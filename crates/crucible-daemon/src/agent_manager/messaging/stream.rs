@@ -424,7 +424,7 @@ impl AgentManager {
                             &stream_ctx.session_id,
                             &mut call,
                             &args,
-                            stream_ctx.origin,
+                            &stream_ctx.origin,
                         )
                         .await;
                         // The bracket opens at the call and closes at its
@@ -658,7 +658,7 @@ impl AgentManager {
                         &stream_ctx.session_id,
                         &mut call,
                         &args,
-                        stream_ctx.origin,
+                        &stream_ctx.origin,
                     )
                     .await;
                     if let Some((_, known)) = agent_calls.get_mut(&id) {

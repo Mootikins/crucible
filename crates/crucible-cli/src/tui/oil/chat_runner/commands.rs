@@ -165,17 +165,11 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             None => "── Context cleared ──".to_string(),
         })],
         TurnPayload::UserMessage {
-            content,
-            origin,
-            plugin,
-            ..
+            content, origin, ..
         } => non_empty(content)
-            .map(|c| match origin {
-                crucible_core::turn::TurnOrigin::User => vec![ChatAppMsg::UserMessage(c)],
-                crucible_core::turn::TurnOrigin::Plugin => vec![ChatAppMsg::SystemNotice(format!(
-                    "↻ {}\n{c}",
-                    plugin.as_deref().unwrap_or("plugin")
-                ))],
+            .map(|c| match origin.as_ref().and_then(|o| o.plugin()) {
+                None => vec![ChatAppMsg::UserMessage(c)],
+                Some(plugin) => vec![ChatAppMsg::SystemNotice(format!("↻ {plugin}\n{c}"))],
             })
             .unwrap_or_default(),
         TurnPayload::TextDelta { content } => non_empty(content)

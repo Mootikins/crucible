@@ -176,8 +176,7 @@ impl SessionEventMessage {
             TurnPayload::UserMessage {
                 message_id: message_id.into(),
                 content: content.into(),
-                origin: crate::turn::TurnOrigin::User,
-                plugin: None,
+                origin: None,
             },
         )
     }
@@ -195,8 +194,7 @@ impl SessionEventMessage {
             TurnPayload::UserMessage {
                 message_id: message_id.into(),
                 content: content.into(),
-                origin: crate::turn::TurnOrigin::Plugin,
-                plugin: Some(plugin.into()),
+                origin: Some(crate::turn::TurnOrigin::Plugin(plugin.into())),
             },
         )
     }

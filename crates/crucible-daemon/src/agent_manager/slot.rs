@@ -119,9 +119,9 @@ pub(crate) struct SessionSlot {
 pub(crate) struct TurnGate {
     pub is_interactive: bool,
     pub permission_override: Option<crucible_core::config::components::permissions::PermissionMode>,
-    /// Who asked for the turn. The render of a prompt reads it.
+    /// Who asked for the turn. The render of a prompt and the plugin
+    /// approval read it.
     pub origin: crucible_core::turn::TurnOrigin,
-    pub active_plugin: Option<String>,
 }
 
 /// The turn that a `turn:complete` handler of `plugin` asked for.

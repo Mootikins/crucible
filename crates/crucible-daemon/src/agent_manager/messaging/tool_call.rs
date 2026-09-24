@@ -791,7 +791,7 @@ impl StreamContext {
             &self.session_id,
             &call,
             args,
-            self.origin,
+            &self.origin,
             Some((&result, error.as_deref())),
         )
         .await;

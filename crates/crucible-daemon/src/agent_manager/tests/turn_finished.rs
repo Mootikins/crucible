@@ -60,7 +60,9 @@ async fn assert_no_more_turn_finished(h: &mut ReactorTestHarness) {
 /// The origin of a `user_message` event.
 fn origin_of(event: &SessionEventMessage) -> TurnOrigin {
     match event.payload() {
-        Ok(SessionEventPayload::Turn(TurnPayload::UserMessage { origin, .. })) => origin,
+        Ok(SessionEventPayload::Turn(TurnPayload::UserMessage { origin, .. })) => {
+            origin.unwrap_or_default()
+        }
         other => panic!("expected user_message, got {other:?}"),
     }
 }
@@ -190,7 +192,7 @@ async fn a_turn_complete_inject_starts_a_new_turn_marked_as_the_plugin_s() {
         .iter()
         .find(|e| e.event == "user_message")
         .expect("the plugin's turn opens with a user_message too");
-    assert_eq!(origin_of(opening), TurnOrigin::Plugin);
+    assert!(matches!(origin_of(opening), TurnOrigin::Plugin(_)));
     match opening.payload() {
         Ok(SessionEventPayload::Turn(TurnPayload::UserMessage { content, .. })) => {
             assert_eq!(content, "keep going");

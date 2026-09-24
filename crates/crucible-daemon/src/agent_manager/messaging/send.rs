@@ -22,7 +22,6 @@ fn outcome_to_status(outcome: StreamOutcome) -> (TurnStatus, Option<StopReason>,
 pub(crate) struct TurnRequest<'a> {
     /// Who asked for the turn. A plugin turn has no caller to notify.
     pub origin: TurnOrigin,
-    pub plugin_name: Option<String>,
     /// Reset conversation context after claiming the turn slot, before the
     /// prompt is committed. This makes clear-with-prompt one admitted turn.
     pub clear_before: bool,
@@ -62,18 +61,13 @@ impl AgentManager {
                 }
             }
             if let Some(prompt) = prompt {
-                let origin = if plugin.is_some() {
-                    TurnOrigin::Plugin
-                } else {
-                    TurnOrigin::User
-                };
+                let origin = plugin.map_or(TurnOrigin::User, TurnOrigin::Plugin);
                 return self
                     .send_message_inner(
                         session_id,
                         prompt,
                         TurnRequest {
                             origin,
-                            plugin_name: plugin,
                             clear_before: true,
                             review_context: None,
                             event_tx,
@@ -183,7 +177,6 @@ impl AgentManager {
             content,
             TurnRequest {
                 origin: TurnOrigin::User,
-                plugin_name: None,
                 clear_before: false,
                 review_context: None,
                 event_tx,
@@ -211,7 +204,6 @@ impl AgentManager {
             content,
             TurnRequest {
                 origin: TurnOrigin::User,
-                plugin_name: None,
                 clear_before: false,
                 review_context,
                 event_tx,
@@ -242,7 +234,6 @@ impl AgentManager {
                 content,
                 TurnRequest {
                     origin: TurnOrigin::User,
-                    plugin_name: None,
                     clear_before: false,
                     review_context: None,
                     event_tx,
@@ -283,8 +274,7 @@ impl AgentManager {
                     &session_id,
                     follow_up.content,
                     TurnRequest {
-                        origin: TurnOrigin::Plugin,
-                        plugin_name: Some(follow_up.plugin),
+                        origin: TurnOrigin::Plugin(follow_up.plugin),
                         clear_before: false,
                         review_context: None,
                         event_tx: &event_tx,
@@ -312,7 +302,6 @@ impl AgentManager {
     ) -> Result<String, AgentError> {
         let TurnRequest {
             origin,
-            plugin_name,
             clear_before,
             review_context,
             event_tx,
@@ -353,7 +342,7 @@ impl AgentManager {
 
         if clear_before {
             if let Err(error) = self
-                .clear_context_inner(&session, plugin_name.as_deref(), event_tx)
+                .clear_context_inner(&session, origin.plugin(), event_tx)
                 .await
             {
                 self.request_state.remove(session_id);
@@ -382,48 +371,46 @@ impl AgentManager {
         info!(target: "ttft", session_id = %session_id, stage = "agent_ready", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
 
         let input_slot = self.slot(session_id);
-        match origin {
+        match &origin {
             TurnOrigin::User => input_slot
                 .plugin_turn_count
                 .store(0, std::sync::atomic::Ordering::Relaxed),
-            TurnOrigin::Plugin => {
+            TurnOrigin::Plugin(plugin) => {
                 let count = input_slot
                     .plugin_turn_count
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                     .saturating_add(1);
                 if count >= session.plugin_turn_limit {
-                    if let Some(plugin) = plugin_name.as_deref() {
-                        let approval = match self.get_plugin_approval(session_id, plugin).await {
-                            Ok(approval) => approval,
-                            Err(error) => {
-                                self.request_state.remove(session_id);
-                                return Err(error);
-                            }
-                        };
-                        if approval == crucible_core::session::PluginApproval::Inherit {
-                            if let Err(error) = self
-                                .set_plugin_approval(
-                                    session_id,
-                                    plugin,
-                                    crucible_core::session::PluginApproval::Ask,
-                                    Some(event_tx),
-                                )
-                                .await
-                            {
-                                self.request_state.remove(session_id);
-                                return Err(error);
-                            }
-                            let notice = crucible_core::types::Notification::warning(format!(
-                                "Plugin {plugin} reached the {} consecutive turn limit; approval is now Ask",
-                                session.plugin_turn_limit
-                            ));
-                            if let Err(error) = self
-                                .add_notification(session_id, notice, Some(event_tx))
-                                .await
-                            {
-                                self.request_state.remove(session_id);
-                                return Err(error);
-                            }
+                    let approval = match self.get_plugin_approval(session_id, plugin).await {
+                        Ok(approval) => approval,
+                        Err(error) => {
+                            self.request_state.remove(session_id);
+                            return Err(error);
+                        }
+                    };
+                    if approval == crucible_core::session::PluginApproval::Inherit {
+                        if let Err(error) = self
+                            .set_plugin_approval(
+                                session_id,
+                                plugin,
+                                crucible_core::session::PluginApproval::Ask,
+                                Some(event_tx),
+                            )
+                            .await
+                        {
+                            self.request_state.remove(session_id);
+                            return Err(error);
+                        }
+                        let notice = crucible_core::types::Notification::warning(format!(
+                            "Plugin {plugin} reached the {} consecutive turn limit; approval is now Ask",
+                            session.plugin_turn_limit
+                        ));
+                        if let Err(error) = self
+                            .add_notification(session_id, notice, Some(event_tx))
+                            .await
+                        {
+                            self.request_state.remove(session_id);
+                            return Err(error);
                         }
                     }
                 }
@@ -496,15 +483,15 @@ impl AgentManager {
         }
 
         // One exhaustive table, so a new origin fails to compile here.
-        let opening_event = match origin {
+        let opening_event = match &origin {
             TurnOrigin::User => {
                 SessionEventMessage::user_message(session_id, &message_id, &original_content)
             }
-            TurnOrigin::Plugin => SessionEventMessage::plugin_message(
+            TurnOrigin::Plugin(plugin) => SessionEventMessage::plugin_message(
                 session_id,
                 &message_id,
                 &original_content,
-                plugin_name.as_deref().unwrap_or("plugin"),
+                plugin,
             ),
         };
         if !emit_event(event_tx, opening_event) {
@@ -609,13 +596,13 @@ impl AgentManager {
             let mut t = conversation_tree.lock().await;
             input.after_turn = Some(message_id.clone());
             let parent = t.current();
-            let turn_node = match origin {
+            let turn_node = match &origin {
                 TurnOrigin::User => crucible_core::turn::NodeContent::User {
                     text: original_content.clone(),
                 },
-                TurnOrigin::Plugin => crucible_core::turn::NodeContent::Plugin {
+                TurnOrigin::Plugin(plugin) => crucible_core::turn::NodeContent::Plugin {
                     text: original_content.clone(),
-                    name: plugin_name.clone().unwrap_or_else(|| "plugin".into()),
+                    name: plugin.clone(),
                 },
             };
             t.add_child_and_advance(parent, turn_node);
@@ -692,15 +679,16 @@ impl AgentManager {
         // ACP owns its history and receives this turn through a user-role
         // prompt. Tag plugin text here; the internal agent gets the tagged
         // system node from the scheduler-owned conversation tree instead.
-        let content = if agent_config.agent_type == "acp" && origin == TurnOrigin::Plugin {
-            crucible_core::traits::ContextMessage::injection(
-                "plugin",
-                plugin_name.as_deref().unwrap_or("plugin"),
-                &original_content,
-            )
-            .content
-        } else {
-            original_content.clone()
+        let content = match origin.plugin() {
+            Some(plugin) if agent_config.agent_type == "acp" => {
+                crucible_core::traits::ContextMessage::injection(
+                    "plugin",
+                    plugin,
+                    &original_content,
+                )
+                .content
+            }
+            _ => original_content.clone(),
         };
 
         let session_id_owned = session_id.to_string();
@@ -749,8 +737,7 @@ impl AgentManager {
             .set_turn_gate(crate::agent_manager::slot::TurnGate {
                 is_interactive,
                 permission_override,
-                origin,
-                active_plugin: plugin_name.clone(),
+                origin: origin.clone(),
             });
         // The turn proposal ends with the turn, on every exit path below.
         let proposals = self.proposals.clone();
@@ -798,7 +785,6 @@ impl AgentManager {
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
             conversation_tree,
-            plugin_name: plugin_name.clone(),
             session_manager: self.session_manager.clone(),
             precognition_message,
             attachment_message,

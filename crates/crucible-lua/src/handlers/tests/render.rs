@@ -30,7 +30,7 @@ async fn a_render_reads_the_result_of_a_finished_call() {
             Some("s-test"),
             &call,
             &args,
-            TurnOrigin::User,
+            &TurnOrigin::User,
             outcome,
         )
     };

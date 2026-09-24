@@ -1090,7 +1090,7 @@ async fn render(
         "test-session",
         &mut call,
         &args,
-        crucible_core::turn::TurnOrigin::User,
+        &crucible_core::turn::TurnOrigin::User,
     )
     .await;
     call.render.expect("render_call always sets a render")
@@ -1169,7 +1169,7 @@ async fn the_read_render_summarizes_its_result() {
                 "test-session",
                 call,
                 args,
-                crucible_core::turn::TurnOrigin::User,
+                &crucible_core::turn::TurnOrigin::User,
                 Some(outcome),
             )
             .await
@@ -1249,6 +1249,51 @@ async fn a_plugin_renders_its_own_kind() {
     let render = render(&vm, call, serde_json::Value::Null).await;
     assert_eq!(render.line.as_deref(), Some("Task: fix the bug"));
     assert_eq!(render.fields[0].value, "user");
+}
+
+/// The prompt of a plugin turn renders with the plugin as its origin, so
+/// the Lua render can name the plugin that asks.
+#[tokio::test]
+async fn a_plugin_turn_prompt_renders_with_the_plugin_name() {
+    let (_vm, am, _sm, id) = session_with_lua(
+        r#"
+        cru.on("tool:render", { pattern = "command" }, function(ctx, call)
+          return { line = "run", fields = { { label = "by", value = tostring(call.origin.name) } } }
+        end)
+        "#,
+    )
+    .await;
+    let (event_tx, _events) = broadcast::channel(16);
+    let handle = am
+        .build_acp_permissions(&id, &event_tx, std::path::Path::new("/w"), None)
+        .handler();
+    am.slot(&id)
+        .set_turn_gate(crate::agent_manager::slot::TurnGate {
+            is_interactive: true,
+            origin: crucible_core::turn::TurnOrigin::Plugin("goal".into()),
+            ..Default::default()
+        });
+    let call = acp_call(serde_json::json!({
+        "kind": "execute", "title": "Run", "rawInput": {"command": "cargo test"},
+    }));
+    let options = vec![agent_client_protocol::schema::v1::PermissionOption::new(
+        "allow",
+        "Allow",
+        agent_client_protocol::schema::v1::PermissionOptionKind::AllowOnce,
+    )];
+    let pending = tokio::spawn(handle(call, options));
+    let request = loop {
+        if let Some((_, _, request)) = am.list_all_pending_permissions().pop() {
+            break request;
+        }
+        tokio::task::yield_now().await;
+    };
+    pending.abort();
+    let render = request
+        .call
+        .and_then(|call| call.render)
+        .expect("the prompt has a render");
+    assert_eq!(render.fields[0].value, "goal");
 }
 
 /// The last render of a kind wins, so a user file replaces a shipped render.

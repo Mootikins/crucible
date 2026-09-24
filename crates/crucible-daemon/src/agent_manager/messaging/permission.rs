@@ -166,8 +166,8 @@ impl AcpGate {
             tool_policy: self.tool_policy.as_ref(),
             engine,
             permission_override: turn.permission_override,
-            plugin: turn.active_plugin.as_deref(),
-            plugin_approval: (turn.active_plugin.as_deref())
+            plugin: turn.origin.plugin(),
+            plugin_approval: (turn.origin.plugin())
                 .and_then(|plugin| {
                     self.sessions
                         .get_session(&self.session_id)
@@ -212,7 +212,7 @@ impl AcpGate {
             &self.session_id,
             &mut call,
             &args,
-            turn.origin,
+            &turn.origin,
         )
         .await;
         let engine = self.rules.engine(&self.session_id);
@@ -262,7 +262,7 @@ impl AcpGate {
             &self.session_id,
             &mut call,
             &args,
-            turn.origin,
+            &turn.origin,
         )
         .await;
         let engine = self.rules.engine(&self.session_id);
@@ -839,10 +839,10 @@ impl StreamContext {
             tool_policy: config.tool_policy.as_ref(),
             engine: &self.permission_engine,
             permission_override: self.permission_override,
-            plugin: self.plugin_name.as_deref(),
+            plugin: self.origin.plugin(),
             plugin_approval: self
-                .plugin_name
-                .as_deref()
+                .origin
+                .plugin()
                 .and_then(|plugin| {
                     self.session_manager
                         .get_session(&self.session_id)
@@ -2088,8 +2088,7 @@ mod acp_permission_handler_tests {
         am.slot(&session_id).set_turn_gate(TurnGate {
             is_interactive: true,
             permission_override: Some(PermissionMode::Allow),
-            active_plugin: Some("alpha".into()),
-            ..Default::default()
+            origin: crucible_core::turn::TurnOrigin::Plugin("alpha".into()),
         });
         let (event_tx, mut event_rx) = broadcast::channel(16);
         let handle = am

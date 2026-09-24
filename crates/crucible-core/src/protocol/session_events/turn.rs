@@ -56,13 +56,10 @@ pub enum TurnPayload {
         message_id: String,
         #[serde(default)]
         content: String,
-        /// Who asked for this turn. Absent on the wire for a person's own
-        /// message, so their turns keep the shape they always had.
-        #[serde(default, skip_serializing_if = "crate::turn::TurnOrigin::is_user")]
-        origin: crate::turn::TurnOrigin,
-        /// Plugin that requested this turn; absent for a person's message.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        plugin: Option<String>,
+        /// Who asked for this turn. `None` for a person's own message: the
+        /// wire then has no `origin` key, as it always had.
+        #[serde(flatten)]
+        origin: Option<crate::turn::TurnOrigin>,
     },
     TextDelta {
         #[serde(default)]

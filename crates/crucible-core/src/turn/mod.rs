@@ -234,23 +234,26 @@ pub enum TurnStatus {
 /// A turn ENDS, and a `turn:complete` handler that wants more work asks for a
 /// NEW turn. That turn is a normal turn: it takes admission, Precognition,
 /// persistence and undo like any other. Only this field says who asked.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+///
+/// The serde form is the `origin` and `plugin` keys of the `user_message`
+/// event: `{"origin": "plugin", "plugin": "goal"}`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "origin", content = "plugin", rename_all = "snake_case")]
 pub enum TurnOrigin {
     /// A person sent the message through a client.
     #[default]
     User,
-    /// A `turn:complete` handler asked for the turn.
-    Plugin,
+    /// The plugin with this name asked for the turn.
+    Plugin(String),
 }
 
 impl TurnOrigin {
-    /// Is this the default origin?
-    ///
-    /// The `user_message` event omits the field then, so the wire form and
-    /// the stored line of a person's own turn do not change.
-    pub fn is_user(&self) -> bool {
-        matches!(self, Self::User)
+    /// The name of the plugin that asked for the turn.
+    pub fn plugin(&self) -> Option<&str> {
+        match self {
+            Self::User => None,
+            Self::Plugin(name) => Some(name),
+        }
     }
 }
 

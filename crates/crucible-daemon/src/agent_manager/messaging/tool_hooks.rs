@@ -25,7 +25,7 @@ pub(crate) async fn lua_render(
     session_id: &str,
     call: &crucible_core::types::CanonicalToolCall,
     args: &serde_json::Value,
-    origin: crucible_core::turn::TurnOrigin,
+    origin: &crucible_core::turn::TurnOrigin,
     outcome: Option<(&str, Option<&str>)>,
 ) -> Option<crucible_core::types::ToolRender> {
     let (registry, lua) = handlers?;
@@ -47,7 +47,7 @@ pub(crate) async fn render_call(
     session_id: &str,
     call: &mut crucible_core::types::CanonicalToolCall,
     args: &serde_json::Value,
-    origin: crucible_core::turn::TurnOrigin,
+    origin: &crucible_core::turn::TurnOrigin,
 ) {
     let render = lua_render(handlers, session_id, call, args, origin, None).await;
     call.render =
@@ -63,7 +63,7 @@ impl StreamContext {
     ) -> crucible_core::types::CanonicalToolCall {
         let mut call = crucible_core::types::CanonicalToolCall::crucible_tool(name, args);
         let handlers = self.agent_stream_config.plugin_handlers.as_ref();
-        render_call(handlers, &self.session_id, &mut call, args, self.origin).await;
+        render_call(handlers, &self.session_id, &mut call, args, &self.origin).await;
         call
     }
 }
