@@ -165,6 +165,22 @@ async fn an_agent_mode_named_auto_does_not_take_the_crucible_auto_stance() {
     assert_eq!(gate.answers(), ["reject_once"]);
 }
 
+/// Each turn start writes its interactivity for the permission handler of
+/// the cached handle. An interactive turn asks the user. A later turn that
+/// nobody can answer, on the same handle, refuses with no prompt.
+#[tokio::test]
+async fn each_turn_start_sets_the_gate_of_the_cached_handle() {
+    let mut gate = gate("default").await;
+    assert!(gate.turn(true).await, "the interactive turn asks the user");
+    assert!(
+        !gate.turn(false).await,
+        "the non-interactive turn asks nobody"
+    );
+    assert_eq!(gate.answers(), ["reject_once", "reject_once"]);
+    let initializes = logged(&gate.log, "initialize").len();
+    assert_eq!(initializes, 1, "both turns ran on one agent process");
+}
+
 /// The Crucible plan rule refuses each unsafe call. An agent mode named
 /// `plan` is the agent's own rule, so Crucible asks the user.
 #[tokio::test]
