@@ -197,6 +197,13 @@ pub(in crate::agent_manager) async fn prompt_user(
     let _one_at_a_time = slot.prompt_lock().await;
     let interaction = InteractionRequest::Permission(request.clone());
     let (permission_id, response_rx) = slot.register_permission(request);
+    let mut open = OpenPrompt {
+        slot,
+        session_id,
+        event_tx,
+        id: &permission_id,
+        answered: false,
+    };
     if !emit_event(
         event_tx,
         SessionEventMessage::interaction_requested(session_id, &permission_id, &interaction),
@@ -206,13 +213,47 @@ pub(in crate::agent_manager) async fn prompt_user(
 
     let reason = match tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await
     {
-        Ok(Ok(response)) => return response,
+        Ok(Ok(response)) => {
+            open.answered = true;
+            return response;
+        }
         Ok(Err(_)) => "Permission request channel closed before response",
         Err(_) => "Permission request timed out",
     };
-    slot.take_permission(&permission_id);
     debug!(session_id = %session_id, permission_id = %permission_id, reason, "permission prompt ended with no answer");
     PermResponse::deny_with_reason(reason)
+}
+
+/// A prompt that waits for an answer.
+///
+/// A prompt can end with no answer: the turn is cancelled, the wait times
+/// out, or the caller drops the wait (the ACP client drops it when the turn
+/// ends). Then the drop removes the prompt from the session, and tells each
+/// client to remove it. Without this the web Inbox listed a prompt that
+/// nobody waited for.
+struct OpenPrompt<'a> {
+    slot: &'a crate::agent_manager::slot::SessionSlot,
+    session_id: &'a str,
+    event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    id: &'a str,
+    answered: bool,
+}
+
+impl Drop for OpenPrompt<'_> {
+    fn drop(&mut self) {
+        if self.answered {
+            return;
+        }
+        self.slot.take_permission(self.id);
+        emit_event(
+            self.event_tx,
+            SessionEventMessage::interaction_completed(
+                self.session_id,
+                self.id,
+                crucible_core::interaction::InteractionResponse::Cancelled,
+            ),
+        );
+    }
 }
 
 impl AgentManager {
@@ -1673,6 +1714,58 @@ mod acp_permission_handler_tests {
             .expect("join");
         assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
         assert!(am.list_all_pending_permissions().is_empty());
+    }
+
+    /// Read events until a prompt ends. Return its request id.
+    async fn ended_id(rx: &mut broadcast::Receiver<SessionEventMessage>) -> String {
+        loop {
+            let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .expect("the prompt must end with interaction_completed")
+                .expect("event channel open");
+            if msg.event == "interaction_completed" {
+                return msg.data["request_id"]
+                    .as_str()
+                    .expect("request_id")
+                    .to_string();
+            }
+        }
+    }
+
+    /// A prompt that ends with no answer leaves the registry (the web Inbox
+    /// lists it), and each client gets `interaction_completed` to remove it.
+    /// A cancel of the turn ends a prompt, and so does a caller that drops
+    /// the wait: the ACP client drops it when its turn ends.
+    #[tokio::test]
+    async fn an_abandoned_prompt_leaves_the_registry_and_the_clients() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+
+        let pending = tokio::spawn(ask(&handle));
+        let id = prompt_id(&mut event_rx).await;
+        am.cancel(SESSION).await;
+        pending.await.expect("join");
+        assert!(am.list_all_pending_permissions().is_empty());
+        assert_eq!(
+            ended_id(&mut event_rx).await,
+            id,
+            "a cancel ends the prompt"
+        );
+
+        let pending = tokio::spawn(ask(&handle));
+        let id = prompt_id(&mut event_rx).await;
+        pending.abort();
+        let _ = pending.await;
+        assert!(
+            am.list_all_pending_permissions().is_empty(),
+            "a dropped wait leaves no prompt"
+        );
+        assert_eq!(
+            ended_id(&mut event_rx).await,
+            id,
+            "a dropped wait ends the prompt"
+        );
     }
 
     /// Nobody answers. After 300 s the handler rejects the call. It does not

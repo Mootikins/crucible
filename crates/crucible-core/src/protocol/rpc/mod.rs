@@ -453,6 +453,22 @@ impl SessionEventMessage {
         )
     }
 
+    /// A prompt ended: a client answered it, or it ended with no answer.
+    /// Each client removes the prompt with this id.
+    pub fn interaction_completed(
+        session_id: impl Into<String>,
+        request_id: impl Into<String>,
+        response: crate::interaction::InteractionResponse,
+    ) -> Self {
+        Self::typed(
+            session_id,
+            TurnPayload::InteractionCompleted {
+                request_id: request_id.into(),
+                response,
+            },
+        )
+    }
+
     // ---- workflow events (Phase 3a) ----
 
     pub fn workflow_step_started(

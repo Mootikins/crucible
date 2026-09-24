@@ -117,6 +117,21 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([keys.pendingInteractions()]);
   });
 
+  it('drops a prompt that the daemon ended, in the pane and in the Inbox', () => {
+    const resolved: { sessionId: string; requestId: string }[] = [];
+    getBus().on('interactionResolved', (payload) => resolved.push(payload));
+    const source = openStream();
+
+    source.emit('session_event', {
+      type: 'session_event',
+      event: 'interaction_completed',
+      data: { request_id: 'perm-1', response: { kind: 'cancelled' } },
+    });
+
+    expect(resolved).toEqual([{ sessionId: SESSION, requestId: 'perm-1' }]);
+    expect(invalidated).toEqual([keys.pendingInteractions()]);
+  });
+
   it('appends the echoed user message to the history it already holds', () => {
     env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
     const source = openStream();

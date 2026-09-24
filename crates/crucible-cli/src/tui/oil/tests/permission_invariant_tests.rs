@@ -513,3 +513,40 @@ fn test_escape_closes_modal_without_side_effects() {
         "Should be able to open another modal after Escape"
     );
 }
+
+/// The id of the prompt that `y` answers, or `None` with no prompt.
+fn answered_id(app: &mut OilChatApp) -> Option<String> {
+    match app.update(Event::Key(key(KeyCode::Char('y')))) {
+        Action::Send(ChatAppMsg::CloseInteraction { request_id, .. }) => Some(request_id),
+        _ => None,
+    }
+}
+
+/// A prompt that the daemon ended (a cancelled turn, or an answer from
+/// another client) leaves the TUI, shown or queued. The event is
+/// `interaction_completed`.
+#[test]
+fn a_prompt_that_the_daemon_ended_leaves_the_tui() {
+    use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
+
+    let ended = |id: &str| {
+        let data = serde_json::json!({ "request_id": id, "response": { "kind": "cancelled" } });
+        let msgs = session_event_to_chat_msgs("interaction_completed", &data);
+        assert_eq!(msgs.len(), 1, "one message for {id}");
+        msgs.into_iter().next().unwrap()
+    };
+    let mut app = OilChatApp::default();
+    for id in ["perm-a", "perm-b", "perm-c"] {
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        app.open_interaction(id.to_string(), request);
+    }
+
+    app.on_message(ended("perm-b"));
+    app.on_message(ended("perm-a"));
+    assert_eq!(answered_id(&mut app).as_deref(), Some("perm-c"));
+
+    let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+    app.open_interaction("perm-d".to_string(), request);
+    app.on_message(ended("perm-d"));
+    assert!(!app.interaction_visible(), "the last prompt left");
+}

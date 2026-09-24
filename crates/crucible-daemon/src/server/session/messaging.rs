@@ -313,14 +313,7 @@ pub(crate) async fn handle_session_interaction_respond(
 
     if !emit_event(
         event_tx,
-        SessionEventMessage::new(
-            session_id,
-            "interaction_completed",
-            serde_json::json!({
-                "request_id": request_id,
-                "response": response,
-            }),
-        ),
+        SessionEventMessage::interaction_completed(session_id, request_id, response),
     ) {
         tracing::debug!("Failed to emit interaction_completed event (no subscribers)");
     }

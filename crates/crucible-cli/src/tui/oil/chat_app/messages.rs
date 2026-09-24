@@ -209,6 +209,8 @@ pub enum ChatAppMsg {
         request_id: String,
         response: InteractionResponse,
     },
+    /// **Event** (daemon → TUI): A prompt ended. Remove it, shown or queued.
+    InteractionEnded { request_id: String },
     /// **Command** (TUI → daemon): Reload a Lua/Fennel plugin.
     ReloadPlugin(String),
     /// **Command** (TUI → daemon): Fetch a plugin surface and open it.
@@ -442,6 +444,7 @@ impl ChatAppMsg {
             | Self::ClearHistory
             | Self::OpenInteraction { .. }
             | Self::CloseInteraction { .. }
+            | Self::InteractionEnded { .. }
             | Self::PrecognitionResult { .. }
             | Self::ExecuteSlashCommand(_)
             | Self::RunPluginCommand { .. }

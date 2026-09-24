@@ -148,7 +148,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-401: Permission modal full flow
 **As a user**, when the agent needs permission I get a modal with the tool, args, and a togglable diff; y approves, n denies, a allowlists — and the tool then runs or errors accordingly.
-**Acceptance:** queued permissions auto-open in order; `h` toggles diff (the on-screen hint reads `press h to expand/collapse diff` — `d` is not bound, see `interaction_modal/perm.rs:68`); decision reaches the daemon; deny yields an error tool result and the turn continues; allowlist persists project-scoped, and the grant it saves is the command the modal displayed — a wider grant needs the user to `Tab` and add a `*`.
+**Acceptance:** queued permissions auto-open in order; `h` toggles diff (the on-screen hint reads `press h to expand/collapse diff` — `d` is not bound, see `interaction_modal/perm.rs:68`); decision reaches the daemon; deny yields an error tool result and the turn continues; allowlist persists project-scoped, and the grant it saves is the command the modal displayed — a wider grant needs the user to `Tab` and add a `*`. A prompt that the daemon ends (a cancelled turn, or an answer from another client) leaves the modal and the queue (`interaction_completed`).
 **Tests:** T2 (modal render + diff), full approve/deny→tool-result flow + queued-ordering in `user_story_tests/permission_tests.rs`, permission_invariant_tests.
 
 ### US-402: Ask modal

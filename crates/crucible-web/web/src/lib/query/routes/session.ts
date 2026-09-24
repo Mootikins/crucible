@@ -104,9 +104,18 @@ function appendUserMessage(client: QueryClient, sessionId: string, data: Session
 /** Routes the events the daemon forwards under one `session_event` type. */
 function routeSessionSubEvent(
   event: Extract<ChatEvent, { type: 'session_event' }>,
-  { client, sessionId }: SessionRouteContext,
+  { client, bus, sessionId }: SessionRouteContext,
 ): void {
   switch (event.event) {
+    // A prompt ended: a client answered it, or it ended with no answer (a
+    // cancelled turn). The pane drops its card, and the Inbox refetches.
+    case 'interaction_completed': {
+      const requestId = (event.data as { request_id?: unknown } | null)?.request_id;
+      if (typeof requestId === 'string') bus.emit('interactionResolved', { sessionId, requestId });
+      void client.invalidateQueries({ queryKey: keys.pendingInteractions() });
+      break;
+    }
+
     case 'user_message':
       appendUserMessage(client, sessionId, event.data as SessionEventData);
       break;

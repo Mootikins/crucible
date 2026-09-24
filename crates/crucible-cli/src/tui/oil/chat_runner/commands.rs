@@ -341,9 +341,13 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
         // Rendered by other paths or not rendered at all: `segment_complete` is
         // additive over `message_complete`'s text, interactions ride their own
         // channel, and the rest is context plumbing and telemetry.
+        // A prompt ended, answered here, by another client, or with no
+        // answer. The prompt leaves the TUI.
+        TurnPayload::InteractionCompleted { request_id, .. } => {
+            vec![ChatAppMsg::InteractionEnded { request_id }]
+        }
         TurnPayload::SegmentComplete { .. }
         | TurnPayload::InteractionRequested { .. }
-        | TurnPayload::InteractionCompleted { .. }
         | TurnPayload::ContextInjected { .. }
         | TurnPayload::PostLlmCall { .. } => vec![],
     }

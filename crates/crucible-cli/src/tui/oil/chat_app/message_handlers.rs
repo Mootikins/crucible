@@ -385,6 +385,14 @@ impl OilChatApp {
                 self.close_interaction();
                 // The actual response is sent by process_action in chat_runner
             }
+            ChatAppMsg::InteractionEnded { request_id } => {
+                self.permission
+                    .permission_queue
+                    .retain(|(id, _)| *id != request_id);
+                if (self.interaction_modal.as_ref()).is_some_and(|m| m.request_id == request_id) {
+                    self.close_interaction_and_show_next();
+                }
+            }
 
             // --- Setup Events (daemon → TUI, fire once per session) ---
             ChatAppMsg::SessionInitialized(payload) => {
