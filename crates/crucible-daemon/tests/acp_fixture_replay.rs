@@ -897,7 +897,7 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     ),
     ("claude", 6, r#"{"kind":"tool","tool":"tool"}"#),
     ("claude", 7, r#"{"kind":"tool","tool":"tool"}"#),
-    ("claude", 8, r#"{"kind":"tool","tool":"Edit"}"#),
+    ("claude", 8, r#"{"kind":"file_edit","tool":"Edit"}"#),
     (
         "claude",
         9,

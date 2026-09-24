@@ -50,11 +50,13 @@ impl PermissionEngine {
     ) -> PermissionDecision {
         let command = (call.kind == "command").then(|| match call.command.as_deref() {
             Some(line) => self.evaluate_bash(line),
-            None => Some(self.unreadable_command()),
+            None => Some(self.unreadable(&["bash"])),
         });
         let keys = file_rule_keys(&call.kind);
-        let paths = (!keys.is_empty() && !call.paths.is_empty())
-            .then(|| every_input(call.paths.iter().map(|p| self.evaluate_single(keys, p))));
+        let paths = (!keys.is_empty()).then(|| match call.paths.is_empty() {
+            true => Some(self.unreadable(keys)),
+            false => every_input(call.paths.iter().map(|p| self.evaluate_single(keys, p))),
+        });
         let named = (call.tool != "bash" && !is_file_tool(&call.tool))
             .then(|| self.evaluate_single(&[&call.tool], &args.to_string()));
         self.finish(
@@ -81,17 +83,21 @@ impl PermissionEngine {
         decision
     }
 
-    /// The decision for a command whose command line Crucible cannot read.
-    /// The command can be the one that a `bash` deny rule names, so each
-    /// such rule refuses it. No rule can allow it, so the user is asked.
-    fn unreadable_command(&self) -> PermissionDecision {
-        if self.compiled.deny.iter().any(|rule| rule.tool == "bash") {
-            return PermissionDecision::Deny {
-                reason: "Cannot read the command line, and a bash deny rule exists".to_string(),
-            };
-        }
-        PermissionDecision::Ask {
-            rule_matched: false,
+    /// The decision for a call whose target Crucible cannot read: a command
+    /// with no command line, or an edit with no path. The target can be one
+    /// that a deny rule of `keys` names, so each such rule refuses it. No
+    /// rule can allow it, so the user is asked.
+    fn unreadable(&self, keys: &[&str]) -> PermissionDecision {
+        match (self.compiled.deny.iter()).find(|rule| keys.contains(&rule.tool.as_str())) {
+            Some(rule) => PermissionDecision::Deny {
+                reason: format!(
+                    "Cannot read the target of the call, and a {} deny rule exists",
+                    rule.tool
+                ),
+            },
+            None => PermissionDecision::Ask {
+                rule_matched: false,
+            },
         }
     }
 

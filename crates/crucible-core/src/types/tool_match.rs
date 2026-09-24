@@ -322,11 +322,11 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         USUAL_QUERY_KEYS,
     );
 
-    // 6. The fallback. A file kind with no path is also `tool`. A command
-    // with no command line stays a command, so that a `bash` deny rule
-    // still applies to it.
+    // 6. The fallback. A read with no path is also `tool`. A command with
+    // no command line stays a command, and an edit with no path stays an
+    // edit, so that a `bash` or an `edit` deny rule still applies to it.
     let empty = match BuiltinKind::parse(&call.kind) {
-        Some(BuiltinKind::FileEdit | BuiltinKind::FileRead) => call.paths.is_empty(),
+        Some(BuiltinKind::FileRead) => call.paths.is_empty(),
         _ => call.kind.is_empty(),
     };
     if empty {
@@ -754,13 +754,14 @@ mod tests {
         assert_eq!(c.tool, "wire");
     }
 
-    /// A file kind with no path is `tool`. A command with no command line
-    /// stays a command, so a `bash` deny rule still applies to it.
+    /// A read with no path is `tool`. A command with no command line and
+    /// an edit with no path keep their kind, so a `bash` or an `edit` deny
+    /// rule still applies to them.
     #[test]
     fn a_typed_kind_with_an_empty_field() {
-        for kind in ["read", "edit"] {
+        for (kind, canonical) in [("read", "tool"), ("edit", "file_edit")] {
             let c = classify_acp(raw(json!({"kind": kind, "rawInput": {}})), &[]);
-            assert_eq!(c.kind, "tool", "{kind}");
+            assert_eq!(c.kind, canonical, "{kind}");
         }
         let c = classify_acp(raw(json!({"kind": "execute", "rawInput": {}})), &[]);
         assert_eq!((c.kind.as_str(), c.command), ("command", None));

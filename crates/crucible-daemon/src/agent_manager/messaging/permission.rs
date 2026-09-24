@@ -39,13 +39,14 @@ enum PatternKind {
 /// name. [`PermRequest::suggested_pattern`] offers the same thing: the
 /// command line for a command, and the tool name for another tool.
 ///
-/// `None` for a command that Crucible cannot read. A grant for it would
-/// allow each command that Crucible cannot read, so no grant is stored.
+/// `None` for a command that Crucible cannot read, and for an edit with no
+/// path. A grant for it would allow each such call, so no grant is stored.
 fn pattern_kind(call: &CanonicalToolCall) -> Option<PatternKind> {
     match (call.kind.as_str(), &call.command) {
         ("command", Some(command)) => Some(PatternKind::Bash(command.clone())),
         ("command", None) => None,
-        ("file_edit", _) if !call.paths.is_empty() => Some(PatternKind::File),
+        ("file_edit", _) if call.paths.is_empty() => None,
+        ("file_edit", _) => Some(PatternKind::File),
         _ => Some(PatternKind::Tool),
     }
 }
@@ -1330,6 +1331,47 @@ mod acp_tool_policy_tests {
 
         let asked = decide(hermes(), &[], Some(rules("read:/etc/*"))).await;
         assert_eq!(asked.prompts, 1, "`allow bash:*` cannot allow it");
+    }
+
+    /// An ACP edit that names no path is still an edit, as a command with
+    /// no command line is still a command. An `edit` deny rule refuses it.
+    /// No rule can allow it, so with no deny rule the user is asked, and
+    /// "always allow" saves no grant for it.
+    #[tokio::test]
+    async fn an_edit_that_names_no_path_is_still_an_edit() {
+        let edit = |name: Option<&str>| {
+            let mut raw = serde_json::json!({ "kind": "edit", "title": "Edit a file" });
+            if let Some(name) = name {
+                raw["name"] = serde_json::json!(name);
+            }
+            classify_acp(serde_json::from_value(raw).expect("a raw tool call"), &[])
+        };
+        let rules = |rule: &str, deny: bool| PermissionConfig {
+            default: PermissionMode::Allow,
+            allow: (!deny).then(|| rule.to_string()).into_iter().collect(),
+            deny: deny.then(|| rule.to_string()).into_iter().collect(),
+            ..Default::default()
+        };
+        for name in [None, Some("Edit")] {
+            assert_eq!(edit(name).kind, "file_edit", "{name:?}");
+            let denied = decide_call(edit(name), &[], Some(rules("edit:*", true))).await;
+            assert!(!denied.allowed(), "an edit deny rule refuses {name:?}");
+            assert_eq!(denied.prompts, 0, "an operator deny asks nobody");
+            let asked = decide_call(edit(name), &[], Some(rules("edit:*", false))).await;
+            assert_eq!(asked.prompts, 1, "no rule can allow {name:?}");
+        }
+        assert_eq!(
+            asked_with_always_allow(vec![edit(Some("Edit")), edit(Some("Edit"))]).await,
+            [true, true],
+            "no grant covers each edit of Edit"
+        );
+        // A grant that the user types does not cover it either.
+        let mut typed = PatternStore::new();
+        typed.add_tool_pattern("Edit").unwrap();
+        assert!(!AgentManager::check_pattern_match(
+            &edit(Some("Edit")),
+            &typed
+        ));
     }
 
     /// A codex MCP approval carries `kind: "execute"` and no name of its own.

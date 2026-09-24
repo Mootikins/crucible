@@ -144,6 +144,9 @@ or Crucible's own agent calls it.
   A shell tool of an MCP server (`mcp__srv__bash`) is also a `command` call.
 - **`read`** reads each **path** of a `file_read` call. **`edit`**, **`write`** and
   **`delete`** read each path of a `file_edit` call. A `read` rule never reads an edit.
+  An ACP agent can send an edit with no path. Each `edit`, `write` or `delete` deny rule
+  refuses such a call. With no such deny rule, the user is asked, and no `allow` rule and
+  no saved grant can allow it.
   An `allow` rule allows a call only when it matches each path of the call. Of
   Crucible's tools, only `read_file`, `read_note`, `read_metadata`, `glob` and `grep`
   make a `file_read` call. A plugin or MCP gateway tool with a `path` argument is kind
