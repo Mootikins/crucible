@@ -11,6 +11,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 toml = { workspace = true }
+# `EnumIter` gives the completeness gates the variants that the compiler knows.
+strum = { version = "0.28", features = ["derive"] }
 toml_edit = { workspace = true }
 uuid = { workspace = true }
 anyhow = { workspace = true }
@@ -106,10 +108,6 @@ toml = []
 # Integration tests under `tests/` compile the library without `cfg(test)`,
 # so the `test-utils` feature must turn the test helpers on for them.
 crucible-core = { path = ".", features = ["test-utils"] }
-# `EnumIter` over `ScriptingEvent` and `ConfigSource`, so the tests asserting
-# completeness walk what the compiler knows rather than a second hand-written
-# list. Dev-only: each derive is `#[cfg_attr(test, ...)]`.
-strum = { version = "0.28", features = ["derive"] }
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.27"

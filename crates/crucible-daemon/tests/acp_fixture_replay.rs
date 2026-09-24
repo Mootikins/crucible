@@ -1252,8 +1252,8 @@ async fn each_tool_frame_gives_its_canonical_call() {
             assert_eq!(got, fields, "{agent}.jsonl:{line}");
             let kind = got["kind"].as_str().unwrap();
             assert!(
-                crucible_core::types::CanonicalToolCall::KINDS.contains(&kind),
-                "{kind} is missing from CanonicalToolCall::KINDS, so no render gate covers it"
+                crucible_core::types::BuiltinKind::parse(kind).is_some(),
+                "{kind} is not a BuiltinKind, so no render gate covers it"
             );
         }
     }

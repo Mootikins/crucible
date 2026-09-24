@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::acp::FileDiff;
-use super::tool_call::{is_shell_tool, CanonicalToolCall};
+use super::tool_call::{is_shell_tool, BuiltinKind, CanonicalToolCall};
 
 /// The fields of an ACP tool call that a matcher or a display can read.
 ///
@@ -264,7 +264,7 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         })
         .collect();
     if !diff_paths.is_empty() {
-        call.kind = "file_edit".into();
+        call.kind = BuiltinKind::FileEdit.as_str().into();
         call.paths = diff_paths;
     }
     call.diffs = file_diffs(&raw.content);
@@ -273,16 +273,19 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
     // it is for Crucible's own MCP gateway tools.
     if let (true, Some(name)) = (call.kind.is_empty(), &mcp_name) {
         call.kind = if is_shell_tool(name) {
-            "command"
+            BuiltinKind::Command
         } else {
-            "mcp_tool"
+            BuiltinKind::McpTool
         }
+        .as_str()
         .into();
     }
 
     // 3. The ACP kind and the locations.
     if call.kind.is_empty() {
-        call.kind = raw.kind.and_then(acp_kind_name).unwrap_or_default().into();
+        call.kind = (raw.kind.and_then(acp_kind_name))
+            .map_or("", BuiltinKind::as_str)
+            .into();
     }
     if call.paths.is_empty() {
         call.paths = raw
@@ -304,7 +307,7 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
 
     // 5. The usual keys. A `command` key makes a command line only for a
     // command call: another tool can take a `command` argument.
-    let command_keys: &[&str] = if call.kind == "command" {
+    let command_keys: &[&str] = if call.kind == BuiltinKind::Command.as_str() {
         &["command"]
     } else {
         &[]
@@ -322,20 +325,23 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
     // 6. The fallback. A file kind with no path is also `tool`. A command
     // with no command line stays a command, so that a `bash` deny rule
     // still applies to it.
-    let empty = match call.kind.as_str() {
-        "" => true,
-        "file_edit" | "file_read" => call.paths.is_empty(),
-        _ => false,
+    let empty = match BuiltinKind::parse(&call.kind) {
+        Some(BuiltinKind::FileEdit | BuiltinKind::FileRead) => call.paths.is_empty(),
+        _ => call.kind.is_empty(),
     };
     if empty {
-        call.kind = "tool".into();
+        call.kind = BuiltinKind::Tool.as_str().into();
     }
 
     // ACP agents do not agree on `fetch` and `search` for a web search. The
     // field that the call has decides.
-    match (call.kind.as_str(), &call.url, &call.query) {
-        ("fetch", None, Some(_)) => call.kind = "search".into(),
-        ("search", Some(_), None) => call.kind = "fetch".into(),
+    match (BuiltinKind::parse(&call.kind), &call.url, &call.query) {
+        (Some(BuiltinKind::Fetch), None, Some(_)) => {
+            call.kind = BuiltinKind::Search.as_str().into()
+        }
+        (Some(BuiltinKind::Search), Some(_), None) => {
+            call.kind = BuiltinKind::Fetch.as_str().into()
+        }
         _ => {}
     }
 
@@ -394,13 +400,13 @@ fn is_mcp_name(name: &str) -> bool {
 
 /// The canonical kind for an ACP kind. `other`, `think` and `switch_mode`
 /// give no kind, so a later step decides.
-fn acp_kind_name(kind: ToolKind) -> Option<&'static str> {
+fn acp_kind_name(kind: ToolKind) -> Option<BuiltinKind> {
     match kind {
-        ToolKind::Read => Some("file_read"),
-        ToolKind::Edit | ToolKind::Delete | ToolKind::Move => Some("file_edit"),
-        ToolKind::Execute => Some("command"),
-        ToolKind::Fetch => Some("fetch"),
-        ToolKind::Search => Some("search"),
+        ToolKind::Read => Some(BuiltinKind::FileRead),
+        ToolKind::Edit | ToolKind::Delete | ToolKind::Move => Some(BuiltinKind::FileEdit),
+        ToolKind::Execute => Some(BuiltinKind::Command),
+        ToolKind::Fetch => Some(BuiltinKind::Fetch),
+        ToolKind::Search => Some(BuiltinKind::Search),
         _ => None,
     }
 }

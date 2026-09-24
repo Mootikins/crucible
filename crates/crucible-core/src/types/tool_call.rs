@@ -24,12 +24,46 @@ const PATH_KEYS: &[&str] = &["file_path", "filePath", "path", "file", "note", "n
 /// Argument keys that carry a search query, in priority order.
 const QUERY_KEYS: &[&str] = &["pattern", "query"];
 
+/// The kinds that [`CanonicalToolCall::crucible_tool`] and the default ACP
+/// matcher give. A kind stays an open name: a plugin or an agent key table
+/// can add a kind. The Lua defaults render each kind here but `tool`, which
+/// [`ToolRender::fallback`] renders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
+pub enum BuiltinKind {
+    Command,
+    FileEdit,
+    FileRead,
+    McpTool,
+    Fetch,
+    Search,
+    Tool,
+}
+
+impl BuiltinKind {
+    /// The kind name on the wire.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Command => "command",
+            Self::FileEdit => "file_edit",
+            Self::FileRead => "file_read",
+            Self::McpTool => "mcp_tool",
+            Self::Fetch => "fetch",
+            Self::Search => "search",
+            Self::Tool => "tool",
+        }
+    }
+
+    /// The built-in kind with the name `kind`, or `None` for another kind.
+    pub fn parse(kind: &str) -> Option<Self> {
+        <Self as strum::IntoEnumIterator>::iter().find(|k| k.as_str() == kind)
+    }
+}
+
 /// One tool call, classified.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CanonicalToolCall {
     /// The open kind name. The default matcher and [`Self::crucible_tool`]
-    /// give `command`, `file_edit`, `file_read`, `mcp_tool`, `fetch`,
-    /// `search`, or the fallback `tool`.
+    /// give a [`BuiltinKind`].
     pub kind: String,
     /// The canonical tool name. A display object from before this field has
     /// no name, so the default keeps an old transcript readable.
@@ -141,19 +175,6 @@ fn field(label: &str, value: Value) -> RenderField {
 }
 
 impl CanonicalToolCall {
-    /// The kinds that [`Self::crucible_tool`] and the default ACP matcher
-    /// give. The Lua defaults render each one but `tool`, which
-    /// [`ToolRender::fallback`] renders. A plugin can add a kind.
-    pub const KINDS: &'static [&'static str] = &[
-        "command",
-        "file_edit",
-        "file_read",
-        "mcp_tool",
-        "fetch",
-        "search",
-        "tool",
-    ];
-
     /// Tool names whose payload is a shell command line.
     ///
     /// Matched exactly, or as the tail of an MCP-prefixed name
@@ -198,8 +219,8 @@ impl CanonicalToolCall {
     /// nothing) yields the fallback `tool`; its fallback render shows the
     /// string, because some agents pass a single positional argument.
     pub fn crucible_tool(tool_name: &str, args: &Value) -> Self {
-        let call = |kind: &str| Self {
-            kind: kind.to_string(),
+        let call = |kind: BuiltinKind| Self {
+            kind: kind.as_str().to_string(),
             tool: tool_name.to_string(),
             command: None,
             paths: Vec::new(),
@@ -216,21 +237,21 @@ impl CanonicalToolCall {
         if is_shell_tool(tool_name) {
             return Self {
                 command: args.as_object().and_then(|m| first_string(m, &["command"])),
-                ..call("command")
+                ..call(BuiltinKind::Command)
             };
         }
 
         let Some(map) = args.as_object() else {
-            return call("tool");
+            return call(BuiltinKind::Tool);
         };
 
         if let Some(path) = first_string(map, PATH_KEYS) {
             let kind = if Self::FILE_EDIT_TOOL_NAMES.contains(&tool_name) {
-                "file_edit"
+                BuiltinKind::FileEdit
             } else if Self::FILE_READ_TOOL_NAMES.contains(&tool_name) {
-                "file_read"
+                BuiltinKind::FileRead
             } else {
-                "tool"
+                BuiltinKind::Tool
             };
             return Self {
                 paths: vec![path],
@@ -240,17 +261,17 @@ impl CanonicalToolCall {
         if let Some(query) = first_string(map, QUERY_KEYS) {
             return Self {
                 query: Some(query),
-                ..call("search")
+                ..call(BuiltinKind::Search)
             };
         }
         if let Some(url) = first_string(map, &["url"]) {
             return Self {
                 url: Some(url),
-                ..call("fetch")
+                ..call(BuiltinKind::Fetch)
             };
         }
 
-        call("tool")
+        call(BuiltinKind::Tool)
     }
 
     /// The render line in one line, truncated on character boundaries.

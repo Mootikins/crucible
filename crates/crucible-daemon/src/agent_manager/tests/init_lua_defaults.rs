@@ -1174,9 +1174,8 @@ async fn each_kind_has_a_render_or_uses_the_fallback() {
         .eval()
         .expect("the key tables read");
     assert!(!table_kinds.is_empty(), "the shipped key tables name kinds");
-    let kinds = crucible_core::types::CanonicalToolCall::KINDS
-        .iter()
-        .map(|k| k.to_string())
+    let kinds = <crucible_core::types::BuiltinKind as strum::IntoEnumIterator>::iter()
+        .map(|k| k.as_str().to_string())
         .chain(table_kinds);
     let registry = vm.plugin_handlers();
     for kind in kinds {
@@ -1187,7 +1186,7 @@ async fn each_kind_has_a_render_or_uses_the_fallback() {
         );
         assert_eq!(
             renders.is_empty(),
-            kind == "tool",
+            kind == crucible_core::types::BuiltinKind::Tool.as_str(),
             "kind `{kind}` needs a render in runtime/defaults/init.luau, or the fallback"
         );
     }
