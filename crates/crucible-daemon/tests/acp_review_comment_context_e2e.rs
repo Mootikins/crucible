@@ -156,6 +156,20 @@ impl Fixture {
 
     /// Create a chat session over the repository. `agent_type` is what
     /// `session.create` records; `agent` is what it then runs.
+    /// Make `endpoint` the configured `chat.endpoint`, through the RPC a
+    /// settings UI uses. The daemon refuses a loopback endpoint that a request
+    /// names unless the operator configured it, and a mock provider listens
+    /// on loopback.
+    async fn configure_endpoint(&self, endpoint: &str) {
+        self.client
+            .call(
+                "config.set",
+                serde_json::json!({ "values": { "chat.endpoint": endpoint } }),
+            )
+            .await
+            .expect("set chat.endpoint");
+    }
+
     async fn session(&self, agent_type: &str, agent: &SessionAgent) -> String {
         let created = self
             .client
@@ -382,6 +396,7 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
     let reference = fixture.comment().await;
 
     let acp = fixture.session("acp", &acp_agent(&capture)).await;
+    fixture.configure_endpoint(&provider.uri()).await;
     let internal = fixture
         .session("internal", &internal_agent(&provider.uri()))
         .await;
@@ -462,6 +477,7 @@ async fn an_unknown_comment_id_refuses_both_routes_alike() {
     let acp = fixture.session("acp", &acp_agent(&capture)).await;
     // The refusal happens before the daemon builds the agent, so this
     // endpoint is never called.
+    fixture.configure_endpoint("http://127.0.0.1:1/").await;
     let internal = fixture
         .session("internal", &internal_agent("http://127.0.0.1:1/"))
         .await;

@@ -12,7 +12,7 @@ use std::time::Duration;
 pub async fn fetch_model_context_length(endpoint: &str, model_id: &str) -> Option<usize> {
     // `redirect::Policy::none()` is load-bearing. The endpoint reaching here has
     // already been checked against the internal-address deny list
-    // (`crucible-web`'s `validate_endpoint`), but that check covers the URL we
+    // (`provider::endpoint_check`), but that check covers the URL we
     // were handed, not wherever it points us next. Following redirects makes it
     // meaningless: one `302 Location: http://169.254.169.254/` from a validated
     // public endpoint is a full SSRF, needing no DNS control — just an HTTP

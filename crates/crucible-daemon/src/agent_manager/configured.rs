@@ -28,6 +28,15 @@ pub(crate) fn system_prompt() -> Option<String> {
     Some(configured.unwrap_or_else(|| ChatConfig::default().system_prompt))
 }
 
+/// `chat.endpoint` — the endpoint the legacy `[chat]` section names. The
+/// operator wrote it, so a request may name it too.
+pub(crate) fn chat_endpoint() -> Option<String> {
+    leaf("chat.endpoint")
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
 /// The token budget for a session's assembled context.
 ///
 /// Precedence: an explicit `chat.context_budget` wins, then the window the

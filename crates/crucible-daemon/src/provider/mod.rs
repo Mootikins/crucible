@@ -6,6 +6,7 @@
 
 pub mod adapter_mapping;
 pub mod copilot;
+pub(crate) mod endpoint_check;
 pub mod genai_handle;
 pub mod model_listing;
 pub(crate) mod oneshot;

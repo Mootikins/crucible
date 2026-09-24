@@ -7,10 +7,9 @@ use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
-    Extension, Json,
+    Json,
 };
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -367,20 +366,8 @@ fn map_session_not_found(err: impl std::fmt::Display, id: &str) -> WebError {
     }
 }
 
-/// Session routes for a harness with no bind address — the fail-closed policy.
-///
-/// Named for what it is rather than offered as `session_routes()`, because an
-/// argument-free constructor next to [`session_routes_with`] reads like the
-/// default: `start_server` called it, and a default `cru web` silently refused
-/// `http://localhost:11434` — the local-Ollama path — until someone noticed.
-/// Production callers have a bind address and must pass it.
-pub fn session_routes_fail_closed() -> OpenApiRouter<AppState> {
-    session_routes_with(EndpointPolicy::for_bind_host(UNKNOWN_BIND))
-}
-
-/// Session routes carrying `policy`, which `create_session` reads when
-/// validating a custom provider endpoint.
-pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
+/// Session routes.
+pub fn session_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(create_session))
         .routes(routes!(list_sessions))
@@ -414,7 +401,6 @@ pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
         // Session-independent: the command set is static, so the composer can
         // fetch it once instead of per session.
         .routes(routes!(list_commands))
-        .layer(Extension(policy))
 }
 #[derive(Debug, Deserialize, ToSchema)]
 struct CreateSessionRequest {
@@ -434,7 +420,9 @@ struct CreateSessionRequest {
     provider: Option<String>,
     /// Model name (e.g., "llama3.2", "gpt-4o", "claude-3-5-sonnet")
     model: Option<String>,
-    /// Custom endpoint URL (optional, for self-hosted models)
+    /// Custom endpoint URL (optional, for self-hosted models). The daemon
+    /// refuses one that targets an internal address it does not have
+    /// configured.
     endpoint: Option<String>,
     /// "internal" (default) or "acp"
     agent_type: Option<String>,
@@ -455,262 +443,16 @@ fn default_session_type() -> String {
     "chat".to_string()
 }
 
-/// Escape hatch for a NON-loopback bind: an operator who deliberately exposes
-/// `cru web` on a LAN and still wants sessions pointed at the server's own
-/// Ollama. It only ever adds permission — with a loopback bind it is redundant,
-/// because [`EndpointPolicy`] already allows loopback there.
-const ALLOW_LOOPBACK_ENDPOINTS_ENV: &str = "CRUCIBLE_WEB_ALLOW_LOOPBACK_ENDPOINTS";
-
-/// Split from the env read so the parsing rule is testable without mutating
-/// process env (which races under parallel test runs).
-fn loopback_opt_in(raw: Option<&str>) -> bool {
-    raw.map(str::trim)
-        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
-}
-
-fn loopback_env_override() -> bool {
-    loopback_opt_in(std::env::var(ALLOW_LOOPBACK_ENDPOINTS_ENV).ok().as_deref())
-}
-
-/// Whether this server may hand a provider an endpoint on the machine's own
-/// loopback — `http://localhost:11434`, the Ollama default and the product's
-/// headline local-LLM path.
-///
-/// Decided by the bind address, per §W4 of the hardening plan ("Loopback stays
-/// allowed only when the bind is loopback"). A loopback bind means the only
-/// browser that can reach this server is already on this machine, so naming
-/// this machine's loopback grants it nothing it did not already have. A LAN or
-/// public bind is the different case: there the browser is a confused deputy
-/// for everything the *server* can reach, and the server's own loopback
-/// services are exactly what the browser cannot reach on its own.
-///
-/// Nothing else about the endpoint check is configurable — link-local, private,
-/// CGNAT and the metadata address stay refused under every policy.
-#[derive(Clone, Copy, Debug)]
-pub struct EndpointPolicy {
-    allow_loopback: bool,
-}
-
-impl EndpointPolicy {
-    /// The policy for a server bound to `bind_host`, plus the env escape hatch.
-    pub fn for_bind_host(bind_host: &str) -> Self {
-        Self::from_bind(bind_host, loopback_env_override())
-    }
-
-    /// Split from the env read so the rule is testable without mutating process
-    /// env.
-    fn from_bind(bind_host: &str, env_override: bool) -> Self {
-        Self {
-            allow_loopback: bind_is_loopback(bind_host) || env_override,
-        }
-    }
-}
-
-/// What [`session_routes_fail_closed`] passes: no bind address is known, so the bind cannot
-/// be shown to be loopback and the policy fails closed.
-const UNKNOWN_BIND: &str = "";
-
-/// Whether binding to `bind_host` means "this machine only".
-///
-/// `localhost` is loopback by RFC 6761 and is what `[server] host` carries by
-/// default; `0.0.0.0` and `::` are unspecified, not loopback, and a name we
-/// cannot resolve here is treated as reachable from elsewhere.
-fn bind_is_loopback(bind_host: &str) -> bool {
-    let host = bind_host
-        .trim()
-        .trim_start_matches('[')
-        .trim_end_matches(']');
-    host.eq_ignore_ascii_case("localhost")
-        || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
-}
-
-/// The IPv4 address an IPv6 address actually reaches, if any.
-///
-/// `::ffff:a.b.c.d` (v4-mapped), `::a.b.c.d` (v4-compatible),
-/// `::ffff:0:a.b.c.d` (v4-translated), `2002:a.b.c.d::/16` (6to4) and
-/// `64:ff9b::a.b.c.d` (NAT64) are all ways of writing an IPv4 destination, so
-/// they have to be judged as that IPv4 address rather than as an opaque v6
-/// literal.
-fn embedded_ipv4(v6: Ipv6Addr) -> Option<Ipv4Addr> {
-    fn from_halves(a: u16, b: u16) -> Option<Ipv4Addr> {
-        Some(Ipv4Addr::from(((a as u32) << 16) | b as u32))
-    }
-    match v6.segments() {
-        [0x2002, a, b, ..] => from_halves(a, b),
-        // NAT64 well-known prefix 64:ff9b::/96. The local-use prefix
-        // 64:ff9b:1::/48 and the other RFC 6052 embeddings scatter the IPv4
-        // bytes across the address; they are not decoded here, and are instead
-        // refused wholesale by the 2000::/3 allow-list in `is_internal_target`.
-        [0x0064, 0xff9b, 0, 0, 0, 0, a, b] => from_halves(a, b),
-        // ::ffff:0:a.b.c.d (v4-translated, RFC 2765)
-        [0, 0, 0, 0, 0xffff, 0, a, b] => from_halves(a, b),
-        // ::ffff:a.b.c.d and ::a.b.c.d
-        _ => v6.to_ipv4(),
-    }
-}
-
-/// Whether an address is somewhere `cru web` must never be talked into dialing:
-/// anything that is not a globally routable unicast destination. Written as a
-/// deny of everything non-global rather than a list of "private" ranges, so
-/// oddities (0.0.0.0/8, CGNAT, 240/4, multicast) fail closed too.
-///
-/// This is the ONE place the decision is made — literals and resolved addresses
-/// both come through here.
-fn is_internal_target(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            v4.is_loopback()
-                || v4.is_private()
-                // 169.254.0.0/16 — includes the cloud metadata address 169.254.169.254
-                || v4.is_link_local()
-                || v4.is_multicast()
-                // 0.0.0.0/8 "this host" (0.x reaches localhost on Linux); also
-                // subsumes `is_unspecified`, as `a >= 240` below subsumes
-                // `is_broadcast` — spelling either out again would pad the
-                // deny-list with clauses that can never fire.
-                || a == 0
-                || (a == 100 && (64..128).contains(&b)) // 100.64.0.0/10 CGNAT
-                || (a == 192 && b == 0 && v4.octets()[2] == 0) // 192.0.0.0/24 IETF assignments
-                || (a == 198 && b & 0xfe == 18) // 198.18.0.0/15 benchmarking
-                || a >= 240 // 240.0.0.0/4 reserved
-        }
-        IpAddr::V6(v6) => {
-            // An address that encodes an IPv4 destination is that destination.
-            if let Some(v4) = embedded_ipv4(v6) {
-                return is_internal_target(IpAddr::V4(v4));
-            }
-            let segments = v6.segments();
-            // Allow-list rather than a list of "private" prefixes: only global
-            // unicast (2000::/3) is a public destination. ::1, ::, fc00::/7
-            // unique-local, fe80::/10 link-local, fec0::/10 site-local,
-            // ff00::/8 multicast and every other reserved prefix fall outside
-            // it and are refused without having to be enumerated — including
-            // the RFC 6052 NAT64 encodings this code does not decode.
-            segments[0] & 0xe000 != 0x2000 || segments[..2] == [0x2001, 0x0db8] // 2001:db8::/32 documentation
-        }
-    }
-}
-
-fn is_loopback_target(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => v4.is_loopback(),
-        IpAddr::V6(v6) => v6.is_loopback() || embedded_ipv4(v6).is_some_and(|v4| v4.is_loopback()),
-    }
-}
-
-fn reject_internal_target(ip: IpAddr, host: &str, allow_loopback: bool) -> Result<(), WebError> {
-    if is_internal_target(ip) && !(allow_loopback && is_loopback_target(ip)) {
-        let hint = if is_loopback_target(ip) {
-            format!(
-                " (loopback endpoints are allowed only on a loopback bind, or with \
-                 {ALLOW_LOOPBACK_ENDPOINTS_ENV}=1)"
-            )
-        } else {
-            String::new()
-        };
-        return Err(WebError::Validation(format!(
-            "Endpoint must not target a private/internal address: {host} → {ip}{hint}"
-        )));
-    }
-    Ok(())
-}
-
-type ResolvedAddrs = std::io::Result<Vec<IpAddr>>;
-
-async fn resolve_host(host: String, port: u16) -> ResolvedAddrs {
-    Ok(tokio::net::lookup_host((host.as_str(), port))
-        .await?
-        .map(|addr| addr.ip())
-        .collect())
-}
-
-/// Validate that an endpoint URL is safe to hand to a provider (no SSRF into
-/// the machine's own networks).
-///
-/// What this guarantees: the endpoint's scheme is http(s), and every address
-/// the host maps to **at validation time** is a globally routable unicast
-/// address. Literal hosts in any encoding the URL parser normalizes (decimal
-/// `2130706433`, IPv4-mapped/6to4/NAT64 IPv6) are judged as the address they
-/// actually reach, and a hostname is resolved and judged on its answers — all
-/// of them, so one internal record in an otherwise public answer set refuses.
-///
-/// What this does NOT guarantee: that the connection later made to this
-/// endpoint goes to a checked address. Resolution here and resolution in the
-/// dialer are two separate lookups, so a short-TTL or round-robin record can
-/// answer with a public address now and 169.254.169.254 when the provider
-/// connects — DNS rebinding, unfixable at this layer. Closing it requires the
-/// component that dials (the daemon's provider client) to pin or re-check the
-/// address it connects to. Treat this as raising the cost of the attack, not as
-/// a boundary. Note also that this check lives in the web layer only: the same
-/// endpoint reaches the daemon unvalidated from the TUI or a direct RPC client.
-async fn validate_endpoint(endpoint: &str, policy: EndpointPolicy) -> Result<(), WebError> {
-    validate_endpoint_with(endpoint, policy.allow_loopback, resolve_host).await
-}
-
-async fn validate_endpoint_with<F, Fut>(
-    endpoint: &str,
-    allow_loopback: bool,
-    resolve: F,
-) -> Result<(), WebError>
-where
-    F: FnOnce(String, u16) -> Fut,
-    Fut: std::future::Future<Output = ResolvedAddrs>,
-{
-    let url = reqwest::Url::parse(endpoint)
-        .map_err(|e| WebError::Validation(format!("Invalid endpoint URL: {e}")))?;
-
-    match url.scheme() {
-        "http" | "https" => {}
-        scheme => {
-            return Err(WebError::Validation(format!(
-                "Unsupported URL scheme: {scheme}"
-            )));
-        }
-    }
-
-    let host = url
-        .host_str()
-        .filter(|host| !host.is_empty())
-        .ok_or_else(|| WebError::Validation("Endpoint URL must have a host".to_string()))?
-        .to_string();
-
-    // `host_str` is the *normalized* host: `http://2130706433` and
-    // `http://0x7f.1` are already "127.0.0.1" here, and an IPv6 literal keeps
-    // its brackets.
-    let literal = host.trim_start_matches('[').trim_end_matches(']').parse();
-
-    let addrs = match literal {
-        Ok(ip) => vec![ip],
-        Err(_) => {
-            let port = url.port_or_known_default().unwrap_or(80);
-            // Fail closed: an unresolvable host is not a safe host, it is an
-            // unknown one.
-            let addrs = resolve(host.clone(), port).await.map_err(|e| {
-                WebError::Validation(format!("Endpoint host {host} could not be resolved: {e}"))
-            })?;
-            if addrs.is_empty() {
-                return Err(WebError::Validation(format!(
-                    "Endpoint host {host} resolved to no addresses"
-                )));
-            }
-            addrs
-        }
-    };
-
-    for ip in addrs {
-        reject_internal_target(ip, &host, allow_loopback)?;
-    }
-
-    Ok(())
-}
-
 /// Map a `session.create` daemon error to an HTTP status. An `INVALID_PARAMS`
 /// error (JSON-RPC code `-32602` — e.g. an unknown ACP profile or an
 /// unparseable provider override, both now resolved daemon-side) is a client
 /// error (422), preserving the pre-consolidation behavior where the web
 /// validated the profile itself. Anything else is a daemon/transport failure
 /// (502).
+///
+/// The daemon also checks a custom `endpoint` (no internal addresses; see
+/// `crucible_daemon::provider::endpoint_check`) and refuses it with `-32602`,
+/// so a refused endpoint is a 422 here. The web keeps no copy of the check.
 #[utoipa::path(
     post,
     path = "/api/session",
@@ -723,13 +465,8 @@ where
 )]
 async fn create_session(
     State(state): State<AppState>,
-    Extension(endpoint_policy): Extension<EndpointPolicy>,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Json<SessionRow>, WebError> {
-    if let Some(ref endpoint) = req.endpoint {
-        validate_endpoint(endpoint, endpoint_policy).await?;
-    }
-
     // Validate agent_type up front: an unrecognized value (e.g. "ACP",
     // "internal-x") must be rejected, not silently forwarded to the daemon as a
     // junk string while taking the internal branch.

@@ -167,6 +167,54 @@ cru.config.set({
 })
 ```
 
+### Request endpoints
+
+A request can also name an endpoint for one session: `cru session configure --endpoint`,
+`session.create` or `session.configure_agent` over RPC, a Lua plugin's `configure_agent`, or
+the web API. The daemon dials that endpoint. A web browser on another machine can send it,
+so the daemon checks every such endpoint before it stores the session's agent.
+
+The daemon accepts an endpoint with no further check when its origin (scheme, host and port)
+is one that the operator configured:
+
+- the `endpoint` of a provider in `llm.providers`;
+- the default endpoint of a provider type, such as `http://localhost:11434` for Ollama;
+- `OLLAMA_HOST`;
+- `chat.endpoint`.
+
+The daemon dials these with no request, so a request that names one gets no new reach. A
+path on a configured origin is accepted, because the same server answers it.
+
+Any other endpoint must use `http` or `https`, and **every** address its host maps to must be
+a globally routable unicast address. For IPv4 the daemon refuses loopback, the RFC 1918
+private ranges, link-local `169.254.0.0/16` (the cloud metadata address `169.254.169.254`),
+CGNAT `100.64.0.0/10`, `0.0.0.0/8`, `192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4` and
+multicast. For IPv6 it accepts only global unicast `2000::/3`, minus the documentation prefix
+`2001:db8::/32`. An IPv6 form that encodes an IPv4 address (v4-mapped, v4-compatible,
+v4-translated, 6to4, NAT64) is judged as that IPv4 address. The URL parser also normalizes
+other spellings, so `http://2130706433` is `127.0.0.1`.
+
+The daemon resolves a hostname and judges all of its answers. One internal answer refuses the
+endpoint. A host that does not resolve is refused. The refusal is `INVALID_PARAMS`:
+
+```text
+Invalid configuration: Endpoint must not target a private/internal address: 10.0.0.1 →
+10.0.0.1. To use a server on this machine or on a private network, add its endpoint to a
+provider under `llm.providers` in the config.
+```
+
+To use a model server on this machine or on your LAN, add it as a provider (see
+[endpoint](#endpoint) above). Then a request can name it.
+
+Two limits:
+
+- The check runs when the request arrives, not when the daemon connects. The dialer resolves
+  the host again, so a DNS record that changes between the two lookups (DNS rebinding) is not
+  stopped. The model-listing and context-length probes do not follow redirects, so a
+  redirect cannot send them to an internal address.
+- The check applies to a request's endpoint only. An endpoint that you write to the config,
+  with `config.set` or `llm.register_provider`, is operator configuration and is not checked.
+
 ### api_key
 
 Set it directly, or read it from the environment with `os.getenv("VAR_NAME")`:

@@ -247,33 +247,72 @@ async fn create_session_returns_200_with_session_id() {
     assert_eq!(json["session_id"], "test-session-001");
 }
 
+/// The endpoint check lives in the daemon, so this test runs a real one: a
+/// mock daemon would only prove what the mock was told to answer. The web
+/// forwards the endpoint; the daemon refuses it with `-32602`; the route turns
+/// that into a 422 that names the reason.
 #[tokio::test]
 async fn create_session_with_private_ip_endpoint_returns_422() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({
-                        "kilns": ["test-kiln"],
-                        "provider": "openai",
-                        "model": "gpt-4o",
-                        "endpoint": "http://10.0.0.1/v1"
-                    })
-                    .to_string(),
-                ))
-                .unwrap(),
-        )
+    let home = tempfile::tempdir().expect("a temp home");
+    let socket = home.path().join("daemon.sock");
+    let server = crucible_daemon::Server::bind_with_data_home(&socket, home.path().join("data"))
         .await
-        .unwrap();
+        .expect("the daemon binds");
+    tokio::spawn(async move {
+        let _ = server.run().await;
+    });
+    let client = connect(&socket).await;
+    let app = build_test_app(build_mock_state(client));
 
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    for endpoint in [
+        "http://10.0.0.1/v1",
+        "http://169.254.169.254/latest/meta-data/",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/session")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "provider": "openai",
+                            "model": "gpt-4o",
+                            "endpoint": endpoint,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{endpoint}"
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8_lossy(&body);
+        assert!(body.contains("internal address"), "{endpoint}: {body}");
+    }
+}
+
+/// Connect once the daemon accepts, rather than after a fixed sleep.
+async fn connect(socket: &std::path::Path) -> crucible_daemon::DaemonClient {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match crucible_daemon::DaemonClient::connect_to(socket).await {
+            Ok(client) => return client,
+            Err(e) if tokio::time::Instant::now() >= deadline => {
+                panic!("the daemon never accepted a connection: {e}")
+            }
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
+        }
+    }
 }
 
 #[tokio::test]

@@ -36,6 +36,7 @@ async fn advertised_tool_names(active: Option<Vec<&str>>) -> Vec<String> {
     let mut h = ReactorTestHarness::new().await;
     // An endpoint the test owns, so the real genai client is exercised
     // without reaching a real provider.
+    configure_provider_endpoint(&h.agent_manager, &server.uri());
     h.reconfigure(SessionAgent {
         endpoint: Some(server.uri()),
         ..test_agent()

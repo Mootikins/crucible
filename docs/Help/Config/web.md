@@ -314,94 +314,10 @@ The daemon resolves a registration inside a git repo up to the repo root, which 
 
 ## Endpoint validation
 
-A session created through the web API may name a custom provider `endpoint` (a self-hosted
-model). The web layer validates it first, because the server dialing a URL the browser chose
-is an SSRF primitive: the browser is a confused deputy for everything the *server* can
-reach.
-
-The rule is an allow-list, not a deny-list. An endpoint is accepted only if:
-
-- the scheme is `http` or `https`; and
-- **every** address its host maps to is a globally routable unicast address.
-
-For IPv4 that refuses loopback, the RFC 1918 private ranges, link-local `169.254.0.0/16`
-(which is where the cloud metadata address `169.254.169.254` lives), CGNAT
-`100.64.0.0/10`, `0.0.0.0/8`, `192.0.0.0/24`, benchmarking `198.18.0.0/15`, reserved
-`240.0.0.0/4`, multicast, broadcast and the unspecified address. For IPv6 only global
-unicast `2000::/3` is accepted at all, minus the documentation prefix `2001:db8::/32` — so
-`::1`, unique-local `fc00::/7`, link-local `fe80::/10`, multicast and every other reserved
-prefix are refused without having to be enumerated.
-
-Hostnames are resolved and judged on **all** their answers, so one internal record in an
-otherwise public answer set refuses the whole endpoint. An unresolvable host is refused
-too — an unknown host is not a safe host. IPv6 forms that encode an IPv4 destination
-(v4-mapped, v4-compatible, v4-translated, 6to4, NAT64) are judged as that IPv4 address, and
-so are alternative spellings the URL parser normalises (`http://2130706433`, `http://0x7f.1`
-are both `127.0.0.1`).
-
-### Loopback endpoints
-
-A local Ollama on `http://localhost:11434` is loopback, and so would be refused by the rule
-above. It is the product's headline local-LLM path, so it gets an exception — decided by the
-**bind address**, with no configuration (the escape hatch below can only widen this):
-
-| Effective bind (`web.host`, or `cru web --host`) | Loopback endpoints |
-|---|---|
-| `127.0.0.1` (the default), any `127.x.x.x`, `::1`, `localhost` | **allowed** |
-| `0.0.0.0`, `::` | refused |
-| a LAN address, or any other name | refused |
-
-The reasoning is who the browser is. On a loopback bind the only browser that can reach this
-server is already on this machine, so pointing it at this machine's loopback grants it
-nothing it did not already have. On a LAN or public bind the browser is a confused deputy:
-the server's own loopback services are exactly what that browser cannot reach on its own.
-
-`0.0.0.0` and `::` are the *unspecified* address, not loopback, so a wildcard bind refuses.
-A bind host that is neither `localhost` nor a parseable IP is treated as reachable from
-elsewhere and refuses too. The `localhost` match is case-insensitive, and brackets around an
-IPv6 bind are ignored (`[::1]` is `::1`).
-
-A refusal reads:
-
-```text
-Endpoint must not target a private/internal address: localhost → 127.0.0.1 (loopback
-endpoints are allowed only on a loopback bind, or with
-CRUCIBLE_WEB_ALLOW_LOOPBACK_ENDPOINTS=1)
-```
-
-The parenthetical appears only when the target actually is loopback — including the IPv4
-mapped and embedded spellings, so `http://[::ffff:127.0.0.1]` gets it too. The other internal
-ranges have no opt-in and get the bare message.
-
-#### The escape hatch
-
-`CRUCIBLE_WEB_ALLOW_LOOPBACK_ENDPOINTS` is for the one case the bind rule gets wrong on
-purpose: an operator who deliberately exposes `cru web` on a LAN and still wants sessions
-pointed at the server's own Ollama.
-
-```bash
-CRUCIBLE_WEB_ALLOW_LOOPBACK_ENDPOINTS=1 cru web --host 0.0.0.0
-```
-
-- It only ever **adds** permission. On a loopback bind it is redundant.
-- The value must be exactly `1` or `true` (case-insensitive, surrounding whitespace
-  ignored). Anything else — `yes`, `on`, `0`, empty, unset — is off.
-- It is an environment variable on the `cru web` process. There is no config-file
-  equivalent, deliberately: it should be a decision someone makes at launch, not one that
-  outlives the reason for it.
-- It unlocks **loopback only**. Private, CGNAT, link-local and the metadata address stay
-  refused with it set; it is not a general "allow internal addresses" switch.
-
-Setting it alongside a LAN bind means anyone on that network can steer the server at its own
-loopback services. That is the trade you are making.
-
-Two further limits worth knowing:
-
-- This check happens at validation time, not at connect time. A short-TTL DNS record can
-  answer with a public address here and an internal one when the provider actually connects.
-  It raises the cost of the attack; it is not a boundary.
-- It lives in the web layer only. The same endpoint reaches the daemon unvalidated from the
-  TUI or a direct RPC client, which are already local-trust paths.
+A session created through the web API may name a custom provider `endpoint`. The web layer
+does not check it. It sends the endpoint to the daemon, which checks every endpoint that a
+request names, from any client. A refused endpoint returns `422`. See
+[[Help/Config/llm#Request endpoints|Request endpoints]] for the rule.
 
 ## Webhooks
 

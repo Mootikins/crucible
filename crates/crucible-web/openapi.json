@@ -2514,6 +2514,7 @@
     "/api/session": {
       "post": {
         "summary": "Map a `session.create` daemon error to an HTTP status. An `INVALID_PARAMS`\nerror (JSON-RPC code `-32602` — e.g. an unknown ACP profile or an\nunparseable provider override, both now resolved daemon-side) is a client\nerror (422), preserving the pre-consolidation behavior where the web\nvalidated the profile itself. Anything else is a daemon/transport failure\n(502).",
+        "description": "The daemon also checks a custom `endpoint` (no internal addresses; see\n`crucible_daemon::provider::endpoint_check`) and refuses it with `-32602`,\nso a refused endpoint is a 422 here. The web keeps no copy of the check.",
         "operationId": "create_session",
         "requestBody": {
           "content": {
@@ -5536,7 +5537,7 @@
               "string",
               "null"
             ],
-            "description": "Custom endpoint URL (optional, for self-hosted models)"
+            "description": "Custom endpoint URL (optional, for self-hosted models). The daemon\nrefuses one that targets an internal address it does not have\nconfigured."
           },
           "agent_type": {
             "type": [

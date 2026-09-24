@@ -97,6 +97,7 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
         )
         .mount(&server)
         .await;
+    configure_provider_endpoint(&am, &server.uri());
     for case in golden["queries"].as_array().unwrap() {
         let reader = sm
             .create_session(

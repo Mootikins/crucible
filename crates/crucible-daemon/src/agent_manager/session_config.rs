@@ -130,6 +130,29 @@ impl AgentManager {
         agent
     }
 
+    /// Refuse an agent whose `endpoint` the daemon must not dial for a
+    /// request. See [`crate::provider::endpoint_check`] for the policy.
+    ///
+    /// `configure_agent` runs it, so `session.create`, `session.configure_agent`
+    /// and a Lua plugin's `configure_agent` all meet it. `session.create` also
+    /// runs it before it persists the session, for the reason
+    /// [`Self::refuse_untrusted_for_kilns`] gives.
+    pub(crate) async fn refuse_internal_endpoint(
+        &self,
+        agent: &SessionAgent,
+    ) -> Result<(), AgentError> {
+        let Some(endpoint) = agent.endpoint.as_deref() else {
+            return Ok(());
+        };
+        let configured = crate::provider::endpoint_check::configured_endpoints(
+            self.llm_config().as_deref(),
+            super::configured::chat_endpoint(),
+        );
+        crate::provider::endpoint_check::check_request_endpoint(endpoint, &configured)
+            .await
+            .map_err(AgentError::InvalidConfig)
+    }
+
     pub async fn configure_agent(
         &self,
         session_id: &str,
@@ -166,6 +189,7 @@ impl AgentManager {
         // first avoids spinning up a session Lua VM for a call that cannot
         // succeed.
         self.refuse_untrusted_for_attached_kilns(&session, &agent)?;
+        self.refuse_internal_endpoint(&agent).await?;
 
         let agent = self.apply_session_defaults(session_id, agent);
         // The VM may just have run the start hooks; save what they stored

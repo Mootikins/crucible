@@ -1298,6 +1298,9 @@ export interface paths {
          *     error (422), preserving the pre-consolidation behavior where the web
          *     validated the profile itself. Anything else is a daemon/transport failure
          *     (502).
+         * @description The daemon also checks a custom `endpoint` (no internal addresses; see
+         *     `crucible_daemon::provider::endpoint_check`) and refuses it with `-32602`,
+         *     so a refused endpoint is a 422 here. The web keeps no copy of the check.
          */
         post: operations["create_session"];
         delete?: never;
@@ -2574,7 +2577,11 @@ export interface components {
             agent_name?: string | null;
             /** @description "internal" (default) or "acp" */
             agent_type?: string | null;
-            /** @description Custom endpoint URL (optional, for self-hosted models) */
+            /**
+             * @description Custom endpoint URL (optional, for self-hosted models). The daemon
+             *     refuses one that targets an internal address it does not have
+             *     configured.
+             */
             endpoint?: string | null;
             /**
              * @description Isolation override: absent → resolve normally; `false` → no container

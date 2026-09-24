@@ -2,7 +2,7 @@
 ///
 /// `redirect::Policy::none()` is the load-bearing part. The endpoint a probe is
 /// given has already been checked against the internal-address deny list
-/// (`crucible-web`'s `validate_endpoint`), but that check applies to the URL we
+/// (`provider::endpoint_check`), but that check applies to the URL we
 /// were handed — not to wherever it points us next. Following redirects makes
 /// the check meaningless: one `302 Location: http://169.254.169.254/` from a
 /// validated public endpoint is a full SSRF, needing no DNS control at all,

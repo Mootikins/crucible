@@ -761,6 +761,21 @@ pub(crate) fn handler_vm() -> HandlerVm {
     HandlerVm { lua, registry }
 }
 
+/// Make `endpoint` a provider endpoint that the operator configured.
+///
+/// A mock server listens on loopback, and the request endpoint check refuses
+/// loopback unless the operator configured it. A user takes the same step for
+/// a local model server.
+pub(super) fn configure_provider_endpoint(am: &AgentManager, endpoint: &str) {
+    let entry = crucible_core::config::LlmProviderConfig::builder(
+        crucible_core::config::BackendType::Ollama,
+    )
+    .endpoint(endpoint)
+    .build();
+    am.llm_handle()
+        .add_provider(&format!("mock-{endpoint}"), entry, false);
+}
+
 fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));

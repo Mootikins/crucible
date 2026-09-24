@@ -541,3 +541,138 @@ async fn create_without_spec_leaves_agent_unconfigured() {
 
     server.shutdown().await;
 }
+
+/// The daemon dials a session's `endpoint`. An endpoint that names an address
+/// inside the machine's own networks makes the daemon an SSRF relay for any
+/// client that forwards a remote user's request, such as `crucible-web`.
+///
+/// These endpoints each name an internal address in a different spelling: the
+/// cloud metadata address, an RFC 1918 host, and the metadata address hidden
+/// in an IPv4-mapped IPv6 literal.
+const INTERNAL_ENDPOINTS: &[&str] = &[
+    "http://169.254.169.254/latest/meta-data/",
+    "http://10.0.0.1:11434",
+    "http://[::ffff:169.254.169.254]/",
+];
+
+/// The daemon, not a client, refuses the internal endpoint. The refusal is
+/// `INVALID_PARAMS` because the caller can fix it, and no session is left.
+#[tokio::test]
+async fn create_refuses_an_internal_endpoint_without_creating_a_session() {
+    let server = TestServer::start().await.expect("start server");
+    let client = server.connect().await;
+
+    for endpoint in INTERNAL_ENDPOINTS {
+        let before = session_count(&client).await;
+        let spec = SessionAgentSpec {
+            provider: Some("openai".to_string()),
+            model: Some("gpt-4o".to_string()),
+            endpoint: Some((*endpoint).to_string()),
+            ..Default::default()
+        };
+        let err = client
+            .session_create_with_agent(base_params("internal"), spec)
+            .await
+            .expect_err("an internal endpoint must refuse the create");
+        let message = err.to_string();
+        assert!(
+            message.contains("-32602"),
+            "{endpoint}: the refusal must be INVALID_PARAMS, got: {message}"
+        );
+        assert!(
+            message.contains("internal address"),
+            "{endpoint}: the refusal must say why, got: {message}"
+        );
+        assert_eq!(
+            before,
+            session_count(&client).await,
+            "{endpoint}: a refused create must not leave a session"
+        );
+    }
+
+    server.shutdown().await;
+}
+
+/// `session.configure_agent` is the other door an endpoint comes through. The
+/// TUI's `cru session configure --endpoint` and a Lua plugin both use it.
+#[tokio::test]
+async fn configure_agent_refuses_an_internal_endpoint() {
+    let server = TestServer::start().await.expect("start server");
+    let client = server.connect().await;
+
+    let created = client
+        .session_create(base_params("internal"))
+        .await
+        .expect("plain create failed");
+    let session_id = created["session_id"].as_str().unwrap().to_string();
+
+    for endpoint in INTERNAL_ENDPOINTS {
+        let err = client
+            .call(
+                "session.configure_agent",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "agent": {
+                        "agent_type": "internal",
+                        "provider": "openai",
+                        "model": "gpt-4o",
+                        "system_prompt": "",
+                        "endpoint": endpoint,
+                    },
+                }),
+            )
+            .await
+            .expect_err("an internal endpoint must refuse the configure");
+        let message = err.to_string();
+        assert!(
+            message.contains("-32602") && message.contains("internal address"),
+            "{endpoint}: got: {message}"
+        );
+    }
+    let session = client.session_get(&session_id).await.unwrap();
+    assert!(
+        session["agent"].is_null(),
+        "a refused configure must not store the agent, got: {}",
+        session["agent"]
+    );
+
+    server.shutdown().await;
+}
+
+/// A local Ollama is the main local-model use. Its default endpoint is on
+/// loopback, but the daemon dials it with no request at all, so a request
+/// that names it gets no new reach. A loopback port that nothing configures
+/// is refused.
+#[tokio::test]
+async fn the_default_ollama_endpoint_is_accepted_but_an_unconfigured_loopback_port_is_not() {
+    let server = TestServer::start().await.expect("start server");
+    let client = server.connect().await;
+
+    let spec = SessionAgentSpec {
+        provider: Some("ollama".to_string()),
+        model: Some("llama3.2".to_string()),
+        endpoint: Some("http://localhost:11434".to_string()),
+        ..Default::default()
+    };
+    let created = client
+        .session_create_with_agent(base_params("internal"), spec)
+        .await
+        .expect("the default Ollama endpoint must be accepted");
+    let session_id = created["session_id"].as_str().unwrap();
+    let session = client.session_get(session_id).await.unwrap();
+    assert_eq!(session["agent"]["endpoint"], "http://localhost:11434");
+
+    let spec = SessionAgentSpec {
+        provider: Some("openai".to_string()),
+        model: Some("gpt-4o".to_string()),
+        endpoint: Some("http://127.0.0.1:8081".to_string()),
+        ..Default::default()
+    };
+    let err = client
+        .session_create_with_agent(base_params("internal"), spec)
+        .await
+        .expect_err("an unconfigured loopback endpoint must refuse the create");
+    assert!(err.to_string().contains("-32602"), "got: {err}");
+
+    server.shutdown().await;
+}

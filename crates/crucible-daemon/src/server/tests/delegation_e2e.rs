@@ -75,6 +75,20 @@ async fn delegate_session_works_through_production_server_wiring() {
     let mut client = server.connect().await;
     let parent_id = create_chat_session(&mut client, TestServer::KILN, 900).await;
 
+    // The scripted LLM listens on loopback. The daemon refuses a loopback
+    // endpoint that a request names unless the operator configured it.
+    let set = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 899,
+            "method": "config.set",
+            "params": { "values": { "chat.endpoint": endpoint } }
+        }),
+    )
+    .await;
+    assert!(set["error"].is_null(), "config.set failed: {set:?}");
+
     // Configure a delegation-enabled internal agent against the scripted LLM.
     let configure = rpc_call(
         &mut client,

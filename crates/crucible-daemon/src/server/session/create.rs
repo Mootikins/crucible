@@ -210,6 +210,12 @@ impl RpcContext {
             if let Some(servers) = &params.mcp_servers {
                 agent.mcp_servers.clone_from(servers);
             }
+            // `configure_agent` below runs the endpoint check too; here it
+            // refuses before a session exists, so a refusal leaves no row behind.
+            self.agents
+                .refuse_internal_endpoint(&agent)
+                .await
+                .map_err(|e| SessionCreateError::Invalid(e.to_string()))?;
             Some(agent)
         } else {
             None

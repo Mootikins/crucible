@@ -6,8 +6,8 @@ use crate::middleware::auth::{
 use crate::routes::{
     agents_routes, auth_routes, canvas_routes, chat_routes, config_routes, diff_routes,
     events_routes, fs_routes, health_routes, kiln_routes, layout_routes, mcp_routes, plugin_routes,
-    project_routes, proposal_routes, scm_routes, search_routes, session_routes_with, shell_routes,
-    skills_routes, surface_routes, terminal_routes, webhook_routes, EndpointPolicy,
+    project_routes, proposal_routes, scm_routes, search_routes, session_routes, shell_routes,
+    skills_routes, surface_routes, terminal_routes, webhook_routes,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -110,7 +110,6 @@ fn api_document_info() -> utoipa::openapi::OpenApi {
 /// The state is not applied here, so the caller chooses: `build_router` splits
 /// the pair and serves the router half, `api_spec` keeps the document half.
 fn api_router(
-    web_config: &WebConfig,
     shell_gate: Arc<ShellGateState>,
     allowed_origins: Arc<Vec<HeaderValue>>,
 ) -> OpenApiRouter<daemon::AppState> {
@@ -140,13 +139,7 @@ fn api_router(
         .merge(agents_routes())
         .merge(chat_routes())
         .merge(config_routes())
-        // Endpoint policy comes from the bind: a loopback bind keeps
-        // `http://localhost:11434` (the local-Ollama path) working, a LAN or
-        // wildcard bind refuses it. `session_routes_fail_closed()` is the harness form; this
-        // must be the `_with` form or the default bind loses local Ollama.
-        .merge(session_routes_with(EndpointPolicy::for_bind_host(
-            &web_config.host,
-        )))
+        .merge(session_routes())
         .merge(project_routes())
         .merge(scm_routes())
         .merge(diff_routes())
@@ -179,7 +172,7 @@ pub fn api_spec() -> utoipa::openapi::OpenApi {
         allow_remote: false,
         credentials: None,
     });
-    api_router(&WebConfig::default(), shell_gate, Arc::new(Vec::new())).into_openapi()
+    api_router(shell_gate, Arc::new(Vec::new())).into_openapi()
 }
 
 /// Assemble the served application from injected runtime state and credentials.
@@ -232,8 +225,7 @@ pub fn build_router(
     //
     // The document half of the split describes these same routes; `api_spec`
     // returns it. Here it is dropped, because the server serves the router.
-    let (api_routes, _spec) =
-        api_router(web_config, shell_gate, allowed_origins.clone()).split_for_parts();
+    let (api_routes, _spec) = api_router(shell_gate, allowed_origins.clone()).split_for_parts();
     let health = health_routes(state.clone());
     let api_routes = api_routes
         .with_state(state)

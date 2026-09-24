@@ -203,8 +203,15 @@ fn session_configure_updates_existing_session_via_cli() {
 #[test]
 #[ignore = "requires: cru binary — starts an in-process OpenAI-compatible SSE mock"]
 fn session_send_completes_after_an_unavailable_tool_call() {
-    let daemon = TestDaemon::start();
     let mock = start_openai_compat_delegate_tool_server();
+    // The mock listens on loopback. The daemon refuses a loopback endpoint
+    // that a request names unless the config names it, as a user does for a
+    // local model server. `chat.endpoint` names it without a provider entry,
+    // which the daemon would probe and so spend one of the mock's two replies.
+    let daemon = TestDaemon::start_with_extra_config(&format!(
+        "cru.config.set({{ chat = {{ endpoint = \"{}\" }} }})\n",
+        mock.endpoint
+    ));
 
     let create_output = daemon
         .command()

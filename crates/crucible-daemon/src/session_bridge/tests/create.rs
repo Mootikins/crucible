@@ -511,3 +511,52 @@ async fn bridge_configure_agent_refuses_a_provider_the_attached_kiln_does_not_cl
         .agent
         .is_none());
 }
+
+/// A plugin meets the same endpoint check as an RPC client. Both its create
+/// and its `configure_agent` go through `AgentManager`, which refuses an
+/// endpoint on an internal address that the operator did not configure.
+#[tokio::test]
+async fn a_plugin_cannot_point_a_session_at_an_internal_endpoint() {
+    let tmp = TempDir::new().unwrap();
+    let (session_manager, bridge) = create_rig(tmp.path());
+    let before = session_manager.list_sessions().len();
+
+    let err = bridge
+        .create_session(serde_json::json!({
+            "type": "chat",
+            "kilns": ["kiln"],
+            "configure_agent": true,
+            "provider": "openai",
+            "model": "gpt-4o",
+            "endpoint": "http://169.254.169.254/latest/meta-data/",
+        }))
+        .await
+        .expect_err("a plugin create with an internal endpoint must be refused");
+    assert!(err.contains("internal address"), "got: {err}");
+    assert_eq!(
+        before,
+        session_manager.list_sessions().len(),
+        "a refused create must not leave a session"
+    );
+
+    let created = bridge
+        .create_session(serde_json::json!({ "type": "chat", "kilns": ["kiln"] }))
+        .await
+        .expect("a plain plugin create");
+    let id = created["id"].as_str().unwrap().to_string();
+    let err = bridge
+        .configure_agent(
+            id.clone(),
+            serde_json::json!({
+                "agent_type": "internal",
+                "provider": "openai",
+                "model": "gpt-4o",
+                "system_prompt": "",
+                "endpoint": "http://10.0.0.1:11434",
+            }),
+        )
+        .await
+        .expect_err("a plugin configure with an internal endpoint must be refused");
+    assert!(err.contains("internal address"), "got: {err}");
+    assert!(session_manager.get_session(&id).unwrap().agent.is_none());
+}

@@ -51,7 +51,7 @@ pub use project::project_routes;
 pub use proposals::proposal_routes;
 pub use scm::scm_routes;
 pub use search::search_routes;
-pub use session::{session_routes_fail_closed, session_routes_with, EndpointPolicy};
+pub use session::session_routes;
 pub use shell::shell_routes;
 pub use skills::skills_routes;
 pub use surface::{surface_routes, SurfaceChangedEvent};

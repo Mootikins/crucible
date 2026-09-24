@@ -682,8 +682,7 @@ mcp_client,gateway_executor}.rs`, `mcp_server.rs`, `mcp/`.
 95 forwarding methods), `SwrCache` (`services/catalog.rs:24`), `ApiKeyState`
 (`middleware/auth/mod.rs:44`), `HostPolicy` (`middleware/auth/host/mod.rs:30`),
 `SessionStore` (`middleware/auth/session.rs:62`, 64 tokens, 30-day TTL),
-`ShellGateState` (`middleware/auth/shell.rs:99`), `EndpointPolicy`
-(`routes/session/mod.rs:195`), `Assets` (`assets.rs:34`).
+`ShellGateState` (`middleware/auth/shell.rs:99`), `Assets` (`assets.rs:34`).
 
 **ACP types.** `CrucibleAcpClient` (`acp/client/mod.rs:66`), `ClientConfig`
 (`acp/client/types.rs:12`), `StreamingChunk` (`acp/streaming.rs:21`),
