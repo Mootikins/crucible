@@ -76,8 +76,8 @@ pub(crate) struct SessionSlot {
     /// How the turn that runs now may decide a permission. The turn start
     /// writes it. The ACP permission handler reads it for each call, because
     /// the handler lives as long as the cached agent handle and a later turn
-    /// can differ.
-    turn_gate: Mutex<TurnGate>,
+    /// can differ. `None` outside a turn: the turn end clears it.
+    turn_gate: Mutex<Option<TurnGate>>,
     /// Permission prompts this session is waiting on answers to.
     ///
     /// Mutated in place, never cloned out: `PendingPermission` holds a
@@ -106,8 +106,6 @@ pub(crate) struct SessionSlot {
 
 /// What a permission decision reads from the turn that runs now.
 ///
-/// The default is the answer for no turn: nobody can answer a prompt, and no
-/// override applies.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct TurnGate {
     pub is_interactive: bool,
@@ -423,15 +421,20 @@ impl SessionSlot {
 
     /// Record how the turn that starts now may decide a permission.
     pub(crate) fn set_turn_gate(&self, gate: TurnGate) {
-        *self.lock_turn_gate() = gate;
+        *self.lock_turn_gate() = Some(gate);
+    }
+
+    /// The turn is over. A permission request now belongs to no turn.
+    pub(crate) fn clear_turn_gate(&self) {
+        *self.lock_turn_gate() = None;
     }
 
     /// How the turn that runs now may decide a permission.
-    pub(crate) fn turn_gate(&self) -> TurnGate {
+    pub(crate) fn turn_gate(&self) -> Option<TurnGate> {
         self.lock_turn_gate().clone()
     }
 
-    fn lock_turn_gate(&self) -> std::sync::MutexGuard<'_, TurnGate> {
+    fn lock_turn_gate(&self) -> std::sync::MutexGuard<'_, Option<TurnGate>> {
         self.turn_gate
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

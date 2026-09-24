@@ -112,7 +112,8 @@ agents and to external ACP agents.
 to 3 did not decide. It runs before any hook, so a hook cannot rescue a call the
 flag denied, and cannot block one it allowed. `ask` and no flag fall through.
 The permission handler of an ACP agent reads the flag of the current turn for
-each request.
+each request. A request outside a turn gets `cancelled`, because no turn state
+applies to it.
 
 ### 5 — Read-only exemption
 

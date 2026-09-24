@@ -132,7 +132,10 @@ impl AcpGate {
         mut call: CanonicalToolCall,
         options: &[agent_client_protocol::schema::v1::PermissionOption],
     ) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
-        let turn = self.slot.turn_gate();
+        // No turn runs, so no turn state can answer the request.
+        let Some(turn) = self.slot.turn_gate() else {
+            return agent_client_protocol::schema::v1::RequestPermissionOutcome::Cancelled;
+        };
         let args = (call.raw.as_ref())
             .and_then(|raw| raw.raw_input.clone())
             .unwrap_or(serde_json::Value::Null);

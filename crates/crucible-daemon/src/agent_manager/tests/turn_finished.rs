@@ -239,6 +239,45 @@ async fn a_user_cancel_clears_the_turn_a_handler_asked_for() {
     }
 }
 
+/// The permission state of a turn ends with the turn. An ACP permission
+/// request outside any turn gets `Cancelled`, not the override of the last
+/// turn.
+#[tokio::test]
+async fn a_permission_request_after_the_turn_is_cancelled() {
+    use agent_client_protocol::schema::v1::{
+        PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
+    };
+    let h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    let allow = Some(crucible_core::config::components::permissions::PermissionMode::Allow);
+    let (_, done) = h
+        .agent_manager
+        .send_message_notified(&h.session_id, "hi".into(), &h.event_tx, true, allow)
+        .await
+        .unwrap();
+    assert_eq!(done.await.unwrap().status, TurnStatus::Completed);
+
+    let handle = h.agent_manager.build_acp_permission_handler(
+        &h.session_id,
+        &h.event_tx,
+        std::path::Path::new("/w"),
+        None,
+    );
+    let call = crucible_core::types::CanonicalToolCall::crucible_tool(
+        "bash",
+        &serde_json::json!({ "command": "rm -rf x" }),
+    );
+    let options = vec![
+        PermissionOption::new("allow", "Allow", PermissionOptionKind::AllowOnce),
+        PermissionOption::new("reject", "Reject", PermissionOptionKind::RejectOnce),
+    ];
+    let outcome = handle(call, options).await;
+    assert!(
+        matches!(outcome, RequestPermissionOutcome::Cancelled),
+        "{outcome:?}"
+    );
+}
+
 /// A caller that awaits a turn owns the next turn of the session. A
 /// `turn:complete` inject starts no follow-up for an awaited turn, so the
 /// next send of the caller finds the slot free.

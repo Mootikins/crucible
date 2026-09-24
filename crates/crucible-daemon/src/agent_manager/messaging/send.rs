@@ -611,6 +611,8 @@ impl AgentManager {
             // The next turn starts a new proposal. The store forgets the turn
             // proposal before an awaiter sees the outcome and sends again.
             proposals.end_turn(&proposal_session);
+            // The same for the permission state of the turn.
+            slot.clear_turn_gate();
 
             // A caller that awaits the turn (a workflow step, a delegation)
             // owns the next turn of the session, so a `turn:complete` handler
