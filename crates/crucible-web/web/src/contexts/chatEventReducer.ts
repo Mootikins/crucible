@@ -1,7 +1,7 @@
 import { statusBarActions } from '@/stores/statusBarStore';
 import {
   generateMessageId,
-  originPlugin,
+  originName,
   turnResponseId,
   turnSegmentId,
   turnThinkingId,
@@ -657,14 +657,15 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           // message_complete) so it can't strip the next turn's final bubble.
           frozenSegments = [];
           const data = event.data as { message_id?: string; content?: string; origin?: unknown } | null;
-          const plugin = originPlugin(data?.origin);
+          const plugin = originName(data?.origin, 'plugin');
+          const via = originName(data?.origin, 'relay');
           if (data?.message_id && data.content !== undefined
             && !deps.messages().some((m) => m.id === data.message_id)) {
             // Adopt an optimistic temp entry with the same content instead of
             // duplicating it — the echo can arrive before the send POST (or a
             // sibling provider's dispatch) canonicalized the temp id. Temp ids
             // are client-minted `msg_…` (underscore); daemon ids are `msg-…`.
-            const temp = plugin ? undefined : deps
+            const temp = plugin || via ? undefined : deps
               .messages()
               .find((m) => m.role === 'user' && m.content === data.content && /^msg_/.test(m.id));
             if (temp) {
@@ -683,6 +684,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
                 id: data.message_id,
                 role: plugin ? 'system' : 'user',
                 plugin,
+                via,
                 content: data.content,
                 timestamp: Date.now(),
               };

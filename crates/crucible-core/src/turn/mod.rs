@@ -245,13 +245,16 @@ pub enum TurnOrigin {
     User,
     /// The plugin with this name asked for the turn.
     Plugin(String),
+    /// A person wrote the message in the channel of the plugin with this
+    /// name (a relay, such as Discord). The turn is a user turn.
+    Relay(String),
 }
 
 impl TurnOrigin {
     /// The name of the plugin that asked for the turn.
     pub fn plugin(&self) -> Option<&str> {
         match self {
-            Self::User => None,
+            Self::User | Self::Relay(_) => None,
             Self::Plugin(name) => Some(name),
         }
     }

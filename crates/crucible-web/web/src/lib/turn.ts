@@ -14,12 +14,13 @@
  */
 
 /**
- * The plugin that asked for a turn, read from the `origin` of its
- * `user_message`: `{kind: 'plugin', name}`. `undefined` means a person.
+ * The name in the `origin` of a `user_message` when its kind is `kind`:
+ * `plugin` for a plugin turn, `relay` for a person's words that a plugin
+ * relayed. An absent origin and the kind `user` mean a person here.
  */
-export function originPlugin(origin: unknown): string | undefined {
+export function originName(origin: unknown, kind: 'plugin' | 'relay'): string | undefined {
   const o = origin as { kind?: unknown; name?: unknown } | null | undefined;
-  return o?.kind === 'plugin' && typeof o.name === 'string' ? o.name : undefined;
+  return o?.kind === kind && typeof o.name === 'string' ? o.name : undefined;
 }
 
 /** Transcript id for the assistant response of a turn. The backend keys a

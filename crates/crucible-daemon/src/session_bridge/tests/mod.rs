@@ -242,7 +242,7 @@ async fn a_collected_plugin_turn_errors_on_a_gated_tool_instead_of_prompting() {
     let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
 
     let mut rx = bridge
-        .send_and_collect(session_id, "go".to_string(), Some(5.0), None, false)
+        .send_and_collect(session_id, "go".to_string(), None, Some(5.0), None, false)
         .await
         .unwrap();
 
@@ -294,7 +294,7 @@ async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
     let (_tmp, bridge, session_id) = bash_calling_rig_with_card_roots(event_tx, card_roots).await;
 
     let mut rx = bridge
-        .send_and_collect(session_id, "go".to_string(), Some(5.0), None, false)
+        .send_and_collect(session_id, "go".to_string(), None, Some(5.0), None, false)
         .await
         .unwrap();
 

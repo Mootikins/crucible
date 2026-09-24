@@ -662,6 +662,34 @@ async fn a_plugin_turn_outside_a_turn_asks_the_user() {
     }
 }
 
+/// A relay (the Discord plugin) sends the words of a person. The turn is a
+/// user turn, and its origin names the plugin that relayed the words.
+#[tokio::test]
+async fn a_relayed_message_is_a_user_turn_that_names_its_relay() {
+    let mut h = ReactorTestHarness::new().await;
+    let loader = plugin_lua(&h, "");
+    let lua = loader.plugin_lua();
+    lua.globals().set("sid", h.session_id.clone()).unwrap();
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    let count = &h.agent_manager.slot(&h.session_id).plugin_turn_count;
+    count.store(3, std::sync::atomic::Ordering::Relaxed);
+
+    let previous = crucible_lua::enter_plugin(&lua, "alpha");
+    lua.load(r#"assert(cru.session.send_and_collect(sid, "hi from a person"))"#)
+        .exec_async()
+        .await
+        .unwrap();
+    crucible_lua::set_source(&lua, previous);
+
+    let turn = events_until_turn_finished(&mut h.event_rx).await;
+    let opening = turn.iter().find(|e| e.event == "user_message").unwrap();
+    assert_eq!(
+        opening.data["origin"],
+        serde_json::json!({"kind": "relay", "name": "alpha"})
+    );
+    assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 0);
+}
+
 /// A plugin cannot write a user message into the context. A person writes
 /// those.
 #[tokio::test]

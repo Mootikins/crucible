@@ -102,7 +102,7 @@ export const Message: Component<MessageProps> = (props) => {
               : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-reading italic text-muted'
         }
       >
-        <AuthorHeading>{isUser() ? 'You' : props.message.plugin ? `↻ ${props.message.plugin}` : 'Notice'}</AuthorHeading>
+        <AuthorHeading>{isUser() ? (props.message.via ? `via ${props.message.via}` : 'You') : props.message.plugin ? `↻ ${props.message.plugin}` : 'Notice'}</AuthorHeading>
         <Show when={!isEditing()} fallback={
           <div class="flex flex-col gap-2">
             <textarea

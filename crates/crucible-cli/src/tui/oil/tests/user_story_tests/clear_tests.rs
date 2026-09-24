@@ -80,3 +80,20 @@ fn an_unknown_plugin_approval_warns() {
     let screen = story.screen();
     assert!(screen.contains("expected inherit, ask or stop"), "{screen}");
 }
+
+/// A person's words from a relay stay a user message that names the relay.
+#[test]
+fn a_relayed_message_names_its_relay() {
+    let mut story = StoryRuntime::new(80, 24);
+    let origin = json!({"kind": "relay", "name": "discord"});
+    relay_session_turn(
+        &mut story,
+        &[(
+            "user_message",
+            json!({"message_id": "m1", "content": "hi there", "origin": origin}),
+        )],
+    );
+    let screen = story.screen();
+    assert!(screen.contains("via discord"), "{screen}");
+    assert!(screen.contains("hi there"), "{screen}");
+}

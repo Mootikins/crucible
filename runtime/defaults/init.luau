@@ -216,7 +216,8 @@ end)
 -- The pattern is the kind. The call has kind, tool, command, paths, url,
 -- query, diffs, agent, raw (the ACP title, name, kind, rawInput, locations
 -- and content), args, and origin ({ kind = "user" }, or
--- { kind = "plugin", name = "goal" } for a turn that a plugin started).
+-- { kind = "plugin", name = "goal" } for a turn that a plugin started, or
+-- { kind = "relay", name = "discord" } for a person's relayed message).
 -- The last render of a kind wins, so a render in your init.lua or in a
 -- plugin replaces a render here. A kind with no render, and a render that
 -- fails, gets the fallback of the daemon: it shows every field of the call

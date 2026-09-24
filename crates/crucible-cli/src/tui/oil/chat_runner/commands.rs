@@ -6,7 +6,7 @@ use crucible_core::protocol::session_events::{
     EventDecodeError, JobPayload, SessionEventPayload, SettingsPayload, SetupPayload,
     SystemPayload, ToolResultBody, TurnPayload,
 };
-use crucible_core::turn::TurnStatus;
+use crucible_core::turn::{TurnOrigin, TurnStatus};
 
 use super::OilChatRunner;
 
@@ -167,9 +167,14 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
         TurnPayload::UserMessage {
             content, origin, ..
         } => non_empty(content)
-            .map(|c| match origin.as_ref().and_then(|o| o.plugin()) {
-                None => vec![ChatAppMsg::UserMessage(c)],
-                Some(plugin) => vec![ChatAppMsg::SystemNotice(format!("↻ {plugin}\n{c}"))],
+            .map(|c| match origin {
+                None | Some(TurnOrigin::User) => vec![ChatAppMsg::UserMessage(c)],
+                Some(TurnOrigin::Relay(relay)) => {
+                    vec![ChatAppMsg::UserMessage(format!("via {relay}\n{c}"))]
+                }
+                Some(TurnOrigin::Plugin(plugin)) => {
+                    vec![ChatAppMsg::SystemNotice(format!("↻ {plugin}\n{c}"))]
+                }
             })
             .unwrap_or_default(),
         TurnPayload::TextDelta { content } => non_empty(content)
@@ -492,6 +497,23 @@ fn context_cleared_names_the_plugin_in_the_transcript() {
         session_event_to_chat_msgs("context_cleared", &serde_json::json!({"plugin": "alpha"}));
     assert!(
         matches!(&messages[..], [ChatAppMsg::SystemNotice(text)] if text == "── ↻ alpha cleared the context ──")
+    );
+}
+
+/// A relayed message is a person's words, so it stays a user message, and
+/// it names the plugin that relayed it.
+#[cfg(test)]
+#[test]
+fn a_relayed_message_is_a_user_message_that_names_its_relay() {
+    let messages = session_event_to_chat_msgs(
+        "user_message",
+        &serde_json::json!({
+            "message_id": "m1", "content": "hi", "origin": {"kind": "relay", "name": "discord"}
+        }),
+    );
+    assert!(
+        matches!(&messages[..], [ChatAppMsg::UserMessage(text)] if text == "via discord\nhi"),
+        "{messages:?}"
     );
 }
 

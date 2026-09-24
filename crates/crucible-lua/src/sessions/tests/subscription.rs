@@ -329,6 +329,7 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         &self,
         _session_id: String,
         _content: String,
+        _relay: Option<String>,
         _timeout_secs: Option<f64>,
         _max_tool_result_len: Option<usize>,
         _interactive: bool,

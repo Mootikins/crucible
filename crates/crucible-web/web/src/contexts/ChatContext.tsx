@@ -20,7 +20,7 @@ import {
   generateMessageId,
   turnResponseId,
   turnSegmentId,
-  originPlugin,
+  originName,
   stripFrozenPrefix,
   estimateThinkingTokens,
 } from '@/lib/turn';
@@ -262,11 +262,12 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         // New turn: drop any segments a prior turn left uncollected.
         pendingSegments = [];
         pendingThinking = '';
-        const plugin = originPlugin(data.origin);
+        const plugin = originName(data.origin, 'plugin');
         loadedMessages.push({
           id: (data.message_id as string) || `user-${loadedMessages.length}`,
           role: plugin ? 'system' : 'user',
           plugin,
+          via: originName(data.origin, 'relay'),
           content: data.content,
           timestamp: turnStart ?? synthetic(),
         });

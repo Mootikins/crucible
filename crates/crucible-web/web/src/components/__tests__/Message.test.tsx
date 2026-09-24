@@ -77,6 +77,11 @@ describe('Message — role rendering', () => {
     expect(screen.getByText('continue with the detailed plan')).toBeInTheDocument();
     expect(screen.queryByText('Notice')).not.toBeInTheDocument();
   });
+  it('names the relay of a message that a person wrote in a plugin channel', () => {
+    render(() => <Message message={makeMessage({ role: 'user', via: 'discord', content: 'hi there' })} />);
+    expect(screen.getByText('via discord')).toBeInTheDocument();
+    expect(screen.queryByText('You')).not.toBeInTheDocument();
+  });
   it('draws a context clear marker as a divider', () => {
     render(() => <Message message={makeMessage({ role: 'system', type: 'clear', content: '↻ alpha cleared the context' })} />);
     expect(screen.getByTestId('context-clear-divider').textContent).toContain('alpha cleared the context');

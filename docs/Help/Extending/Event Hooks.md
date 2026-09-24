@@ -440,7 +440,8 @@ The call has `kind`, `tool`, `command`, `paths`, `url`, `query`, `diffs`,
 `agent`, `raw` (the ACP `title`, `name`, `kind`, `rawInput`, `locations` and
 `content`), `args`, and `origin` (`{ kind = "user" }`, or
 `{ kind = "plugin", name = "goal" }` for a turn that the plugin `goal`
-started). Return a table with `line`, the one line that says
+started, or `{ kind = "relay", name = "discord" }` for a person's message that
+the plugin `discord` relayed). Return a table with `line`, the one line that says
 what the call does, and `fields`, a list of `{ label, value }`. Return no
 terminal text and no HTML: each client draws the data in its own way.
 

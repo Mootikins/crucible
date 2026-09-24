@@ -517,6 +517,7 @@ pub(crate) async fn send_and_collect_op(
         .send_and_collect(
             sid.to_string(),
             content,
+            crate::plugin_context::current_plugin_name(lua),
             timeout_secs,
             max_tool_result_len,
             interactive,

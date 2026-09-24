@@ -234,6 +234,32 @@ impl AgentManager {
         .await
     }
 
+    /// Send the words that a person wrote in the channel of the plugin
+    /// `relay`, such as Discord. The turn is a user turn that names its relay.
+    pub async fn send_relayed_message(
+        self: &Arc<Self>,
+        session_id: &str,
+        content: String,
+        relay: Option<String>,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+        is_interactive: bool,
+    ) -> Result<String, AgentError> {
+        self.send_message_inner(
+            session_id,
+            content,
+            TurnRequest {
+                origin: relay.map_or(TurnOrigin::User, TurnOrigin::Relay),
+                clear_before: false,
+                review_context: None,
+                event_tx,
+                is_interactive,
+                permission_override: None,
+                completion_tx: None,
+            },
+        )
+        .await
+    }
+
     /// Like [`send_message`], with the review comments that the message
     /// attaches.
     pub async fn send_message_with_context(
@@ -418,7 +444,7 @@ impl AgentManager {
 
         let input_slot = self.slot(session_id);
         match &origin {
-            TurnOrigin::User => input_slot
+            TurnOrigin::User | TurnOrigin::Relay(_) => input_slot
                 .plugin_turn_count
                 .store(0, std::sync::atomic::Ordering::Relaxed),
             TurnOrigin::Plugin(plugin) => {
@@ -533,11 +559,13 @@ impl AgentManager {
             TurnOrigin::User => {
                 SessionEventMessage::user_message(session_id, &message_id, &original_content)
             }
-            TurnOrigin::Plugin(plugin) => SessionEventMessage::plugin_message(
+            TurnOrigin::Plugin(_) | TurnOrigin::Relay(_) => SessionEventMessage::typed(
                 session_id,
-                &message_id,
-                &original_content,
-                plugin,
+                crucible_core::protocol::session_events::TurnPayload::UserMessage {
+                    message_id: message_id.clone(),
+                    content: original_content.clone(),
+                    origin: Some(origin.clone()),
+                },
             ),
         };
         if !emit_event(event_tx, opening_event) {
@@ -643,7 +671,7 @@ impl AgentManager {
             input.after_turn = Some(message_id.clone());
             let parent = t.current();
             let turn_node = match &origin {
-                TurnOrigin::User => crucible_core::turn::NodeContent::User {
+                TurnOrigin::User | TurnOrigin::Relay(_) => crucible_core::turn::NodeContent::User {
                     text: original_content.clone(),
                 },
                 TurnOrigin::Plugin(plugin) => crucible_core::turn::NodeContent::Plugin {

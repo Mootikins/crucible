@@ -712,6 +712,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         &self,
         session_id: String,
         content: String,
+        relay: Option<String>,
         timeout_secs: Option<f64>,
         max_tool_result_len: Option<usize>,
         interactive: bool,
@@ -732,7 +733,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
             // for everyone. A plugin may opt in where it knows the channel is
             // one named account — a DM — and only there.
             let _msg_id = am
-                .send_message(&session_id, content, &event_tx, interactive, None)
+                .send_relayed_message(&session_id, content, relay, &event_tx, interactive)
                 .await
                 .map_err(|e| e.to_string())?;
 

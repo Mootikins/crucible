@@ -600,7 +600,7 @@ describe('isLoadingHistory', () => {
         </span>
         <ul>
           {messages().map((m) => (
-            <li data-testid={`hist-msg-${m.id}`} data-role={m.role} data-plugin={m.plugin}>
+            <li data-testid={`hist-msg-${m.id}`} data-role={m.role} data-plugin={m.plugin} data-via={m.via}>
               {m.content}
             </li>
           ))}
@@ -638,6 +638,20 @@ describe('isLoadingHistory', () => {
     await waitFor(() => expect(screen.getByTestId('hist-msg-plugin-turn')).toBeInTheDocument());
     expect(screen.getByTestId('hist-msg-plugin-turn')).toHaveAttribute('data-role', 'system');
     expect(screen.getByTestId('hist-msg-plugin-turn')).toHaveAttribute('data-plugin', 'alpha');
+  });
+
+  it('restores a relayed message as a user message that names its relay', async () => {
+    historyAnswer = () => ({
+      session_id: ID,
+      history: [{ type: 'event', session_id: ID, event: 'user_message', data: {
+        message_id: 'relayed', content: 'hi', origin: { kind: 'relay', name: 'discord' },
+      } }],
+      total_events: 1,
+    });
+    render(() => <TestWrapper><HistoryTestConsumer /></TestWrapper>);
+    await waitFor(() => expect(screen.getByTestId('hist-msg-relayed')).toBeInTheDocument());
+    expect(screen.getByTestId('hist-msg-relayed')).toHaveAttribute('data-role', 'user');
+    expect(screen.getByTestId('hist-msg-relayed')).toHaveAttribute('data-via', 'discord');
   });
 
   it('is true during history load and false after', async () => {

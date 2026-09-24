@@ -42,6 +42,8 @@ export interface Message {
   type?: string;
   /** Owner of a plugin-requested system turn. */
   plugin?: string;
+  /** The plugin that relayed a person's message, such as `discord`. */
+  via?: string;
   /** Thinking block data (extended thinking / reasoning) */
   thinking?: ThinkingBlock;
   /** Token usage data (populated on message_complete) */

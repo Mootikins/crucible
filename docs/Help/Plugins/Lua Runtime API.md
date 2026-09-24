@@ -559,6 +559,11 @@ Send a message and read the reply back as a stream of parts, rather than
 subscribing to the raw event bus and filtering it yourself. Returns an iterator
 that yields one part at a time and `nil` when the turn ends.
 
+The message is the words of a person in the plugin's channel, so the turn is a
+user turn. When a plugin calls it, the `user_message` names the plugin as the
+relay: `origin: { kind = "relay", name = "<plugin>" }`. The TUI and the web show
+"via <plugin>" on the message.
+
 Collection timeouts are finite, nonnegative seconds (zero does not wait);
 invalid values return `(nil, error)` before sending. The timeout starts after
 the turn is submitted. Reaching the timeout or dropping the iterator stops

@@ -513,6 +513,7 @@ mod tests {
             &self,
             _: String,
             _: String,
+            _: Option<String>,
             _: Option<f64>,
             _: Option<usize>,
             _: bool,

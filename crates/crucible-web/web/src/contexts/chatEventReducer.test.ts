@@ -211,6 +211,13 @@ describe('event matrix — covers every ChatEvent variant', () => {
     } });
     expect(h.state.messages).toMatchObject([{ id: 'm-plugin', role: 'system', plugin: 'alpha', content: 'continue with details' }]);
   });
+  it('places a live relayed message as a user message that names its relay', () => {
+    const h = createHarness();
+    h.reducer({ type: 'session_event', event: 'user_message', data: {
+      message_id: 'm-relay', content: 'hi', origin: { kind: 'relay', name: 'discord' },
+    } });
+    expect(h.state.messages).toMatchObject([{ id: 'm-relay', role: 'user', via: 'discord', content: 'hi' }]);
+  });
   it('shows a live context clear divider with the plugin name', () => {
     const h = createHarness();
     h.reducer({ type: 'session_event', event: 'context_cleared', data: { plugin: 'alpha' } });

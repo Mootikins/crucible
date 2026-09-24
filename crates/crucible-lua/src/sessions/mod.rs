@@ -506,6 +506,7 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         &self,
         session_id: String,
         content: String,
+        relay: Option<String>,
         timeout_secs: Option<f64>,
         max_tool_result_len: Option<usize>,
         interactive: bool,
