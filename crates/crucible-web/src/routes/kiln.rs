@@ -1,4 +1,4 @@
-use super::helpers::{note_to_file_json, reject_path_traversal, validate_file_within_kiln};
+use super::helpers::note_to_file_json;
 use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -8,12 +8,12 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     Json,
 };
-use crucible_core::config::{read_project_config, ProjectFileAccess};
-use crucible_core::note_edit::{disk_hash, AnchoredEdit, EditRefusal};
+use base64::Engine as _;
+use crucible_core::file_write::{FileContent, FileEncoding, FileReadReply, FileReadRequest};
+use crucible_core::note_edit::{AnchoredEdit, EditRefusal};
 use crucible_core::note_merge::Region;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use tokio::fs;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -41,8 +41,8 @@ struct KilnPathQuery {
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 struct FilePathQuery {
-    /// ABSOLUTE path of the file. Containment against an open kiln or a
-    /// readable project is enforced by the handler, not by this shape.
+    /// ABSOLUTE path of the file. The daemon decides which root holds it and
+    /// whether that root serves it; this shape does not.
     path: String,
 }
 
@@ -199,7 +199,7 @@ struct KilnGraphResponse {
 
 /// `GET /api/kiln/file?path=<path>` — read a file's content.
 ///
-/// The path must reside within an open kiln; otherwise the request is rejected.
+/// The daemon's `fs.read` decides which root holds the path, and reads it.
 #[utoipa::path(
     get,
     path = "/api/kiln/file",
@@ -209,40 +209,31 @@ struct KilnGraphResponse {
         (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
         (status = 415, description = "The file is not text; fetch it from `/api/file/raw`"),
         (status = 422, description = "The path carries a traversal sequence, or escapes its root"),
-        (status = 502, description = "The daemon could not list the roots"),
+        (status = 502, description = "The daemon could not be reached"),
     )
 )]
 async fn get_kiln_file(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
 ) -> Result<Json<KilnFileResponse>, WebError> {
-    // The editor addresses files by ABSOLUTE path (a note's `path`); containment
-    // is enforced below by find_enclosing_root + validate_file_within_kiln.
-    reject_path_traversal(&query.path)?;
-
-    let file_path = PathBuf::from(&query.path);
-    let root = find_enclosing_root(&state, &file_path).await?;
-    // Project files are readable unless the project's policy is `off` (then
-    // they behave as not served — a 404, same as a path in no root at all).
-    if let EnclosingRoot::Project(_, policy) = &root {
-        if !policy.can_read() {
-            return Err(WebError::NotFound(
-                "File not within any open kiln".to_string(),
-            ));
-        }
-    }
-    let canonical_file = validate_file_within_kiln(&file_path, root.path(), &query.path)?;
-
-    // Read the file directly. GET /api/notes/{name} (get_note_by_name) returns
-    // only path/title/tags/links_to/content_hash — never a "content" field — so
-    // a daemon-first content branch here was statically unreachable and a
-    // footgun (it would have served stale DB text over the file bytes).
-    let content = read_text_file(&canonical_file).await?;
-
+    // The editor addresses files by ABSOLUTE path (a note's `path`).
+    let reply = read_through_daemon(&state, &query.path, FileEncoding::Text)
+        .await
+        .map_err(|e| match e {
+            // The status is what clients branch on, and the file is there:
+            // name the endpoint that CAN serve it.
+            WebError::UnsupportedMediaType(_) => WebError::UnsupportedMediaType(format!(
+                "{} is not a text file; fetch it from /api/file/raw",
+                query.path
+            )),
+            other => other,
+        })?;
+    let (content, content_hash) = text_of(reply.content)?
+        .ok_or_else(|| WebError::NotFound(format!("File not found: {}", query.path)))?;
     // The hash of the bytes just read, so a later PATCH can say whether the
     // file moved on. Not the index's hash, which lags a save.
     Ok(Json(KilnFileResponse {
-        content_hash: disk_hash(&content),
+        content_hash,
         content,
     }))
 }
@@ -256,24 +247,36 @@ struct KilnFileResponse {
     content: String,
 }
 
-/// Read a file this endpoint is able to represent, or say which way it failed.
+/// Read `path` through the daemon's `fs.read`.
 ///
-/// `read_to_string` reports "not valid UTF-8" as an ordinary [`io::Error`], and
-/// mapping every error from it to `NotFound` turned every image in the tree
-/// into a 404 whose body read `File not found: stream did not contain valid
-/// UTF-8` — a status claiming the file is absent, a message claiming it is
-/// not, and a real file on disk that `/api/file/raw` serves without complaint.
-/// Clients branch on the status, so that is the half that has to be true.
-async fn read_text_file(path: &Path) -> Result<String, WebError> {
-    match fs::read_to_string(path).await {
-        Ok(content) => Ok(content),
-        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-            Err(WebError::UnsupportedMediaType(format!(
-                "{} is not a text file; fetch it from /api/file/raw",
-                path.display()
-            )))
-        }
-        Err(e) => Err(WebError::NotFound(format!("File not found: {e}"))),
+/// The daemon owns the one enclosing-root rule: it decides which root holds
+/// the path, whether that root serves it, and where its symlinks lead. The
+/// web sends the path and uses the root in the answer as it is.
+pub(super) async fn read_through_daemon(
+    state: &AppState,
+    path: &str,
+    encoding: FileEncoding,
+) -> Result<FileReadReply, WebError> {
+    let answer = state
+        .daemon
+        .fs_read(&FileReadRequest {
+            path: path.to_owned(),
+            encoding,
+        })
+        .await
+        .daemon_err()?;
+    check_file_answer(&answer)?;
+    daemon_shape(answer, "fs.read")
+}
+
+/// The text and its hash from a text read, or `None` when no file is there.
+pub(super) fn text_of(content: Option<FileContent>) -> Result<Option<(String, String)>, WebError> {
+    match content {
+        None => Ok(None),
+        Some(FileContent::Text { text, content_hash }) => Ok(Some((text, content_hash))),
+        Some(FileContent::Base64 { .. }) => Err(WebError::Daemon(
+            "fs.read answered bytes for a text read".to_string(),
+        )),
     }
 }
 
@@ -297,32 +300,35 @@ async fn read_text_file(path: &Path) -> Result<String, WebError> {
             body = String,
         ),
         (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
-        (status = 422, description = "The path carries a traversal sequence, or escapes its root"),
-        (status = 502, description = "The daemon could not list the roots"),
+        (status = 422, description = "The path carries a traversal sequence, escapes its root, or names a file too large to read"),
+        (status = 502, description = "The daemon could not be reached"),
     )
 )]
 async fn get_raw_file(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
 ) -> Result<Response, WebError> {
-    reject_path_traversal(&query.path)?;
-
-    let file_path = PathBuf::from(&query.path);
-    let root = find_enclosing_root(&state, &file_path).await?;
-    if let EnclosingRoot::Project(_, policy) = &root {
-        if !policy.can_read() {
-            return Err(WebError::NotFound(
-                "File not within any open kiln".to_string(),
-            ));
+    let reply = read_through_daemon(&state, &query.path, FileEncoding::Base64).await?;
+    let bytes = match reply.content {
+        Some(FileContent::Base64 { data }) => base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|e| {
+                WebError::Daemon(format!("fs.read answered bytes that are not base64: {e}"))
+            })?,
+        Some(FileContent::Text { .. }) => {
+            return Err(WebError::Daemon(
+                "fs.read answered text for a base64 read".to_string(),
+            ))
         }
-    }
-    let canonical_file = validate_file_within_kiln(&file_path, root.path(), &query.path)?;
-
-    let bytes = fs::read(&canonical_file)
-        .await
-        .map_err(|e| WebError::NotFound(format!("File not found: {e}")))?;
-
-    Ok(raw_file_response(&canonical_file, bytes))
+        None => {
+            return Err(WebError::NotFound(format!(
+                "File not found: {}",
+                query.path
+            )))
+        }
+    };
+    // The resolved path, so the content type follows the file that was read.
+    Ok(raw_file_response(&reply.path, bytes))
 }
 
 /// Top-level types whose every subtype the browser hands to an image, audio or
@@ -607,8 +613,8 @@ async fn patch_kiln_file(
     write_response(answer)
 }
 
-/// Translate domain failures into the existing HTTP contract.
-pub(super) fn check_write(answer: &serde_json::Value) -> Result<(), WebError> {
+/// Translate the failures of `fs.read` and `fs.write` into the HTTP contract.
+pub(super) fn check_file_answer(answer: &serde_json::Value) -> Result<(), WebError> {
     let message = answer["message"]
         .as_str()
         .unwrap_or("File write failed")
@@ -630,7 +636,7 @@ pub(super) fn check_write(answer: &serde_json::Value) -> Result<(), WebError> {
 }
 
 fn write_response(answer: serde_json::Value) -> Result<Response, WebError> {
-    match check_write(&answer) {
+    match check_file_answer(&answer) {
         Ok(()) => Ok(Json(answer).into_response()),
         Err(error @ WebError::StaleBase { .. })
             if answer.get("regions").is_none() && answer.get("failed").is_none() =>
@@ -642,124 +648,14 @@ fn write_response(answer: serde_json::Value) -> Result<Response, WebError> {
     }
 }
 
-/// A root the file endpoints may serve `file_path` from. Kilns are the
-/// knowledge content and are always read-write; projects (the code/repo dir a
-/// kiln lives in) obey a per-project [`ProjectFileAccess`] policy.
-enum EnclosingRoot {
-    Kiln(PathBuf),
-    Project(PathBuf, ProjectFileAccess),
-}
-
-impl EnclosingRoot {
-    /// The canonical containing directory, for containment validation.
-    fn path(&self) -> &Path {
-        match self {
-            EnclosingRoot::Kiln(p) | EnclosingRoot::Project(p, _) => p,
-        }
-    }
-}
-
-/// Return the canonical root if `file_path` is inside `root` (matched against
-/// both the canonical and raw forms, as daemon-reported paths may be either).
-fn canonical_if_contains(file_path: &Path, root: &Path) -> Option<PathBuf> {
-    let canonical = root.canonicalize().ok()?;
-    (file_path.starts_with(&canonical) || file_path.starts_with(root)).then_some(canonical)
-}
-
-/// Resolve which open root encloses `file_path`. Kilns take precedence over
-/// projects, so a kiln nested inside a project keeps its always-read-write
-/// treatment. Daemon-free (canonicalizes on the filesystem only) so the
-/// precedence and containment rules are unit-testable without a running daemon.
-fn resolve_enclosing_root(
-    file_path: &Path,
-    kilns: &[PathBuf],
-    projects: &[(PathBuf, ProjectFileAccess)],
-) -> Option<EnclosingRoot> {
-    for kiln in kilns {
-        if let Some(root) = canonical_if_contains(file_path, kiln) {
-            return Some(EnclosingRoot::Kiln(root));
-        }
-    }
-    for (project, policy) in projects {
-        if let Some(root) = canonical_if_contains(file_path, project) {
-            return Some(EnclosingRoot::Project(root, *policy));
-        }
-    }
-    None
-}
-
-/// Find the open kiln or registered project that contains `file_path`. The
-/// project's `project_files` policy (default read-write) is loaded from its
-/// `.crucible/project.toml` here so the handlers can gate read/write.
-async fn find_enclosing_root(
-    state: &AppState,
-    file_path: &Path,
-) -> Result<EnclosingRoot, WebError> {
-    let kilns: Vec<PathBuf> = state
-        .daemon
-        .kiln_list()
-        .await
-        .daemon_err()?
-        .iter()
-        .filter_map(|v| v.get("path").and_then(|p| p.as_str()).map(PathBuf::from))
-        .collect();
-
-    let projects: Vec<(PathBuf, ProjectFileAccess)> = state
-        .daemon
-        .project_list()
-        .await
-        .daemon_err()?
-        .into_iter()
-        .map(|p| {
-            let policy = read_project_config(&p.path)
-                .map(|c| c.security.project_files)
-                .unwrap_or_default();
-            (p.path, policy)
-        })
-        .collect();
-
-    if let Some(root) = resolve_enclosing_root(file_path, &kilns, &projects) {
-        return Ok(root);
-    }
-
-    // A project-less session works in the folder the daemon made for it,
-    // which no registry lists. Asked only after the registries miss, so the
-    // ordinary read costs no extra round trip. Read-write like a project with
-    // no policy file: nothing in a scratch folder can say otherwise.
-    let session_folders: Vec<(PathBuf, ProjectFileAccess)> = state
-        .daemon
-        .session_list(None, None, None, None, Some(true))
-        .await
-        .daemon_err()?
-        .get("sessions")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|s| s.get("workspace").and_then(serde_json::Value::as_str))
-        .map(|w| (PathBuf::from(w), ProjectFileAccess::ReadWrite))
-        .collect();
-
-    resolve_enclosing_root(file_path, &[], &session_folders)
-        .ok_or_else(|| WebError::NotFound("File not within any open kiln".to_string()))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::helpers::{
-        reject_path_traversal, validate_parent_within_kiln, validate_write_target_within_kiln,
-    };
     use super::*;
-    use crate::test_support::{
-        arb_safe_path, arb_traversal_path, request_json_in_kilns, shape, shape_in_kilns, survives,
-    };
+    use crate::test_support::{request_json_in_kilns, shape, shape_in_kilns, survives};
+    use crucible_core::config::ProjectFileAccess;
+    use crucible_core::note_edit::disk_hash;
     use crucible_daemon::rpc_client::NoteListRow;
-    use proptest::prelude::*;
-    use tempfile::{tempdir, TempDir};
-
-    #[cfg(unix)]
-    use std::os::unix::fs::symlink as symlink_dir;
-    #[cfg(windows)]
-    use std::os::windows::fs::symlink_dir;
+    use tempfile::TempDir;
 
     // =====================================================================
     // Each route answers the shape it declares
@@ -926,6 +822,84 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(body.as_ref(), bytes);
+    }
+
+    /// A PNG opened from the file tree used to answer 404 with a body that
+    /// said the file was there. The status is what clients branch on, so the
+    /// daemon's `unsupported` refusal must reach the browser as 415, with the
+    /// endpoint that CAN serve the file.
+    #[tokio::test]
+    async fn a_file_that_is_not_text_is_not_reported_as_missing() {
+        let kiln = TempDir::new().unwrap();
+        let png = kiln.path().join("shot.png");
+        tokio::fs::write(&png, b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+            .await
+            .unwrap();
+
+        let (status, body) = request_json_in_kilns(
+            "GET",
+            &format!("/api/kiln/file?path={}", png.display()),
+            None,
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{body}");
+        let message = body.to_string();
+        assert!(message.contains("/api/file/raw"), "{message}");
+        assert!(!message.to_lowercase().contains("not found"), "{message}");
+    }
+
+    /// A path in a root with no file there is missing, not refused.
+    #[tokio::test]
+    async fn a_missing_file_in_a_kiln_is_reported_as_missing() {
+        let kiln = TempDir::new().unwrap();
+        for uri in [
+            format!(
+                "/api/kiln/file?path={}",
+                kiln.path().join("nope.md").display()
+            ),
+            format!(
+                "/api/file/raw?path={}",
+                kiln.path().join("nope.png").display()
+            ),
+            format!("/api/kiln/file?path={}", kiln.path().display()),
+        ] {
+            let (status, body) =
+                request_json_in_kilns("GET", &uri, None, vec![kiln.path().to_path_buf()]).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{uri}: {body}");
+        }
+    }
+
+    /// Text reads back unchanged, multibyte characters included.
+    #[tokio::test]
+    async fn a_text_file_reads_back_unchanged() {
+        let text = "# hello\n\nwörld ✅\n";
+        let (kiln, note, _) = kiln_with_note(text).await;
+        let answer: KilnFileResponse = shape_in_kilns(
+            "GET",
+            &format!("/api/kiln/file?path={note}"),
+            None,
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+        assert_eq!(answer.content, text);
+    }
+
+    /// The daemon refuses a traversal sequence and a relative path before it
+    /// reads the disk, and each file route shows the refusal as 422.
+    #[tokio::test]
+    async fn a_traversal_or_a_relative_path_is_refused_by_the_daemon() {
+        let kiln = TempDir::new().unwrap();
+        let dotdot = format!("{}/../etc/passwd", kiln.path().display());
+        for path in [dotdot.as_str(), "notes/daily.md", "/tmp/a\0b"] {
+            for route in ["/api/kiln/file", "/api/file/raw", "/api/canvas"] {
+                let uri = format!("{route}?path={}", path.replace('\0', "%00"));
+                let (status, body) =
+                    request_json_in_kilns("GET", &uri, None, vec![kiln.path().to_path_buf()]).await;
+                assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+            }
+        }
     }
 
     // =====================================================================
@@ -1109,89 +1083,6 @@ mod tests {
         survives::<FileEntryRow>(&note_to_file_json(row));
     }
 
-    #[tokio::test]
-    async fn a_file_that_is_not_text_is_not_reported_as_missing() {
-        // A PNG opened from the file tree used to answer
-        //   404 {"message": "File not found: stream did not contain valid UTF-8"}
-        // — a status that says the file is absent and a body that says it is
-        // not, for a file sitting on disk that `/api/file/raw` serves fine.
-        // The status is what clients branch on, so this is the half that has
-        // to carry the meaning.
-        let dir = tempdir().unwrap();
-        let png = dir.path().join("shot.png");
-        // A real PNG signature, and 0x89 is not valid UTF-8 in any position.
-        tokio::fs::write(&png, b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
-            .await
-            .unwrap();
-
-        let err = read_text_file(&png).await.expect_err("a PNG is not text");
-        assert!(
-            matches!(err, WebError::UnsupportedMediaType(_)),
-            "expected 415, got {err:?}"
-        );
-        let message = err.to_string();
-        assert!(
-            message.contains("/api/file/raw"),
-            "the error has to name the endpoint that CAN serve it: {message}"
-        );
-        assert!(
-            !message.to_lowercase().contains("not found"),
-            "the file is not missing: {message}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_missing_file_is_still_reported_as_missing() {
-        let dir = tempdir().unwrap();
-        let err = read_text_file(&dir.path().join("nope.md"))
-            .await
-            .expect_err("no such file");
-        assert!(
-            matches!(err, WebError::NotFound(_)),
-            "expected 404, got {err:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_text_file_reads_back_unchanged() {
-        let dir = tempdir().unwrap();
-        let note = dir.path().join("note.md");
-        tokio::fs::write(&note, "# hello\n\nwörld ✅\n")
-            .await
-            .unwrap();
-
-        assert_eq!(
-            read_text_file(&note).await.unwrap(),
-            "# hello\n\nwörld ✅\n"
-        );
-    }
-
-    #[test]
-    fn test_reject_path_traversal_rejects_dotdot() {
-        assert!(reject_path_traversal("../etc/passwd").is_err());
-        assert!(reject_path_traversal("foo/../../bar").is_err());
-    }
-
-    #[test]
-    fn test_reject_path_traversal_rejects_null_bytes() {
-        assert!(reject_path_traversal("file\0.md").is_err());
-    }
-
-    #[test]
-    fn test_reject_path_traversal_allows_valid_paths() {
-        assert!(reject_path_traversal("notes/daily/2024-01-15.md").is_ok());
-        assert!(reject_path_traversal("subdir/note.md").is_ok());
-    }
-
-    #[test]
-    fn test_reject_path_traversal_allows_absolute_paths() {
-        // The kiln file routes accept absolute paths; kiln containment is
-        // enforced separately by find_enclosing_kiln + within-kiln checks.
-        assert!(reject_path_traversal("/home/user/kiln/note.md").is_ok());
-        // ...but an absolute path with a `..` segment is still rejected.
-        assert!(reject_path_traversal("/home/user/kiln/../../etc/passwd").is_err());
-    }
-
     #[test]
     fn test_content_size_allows_exactly_ten_megabytes() {
         const MAX_SIZE: usize = 10 * 1024 * 1024;
@@ -1214,91 +1105,6 @@ mod tests {
             "Content too large: 10485761 bytes (max 10485760)"
         );
         assert!(content.len() > MAX_SIZE);
-    }
-
-    #[test]
-    fn symlink_escape_rejected() {
-        let kiln = tempdir().expect("temp kiln");
-        let outside = tempdir().expect("temp outside");
-
-        let outside_file = outside.path().join("outside-note.md");
-        std::fs::write(&outside_file, "outside").expect("write outside file");
-
-        let link = kiln.path().join("escape-link");
-        symlink_dir(outside.path(), &link).expect("create symlink to outside");
-
-        let escaped_path = link.join("outside-note.md");
-        let err =
-            validate_file_within_kiln(&escaped_path, kiln.path(), &escaped_path.to_string_lossy())
-                .expect_err("symlink target outside kiln must be rejected");
-
-        match err {
-            WebError::Validation(message) => {
-                assert_eq!(message, "File path escapes kiln directory");
-            }
-            other => panic!("expected validation error, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn put_kiln_file_rejects_new_file_outside_kiln() {
-        let kiln = tempdir().expect("temp kiln");
-        let outside = tempdir().expect("temp outside");
-
-        let link = kiln.path().join("escape-link");
-        symlink_dir(outside.path(), &link).expect("create symlink to outside");
-
-        let new_file_path = link.join("new-note.md");
-        assert!(!new_file_path.exists());
-
-        let err = validate_parent_within_kiln(&new_file_path, kiln.path())
-            .expect_err("symlinked parent outside kiln must be rejected");
-        match err {
-            WebError::Validation(message) => {
-                assert_eq!(message, "Path escapes kiln directory");
-            }
-            other => panic!("expected validation error, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn write_target_symlinked_final_component_rejected() {
-        // KILN/evil.md is a pre-planted symlink to a file OUTSIDE the kiln. The
-        // parent (the kiln root) is legitimate, so only the final-component
-        // symlink check catches the escape — without it, fs::write would follow
-        // the link and overwrite the outside file.
-        let kiln = tempdir().expect("temp kiln");
-        let outside = tempdir().expect("temp outside");
-
-        let secret = outside.path().join("secret.md");
-        std::fs::write(&secret, "original secret").expect("write secret");
-
-        let link = kiln.path().join("evil.md");
-        symlink_dir(&secret, &link).expect("plant symlink to outside file");
-
-        let canonical_kiln = kiln.path().canonicalize().expect("canonical kiln");
-        let err = validate_write_target_within_kiln(&link, &canonical_kiln)
-            .expect_err("symlinked final component pointing outside the kiln must be rejected");
-        match err {
-            WebError::Validation(message) => assert_eq!(message, "Path escapes kiln directory"),
-            other => panic!("expected validation error, got: {other:?}"),
-        }
-
-        // The guard runs before any write, so the outside file is untouched.
-        assert_eq!(
-            std::fs::read_to_string(&secret).expect("read secret"),
-            "original secret"
-        );
-    }
-
-    #[test]
-    fn write_target_regular_file_within_kiln_allowed() {
-        // A normal (non-symlink) file inside the kiln passes.
-        let kiln = tempdir().expect("temp kiln");
-        let canonical_kiln = kiln.path().canonicalize().expect("canonical kiln");
-        let note = canonical_kiln.join("note.md");
-        std::fs::write(&note, "hi").expect("write note");
-        assert!(validate_write_target_within_kiln(&note, &canonical_kiln).is_ok());
     }
 
     // -- /api/file/raw: never hand back an executable document ---------------
@@ -1526,62 +1332,7 @@ mod tests {
         );
     }
 
-    // -- enclosing-root resolution (kiln vs project + policy) ----------------
-
-    #[test]
-    fn resolve_prefers_kiln_over_enclosing_project() {
-        // A kiln nested inside a project keeps its always-read-write treatment
-        // rather than inheriting the project's file policy.
-        let project = tempdir().expect("temp project");
-        let kiln = project.path().join("docs");
-        std::fs::create_dir(&kiln).expect("mkdir kiln");
-        let file = kiln.join("note.md");
-        std::fs::write(&file, "n").expect("write note");
-
-        let root = resolve_enclosing_root(
-            &file,
-            std::slice::from_ref(&kiln),
-            &[(project.path().to_path_buf(), ProjectFileAccess::Off)],
-        )
-        .expect("kiln should match first");
-        assert!(matches!(root, EnclosingRoot::Kiln(_)));
-    }
-
-    #[test]
-    fn resolve_matches_project_and_carries_policy() {
-        let project = tempdir().expect("temp project");
-        let file = project.path().join("README.md");
-        std::fs::write(&file, "r").expect("write readme");
-
-        for policy in [
-            ProjectFileAccess::ReadWrite,
-            ProjectFileAccess::ReadOnly,
-            ProjectFileAccess::Off,
-        ] {
-            let root =
-                resolve_enclosing_root(&file, &[], &[(project.path().to_path_buf(), policy)])
-                    .expect("project should match");
-            match root {
-                EnclosingRoot::Project(_, p) => assert_eq!(p, policy),
-                other => panic!("expected project root, got a kiln: {:?}", other.path()),
-            }
-        }
-    }
-
-    #[test]
-    fn resolve_returns_none_when_outside_every_root() {
-        let project = tempdir().expect("temp project");
-        let outside = tempdir().expect("temp outside");
-        let file = outside.path().join("secret.md");
-        std::fs::write(&file, "s").expect("write secret");
-
-        assert!(resolve_enclosing_root(
-            &file,
-            &[],
-            &[(project.path().to_path_buf(), ProjectFileAccess::ReadWrite)],
-        )
-        .is_none());
-    }
+    // -- project file policy ------------------------------------------------
 
     #[test]
     fn project_file_access_read_write_matrix() {
@@ -1591,37 +1342,5 @@ mod tests {
         assert!(!ProjectFileAccess::ReadOnly.can_write());
         assert!(!ProjectFileAccess::Off.can_read());
         assert!(!ProjectFileAccess::Off.can_write());
-    }
-
-    proptest! {
-        #[test]
-        fn prop_traversal_paths_are_rejected(path in arb_traversal_path()) {
-            prop_assert!(reject_path_traversal(&path).is_err());
-        }
-
-        #[test]
-        fn prop_safe_paths_are_accepted(path in arb_safe_path()) {
-            prop_assert!(reject_path_traversal(&path).is_ok());
-        }
-
-        #[test]
-        fn prop_null_bytes_are_always_rejected(prefix in ".{0,32}", suffix in ".{0,32}") {
-            let path = format!("{prefix}\0{suffix}");
-            prop_assert!(reject_path_traversal(&path).is_err());
-        }
-
-        #[test]
-        fn prop_new_file_path_traversal_rejected(file_name in "[a-zA-Z0-9_-]{1,32}\\.md") {
-            let kiln = tempdir().expect("temp kiln");
-            let outside = tempdir().expect("temp outside");
-
-            let link = kiln.path().join("escape-link");
-            symlink_dir(outside.path(), &link).expect("create symlink to outside");
-
-            let new_file_path = link.join(file_name);
-            prop_assume!(!new_file_path.exists());
-
-            prop_assert!(validate_parent_within_kiln(&new_file_path, kiln.path()).is_err());
-        }
     }
 }

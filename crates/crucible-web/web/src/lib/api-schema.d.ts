@@ -503,7 +503,7 @@ export interface paths {
         };
         /**
          * `GET /api/kiln/file?path=<path>` — read a file's content.
-         * @description The path must reside within an open kiln; otherwise the request is rejected.
+         * @description The daemon's `fs.read` decides which root holds the path, and reads it.
          */
         get: operations["get_kiln_file"];
         /** The daemon owns containment, policy, compare, merge and write. */
@@ -3960,7 +3960,10 @@ export interface components {
              */
             base_hash?: string | null;
             content: string;
-            /** @description Absolute path of the kiln to write into. It must be registered. */
+            /**
+             * @description Absolute path of the kiln to write into. The daemon writes only into
+             *     a path that one of its roots holds.
+             */
             kiln: string;
         };
         RecentFile: {
@@ -5007,14 +5010,21 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The path carries a traversal sequence, or the file is not a canvas */
+            /** @description The file on disk is not UTF-8 text */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path carries a traversal sequence, escapes its root, or the file is not a canvas */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description The daemon could not list the kilns or the projects */
+            /** @description The daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -5079,7 +5089,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The daemon could not list the roots, or could not write */
+            /** @description The daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -5527,8 +5537,8 @@ export interface operations {
         parameters: {
             query: {
                 /**
-                 * @description ABSOLUTE path of the file. Containment against an open kiln or a
-                 *     readable project is enforced by the handler, not by this shape.
+                 * @description ABSOLUTE path of the file. The daemon decides which root holds it and
+                 *     whether that root serves it; this shape does not.
                  */
                 path: string;
             };
@@ -5554,14 +5564,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The path carries a traversal sequence, or escapes its root */
+            /** @description The path carries a traversal sequence, escapes its root, or names a file too large to read */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description The daemon could not list the roots */
+            /** @description The daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -5811,8 +5821,8 @@ export interface operations {
         parameters: {
             query: {
                 /**
-                 * @description ABSOLUTE path of the file. Containment against an open kiln or a
-                 *     readable project is enforced by the handler, not by this shape.
+                 * @description ABSOLUTE path of the file. The daemon decides which root holds it and
+                 *     whether that root serves it; this shape does not.
                  */
                 path: string;
             };
@@ -5851,7 +5861,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The daemon could not list the roots */
+            /** @description The daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -6358,7 +6368,7 @@ export interface operations {
                     "application/json": components["schemas"]["NoteSavedResponse"];
                 };
             };
-            /** @description The content is too large, the name carries a traversal sequence, or the name escapes the kiln */
+            /** @description The content is too large, or the name carries a traversal sequence */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -6372,7 +6382,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The kiln is not registered, or the path is in no root */
+            /** @description No root holds the path */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6393,14 +6403,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The daemon refused the write */
+            /** @description The path is invalid, or escapes its root */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description The daemon could not list the kilns, or could not write */
+            /** @description The daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -6448,6 +6458,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The supplied root is not an absolute path, or escapes its root */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description The walk that searches the root failed */
             500: {
                 headers: {
@@ -6455,7 +6472,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The daemon could not list the kilns or the projects */
+            /** @description The daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;

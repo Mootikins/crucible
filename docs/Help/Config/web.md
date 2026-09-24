@@ -515,6 +515,19 @@ None of this is configurable.
 
 ### Serving kiln files
 
+The web server reads no file from the disk itself. `GET /api/kiln/file`, `/api/file/raw`,
+`/api/canvas`, `/api/notes/resolve` and the backlinks panel send the path to the daemon's
+`fs.read` RPC. Writes go to `fs.write`. The daemon uses one rule for both to find the root
+that holds a path:
+
+- The innermost kiln that holds the path is its root. With nested kilns, a file in the inner
+  kiln belongs to the inner kiln.
+- If no kiln holds the path, the innermost registered project or session folder is its root.
+  A kiln inside a project is always read-write, whatever the project's `project_files` policy.
+- A symlink must stay inside that root. A link out of the root gets a 422.
+- A path in no root, or in a project with `project_files = "off"`, gets a 404.
+- `fs.read` does not read a file larger than 64 MiB. The route answers 422.
+
 `/api/file/raw` is the one route that hands back bytes an agent may have written, and it is
 same-origin with the API — so a file the browser parses as a *document* there could
 `fetch('/api/shell/exec')` with your credentials already applied. It is therefore an

@@ -342,13 +342,13 @@ async fn backlinks_rejects_path_traversal_in_note() {
 
 #[tokio::test]
 async fn backlinks_returns_linked_and_filtered_unlinked() {
-    let (_mock, client) = start_mock_daemon().await;
+    // Real kiln dir so the route can read the focused note's content for
+    // the suggest_links (unlinked mentions) pass. The daemon's `fs.read`
+    // serves it only because the mock lists it as a kiln.
+    let kiln = tempfile::tempdir().unwrap();
+    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
     let state = build_mock_state(client);
     let app = build_test_app(state);
-
-    // Real kiln dir so the route can read the focused note's content for
-    // the suggest_links (unlinked mentions) pass.
-    let kiln = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(kiln.path().join("notes")).unwrap();
     std::fs::write(
         kiln.path().join("notes/focused.md"),
@@ -403,6 +403,29 @@ async fn raw_file_outside_any_root_is_404() {
     let app = build_test_app(build_mock_state(client));
     let (status, _) = get_json(app, "/api/file/raw?path=/etc/hostname").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// The focused note is on disk, but in no root. The web does not read it,
+/// so the unlinked mentions are empty.
+#[tokio::test]
+async fn backlinks_do_not_read_a_note_outside_every_root() {
+    let (_mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+    let kiln = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(kiln.path().join("notes")).unwrap();
+    std::fs::write(
+        kiln.path().join("notes/focused.md"),
+        "Other Note is mentioned here.",
+    )
+    .unwrap();
+
+    let uri = format!(
+        "/api/backlinks?kiln={}&note=focused",
+        kiln.path().to_string_lossy()
+    );
+    let (status, json) = get_json(app, &uri).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["unlinked"], json!([]), "{json}");
 }
 
 #[tokio::test]
@@ -813,4 +836,46 @@ async fn a_put_whose_base_is_current_writes_its_own_text_and_merged_is_false() {
         tokio::fs::read_to_string(&note).await.unwrap(),
         "A\nB\nC\nD\n"
     );
+}
+
+/// Nested kilns, listed outer first. A link in the inner kiln points at a file
+/// in the outer kiln. Every file route must choose the same root for the link
+/// (the inner kiln) and refuse it. Before the daemon owned the rule, the text
+/// and raw reads chose the outer kiln and served the file, while the canvas
+/// read chose the inner kiln and refused it.
+#[cfg(unix)]
+#[tokio::test]
+async fn every_file_route_refuses_a_link_out_of_the_innermost_kiln() {
+    let dir = tempfile::tempdir().unwrap();
+    let outer = dir.path().join("outer");
+    let inner = outer.join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+    let secret = outer.join("secret.md");
+    std::fs::write(&secret, "secret").unwrap();
+    let board = outer.join("board.canvas");
+    std::fs::write(&board, r#"{"nodes":[],"edges":[]}"#).unwrap();
+    let link = inner.join("link.md");
+    std::os::unix::fs::symlink(&secret, &link).unwrap();
+    let canvas_link = inner.join("link.canvas");
+    std::os::unix::fs::symlink(&board, &canvas_link).unwrap();
+    let kilns = vec![outer.clone(), inner.clone()];
+
+    for uri in [
+        format!("/api/kiln/file?path={}", link.display()),
+        format!("/api/file/raw?path={}", link.display()),
+        format!("/api/canvas?path={}", canvas_link.display()),
+    ] {
+        let (_mock, client) = start_mock_daemon_with_kilns(kilns.clone()).await;
+        let (status, body) = get_json(build_test_app(build_mock_state(client)), &uri).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+    }
+
+    let (_mock, client) = start_mock_daemon_with_kilns(kilns).await;
+    let (status, body) = put_file(
+        build_test_app(build_mock_state(client)),
+        json!({ "path": link, "content": "overwritten" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(std::fs::read_to_string(&secret).unwrap(), "secret");
 }

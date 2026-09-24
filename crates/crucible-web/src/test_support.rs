@@ -113,8 +113,9 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
 #[cfg(any(test, feature = "test-utils"))]
 /// Like [`start_mock_daemon`], but `kiln.list` answers these directories as
-/// open kilns. The file routes serve only a path inside an open kiln, so a
-/// test that writes a real file through them needs a kiln that holds it.
+/// open kilns. `fs.read` and `fs.write` run the daemon's own reader and
+/// writer with these kilns as the only roots, so a test that reads or writes
+/// a real file through the file routes needs a kiln that holds it.
 pub async fn start_mock_daemon_with_kilns(kilns: Vec<PathBuf>) -> (MockDaemon, DaemonClient) {
     start_mock_daemon_scripted(MockErrors::new(), kilns).await
 }
@@ -174,6 +175,15 @@ async fn start_mock_daemon_scripted(
                                     let request =
                                         serde_json::from_value(msg["params"].clone()).unwrap();
                                     crucible_daemon::file_write::write_for_roots(
+                                        request,
+                                        &kilns,
+                                        &[],
+                                    )
+                                    .await
+                                } else if method == "fs.read" {
+                                    let request =
+                                        serde_json::from_value(msg["params"].clone()).unwrap();
+                                    crucible_daemon::file_write::read_for_roots(
                                         request,
                                         &kilns,
                                         &[],

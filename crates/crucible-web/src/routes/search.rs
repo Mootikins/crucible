@@ -17,7 +17,6 @@ use crucible_daemon::GrepSearchResponse;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use tokio::fs;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -181,8 +180,9 @@ async fn list_notes(
         (status = 200, body = ResolvedNoteResponse),
         (status = 400, description = "The name carries a traversal sequence"),
         (status = 404, description = "No open kiln or readable project holds the supplied root, or it holds no such note"),
+        (status = 422, description = "The supplied root is not an absolute path, or escapes its root"),
         (status = 500, description = "The walk that searches the root failed"),
-        (status = 502, description = "The daemon could not list the kilns or the projects"),
+        (status = 502, description = "The daemon could not be reached"),
     )
 )]
 async fn resolve_note(
@@ -197,10 +197,16 @@ async fn resolve_note(
     // the whole filesystem: `?kiln=/etc&name=passwd` answered, as did
     // `?kiln=/&name=etc/shadow` (which also walked the entire disk). It ignored
     // a project's `project_files` policy that every sibling route honours. The
-    // supplied path is resolved through the same kiln-then-project rule the
-    // canvas endpoints use, and the CANONICAL root that comes back is what gets
-    // walked — so the walk is bounded by a registered root, not by argv.
-    let (root, _policy) = super::canvas::enclosing_root(&state, &query.kiln).await?;
+    // daemon's `fs.read` resolves the supplied path with the one rule that
+    // every file route uses, and the CANONICAL root that comes back is what
+    // gets walked — so the walk is bounded by a registered root, not by argv.
+    let root = super::kiln::read_through_daemon(
+        &state,
+        &query.kiln.to_string_lossy(),
+        crucible_core::file_write::FileEncoding::Text,
+    )
+    .await?
+    .root;
 
     // Strip an alias/heading/block suffix — `[[Note|alias]]`, `[[Note#Heading]]`.
     let target = query
@@ -486,8 +492,8 @@ async fn get_backlinks(
     // unreadable file degrades to "no suggestions" rather than failing the
     // whole panel — linked mentions come from the index, not the file.
     let abs_path = absolute_note_path(&query.kiln, &note_path);
-    let unlinked = match fs::read_to_string(&abs_path).await {
-        Ok(content) => {
+    let unlinked = match read_note_text(&state, &abs_path).await {
+        Some(content) => {
             let mut self_names: Vec<String> = vec![note_title.to_lowercase()];
             let trimmed = note_path.trim_end_matches(".md");
             self_names.push(trimmed.to_lowercase());
@@ -511,7 +517,7 @@ async fn get_backlinks(
                 })
                 .collect::<Vec<_>>()
         }
-        Err(_) => Vec::new(),
+        None => Vec::new(),
     };
 
     Ok(Json(BacklinksResponse {
@@ -523,6 +529,23 @@ async fn get_backlinks(
         linked: daemon_shape(serde_json::Value::Array(linked), "get_backlinks")?,
         unlinked: daemon_shape(serde_json::Value::Array(unlinked), "suggest_links")?,
     }))
+}
+
+/// The text of a note, read through the daemon's `fs.read`. `None` for any
+/// refusal or failure: the unlinked mentions are a hint, and the linked
+/// mentions come from the index, not from the file.
+async fn read_note_text(state: &AppState, path: &str) -> Option<String> {
+    let reply = super::kiln::read_through_daemon(
+        state,
+        path,
+        crucible_core::file_write::FileEncoding::Text,
+    )
+    .await
+    .ok()?;
+    super::kiln::text_of(reply.content)
+        .ok()
+        .flatten()
+        .map(|(text, _hash)| text)
 }
 
 /// The note the panel is about.
@@ -584,7 +607,8 @@ struct PutNoteRequest {
     #[serde(default)]
     base_hash: Option<String>,
 
-    /// Absolute path of the kiln to write into. It must be registered.
+    /// Absolute path of the kiln to write into. The daemon writes only into
+    /// a path that one of its roots holds.
     #[schema(value_type = String)]
     kiln: PathBuf,
     content: String,
@@ -611,13 +635,13 @@ struct NoteSavedResponse {
     request_body = PutNoteRequest,
     responses(
         (status = 200, body = NoteSavedResponse),
-        (status = 400, description = "The content is too large, the name carries a traversal sequence, or the name escapes the kiln"),
+        (status = 400, description = "The content is too large, or the name carries a traversal sequence"),
         (status = 403, description = "The root refuses writes"),
-        (status = 404, description = "The kiln is not registered, or the path is in no root"),
+        (status = 404, description = "No root holds the path"),
         (status = 409, description = "The file moved on since `base_hash` was read"),
         (status = 415, description = "The file on disk is not UTF-8 text"),
-        (status = 422, description = "The daemon refused the write"),
-        (status = 502, description = "The daemon could not list the kilns, or could not write"),
+        (status = 422, description = "The path is invalid, or escapes its root"),
+        (status = 502, description = "The daemon could not be reached"),
     )
 )]
 async fn put_note(
@@ -637,43 +661,14 @@ async fn put_note(
     // Security: Validate note name doesn't contain path traversal
     validate_note_name(&name)?;
 
-    // Security: Validate kiln is registered/open
-    let kilns = state.daemon.kiln_list().await.daemon_err()?;
-
-    let canonical_kiln = req
-        .kiln
-        .canonicalize()
-        .map_err(|_| WebError::NotFound("Invalid kiln path".to_string()))?;
-
-    let kiln_registered = kilns.iter().any(|kiln_value| {
-        kiln_value
-            .get("path")
-            .and_then(|p| p.as_str())
-            .and_then(|p| PathBuf::from(p).canonicalize().ok())
-            .map(|p| p == canonical_kiln)
-            .unwrap_or(false)
-    });
-
-    if !kiln_registered {
-        return Err(WebError::NotFound(
-            "Kiln not registered. Please open the kiln first.".to_string(),
-        ));
-    }
-
-    // Build the full file path (ensure .md extension)
+    // Build the full file path (ensure .md extension). The daemon's `fs.write`
+    // decides which root holds it, and refuses a path that no root holds.
     let note_filename = if name.ends_with(".md") {
         name.clone()
     } else {
         format!("{}.md", name)
     };
-    let file_path = canonical_kiln.join(&note_filename);
-
-    // Security: Verify the file path is still within the kiln after joining
-    if !file_path.starts_with(&canonical_kiln) {
-        return Err(WebError::Chat(
-            "Invalid note name: path escapes kiln directory".to_string(),
-        ));
-    }
+    let file_path = req.kiln.join(&note_filename);
 
     let answer = state
         .daemon
@@ -687,7 +682,7 @@ async fn put_note(
         })
         .await
         .daemon_err()?;
-    super::kiln::check_write(&answer)?;
+    super::kiln::check_file_answer(&answer)?;
 
     let title = extract_title(&req.content);
 
@@ -1027,8 +1022,8 @@ mod tests {
     }
 
     /// Unlinked mentions are scanned out of the focused note's own file, so
-    /// this one needs the note on disk. Linked mentions come from the index
-    /// and would answer without it.
+    /// this one needs the note on disk, in a kiln that the daemon's `fs.read`
+    /// admits. Linked mentions come from the index and would answer without it.
     #[tokio::test]
     async fn get_backlinks_answers_the_declared_shape() {
         let kiln = TempDir::new().unwrap();
@@ -1043,10 +1038,11 @@ mod tests {
         .unwrap();
         let root = kiln.path().display();
 
-        let answer: BacklinksResponse = shape(
+        let answer: BacklinksResponse = shape_in_kilns(
             "GET",
             &format!("/api/backlinks?kiln={root}&note=Focused"),
             None,
+            vec![kiln.path().to_path_buf()],
         )
         .await;
 

@@ -16,6 +16,8 @@ write. The agent writes notes. You write notes. Another device writes notes. So
 two writers reach one note often, and this page says what happens when they do.
 
 Browser note saves use the daemon's `fs.write` RPC on desktop and phone.
+Browser note reads use the daemon's `fs.read` RPC. The daemon finds the root
+of a read and of a write with the same rule.
 Its compare, merge and write share a per-path lock with the agent's note tools.
 Two web-server processes therefore cannot bypass each other's note-write lock.
 An external editor or shell command does not take this lock.

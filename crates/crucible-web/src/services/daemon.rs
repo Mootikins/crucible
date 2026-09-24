@@ -674,6 +674,12 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        Safe FsRead =>
+        fs_read(request: &crucible_core::file_write::FileReadRequest)
+        -> serde_json::Value = fs_read(&request);
+    }
+
+    forward_rpc! {
         Once FsWrite =>
         fs_write(request: &crucible_core::file_write::FileWriteRequest)
         -> serde_json::Value = fs_write(&request);

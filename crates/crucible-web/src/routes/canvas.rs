@@ -2,9 +2,11 @@
 //!
 //! These exist separately from the generic file endpoints because canvas
 //! containment is stricter than the `project_files` policy those obey. A canvas
-//! is portable knowledge content: it must live in a kiln and may only reference
-//! files inside that same kiln. See [`crucible_core::canvas::containment`] for
-//! why, and for the three-layer scheme this implements two thirds of.
+//! is portable knowledge content: it may only reference files inside the root
+//! that holds it. The daemon's `fs.read` names that root with the same rule as
+//! every other file route: the innermost kiln, else the innermost project or
+//! session folder. See [`crucible_core::canvas::containment`] for why, and for
+//! the three-layer scheme this implements two thirds of.
 //!
 //! The read path does not merely *report* bad references — it removes them from
 //! the payload. A client that never learns the offending path cannot request
@@ -15,17 +17,14 @@ use crucible_core::canvas::containment::{
     resolve_file_ref, validate_canvas, RefError, RejectedRef,
 };
 use crucible_core::canvas::{Canvas, NodeKind};
+use crucible_core::file_write::FileEncoding;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use tokio::fs;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use super::helpers::{
-    reject_path_traversal, validate_file_within_kiln, validate_write_target_within_kiln,
-    MAX_CONTENT_SIZE,
-};
-use crucible_core::config::{read_project_config, ProjectFileAccess};
+use super::helpers::MAX_CONTENT_SIZE;
+use super::kiln::{read_through_daemon, text_of};
 
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -109,25 +108,21 @@ struct CanvasSavedResponse {
     responses(
         (status = 200, body = CanvasResponse),
         (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
-        (status = 422, description = "The path carries a traversal sequence, or the file is not a canvas"),
-        (status = 502, description = "The daemon could not list the kilns or the projects"),
+        (status = 415, description = "The file on disk is not UTF-8 text"),
+        (status = 422, description = "The path carries a traversal sequence, escapes its root, or the file is not a canvas"),
+        (status = 502, description = "The daemon could not be reached"),
     )
 )]
 async fn get_canvas(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<CanvasPathQuery>,
 ) -> Result<Json<CanvasResponse>, WebError> {
-    reject_path_traversal(&query.path)?;
-
-    let path = PathBuf::from(&query.path);
-    let kiln = enclosing_kiln(&state, &path).await?;
-    // `enclosing_kiln` matches lexically; this resolves symlinks, so a
-    // `.canvas` that is itself a link out of the kiln cannot be read through.
-    let path = validate_file_within_kiln(&path, &kiln, &query.path)?;
-
-    let source = fs::read_to_string(&path)
-        .await
-        .map_err(|e| WebError::NotFound(format!("Canvas not found: {e}")))?;
+    // The daemon decides which root holds the canvas, and its answer resolves
+    // symlinks: a `.canvas` that is a link out of its root is not read.
+    let reply = read_through_daemon(&state, &query.path, FileEncoding::Text).await?;
+    let kiln = reply.root;
+    let (source, _hash) = text_of(reply.content)?
+        .ok_or_else(|| WebError::NotFound(format!("Canvas not found: {}", query.path)))?;
 
     let mut canvas =
         Canvas::parse(&source).map_err(|e| WebError::Validation(format!("Invalid canvas: {e}")))?;
@@ -159,15 +154,13 @@ async fn get_canvas(
         (status = 409, description = "The file moved on since `base_hash` was read"),
         (status = 415, description = "The file on disk is not UTF-8 text"),
         (status = 422, description = "The path carries a traversal sequence, the content is too large, or it is not a canvas"),
-        (status = 502, description = "The daemon could not list the roots, or could not write"),
+        (status = 502, description = "The daemon could not be reached"),
     )
 )]
 async fn put_canvas(
     State(state): State<AppState>,
     Json(req): Json<PutCanvasRequest>,
 ) -> Result<Json<CanvasSavedResponse>, WebError> {
-    reject_path_traversal(&req.path)?;
-
     if req.content.len() > MAX_CONTENT_SIZE {
         return Err(WebError::Validation(format!(
             "Canvas too large: {} bytes (max {MAX_CONTENT_SIZE})",
@@ -175,19 +168,12 @@ async fn put_canvas(
         )));
     }
 
-    let path = PathBuf::from(&req.path);
-    let (kiln, policy) = enclosing_root(&state, &path).await?;
-    if !policy.can_write() {
-        return Err(WebError::Forbidden(
-            "Project files are read-only".to_string(),
-        ));
-    }
-
-    // Without this, `fs::write` follows a pre-planted symlink and writes
-    // outside the kiln even though the parent directory is legitimate — the
-    // exact case `validate_write_target_within_kiln` documents. Every other
-    // kiln file route already calls it; this one was the gap.
-    validate_write_target_within_kiln(&path, &kiln)?;
+    // The daemon decides which root holds the canvas, and answers the canvas
+    // on disk, if any. The write below goes through the same rule, which
+    // also refuses a read-only root and a link out of the root.
+    let reply = read_through_daemon(&state, &req.path, FileEncoding::Text).await?;
+    let kiln = reply.root;
+    let on_disk = text_of(reply.content)?;
 
     let canvas = Canvas::parse(&req.content)
         .map_err(|e| WebError::Validation(format!("Invalid canvas: {e}")))?;
@@ -215,7 +201,7 @@ async fn put_canvas(
     // `../shared/note.md` reference, would lose it on the first accidental
     // click. The bad reference stays exactly as it was; it is not made worse.
     let mut canvas = canvas;
-    if let Ok(on_disk) = fs::read_to_string(&path).await {
+    if let Some((on_disk, _hash)) = on_disk {
         if let Ok(previous) = Canvas::parse(&on_disk) {
             restore_redacted(&mut canvas, &previous, &kiln);
         }
@@ -231,7 +217,7 @@ async fn put_canvas(
     let answer = state
         .daemon
         .fs_write(&crucible_core::file_write::FileWriteRequest {
-            path: path.to_string_lossy().into_owned(),
+            path: req.path,
             change: crucible_core::file_write::FileChange::Put {
                 content: serialized,
                 base_hash: req.base_hash,
@@ -240,86 +226,9 @@ async fn put_canvas(
         })
         .await
         .daemon_err()?;
-    super::kiln::check_write(&answer)?;
+    super::kiln::check_file_answer(&answer)?;
 
     Ok(Json(CanvasSavedResponse { ok: true }))
-}
-
-/// Resolve the root a canvas belongs to: its kiln, or failing that its project.
-///
-/// A canvas in a code repository is a legitimate thing to keep — an
-/// architecture board that references source files lives with the code, not in
-/// a notes vault. So a canvas outside any kiln resolves against its **project**
-/// root instead, and its references are contained to that root.
-///
-/// The containment rule is unchanged in substance: a canvas may only reference
-/// files inside the one root that owns it. What changes is which root that can
-/// be. A project canvas additionally obeys that project's
-/// [`ProjectFileAccess`] policy, so a repository configured `read-only` serves
-/// its canvases but refuses to save them, and one configured `off` does not
-/// serve them at all — exactly as for any other file in that project.
-async fn enclosing_kiln(state: &AppState, path: &Path) -> Result<PathBuf, WebError> {
-    enclosing_root(state, path).await.map(|(root, _)| root)
-}
-
-/// As [`enclosing_kiln`], but also reporting whether writes are permitted.
-pub(crate) async fn enclosing_root(
-    state: &AppState,
-    path: &Path,
-) -> Result<(PathBuf, ProjectFileAccess), WebError> {
-    let kilns: Vec<PathBuf> = state
-        .daemon
-        .kiln_list()
-        .await
-        .daemon_err()?
-        .iter()
-        .filter_map(|v| v.get("path").and_then(|p| p.as_str()).map(PathBuf::from))
-        .collect();
-
-    // Longest match, not first. With nested kilns (`/vault` and `/vault/sub`
-    // both open) taking whichever the daemon happened to list first would
-    // attribute a canvas in the inner kiln to the outer one, letting it
-    // reference anything under `/vault` — wider than "that same kiln".
-    let best_kiln = kilns
-        .into_iter()
-        .filter_map(|kiln| {
-            let canonical = kiln.canonicalize().ok()?;
-            (path.starts_with(&canonical) || path.starts_with(&kiln)).then_some(canonical)
-        })
-        .max_by_key(|k| k.components().count());
-
-    // A kiln always wins over the project containing it: kiln notes are
-    // read-write regardless of the project's file policy.
-    if let Some(kiln) = best_kiln {
-        return Ok((kiln, ProjectFileAccess::ReadWrite));
-    }
-
-    let projects = state.daemon.project_list().await.daemon_err()?;
-    let best_project = projects
-        .into_iter()
-        .filter_map(|p| {
-            let canonical = p.path.canonicalize().ok()?;
-            (path.starts_with(&canonical) || path.starts_with(&p.path))
-                .then_some((canonical, p.path))
-        })
-        .max_by_key(|(canonical, _)| canonical.components().count());
-
-    match best_project {
-        Some((canonical, raw)) => {
-            let policy = read_project_config(&raw)
-                .map(|c| c.security.project_files)
-                .unwrap_or_default();
-            if !policy.can_read() {
-                return Err(WebError::NotFound(
-                    "Canvas is not within an open kiln or readable project".to_string(),
-                ));
-            }
-            Ok((canonical, policy))
-        }
-        None => Err(WebError::NotFound(
-            "Canvas is not within an open kiln or registered project".to_string(),
-        )),
-    }
 }
 
 /// Put back any reference the read path blanked before this document was sent.

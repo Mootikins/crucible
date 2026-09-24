@@ -25,6 +25,8 @@ crucible-daemon = { path = "../crucible-daemon", default-features = false, featu
 
 axum = { workspace = true, features = ["macros", "ws"] }
 tower = { workspace = true }
+# Decodes the bytes that the daemon `fs.read` answers for `/api/file/raw`.
+base64 = { workspace = true }
 # The OpenAPI document is generated from this router, not hand-written.
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
