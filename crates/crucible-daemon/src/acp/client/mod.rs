@@ -163,9 +163,12 @@ impl CrucibleAcpClient {
                         // takes a minute to answer must not stop the updates
                         // of the turn, so the answer waits on its own task.
                         cx.spawn(async move {
+                            // A cancel wins over an answer that is ready at
+                            // the same time: the turn ended.
                             let outcome = tokio::select! {
-                                outcome = ask(permission, call, options) => outcome,
+                                biased;
                                 () = cancel.cancelled() => RequestPermissionOutcome::Cancelled,
+                                outcome = ask(permission, call, options) => outcome,
                             };
                             // A closed connection has nobody to answer. The
                             // task returns `Ok`, because an error stops the

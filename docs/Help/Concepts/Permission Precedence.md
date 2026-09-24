@@ -208,8 +208,9 @@ This step is easy to forget and it changes behaviour: the same tool call that
 ### 11 — Prompt
 
 Whatever is left reaches you, with a diff preview where one can be synthesised.
-A session shows one prompt at a time. A cancel of the turn answers the waiting
-prompt with a denial.
+A session shows one prompt at a time. A cancel of the turn ends the waiting
+prompt with no answer: Crucible refuses its own tool call, and an ACP agent
+receives `cancelled`, not a reject, because nobody refused the call.
 
 An ACP agent receives only one of its own options: `allow_once` for an allow,
 and `reject_once` (or `reject_always`) for a denial. The reason of a denial

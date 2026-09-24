@@ -523,6 +523,10 @@ impl AgentManager {
             Decision::Deny(reason) => {
                 return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason)
             }
+            Decision::NoAnswer => {
+                let reason = "The permission prompt ended with no answer".to_string();
+                return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason);
+            }
             Decision::Allow(marker) => marker,
             // The second unbounded wait, and the only other one. Re-baseline
             // only when the gate put the question to a person: rebaselining

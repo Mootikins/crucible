@@ -168,7 +168,14 @@ impl AcpGate {
         };
         let decision =
             decide_permission(&ctx, &call, &args, || acp_prompt_request(&call, &args)).await;
-        select_option(options, decision.allowed())
+        match decision {
+            // The turn ended before the user answered. A reject would say
+            // that the user refused the call.
+            super::gate_decision::Decision::NoAnswer => {
+                agent_client_protocol::schema::v1::RequestPermissionOutcome::Cancelled
+            }
+            decision => select_option(options, decision.allowed()),
+        }
     }
 }
 
@@ -185,15 +192,15 @@ impl AcpGate {
 ///
 /// A queued caller therefore waits while an earlier prompt waits. If the
 /// user leaves a prompt until the 300 s timeout, the next prompt appears
-/// only after that timeout. A cancel of the turn drops every pending prompt
-/// of the session (`AgentManager::cancel`), which answers the wait with a
-/// denial at once.
+/// only after that timeout, and the call is denied. A cancel of the turn
+/// drops every pending prompt of the session (`AgentManager::cancel`),
+/// which ends the wait at once with no answer: `None`.
 pub(in crate::agent_manager) async fn prompt_user(
     slot: &crate::agent_manager::slot::SessionSlot,
     session_id: &str,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     request: PermRequest,
-) -> PermResponse {
+) -> Option<PermResponse> {
     let _one_at_a_time = slot.prompt_lock().await;
     let interaction = InteractionRequest::Permission(request.clone());
     let (permission_id, response_rx) = slot.register_permission(request);
@@ -211,17 +218,16 @@ pub(in crate::agent_manager) async fn prompt_user(
         debug!(session_id = %session_id, "no subscribers for the permission prompt");
     }
 
-    let reason = match tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await
-    {
+    match tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await {
         Ok(Ok(response)) => {
             open.answered = true;
-            return response;
+            Some(response)
         }
-        Ok(Err(_)) => "Permission request channel closed before response",
-        Err(_) => "Permission request timed out",
-    };
-    debug!(session_id = %session_id, permission_id = %permission_id, reason, "permission prompt ended with no answer");
-    PermResponse::deny_with_reason(reason)
+        Ok(Err(_)) => None,
+        Err(_) => Some(PermResponse::deny_with_reason(
+            "Permission request timed out",
+        )),
+    }
 }
 
 /// A prompt that waits for an answer.
@@ -1696,8 +1702,9 @@ mod acp_permission_handler_tests {
         pending.await.unwrap();
     }
 
-    /// A cancel of the turn answers the waiting prompt with a denial at once,
-    /// and the prompt leaves the registry.
+    /// A cancel of the turn answers the waiting prompt at once with
+    /// `cancelled`, not with a reject: nobody refused the call. The prompt
+    /// leaves the registry.
     #[tokio::test]
     async fn a_cancel_answers_the_waiting_prompt() {
         let am = create_test_agent_manager(temp_session_manager());
@@ -1712,7 +1719,10 @@ mod acp_permission_handler_tests {
             .await
             .expect("the cancel must answer the prompt")
             .expect("join");
-        assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
+        assert!(
+            matches!(outcome, RequestPermissionOutcome::Cancelled),
+            "{outcome:?}"
+        );
         assert!(am.list_all_pending_permissions().is_empty());
     }
 

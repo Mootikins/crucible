@@ -218,3 +218,67 @@ async fn a_request_outside_a_turn_is_classified_alone() {
     let seen = seen.lock().expect("the recorder is not poisoned");
     assert_eq!(seen.first().map(|c| c.tool.as_str()), Some("command"));
 }
+
+/// A request that arrives after the turn was cancelled gets `cancelled`,
+/// also when the handler has an answer at once. A reject would say that the
+/// user refused the call. The client must prefer the cancel when both are
+/// ready, so each of many requests is asked.
+#[tokio::test]
+async fn a_request_after_a_cancel_gets_cancelled_and_not_the_answer() {
+    let permission: PermissionRequestHandler = Arc::new(|_call, options| {
+        let reject = options[0].option_id.clone();
+        Box::pin(async move {
+            RequestPermissionOutcome::Selected(
+                agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(reject),
+            )
+        })
+    });
+    let (client_end, agent_end) = tokio::io::duplex(64 * 1024);
+    let (client_read, client_write) = tokio::io::split(client_end);
+    let (agent_read, agent_write) = tokio::io::split(agent_end);
+    let client = CrucibleAcpClient::connect(
+        ClientConfig::default(),
+        ByteStreams::new(client_write.compat_write(), client_read.compat()),
+        "raw",
+        Some(permission),
+    )
+    .await
+    .expect("the client connects");
+    let mut agent = RawAgent {
+        lines: BufReader::new(agent_read).lines(),
+        write: agent_write,
+    };
+    let (out, chunks) = tokio::sync::mpsc::unbounded_channel();
+    let turn = client.prompt(
+        PromptRequest::new(SessionId::from("sess-1"), vec![ContentBlock::from("hi")]),
+        &out,
+    );
+    let agent_side = async {
+        let prompt = agent.read().await;
+        // The consumer of the turn goes away, so the client cancels it.
+        drop(chunks);
+        let cancel = agent.read().await;
+        assert_eq!(cancel["method"], "session/cancel", "{cancel}");
+        for id in 1..=20 {
+            let mut request = codex_permission_request("call-1");
+            request["id"] = serde_json::json!(id);
+            request["params"]["options"] = serde_json::json!([
+                { "optionId": "reject", "name": "Reject", "kind": "reject_once" }
+            ]);
+            agent.write(request).await;
+            let reply = agent.read().await;
+            assert_eq!(
+                reply["result"]["outcome"]["outcome"], "cancelled",
+                "request {id}: {reply}"
+            );
+        }
+        agent
+            .write(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": prompt["id"],
+                "result": { "stopReason": "cancelled" }
+            }))
+            .await;
+    };
+    let (_result, ()) = tokio::join!(turn, agent_side);
+}

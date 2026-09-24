@@ -187,6 +187,7 @@ pub(crate) fn unattended_refusal(
     use crate::agent_manager::messaging::gate_decision::{unattended_decision, Decision};
     match unattended_decision(permissions, name, args) {
         Decision::Deny(reason) => Some(format!("{caller} has no prompt: {reason}")),
+        Decision::NoAnswer => Some(format!("{caller} has no prompt")),
         Decision::Allow(_) | Decision::UserAllowed => None,
     }
 }

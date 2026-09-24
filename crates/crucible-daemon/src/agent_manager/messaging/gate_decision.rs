@@ -70,11 +70,14 @@ pub(crate) enum Decision {
     UserAllowed,
     /// Refuse the call. The text says why.
     Deny(String),
+    /// The prompt ended with no answer, because the turn was cancelled.
+    /// Not a refusal: nobody said no.
+    NoAnswer,
 }
 
 impl Decision {
     pub(crate) fn allowed(&self) -> bool {
-        !matches!(self, Self::Deny(_))
+        !matches!(self, Self::Deny(_) | Self::NoAnswer)
     }
 }
 
@@ -140,7 +143,10 @@ pub(crate) async fn decide_permission(
         layer: Some(layer),
         ..request()
     };
-    let response = prompt_user(prompt.slot, ctx.session_id, prompt.event_tx, request).await;
+    let Some(response) = prompt_user(prompt.slot, ctx.session_id, prompt.event_tx, request).await
+    else {
+        return Decision::NoAnswer;
+    };
 
     if response.allowed {
         let file = ctx.patterns.and_then(|(dir, project)| {
