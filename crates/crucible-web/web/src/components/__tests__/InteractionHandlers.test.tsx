@@ -365,6 +365,7 @@ describe('PermissionInteraction', () => {
       id: 'perm-3',
       action_type: 'bash',
       tokens: ['rm', '-rf', '/tmp/test'],
+      pattern: 'rm -rf /tmp/test',
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -376,6 +377,32 @@ describe('PermissionInteraction', () => {
       allowed: true,
       pattern: 'rm -rf /tmp/test',
       scope: 'once',
+    });
+  });
+
+  // The daemon checks a grant against the canonical call. A Claude `Edit` is
+  // a file edit, so its grant is the path, not the tool name on the wire.
+  it('sends the grant that the daemon suggested, not a token of the request', async () => {
+    const request: InteractionOf<'permission'> = {
+      kind: 'permission',
+      id: 'perm-5',
+      action_type: 'tool',
+      tokens: ['Edit'],
+      tool_name: 'Edit',
+      pattern: '/w/a.rs',
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    await fireEvent.click(screen.getByTestId('perm-scopes-toggle'));
+    await fireEvent.click(screen.getByText('Project'));
+    await fireEvent.click(screen.getByText('Allow'));
+
+    expect(mockOnRespond).toHaveBeenCalledWith({
+      kind: 'permission',
+      allowed: true,
+      pattern: '/w/a.rs',
+      scope: 'project',
     });
   });
 

@@ -7,6 +7,16 @@ use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
 use unicode_width::UnicodeWidthStr;
 
+/// "Always allow" with the grant that the request suggests. With no grant
+/// that can name the call, the answer allows this call only.
+fn always_allow(request: &PermRequest, scope: PermissionScope) -> PermResponse {
+    request
+        .suggested_pattern()
+        .map_or_else(PermResponse::allow, |p| {
+            PermResponse::allow_pattern(p, scope)
+        })
+}
+
 impl InteractionModal {
     pub(super) fn handle_perm_key(
         &mut self,
@@ -30,10 +40,7 @@ impl InteractionModal {
                 {
                     InteractionModalOutput::PermissionResponse {
                         request_id: self.request_id.clone(),
-                        response: PermResponse::allow_pattern(
-                            perm_request.suggested_pattern(),
-                            PermissionScope::User,
-                        ),
+                        response: always_allow(&perm_request, PermissionScope::User),
                     }
                 }
                 KeyCode::Enter => self.handle_perm_confirm(&perm_request),
@@ -52,16 +59,13 @@ impl InteractionModal {
                 KeyCode::Char('a') | KeyCode::Char('A') => {
                     InteractionModalOutput::PermissionResponse {
                         request_id: self.request_id.clone(),
-                        response: PermResponse::allow_pattern(
-                            perm_request.suggested_pattern(),
-                            PermissionScope::Project,
-                        ),
+                        response: always_allow(&perm_request, PermissionScope::Project),
                     }
                 }
                 KeyCode::Tab => {
                     self.mode = InteractionMode::TextInput;
                     if self.selected == 2 {
-                        self.other_text = perm_request.suggested_pattern();
+                        self.other_text = perm_request.suggested_pattern().unwrap_or_default();
                     }
                     InteractionModalOutput::None
                 }
@@ -113,10 +117,7 @@ impl InteractionModal {
             },
             2 => InteractionModalOutput::PermissionResponse {
                 request_id: self.request_id.clone(),
-                response: PermResponse::allow_pattern(
-                    perm_request.suggested_pattern(),
-                    PermissionScope::Project,
-                ),
+                response: always_allow(perm_request, PermissionScope::Project),
             },
             _ => InteractionModalOutput::None,
         }

@@ -92,7 +92,7 @@ Shown when the agent needs approval for a tool call (see the footer hints):
 |-----|--------|
 | `y` | Allow this call |
 | `n` | Deny this call |
-| `a` | Allowlist: save the suggested pattern project-scoped and allow. For a shell call the suggestion is the command shown, which grants that command alone; add a trailing `*` with `Tab` to grant a wider prefix. A prefix keeps at least one argument — `cargo build *` is saved, `cargo *` is refused |
+| `a` | Allowlist: save the suggested pattern project-scoped and allow. For a shell call the suggestion is the command shown, which grants that command alone; add a trailing `*` with `Tab` to grant a wider prefix. A prefix keeps at least one argument — `cargo build *` is saved, `cargo *` is refused. For a file edit the suggestion is its path, and for another tool its exact name (type `mcp__github__*` for a whole server). A call that nothing names gets no suggestion |
 | `Up/Down` / `k`/`j` | Move between Yes / No / Allowlist |
 | `Enter` | Confirm the highlighted option |
 | `Shift+Enter` | On Allowlist: save the rule user-scoped (global) instead |

@@ -505,6 +505,11 @@ interface PermRequest {
   call?: CanonicalToolCall;
   /** The permission layer that asked, for example `ask mode`. */
   layer?: string;
+  /**
+   * The grant that "always allow" saves, which the daemon made from the call.
+   * Absent when no grant can name the call.
+   */
+  pattern?: string;
 }
 
 /** The seven request bodies, exactly as the Rust enum serializes them. */

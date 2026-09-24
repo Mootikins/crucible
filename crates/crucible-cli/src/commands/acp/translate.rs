@@ -341,7 +341,7 @@ pub fn outcome_to_interaction_response(
 
     // Suggested allowlist pattern for the "always" scopes.
     let pattern = match request {
-        InteractionRequest::Permission(perm) => Some(perm.suggested_pattern()),
+        InteractionRequest::Permission(perm) => perm.suggested_pattern(),
         _ => None,
     };
 

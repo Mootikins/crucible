@@ -267,7 +267,10 @@ mod pattern_matching_tests {
         let project_path = "/some/project";
 
         // What the modal sends when the user picks "Allowlist".
-        let response = PermResponse::allow_pattern(request.suggested_pattern(), scope);
+        let response = PermResponse::allow_pattern(
+            request.suggested_pattern().expect("the call has a grant"),
+            scope,
+        );
         let pattern = response.pattern.clone().expect("the modal sends a pattern");
 
         // What the daemon does with it, on the run that asked.
@@ -316,8 +319,10 @@ mod pattern_matching_tests {
         let approved = serde_json::json!({"command": "rm build/tmp.o"});
 
         let request = PermRequest::tool("bash", approved.clone());
-        let response =
-            PermResponse::allow_pattern(request.suggested_pattern(), PermissionScope::User);
+        let response = PermResponse::allow_pattern(
+            request.suggested_pattern().unwrap(),
+            PermissionScope::User,
+        );
         let pattern = response.pattern.clone().expect("the modal sends a pattern");
         let file = PatternStore::store_file_in(&whitelists_dir, response.scope, project_path)
             .expect("a persisted scope has a store file");
@@ -1336,7 +1341,8 @@ mod always_allow_covers_every_command_tool {
         let args = serde_json::json!({ "command": "cargo test" });
         let pattern =
             crate::agent_manager::messaging::permission::acp_prompt_request(&acp(), &args)
-                .suggested_pattern();
+                .suggested_pattern()
+                .expect("a command has a grant");
 
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("whitelists.d").join("user.toml");
@@ -1370,7 +1376,9 @@ mod always_allow_covers_every_command_tool {
                 );
 
                 // What the modal offers, and what the daemon does with it.
-                let pattern = PermRequest::tool(name.clone(), args.clone()).suggested_pattern();
+                let pattern = PermRequest::tool(name.clone(), args.clone())
+                    .suggested_pattern()
+                    .expect("a command has a grant");
                 let tmp = TempDir::new().unwrap();
                 let file = tmp.path().join("whitelists.d").join("user.toml");
                 AgentManager::store_pattern_to(

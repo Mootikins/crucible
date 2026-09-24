@@ -754,7 +754,7 @@ mod acp_tool_policy_tests {
     use agent_client_protocol::schema::v1::{RequestPermissionOutcome, RequestPermissionRequest};
     use crucible_core::agent::ToolPolicy;
     use crucible_core::config::components::permissions::PermissionConfig;
-    use crucible_core::types::{classify_acp, CanonicalToolCall};
+    use crucible_core::types::{classify_acp, CanonicalToolCall, RawToolCall};
 
     /// One decided permission request, and whether the user was asked.
     struct Asked {
@@ -888,6 +888,113 @@ mod acp_tool_policy_tests {
         Asked {
             outcome,
             prompts: answers.await.expect("join"),
+        }
+    }
+
+    /// Ask about each call in turn, in one session whose user answers each
+    /// prompt with "always allow" and the grant that the prompt suggests.
+    /// Whether each call was put to the user.
+    async fn asked_with_always_allow(calls: Vec<CanonicalToolCall>) -> Vec<bool> {
+        use crucible_core::interaction::{InteractionRequest, PermissionScope};
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let whitelists = tempfile::TempDir::new().unwrap();
+        let (event_tx, mut events) = broadcast::channel::<SessionEventMessage>(16);
+        let slot = Arc::new(crate::agent_manager::slot::SessionSlot::default());
+        slot.set_turn_gate(crate::agent_manager::slot::TurnGate {
+            is_interactive: true,
+            ..Default::default()
+        });
+        let prompts = Arc::new(AtomicUsize::new(0));
+        let (user, counted) = (slot.clone(), prompts.clone());
+        tokio::spawn(async move {
+            while let Ok(msg) = events.recv().await {
+                let Some(id) = msg.data["request_id"].as_str() else {
+                    continue;
+                };
+                let Ok(InteractionRequest::Permission(request)) =
+                    serde_json::from_value(msg.data["request"].clone())
+                else {
+                    continue;
+                };
+                counted.fetch_add(1, SeqCst);
+                let answer = request
+                    .suggested_pattern()
+                    .map_or_else(PermResponse::allow, |p| {
+                        PermResponse::allow_pattern(p, PermissionScope::User)
+                    });
+                if let Some(pending) = user.take_permission(id) {
+                    let _ = pending.response_tx.send(answer);
+                }
+            }
+        });
+        let gate = AcpGate {
+            slot,
+            session_id: "sess-1".to_string(),
+            event_tx,
+            workspace: PathBuf::from("/w"),
+            whitelists_dir: Some(whitelists.path().to_path_buf()),
+            hooks: None,
+            engine: PermissionEngine::new(None),
+            tool_policy: None,
+        };
+        let options: Vec<agent_client_protocol::schema::v1::PermissionOption> =
+            serde_json::from_value(options()).expect("the options parse");
+        let mut asked = Vec::new();
+        for call in calls {
+            let before = prompts.load(SeqCst);
+            gate.decide(call, &options).await;
+            asked.push(prompts.load(SeqCst) > before);
+        }
+        asked
+    }
+
+    /// One "always allow" answers the same call next time, and never a
+    /// different tool. A call that nothing names gets no grant, because a
+    /// grant for its kind would answer each other unnamed call.
+    #[tokio::test]
+    async fn always_allow_answers_the_same_call_and_no_other() {
+        let named =
+            |name: &str| classify_acp(RawToolCall::from(&claude_request(name).tool_call), &[]);
+        let edit = |path: &str| {
+            classify_acp(
+                serde_json::from_value(serde_json::json!({
+                    "toolCallId": "toolu_02",
+                    "name": "Edit",
+                    "kind": "edit",
+                    "content": [{ "type": "diff", "path": path, "oldText": "a", "newText": "b" }],
+                }))
+                .expect("a raw tool call"),
+                &[],
+            )
+        };
+        let cases = [
+            (
+                "an MCP tool",
+                vec![
+                    named("mcp__github__create_pr"),
+                    named("mcp__github__create_pr"),
+                    named("mcp__github__delete_repo"),
+                ],
+                vec![true, false, true],
+            ),
+            (
+                "a Claude Edit",
+                vec![edit("/w/a.rs"), edit("/w/a.rs"), edit("/w/b.rs")],
+                vec![true, false, true],
+            ),
+            (
+                "an unnamed call",
+                vec![unnamed("other", "Do A"), unnamed("other", "Do B")],
+                vec![true, true],
+            ),
+            (
+                "an unnamed read",
+                vec![unnamed("read", "Read A"), unnamed("read", "Read B")],
+                vec![true, true],
+            ),
+        ];
+        for (what, calls, expected) in cases {
+            assert_eq!(asked_with_always_allow(calls).await, expected, "{what}");
         }
     }
 

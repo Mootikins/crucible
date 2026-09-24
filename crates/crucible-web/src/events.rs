@@ -515,6 +515,16 @@ pub(crate) fn normalize_interaction(data: &serde_json::Value) -> serde_json::Val
                 out[key] = value.clone();
             }
         }
+        // The grant that "always allow" saves. The daemon checks the grant
+        // against the canonical call, so the browser must not make its own.
+        let grant = serde_json::from_value::<crucible_core::interaction::InteractionRequest>(
+            request.clone(),
+        );
+        if let Ok(crucible_core::interaction::InteractionRequest::Permission(perm)) = grant {
+            if let Some(pattern) = perm.suggested_pattern() {
+                out["pattern"] = json!(pattern);
+            }
+        }
         return out;
     }
 
@@ -902,9 +912,33 @@ mod tests {
                 assert_eq!(request["call"]["agent"], "codex");
                 assert_eq!(request["call"]["command"], "cargo test");
                 assert_eq!(request["layer"], "ask mode");
+                assert_eq!(request["pattern"], "cargo test");
             }
             other => panic!("expected InteractionRequested, got {other:?}"),
         }
+    }
+
+    /// "Always allow" saves the grant that the daemon suggests from the
+    /// call: the exact tool name, and no grant for a call that nothing names.
+    #[test]
+    fn a_permission_carries_the_grant_of_its_call() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+        use crucible_core::types::CanonicalToolCall;
+
+        let pattern = |tool: &str| {
+            let call = CanonicalToolCall::crucible_tool(tool, &serde_json::json!({}));
+            let request = InteractionRequest::Permission(PermRequest {
+                call: Some(Box::new(call)),
+                ..PermRequest::tool(tool, serde_json::json!({}))
+            });
+            let event = SessionEventMessage::interaction_requested("s1", "perm-4", &request);
+            match ChatEvent::from_daemon_event(&event) {
+                ChatEvent::InteractionRequested { request, .. } => request["pattern"].clone(),
+                other => panic!("expected InteractionRequested, got {other:?}"),
+            }
+        };
+        assert_eq!(pattern("mcp__github__create_pr"), "mcp__github__create_pr");
+        assert_eq!(pattern("tool"), serde_json::Value::Null);
     }
 
     #[test]

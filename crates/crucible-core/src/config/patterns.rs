@@ -738,7 +738,7 @@ mod tests {
         for request in requests {
             let mut store = PatternStore::new();
             store
-                .add_bash_pattern(&request.suggested_pattern())
+                .add_bash_pattern(&request.suggested_pattern().expect("a command has a grant"))
                 .unwrap();
 
             assert!(

@@ -64,13 +64,10 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const isNamedTool = () =>
     props.request.action_type === 'tool' && !!props.request.tool_name;
   const chipLabel = () => (isNamedTool() ? props.request.tool_name! : actionInfo().label);
-  // Two values, deliberately separate: the daemon's permission engine
-  // pattern-matches against the EXACT token shape (`tokens.join(' ')`), so
-  // the response payload must carry the raw pattern. The display can still
-  // pretty-print the same string for human legibility — but the formatted
-  // version must never reach `PermResponse.pattern`, or "Allow for session"
-  // silently fails to grant (the persisted pattern won't match future
-  // requests).
+  // The command line as the request carries it, for the display only. The
+  // grant that "always allow" saves is `request.pattern`, which the daemon
+  // made from the canonical call: the daemon checks the grant against that
+  // call, so a grant that the browser made could never match it.
   const commandPattern = () => props.request.tokens.join(' ');
   const commandDisplay = () => prettyPrintMaybeJson(commandPattern());
 
@@ -94,7 +91,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
     props.onRespond({
       kind: 'permission',
       allowed: true,
-      pattern: commandPattern(),
+      pattern: props.request.pattern,
       scope: scope(),
     });
   };

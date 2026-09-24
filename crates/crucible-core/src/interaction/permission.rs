@@ -166,46 +166,52 @@ impl PermRequest {
         }
     }
 
-    /// Suggested pattern for allowlisting this request.
+    /// The grant that "always allow" saves for this request, or `None` when
+    /// no grant can name the call.
     ///
-    /// For bash: the command line itself (e.g., `cargo build --release`).
-    /// For file ops: directory prefix (e.g., `src/`).
-    /// For tools: tool name, or MCP prefix + `*` (e.g., `fs_*`).
+    /// The suggestion reads the canonical call, the same call that the
+    /// daemon stores the grant for and checks it against:
+    ///
+    /// - a command: the command line;
+    /// - a file edit: its one path;
+    /// - another call: its exact tool name, never a prefix such as `mcp_*`.
+    ///   The user who wants `mcp__github__*` types the `*`.
+    ///
+    /// A command that Crucible cannot read, an edit of no path or of several
+    /// paths, and a call that nothing names (its tool is its kind) get
+    /// `None`. A grant for them would cover other calls too.
     ///
     /// A suggestion is the *default* grant, so it may never be wider than the
     /// action the modal displayed. The first token alone was wider: the user
     /// read `rm build/tmp.o` and the offered grant was `rm *`, which covers
     /// `rm -rf /home/user/project` on every project, for as long as the store
-    /// file lives. A shell tool call answers with its command for the same
-    /// reason — the tool name `bash` is a bash pattern, and as a prefix it
-    /// read `bash -c <anything>`. The user who wants a wider grant edits the
-    /// suggestion and types the `*`; see
-    /// [`crate::config::PatternStore::matches_bash`].
-    pub fn suggested_pattern(&self) -> String {
-        match &self.action {
-            PermAction::Bash { tokens } => {
-                if tokens.is_empty() {
-                    "*".to_string()
-                } else {
-                    Self::bash_suggestion(&tokens.join(" "))
-                }
+    /// file lives. See [`crate::config::PatternStore::matches_bash`].
+    pub fn suggested_pattern(&self) -> Option<String> {
+        let derived;
+        let call = match (&self.call, &self.action) {
+            (Some(call), _) => call.as_ref(),
+            (None, PermAction::Tool { name, args }) => {
+                derived = CanonicalToolCall::crucible_tool(name, args);
+                &derived
             }
-            PermAction::Read { segments } | PermAction::Write { segments } => {
-                if segments.is_empty() {
-                    "*".to_string()
-                } else {
-                    format!("{}/", segments[0])
-                }
+            (None, PermAction::Bash { tokens }) => {
+                return Some(tokens.join(" "))
+                    .filter(|c| !c.is_empty())
+                    .map(|c| Self::bash_suggestion(&c))
             }
-            PermAction::Tool { name, args } => {
-                match CanonicalToolCall::crucible_tool(name, args).command {
-                    Some(command) => Self::bash_suggestion(&command),
-                    None => match name.find('_') {
-                        Some(prefix_end) => format!("{}_*", &name[..prefix_end]),
-                        None => name.clone(),
-                    },
-                }
+            (None, PermAction::Read { segments } | PermAction::Write { segments }) => {
+                return Some(segments.join("/")).filter(|p| !p.is_empty())
             }
+        };
+        match (call.kind.as_str(), &call.command) {
+            ("command", Some(command)) => Some(Self::bash_suggestion(command)),
+            ("command", None) => None,
+            ("file_edit", _) => match call.paths.as_slice() {
+                [path] => Some(path.clone()),
+                _ => None,
+            },
+            _ if call.tool == call.kind => None,
+            _ => Some(call.tool.clone()),
         }
     }
 
@@ -311,7 +317,7 @@ mod tests {
         ];
 
         for request in requests {
-            let suggestion = request.suggested_pattern();
+            let suggestion = request.suggested_pattern().expect("a command has a grant");
             assert!(
                 !suggestion.ends_with('*'),
                 "suggested {suggestion:?} for {request:?}"
