@@ -380,11 +380,13 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
+    /// A plugin pause is the pause an RPC client gets: the stop owner runs the
+    /// end hooks, which release the isolation claim and the container.
     fn pause(&self, session_id: String) -> BoxFut<()> {
-        bridge_async!(self.session_manager, |sm| async move {
-            sm.pause_session(&session_id)
+        bridge_async!(self.ctx, |ctx| async move {
+            ctx.session_lifecycle
+                .stop_from_lua(&session_id, crate::session_lifecycle::StopCause::Pause)
                 .await
-                .map(|_| ())
                 .map_err(|e| e.to_string())
         })
     }
@@ -405,20 +407,17 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    /// A plugin end runs the end hooks, as the RPC `session.end` does. The
-    /// start hooks of the session claimed isolation and maybe a container,
-    /// and only the end hooks release them.
+    /// A plugin end is the end an RPC client gets, through the one stop
+    /// owner: the end hooks, the release of the attachment and the agent
+    /// state, and the `session:ended` event. Lua that holds the plugin runtime
+    /// gets the stop after that Lua returns; see
+    /// [`SessionLifecycle::stop_from_lua`](crate::session_lifecycle::SessionLifecycle::stop_from_lua).
     fn end_session(&self, session_id: String) -> BoxFut<()> {
         bridge_async!(self.ctx, |ctx| async move {
             ctx.session_lifecycle
-                .fire_session_end_from_lua(&session_id)
-                .await;
-            ctx.sessions
-                .end_session(&session_id)
+                .stop_from_lua(&session_id, crate::session_lifecycle::StopCause::End)
                 .await
-                .map_err(|e| e.to_string())?;
-            ctx.agents.cleanup_session(&session_id);
-            Ok(())
+                .map_err(|e| e.to_string())
         })
     }
 

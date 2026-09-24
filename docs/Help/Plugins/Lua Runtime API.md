@@ -652,6 +652,11 @@ local cancelled, err = cru.session.cancel(session_id)
 
 Pause a session. Returns `(true, nil)` on success.
 
+The pause is the pause of the `session.pause` RPC. The plugin end hooks run,
+and they release the isolation claim and the container that the start hooks
+made. The session keeps its conversation and its context attachments, so a
+resume continues it. The daemon sends `session:ended` with the reason `paused`.
+
 ### cru.session.resume(session_id)
 
 Resume a paused session. Returns `(true, nil)` on success.
@@ -670,10 +675,15 @@ session back is refused for the same reason.
 
 End a session permanently. Returns `(true, nil)` on success.
 
-The end runs the plugin end hooks, as the `session.end` RPC does. The hooks
-release the isolation claim and the container that the start hooks made. Lua
-that holds the plugin runtime cannot run them at once, so there the hooks run
-after that Lua returns.
+The end is the end of the `session.end` RPC. The plugin end hooks run, and
+they release the isolation claim and the container that the start hooks made.
+Then the daemon releases the context attachment and the agent state, and it
+sends `session:ended` with the reason `ended`.
+
+Lua that holds the plugin runtime (a session hook, `lua.eval`) cannot wait for
+it. There the call refuses a session that cannot end at once, and the whole
+stop runs after that Lua returns, in the same order. `pause` works the same
+way.
 
 ```lua
 cru.session.end_session(session_id)

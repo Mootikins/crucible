@@ -112,7 +112,7 @@ disagree.
 | `note:renamed` | a note moved, with its inbound links repointed |
 | `webhook:received` | a signed delivery arrived at `POST /api/webhook/{name}` |
 | `session:created` | a session was created, daemon-wide |
-| `session:ended` | a session ended, daemon-wide |
+| `session:ended` | a session stopped, daemon-wide; `event.reason` names the cause |
 
 The ten events below the line come off the daemon rather than an agent turn,
 so they fire whether or not a session is mid-conversation — that is the point of
@@ -130,6 +130,12 @@ Their identifiers, for `opts.pattern`:
 | `note:renamed` | the **destination** path |
 | `webhook:received` | the webhook name |
 | `session:created`, `session:ended` | *none* — see below |
+
+`session:ended` fires once for each stop that takes a session out of service.
+`event.reason` is `paused`, `ended`, `archived`, `auto_archived`, `deleted`,
+`refused` or `child_done`. An archive or a delete of a session that already
+ended sends no second event. The daemon sends the event after the plugin end
+hooks ran and after the daemon released the session state.
 
 **`session:created` and `session:ended` take no `pattern`.** The session id
 was their identifier, which made `{ pattern = id }` a second way to say

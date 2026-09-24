@@ -122,10 +122,12 @@ async fn a_plugin_creating_a_session_from_on_session_end_is_refused_and_does_not
 
     tokio::time::timeout(
         Duration::from_secs(30),
-        ctx.session_lifecycle.fire_session_end(&ending),
+        ctx.session_lifecycle
+            .stop(&ending, crate::session_lifecycle::StopCause::End),
     )
     .await
-    .expect("fire_session_end deadlocked on the plugin loader mutex");
+    .expect("fire_session_end deadlocked on the plugin loader mutex")
+    .expect("the stop succeeds");
 
     let hook_error: Option<String> = plugin_lua.globals().get("hook_error").unwrap();
     let hook_error = hook_error.expect(
@@ -166,10 +168,12 @@ async fn a_plugin_creating_a_session_from_a_task_that_on_session_end_starts_gets
 
     tokio::time::timeout(
         Duration::from_secs(30),
-        ctx.session_lifecycle.fire_session_end(&ending),
+        ctx.session_lifecycle
+            .stop(&ending, crate::session_lifecycle::StopCause::End),
     )
     .await
-    .expect("fire_session_end deadlocked on the plugin loader mutex");
+    .expect("fire_session_end deadlocked on the plugin loader mutex")
+    .expect("the stop succeeds");
     tokio::time::timeout(Duration::from_secs(30), async {
         while plugin_lua
             .globals()
@@ -303,7 +307,10 @@ async fn session_end_sweeps_the_handlers_that_session_activated() {
     assert_eq!(scoped.len(), 2, "the start hook activated two handlers");
 
     *plugin_loader.lock().await = Some(loader);
-    ctx.session_lifecycle.fire_session_end(&session.id).await;
+    ctx.session_lifecycle
+        .stop(&session.id, crate::session_lifecycle::StopCause::End)
+        .await
+        .expect("the stop succeeds");
 
     let end_hook_ran: Option<String> = plugin_lua.globals().get("end_hook_ran").unwrap();
     assert_eq!(
@@ -412,7 +419,10 @@ async fn session_end_forgets_the_sessions_statusline_values() {
     );
 
     *plugin_loader.lock().await = Some(loader);
-    ctx.session_lifecycle.fire_session_end(&session.id).await;
+    ctx.session_lifecycle
+        .stop(&session.id, crate::session_lifecycle::StopCause::End)
+        .await
+        .expect("the stop succeeds");
 
     assert!(
         exprs.snapshot(&session.id).is_empty(),

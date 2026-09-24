@@ -16,7 +16,7 @@
 use crate::agent_manager::{AgentManager, TurnOutcome, TurnStatus};
 use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
-use crate::session_lifecycle::SessionLifecycle;
+use crate::session_lifecycle::{SessionLifecycle, StopCause};
 use crate::session_manager::SessionManager;
 use async_trait::async_trait;
 use crucible_core::background::{JobError, JobInfo, JobKind, JobResult};
@@ -195,9 +195,7 @@ impl DelegationService {
             return Ok(());
         };
         if registry.get(parent_id).is_some() && registry.get(child_id).is_none() {
-            if let Some(lifecycle) = self.session_lifecycle.get() {
-                lifecycle.fire_session_end(child_id).await;
-            }
+            self.stop_child(child_id, StopCause::Refuse).await;
             anyhow::bail!(
                 "the parent session is sandboxed but no plugin claimed isolation for \
                  the child: its sandbox is gone or was declined, and a child that \
@@ -205,6 +203,19 @@ impl DelegationService {
             );
         }
         Ok(())
+    }
+
+    /// Stop a delegated child through the stop owner.
+    async fn stop_child(&self, child_id: &str, cause: StopCause) {
+        let manager = self.agent_manager.get().and_then(Weak::upgrade);
+        stop_child_session(
+            self.session_lifecycle.get().map(Arc::as_ref),
+            &self.session_manager,
+            manager.as_deref(),
+            child_id,
+            cause,
+        )
+        .await;
     }
 
     /// Delegation depth of a session: number of parent links above it.
@@ -480,9 +491,10 @@ impl DelegationSpawner for DelegationService {
         // through the RPC dispatcher, the only place that fired them, so a
         // sandboxed parent's subagent got no container, no claim, and ran
         // every tool on the host.
+        // A refused child is already stopped: the start checks and the
+        // backstop both stop it through the stop owner.
         if let Err(e) = self.enforce_child_isolation(&parent.id, &child.id).await {
             drop(permit);
-            let _ = self.session_manager.end_session(&child.id).await;
             return Err(JobError::SpawnFailed(format!("Delegation refused: {e}")));
         }
 
@@ -534,9 +546,10 @@ impl DelegationSpawner for DelegationService {
         {
             Ok(pair) => pair,
             Err(e) => {
-                // Undo the spawn: end the child session, free the permit.
+                // Undo the spawn: stop the child session, free the permit.
+                // Its start hooks ran, so the stop runs its end hooks.
                 drop(permit);
-                let _ = self.session_manager.end_session(&child.id).await;
+                self.stop_child(&child.id, StopCause::ChildDone).await;
                 let mut failed_info = info;
                 failed_info.mark_failed();
                 let result = JobResult::failure(failed_info, e.to_string());
@@ -598,22 +611,19 @@ impl DelegationSpawner for DelegationService {
             // does. Finalize the child's lifecycle BEFORE publishing the
             // result so an awaiter observes a fully-ended child session.
             //
-            // Plugin teardown first, and it has to happen here: this is the
-            // only place a delegated child is ended, and `fire_session_end`
-            // needs the session still in the manager. It is what releases the
-            // isolation claim and decrements the plugin's per-workspace
-            // container refcount — without it every delegated child leaks
+            // The stop owner runs the whole stop, end hooks first: it releases
+            // the isolation claim and decrements the plugin's per-workspace
+            // container refcount. Without it every delegated child leaks
             // both, and a claim outliving its session denies tools for an id
             // that may be reused.
-            if let Some(lifecycle) = lifecycle.as_ref() {
-                lifecycle.fire_session_end(&child_id).await;
-            }
-            if let Err(e) = session_manager.end_session(&child_id).await {
-                debug!(child_id = %child_id, error = %e, "Child session already ended");
-            }
-            if let Some(m) = manager_weak.as_ref().and_then(Weak::upgrade) {
-                m.cleanup_session(&child_id);
-            }
+            stop_child_session(
+                lifecycle.as_deref(),
+                &session_manager,
+                manager_weak.as_ref().and_then(Weak::upgrade).as_deref(),
+                &child_id,
+                StopCause::ChildDone,
+            )
+            .await;
 
             // send_replace, not send: `send` fails (and DISCARDS the value)
             // when no receiver currently exists, which is exactly the case
@@ -721,6 +731,33 @@ impl DelegationSpawner for DelegationService {
             // (Cancelled); the watcher finalizes the record from there.
             Ok(m) => m.cancel(delegation_id).await,
             Err(_) => false,
+        }
+    }
+}
+
+/// Stop a delegated child. The stop owner runs every step. A service with no
+/// lifecycle has no plugin runtime, so there are no end hooks to run, and only
+/// the state change and the agent cleanup are left.
+async fn stop_child_session(
+    lifecycle: Option<&SessionLifecycle>,
+    session_manager: &SessionManager,
+    manager: Option<&AgentManager>,
+    child_id: &str,
+    cause: StopCause,
+) {
+    match lifecycle {
+        Some(lifecycle) => {
+            if let Err(e) = lifecycle.stop(child_id, cause).await {
+                debug!(child_id = %child_id, error = %e, "Child session did not stop");
+            }
+        }
+        None => {
+            if let Err(e) = session_manager.end_session(child_id).await {
+                debug!(child_id = %child_id, error = %e, "Child session already ended");
+            }
+            if let Some(manager) = manager {
+                manager.cleanup_session(child_id);
+            }
         }
     }
 }

@@ -37,7 +37,7 @@ use tokio::sync::{broadcast, Mutex};
 ///
 /// It reads the persisted `session.isolation`, as the `oci` plugin does, so a
 /// session gets a claim back only when its start hooks fire again.
-const CLAIMS_REQUESTED_ISOLATION: &str = r#"
+pub(super) const CLAIMS_REQUESTED_ISOLATION: &str = r#"
 cru.on_session_start(function(session)
   if session.isolation then
     cru.isolation.require{ session = session.id, plugin = "sandbox" }
@@ -68,12 +68,12 @@ return { name = "sandbox", version = "0.1.0", description = "claims nothing" }
 
 /// Write [`CLAIMS_REQUESTED_ISOLATION`] as a plugin under `dir` and return the
 /// plugin root.
-fn sandbox_plugin(dir: &Path) -> std::path::PathBuf {
+pub(super) fn sandbox_plugin(dir: &Path) -> std::path::PathBuf {
     sandbox_plugin_with(dir, CLAIMS_REQUESTED_ISOLATION)
 }
 
 /// Write `init` as the `sandbox` plugin under `dir` and return the plugin root.
-fn sandbox_plugin_with(dir: &Path, init: &str) -> std::path::PathBuf {
+pub(super) fn sandbox_plugin_with(dir: &Path, init: &str) -> std::path::PathBuf {
     let root = dir.join("plugins");
     let plugin = root.join("sandbox");
     std::fs::create_dir_all(&plugin).expect("plugin dir");
@@ -82,8 +82,8 @@ fn sandbox_plugin_with(dir: &Path, init: &str) -> std::path::PathBuf {
 }
 
 /// One daemon process, over storage that outlives it.
-struct Daemon {
-    ctx: Arc<RpcContext>,
+pub(super) struct Daemon {
+    pub(super) ctx: Arc<RpcContext>,
     dispatcher: RpcDispatcher,
     /// The plugin VM, when the daemon has a plugin runtime.
     lua: Option<Arc<mlua::Lua>>,
@@ -95,7 +95,7 @@ impl Daemon {
     /// `plugins` is a plugin root to activate. `None` boots a daemon with no
     /// plugin runtime, which is a daemon where the isolating plugin is gone.
     /// `hook_lua` runs on the plugin VM before the runtime is shared.
-    async fn boot(
+    pub(super) async fn boot(
         data_home: &Path,
         kiln: &Path,
         plugins: Option<&Path>,
@@ -165,20 +165,20 @@ impl Daemon {
         }
     }
 
-    fn lua(&self) -> &mlua::Lua {
+    pub(super) fn lua(&self) -> &mlua::Lua {
         self.lua.as_ref().expect("this daemon has a plugin runtime")
     }
 
     /// A live session that asked for isolation and got a claim, made the way
     /// `session.create` makes one: stored, configured, then started.
-    async fn isolated_session(&self) -> String {
+    pub(super) async fn isolated_session(&self) -> String {
         self.started_session(Some(json!("sandbox"))).await
     }
 
     /// A live session with a claim, made the way `session.create` makes one:
     /// stored, configured, then started. `isolation` is the value the caller
     /// persisted. `None` leaves the decision to the plugin configuration.
-    async fn started_session(&self, isolation: Option<serde_json::Value>) -> String {
+    pub(super) async fn started_session(&self, isolation: Option<serde_json::Value>) -> String {
         let sm = &self.ctx.sessions;
         let session = sm
             .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
@@ -208,7 +208,7 @@ impl Daemon {
         id
     }
 
-    async fn claimed(&self, session_id: &str) -> bool {
+    pub(super) async fn claimed(&self, session_id: &str) -> bool {
         self.ctx
             .session_lifecycle
             .isolation_claim(session_id)
@@ -216,12 +216,12 @@ impl Daemon {
             .is_some()
     }
 
-    fn state(&self, session_id: &str) -> Option<SessionState> {
+    pub(super) fn state(&self, session_id: &str) -> Option<SessionState> {
         self.ctx.sessions.get_session(session_id).map(|s| s.state)
     }
 
     /// A scripted agent, so a turn that is allowed to run needs no provider.
-    fn inject_agent(&self, session_id: &str) {
+    pub(super) fn inject_agent(&self, session_id: &str) {
         self.ctx.agents.install_agent_for_test(
             session_id.to_string(),
             Arc::new(Mutex::new(Box::new(StreamingMockAgent {
@@ -230,7 +230,7 @@ impl Daemon {
         );
     }
 
-    async fn rpc(&self, method: &str, params: serde_json::Value) -> Response {
+    pub(super) async fn rpc(&self, method: &str, params: serde_json::Value) -> Response {
         self.dispatcher
             .dispatch(
                 ClientId::new(),
@@ -408,10 +408,14 @@ end)
 
     tokio::time::timeout(
         Duration::from_secs(30),
-        daemon.ctx.session_lifecycle.fire_session_end(&ending.id),
+        daemon
+            .ctx
+            .session_lifecycle
+            .stop(&ending.id, crate::session_lifecycle::StopCause::End),
     )
     .await
-    .expect("a resume inside a session hook waited for the plugin runtime its hook holds");
+    .expect("a resume inside a session hook waited for the plugin runtime its hook holds")
+    .expect("the stop succeeds");
 
     let err: Option<String> = daemon.lua().globals().get("resume_err").unwrap();
     let err = err.expect("a resume that cannot run the start hooks must be refused");
@@ -759,21 +763,26 @@ end)
         .unwrap();
     tokio::time::timeout(
         Duration::from_secs(30),
-        daemon.ctx.session_lifecycle.fire_session_end(&ending.id),
+        daemon
+            .ctx
+            .session_lifecycle
+            .stop(&ending.id, crate::session_lifecycle::StopCause::End),
     )
     .await
-    .expect("a plugin end inside a session hook waited for the plugin runtime its hook holds");
+    .expect("a plugin end inside a session hook waited for the plugin runtime its hook holds")
+    .expect("the stop succeeds");
 
     let err: Option<String> = daemon.lua().globals().get("end_err").unwrap();
     assert_eq!(err, None, "the end itself succeeds");
-    assert_eq!(daemon.state(&target), Some(SessionState::Ended));
+    // The whole stop runs after the hook returns, in its fixed order: the end
+    // hooks release the claim, then the session ends.
     tokio::time::timeout(Duration::from_secs(30), async {
-        while daemon.claimed(&target).await {
+        while daemon.claimed(&target).await || daemon.state(&target) != Some(SessionState::Ended) {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("the end hooks of a session that a hook ended never ran: its claim stayed");
+    .expect("the stop of a session that a hook ended never ran: its claim stayed");
 }
 
 /// A plugin that loads runs its Lua with the plugin runtime held. A session

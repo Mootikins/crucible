@@ -257,10 +257,12 @@ async fn shipped_reflection_proposes_a_note_on_session_end() {
     let source = rig.finished_session(Some(workspace)).await;
     tokio::time::timeout(
         Duration::from_secs(10),
-        ctx.session_lifecycle.fire_session_end(&source.id),
+        ctx.session_lifecycle
+            .stop(&source.id, crate::session_lifecycle::StopCause::End),
     )
     .await
-    .expect("reflection end hook completes without re-entering the loader lock");
+    .expect("reflection end hook completes without re-entering the loader lock")
+    .expect("the stop succeeds");
     // The hook starts the pass in a task, because the pass's own session runs
     // the start hooks, and the hook holds the plugin runtime. Wait for the
     // whole end of the pass: the Lua end marks the session ended, then drops
@@ -405,7 +407,10 @@ async fn shipped_reflection_proposes_a_note_on_session_end() {
             .is_empty(),
         "the source owns no edits from the reflection pass"
     );
-    ctx.session_lifecycle.fire_session_end(&source.id).await;
+    ctx.session_lifecycle
+        .stop(&source.id, crate::session_lifecycle::StopCause::End)
+        .await
+        .expect_err("a second end of an ended session is refused");
     assert_eq!(
         sessions.list_sessions().len(),
         2,

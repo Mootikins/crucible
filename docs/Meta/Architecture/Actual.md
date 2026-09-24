@@ -207,7 +207,8 @@ and persistence.
 | `ToolCallTracker` | `crucible-daemon/src/agent_manager/tool_tracking.rs:3` | Counts repeated identical tool calls |
 | `SessionManager` | `crucible-daemon/src/session_manager.rs:147` | In-memory session map plus persistence |
 | `SessionError` | `crucible-daemon/src/session_manager.rs:925` | NotFound, AlreadyEnded, InvalidState, IoError |
-| `SessionLifecycle` | `crucible-daemon/src/session_lifecycle.rs:37` | Plugin start and end hooks for create (RPC and Lua), fork, delegation, resume and revive-on-send; refuses an unenforceable isolation claim and a persisted isolation request or claim record that no plugin claimed |
+| `SessionLifecycle` | `crucible-daemon/src/session_lifecycle.rs` | Plugin start and end hooks for create (RPC and Lua), fork, delegation, resume and revive-on-send; refuses an unenforceable isolation claim and a persisted isolation request or claim record that no plugin claimed. `stop(id, StopCause)` is the one owner of every stop: pause, end, archive, auto-archive, delete, refusal and the end of a delegated child |
+| `StopCause`, `Stopped`, `StopError` | `crucible-daemon/src/session_lifecycle.rs` | Why a session stops, what the state change returned, why a stop was refused |
 | `DelegationService` | `crucible-daemon/src/delegation.rs:93` | Spawn, await, cancel, list child sessions |
 | `DelegationRequest`, `DelegationSpawned` | `crucible-daemon/src/delegation.rs:41,55` | Spawn input and result |
 | `AgentFactoryError` | `crucible-daemon/src/agent_factory.rs:370` | ClientCreation, AgentBuild, UnsupportedAgentType |
@@ -251,6 +252,15 @@ under `<session_dir>/tools/` (`tool_call.rs:887`). Lock order: the
 session-state `tokio::Mutex` is held for session-VM handler passes and released
 before plugin-VM passes (`messaging/permission.rs:1130-1138`). The auto-archive
 sweep runs every 30 min with a 72 h default (`server/mod.rs:664-667`).
+
+Every stop goes through `SessionLifecycle::stop`. Under the plugin-loader
+mutex it runs the end stage (claim, status slots, `on_session_end` hooks,
+once for each start), releases the context attachment, changes the state,
+runs `cleanup_session`, and sweeps the session-scoped handlers and statusline
+values. Then it sends one `session:ended {session_id, reason}` to the system
+session, and it stops the children of an archive or a delete. A pause keeps
+the attachment and the agent state. Lua that holds the plugin runtime calls
+`stop_from_lua`, which runs the same stop on another task.
 
 **Confirmed problems.**
 

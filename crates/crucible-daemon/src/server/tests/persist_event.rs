@@ -5,14 +5,20 @@ use crate::test_support::temp_session_manager;
 use async_trait::async_trait;
 use crucible_core::session::{SessionSummary, SessionType};
 
-/// Minimal AgentManager for exercising the sweep's cleanup call.
-fn sweep_test_agent_manager() -> AgentManager {
+/// The stop owner the sweep calls, over `session_manager`, with an agent
+/// manager bound so the stop runs `cleanup_session`. Keep the manager: the
+/// lifecycle holds it weakly.
+fn sweep_lifecycle(
+    session_manager: &Arc<SessionManager>,
+) -> (
+    Arc<crate::session_lifecycle::SessionLifecycle>,
+    Arc<AgentManager>,
+) {
     let (event_tx, _) = broadcast::channel(16);
-    let session_manager = temp_session_manager();
-    AgentManager::new(AgentManagerParams {
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
-        session_manager,
-        background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
+        session_manager: session_manager.clone(),
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
         mcp_gateway: None,
         llm_config: None,
         acp_config: None,
@@ -21,7 +27,14 @@ fn sweep_test_agent_manager() -> AgentManager {
         plugin_loader: None,
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
-    })
+    }));
+    let lifecycle = crate::session_lifecycle::SessionLifecycle::new(
+        session_manager.clone(),
+        Arc::new(tokio::sync::Mutex::new(None)),
+        event_tx,
+    );
+    lifecycle.bind_agent_manager(&agent_manager);
+    (lifecycle, agent_manager)
 }
 
 struct FailingStorage(PathBuf);
@@ -324,7 +337,7 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
         &subscription_manager,
-        &sweep_test_agent_manager(),
+        &sweep_lifecycle(&session_manager).0,
         72,
     )
     .await
@@ -361,7 +374,7 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
         .unwrap();
 
     // Simulate per-turn agent state that the sweep must free.
-    let agent_manager = sweep_test_agent_manager();
+    let (lifecycle, agent_manager) = sweep_lifecycle(&session_manager);
     agent_manager.snapshots.insert(
         session.id.to_string(),
         0,
@@ -369,14 +382,10 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
     );
     assert!(!agent_manager.snapshots.is_empty());
 
-    let archived = sweep_and_archive_stale_sessions(
-        &session_manager,
-        &subscription_manager,
-        &agent_manager,
-        72,
-    )
-    .await
-    .unwrap();
+    let archived =
+        sweep_and_archive_stale_sessions(&session_manager, &subscription_manager, &lifecycle, 72)
+            .await
+            .unwrap();
 
     assert_eq!(archived, 1);
     assert!(
@@ -424,7 +433,7 @@ async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
         &subscription_manager,
-        &sweep_test_agent_manager(),
+        &sweep_lifecycle(&session_manager).0,
         72,
     )
     .await
@@ -475,7 +484,7 @@ async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
         &subscription_manager,
-        &sweep_test_agent_manager(),
+        &sweep_lifecycle(&session_manager).0,
         72,
     )
     .await
@@ -516,7 +525,7 @@ async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscr
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
         &subscription_manager,
-        &sweep_test_agent_manager(),
+        &sweep_lifecycle(&session_manager).0,
         72,
     )
     .await

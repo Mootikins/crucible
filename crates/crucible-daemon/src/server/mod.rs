@@ -77,6 +77,7 @@ pub mod plugins;
 pub mod session;
 pub mod storage;
 
+pub(crate) use core::sweep_and_archive_stale_sessions;
 use core::*;
 use plugins::*;
 
@@ -836,7 +837,7 @@ impl Server {
 
         let sweep_session_manager = self.session_manager.clone();
         let sweep_subscription_manager = self.rpc_context.subscriptions.clone();
-        let sweep_agent_manager = self.agent_manager.clone();
+        let sweep_lifecycle = self.rpc_context.session_lifecycle.clone();
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
         let sweep_activity = self.activity.clone();
@@ -856,7 +857,7 @@ impl Server {
                         match sweep_and_archive_stale_sessions(
                             &sweep_session_manager,
                             &sweep_subscription_manager,
-                            &sweep_agent_manager,
+                            &sweep_lifecycle,
                             auto_archive_hours,
                         ).await {
                             Ok(archived) if archived > 0 => {

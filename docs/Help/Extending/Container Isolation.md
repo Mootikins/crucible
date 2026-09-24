@@ -297,8 +297,12 @@ exactly as it was created, and a delegated child inherits its parent's — a chi
 that resolved isolation independently would land on the host while its parent is
 sandboxed.
 
-The daemon keeps the isolation claims in memory. A restart drops them, and a
-`session.pause` or `session.end` releases one with the end hooks. So every path
+The daemon keeps the isolation claims in memory. A restart drops them, and
+each stop of a session releases one with the end hooks. One owner in the daemon
+stops a session, so every stop runs the end hooks: `session.pause`,
+`session.end`, `session.archive`, `session.delete`, the auto-archive sweep, a
+refused start, the end of a delegated child, and the Lua `pause` and
+`end_session`. So every path
 that makes a stored session live again fires the start hooks again, and the
 plugin claims the persisted value again. These paths are a message to an ended
 or stored session, `session.resume`, `session.resume_from_storage` and

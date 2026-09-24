@@ -244,7 +244,8 @@ impl RpcContext {
         // Taken from the agent manager, never built here: one provider table,
         // shared, so a provider added at runtime is visible to both.
         let llm_config = agents.llm_handle();
-        let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
+        let session_lifecycle =
+            SessionLifecycle::new(sessions.clone(), plugin_loader.clone(), event_tx.clone());
         session_lifecycle.bind_agent_manager(&agents);
         // Same instance for every path: delegated children and sessions that
         // revive on send fire plugin start hooks and get their own isolation

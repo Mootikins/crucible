@@ -540,6 +540,7 @@ impl ReactorTestHarness {
         let lifecycle = crate::session_lifecycle::SessionLifecycle::new(
             self.agent_manager.session_manager().clone(),
             Arc::new(Mutex::new(Some(loader))),
+            self.event_tx.clone(),
         );
         self.lifecycle = Some(LifecycleBinding {
             lifecycle,
@@ -599,17 +600,13 @@ impl ReactorTestHarness {
         done.await.expect("the turn reports its outcome");
     }
 
-    /// End a session the way `session.end` does: plugin end hooks first,
-    /// then the manager drops the session. The RPC path also runs
-    /// `context_attach().release`; this helper does not.
+    /// End a session the way `session.end` does, through the stop owner. The
+    /// lifecycle has no route back to this manager, so the agent steps of the
+    /// stop do not run here.
     async fn end_session(&self, session_id: &str) {
         self.lifecycle()
             .lifecycle
-            .fire_session_end(session_id)
-            .await;
-        self.agent_manager
-            .session_manager()
-            .end_session(session_id)
+            .stop(session_id, crate::session_lifecycle::StopCause::End)
             .await
             .unwrap();
     }
@@ -988,6 +985,7 @@ mod review_capture;
 mod review_comment_context;
 mod revive_cold;
 mod revive_isolation;
+mod session_stop;
 mod title;
 mod transcript_containment;
 mod trust_gate;

@@ -494,10 +494,10 @@ pub(super) async fn persist_event(
     Ok(())
 }
 
-pub(super) async fn sweep_and_archive_stale_sessions(
+pub(crate) async fn sweep_and_archive_stale_sessions(
     session_manager: &SessionManager,
     subscription_manager: &SubscriptionManager,
-    agent_manager: &AgentManager,
+    lifecycle: &crate::session_lifecycle::SessionLifecycle,
     auto_archive_hours: u64,
 ) -> Result<usize> {
     let now = Utc::now();
@@ -531,16 +531,17 @@ pub(super) async fn sweep_and_archive_stale_sessions(
             }
         }
 
-        // One unreadable meta.json must not wedge the whole sweep.
-        match session_manager.archive_session(&summary.id).await {
-            Ok(_) => {
-                // Mirror the RPC end/delete/archive handlers: free the archived
-                // session's agent state (cache, Lua, dispatchers, trees,
-                // snapshots, pending requests). The sweep is SessionManager-only,
-                // so without this the agent state orphaned for the daemon's life.
-                agent_manager.cleanup_session(&summary.id);
-                archived += 1;
-            }
+        // One unreadable meta.json must not wedge the whole sweep. The stop
+        // owner runs the whole stop: a live session releases its claim, its
+        // container and its agent state, as an RPC archive does.
+        match lifecycle
+            .stop(
+                summary.id.as_str(),
+                crate::session_lifecycle::StopCause::AutoArchive,
+            )
+            .await
+        {
+            Ok(_) => archived += 1,
             Err(e) => warn!(
                 session_id = %summary.id,
                 error = %e,

@@ -133,7 +133,11 @@ async fn setup(parent: SessionAgent, profiles: &[(&str, &str)]) -> Harness {
         .collect();
 
     let plugin_loader = Arc::new(tokio::sync::Mutex::new(None));
-    let lifecycle = SessionLifecycle::new(session_manager.clone(), plugin_loader.clone());
+    let lifecycle = SessionLifecycle::new(
+        session_manager.clone(),
+        plugin_loader.clone(),
+        event_tx.clone(),
+    );
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
         AgentManagerParams {

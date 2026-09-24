@@ -1,24 +1,42 @@
 use super::super::*;
 use crate::rpc_client::{SessionIdRequest, SessionResumeFromStorageRequest};
 use crate::rpc_helpers::{session_id_field, typed_params};
+use crate::session_lifecycle::{SessionLifecycle, StopCause, StopError, Stopped};
 
-pub(crate) async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
+pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecycle) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = &params.session_id;
 
-    match sm.pause_session(session_id).await {
-        Ok(previous_state) => Response::success(
+    match lifecycle.stop(session_id, StopCause::Pause).await {
+        Ok(Stopped::Paused { previous }) => Response::success(
             req.id,
             serde_json::json!({
                 "session_id": session_id,
-                "previous_state": format!("{}", previous_state),
+                "previous_state": format!("{}", previous),
                 "state": "paused",
             }),
         ),
-        Err(e) => invalid_state_error(req.id, "pause", e),
+        Ok(other) => unexpected_stop(req.id, "pause", other),
+        Err(e) => stop_error(req.id, "pause", e),
+    }
+}
+
+/// The answer to a stop that returned a result of another cause. The owner
+/// maps each cause to one result, so this is a daemon bug, not a user error.
+fn unexpected_stop(req_id: Option<RequestId>, operation: &str, stopped: Stopped) -> Response {
+    internal_error(
+        req_id,
+        format!("session {operation} returned {stopped:?}, which is a result of another stop"),
+    )
+}
+
+/// The answer to a refused stop.
+fn stop_error(req_id: Option<RequestId>, operation: &str, err: StopError) -> Response {
+    match err {
+        StopError::Session(e) => invalid_state_error(req_id, operation, e),
     }
 }
 
@@ -99,38 +117,30 @@ pub(crate) async fn handle_session_resume_from_storage(
     )
 }
 
-pub(crate) async fn handle_session_end(
-    req: Request,
-    sm: &Arc<SessionManager>,
-    am: &Arc<AgentManager>,
-) -> Response {
+pub(crate) async fn handle_session_end(req: Request, lifecycle: &SessionLifecycle) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = &params.session_id;
 
-    match sm.end_session(session_id).await {
-        Ok(session) => {
-            am.cleanup_session(session_id);
-            Response::success(
-                req.id,
-                serde_json::json!({
-                    "session_id": session.id,
-                    "state": "ended",
-                    "kilns": session.kilns,
-                }),
-            )
-        }
-        Err(e) => invalid_state_error(req.id, "end", e),
+    match lifecycle.stop(session_id, StopCause::End).await {
+        Ok(Stopped::Ended(session)) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session.id,
+                "state": "ended",
+                "kilns": session.kilns,
+            }),
+        ),
+        Ok(other) => unexpected_stop(req.id, "end", other),
+        Err(e) => stop_error(req.id, "end", e),
     }
 }
 
-pub(crate) async fn handle_session_delete(
-    req: Request,
-    sm: &Arc<SessionManager>,
-    am: &Arc<AgentManager>,
-) -> Response {
+/// Deleting the parent deletes its delegated children too: the stop owner
+/// stops each child the same way.
+pub(crate) async fn handle_session_delete(req: Request, lifecycle: &SessionLifecycle) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -140,35 +150,22 @@ pub(crate) async fn handle_session_delete(
         Err(response) => return *response,
     };
 
-    match sm.delete_session(session_id).await {
-        Ok(()) => {
-            am.cleanup_session(session_id);
-            // Deleting the parent deletes its delegated children too —
-            // an orphaned hidden child would be unreachable otherwise.
-            for child_id in sm.child_session_ids(session_id).await {
-                if let Err(e) = sm.delete_session(&child_id).await {
-                    warn!(child_id = %child_id, error = %e, "Failed to delete child session");
-                } else {
-                    am.cleanup_session(&child_id);
-                }
-            }
-            Response::success(
-                req.id,
-                serde_json::json!({
-                    "session_id": session_id,
-                    "deleted": true,
-                }),
-            )
-        }
-        Err(e) => invalid_state_error(req.id, "delete", e),
+    match lifecycle.stop(session_id.as_str(), StopCause::Delete).await {
+        Ok(Stopped::Deleted) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "deleted": true,
+            }),
+        ),
+        Ok(other) => unexpected_stop(req.id, "delete", other),
+        Err(e) => stop_error(req.id, "delete", e),
     }
 }
 
-pub(crate) async fn handle_session_archive(
-    req: Request,
-    sm: &Arc<SessionManager>,
-    am: &Arc<AgentManager>,
-) -> Response {
+/// Children are lifecycle-subordinate: archiving the parent archives its
+/// delegated children too, through the same stop.
+pub(crate) async fn handle_session_archive(req: Request, lifecycle: &SessionLifecycle) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -178,27 +175,19 @@ pub(crate) async fn handle_session_archive(
         Err(response) => return *response,
     };
 
-    match sm.archive_session(session_id).await {
-        Ok(session) => {
-            am.cleanup_session(session_id);
-            // Children are lifecycle-subordinate: archiving the parent
-            // archives its delegated children too (best-effort).
-            for child_id in sm.child_session_ids(session_id).await {
-                if let Err(e) = sm.archive_session(&child_id).await {
-                    warn!(child_id = %child_id, error = %e, "Failed to archive child session");
-                } else {
-                    am.cleanup_session(&child_id);
-                }
-            }
-            Response::success(
-                req.id,
-                serde_json::json!({
-                    "session_id": session.id,
-                    "archived": session.archived,
-                }),
-            )
-        }
-        Err(e) => invalid_state_error(req.id, "archive", e),
+    match lifecycle
+        .stop(session_id.as_str(), StopCause::Archive)
+        .await
+    {
+        Ok(Stopped::Archived(session)) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session.id,
+                "archived": session.archived,
+            }),
+        ),
+        Ok(other) => unexpected_stop(req.id, "archive", other),
+        Err(e) => stop_error(req.id, "archive", e),
     }
 }
 

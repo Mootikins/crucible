@@ -543,8 +543,7 @@ impl RpcDispatcher {
                 id,
                 crate::server::session::handle_session_archive(
                     req.clone(),
-                    &self.ctx.sessions,
-                    &self.ctx.agents
+                    &self.ctx.session_lifecycle
                 )
             ),
             RpcMethod::SessionUnarchive => forward!(
@@ -559,8 +558,7 @@ impl RpcDispatcher {
                 id,
                 crate::server::session::handle_session_delete(
                     req.clone(),
-                    &self.ctx.sessions,
-                    &self.ctx.agents
+                    &self.ctx.session_lifecycle
                 )
             ),
             RpcMethod::SessionCompact => forward!(
@@ -1535,27 +1533,15 @@ impl RpcDispatcher {
         }
     }
 
-    /// Fire plugin `on_session_end` hooks, best-effort and exactly once.
-    async fn fire_plugin_session_end(&self, session_id: &str) {
-        self.ctx
-            .session_lifecycle
-            .fire_session_end(session_id)
-            .await
-    }
-
     async fn handle_session_pause(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        // The stop runs the end hooks, symmetric with resume firing the start
+        // hooks: without them a paused session holds its container for the
+        // daemon's lifetime, and pause/resume cycles would acquire one each
+        // time without releasing any.
         let resp =
-            crate::server::session::handle_session_pause(req.clone(), &self.ctx.sessions).await;
-        let mapped = map_server_resp(resp);
-        // Symmetric with resume firing start hooks: without this a paused
-        // session holds its container for the daemon's lifetime, and pause/
-        // resume cycles would acquire one each time without releasing any.
-        if mapped.is_ok() {
-            if let Some(session_id) = req.params.get("session_id").and_then(|v| v.as_str()) {
-                self.fire_plugin_session_end(session_id).await;
-            }
-        }
-        mapped
+            crate::server::session::handle_session_pause(req.clone(), &self.ctx.session_lifecycle)
+                .await;
+        map_server_resp(resp)
     }
 
     async fn handle_session_resume(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1580,30 +1566,15 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_end(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        // Fire on_session_end Lua hooks before ending the session.
-        // Plugins use this for cleanup (e.g., releasing resources, stopping
-        // services) and for agent-learning extraction (session digest, entity
-        // memory). The Session handed to hooks carries id + workspace — the
-        // documented surface; richer metadata (kiln, agent, end reason) is
-        // future session-API growth, not something this comment promises.
         let session_id = req
             .params
             .get("session_id")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        // The per-session `lua_sessions` executor is a second VM that only
+        // this RPC and `lua.shutdown_session` know. Its end hooks run here,
+        // before the stop, as they did before the stop had one owner.
         if !session_id.is_empty() {
-            // Plugin runtime first — it's a separate VM from the per-session
-            // `lua_sessions` executors below, and a plugin that acquired a
-            // resource in `on_session_start` needs the matching teardown.
-            self.fire_plugin_session_end(session_id).await;
-
-            // Attachment state is not a plugin concern: handlers can attach
-            // with no plugin runtime bound at all, so releasing inside
-            // `fire_plugin_session_end` leaked every session on a plugin-less
-            // daemon. It also must NOT fire on pause — that would hand a
-            // resumed session a fresh budget and a cleared dedup set.
-            self.ctx.agents.context_attach().release(session_id);
-
             if let Some(state) = self.ctx.lua_sessions.get(session_id) {
                 let state = state.value().clone();
                 let mut state = state.lock().await;
@@ -1626,23 +1597,12 @@ impl RpcDispatcher {
             }
         }
 
-        let resp = crate::server::session::handle_session_end(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.agents,
-        )
-        .await;
-        let mapped = map_server_resp(resp);
-
-        // Only on success, and only daemon-wide — see `handle_session_create`.
-        if mapped.is_ok() && !session_id.is_empty() {
-            crate::event_emitter::emit_event(
-                &self.ctx.event_tx,
-                crate::event_map::session_ended(session_id, "explicit"),
-            );
-        }
-
-        mapped
+        // Everything else, the plugin end hooks and the `session:ended` event
+        // included, is the stop owner's work.
+        let resp =
+            crate::server::session::handle_session_end(req.clone(), &self.ctx.session_lifecycle)
+                .await;
+        map_server_resp(resp)
     }
 
     /// A fork is a live session on the parent's workspace with the parent's
@@ -2621,12 +2581,9 @@ mod tests {
 
     /// Two concurrent `session.end` requests must fire plugin `on_session_end`
     /// exactly once. Session existence was the only guard, but end hooks run
-    /// BEFORE `end_session` removes the session, so both requests passed it —
-    /// a check, not a claim. Plugins are promised they need not be idempotent,
-    /// and a double `oci` teardown removes an already-removed container.
-    ///
-    /// Observed through the isolation release the teardown performs: re-plant
-    /// the claim, fire again, and a short-circuited second run leaves it alone.
+    /// BEFORE the session ends, so both requests passed it — a check, not a
+    /// claim. Plugins are promised they need not be idempotent, and a double
+    /// `oci` teardown removes an already-removed container.
     #[tokio::test]
     async fn concurrent_session_end_fires_plugin_end_hooks_exactly_once() {
         use crucible_core::session::SessionType;
@@ -2635,6 +2592,15 @@ mod tests {
         let tempdir = TempDir::new().unwrap();
         let kiln_root = tempdir.path().to_path_buf();
         let (ctx, _data_home) = test_context_with_loader();
+        {
+            let guard = ctx.plugin_loader.lock().await;
+            guard
+                .as_ref()
+                .unwrap()
+                .eval("cru.on_session_end(function() _G.ends = (_G.ends or 0) + 1 end)")
+                .await
+                .expect("register the end hook");
+        }
 
         let session = ctx
             .sessions
@@ -2646,45 +2612,40 @@ mod tests {
             )
             .await
             .expect("create session");
-        let session_id = session.id.clone();
+        let session_id = session.id.to_string();
 
-        let dispatcher = RpcDispatcher::new(ctx);
-
-        async fn plant(dispatcher: &RpcDispatcher, session_id: &str) {
-            let guard = dispatcher.ctx.plugin_loader.lock().await;
-            guard.as_ref().unwrap().isolation().claim(
-                session_id,
-                crucible_lua::IsolationClaim {
-                    plugin: "oci".to_string(),
-                    exempt: Default::default(),
-                    exec: Default::default(),
+        let dispatcher = RpcDispatcher::new(ctx.clone());
+        let end = || {
+            dispatcher.dispatch(
+                ClientId::new(),
+                Request {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(RequestId::Number(1)),
+                    method: "session.end".to_string(),
+                    params: serde_json::json!({ "session_id": session_id }),
                 },
-            );
-        }
-        async fn claim_present(dispatcher: &RpcDispatcher, session_id: &str) -> bool {
-            let guard = dispatcher.ctx.plugin_loader.lock().await;
+            )
+        };
+        let (first, second) = tokio::join!(end(), end());
+
+        let ends: i64 = {
+            let guard = ctx.plugin_loader.lock().await;
             guard
                 .as_ref()
                 .unwrap()
-                .isolation()
-                .get(session_id)
-                .is_some()
-        }
-
-        plant(&dispatcher, &session_id).await;
-        dispatcher.fire_plugin_session_end(&session_id).await;
-        assert!(
-            !claim_present(&dispatcher, &session_id).await,
-            "first teardown must release the isolation claim"
-        );
-
-        // A second `session.end` racing the first: the session is still in the
-        // manager, so the existence guard passes again.
-        plant(&dispatcher, &session_id).await;
-        dispatcher.fire_plugin_session_end(&session_id).await;
-        assert!(
-            claim_present(&dispatcher, &session_id).await,
-            "second teardown must short-circuit, not fire hooks a second time"
+                .lua()
+                .load("return _G.ends or 0")
+                .eval()
+                .unwrap()
+        };
+        assert_eq!(ends, 1, "the end hooks must run once for one start");
+        assert_eq!(
+            [first.error.is_none(), second.error.is_none()]
+                .iter()
+                .filter(|ok| **ok)
+                .count(),
+            1,
+            "exactly one of two ends ends the session"
         );
     }
 

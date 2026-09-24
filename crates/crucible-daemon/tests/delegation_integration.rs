@@ -108,7 +108,11 @@ async fn setup_with_plugin(
         None => None,
     };
     let plugin_loader = Arc::new(tokio::sync::Mutex::new(loader));
-    let lifecycle = SessionLifecycle::new(session_manager.clone(), plugin_loader.clone());
+    let lifecycle = SessionLifecycle::new(
+        session_manager.clone(),
+        plugin_loader.clone(),
+        event_tx.clone(),
+    );
 
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(

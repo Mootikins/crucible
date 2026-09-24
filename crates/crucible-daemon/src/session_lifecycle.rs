@@ -23,11 +23,108 @@
 
 use crate::agent_manager::AgentManager;
 use crate::daemon_plugins::DaemonPluginLoader;
-use crate::session_manager::SessionManager;
-use crucible_core::session::{IsolationRecord, IsolationRequirement, Session};
+use crate::session_manager::{SessionError, SessionManager};
+use crucible_core::protocol::SessionEventMessage;
+use crucible_core::session::{
+    IsolationRecord, IsolationRequirement, Session, SessionId, SessionState,
+};
 use dashmap::DashSet;
 use std::sync::{Arc, OnceLock, Weak};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
+
+/// Why a session stops. The cause selects the steps that
+/// [`SessionLifecycle::stop`] runs, and it names the stop in the
+/// `session:ended` event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub enum StopCause {
+    /// `session.pause` or the Lua `pause`. The conversation stays, so a resume
+    /// continues it.
+    Pause,
+    /// `session.end` or the Lua `end_session`.
+    End,
+    /// `session.archive`. The session leaves memory, and its children go too.
+    Archive,
+    /// The sweep archived a session that nobody used for a long time.
+    AutoArchive,
+    /// `session.delete`. The session leaves memory and storage, and its
+    /// children go too.
+    Delete,
+    /// The start checks refused the session.
+    Refuse,
+    /// A delegated child finished its one turn, or its turn did not start.
+    ChildDone,
+}
+
+impl StopCause {
+    /// The `reason` field of the `session:ended` event.
+    #[must_use]
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::Pause => "paused",
+            Self::End => "ended",
+            Self::Archive => "archived",
+            Self::AutoArchive => "auto_archived",
+            Self::Delete => "deleted",
+            Self::Refuse => "refused",
+            Self::ChildDone => "child_done",
+        }
+    }
+
+    /// Whether the session keeps its conversation for a later resume. Such a
+    /// stop keeps the context attachment and the agent state, because a
+    /// resumed session must not get a new budget and an empty dedup set.
+    const fn keeps_conversation(self) -> bool {
+        match self {
+            Self::Pause => true,
+            Self::End
+            | Self::Archive
+            | Self::AutoArchive
+            | Self::Delete
+            | Self::Refuse
+            | Self::ChildDone => false,
+        }
+    }
+
+    /// Whether the delegated children of the session stop with it.
+    const fn stops_children(self) -> bool {
+        match self {
+            Self::Archive | Self::Delete => true,
+            Self::Pause | Self::End | Self::AutoArchive | Self::Refuse | Self::ChildDone => false,
+        }
+    }
+}
+
+/// What the state change of a stop returned.
+#[derive(Debug)]
+pub enum Stopped {
+    /// The session is paused. `previous` is the state it left.
+    Paused { previous: SessionState },
+    /// The session ended. It stays resident.
+    Ended(Session),
+    /// The session is archived and out of memory.
+    Archived(Session),
+    /// The session is gone from memory and storage.
+    Deleted,
+}
+
+/// Why a stop did not change the session.
+#[derive(Debug, thiserror::Error)]
+pub enum StopError {
+    /// The session manager refused the state change, or storage failed.
+    #[error(transparent)]
+    Session(#[from] SessionError),
+}
+
+/// Whether the end stage can run for a stop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EndStage {
+    /// The start hooks of the session ran, so the end hooks must run.
+    Run,
+    /// No start hook ran in this start, and the plugin runtime is held by
+    /// the Lua that asked. There is nothing plugin-owned to release.
+    NeverStarted,
+}
 
 /// Shared plugin session-lifecycle enforcement.
 ///
@@ -38,6 +135,8 @@ use tokio::sync::Mutex;
 pub struct SessionLifecycle {
     sessions: Arc<SessionManager>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+    /// The daemon bus. A stop announces itself here after its steps are done.
+    event_tx: broadcast::Sender<SessionEventMessage>,
     agents: OnceLock<Weak<AgentManager>>,
     /// Sessions whose plugin `on_session_end` hooks have already been claimed
     /// since their start hooks last fired.
@@ -57,10 +156,12 @@ impl SessionLifecycle {
     pub fn new(
         sessions: Arc<SessionManager>,
         plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+        event_tx: broadcast::Sender<SessionEventMessage>,
     ) -> Arc<Self> {
         Arc::new(Self {
             sessions,
             plugin_loader,
+            event_tx,
             agents: OnceLock::new(),
             plugin_end_claimed: DashSet::new(),
         })
@@ -101,7 +202,10 @@ impl SessionLifecycle {
         // nothing for end hooks to release, and they need the mutex too.
         if this_task_holds_plugin_loader() {
             tracing::error!(session_id = %session_id, "refusing a session start inside plugin Lua");
-            if let Err(e) = self.sessions.end_session(session_id).await {
+            if let Err(e) = self
+                .stop_steps(session_id, StopCause::Refuse, EndStage::NeverStarted)
+                .await
+            {
                 tracing::error!(session_id = %session_id, error = %e, "refused session could not be ended");
             }
             anyhow::bail!(
@@ -196,17 +300,13 @@ impl SessionLifecycle {
         Ok(())
     }
 
-    /// Tear down a session being refused: plugin end hooks first (so an
-    /// earlier plugin's container is released), then end the session.
+    /// Tear down a session being refused: the stop runs the end hooks first,
+    /// so an earlier plugin's container is released, then it ends the session.
     async fn refuse_session(&self, session_id: &str) {
-        self.fire_session_end(session_id).await;
-        if let Some(agents) = self.agents() {
-            agents.context_attach().release(session_id);
-        }
-        if let Err(end_err) = self.sessions.end_session(session_id).await {
+        if let Err(e) = self.stop(session_id, StopCause::Refuse).await {
             tracing::error!(
                 session_id = %session_id,
-                error = %end_err,
+                error = %e,
                 "refused session could not be ended; it may be orphaned"
             );
         }
@@ -254,14 +354,178 @@ impl SessionLifecycle {
         unenforceable_reason(&claim, &agent_type)
     }
 
-    /// Fire plugin `on_session_end` hooks, best-effort and exactly once.
+    /// Stop a session: the one owner of every way a session leaves service.
+    ///
+    /// The steps run in this order, and the cause selects which run:
+    ///
+    /// 1. The end stage: the isolation claim and the status slots go, and the
+    ///    plugin `on_session_end` hooks run, once for each start. It releases
+    ///    the container, so it runs before the session leaves memory.
+    /// 2. The context attachment is released (not on a pause).
+    /// 3. The session manager changes the state: pause, end, archive or delete.
+    /// 4. `cleanup_session` frees the agent state (not on a pause).
+    /// 5. The handlers that the session activated and its statusline values
+    ///    are swept, after the hooks, which can write both.
+    /// 6. One `session:ended` event goes to the system session, when the stop
+    ///    took a session out of service. Its `reason` names the cause.
+    /// 7. For an archive or a delete, each delegated child stops the same way.
+    ///
+    /// Steps 1 to 5 run with the plugin-loader mutex held. A start that waits
+    /// for the mutex runs after this stop, so the stop cannot release what a
+    /// new start claims. Every step before the event is a direct call: the
+    /// bus can drop an event, and these releases must not be lost.
+    ///
+    /// Lua that holds the plugin runtime must call
+    /// [`Self::stop_from_lua`], which cannot wait for the mutex.
+    pub async fn stop(&self, session_id: &str, cause: StopCause) -> Result<Stopped, StopError> {
+        let stopped = self.stop_steps(session_id, cause, EndStage::Run).await;
+        if cause.stops_children() {
+            for child in self.sessions.child_session_ids(session_id).await {
+                // Boxed: a child stop is a stop, and an async fn cannot hold
+                // itself by value.
+                if let Err(e) = Box::pin(self.stop(child.as_str(), cause)).await {
+                    tracing::warn!(child_id = %child, error = %e, "a child session did not stop");
+                }
+            }
+        }
+        stopped
+    }
+
+    /// Stop a session for plugin Lua.
+    ///
+    /// Lua that holds the plugin runtime (a session hook, `lua.eval`) cannot
+    /// wait for it. There the checks that can refuse run at once, and the
+    /// stop runs on another task, which gets the runtime when that Lua
+    /// returns. The steps are not skipped and not reordered: the start hooks
+    /// of the session claimed isolation, and only the end hooks release it.
+    pub(crate) async fn stop_from_lua(
+        self: &Arc<Self>,
+        session_id: &str,
+        cause: StopCause,
+    ) -> Result<(), StopError> {
+        if !this_task_holds_plugin_loader() {
+            return self.stop(session_id, cause).await.map(|_| ());
+        }
+        self.check_stoppable(session_id, cause)?;
+        let lifecycle = Arc::clone(self);
+        let session_id = session_id.to_string();
+        tokio::spawn(async move {
+            if let Err(e) = lifecycle.stop(&session_id, cause).await {
+                tracing::warn!(session_id = %session_id, error = %e, "a deferred session stop failed");
+            }
+        });
+        Ok(())
+    }
+
+    /// Refuse a stop that the session manager would refuse, before any step
+    /// runs. The state change checks again under its own guard.
+    fn check_stoppable(&self, session_id: &str, cause: StopCause) -> Result<(), SessionError> {
+        let resident = self.sessions.get_session(session_id);
+        match cause {
+            StopCause::Pause => match resident {
+                None => Err(SessionError::NotFound(session_id.to_string())),
+                Some(s) if s.state != SessionState::Active => Err(SessionError::InvalidState {
+                    expected: SessionState::Active,
+                    actual: s.state,
+                }),
+                Some(_) => Ok(()),
+            },
+            StopCause::End | StopCause::Refuse | StopCause::ChildDone => match resident {
+                None => Err(SessionError::NotFound(session_id.to_string())),
+                Some(s) if s.state == SessionState::Ended => {
+                    Err(SessionError::AlreadyEnded(session_id.to_string()))
+                }
+                Some(_) => Ok(()),
+            },
+            // Archive and delete also act on a session that is only in storage.
+            StopCause::Archive | StopCause::AutoArchive | StopCause::Delete => Ok(()),
+        }
+    }
+
+    /// Steps 1 to 6 of [`Self::stop`], for one session.
+    async fn stop_steps(
+        &self,
+        session_id: &str,
+        cause: StopCause,
+        stage: EndStage,
+    ) -> Result<Stopped, StopError> {
+        self.check_stoppable(session_id, cause)?;
+        let agents = self.agents();
+        // The session goes out of service only when it was in service.
+        let in_service = self
+            .sessions
+            .get_session(session_id)
+            .is_some_and(|s| s.state != SessionState::Ended);
+
+        let mut guard = match stage {
+            EndStage::Run => Some(self.plugin_loader.lock().await),
+            EndStage::NeverStarted => None,
+        };
+        let mut loader = guard.as_mut().and_then(|g| g.as_mut());
+
+        if let Some(loader) = loader.as_deref_mut() {
+            self.run_end_stage(loader, session_id).await;
+        }
+        if !cause.keeps_conversation() {
+            if let Some(agents) = &agents {
+                agents.context_attach().release(session_id);
+            }
+        }
+        let changed = self.change_state(session_id, cause).await;
+        if !cause.keeps_conversation() {
+            if let Some(agents) = &agents {
+                agents.cleanup_session(session_id);
+            }
+        }
+        sweep_session(loader.as_deref(), agents.as_deref(), session_id);
+        drop(guard);
+
+        if in_service && changed.is_ok() {
+            crate::event_emitter::emit_event(
+                &self.event_tx,
+                crate::event_map::session_ended(session_id, cause.reason()),
+            );
+        }
+        changed.map_err(StopError::from)
+    }
+
+    /// Step 3 of [`Self::stop`]: the state change in the session manager.
+    async fn change_state(
+        &self,
+        session_id: &str,
+        cause: StopCause,
+    ) -> Result<Stopped, SessionError> {
+        match cause {
+            StopCause::Pause => self
+                .sessions
+                .pause_session(session_id)
+                .await
+                .map(|previous| Stopped::Paused { previous }),
+            StopCause::End | StopCause::Refuse | StopCause::ChildDone => self
+                .sessions
+                .end_session(session_id)
+                .await
+                .map(Stopped::Ended),
+            StopCause::Archive | StopCause::AutoArchive => self
+                .sessions
+                .archive_session(&stored_id(session_id)?)
+                .await
+                .map(Stopped::Archived),
+            StopCause::Delete => self
+                .sessions
+                .delete_session(&stored_id(session_id)?)
+                .await
+                .map(|()| Stopped::Deleted),
+        }
+    }
+
+    /// Step 1 of [`Self::stop`]: the end stage, best-effort and once for each
+    /// start. The caller holds the plugin-loader mutex.
     ///
     /// Unlike the start path this never propagates: refusing to *end* a session
     /// strands the user with something they cannot clean up, which is the
-    /// opposite of the start-hook tradeoff. Shared by the normal end path, the
-    /// create-refusal path and the delegation watcher, so every way a session
-    /// ends tears down identically.
-    pub async fn fire_session_end(&self, session_id: &str) {
+    /// opposite of the start-hook tradeoff.
+    async fn run_end_stage(&self, loader: &mut DaemonPluginLoader, session_id: &str) {
         // Only fire for a session the manager still knows — this rejects
         // made-up ids and sessions already torn down and removed.
         let Some(daemon_session) = self.sessions.get_session(session_id) else {
@@ -271,10 +535,9 @@ impl SessionLifecycle {
             );
             return;
         };
-        // ...but existence is a CHECK, not a CLAIM. End hooks run before
-        // `end_session` removes the session, so two concurrent teardowns both
-        // pass the guard above and both fire — and plugins are promised they
-        // need not be idempotent (a double `oci` teardown removes an
+        // ...but existence is a CHECK, not a CLAIM. Two teardowns of one
+        // start both find the session, and plugins are promised they need
+        // not be idempotent (a double `oci` teardown removes an
         // already-removed container). Claim atomically; the loser returns.
         if !self.plugin_end_claimed.insert(session_id.to_string()) {
             tracing::debug!(
@@ -283,8 +546,6 @@ impl SessionLifecycle {
             );
             return;
         }
-        let mut guard = self.plugin_loader.lock().await;
-        let Some(loader) = guard.as_mut() else { return };
         // Drop the isolation claim with the session. A claim that outlives its
         // container would keep denying tools for a session id that may be
         // reused, and a stale claim is indistinguishable from a live one.
@@ -298,58 +559,6 @@ impl SessionLifecycle {
         if let Err(e) = holding_plugin_loader(loader.fire_session_end(&session)).await {
             tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
         }
-        // Drop the handlers this session activated, for the same reason the
-        // isolation claim and the status entries go above. A plugin turned on
-        // for one session registers a row for it, and the store has no
-        // unregister: without this, every session that ever enabled a plugin
-        // leaves a row behind for the life of the daemon.
-        //
-        // AFTER the end hooks, not before: a `session:end` handler scoped to
-        // this session is one of the rows swept, and it has to run first.
-        let dropped = loader.plugin_handlers().clear_session(session_id);
-        if dropped > 0 {
-            tracing::debug!(
-                session_id = %session_id,
-                dropped,
-                "swept session-scoped plugin handlers"
-            );
-        }
-        // And this session's statusline expression values, which are the same
-        // shape of leak one store over: the map is keyed by session and had no
-        // production release, so every session that ever set an expression kept
-        // its map for the daemon's life.
-        //
-        // AFTER the end hooks for the same reason, read the other way round: a
-        // `session:end` handler may set or clear a value — the bar showing
-        // "shutting down" is the obvious one — so sweeping first would let the
-        // hook put the map straight back.
-        if let Some(agents) = self.agents() {
-            let forgotten = agents.statusline_exprs().release_session(session_id);
-            if forgotten > 0 {
-                tracing::debug!(
-                    session_id = %session_id,
-                    forgotten,
-                    "swept session statusline expression values"
-                );
-            }
-        }
-    }
-
-    /// Fire the end hooks for a session that plugin Lua ends.
-    ///
-    /// Lua that holds the plugin runtime (a session hook, `lua.eval`) cannot
-    /// wait for it. There the hooks run on another task, which gets the
-    /// runtime when that Lua returns. They are not skipped: the start hooks
-    /// of the session claimed isolation, and only the end hooks release it.
-    /// The session stays resident when it ends, so the hooks still find it.
-    pub(crate) async fn fire_session_end_from_lua(self: &Arc<Self>, session_id: &str) {
-        if this_task_holds_plugin_loader() {
-            let lifecycle = Arc::clone(self);
-            let session_id = session_id.to_string();
-            tokio::spawn(async move { lifecycle.fire_session_end(&session_id).await });
-            return;
-        }
-        self.fire_session_end(session_id).await;
     }
 
     async fn fire_session_start(&self, session_id: &str) -> anyhow::Result<()> {
@@ -423,6 +632,44 @@ pub(crate) async fn fire_start_hooks(
         agents.commit_start_hook_scope(session_id, &scope);
     }
     result
+}
+
+/// Step 5 of [`SessionLifecycle::stop`]: drop what the session registered in
+/// stores that have no unregister.
+///
+/// AFTER the end hooks, not before, for two reasons. A `session:end` handler
+/// scoped to this session is one of the rows swept, and it has to run first.
+/// And a `session:end` handler may set or clear a statusline value (the bar
+/// showing "shutting down"), so a sweep first would let the hook put the map
+/// straight back.
+fn sweep_session(
+    loader: Option<&DaemonPluginLoader>,
+    agents: Option<&AgentManager>,
+    session_id: &str,
+) {
+    // A plugin turned on for one session registers a row for it, and the
+    // store has no unregister: without this, every session that ever enabled
+    // a plugin leaves a row behind for the life of the daemon.
+    if let Some(loader) = loader {
+        let dropped = loader.plugin_handlers().clear_session(session_id);
+        if dropped > 0 {
+            tracing::debug!(session_id = %session_id, dropped, "swept session-scoped plugin handlers");
+        }
+    }
+    // The same shape of leak one store over: the map is keyed by session and
+    // had no other release.
+    if let Some(agents) = agents {
+        let forgotten = agents.statusline_exprs().release_session(session_id);
+        if forgotten > 0 {
+            tracing::debug!(session_id = %session_id, forgotten, "swept session statusline expression values");
+        }
+    }
+}
+
+/// The id of a stored session. Archive and delete read the session directory,
+/// so the id must be one path component.
+fn stored_id(session_id: &str) -> Result<SessionId, SessionError> {
+    SessionId::parse(session_id).map_err(|e| SessionError::IoError(e.to_string()))
 }
 
 tokio::task_local! {

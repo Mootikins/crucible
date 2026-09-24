@@ -53,12 +53,10 @@ impl AgentManager {
             daemon_permissions: _, // startup-bound OnceLock; one registry for the process
             isolation: _,        // startup-bound OnceLock
             context_attach: _,   // process-wide buffer, drained per turn
-            // Session-keyed, and swept by `SessionLifecycle::fire_session_end`
-            // rather than here: that is the one path every way of ending a
-            // session shares, `cleanup_session` is not (the create-refusal
-            // path never calls it), and the sweep must follow the plugin end
-            // hooks. Asserting here would fire for any caller of
-            // `cleanup_session` that fired no end hooks.
+            // Session-keyed, and swept by `SessionLifecycle::stop` rather
+            // than here: a pause sweeps it and runs no `cleanup_session`, and
+            // the sweep must follow the plugin end hooks. Asserting here would
+            // fire for any caller of `cleanup_session` that fired no end hooks.
             statusline_exprs: _,
             publications: _, // startup-bound OnceLock; describes plugins, not sessions
             plugin_tool_registry: _, // startup-bound OnceLock
