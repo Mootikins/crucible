@@ -175,3 +175,38 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
         before
     );
 }
+
+/// Injected system context reaches the model in one `<system-message>`
+/// element that names who injected it. The log keeps its kind and source,
+/// so a replay (a resume, a fork) gives the same message back.
+#[tokio::test]
+async fn injected_system_context_is_tagged_and_keeps_its_kind_after_replay() {
+    let h = ReactorTestHarness::new().await;
+    let sm = &h.agent_manager.session_manager;
+    crate::server::session::inject_context_impl(
+        sm,
+        &h.agent_manager,
+        &h.event_tx,
+        &h.session_id,
+        "system",
+        "Remember the kiln",
+        Some("alpha"),
+    )
+    .await
+    .unwrap();
+
+    let session = sm.get_session(&h.session_id).unwrap();
+    let log = std::fs::read_to_string(session.jsonl_path(sm.sessions_root())).unwrap();
+    let tree = crate::observe::rebuild::rebuild_tree_from_str(&log);
+    let messages = tree.flatten_current_path_to_context();
+    let injected = messages.last().expect("the injected message");
+    assert_eq!(injected.metadata.kind.as_deref(), Some("context"));
+    assert_eq!(injected.metadata.source.as_deref(), Some("alpha"));
+    assert!(
+        injected
+            .content
+            .starts_with("<system-message kind=\"context\" source=\"alpha\">"),
+        "{}",
+        injected.content
+    );
+}

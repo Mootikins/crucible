@@ -59,8 +59,16 @@ pub(crate) fn apply_injection_to_tree(tree: &mut ConversationTree, event: &LogEv
             None => ContextMessage::user(content),
         },
         LogEvent::Assistant { content, .. } => ContextMessage::assistant(content),
-        LogEvent::System { content, tags, .. } => {
-            let mut message = ContextMessage::system(content);
+        LogEvent::System {
+            content,
+            tags,
+            injection,
+            ..
+        } => {
+            let mut message = match injection {
+                Some((kind, source)) => ContextMessage::injection(kind, source, content),
+                None => ContextMessage::system(content),
+            };
             // The kind of the block, so a `transform_context` handler finds
             // it again after a replay, an undo or a fork.
             message.metadata.tags.clone_from(tags);

@@ -176,7 +176,12 @@ pub(crate) async fn inject_context_impl(
     }
 
     let log_event = match role {
-        "system" => crate::observe::LogEvent::system(content),
+        "system" => crate::observe::LogEvent::System {
+            ts: chrono::Utc::now(),
+            content: content.to_string(),
+            tags: Vec::new(),
+            injection: Some(("context".into(), plugin.unwrap_or("rpc").into())),
+        },
         "user" => crate::observe::LogEvent::user(content),
         "assistant" => crate::observe::LogEvent::assistant(content),
         _ => unreachable!(),

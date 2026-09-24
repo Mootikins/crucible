@@ -50,6 +50,12 @@ pub enum LogEvent {
         /// system message means.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tags: Vec<String>,
+        /// The `kind` and `source` of an injection. The turn wraps the
+        /// content in one `<system-message>` element with them, live and on
+        /// replay. `None`: plain system text, as every record before this
+        /// field.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        injection: Option<(String, String)>,
     },
 
     /// User message
@@ -182,6 +188,7 @@ impl LogEvent {
             ts: Utc::now(),
             content: content.into(),
             tags: Vec::new(),
+            injection: None,
         }
     }
 
@@ -194,6 +201,7 @@ impl LogEvent {
             ts: Utc::now(),
             content: content.into(),
             tags,
+            injection: None,
         }
     }
 
@@ -501,6 +509,7 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
                 text("query_summary").unwrap_or_default(),
             ),
             tags: Vec::new(),
+            injection: None,
         }),
         // `segment_complete` is a prefix of the same turn's
         // `message_complete.full_response` — `segment_complete`'s own doc comment says so outright
