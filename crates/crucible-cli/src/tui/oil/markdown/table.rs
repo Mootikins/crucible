@@ -302,9 +302,11 @@ fn render_table_data_row(
     }
 }
 
-pub(super) fn wrap_text(text: &str, width: usize) -> Vec<String> {
+/// [`wrap_text`], with the source text each wrap dropped; see
+/// `crucible_oil::node::WrapJoin`.
+pub(super) fn wrap_text_with_gaps(text: &str, width: usize) -> Vec<(String, Option<String>)> {
     if width == 0 || text.is_empty() {
-        return vec![text.to_string()];
+        return vec![(text.to_string(), None)];
     }
 
     use textwrap::{wrap, Options, WordSplitter};
@@ -332,9 +334,17 @@ pub(super) fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut result = Vec::new();
     for segment in text.split('\n') {
         let wrapped = wrap(segment, &options);
-        for line in wrapped {
-            result.push(line.into_owned());
+        let gaps = crucible_oil::utils::wrap_gaps(segment, &wrapped);
+        for (line, gap) in wrapped.into_iter().zip(gaps) {
+            result.push((line.into_owned(), gap));
         }
     }
     result
+}
+
+pub(super) fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    wrap_text_with_gaps(text, width)
+        .into_iter()
+        .map(|(line, _)| line)
+        .collect()
 }

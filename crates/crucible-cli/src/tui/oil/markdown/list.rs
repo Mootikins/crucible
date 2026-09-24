@@ -1,6 +1,6 @@
 use super::context::RenderContext;
 use super::render::{render_node, text_node};
-use super::table::wrap_text;
+use super::table::wrap_text_with_gaps;
 use super::BR_TAG_REGEX;
 use crate::tui::oil::theme;
 use crucible_oil::node::*;
@@ -30,9 +30,9 @@ pub(super) fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext
     let content_width = ctx
         .width
         .saturating_sub(margins.left + list_indent.len() + bullet_width);
-    let wrapped = wrap_text(&item_text, content_width);
+    let wrapped = wrap_text_with_gaps(&item_text, content_width);
 
-    for (i, line) in wrapped.iter().enumerate() {
+    for (i, (line, gap)) in wrapped.iter().enumerate() {
         if i == 0 {
             if margins.left > 0 {
                 ctx.blocks.push(row([
@@ -47,18 +47,22 @@ pub(super) fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext
             }
         } else {
             let continuation_indent = " ".repeat(bullet_width);
+            let body = match gap {
+                Some(gap) => text_node(line).continues_line(gap.as_str(), 0),
+                None => text_node(line),
+            };
             if margins.left > 0 {
                 ctx.blocks.push(row([
                     text(&margin_indent),
                     text(&list_indent),
                     text(&continuation_indent),
-                    text_node(line),
+                    body,
                 ]));
             } else {
                 ctx.blocks.push(row([
                     text(&list_indent),
                     text(&continuation_indent),
-                    text_node(line),
+                    body,
                 ]));
             }
         }

@@ -14,22 +14,27 @@
 
 pub mod fixtures;
 pub mod scroll;
+pub mod selection;
 pub mod transcript;
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::event::Event;
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crucible_oil::cell_grid::CellGrid;
 use crucible_oil::node::{col, Node};
 use crucible_oil::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crucible_oil::render::{render_tree_to_grid, NATURAL_HEIGHT};
 use crucible_oil::style::Gap;
 use scroll::Scroll;
+use selection::{selected_text, Point, Selection, Unit};
+use std::time::{Duration, Instant};
 use transcript::Transcript;
 
 /// Rows one wheel step moves.
 const WHEEL_ROWS: isize = 3;
+/// Presses closer together than this count as a double or triple click.
+const MULTI_CLICK: Duration = Duration::from_millis(500);
 
 /// One full-screen frame: the cells of the whole screen and the cursor.
 pub struct Frame {
@@ -44,6 +49,26 @@ pub enum ViewAction {
     Ignored,
     /// The view changed; draw a frame.
     Handled,
+    /// A selection ended; copy this text.
+    Copy(String),
+}
+
+/// Counts presses on one cell in quick succession.
+#[derive(Debug, Default)]
+struct Clicks {
+    last: Option<(Instant, u16, u16)>,
+    count: u8,
+}
+
+impl Clicks {
+    fn press(&mut self, column: u16, row: u16, now: Instant) -> u8 {
+        let repeat = self.last.is_some_and(|(at, c, r)| {
+            now.duration_since(at) < MULTI_CLICK && c == column && r == row
+        });
+        self.count = if repeat { self.count % 3 + 1 } else { 1 };
+        self.last = Some((now, column, row));
+        self.count
+    }
 }
 
 /// Where the transcript sits on the screen at the last frame.
@@ -64,6 +89,12 @@ pub struct FullscreenView {
     /// window edge does not drift: each mapping rounds, and rounding again
     /// from a rounded row walks the reader away.
     anchor: Option<transcript::Anchor>,
+    selection: Option<Selection>,
+    /// Whether the left button is down after a press in the transcript.
+    dragging: bool,
+    /// Whether the pointer moved since the press.
+    moved: bool,
+    clicks: Clicks,
 }
 
 impl FullscreenView {
@@ -83,6 +114,10 @@ impl FullscreenView {
 
     pub fn scroll(&self) -> Scroll {
         self.scroll
+    }
+
+    pub fn selection(&self) -> Option<&Selection> {
+        self.selection.as_ref()
     }
 
     /// Build the frame for `app` at the terminal size in `ctx`.
@@ -144,6 +179,11 @@ impl FullscreenView {
             None
         };
         self.anchor = self.anchor.or(anchor);
+        if reflow {
+            // The selected cells moved; a selection must not grab others.
+            self.selection = None;
+            self.dragging = false;
+        }
         self.transcript.sync(app.container_list().nodes(), ctx);
         let total = self.transcript.len();
         if let Some(anchor) = anchor {
@@ -155,9 +195,17 @@ impl FullscreenView {
 
     fn draw_transcript(&self, grid: &mut CellGrid) {
         let top = self.scroll.top();
+        let width = grid.width();
         for y in 0..self.area.height {
             if let Some(row) = self.transcript.row(top + y) {
                 grid.blit_line(&row.ansi, 0, self.area.top + y);
+            }
+            if let Some(cols) = self
+                .selection
+                .as_ref()
+                .and_then(|s| s.cols_on(top + y, width))
+            {
+                grid.invert(self.area.top + y, cols);
             }
         }
         if !self.scroll.follows() && self.area.height > 0 {
@@ -190,6 +238,10 @@ impl FullscreenView {
     fn handle_key(&mut self, key: &KeyEvent) -> ViewAction {
         let page = self.area.height.saturating_sub(1).max(1) as isize;
         match key.code {
+            KeyCode::Esc if self.selection.is_some() => {
+                self.selection = None;
+                self.dragging = false;
+            }
             KeyCode::PageUp => self.scroll_by(-page),
             KeyCode::PageDown => self.scroll_by(page),
             _ => return ViewAction::Ignored,
@@ -201,13 +253,97 @@ impl FullscreenView {
         match mouse.kind {
             MouseEventKind::ScrollUp => self.scroll_by(-WHEEL_ROWS),
             MouseEventKind::ScrollDown => self.scroll_by(WHEEL_ROWS),
+            MouseEventKind::Down(MouseButton::Left) => return self.press(mouse),
+            MouseEventKind::Drag(MouseButton::Left) if self.dragging => self.drag(mouse),
+            MouseEventKind::Up(MouseButton::Left) if self.dragging => return self.release(),
             _ => return ViewAction::Ignored,
         }
         ViewAction::Handled
     }
 
+    /// The buffer cell under a screen cell in the transcript area.
+    fn point_at(&self, column: u16, row: u16) -> Option<Point> {
+        let y = (row as usize).checked_sub(self.area.top)?;
+        (y < self.area.height).then(|| Point {
+            row: self.scroll.top() + y,
+            col: column as usize,
+        })
+    }
+
+    fn press(&mut self, mouse: &MouseEvent) -> ViewAction {
+        let Some(point) = self.point_at(mouse.column, mouse.row) else {
+            // A press outside the transcript clears the selection and goes
+            // on to the app.
+            self.selection = None;
+            return ViewAction::Ignored;
+        };
+        let clicks = self.clicks.press(mouse.column, mouse.row, Instant::now());
+        let transcript = &self.transcript;
+        self.selection = Some(Selection::start(
+            point,
+            Unit::from_clicks(clicks),
+            transcript.width() as usize,
+            |r| transcript.row(r).map(|row| row.as_ref()),
+        ));
+        self.dragging = true;
+        self.moved = false;
+        ViewAction::Handled
+    }
+
+    /// Extend the selection to the pointer. Past the top or bottom edge of
+    /// the transcript, scroll one row toward the pointer.
+    fn drag(&mut self, mouse: &MouseEvent) {
+        let row = mouse.row as usize;
+        if row < self.area.top {
+            self.scroll_by(-1);
+        } else if row >= self.area.top + self.area.height {
+            self.scroll_by(1);
+        }
+        let last = (self.area.top + self.area.height).saturating_sub(1);
+        let clamped = row.clamp(self.area.top, last.max(self.area.top)) as u16;
+        let Some(point) = self.point_at(mouse.column, clamped) else {
+            return;
+        };
+        let transcript = &self.transcript;
+        if let Some(selection) = self.selection.as_mut() {
+            selection.extend(point, transcript.width() as usize, |r| {
+                transcript.row(r).map(|row| row.as_ref())
+            });
+        }
+        self.moved = true;
+    }
+
+    /// End the gesture. A plain click selects nothing; anything else
+    /// copies, as a terminal does.
+    fn release(&mut self) -> ViewAction {
+        self.dragging = false;
+        let Some(selection) = self.selection else {
+            return ViewAction::Handled;
+        };
+        if selection.unit() == Unit::Cell && !self.moved {
+            self.selection = None;
+            return ViewAction::Handled;
+        }
+        match self.selected_text() {
+            Some(text) if !text.is_empty() => ViewAction::Copy(text),
+            _ => ViewAction::Handled,
+        }
+    }
+
+    /// The text of the selection, as the source had it.
+    pub fn selected_text(&self) -> Option<String> {
+        let selection = self.selection?;
+        let transcript = &self.transcript;
+        Some(selected_text(
+            selection.bounds(),
+            transcript.width() as usize,
+            |r| transcript.row(r).map(|row| row.as_ref()),
+        ))
+    }
+
     fn scroll_by(&mut self, delta: isize) {
         self.anchor = None;
+        // Wheel scrolls do not end a selection: it lives in buffer rows.
         self.scroll
             .scroll_by(delta, self.transcript.len(), self.area.height);
     }

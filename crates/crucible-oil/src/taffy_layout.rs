@@ -348,13 +348,17 @@ impl LayoutEngine {
         match node {
             Node::Empty => LayoutBox::new(rect, LayoutContent::Empty),
 
-            Node::Text(text) => LayoutBox::new(
-                rect,
-                LayoutContent::Text {
-                    content: text.content.clone(),
-                    style: text.style,
-                },
-            ),
+            Node::Text(text) => {
+                let mut layout_box = LayoutBox::new(
+                    rect,
+                    LayoutContent::Text {
+                        content: text.content.clone(),
+                        style: text.style,
+                    },
+                );
+                layout_box.join = text.continues.clone();
+                layout_box
+            }
 
             Node::Box(boxnode) => {
                 let taffy_children = self
@@ -379,6 +383,7 @@ impl LayoutEngine {
                     children,
                     style: boxnode.style,
                     key: None,
+                    join: None,
                 }
             }
 
@@ -438,6 +443,7 @@ impl LayoutEngine {
                     children: child_boxes,
                     style: OilStyle::default(),
                     key: None,
+                    join: None,
                 }
             }
 

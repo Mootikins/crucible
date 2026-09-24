@@ -4,7 +4,7 @@ use super::context::RenderContext;
 use super::list::render_list_item;
 use super::table::render_table;
 use super::{ASSISTANT_BULLET, BR_TAG_REGEX};
-use crate::tui::oil::markdown::table::wrap_text;
+use crate::tui::oil::markdown::table::wrap_text_with_gaps;
 use crate::tui::oil::theme;
 use crucible_oil::node::*;
 use crucible_oil::style::Style;
@@ -217,18 +217,22 @@ pub(super) fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext
     }
 
     let para_text = extract_all_text(node);
-    let wrapped = wrap_text(&para_text, ctx.width);
+    let wrapped = wrap_text_with_gaps(&para_text, ctx.width);
 
     let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
     let indent = " ".repeat(margins.left);
 
-    for (i, line) in wrapped.iter().enumerate() {
+    for (i, (line, gap)) in wrapped.iter().enumerate() {
         let prefix = if i == 0 && show_bullet {
             bullet_node()
         } else {
             text(&indent)
         };
-        ctx.blocks.push(row([prefix, text_node(line)]));
+        let body = match gap {
+            Some(gap) => text_node(line).continues_line(gap.as_str(), 0),
+            None => text_node(line),
+        };
+        ctx.blocks.push(row([prefix, body]));
     }
 
     ctx.is_first_paragraph = false;

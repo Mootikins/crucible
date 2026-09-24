@@ -14,14 +14,27 @@ use textwrap::{wrap, Options, WordSplitter};
 /// the wrapped text exceeds `max_rows`, the last visible line ends in an
 /// ellipsis so truncation is visible instead of silently bleeding past the
 /// laid-out rect (e.g., a shrunk status-bar span whose rect is 1 row tall).
+/// Wrapped, styled, padded rows of one text, and how each row joins the
+/// row above it.
+pub(crate) struct WrappedText {
+    pub lines: Vec<String>,
+    /// For each row: `Some(gap)` when a wrap split it from the row above and
+    /// dropped `gap` from the source; `None` for the first row and for a row
+    /// after a line break in the source.
+    pub gaps: Vec<Option<String>>,
+}
+
 pub(crate) fn wrap_and_style_padded_clamped(
     content: &str,
     style: &Style,
     width: usize,
     max_rows: usize,
-) -> Vec<String> {
+) -> WrappedText {
     if content.is_empty() || width == 0 || max_rows == 0 {
-        return Vec::new();
+        return WrappedText {
+            lines: Vec::new(),
+            gaps: Vec::new(),
+        };
     }
 
     // Wrap text to the target width
@@ -30,8 +43,13 @@ pub(crate) fn wrap_and_style_padded_clamped(
 
     // If wrapping produced no lines (e.g., all-whitespace input), return one full-width line of spaces
     if wrapped.is_empty() {
-        return vec![apply_style(&" ".repeat(width), style)];
+        return WrappedText {
+            lines: vec![apply_style(&" ".repeat(width), style)],
+            gaps: vec![None],
+        };
     }
+
+    let gaps = crate::utils::wrap_gaps(content, &wrapped);
 
     if wrapped.len() > max_rows {
         wrapped.truncate(max_rows);
@@ -53,7 +71,7 @@ pub(crate) fn wrap_and_style_padded_clamped(
     // input bar, mode bar, user-message highlight). The CellGrid's
     // compact path preserves these styled-space cells via the
     // `!c.style.is_empty()` rule.
-    wrapped
+    let lines = wrapped
         .into_iter()
         .map(|line| {
             let visual_len = visible_width(&line);
@@ -64,8 +82,10 @@ pub(crate) fn wrap_and_style_padded_clamped(
             };
             apply_style(&padded, style)
         })
-        .collect()
+        .collect();
+    WrappedText { lines, gaps }
 }
+
 
 /// Selects the current spinner frame character from the given frames array.
 ///

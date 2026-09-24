@@ -167,6 +167,33 @@ pub fn wrap_words(content: &str, width: usize) -> Vec<String> {
         .collect()
 }
 
+/// [`wrap_words`], with the source text each wrap dropped: `Some(gap)` for
+/// a row that continues the row above, `None` for a row that starts a
+/// source line. A full-screen copy joins the rows again with the gap.
+pub fn wrap_words_with_gaps(content: &str, width: usize) -> Vec<(String, Option<String>)> {
+    use textwrap::{wrap, Options, WordSplitter};
+
+    if width == 0 {
+        return vec![(content.to_string(), None)];
+    }
+    let options = Options::new(width).word_splitter(WordSplitter::NoHyphenation);
+    content
+        .lines()
+        .flat_map(|line| {
+            if line.is_empty() {
+                return vec![(String::new(), None)];
+            }
+            let lines = wrap(line, &options);
+            let gaps = crucible_oil::utils::wrap_gaps(line, &lines);
+            lines
+                .into_iter()
+                .map(|cow| cow.into_owned())
+                .zip(gaps)
+                .collect()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,7 +10,7 @@
 //! at computed coordinates, then converts the buffer to an ANSI string.
 
 use crate::ansi::apply_style;
-use crate::cell_grid::CellGrid;
+use crate::cell_grid::{CellGrid, RowJoin};
 use crate::utils::{truncate_to_chars, visible_width};
 
 use crate::render::CursorInfo;
@@ -105,6 +105,15 @@ fn render_box(
 
         LayoutContent::Text { content, style } => {
             render_text(content, style, x, y, width, height, grid);
+            if let Some(join) = &layout_box.join {
+                grid.set_join(
+                    y,
+                    RowJoin {
+                        gap: join.gap.clone(),
+                        content_col: x + join.indent as usize,
+                    },
+                );
+            }
         }
 
         LayoutContent::Input {
@@ -218,12 +227,21 @@ fn render_text(
     }
 
     let max_rows = if height == 0 { usize::MAX } else { height };
-    let styled_lines = wrap_and_style_padded_clamped(content, style, width, max_rows);
+    let wrapped = wrap_and_style_padded_clamped(content, style, width, max_rows);
 
-    for (row_idx, line) in styled_lines.iter().enumerate() {
+    for (row_idx, line) in wrapped.lines.iter().enumerate() {
         let target_y = y + row_idx;
         if target_y < grid.height() {
             grid.blit_line(line, x, target_y);
+            if let Some(Some(gap)) = wrapped.gaps.get(row_idx) {
+                grid.set_join(
+                    target_y,
+                    RowJoin {
+                        gap: gap.clone(),
+                        content_col: x,
+                    },
+                );
+            }
         }
     }
 }

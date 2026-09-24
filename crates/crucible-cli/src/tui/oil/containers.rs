@@ -19,7 +19,7 @@ use crate::tui::oil::markdown::{
     markdown_to_node_streaming, markdown_to_node_styled, Margins, RenderStyle,
 };
 use crate::tui::oil::render_state::RenderState;
-use crate::tui::oil::utils::wrap_words;
+use crate::tui::oil::utils::wrap_words_with_gaps;
 use crate::tui::oil::viewport_cache::{CachedShellExecution, CachedSubagent, CachedToolCall};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -154,7 +154,7 @@ impl ChatNode {
         let prefix = " > ";
         let continuation_prefix = "   ";
         let content_width = width.saturating_sub(prefix.len() + 1);
-        let lines = wrap_words(content, content_width);
+        let lines = wrap_words_with_gaps(content, content_width);
 
         let top_edge = styled(
             t.decorations.half_block_bottom.to_string().repeat(width),
@@ -168,14 +168,18 @@ impl ChatNode {
         let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
         rows.push(top_edge);
 
-        for (i, line) in lines.iter().enumerate() {
+        for (i, (line, gap)) in lines.iter().enumerate() {
             let line_len = line.width();
             let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
             let line_prefix = if i == 0 { prefix } else { continuation_prefix };
-            rows.push(styled(
+            let row = styled(
                 format!("{}{}{}", line_prefix, line, line_padding),
                 Style::new().bg(bg),
-            ));
+            );
+            rows.push(match gap {
+                Some(gap) => row.continues_line(gap.as_str(), line_prefix.len() as u16),
+                None => row,
+            });
         }
 
         rows.push(bottom_edge);

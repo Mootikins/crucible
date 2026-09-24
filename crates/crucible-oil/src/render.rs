@@ -204,6 +204,26 @@ mod tests {
     }
 
     #[test]
+    fn a_text_that_wraps_records_the_gap_on_each_continued_row() {
+        let rendered = render_tree_to_grid(&text("alpha beta  gamma\ndelta"), 11, NATURAL_HEIGHT);
+        let grid = &rendered.grid;
+        assert_eq!(grid.join(0), None);
+        assert_eq!(grid.join(1).map(|j| j.gap.as_str()), Some("  "), "the two spaces the wrap dropped");
+        assert_eq!(grid.join(2), None, "a line break in the source is not a wrap");
+    }
+
+    #[test]
+    fn a_continued_text_marks_its_row_past_the_indent() {
+        let tree = col([
+            row([text("- "), text("first")]),
+            row([text("  "), text("second").continues_line(" ", 0)]),
+        ]);
+        let rendered = render_tree_to_grid(&tree, 20, NATURAL_HEIGHT);
+        let join = rendered.grid.join(1).expect("the second row continues the first");
+        assert_eq!((join.gap.as_str(), join.content_col), (" ", 2));
+    }
+
+    #[test]
     fn test_render_empty_node() {
         let node = Node::Empty;
         let result = render_to_string(&node, 80);

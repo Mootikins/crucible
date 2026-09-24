@@ -208,3 +208,111 @@ fn streamed_frames_are_single_synchronized_updates_without_a_clear() {
     }
     assert!(!row_counts.is_empty());
 }
+
+/// Screen row and column where `needle` starts.
+fn find_on_screen(frame: &Frame, needle: &str) -> (u16, u16) {
+    for (y, row) in screen_text(frame).iter().enumerate() {
+        if let Some(byte) = row.find(needle) {
+            let col = unicode_width::UnicodeWidthStr::width(&row[..byte]);
+            return (col as u16, y as u16);
+        }
+    }
+    panic!("{needle:?} is not on screen: {:#?}", screen_text(frame));
+}
+
+fn drag_copy(view: &mut FullscreenView, app: &OilChatApp, from: (u16, u16), to: (u16, u16)) -> String {
+    use crossterm::event::MouseButton;
+    view.handle_event(&mouse(MouseEventKind::Down(MouseButton::Left), from.0, from.1), app);
+    view.handle_event(&mouse(MouseEventKind::Drag(MouseButton::Left), to.0, to.1), app);
+    match view.handle_event(&mouse(MouseEventKind::Up(MouseButton::Left), to.0, to.1), app) {
+        ViewAction::Copy(text) => text,
+        other => panic!("a drag must copy, got {other:?}"),
+    }
+}
+
+/// Pass criterion 2: a drag over a wrapped paragraph with wide characters
+/// copies the source text exactly.
+#[test]
+fn a_drag_over_a_wrapped_paragraph_copies_the_source_text() {
+    let paragraph = "Start of the paragraph with 日本語のテキスト and a family \
+                     \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} emoji, long enough to wrap \
+                     over several rows at forty columns, until the END.";
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::TextDelta(paragraph.into()));
+    app.on_message(ChatAppMsg::StreamComplete);
+    let mut view = FullscreenView::new();
+    let frame = frame_at(&mut view, &app, 40, 30);
+
+    let from = find_on_screen(&frame, "Start");
+    let (end_col, end_row) = find_on_screen(&frame, "END.");
+    let copied = drag_copy(&mut view, &app, from, (end_col + 3, end_row));
+    assert_eq!(copied, paragraph);
+}
+
+#[test]
+fn a_drag_over_a_wrapped_user_message_copies_the_source_text() {
+    let message = "a user question that is long enough to wrap onto a second row and a third";
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage(message.into()));
+    let mut view = FullscreenView::new();
+    let frame = frame_at(&mut view, &app, 30, 30);
+
+    let from = find_on_screen(&frame, "a user");
+    let (end_col, end_row) = find_on_screen(&frame, "third");
+    let copied = drag_copy(&mut view, &app, from, (end_col + 4, end_row));
+    assert_eq!(copied, message);
+}
+
+#[test]
+fn the_selection_is_drawn_inverted() {
+    let mut app = OilChatApp::default();
+    app.add_system_message("select me".into());
+    let mut view = FullscreenView::new();
+    let frame = frame_at(&mut view, &app, 40, 20);
+    let (col, row) = find_on_screen(&frame, "select");
+    drag_copy(&mut view, &app, (col, row), (col + 5, row));
+    let frame = frame_at(&mut view, &app, 40, 20);
+    assert!(frame.grid.row(row as usize)[col as usize].style.contains("\x1b[7m"));
+    assert!(!frame.grid.row(row as usize)[col as usize + 7].style.contains("\x1b[7m"));
+}
+
+#[test]
+fn a_plain_click_selects_and_copies_nothing() {
+    use crossterm::event::MouseButton;
+    let app = fixtures::app_with_exchanges(1);
+    let mut view = FullscreenView::new();
+    frame_at(&mut view, &app, 80, 30);
+    view.handle_event(&mouse(MouseEventKind::Down(MouseButton::Left), 4, 3), &app);
+    let up = view.handle_event(&mouse(MouseEventKind::Up(MouseButton::Left), 4, 3), &app);
+    assert_eq!(up, ViewAction::Handled);
+    assert!(view.selection().is_none());
+}
+
+#[test]
+fn a_double_and_a_triple_click_copy_a_word_and_a_line() {
+    use crossterm::event::MouseButton;
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::TextDelta(
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda".into(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    let mut view = FullscreenView::new();
+    let frame = frame_at(&mut view, &app, 30, 20);
+    let (col, row) = find_on_screen(&frame, "gamma");
+
+    let down = mouse(MouseEventKind::Down(MouseButton::Left), col + 1, row);
+    let up = mouse(MouseEventKind::Up(MouseButton::Left), col + 1, row);
+    view.handle_event(&down, &app);
+    view.handle_event(&up, &app);
+    view.handle_event(&down, &app);
+    assert_eq!(view.handle_event(&up, &app), ViewAction::Copy("gamma".into()));
+    view.handle_event(&down, &app);
+    match view.handle_event(&up, &app) {
+        ViewAction::Copy(line) => assert!(
+            line.trim_start().trim_start_matches('●').trim()
+                == "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda",
+            "{line:?}"
+        ),
+        other => panic!("{other:?}"),
+    }
+}

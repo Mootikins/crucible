@@ -17,6 +17,7 @@ crossterm = { workspace = true }
 # `rc` serializes the shared rows of a `RowsNode`.
 serde = { workspace = true, optional = true, features = ["rc"] }
 unicode-width = "0.2"
+unicode-segmentation = "1.13"
 taffy = "0.12"
 textwrap = "0.16.2"
 html_parser = "0.7"

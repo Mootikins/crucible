@@ -457,7 +457,7 @@ impl OilChatRunner {
             use crate::tui::oil::fullscreen::ViewAction;
             match view.handle_event(&ev, params.app) {
                 ViewAction::Ignored => {}
-                ViewAction::Handled => return Ok(false),
+                ViewAction::Handled | ViewAction::Copy(_) => return Ok(false),
             }
         }
 

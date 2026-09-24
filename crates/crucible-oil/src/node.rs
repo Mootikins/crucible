@@ -111,6 +111,23 @@ pub struct TextNode {
     /// ellipsized instead. For short decorations like statusline badges.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub no_shrink: bool,
+    /// This text is the rest of the line above it; see [`WrapJoin`].
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub continues: Option<WrapJoin>,
+}
+
+/// Marks a text as the rest of the logical line above it, put on its own
+/// row by a wrap that ran before layout. The markdown renderer wraps a
+/// paragraph itself and emits one row per wrapped line, so only the
+/// renderer knows which rows belong together. A full-screen copy reads this
+/// to join the rows again with the source text instead of a line break.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct WrapJoin {
+    /// The source text the wrap dropped between the rows, usually `" "`.
+    pub gap: String,
+    /// Columns at the start of this text that are decoration, not source.
+    pub indent: u16,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -244,6 +261,7 @@ pub fn text(content: impl Into<String>) -> Node {
         content: content.into(),
         style: Style::default(),
         no_shrink: false,
+        continues: None,
     })
 }
 
@@ -252,6 +270,7 @@ pub fn styled(content: impl Into<String>, style: Style) -> Node {
         content: content.into(),
         style,
         no_shrink: false,
+        continues: None,
     })
 }
 
@@ -434,6 +453,21 @@ pub fn numbered_list(items: impl IntoIterator<Item = impl Into<String>>) -> Node
 }
 
 impl Node {
+    /// Mark a text node as the rest of the line above it (see [`WrapJoin`]).
+    /// No effect on other node kinds.
+    pub fn continues_line(self, gap: impl Into<String>, indent: u16) -> Self {
+        match self {
+            Node::Text(mut t) => {
+                t.continues = Some(WrapJoin {
+                    gap: gap.into(),
+                    indent,
+                });
+                Node::Text(t)
+            }
+            other => other,
+        }
+    }
+
     /// Mark a text node as non-shrinkable in row layouts (see
     /// [`TextNode::no_shrink`]). No effect on other node kinds.
     pub fn no_shrink(self) -> Self {

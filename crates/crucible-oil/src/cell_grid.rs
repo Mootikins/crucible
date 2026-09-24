@@ -1,12 +1,21 @@
+use std::ops::Range;
 use std::sync::Arc;
 
-use unicode_width::UnicodeWidthChar;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::ansi::extract_bg;
 
+/// One terminal cell: a grapheme and the SGR escapes that style it.
 #[derive(Debug, Clone, Default)]
 pub struct StyledCell {
+    /// The first code point of the grapheme. `'\0'` marks a cell that the
+    /// wide grapheme to its left covers.
     pub ch: char,
+    /// The rest of the grapheme when it has more than one code point: a ZWJ
+    /// sequence, a combining mark, a variation selector. `None` for most
+    /// cells, so a plain cell allocates nothing.
+    pub tail: Option<Box<str>>,
     pub style: String,
 }
 
@@ -14,18 +23,52 @@ impl StyledCell {
     pub fn space() -> Self {
         Self {
             ch: ' ',
+            tail: None,
             style: String::new(),
         }
     }
 
     pub fn new(ch: char, style: String) -> Self {
-        Self { ch, style }
+        Self {
+            ch,
+            tail: None,
+            style,
+        }
     }
 
     /// A transparent cell lets the base layer show through when an overlay composites.
     pub fn is_transparent(&self) -> bool {
-        self.ch == ' ' && self.style.is_empty()
+        self.ch == ' ' && self.tail.is_none() && self.style.is_empty()
     }
+
+    /// Whether the wide grapheme to the left covers this cell.
+    pub fn is_continuation(&self) -> bool {
+        self.ch == '\0'
+    }
+
+    fn push_grapheme(&self, out: &mut String) {
+        if self.ch != '\0' {
+            out.push(self.ch);
+            if let Some(tail) = &self.tail {
+                out.push_str(tail);
+            }
+        }
+    }
+}
+
+/// How a row continues the logical line of the row above it.
+///
+/// A wrap splits one source line over rows and drops the text at the break,
+/// usually one space. A copy that crosses the break puts that text back
+/// instead of a line break. A row without a join starts a new line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowJoin {
+    /// The source text between the row above and this row: `" "` for a
+    /// break at a space, `""` for a break inside a long word.
+    pub gap: String,
+    /// The first column of this row's own text. The cells before it are an
+    /// indent or a prefix that the wrap added, so a copy skips them.
+    pub content_col: usize,
 }
 
 /// One row of the grid.
@@ -40,6 +83,8 @@ struct Row {
     /// A finished row that [`CellGrid::put_row`] placed, as `rows[index]`.
     /// It is the row's output as long as nothing draws over it.
     verbatim: Option<(Arc<[String]>, usize)>,
+    /// How the row continues the row above. See [`RowJoin`].
+    join: Option<RowJoin>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +103,13 @@ impl CellGrid {
         }
     }
 
+    /// A one-row grid holding `line`, for reading the cells of a stored row.
+    pub fn from_line(line: &str, width: usize) -> Self {
+        let mut grid = Self::new(width, 1);
+        grid.blit_line(line, 0, 0);
+        grid
+    }
+
     pub fn width(&self) -> usize {
         self.width
     }
@@ -70,6 +122,7 @@ impl CellGrid {
     pub fn get(&self, x: usize, y: usize) -> Option<&StyledCell> {
         static SPACE: StyledCell = StyledCell {
             ch: ' ',
+            tail: None,
             style: String::new(),
         };
         let row = self.rows.get(y)?;
@@ -91,6 +144,80 @@ impl CellGrid {
             }
         }
         &mut row.cells
+    }
+
+    /// Draw every verbatim row into its cells, so that [`CellGrid::row`]
+    /// reads its content. The full-screen mode reads cells; the native mode
+    /// copies verbatim rows as they are.
+    pub fn draw_verbatim_rows(&mut self) {
+        for y in 0..self.height {
+            if self.rows[y].verbatim.is_some() {
+                self.cells_mut(y);
+            }
+        }
+    }
+
+    /// How row `y` continues the row above, if a wrap split them.
+    pub fn join(&self, y: usize) -> Option<&RowJoin> {
+        self.rows.get(y).and_then(|row| row.join.as_ref())
+    }
+
+    /// Mark row `y` as the continuation of the row above.
+    pub fn set_join(&mut self, y: usize, join: RowJoin) {
+        if let Some(row) = self.rows.get_mut(y) {
+            row.join = Some(join);
+        }
+    }
+
+    /// Invert the cells of row `y` in `cols`, as a selection highlight. A
+    /// range that starts inside a wide grapheme widens to its first cell.
+    pub fn invert(&mut self, y: usize, cols: Range<usize>) {
+        if y >= self.height {
+            return;
+        }
+        let row = self.cells_mut(y);
+        let mut start = cols.start.min(row.len());
+        while start > 0 && row[start].is_continuation() {
+            start -= 1;
+        }
+        let end = cols.end.min(row.len());
+        for cell in &mut row[start..end] {
+            cell.style.push_str("\x1b[7m");
+        }
+    }
+
+    /// The text of row `y` in `cols`, one grapheme per covered cell. A
+    /// wide grapheme counts when its first cell is in the range, or when the
+    /// range starts inside it.
+    pub fn text(&self, y: usize, cols: Range<usize>) -> String {
+        let row = self.row(y);
+        let mut start = cols.start.min(row.len());
+        while start > 0 && start < row.len() && row[start].is_continuation() {
+            start -= 1;
+        }
+        let mut out = String::new();
+        for cell in &row[start..cols.end.min(row.len())] {
+            cell.push_grapheme(&mut out);
+        }
+        out
+    }
+
+    /// The column span of the grapheme at `col`: its first cell and its
+    /// width. A continuation cell answers for the grapheme that covers it.
+    pub fn grapheme_span(&self, y: usize, col: usize) -> Range<usize> {
+        let row = self.row(y);
+        if row.is_empty() {
+            return col..col;
+        }
+        let mut start = col.min(row.len() - 1);
+        while start > 0 && row[start].is_continuation() {
+            start -= 1;
+        }
+        let mut end = start + 1;
+        while end < row.len() && row[end].is_continuation() {
+            end += 1;
+        }
+        start..end
     }
 
     pub fn blit_line(&mut self, line: &str, x: usize, y: usize) {
@@ -188,17 +315,6 @@ impl CellGrid {
             .collect()
     }
 
-    /// Draw every verbatim row into its cells, so that [`CellGrid::row`]
-    /// reads its content. The full-screen mode reads cells; the native mode
-    /// copies verbatim rows as they are.
-    pub fn draw_verbatim_rows(&mut self) {
-        for y in 0..self.height {
-            if self.rows[y].verbatim.is_some() {
-                self.cells_mut(y);
-            }
-        }
-    }
-
     /// The cells of row `y`: empty outside the grid, and empty for a row
     /// that nothing drew into, which reads as spaces. A verbatim row has
     /// cells only after [`CellGrid::draw_verbatim_rows`].
@@ -266,113 +382,173 @@ fn push_row_compact(row: &Row, out: &mut String) {
 /// Draw `line` into `cells` from column `x`, reading SGR escapes as the
 /// style of the cells after them.
 fn blit_into(cells: &mut [StyledCell], line: &str, x: usize) {
-    let width = cells.len();
     let mut col = x;
     let mut current_style = String::new();
-    let mut chars = line.chars().peekable();
+    let mut rest = line;
+    while !rest.is_empty() && col < cells.len() {
+        match rest.find('\x1b') {
+            Some(0) => rest = consume_escape(rest, &mut current_style),
+            Some(esc) => {
+                col = blit_text(cells, &rest[..esc], x, col, &current_style);
+                rest = &rest[esc..];
+            }
+            None => {
+                blit_text(cells, rest, x, col, &current_style);
+                break;
+            }
+        }
+    }
+}
 
-    while let Some(c) = chars.next() {
-        if col >= width {
+/// Write the graphemes of `text` into `cells` from column `col`, and
+/// return the column after them. `x` is where the blit started, so a
+/// zero-width grapheme never attaches to a cell left of it.
+fn blit_text(cells: &mut [StyledCell], text: &str, x: usize, mut col: usize, style: &str) -> usize {
+    for grapheme in text.graphemes(true) {
+        if col >= cells.len() {
             break;
         }
-
-        if c == '\x1b' {
-            match chars.peek() {
-                Some(&'[') => {
-                    let mut escape = String::from("\x1b[");
-                    chars.next();
-                    while let Some(&next) = chars.peek() {
-                        escape.push(chars.next().unwrap());
-                        if next.is_ascii_alphabetic() {
-                            break;
-                        }
-                    }
-                    if escape.contains('m') {
-                        if escape == "\x1b[0m" || escape == "\x1b[m" {
-                            current_style.clear();
-                        } else {
-                            current_style.push_str(&escape);
-                        }
-                    }
-                }
-                // OSC / APC / DCS: skip entirely without interpreting as visible chars.
-                // Bounded to 256 characters — a malformed unterminated sequence in
-                // user content must not consume the rest of the line.
-                //
-                // NOTE: the parallel skip in `ansi::strip_ansi` / `visible_width`
-                // is unbounded today (see `ansi.rs::skip_until_st_or_bel`). For
-                // legitimate well-terminated escapes the two agree by reaching the
-                // terminator first; for malformed input this asymmetry would only
-                // matter if width and blit ran on the same malformed payload, which
-                // no current path does. Stage B (render path unification) is the
-                // right place to converge them.
-                Some(&']') | Some(&'_') | Some(&'P') => {
-                    chars.next();
-                    let mut consumed = 0usize;
-                    let mut terminated = false;
-                    while let Some(sc) = chars.next() {
-                        consumed += 1;
-                        if sc == '\x07' {
-                            terminated = true;
-                            break;
-                        }
-                        if sc == '\x1b' && chars.peek() == Some(&'\\') {
-                            chars.next();
-                            terminated = true;
-                            break;
-                        }
-                        if consumed >= 256 {
-                            break;
-                        }
-                    }
-                    if !terminated {
-                        tracing::debug!(
-                            consumed,
-                            "dropped malformed OSC/APC/DCS escape (no terminator within 256 characters)"
-                        );
-                    }
-                }
-                _ => {}
+        let mut chars = grapheme.chars();
+        let first = chars.next().unwrap_or(' ');
+        let tail = chars.as_str();
+        // A control character keeps the old per-character rule: one
+        // cell each. CR LF is one grapheme, and a zero-width answer for
+        // it would move every cell after it.
+        if tail.is_empty() || first.is_control() {
+            for c in grapheme.chars() {
+                let width = UnicodeWidthChar::width(c).unwrap_or(1);
+                col = put_grapheme(cells, c, None, width, x, col, style);
             }
         } else {
-            let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
-            if col + char_width <= width {
-                // Style composition: if the new write doesn't set its
-                // own bg, inherit whatever bg was on the cell already.
-                // This lets a parent Box's `style.bg` survive children
-                // that only paint fg, mirroring CSS layering. Pair
-                // with `tree_render::render_box_content`'s bg-fill.
-                //
-                // Asymmetric guarantee: this composes by *cell state*,
-                // not by tree ancestry. If a sibling Box-with-bg paints
-                // a region, then a *later* sibling (no bg) writes text
-                // over the same cells, the second sibling's text picks
-                // up the first sibling's bg. Tree layouts that don't
-                // overlap siblings (Crucible's norm) see only the
-                // intended parent→child inheritance.
-                let final_style = if extract_bg(&current_style).is_none() {
-                    match extract_bg(&cells[col].style) {
-                        Some(prior_bg) => {
-                            if current_style.is_empty() {
-                                prior_bg
-                            } else {
-                                format!("{}{}", prior_bg, current_style)
-                            }
-                        }
-                        None => current_style.clone(),
-                    }
-                } else {
-                    current_style.clone()
-                };
-                cells[col] = StyledCell::new(c, final_style);
-                for i in 1..char_width {
-                    if col + i < width {
-                        cells[col + i] = StyledCell::new('\0', String::new());
-                    }
-                }
-                col += char_width;
-            }
+            let width = UnicodeWidthStr::width(grapheme);
+            col = put_grapheme(cells, first, Some(tail), width, x, col, style);
         }
+    }
+    col
+}
+
+/// Write one grapheme at `col` and return the next column. A grapheme
+/// that does not fit is dropped; a zero-width one joins the cell to its
+/// left.
+#[allow(clippy::too_many_arguments)]
+fn put_grapheme(
+    cells: &mut [StyledCell],
+    first: char,
+    tail: Option<&str>,
+    width: usize,
+    x: usize,
+    col: usize,
+    current_style: &str,
+) -> usize {
+    if width == 0 {
+        if col > x {
+            let mut lead = col - 1;
+            while lead > x && cells[lead].is_continuation() {
+                lead -= 1;
+            }
+            let cell = &mut cells[lead];
+            let mut joined = cell.tail.take().map(String::from).unwrap_or_default();
+            joined.push(first);
+            joined.push_str(tail.unwrap_or(""));
+            cell.tail = Some(joined.into_boxed_str());
+        }
+        return col;
+    }
+    if col + width > cells.len() {
+        return col;
+    }
+    // Style composition: if the new write doesn't set its own bg,
+    // inherit whatever bg was on the cell already. This lets a parent
+    // Box's `style.bg` survive children that only paint fg, mirroring
+    // CSS layering. Pair with `tree_render::render_box_content`'s
+    // bg-fill.
+    //
+    // Asymmetric guarantee: this composes by *cell state*, not by tree
+    // ancestry. If a sibling Box-with-bg paints a region, then a *later*
+    // sibling (no bg) writes text over the same cells, the second
+    // sibling's text picks up the first sibling's bg. Tree layouts that
+    // don't overlap siblings (Crucible's norm) see only the intended
+    // parent→child inheritance.
+    let final_style = if extract_bg(current_style).is_none() {
+        match extract_bg(&cells[col].style) {
+            Some(prior_bg) => {
+                if current_style.is_empty() {
+                    prior_bg
+                } else {
+                    format!("{}{}", prior_bg, current_style)
+                }
+            }
+            None => current_style.to_string(),
+        }
+    } else {
+        current_style.to_string()
+    };
+    cells[col] = StyledCell {
+        ch: first,
+        tail: tail.map(Box::from),
+        style: final_style,
+    };
+    for i in 1..width {
+        cells[col + i] = StyledCell::new('\0', String::new());
+    }
+    col + width
+}
+
+/// Consume the escape sequence at the start of `rest` and return what
+/// follows it. An SGR sequence updates `current_style`; every other escape
+/// is dropped.
+fn consume_escape<'a>(rest: &'a str, current_style: &mut String) -> &'a str {
+    let mut chars = rest.char_indices().skip(1).peekable();
+    match chars.peek().map(|&(_, c)| c) {
+        Some('[') => {
+            chars.next();
+            let end = chars
+                .find(|&(_, c)| c.is_ascii_alphabetic())
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(rest.len());
+            let escape = &rest[..end];
+            if escape.contains('m') {
+                if escape == "\x1b[0m" || escape == "\x1b[m" {
+                    current_style.clear();
+                } else {
+                    current_style.push_str(escape);
+                }
+            }
+            &rest[end..]
+        }
+        // OSC / APC / DCS: skip entirely without interpreting as visible chars.
+        // Bounded to 256 characters — a malformed unterminated sequence in
+        // user content must not consume the rest of the line.
+        //
+        // NOTE: the parallel skip in `ansi::strip_ansi` / `visible_width`
+        // is unbounded today (see `ansi.rs::skip_until_st_or_bel`). For
+        // legitimate well-terminated escapes the two agree by reaching the
+        // terminator first; for malformed input this asymmetry would only
+        // matter if width and blit ran on the same malformed payload, which
+        // no current path does.
+        Some(']') | Some('_') | Some('P') => {
+            chars.next();
+            let mut consumed = 0usize;
+            while let Some((i, c)) = chars.next() {
+                consumed += 1;
+                if c == '\x07' {
+                    return &rest[i + 1..];
+                }
+                if c == '\x1b' && chars.peek().map(|&(_, c)| c) == Some('\\') {
+                    return &rest[i + 2..];
+                }
+                if consumed >= 256 {
+                    tracing::debug!(
+                        consumed,
+                        "dropped malformed OSC/APC/DCS escape (no terminator within 256 characters)"
+                    );
+                    return &rest[i + c.len_utf8()..];
+                }
+            }
+            ""
+        }
+        // A lone ESC is dropped; what follows it is text.
+        _ => &rest[1..],
     }
 }
 
@@ -406,7 +582,7 @@ pub(crate) fn cells_to_string(cells: &[StyledCell]) -> String {
             current_style = cell.style.clone();
         }
 
-        result.push(cell.ch);
+        cell.push_grapheme(&mut result);
     }
 
     if !current_style.is_empty() {
@@ -522,6 +698,63 @@ mod tests {
         // grid retains its allocated width.
         let line = &grid.to_lines()[0];
         assert_eq!(line.chars().count(), 20);
+    }
+
+    #[test]
+    fn a_zwj_emoji_takes_two_cells_and_keeps_every_code_point() {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        let mut grid = CellGrid::new(10, 1);
+        grid.blit_line(&format!("a{family}b"), 0, 0);
+
+        assert_eq!(
+            grid.get(3, 0).unwrap().ch,
+            'b',
+            "the emoji covers columns 1 and 2"
+        );
+        assert_eq!(grid.text(0, 0..4), format!("a{family}b"));
+        assert_eq!(grid.row_ansi(0), format!("a{family}b\x1b[K"));
+    }
+
+    #[test]
+    fn cjk_takes_two_cells_per_character() {
+        let mut grid = CellGrid::new(10, 1);
+        grid.blit_line("日本x", 0, 0);
+        assert_eq!(grid.get(4, 0).unwrap().ch, 'x');
+        assert_eq!(
+            grid.grapheme_span(0, 3),
+            2..4,
+            "a continuation cell answers for its lead"
+        );
+    }
+
+    #[test]
+    fn a_combining_mark_stays_with_its_base() {
+        let mut grid = CellGrid::new(10, 1);
+        grid.blit_line("e\u{301}x", 0, 0);
+        assert_eq!(grid.get(1, 0).unwrap().ch, 'x');
+        assert_eq!(grid.text(0, 0..1), "e\u{301}");
+    }
+
+    #[test]
+    fn text_from_inside_a_wide_grapheme_takes_the_whole_grapheme() {
+        let mut grid = CellGrid::new(10, 1);
+        grid.blit_line("a日b", 0, 0);
+        assert_eq!(grid.text(0, 2..4), "日b");
+        assert_eq!(
+            grid.text(0, 0..2),
+            "a日",
+            "a range that ends inside it keeps it"
+        );
+    }
+
+    #[test]
+    fn invert_marks_the_cells_and_widens_to_a_wide_lead() {
+        let mut grid = CellGrid::new(10, 1);
+        grid.blit_line("a日b", 0, 0);
+        grid.invert(0, 2..3);
+        assert!(grid.get(1, 0).unwrap().style.contains("\x1b[7m"));
+        assert!(!grid.get(0, 0).unwrap().style.contains("\x1b[7m"));
+        assert!(!grid.get(3, 0).unwrap().style.contains("\x1b[7m"));
     }
 
     /// Locks in the asymmetric composition rule documented above

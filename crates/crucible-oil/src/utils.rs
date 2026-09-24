@@ -154,6 +154,38 @@ fn visible_width_simple(s: &str) -> usize {
     s.chars().map(|c| c.width().unwrap_or(0)).sum()
 }
 
+/// The source text between consecutive wrapped lines, for
+/// [`crate::node::WrapJoin`] and [`crate::cell_grid::RowJoin`].
+///
+/// `textwrap` returns borrowed slices of `content` when it adds no indent
+/// and no hyphen, so a line's offset in the source is its pointer minus the
+/// source pointer. A gap with a line break is a hard break, not a wrap. An
+/// owned line has no offset, so it gets the usual gap, one space.
+pub fn wrap_gaps(content: &str, lines: &[std::borrow::Cow<'_, str>]) -> Vec<Option<String>> {
+    let base = content.as_ptr() as usize;
+    let offset = |line: &str| {
+        let start = (line.as_ptr() as usize).checked_sub(base)?;
+        (start + line.len() <= content.len()).then_some(start)
+    };
+    let mut gaps = vec![None];
+    for pair in lines.windows(2) {
+        let (prev, next) = (&pair[0], &pair[1]);
+        let gap = match (prev, next) {
+            (std::borrow::Cow::Borrowed(p), std::borrow::Cow::Borrowed(n)) => {
+                match (offset(p), offset(n)) {
+                    (Some(p_start), Some(n_start)) if p_start + p.len() <= n_start => {
+                        Some(content[p_start + p.len()..n_start].to_string())
+                    }
+                    _ => Some(" ".to_string()),
+                }
+            }
+            _ => Some(" ".to_string()),
+        };
+        gaps.push(gap.filter(|g| !g.contains('\n')));
+    }
+    gaps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

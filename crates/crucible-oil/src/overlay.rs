@@ -46,16 +46,10 @@ fn parse_line_to_cells(line: &str, width: usize) -> Vec<StyledCell> {
         } else {
             let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
             if col + char_width <= width {
-                cells[col] = StyledCell {
-                    ch: c,
-                    style: current_style.clone(),
-                };
+                cells[col] = StyledCell::new(c, current_style.clone());
                 for i in 1..char_width {
                     if col + i < width {
-                        cells[col + i] = StyledCell {
-                            ch: '\0',
-                            style: String::new(),
-                        };
+                        cells[col + i] = StyledCell::new('\0', String::new());
                     }
                 }
                 col += char_width;
