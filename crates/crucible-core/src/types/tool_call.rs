@@ -211,9 +211,11 @@ impl CanonicalToolCall {
             render: None,
         };
 
-        if let Some(command) = shell_command(tool_name, args) {
+        // A shell tool is a command also when its command line is absent,
+        // so that a `bash` deny rule still applies to it.
+        if is_shell_tool(tool_name) {
             return Self {
-                command: Some(command.clone()),
+                command: args.as_object().and_then(|m| first_string(m, &["command"])),
                 ..call("command")
             };
         }
@@ -292,21 +294,11 @@ where
     }
 }
 
-fn is_shell_tool(tool_name: &str) -> bool {
+pub(super) fn is_shell_tool(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
     CanonicalToolCall::COMMAND_TOOL_NAMES
         .iter()
         .any(|t| lower == *t || lower.ends_with(&format!("__{t}")))
-}
-
-fn shell_command(tool_name: &str, args: &Value) -> Option<String> {
-    if !is_shell_tool(tool_name) {
-        return None;
-    }
-    args.get("command")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
 }
 
 /// Render a scalar for display. Objects and arrays are skipped: a JSON blob
@@ -363,10 +355,13 @@ mod tests {
         assert_eq!(d.command, None);
     }
 
+    /// A `bash` deny rule must still apply to a shell call with no command
+    /// line.
     #[test]
-    fn a_shell_call_without_a_command_falls_through() {
+    fn a_shell_call_without_a_command_is_still_a_command() {
         let d = of("bash", &json!({"script": "x"}));
-        assert_ne!(d.kind, "command");
+        assert_eq!(d.kind, "command");
+        assert_eq!(d.command, None);
     }
 
     #[test]

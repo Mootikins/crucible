@@ -161,13 +161,13 @@ async fn a_permission_request_names_its_agent() {
     );
 }
 
-/// A different id joins nothing. The request keeps the fallback name rather
+/// A different id joins nothing. The request keeps its kind as its name rather
 /// than the tool of some other call.
 #[tokio::test]
 async fn an_approval_for_another_id_takes_no_name() {
     let call = asked_in_a_turn(vec![codex_tool_call(), codex_permission_request("call-2")]).await;
     assert_eq!(
-        call.tool, "tool",
+        call.tool, "command",
         "a name must never be guessed from another call"
     );
 }
@@ -216,5 +216,5 @@ async fn a_request_outside_a_turn_is_classified_alone() {
         .expect("the client answers the permission request");
     assert!(reply.get("result").is_some(), "the client answers: {reply}");
     let seen = seen.lock().expect("the recorder is not poisoned");
-    assert_eq!(seen.first().map(|c| c.tool.as_str()), Some("tool"));
+    assert_eq!(seen.first().map(|c| c.tool.as_str()), Some("command"));
 }

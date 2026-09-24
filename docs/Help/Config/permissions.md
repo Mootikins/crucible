@@ -138,8 +138,10 @@ or Crucible's own agent calls it.
 - **`bash`** reads the **command line** of each `command` call, whichever tool made it:
   Crucible's `bash`, Claude's `Bash`, codex's `exec_command`, or a shell call that the
   agent does not name. Chained commands (`git log; curl …`) are split and each piece must
-  pass. A `command` call whose command line is unknown is checked as an empty command
-  line, so `bash:*` still matches it.
+  pass. Some agents send a command with no command line that Crucible can read (Hermes
+  puts it only in the title). Each `bash` deny rule refuses such a call. With no `bash`
+  deny rule, the user is asked, and no `allow` rule and no saved grant can allow it.
+  A shell tool of an MCP server (`mcp__srv__bash`) is also a `command` call.
 - **`read`** reads each **path** of a `file_read` call. **`edit`**, **`write`** and
   **`delete`** read each path of a `file_edit` call. A `read` rule never reads an edit.
   An `allow` rule allows a call only when it matches each path of the call. Of

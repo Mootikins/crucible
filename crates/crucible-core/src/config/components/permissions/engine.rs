@@ -48,8 +48,10 @@ impl PermissionEngine {
         args: &serde_json::Value,
         is_interactive: bool,
     ) -> PermissionDecision {
-        let command = (call.kind == "command")
-            .then(|| self.evaluate_bash(call.command.as_deref().unwrap_or_default()));
+        let command = (call.kind == "command").then(|| match call.command.as_deref() {
+            Some(line) => self.evaluate_bash(line),
+            None => Some(self.unreadable_command()),
+        });
         let keys = file_rule_keys(&call.kind);
         let paths = (!keys.is_empty() && !call.paths.is_empty())
             .then(|| every_input(call.paths.iter().map(|p| self.evaluate_single(keys, p))));
@@ -77,6 +79,20 @@ impl PermissionEngine {
             };
         }
         decision
+    }
+
+    /// The decision for a command whose command line Crucible cannot read.
+    /// The command can be the one that a `bash` deny rule names, so each
+    /// such rule refuses it. No rule can allow it, so the user is asked.
+    fn unreadable_command(&self) -> PermissionDecision {
+        if self.compiled.deny.iter().any(|rule| rule.tool == "bash") {
+            return PermissionDecision::Deny {
+                reason: "Cannot read the command line, and a bash deny rule exists".to_string(),
+            };
+        }
+        PermissionDecision::Ask {
+            rule_matched: false,
+        }
     }
 
     /// The rules for a command line. `None` when no rule decides.

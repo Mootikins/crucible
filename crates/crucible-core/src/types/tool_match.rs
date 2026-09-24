@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::acp::FileDiff;
-use super::tool_call::CanonicalToolCall;
+use super::tool_call::{is_shell_tool, CanonicalToolCall};
 
 /// The fields of an ACP tool call that a matcher or a display can read.
 ///
@@ -204,9 +204,15 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
     }
     call.diffs = file_diffs(&raw.content);
 
-    // 2. An MCP tool name.
-    if call.kind.is_empty() && mcp_name.is_some() {
-        call.kind = "mcp_tool".into();
+    // 2. An MCP tool name. A shell tool of an MCP server is a command, as
+    // it is for Crucible's own MCP gateway tools.
+    if let (true, Some(name)) = (call.kind.is_empty(), &mcp_name) {
+        call.kind = if is_shell_tool(name) {
+            "command"
+        } else {
+            "mcp_tool"
+        }
+        .into();
     }
 
     // 3. The ACP kind and the locations.
@@ -248,11 +254,11 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         USUAL_QUERY_KEYS,
     );
 
-    // 6. The fallback. A command or a file kind with no command line or no
-    // path is also `tool`, so a command rule never matches an empty command.
+    // 6. The fallback. A file kind with no path is also `tool`. A command
+    // with no command line stays a command, so that a `bash` deny rule
+    // still applies to it.
     let empty = match call.kind.as_str() {
         "" => true,
-        "command" => call.command.is_none(),
         "file_edit" | "file_read" => call.paths.is_empty(),
         _ => false,
     };
@@ -607,23 +613,36 @@ mod tests {
         assert_eq!(c.tool, "wire");
     }
 
+    /// A file kind with no path is `tool`. A command with no command line
+    /// stays a command, so a `bash` deny rule still applies to it.
     #[test]
-    fn a_typed_kind_with_an_empty_field_is_tool() {
-        for kind in ["execute", "read", "edit"] {
+    fn a_typed_kind_with_an_empty_field() {
+        for kind in ["read", "edit"] {
             let c = classify_acp(raw(json!({"kind": kind, "rawInput": {}})), &[]);
             assert_eq!(c.kind, "tool", "{kind}");
         }
-        let c = classify_acp(
-            raw(json!({"kind": "execute", "rawInput": {"command": "ls"}})),
-            &[],
-        );
-        assert_eq!(c.kind, "command");
+        let c = classify_acp(raw(json!({"kind": "execute", "rawInput": {}})), &[]);
+        assert_eq!((c.kind.as_str(), c.command), ("command", None));
     }
 
     #[test]
     fn another_mcp_server_keeps_the_whole_name() {
         let c = classify_acp(raw(json!({"name": "mcp__srv__tool"})), &[]);
         assert_eq!(c.tool, "mcp__srv__tool");
+    }
+
+    /// The shell tool of an MCP server is a command, over ACP as in
+    /// Crucible's own MCP gateway.
+    #[test]
+    fn an_mcp_shell_tool_is_a_command() {
+        let args = json!({"command": "ls"});
+        let c = classify_acp(
+            raw(json!({"name": "mcp__srv__bash", "rawInput": args})),
+            &[],
+        );
+        let native = CanonicalToolCall::crucible_tool("srv__bash", &args);
+        assert_eq!((c.kind.as_str(), c.command), ("command", native.command));
+        assert_eq!(native.kind, "command");
     }
 
     #[test]

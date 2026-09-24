@@ -869,11 +869,11 @@ fn classify_fixture(
 /// The canonical call that the default matcher gives for each frame, with
 /// the key table of the agent. A line of a status-only update gives the
 /// fallback `tool`, because the frame names nothing. A call that nothing
-/// names gets its kind as its name. A command or file kind
-/// with no command line or no path also gives `tool`. Step 4 merges updates
+/// names gets its kind as its name. A file kind with no path also gives
+/// `tool`. A command with no command line stays a command. Step 4 merges updates
 /// into one call, so these rows show one frame each.
 const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
-    ("claude", 2, r#"{"kind":"tool","tool":"Bash"}"#),
+    ("claude", 2, r#"{"kind":"command","tool":"Bash"}"#),
     (
         "claude",
         3,
@@ -1067,7 +1067,7 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
         12,
         r#"{"kind":"search","tool":"search_notes","query":"rust"}"#,
     ),
-    ("codex-ts", 13, r#"{"kind":"tool","tool":"tool"}"#),
+    ("codex-ts", 13, r#"{"kind":"command","tool":"command"}"#),
     ("codex-ts", 14, r#"{"kind":"tool","tool":"tool"}"#),
     ("codex-ts", 15, r#"{"kind":"tool","tool":"tool"}"#),
     ("codex-ts", 16, r#"{"kind":"search","tool":"search"}"#),

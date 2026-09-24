@@ -216,7 +216,7 @@ local function title_of(call): string?
 end
 
 cru.on("tool:render", { pattern = "command" }, function(ctx, call)
-  return { line = call.command }
+  return { line = call.command or title_of(call) }
 end)
 
 for _, kind in { "file_edit", "file_read" } do

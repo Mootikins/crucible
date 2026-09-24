@@ -38,11 +38,15 @@ enum PatternKind {
 /// paths is a file grant. Any other call is a grant for its canonical tool
 /// name. [`PermRequest::suggested_pattern`] offers the same thing: the
 /// command line for a command, and the tool name for another tool.
-fn pattern_kind(call: &CanonicalToolCall) -> PatternKind {
+///
+/// `None` for a command that Crucible cannot read. A grant for it would
+/// allow each command that Crucible cannot read, so no grant is stored.
+fn pattern_kind(call: &CanonicalToolCall) -> Option<PatternKind> {
     match (call.kind.as_str(), &call.command) {
-        ("command", Some(command)) => PatternKind::Bash(command.clone()),
-        ("file_edit", _) if !call.paths.is_empty() => PatternKind::File,
-        _ => PatternKind::Tool,
+        ("command", Some(command)) => Some(PatternKind::Bash(command.clone())),
+        ("command", None) => None,
+        ("file_edit", _) if !call.paths.is_empty() => Some(PatternKind::File),
+        _ => Some(PatternKind::Tool),
     }
 }
 
@@ -540,10 +544,11 @@ impl AgentManager {
         pattern_store: &PatternStore,
     ) -> bool {
         match pattern_kind(call) {
-            PatternKind::Bash(command) => pattern_store.matches_bash(&command),
+            Some(PatternKind::Bash(command)) => pattern_store.matches_bash(&command),
             // A grant for one path must not permit an edit of another.
-            PatternKind::File => call.paths.iter().all(|p| pattern_store.matches_file(p)),
-            PatternKind::Tool => pattern_store.matches_tool(&call.tool),
+            Some(PatternKind::File) => call.paths.iter().all(|p| pattern_store.matches_file(p)),
+            Some(PatternKind::Tool) => pattern_store.matches_tool(&call.tool),
+            None => false,
         }
     }
 
@@ -571,9 +576,13 @@ impl AgentManager {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
+        let Some(kind) = pattern_kind(call) else {
+            tracing::info!(tool = %call.tool, "No grant is stored for a command that Crucible cannot read");
+            return Ok(());
+        };
         let mut store = PatternStore::load_file(file).unwrap_or_default();
 
-        match pattern_kind(call) {
+        match kind {
             PatternKind::Bash(_) => store.add_bash_pattern(pattern)?,
             PatternKind::File => store.add_file_pattern(pattern)?,
             PatternKind::Tool => store.add_tool_pattern(pattern)?,
@@ -1021,6 +1030,43 @@ mod acp_tool_policy_tests {
             "`deny = [\"bash:cargo *\"]` must refuse the agent's `cargo test`"
         );
         assert_eq!(asked.prompts, 0, "an operator deny asks nobody");
+    }
+
+    /// Hermes asks about a command with a new id, no `rawInput` and the
+    /// command only in the title. Crucible cannot read the command line, so
+    /// a `bash` deny rule refuses the call, and with no deny rule the user
+    /// is asked, also when a `bash` rule allows each command.
+    #[tokio::test]
+    async fn a_command_that_crucible_cannot_read_is_still_a_command() {
+        let hermes = || {
+            serde_json::from_value::<RequestPermissionRequest>(serde_json::json!({
+                "sessionId": "sess-1",
+                "toolCall": {
+                    "toolCallId": "perm-check-1",
+                    "title": "terminal: rm -rf build",
+                    "kind": "execute",
+                    "status": "pending",
+                },
+                "options": options(),
+            }))
+            .expect("the hermes frame parses")
+        };
+        let rules = |deny: &str| PermissionConfig {
+            default: PermissionMode::Allow,
+            allow: vec!["bash:*".to_string()],
+            deny: vec![deny.to_string()],
+            ..Default::default()
+        };
+
+        let denied = decide(hermes(), &[], Some(rules("bash:rm *"))).await;
+        assert!(!denied.allowed(), "a bash deny rule must refuse the call");
+        assert_eq!(denied.prompts, 0, "an operator deny asks nobody");
+
+        let card = decide(hermes(), &[("bash", ToolPolicy::Deny)], None).await;
+        assert!(!card.allowed(), "a card bash deny must refuse the call");
+
+        let asked = decide(hermes(), &[], Some(rules("read:/etc/*"))).await;
+        assert_eq!(asked.prompts, 1, "`allow bash:*` cannot allow it");
     }
 
     /// A codex MCP approval carries `kind: "execute"` and no name of its own.
