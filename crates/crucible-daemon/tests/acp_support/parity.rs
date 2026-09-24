@@ -396,7 +396,7 @@ mod tests {
             TurnEvent::TextDelta(" now".into()),
             // Inbound-only: must not appear in the projection.
             TurnEvent::ContextAttach {
-                content: "reference material".into(),
+                message: crucible_core::traits::ContextMessage::system("reference material"),
             },
             tool_call("toolu_01ABC", "read_file", Vec::new()),
             TurnEvent::ToolResult {
@@ -558,7 +558,7 @@ mod tests {
         let mut p = ShapeProjector::new();
         assert!(p
             .project(&TurnEvent::ContextAttach {
-                content: "note".into()
+                message: crucible_core::traits::ContextMessage::system("note")
             })
             .is_none());
     }

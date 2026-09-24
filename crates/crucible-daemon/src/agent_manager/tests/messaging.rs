@@ -1045,14 +1045,17 @@ async fn attached_context_reaches_the_agent_within_the_same_turn() {
     let attached: Vec<String> = events
         .iter()
         .filter_map(|e| match e {
-            TurnEvent::ContextAttach { content } => Some(content.clone()),
+            TurnEvent::ContextAttach { message } => Some(message.content.clone()),
             _ => None,
         })
         .collect();
 
     assert_eq!(
         attached,
-        vec!["SENTINEL-ATTACHED-KNOWLEDGE".to_string()],
+        vec![
+            "<system-message kind=\"attachment\" source=\"lua\">\nSENTINEL-ATTACHED-KNOWLEDGE\n</system-message>"
+                .to_string()
+        ],
         "attachment should reach the agent inbound; got {events:?}"
     );
 

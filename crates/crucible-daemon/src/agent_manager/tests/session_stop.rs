@@ -70,7 +70,7 @@ impl Rig {
             .ctx
             .agents
             .context_attach()
-            .attach(&id, "attached", Some(ATTACH_KEY))
+            .attach(&id, "lua", "attached", Some(ATTACH_KEY))
             .expect("precondition: the attachment is queued");
         let rig = Self {
             events: daemon.ctx.event_tx.subscribe(),
@@ -111,7 +111,7 @@ impl Rig {
             .ctx
             .agents
             .context_attach()
-            .attach(&self.id, "again", Some(ATTACH_KEY))
+            .attach(&self.id, "lua", "again", Some(ATTACH_KEY))
             .is_ok()
     }
 

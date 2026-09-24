@@ -1251,7 +1251,7 @@ impl GenaiAgentHandle {
             // whatever had been attached, and the registry has already charged
             // its budget and burned its dedup key, so it can never be
             // re-supplied.
-            let mut attached: Vec<String> = Vec::new();
+            let mut attached: Vec<crucible_core::traits::ContextMessage> = Vec::new();
 
             // Whether this turn put anything in front of the user. Declared
             // outside the loop for the same reason as `attached`: a later
@@ -1367,7 +1367,7 @@ impl GenaiAgentHandle {
                                 terminate: false,
                             });
                         }
-                        TurnEvent::ContextAttach { content } => {
+                        TurnEvent::ContextAttach { message } => {
                             // Retrieved reference material, not a user turn —
                             // system role. Buffered rather than restarting the
                             // stream: we are mid tool-result collection, and
@@ -1375,7 +1375,7 @@ impl GenaiAgentHandle {
                             // after the tool responses, at the end of the
                             // message list. Restarting here would drop the
                             // tool results we are still waiting on.
-                            attached.push(content);
+                            attached.push(message);
                         }
                         _ => {}
                     }
@@ -1416,9 +1416,9 @@ impl GenaiAgentHandle {
                 // Attached knowledge goes last, after the tool responses:
                 // appending keeps the entire preceding prefix cacheable, which
                 // is what makes a retrieval path that fires often affordable.
-                for content in attached.drain(..) {
-                    messages.push(ChatMessage::system(&content));
-                }
+                // The adapter's role rule, as for every other injection.
+                messages.extend(self.context_messages_to_chat(&attached));
+                attached.clear();
 
                 drop(chat_stream);
                 chat_stream = self.stream_chat_from_messages(messages.clone());

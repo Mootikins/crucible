@@ -14,6 +14,7 @@
 //! reads them.
 
 use crate::error::LuaError;
+use crucible_core::traits::ContextMessage;
 use mlua::{Lua, Table};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -58,8 +59,8 @@ impl AttachRejection {
 
 #[derive(Debug, Default)]
 struct SessionAttachments {
-    /// Attached but not yet handed to the agent.
-    pending: Vec<String>,
+    /// Attached but not yet handed to the agent, each in its injection element.
+    pending: Vec<ContextMessage>,
     /// Dedup identities seen for the whole session, not just the pending
     /// batch — otherwise draining would let the same key back in.
     seen_keys: HashSet<String>,
@@ -96,9 +97,11 @@ impl ContextAttachRegistry {
     ///
     /// Enforcement lives here, allocation lives in the handler — the same
     /// division the precognition char cap uses.
+    /// `source` names who attached it: the plugin, or `lua` for the user's Lua.
     pub fn attach(
         &self,
         session_id: &str,
+        source: &str,
         content: &str,
         key: Option<&str>,
     ) -> Result<(), AttachRejection> {
@@ -131,13 +134,15 @@ impl ContextAttachRegistry {
             entry.seen_keys.insert(key.to_string());
         }
         entry.chars_used += cost;
-        entry.pending.push(content.to_string());
+        entry
+            .pending
+            .push(ContextMessage::injection("attachment", source, content));
         Ok(())
     }
 
     /// Take everything queued for this session. Keys and the spent budget
     /// survive the drain — dedup is per session, not per batch.
-    pub fn drain(&self, session_id: &str) -> Vec<String> {
+    pub fn drain(&self, session_id: &str) -> Vec<ContextMessage> {
         let Ok(mut guard) = self.sessions.lock() else {
             return Vec::new();
         };
@@ -209,13 +214,15 @@ pub fn register_context_attach(
         "attach",
         "(session_id: string, content: string, options: { key: string? }?) \
          -> (boolean, string?)",
-        move |_, (session_id, content, opts): (String, String, Option<Table>)| {
+        move |lua, (session_id, content, opts): (String, String, Option<Table>)| {
             let key = opts
                 .as_ref()
                 .and_then(|t| t.get::<String>("key").ok())
                 .filter(|k| !k.is_empty());
 
-            match registry.attach(&session_id, &content, key.as_deref()) {
+            let source = crate::plugin_context::current_plugin_name(lua);
+            let source = source.as_deref().unwrap_or("lua");
+            match registry.attach(&session_id, source, &content, key.as_deref()) {
                 Ok(()) => Ok((true, None::<String>)),
                 Err(rejection) => Ok((false, Some(rejection.reason()))),
             }
@@ -232,31 +239,34 @@ mod tests {
     #[test]
     fn attach_queues_content_for_drain() {
         let registry = ContextAttachRegistry::default();
-        registry.attach("s1", "note body", None).unwrap();
+        registry.attach("s1", "lua", "note body", None).unwrap();
 
-        assert_eq!(registry.drain("s1"), vec!["note body".to_string()]);
+        assert_eq!(
+            registry.drain("s1")[0].metadata.source.as_deref(),
+            Some("lua")
+        );
         assert!(registry.drain("s1").is_empty(), "drain should consume");
     }
 
     #[test]
     fn drain_is_scoped_to_one_session() {
         let registry = ContextAttachRegistry::default();
-        registry.attach("s1", "for one", None).unwrap();
-        registry.attach("s2", "for two", None).unwrap();
+        registry.attach("s1", "lua", "for one", None).unwrap();
+        registry.attach("s2", "lua", "for two", None).unwrap();
 
-        assert_eq!(registry.drain("s1"), vec!["for one".to_string()]);
-        assert_eq!(registry.drain("s2"), vec!["for two".to_string()]);
+        assert!(registry.drain("s1")[0].content.contains("for one"));
+        assert!(registry.drain("s2")[0].content.contains("for two"));
     }
 
     #[test]
     fn duplicate_key_is_rejected_so_repeated_triggers_attach_once() {
         let registry = ContextAttachRegistry::default();
         registry
-            .attach("s1", "cpp notes", Some("filetype:cpp"))
+            .attach("s1", "lua", "cpp notes", Some("filetype:cpp"))
             .unwrap();
 
         assert_eq!(
-            registry.attach("s1", "cpp notes", Some("filetype:cpp")),
+            registry.attach("s1", "lua", "cpp notes", Some("filetype:cpp")),
             Err(AttachRejection::DuplicateKey)
         );
         assert_eq!(registry.drain("s1").len(), 1);
@@ -268,11 +278,13 @@ mod tests {
         // notes are in the context now, so attaching them again is still a
         // duplicate.
         let registry = ContextAttachRegistry::default();
-        registry.attach("s1", "cpp notes", Some("k")).unwrap();
+        registry
+            .attach("s1", "lua", "cpp notes", Some("k"))
+            .unwrap();
         registry.drain("s1");
 
         assert_eq!(
-            registry.attach("s1", "cpp notes", Some("k")),
+            registry.attach("s1", "lua", "cpp notes", Some("k")),
             Err(AttachRejection::DuplicateKey)
         );
     }
@@ -280,8 +292,8 @@ mod tests {
     #[test]
     fn keyless_attachments_are_never_deduplicated() {
         let registry = ContextAttachRegistry::default();
-        registry.attach("s1", "one", None).unwrap();
-        registry.attach("s1", "one", None).unwrap();
+        registry.attach("s1", "lua", "one", None).unwrap();
+        registry.attach("s1", "lua", "one", None).unwrap();
 
         assert_eq!(registry.drain("s1").len(), 2);
     }
@@ -289,11 +301,11 @@ mod tests {
     #[test]
     fn budget_is_cumulative_across_attachments() {
         let registry = ContextAttachRegistry::new(10);
-        registry.attach("s1", "12345", None).unwrap();
-        registry.attach("s1", "12345", None).unwrap();
+        registry.attach("s1", "lua", "12345", None).unwrap();
+        registry.attach("s1", "lua", "12345", None).unwrap();
 
         assert_eq!(
-            registry.attach("s1", "x", None),
+            registry.attach("s1", "lua", "x", None),
             Err(AttachRejection::BudgetExhausted {
                 used: 10,
                 budget: 10
@@ -306,7 +318,9 @@ mod tests {
         // Multi-byte content must not be charged triple; the precognition cap
         // counts characters and this has to agree with it.
         let registry = ContextAttachRegistry::new(10);
-        registry.attach("s1", "日本語テキスト", None).unwrap();
+        registry
+            .attach("s1", "lua", "日本語テキスト", None)
+            .unwrap();
 
         assert_eq!(registry.drain("s1").len(), 1);
     }
@@ -314,11 +328,11 @@ mod tests {
     #[test]
     fn spent_budget_survives_a_drain() {
         let registry = ContextAttachRegistry::new(10);
-        registry.attach("s1", "1234567890", None).unwrap();
+        registry.attach("s1", "lua", "1234567890", None).unwrap();
         registry.drain("s1");
 
         assert!(matches!(
-            registry.attach("s1", "more", None),
+            registry.attach("s1", "lua", "more", None),
             Err(AttachRejection::BudgetExhausted { .. })
         ));
     }
@@ -327,7 +341,7 @@ mod tests {
     fn empty_content_is_rejected() {
         let registry = ContextAttachRegistry::default();
         assert_eq!(
-            registry.attach("s1", "   \n ", None),
+            registry.attach("s1", "lua", "   \n ", None),
             Err(AttachRejection::Empty)
         );
     }
@@ -335,11 +349,38 @@ mod tests {
     #[test]
     fn release_clears_buffer_and_dedup_state() {
         let registry = ContextAttachRegistry::new(10);
-        registry.attach("s1", "1234567890", Some("k")).unwrap();
+        registry
+            .attach("s1", "lua", "1234567890", Some("k"))
+            .unwrap();
         registry.release("s1");
 
         assert!(registry.drain("s1").is_empty());
         // Budget and keys reset with the session.
-        registry.attach("s1", "1234567890", Some("k")).unwrap();
+        registry
+            .attach("s1", "lua", "1234567890", Some("k"))
+            .unwrap();
+    }
+
+    /// Decision 8: an attachment reaches the model in the injection element,
+    /// and its `source` names the plugin that attached it.
+    #[test]
+    fn a_plugin_attachment_is_tagged_with_its_plugin() {
+        let lua = Lua::new();
+        let registry = Arc::new(ContextAttachRegistry::default());
+        register_context_attach(&lua, registry.clone()).unwrap();
+        crate::plugin_context::set_source(
+            &lua,
+            crucible_core::lua_source::LuaSource::Plugin("alpha".into()),
+        );
+        lua.load(r#"cru.context.attach("s1", "the note")"#)
+            .exec()
+            .unwrap();
+
+        let drained = format!("{:?}", registry.drain("s1"));
+        assert!(
+            drained.contains(r#"<system-message kind=\"attachment\" source=\"alpha\">"#),
+            "{drained}"
+        );
+        assert!(drained.contains("the note"), "{drained}");
     }
 }

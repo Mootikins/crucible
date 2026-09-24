@@ -561,9 +561,9 @@ impl AgentManager {
                     // conversation tree above, because history is append-only
                     // and scheduler-owned.
                     let mut adapter_gone = false;
-                    for content in stream_ctx.context_attach.drain(&stream_ctx.session_id) {
+                    for message in stream_ctx.context_attach.drain(&stream_ctx.session_id) {
                         if inbound_tx
-                            .send(TurnEvent::ContextAttach { content })
+                            .send(TurnEvent::ContextAttach { message })
                             .await
                             .is_err()
                         {

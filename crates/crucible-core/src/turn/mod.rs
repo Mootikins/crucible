@@ -104,7 +104,7 @@ pub enum TurnEvent {
     /// Context only: this never enters the conversation tree or the session
     /// log. History stays append-only and owned by the scheduler; forking is
     /// the only way to diverge from it.
-    ContextAttach { content: String },
+    ContextAttach { message: ContextMessage },
 
     /// Token usage. Typically one event per turn, near `Done`.
     Usage(TokenUsage),

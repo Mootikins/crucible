@@ -984,7 +984,7 @@ Remove messages. `range` is one of `{ type = "all" }`, `{ type = "last"|"first",
 
 ### cru.context.attach(session_id, content, opts?)
 
-Queue retrieved content for the session's **next LLM call**. Context only: attachments never reach the conversation tree or the session log — one turn's context, then gone.
+Queue retrieved content for the session's **next LLM call**. Context only: attachments never reach the conversation tree or the session log — one turn's context, then gone. The model gets the content in `<system-message kind="attachment" source="<plugin>">`, where `source` is the plugin that attached it, or `lua` for your own Lua.
 
 ```lua
 cru.on("tool_result", { pattern = "read_file" }, function(ctx, event)
