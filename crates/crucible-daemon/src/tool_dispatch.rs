@@ -364,7 +364,9 @@ impl DaemonToolDispatcher {
         // thread and runtime. The outer `recv_timeout` is what unblocks the
         // caller, and it also covers the cases outside the awaits — a runtime
         // that fails to build, or a provider blocking synchronously. Neither
-        // marks the dispatcher hydrated, so a later call retries.
+        // marks the dispatcher hydrated, so a later call retries. The walk
+        // reports an inner timeout as an incomplete result. The outer bound is
+        // twice the budget, so that the inner result arrives first.
         let providers = self.providers.clone();
         let budget = self.blocking_hydration_timeout;
         let (result_tx, result_rx) = std::sync::mpsc::channel();
@@ -375,12 +377,17 @@ impl DaemonToolDispatcher {
             let mut names = HashSet::new();
             let mut refs = HashMap::new();
             let mut surfaces = HashMap::new();
+            let mut complete = true;
 
             if let Ok(runtime) = runtime {
                 runtime.block_on(async {
                     for provider in &providers {
-                        let listed = tokio::time::timeout(budget, provider.list_tools()).await;
-                        let Ok(Ok(defs)) = listed else {
+                        let Ok(listed) = tokio::time::timeout(budget, provider.list_tools()).await
+                        else {
+                            complete = false;
+                            continue;
+                        };
+                        let Ok(defs) = listed else {
                             continue;
                         };
                         for def in defs {
@@ -395,11 +402,11 @@ impl DaemonToolDispatcher {
                 });
             }
 
-            let _ = result_tx.send((names, refs, surfaces));
+            let _ = result_tx.send((names, refs, surfaces, complete));
         });
 
-        let (discovered_names, discovered_refs, discovered_surfaces) =
-            match result_rx.recv_timeout(budget) {
+        let (discovered_names, discovered_refs, discovered_surfaces, complete) =
+            match result_rx.recv_timeout(2 * budget) {
                 Ok(discovered) => discovered,
                 Err(_) => {
                     tracing::warn!(
@@ -432,8 +439,10 @@ impl DaemonToolDispatcher {
                 .extend(discovered_surfaces);
         }
 
-        self.tool_names_hydrated.store(true, Ordering::Release);
-        self.tool_refs_hydrated.store(true, Ordering::Release);
+        if complete {
+            self.tool_names_hydrated.store(true, Ordering::Release);
+            self.tool_refs_hydrated.store(true, Ordering::Release);
+        }
     }
 
     fn hydrate_tool_refs_blocking(&self) {
