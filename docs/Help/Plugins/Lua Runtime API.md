@@ -499,6 +499,10 @@ if session then
 end
 ```
 
+The handle also has `workspace` and `isolation` when the session has them.
+Each is `nil` when the session has none. To start a session like this one,
+pass both to `cru.session.create`. The reflection pass does this.
+
 ### cru.session.list()
 
 List all sessions. Returns an array of session handles.

@@ -321,7 +321,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .read_session(&session_id)
                 .await
                 .map_err(|e| e.to_string())?
-                .map(|s| session_json(&crucible_core::session::SessionSummary::from(&s))))
+                .map(|s| session_record_json(&s)))
         })
     }
 
@@ -1113,6 +1113,25 @@ pub(crate) fn session_json(s: &crucible_core::session::SessionSummary) -> serde_
         "started_at": s.started_at.to_rfc3339(),
         "event_count": s.event_count,
     })
+}
+
+/// The record `cru.session.get` answers for one session: the
+/// [`session_json`] fields, and the fields that a plugin needs to start a
+/// session like it.
+///
+/// `workspace` and `isolation` are present only when the session has them.
+/// mlua maps a JSON `null` to a truthy `null` userdata, so an absent value
+/// must be an absent key: a plugin that copies it into `cru.session.create`
+/// then asks for nothing.
+pub(crate) fn session_record_json(session: &crucible_core::session::Session) -> serde_json::Value {
+    let mut json = session_json(&crucible_core::session::SessionSummary::from(session));
+    if let Some(workspace) = &session.workspace {
+        json["workspace"] = serde_json::Value::String(workspace.to_string_lossy().into_owned());
+    }
+    if let Some(isolation) = &session.isolation {
+        json["isolation"] = isolation.clone();
+    }
+    json
 }
 
 #[cfg(test)]

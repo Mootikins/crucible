@@ -112,6 +112,36 @@ async fn model_on_a_get_handle_reads_the_record() {
     assert_eq!(model, "claude-haiku-4-5-20251001");
 }
 
+/// A handle from `get` answers `workspace` and `isolation` from the record.
+/// The handle reads both from its own fields, so before the fix they read as
+/// nil, and a plugin could not start a session like the one it read.
+#[tokio::test]
+async fn workspace_and_isolation_on_a_get_handle_read_the_record() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let (workspace, image, bare_workspace): (Option<String>, Option<String>, bool) = lua
+        .load(
+            r#"
+            local s = cru.session.get("isolated-123")
+            local bare = cru.session.get("exists-123")
+            return s.workspace, s.isolation and s.isolation.image,
+                bare.workspace == nil and bare.isolation == nil
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert_eq!(workspace.as_deref(), Some("/work/project"));
+    assert_eq!(image.as_deref(), Some("alpine"));
+    assert!(
+        bare_workspace,
+        "a record with neither field reads both as nil"
+    );
+}
+
 /// A record with no model reads as nil, the same answer a bound handle
 /// gives when the daemon has no model for the session.
 #[tokio::test]

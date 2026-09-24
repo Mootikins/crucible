@@ -334,6 +334,14 @@ impl DaemonSessionApi for MockDaemonApi {
                     "state": "active",
                     "model": "claude-haiku-4-5-20251001",
                 })))
+            } else if session_id == "isolated-123" {
+                Ok(Some(serde_json::json!({
+                    "id": "isolated-123",
+                    "session_type": "chat",
+                    "state": "ended",
+                    "workspace": "/work/project",
+                    "isolation": { "image": "alpine" },
+                })))
             } else {
                 Ok(None)
             }

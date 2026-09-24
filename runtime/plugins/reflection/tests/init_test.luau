@@ -353,6 +353,42 @@ describe("reflection", function()
       expect.equal("notes", created[1][1].kilns[1])
     end)
 
+    it("runs the reviewer on the workspace and isolation of the session", function()
+      -- An isolating plugin isolates the pass as it isolated the session.
+      -- `oci` refuses a session with no workspace.
+      test_mocks.setup({
+        kiln = { roots = { notes = kiln_root } },
+        fs = { real_dirs = true },
+        sessions = {
+          info = {
+            id = "chat-1", session_type = "chat", state = "ended", kilns = { "notes" },
+            workspace = "/work/project", isolation = "rust",
+          },
+          messages = {
+            { role = "user", content = "question" },
+            { role = "assistant", content = "answer" },
+          },
+          response_parts = { { type = "text", content = "[]" } },
+        },
+      })
+
+      plugin.run({ id = "chat-1" })
+
+      local created = test_mocks.get_calls("session", "create")
+      expect.equal(1, #created)
+      expect.equal("/work/project", created[1][1].workspace)
+      expect.equal("rust", created[1][1].isolation)
+    end)
+
+    it("gives the reviewer no workspace when the session had none", function()
+      plugin.run({ id = "chat-1" })
+
+      local created = test_mocks.get_calls("session", "create")
+      expect.equal(1, #created)
+      expect.is_nil(created[1][1].workspace)
+      expect.is_nil(created[1][1].isolation)
+    end)
+
     it("creates the reviewer as a plugin session", function()
       plugin.run({ id = "chat-1" })
 

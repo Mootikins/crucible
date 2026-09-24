@@ -188,7 +188,17 @@ pub(crate) fn wrap_session_record(
 ) -> mlua::Result<Value> {
     match val.get("id").and_then(|v| v.as_str()).map(str::to_string) {
         Some(id) => {
-            let session = Session::new(id).with_record(val).with_api(Arc::clone(api));
+            // The handle answers `workspace` and `isolation` from its own
+            // fields, not from the record, so the record's values go there.
+            // Without this a handle from `get` read both as nil.
+            let mut session = Session::new(id);
+            if let Some(workspace) = val.get("workspace").and_then(|v| v.as_str()) {
+                session = session.with_workspace(workspace);
+            }
+            if let Some(isolation) = val.get("isolation").filter(|v| !v.is_null()) {
+                session = session.with_isolation(isolation.clone());
+            }
+            let session = session.with_record(val).with_api(Arc::clone(api));
             Ok(Value::UserData(lua.create_userdata(session)?))
         }
         None => lua.to_value(&val),

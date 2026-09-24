@@ -382,6 +382,12 @@ export type ReviewOpts = {
     --- The title a human reads for the pass in the sessions list. Optional:
     --- a caller that names no title leaves the daemon's own.
     title: string?,
+    --- The workspace of the reviewed session. The pass runs on it, so an
+    --- isolating plugin isolates the pass as it isolated the session. Nil
+    --- when the reviewed session had none.
+    workspace: string?,
+    --- The isolation value of the reviewed session, for the same reason.
+    isolation: any,
 }
 
 --- Run one review in a separate aux session. Answers with the reviewer's
@@ -418,6 +424,8 @@ function M.review(opts: ReviewOpts): (string?, string?)
         mcp_servers = {},
     }
     if opts.provider then create_opts.provider = opts.provider end
+    if opts.workspace then create_opts.workspace = opts.workspace end
+    if opts.isolation ~= nil then create_opts.isolation = opts.isolation end
     local mode = opts.mode or "propose"
     local prompt = opts.prompt
     local rejected = M.render_rejected(M.load_rejected(M.REJECTED_LIMIT))
@@ -537,6 +545,11 @@ function M.run(session: any): string?
         timeout = config.get("timeout", 120),
         mode = config.get("mode", "propose"),
         title = "Reflection: " .. tostring((info and info.title) or session_id),
+        -- The pass runs where the reviewed session ran. An isolating plugin
+        -- then isolates the pass too. `oci` refuses a session with no
+        -- workspace, so without it the pass of an isolated session is refused.
+        workspace = info and info.workspace,
+        isolation = info and info.isolation,
     })
     if output == nil then
         cru.log("warn", "reflection: " .. tostring(review_err))
