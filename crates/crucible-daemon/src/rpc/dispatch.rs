@@ -574,20 +574,28 @@ impl RpcDispatcher {
                 id,
                 crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions)
             ),
-            RpcMethod::SessionLoadEvents => forward!(
-                id,
-                crate::server::observe::handle_session_load_events(
-                    req.clone(),
-                    self.ctx.sessions.sessions_root()
+            RpcMethod::SessionLoadEvents => {
+                // A client that saw an event live must find it in the log.
+                self.ctx.sessions.settle_history().await;
+                forward!(
+                    id,
+                    crate::server::observe::handle_session_load_events(
+                        req.clone(),
+                        self.ctx.sessions.sessions_root()
+                    )
                 )
-            ),
-            RpcMethod::SessionEventsAfter => forward!(
-                id,
-                crate::server::observe::handle_session_events_after(
-                    req.clone(),
-                    self.ctx.sessions.sessions_root()
+            }
+            RpcMethod::SessionEventsAfter => {
+                // A client that saw an event live must find it in the log.
+                self.ctx.sessions.settle_history().await;
+                forward!(
+                    id,
+                    crate::server::observe::handle_session_events_after(
+                        req.clone(),
+                        self.ctx.sessions.sessions_root()
+                    )
                 )
-            ),
+            }
             RpcMethod::SessionListPersisted => {
                 forward!(
                     id,
@@ -598,6 +606,7 @@ impl RpcDispatcher {
                 )
             }
             RpcMethod::SessionRenderMarkdown => {
+                self.ctx.sessions.settle_history().await;
                 forward!(
                     id,
                     crate::server::observe::handle_session_render_markdown(
@@ -607,6 +616,7 @@ impl RpcDispatcher {
                 )
             }
             RpcMethod::SessionExportToFile => {
+                self.ctx.sessions.settle_history().await;
                 forward!(
                     id,
                     crate::server::observe::handle_session_export_to_file(

@@ -27,6 +27,7 @@ mod plugin_boot;
 mod review_watch;
 mod rpc_basic;
 mod session_id_boundary;
+mod session_journal;
 mod session_log_capture;
 mod shutdown;
 mod startup_kilns;

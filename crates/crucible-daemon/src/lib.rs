@@ -53,6 +53,7 @@ pub mod kiln_state;
 pub mod lifecycle;
 pub mod llm;
 pub mod llm_state;
+pub(crate) mod lossless_queue;
 pub mod mcp;
 pub mod mcp_host;
 pub mod mcp_server;

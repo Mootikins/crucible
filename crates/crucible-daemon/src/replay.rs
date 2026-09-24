@@ -153,11 +153,10 @@ impl ReplaySession {
                 // counter and silently rewrite what a recording says happened.
                 // The `replay_event` msg_type is what tells a client these seqs
                 // belong to their own stream and not to its live session.
-                if let Err(err) = self.event_tx.send(event) {
+                if !crate::event_emitter::publish_recorded(&self.event_tx, event) {
                     warn!(
                         source = %self.replay_source.display(),
-                        error = %err,
-                        "Replay broadcast send failed, continuing"
+                        "Replay broadcast has no receiver, continuing"
                     );
                 }
             }
@@ -174,8 +173,8 @@ impl ReplaySession {
             // and stamping this one from the live counter would put a number
             // from a different sequence space next to them. `replay_event` is
             // the marker that tells a client to skip contiguity here.
-            if let Err(e) = self.event_tx.send(complete) {
-                tracing::debug!("Failed to send replay_complete event: {e}");
+            if !crate::event_emitter::publish_recorded(&self.event_tx, complete) {
+                tracing::debug!("No receiver for the replay_complete event");
             }
 
             Ok(())

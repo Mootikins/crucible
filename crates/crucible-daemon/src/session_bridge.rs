@@ -581,6 +581,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Session not found: {}", session_id))?;
             let session_dir = sm.session_dir(&session.id);
+            sm.settle_history().await;
             // NOTE: Loads entire session event log. For very long sessions, consider
             // adding a streaming/backwards-reading approach with index files.
             let events = crate::observe::load_events(&session_dir)

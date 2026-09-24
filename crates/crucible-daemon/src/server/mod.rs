@@ -160,6 +160,9 @@ pub struct Server {
     /// — a connection, a turn, a background job, a maintenance pass — takes a
     /// guard from here, and the idle timer reads nothing else.
     activity: Arc<DaemonActivity>,
+    /// Every event on the bus, in order and without loss. The persist task
+    /// drains it into the session logs.
+    journal: crate::lossless_queue::Receiver<SessionEventMessage>,
 }
 
 pub struct LuaSessionState {
@@ -205,6 +208,9 @@ impl Server {
         let listener = bind_private_listener(&params.path)?;
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
+        // The persist task reads this journal, not the broadcast ring, so a
+        // lag of the ring cannot lose a line of a session log.
+        let (journal_waiter, journal) = crate::event_emitter::attach_journal(&event_tx);
 
         use tokio::sync::RwLock;
 
@@ -440,7 +446,8 @@ impl Server {
             ))
             .with_kiln_registry(kiln_registry.clone())
             .with_session_workspace_dir(Some(session_workspace_dir))
-            .with_review_snapshot_root(review_snapshot_root.clone()),
+            .with_review_snapshot_root(review_snapshot_root.clone())
+            .with_journal(journal_waiter),
         );
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =
@@ -640,6 +647,7 @@ impl Server {
             socket_lock,
             authorized_uid: daemon_uid(),
             activity,
+            journal,
         })
     }
 
@@ -725,7 +733,7 @@ impl Server {
         // nothing — silently emptying `kilns` in each `meta.json` it touches.
         let storage = self.session_manager.storage().clone();
         let sm_clone = self.session_manager.clone();
-        let mut persist_rx = self.rpc_context.event_tx.subscribe();
+        let mut persist_rx = self.journal;
         let persist_cancel = CancellationToken::new();
         let persist_cancel_clone = persist_cancel.clone();
         // Cancelled at `SHUTDOWN_DEADLINE`: the drain then stops taking
@@ -754,7 +762,7 @@ impl Server {
                                                 }
                                                 break;
                                             }
-                                            let Ok(event) = persist_rx.try_recv() else { break };
+                                            let Some(event) = persist_rx.try_recv() else { break };
                                             forward_to_recording(&sm_clone, &event);
                                             if touched.insert(event.session_id.clone()) {
                                                 if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
@@ -769,9 +777,9 @@ impl Server {
                                         }
                                         break;
                                     }
-                                    result = persist_rx.recv() => {
-                                        match result {
-                Ok(event) => {
+                                    entry = persist_rx.recv() => {
+                                        match entry {
+                Some(event) => {
                                                 forward_to_recording(&sm_clone, &event);
 
                                                 // Determine if this is a terminal event that should always persist
@@ -806,13 +814,7 @@ impl Server {
                                                     warn!(session_id = %event.session_id, event = %event.event, error = %e, "Failed to persist event");
                                                 }
                                             }
-                                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                                tracing::warn!(
-                                                    "Persist task lagged, dropped {} events", n
-                                                );
-                                                continue;
-                                            }
-                                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                                            None => break,
                                         }
                                     }
                                 }

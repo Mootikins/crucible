@@ -178,6 +178,10 @@ pub struct SessionManager {
     /// classification, retrieval, the prompt — already has a `SessionManager`
     /// and needs the same mapping. Empty by default, which denies every name.
     kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
+    /// The journal that the persist task drains into each session's log.
+    /// A reader of a log waits on it first, so that it sees each event that
+    /// was already published. Empty for a manager without a daemon.
+    journal: crate::lossless_queue::Waiter,
 }
 
 /// The one listing predicate, over the fields `Session` and `SessionSummary` share.
@@ -292,6 +296,7 @@ impl SessionManager {
             session_workspace_dir: None,
             review_snapshot_root: None,
             session_locks: DashMap::new(),
+            journal: crate::lossless_queue::Waiter::default(),
             kiln_registry: Arc::new(crate::kiln_registry::KilnRegistry::empty(
                 crate::kiln_registry::KilnRegistryContext::new(
                     sessions_root.clone(),
@@ -300,6 +305,23 @@ impl SessionManager {
                 ),
             )),
         }
+    }
+
+    /// Let the log readers wait on `journal`. See [`Self::settle_history`].
+    #[must_use]
+    pub(crate) fn with_journal(mut self, journal: crate::lossless_queue::Waiter) -> Self {
+        self.journal = journal;
+        self
+    }
+
+    /// Wait until each event published before this call is in its session's
+    /// log.
+    ///
+    /// The broadcast reaches a client before the persist task writes the
+    /// event. A client that saw an event and then reads the history must
+    /// find it there, so every reader of a session log calls this first.
+    pub async fn settle_history(&self) {
+        self.journal.wait().await;
     }
 
     /// Guard for a session's mutate-then-persist cycle. See `session_locks`.
@@ -548,6 +570,7 @@ impl SessionManager {
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
+        self.settle_history().await;
         self.storage.load_events(session_id, limit, offset).await
     }
 
@@ -556,6 +579,7 @@ impl SessionManager {
         &self,
         session_id: &SessionId,
     ) -> Result<usize, SessionError> {
+        self.settle_history().await;
         self.storage.count_events(session_id).await
     }
 

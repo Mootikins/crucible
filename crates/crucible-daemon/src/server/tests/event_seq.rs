@@ -113,10 +113,6 @@ const DIRECT_SEND_ALLOWED: &[(&str, &str)] = &[
         "the one place that may: it stamps seq first",
     ),
     (
-        "replay.rs",
-        "re-emits a recording's own recorded seq; stamping would renumber history",
-    ),
-    (
         "rpc_client/client/mod.rs",
         "an mpsc relay of already-stamped daemon events, not the broadcast",
     ),

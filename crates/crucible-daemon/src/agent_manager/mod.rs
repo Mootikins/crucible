@@ -807,6 +807,9 @@ impl AgentManager {
         session_id: &str,
         jsonl_path: &std::path::Path,
     ) -> Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>> {
+        // The tree is built once and then kept in memory, so a log that is
+        // still behind the bus would give a tree without its last turns.
+        self.session_manager.settle_history().await;
         let initial = if jsonl_path.exists() {
             match crate::observe::rebuild::rebuild_tree_from_jsonl(jsonl_path).await {
                 Ok(tree) => tree,

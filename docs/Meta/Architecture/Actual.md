@@ -563,9 +563,13 @@ production impls).
 **Enters and leaves.** `emit_event` at `crucible-daemon/src/event_emitter.rs:29`
 is the one place `seq` and `timestamp` are set; it returns `send().is_ok()`.
 `SessionEventMessage::new` (untyped) has 36 production call sites across 21
-daemon and CLI files. The persist task subscribes to `event_tx`, drops lagged
-events with a warning (`server/mod.rs:551-556`), decodes with `should_persist`,
-then matches event names by string again (`server/core/mod.rs:465-474`).
+daemon and CLI files. The persist task does not subscribe to `event_tx`. It
+reads the journal that `emit_event` feeds under one lock with the broadcast
+(`event_emitter.rs`, `attach_journal`; an ordered unbounded queue in
+`lossless_queue.rs`), so it loses no event and keeps the broadcast order. It
+decodes with `should_persist`, then matches event names by string again
+(`server/core/mod.rs:465-474`). A reader of a session log first calls
+`SessionManager::settle_history`, which waits for the journal.
 `forward_events` in `server/core/` inserts `stream_gap` markers and writes to
 the client with a 30 s deadline (`core/mod.rs:109`), at most 32 requests in
 flight per connection (`core/mod.rs:241`). The web `spawn_event_router` feeds

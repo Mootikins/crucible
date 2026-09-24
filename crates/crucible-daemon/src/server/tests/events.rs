@@ -132,10 +132,11 @@ async fn test_events_auto_persisted() {
         .unwrap()
         .to_string();
 
-    // Send event through broadcast channel
+    // Publish through the emit path: the persist task reads the journal that
+    // `emit_event` feeds, not the broadcast ring.
     // Use user_message since text_delta is filtered out to reduce storage
     let event = SessionEventMessage::user_message(&session_id, "msg-1", "hello world");
-    event_tx.send(event).unwrap();
+    crate::event_emitter::emit_event(&event_tx, event);
 
     let session_dir = server.sessions_root().join(&session_id);
     let jsonl_path = session_dir.join("session.jsonl");
