@@ -534,8 +534,7 @@ impl AgentManager {
             }
         };
 
-        let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
-        let (mut description, mut source) = stream_ctx
+        let labels = stream_ctx
             .tool_dispatcher
             .get_tool_ref(&tool_call.name)
             .and_then(|tool_ref| match &tool_ref.source {
@@ -549,39 +548,9 @@ impl AgentManager {
                 ToolSource::Mcp { .. } | ToolSource::Plugin { .. } | ToolSource::Acp { .. } => None,
             })
             .unwrap_or((None, None));
-
-        let hook_event = ToolDisplayStartEvent {
-            name: tool_call.name.clone(),
-            args: args_str.clone(),
-        };
-        if let Some(hints) = super::tool_hooks::resolve_hints(stream_ctx, &hook_event).await {
-            if let Some(label) = hints.label {
-                description = Some(label);
-            }
-            if let Some(detail) = hints.detail {
-                source = Some(detail);
-            }
-        }
-
-        if !emit_event(
-            &stream_ctx.event_tx,
-            SessionEventMessage::tool_call_with_metadata(
-                &stream_ctx.session_id,
-                &call_id,
-                &tool_call.name,
-                args.clone(),
-                description,
-                source,
-                Some(call),
-                auto_approved.clone(),
-            ),
-        ) {
-            warn!(
-                session_id = %stream_ctx.session_id,
-                tool = %tool_call.name,
-                "No subscribers for tool_call event"
-            );
-        }
+        stream_ctx
+            .announce_tool_call(&call_id, &args, labels, call, auto_approved)
+            .await;
 
         let before_event = ToolBeforeExecuteEvent {
             name: tool_call.name.clone(),
@@ -625,7 +594,7 @@ impl AgentManager {
                 .dispatch_tool(&tool_call.name, args.clone(), hook_env_vars),
         )
         .await;
-        let (mut result_str, mut error_str) = match tool_result {
+        let (result_str, error_str) = match tool_result {
             // A text result IS the text. `to_string()` on a wrapped value
             // would hand the model a JSON envelope (and on a bare string a
             // quoted, newline-escaped literal); only genuinely structured
@@ -646,99 +615,20 @@ impl AgentManager {
             ),
         };
 
-        // `tool_result` seam: chained post-execution patches over what the
-        // MODEL receives (`tool:display_complete` only changes what the user
-        // sees). Runs BEFORE spill, so a redacted secret never reaches the
-        // spill file either.
-        (result_str, error_str) = super::tool_hooks::apply_tool_result_handlers(
-            stream_ctx,
-            &tool_call.name,
-            &args,
-            result_str,
-            error_str,
-        )
-        .await;
-
-        // Spill large tool outputs to disk and replace with a token-efficient reference.
-        // Skip tools whose output is trivially reproducible from existing data on disk.
-        const SPILL_THRESHOLD: usize = 10 * 1024; // 10KB
-        let should_spill = error_str.is_none()
-            && result_str.len() >= SPILL_THRESHOLD
-            && !is_reproducible_tool(&tool_call.name);
-        let spill_path = if should_spill {
-            let counter = stream_ctx
-                .slot
-                .spill_counter
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            match Self::spill_tool_output(
-                &stream_ctx.session_dir,
-                &tool_call.name,
-                &result_str,
-                counter,
-            )
-            .await
-            {
-                Ok((path, filename)) => {
-                    // result_str is what the model will see, so its own line
-                    // count is the honest number.
-                    let line_count = result_str.lines().count();
-                    let byte_kb = result_str.len() / 1024;
-                    result_str = format!(
-                        "[{line_count} lines, {byte_kb}KB — full output in $CRU_SESSION_DIR/tools/{filename}]"
-                    );
-                    Some(path)
-                }
-                Err(e) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        error = %e,
-                        "Failed to spill tool output, sending full result"
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        let mut event_result = tool_result_body(&result_str, error_str.as_deref());
-
-        if let Some(ref path) = spill_path {
-            event_result["spill_path"] = serde_json::json!(path);
-        }
-
-        let complete_event = ToolDisplayCompleteEvent {
-            name: tool_call.name.clone(),
-            args: args_str,
-            result: error_str.clone().unwrap_or_else(|| result_str.clone()),
-        };
-        if let Some(hints) = super::tool_hooks::resolve_hints(stream_ctx, &complete_event).await {
-            if let Some(summary) = hints.summary {
-                event_result["summary"] = serde_json::json!(summary);
-            }
-        }
-
-        if !emit_event(
-            &stream_ctx.event_tx,
-            SessionEventMessage::tool_result(
-                &stream_ctx.session_id,
+        let (result, error) = stream_ctx
+            .finish_tool_result(
                 &call_id,
                 &tool_call.name,
-                event_result,
-            ),
-        ) {
-            warn!(
-                session_id = %stream_ctx.session_id,
-                tool = %tool_call.name,
-                "No subscribers for tool_result event"
-            );
-        }
-
+                &args,
+                result_str,
+                error_str,
+                true,
+            )
+            .await;
         crucible_core::traits::chat::ChatToolResult {
             name: tool_call.name.clone(),
-            result: result_str,
-            error: error_str,
+            result,
+            error,
             call_id: Some(call_id),
             terminate: false,
         }
@@ -824,6 +714,132 @@ impl AgentManager {
 
         tokio::fs::write(&path, output).await?;
         Ok((path, filename))
+    }
+}
+
+/// The handlers of a tool call and of its result. Crucible's own tools and
+/// the tools of an agent that runs its own tools go through the same
+/// functions. The agent's tools skip only what the agent owns: the dispatch,
+/// and the spill, because the agent already has the output.
+impl StreamContext {
+    /// Add a tool node under the current node. A tool node does not move
+    /// the cursor, so undo counts the turn and not its calls.
+    pub(super) async fn add_tool_node(&self, node: crucible_core::turn::NodeContent) {
+        let mut tree = self.conversation_tree.lock().await;
+        let parent = tree.current();
+        tree.add_child(parent, node);
+    }
+
+    /// Run the `tool:display_start` hooks, then emit the `tool_call` event.
+    /// `labels` is the description and the source before the hooks.
+    pub(super) async fn announce_tool_call(
+        &self,
+        call_id: &str,
+        args: &serde_json::Value,
+        labels: (Option<String>, Option<String>),
+        call: CanonicalToolCall,
+        auto_approved: Option<String>,
+    ) {
+        let (mut description, mut source) = labels;
+        let hook_event = ToolDisplayStartEvent {
+            name: call.tool.clone(),
+            args: serde_json::to_string(args).unwrap_or_else(|_| "null".to_string()),
+        };
+        if let Some(hints) = super::tool_hooks::resolve_hints(self, &hook_event).await {
+            description = hints.label.or(description);
+            source = hints.detail.or(source);
+        }
+        let tool = call.tool.clone();
+        if !emit_event(
+            &self.event_tx,
+            SessionEventMessage::tool_call_with_metadata(
+                &self.session_id,
+                call_id,
+                &tool,
+                args.clone(),
+                description,
+                source,
+                Some(call),
+                auto_approved,
+            ),
+        ) {
+            warn!(session_id = %self.session_id, %tool, "No subscribers for tool_call event");
+        }
+    }
+
+    /// Run the `tool_result` hooks, spill a large output when `spill` is
+    /// set, run the `tool:display_complete` hooks, then emit the
+    /// `tool_result` event. Returns the result and the error that the hooks
+    /// made, which is what the model of a Crucible tool reads.
+    pub(super) async fn finish_tool_result(
+        &self,
+        call_id: &str,
+        tool: &str,
+        args: &serde_json::Value,
+        result: String,
+        error: Option<String>,
+        spill: bool,
+    ) -> (String, Option<String>) {
+        // The hooks run BEFORE the spill, so a redacted secret never reaches
+        // the spill file either.
+        let (mut result, error) =
+            super::tool_hooks::apply_tool_result_handlers(self, tool, args, result, error).await;
+
+        // Skip tools whose output is trivially reproducible from existing
+        // data on disk.
+        const SPILL_THRESHOLD: usize = 10 * 1024; // 10KB
+        let mut spill_path = None;
+        if spill
+            && error.is_none()
+            && result.len() >= SPILL_THRESHOLD
+            && !is_reproducible_tool(tool)
+        {
+            let counter = self
+                .slot
+                .spill_counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            match AgentManager::spill_tool_output(&self.session_dir, tool, &result, counter).await {
+                Ok((path, filename)) => {
+                    // The model reads `result`, so its own line count is
+                    // the honest number.
+                    let line_count = result.lines().count();
+                    let byte_kb = result.len() / 1024;
+                    result = format!(
+                        "[{line_count} lines, {byte_kb}KB — full output in $CRU_SESSION_DIR/tools/{filename}]"
+                    );
+                    spill_path = Some(path);
+                }
+                Err(e) => warn!(
+                    session_id = %self.session_id,
+                    %tool,
+                    error = %e,
+                    "Failed to spill tool output, sending full result"
+                ),
+            }
+        }
+
+        let mut event_result = tool_result_body(&result, error.as_deref());
+        if let Some(path) = spill_path {
+            event_result["spill_path"] = serde_json::json!(path);
+        }
+        let complete_event = ToolDisplayCompleteEvent {
+            name: tool.to_string(),
+            args: serde_json::to_string(args).unwrap_or_else(|_| "null".to_string()),
+            result: error.clone().unwrap_or_else(|| result.clone()),
+        };
+        if let Some(summary) = super::tool_hooks::resolve_hints(self, &complete_event)
+            .await
+            .and_then(|hints| hints.summary)
+        {
+            event_result["summary"] = serde_json::json!(summary);
+        }
+        if !emit_event(
+            &self.event_tx,
+            SessionEventMessage::tool_result(&self.session_id, call_id, tool, event_result),
+        ) {
+            warn!(session_id = %self.session_id, %tool, "No subscribers for tool_result event");
+        }
+        (result, error)
     }
 }
 

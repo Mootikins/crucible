@@ -65,6 +65,42 @@ fn response_tail(response: &str, limit: usize) -> (String, bool) {
     }
 }
 
+/// The loop guard of one turn. Three failures in a row of one tool with the
+/// same arguments block that tool for the rest of the turn.
+#[derive(Default)]
+struct LoopGuard {
+    last_failure: Option<(String, String)>,
+    failures: usize,
+    blocked: HashSet<String>,
+}
+
+impl LoopGuard {
+    /// The refusal of a call to a blocked tool.
+    fn refusal(&self, tool: &str) -> Option<String> {
+        (self.blocked.contains(tool))
+            .then(|| format!("Tool '{tool}' is blocked for this stream after repeated failures."))
+    }
+
+    fn record(&mut self, tool: &str, args: &serde_json::Value, failed: bool) {
+        if !failed {
+            self.last_failure = None;
+            self.failures = 0;
+            return;
+        }
+        let args = serde_json::to_string(args).unwrap_or_else(|_| "null".to_string());
+        let key = (tool.to_string(), args);
+        if self.last_failure.as_ref() == Some(&key) {
+            self.failures += 1;
+        } else {
+            self.failures = 1;
+            self.last_failure = Some(key);
+        }
+        if self.failures >= 3 {
+            self.blocked.insert(tool.to_string());
+        }
+    }
+}
+
 impl AgentManager {
     #[allow(clippy::ptr_arg)]
     pub(super) async fn run_reactor_handlers(
@@ -216,8 +252,8 @@ impl AgentManager {
         let mut guard = agent.lock().await;
         // ACP-style agents run their own tool loop server-side and emit
         // `ToolCall` events as observations (and drop the inbound channel).
-        // The scheduler must pass those through, not dispatch them. Capture
-        // the flag now, before `turn()` borrows the guard mutably.
+        // The scheduler runs their handlers but does not dispatch them.
+        // Capture the flag now, before `turn()` borrows the guard mutably.
         let agent_owns_tools = guard.capabilities().owns_history;
         let mut event_stream = match guard.turn(turn_ctx).await {
             Ok(s) => s,
@@ -233,20 +269,19 @@ impl AgentManager {
 
         // Per-batch tool tracking
         let mut tracker = ToolCallTracker::new();
-        let mut blocked_tools: HashSet<String> = HashSet::new();
-        let mut last_failure_key: Option<(String, String)> = None;
-        let mut consecutive_failure_count = 0usize;
-        // Did this turn produce any tool activity the user can see? Set on
-        // both forks — the dispatch path below and the `agent_owns_tools`
-        // pass-through, which `continue`s before ever reaching the dispatch
-        // site. Reading it as "dispatched" made the empty-response guard fire
-        // on every delegated turn that ran tools and narrated nothing.
+        let mut loop_guard = LoopGuard::default();
+        // Did this turn produce any tool activity the user can see? Set for
+        // every call, also for a call that the agent runs itself. Reading it
+        // as "dispatched" made the empty-response guard fire on every
+        // delegated turn that ran tools and narrated nothing.
         let mut saw_tool_activity = false;
-        // Args of tool calls an ACP-style agent announced but executed itself,
-        // kept so the pass-through `tool_result` below can hand handlers the
-        // same `{tool, args, ...}` payload the dispatched path gets. Keyed by
-        // call id; entries are removed when the matching result arrives.
-        let mut acp_tool_args: HashMap<String, serde_json::Value> = HashMap::new();
+        // The args and the open review bracket of each call that an agent
+        // runs itself, from its `ToolCall` to its `ToolResult`, by call id.
+        // The result handlers get the same `{tool, args, ...}` payload as
+        // for a Crucible tool. A bracket that no result closes deregisters
+        // itself when the turn drops it.
+        let mut agent_tool_args: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut agent_brackets: HashMap<String, crate::review::CaptureHandle> = HashMap::new();
 
         // Conjunctive early-stop signals collected per batch. The loop
         // ends after the batch only when every result in this vec is
@@ -358,17 +393,24 @@ impl AgentManager {
                         last_segment_end = accumulated_response.len();
                     }
 
-                    // ACP-style agents already executed this tool in their own
-                    // server-side loop; the event is an observation. Pass it
-                    // through to subscribers + the tree and move on. We must NOT
-                    // dispatch it (the dispatch path feeds `inbound_tx`, which
-                    // the ACP turn dropped — the send fails and breaks the loop,
-                    // truncating the turn right after the first tool call), nor
-                    // count it toward the tool-depth cap. The agent streams its
-                    // own ToolResult + follow-up text, handled below.
+                    saw_tool_activity = true;
+                    stream_ctx
+                        .add_tool_node(crucible_core::turn::NodeContent::ToolCall {
+                            id: id.clone(),
+                            name: name.clone(),
+                            args: args.clone(),
+                        })
+                        .await;
+
+                    // An agent that runs its own tools already runs this
+                    // call. It goes through the same announce and result
+                    // functions below, with no dispatch: the inbound channel
+                    // is closed for such an agent. A loop guard cannot stop
+                    // a call that runs, so it ends the turn.
                     if agent_owns_tools {
-                        saw_tool_activity = true;
-                        acp_tool_args.insert(id.clone(), args.clone());
+                        if let Some(reason) = loop_guard.refusal(&name) {
+                            return StreamOutcome::HandlerCancelled(reason);
+                        }
                         let mut call = call.map_or_else(
                             || CanonicalToolCall::crucible_tool(&name, &args),
                             |call| *call,
@@ -381,72 +423,28 @@ impl AgentManager {
                             stream_ctx.origin,
                         )
                         .await;
-                        {
-                            let mut tree = stream_ctx.conversation_tree.lock().await;
-                            let parent = tree.current();
-                            tree.add_child(
-                                parent,
-                                crucible_core::turn::NodeContent::ToolCall {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    args: args.clone(),
-                                },
-                            );
+                        // The bracket opens at the call and closes at its
+                        // result, so the ledger names the call that wrote.
+                        // A read opens none: a bracket that overlaps a write
+                        // makes the write contested.
+                        if !matches!(call.kind.as_str(), "file_read" | "search") {
+                            if let Some(bracket) = stream_ctx.open_review_bracket(&name).await {
+                                agent_brackets.insert(id.clone(), bracket);
+                            }
                         }
-                        if !emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::tool_call_with_metadata(
-                                &stream_ctx.session_id,
-                                &id,
-                                &name,
-                                args.clone(),
-                                None,
-                                // Name the agent so the card badges
-                                // `[acp:claude]` — which agent ran the tool is
-                                // the whole point of the provenance badge.
-                                // An ACP session cannot exist without a name
-                                // (`session/create` rejects it), so `None`
-                                // here means a non-ACP owns-history agent and
-                                // there is no provenance to claim.
-                                stream_ctx
-                                    .agent_stream_config
-                                    .agent_name
-                                    .as_ref()
-                                    .map(|agent| {
-                                        Self::format_tool_source(&ToolSource::Acp {
-                                            agent: agent.clone(),
-                                        })
-                                    }),
-                                Some(call),
-                                // The ACP agent ran its own gate in its own
-                                // process; we granted nothing here.
-                                None,
-                            ),
-                        ) {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                tool = %name,
-                                "No subscribers for pass-through tool_call event"
-                            );
-                        }
+                        // The card names the agent, `[acp:claude]`. `None`
+                        // is an agent with no name, which is not ACP.
+                        let source =
+                            (stream_ctx.agent_stream_config.agent_name.as_ref()).map(|agent| {
+                                Self::format_tool_source(&ToolSource::Acp {
+                                    agent: agent.clone(),
+                                })
+                            });
+                        stream_ctx
+                            .announce_tool_call(&id, &args, (None, source), call, None)
+                            .await;
+                        agent_tool_args.insert(id, args);
                         continue;
-                    }
-
-                    saw_tool_activity = true;
-
-                    // Commit to scheduler-owned conversation tree
-                    // (shadow state until handle.history retires).
-                    {
-                        let mut tree = stream_ctx.conversation_tree.lock().await;
-                        let parent = tree.current();
-                        tree.add_child(
-                            parent,
-                            crucible_core::turn::NodeContent::ToolCall {
-                                id: id.clone(),
-                                name: name.clone(),
-                                args: args.clone(),
-                            },
-                        );
                     }
 
                     let tool_call = ChatToolCall {
@@ -457,12 +455,7 @@ impl AgentManager {
 
                     // Dispatch (honoring blocked list + failure tracking).
                     let mut attempt: Option<usize> = None;
-                    let mut tool_result = if blocked_tools.contains(&name) {
-                        let blocked_error = format!(
-                            "Tool '{}' is blocked for this stream after repeated failures.",
-                            name
-                        );
-
+                    let mut tool_result = if let Some(blocked_error) = loop_guard.refusal(&name) {
                         if !emit_event(
                             &stream_ctx.event_tx,
                             SessionEventMessage::tool_result(
@@ -506,18 +499,8 @@ impl AgentManager {
                     };
 
                     // Repeat-failure tracking / annotation.
-                    let args_key =
-                        serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
-
+                    loop_guard.record(&name, &args, tool_result.error.is_some());
                     if let Some(error) = tool_result.error.as_mut() {
-                        let failure_key = (name.clone(), args_key.clone());
-                        if last_failure_key.as_ref() == Some(&failure_key) {
-                            consecutive_failure_count += 1;
-                        } else {
-                            consecutive_failure_count = 1;
-                            last_failure_key = Some(failure_key);
-                        }
-
                         if attempt.is_some_and(|a| a >= 3)
                             && tracker.is_repeat_failure(&name, &args, 3)
                         {
@@ -533,13 +516,6 @@ impl AgentManager {
                                 error.push_str(&annotation);
                             }
                         }
-
-                        if consecutive_failure_count >= 3 {
-                            blocked_tools.insert(name.clone());
-                        }
-                    } else {
-                        last_failure_key = None;
-                        consecutive_failure_count = 0;
                     }
 
                     // A delegation is attributed by the child's own ledger,
@@ -553,20 +529,14 @@ impl AgentManager {
 
                     // Commit ToolResult to scheduler-owned tree before
                     // feeding it back to the adapter.
-                    {
-                        let mut tree = stream_ctx.conversation_tree.lock().await;
-                        let parent = tree.current();
-                        let result_value = serde_json::Value::String(tool_result.result.clone());
-                        tree.add_child(
-                            parent,
-                            crucible_core::turn::NodeContent::ToolResult {
-                                id: tool_result.call_id.clone().unwrap_or_else(|| id.clone()),
-                                name: tool_result.name.clone(),
-                                result: result_value,
-                                error: tool_result.error.clone(),
-                            },
-                        );
-                    }
+                    stream_ctx
+                        .add_tool_node(crucible_core::turn::NodeContent::ToolResult {
+                            id: tool_result.call_id.clone().unwrap_or_else(|| id.clone()),
+                            name: tool_result.name.clone(),
+                            result: serde_json::Value::String(tool_result.result.clone()),
+                            error: tool_result.error.clone(),
+                        })
+                        .await;
 
                     // Record this result's terminate flag for the
                     // conjunctive batch-terminate check at ToolBatchEnd.
@@ -619,69 +589,40 @@ impl AgentManager {
                     result,
                     error,
                 } => {
-                    // The agent observed an external tool result
-                    // (ACP-style). Pass through to subscribers — but run the
-                    // `tool_result` handlers first, so a redactor scrubs the
-                    // transcript no matter who executed the tool. Caveat: the
-                    // external agent already consumed this result in its own
-                    // process, so unlike the dispatched path these patches
-                    // shape what subscribers and the session log see, NOT what
-                    // that agent's model saw. Same boundary as isolation
-                    // claims on external agents.
-                    let args = acp_tool_args.remove(&id).unwrap_or(serde_json::Value::Null);
-                    let original = result.clone();
-                    let result_text = match &result {
-                        serde_json::Value::String(s) => s.clone(),
+                    // Only an agent that runs its own tools sends a result.
+                    // The result is a notification: the agent's model read
+                    // it already, so the hooks shape what subscribers, the
+                    // transcript and the tree get, not what the model saw.
+                    let args = agent_tool_args.remove(&id).unwrap_or_default();
+                    let text = match result {
+                        serde_json::Value::String(text) => text,
                         other => other.to_string(),
                     };
-                    let (patched_text, error) = super::tool_hooks::apply_tool_result_handlers(
-                        &stream_ctx,
-                        &name,
-                        &args,
-                        result_text.clone(),
-                        error,
-                    )
-                    .await;
-                    // Same boundary as the patch caveat above: an external
-                    // agent owns its own tool loop and never reads our inbound
-                    // channel, so an attachment can never reach its model.
-                    // Drain and say so — leaving it queued would burn the
-                    // session's budget and dedup keys on content nobody will
-                    // ever see, and grow the buffer for the session's lifetime.
+                    let (text, error) = stream_ctx
+                        .finish_tool_result(&id, &name, &args, text, error, false)
+                        .await;
+                    if let Some(bracket) = agent_brackets.remove(&id) {
+                        stream_ctx.close_review_bracket(bracket, &id).await;
+                    }
+                    loop_guard.record(&name, &args, error.is_some());
+                    stream_ctx
+                        .add_tool_node(crucible_core::turn::NodeContent::ToolResult {
+                            id,
+                            name,
+                            result: serde_json::Value::String(text),
+                            error,
+                        })
+                        .await;
+                    // The agent never reads the inbound channel, so an
+                    // attachment can never reach its model. Drain it, or it
+                    // takes the session's budget and dedup keys for nothing.
                     let stranded = stream_ctx.context_attach.drain(&stream_ctx.session_id);
                     if !stranded.is_empty() {
                         warn!(
                             session_id = %stream_ctx.session_id,
                             count = stranded.len(),
-                            "cru.context.attach is not supported for external (ACP) agents; \
-                             discarding attachments — the agent runs its own tool loop and \
-                             never reads the runtime's inbound channel"
-                        );
-                    }
-
-                    // Structured results survive verbatim when no handler
-                    // touched them; a handler's patch is a string by contract.
-                    let result = if patched_text == result_text {
-                        original
-                    } else {
-                        serde_json::Value::String(patched_text)
-                    };
-
-                    let event_result =
-                        super::tool_call::tool_result_body(&result, error.as_deref());
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::tool_result(
-                            &stream_ctx.session_id,
-                            &id,
-                            &name,
-                            event_result,
-                        ),
-                    ) {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %name,
-                            "No subscribers for pass-through tool_result event"
+                            "cru.context.attach is not supported for an agent that runs \
+                             its own tools; discarding attachments"
                         );
                     }
                 }

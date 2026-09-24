@@ -382,6 +382,10 @@ names above are pinned by `handlers::tests::conversion`.
 
 Pattern is matched against the tool name.
 
+An ACP agent runs its own tools, so `pre_tool_call` does not fire for its
+calls. To decide an ACP call, use a permission hook: the agent asks for
+permission for a call it wants approved.
+
 ### `tool_result`
 
 Fires after a tool call finishes, over the outcome **as the model will
@@ -403,6 +407,11 @@ and Handle are ignored here; a handler that must be able to veto belongs in
 `pre_tool_call`. Use for redaction and summarisation of what the model sees;
 `tool:display_complete` is the equivalent for what the *user* sees.
 
+For an ACP agent, this hook fires when the agent reports the result. The
+agent's model read the result already, so a patch changes only what the
+clients, the transcript and the conversation tree get. A large ACP result
+does not spill to disk, because the agent has the output.
+
 The shipped defaults use this hook once: a bash-only handler that echoes
 `$ <command>` above the output, so the model, the TUI, the web card and the
 recording all read a bash result as a terminal transcript (and output that
@@ -412,7 +421,7 @@ it.
 
 ### `tool:display_start` / `tool:display_complete`
 
-Fire around tool output display in the TUI. Use these to transform or filter how tool output is shown to the user (they don't affect the result returned to the agent).
+Fire around tool output display in the TUI. Use these to transform or filter how tool output is shown to the user (they don't affect the result returned to the agent). They fire for the calls of an ACP agent too.
 
 ### `tool:render`
 
@@ -446,7 +455,7 @@ and never shows the call as another kind.
 
 ### `tool:before_execute`
 
-Lower-level hook fired by the in-process handler pipeline. Most plugins should use `pre_tool_call` instead — it's the canonical interception point and works uniformly across local and ACP agents.
+Lower-level hook fired by the in-process handler pipeline, just before Crucible dispatches a tool. Most plugins should use `pre_tool_call` instead — it's the canonical interception point. Neither hook fires for an ACP agent, which runs its own tools.
 
 ### `precognition_select`
 
