@@ -78,11 +78,11 @@ vi.mock('@/hooks/useMediaRecorder', () => ({
 }));
 
 vi.mock('@/hooks/useAutocomplete', () => ({
-  useAutocomplete: () => ({
+  useAutocomplete: (opts: { setInput: (v: string) => void }) => ({
     isOpen: () => false,
     items: () => [],
     selectedIndex: () => -1,
-    onInput: vi.fn(),
+    onInput: (e: InputEvent) => opts.setInput((e.currentTarget as HTMLTextAreaElement).value),
     onKeyDown: vi.fn(),
     complete: vi.fn(),
   }),
@@ -121,6 +121,7 @@ beforeEach(() => {
     'GET /api/project/list': () => [],
     'GET /api/session/test-session/modes': () => ({ current_mode_id: 'ask', modes: [] }),
     'GET /api/session/test-session/status': () => ({ status: [] }),
+    'POST /api/session/test-session/command': () => ({ result: 'Context cleared', type: 'success' }),
     // The docked permission card reads the file it is about to overwrite.
     'GET /api/kiln/file': () => ({ content: '' }),
     // The `×` of a comment chip deletes the comment.
@@ -202,6 +203,17 @@ describe('ChatInput', () => {
     await waitFor(() => expect(mockSendMessage.mock.calls).toEqual([['', [{ id: 'c1', source }]]]));
     await waitFor(() => expect(chips()).toHaveLength(0));
     expect(composerComments.of('other-session')).toHaveLength(1);
+  });
+
+  // The daemon clears the model context and sends `context_cleared`, which
+  // draws the divider. The transcript keeps the history above it.
+  it('/clear clears through the daemon and keeps the transcript', async () => {
+    render(() => <ChatInput />);
+    fireEvent.input(screen.getByTestId('chat-input'), { target: { value: '/clear' } });
+    fireEvent.submit(screen.getByTestId('chat-input-form'));
+    await waitFor(() => expect(mockAddSystemMessage).toHaveBeenCalledWith('Context cleared'));
+    expect((await kilnEnv.fetch.sent(kilnEnv.fetch.mock.calls.length - 1)).body).toEqual({ command: '/clear' });
+    expect(mockClearMessages).not.toHaveBeenCalled();
   });
 
   it('removing a chip deletes the stored comment', async () => {

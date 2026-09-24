@@ -73,7 +73,7 @@ pub(super) const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "clear",
         args: "",
-        description: "Clear the chat view (server history preserved)",
+        description: "Clear the model context (the transcript stays)",
     },
     SlashCommand {
         name: "export",
@@ -254,14 +254,22 @@ pub(super) async fn execute_command(
                 response_type: "success".to_string(),
             }))
         }
-        // The frontend clears its local view on /clear; nothing is cleared
-        // daemon-side. (TUI :clear ends + recreates the session — full parity
-        // deliberately deferred; ACP sessions reject clear.) The response must
-        // not overclaim.
-        "clear" => Ok(Json(CommandResponse {
-            result: "Chat view cleared (server-side history preserved)".to_string(),
-            response_type: "success".to_string(),
-        })),
+        // The same daemon command as the TUI's `/clear`. The transcript keeps
+        // the history, and the daemon's `context_cleared` draws the divider.
+        "clear" => {
+            let args = serde_json::json!({ "session_id": id });
+            let reply = state
+                .daemon
+                .plugin_run_command("clear", args)
+                .await
+                .daemon_err()?;
+            Ok(Json(CommandResponse {
+                result: reply["result"]
+                    .as_str()
+                    .map_or_else(|| reply["result"].to_string(), str::to_string),
+                response_type: "success".to_string(),
+            }))
+        }
         "export" => {
             // Return a hint — the actual export is handled by the existing export endpoint
             Ok(Json(CommandResponse {

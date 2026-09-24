@@ -313,41 +313,6 @@ async fn command_model_with_name_switches_model() {
 }
 
 #[tokio::test]
-async fn command_clear_returns_cleared() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/clear"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["type"], "success");
-    // Pins the honest wording: /clear only clears the browser view; the
-    // daemon-side history is untouched (TUI end+recreate parity deferred).
-    assert!(
-        json["result"]
-            .as_str()
-            .unwrap()
-            .contains("server-side history preserved"),
-        "Result must state view-only clear semantics"
-    );
-}
-
-#[tokio::test]
 async fn command_export_returns_hint() {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);
@@ -456,7 +421,7 @@ async fn command_with_whitespace_padding_works() {
                 .method("POST")
                 .uri("/api/session/test-session-001/command")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"  /clear  "}"#))
+                .body(Body::from(r#"{"command":"  /help  "}"#))
                 .unwrap(),
         )
         .await
@@ -469,7 +434,34 @@ async fn command_with_whitespace_padding_works() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["type"], "success");
     assert!(
-        json["result"].as_str().unwrap().contains("cleared"),
+        json["result"].as_str().unwrap().contains("/help"),
         "Command should work with whitespace padding"
     );
+}
+
+/// `/clear` clears the model context through the daemon, with the same
+/// command and the same arguments as the TUI's `/clear`.
+#[tokio::test]
+async fn command_clear_runs_the_daemon_clear_of_the_session() {
+    let (mock, client) = start_mock_daemon().await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session/test-session-001/command")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"command":"/clear"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let params = mock
+        .received_params("plugin.run_command")
+        .expect("the clear reaches the daemon");
+    assert_eq!(params["name"], "clear");
+    assert_eq!(params["args"]["session_id"], "test-session-001");
 }

@@ -41,7 +41,6 @@ export const ChatInput: Component = () => {
     availableModes,
     switchMode,
     addSystemMessage,
-    clearMessages,
     pendingInteraction,
     respondToInteraction,
   } = useChatSafe();
@@ -118,10 +117,6 @@ export const ChatInput: Component = () => {
 
       try {
         const result = await runCommand.mutateAsync(message);
-        // Special handling for /clear
-        if (message.startsWith('/clear')) {
-          clearMessages();
-        }
         addSystemMessage(result.result);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Command failed';
