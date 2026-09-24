@@ -602,3 +602,47 @@ async fn a_plugin_clear_keeps_the_override_of_the_turn_that_asked() {
         result.data
     );
 }
+
+/// A plugin's `cru.session.send_message` starts a plugin turn, not a user
+/// turn. So it counts toward the loop limit, and it never resets the count.
+#[tokio::test]
+async fn a_plugin_send_starts_a_plugin_turn() {
+    let mut h = ReactorTestHarness::new().await;
+    let loader = plugin_lua(&h, "");
+    let lua = loader.plugin_lua();
+    lua.globals().set("sid", h.session_id.clone()).unwrap();
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+
+    let previous = crucible_lua::enter_plugin(&lua, "alpha");
+    lua.load(r#"assert(cru.session.send_message(sid, "from alpha"))"#)
+        .exec_async()
+        .await
+        .unwrap();
+    crucible_lua::set_source(&lua, previous);
+
+    let turn = events_until_turn_finished(&mut h.event_rx).await;
+    let opening = turn.iter().find(|e| e.event == "user_message").unwrap();
+    assert_eq!(origin_of(opening), TurnOrigin::Plugin("alpha".into()));
+    let count = &h.agent_manager.slot(&h.session_id).plugin_turn_count;
+    assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 1);
+}
+
+/// A plugin cannot write a user message into the context. A person writes
+/// those.
+#[tokio::test]
+async fn a_plugin_cannot_inject_a_user_message() {
+    let h = ReactorTestHarness::new().await;
+    let loader = plugin_lua(&h, "");
+    let lua = loader.plugin_lua();
+    lua.globals().set("sid", h.session_id.clone()).unwrap();
+
+    let previous = crucible_lua::enter_plugin(&lua, "alpha");
+    let (ok, err): (Option<bool>, Option<String>) = lua
+        .load(r#"return cru.session.inject(sid, "user", "I agree")"#)
+        .eval_async()
+        .await
+        .unwrap();
+    crucible_lua::set_source(&lua, previous);
+    assert_eq!(ok, None, "the inject must be refused");
+    assert!(err.unwrap_or_default().contains("alpha"));
+}

@@ -368,14 +368,27 @@ impl DaemonSessionApi for DaemonSessionBridge {
     /// error before any prompt is emitted. A plugin that wants to drive
     /// permissions itself can still subscribe and use
     /// `cru.session.interaction_respond`.
-    fn send_message(&self, session_id: String, content: String) -> BoxFut<String> {
+    fn send_message(
+        &self,
+        session_id: String,
+        content: String,
+        plugin: Option<String>,
+    ) -> BoxFut<String> {
         bridge_async!(
             self.agent_manager,
             self.event_tx,
             |am, event_tx| async move {
-                am.send_message(&session_id, content, &event_tx, false, None)
-                    .await
-                    .map_err(|e| e.to_string())
+                match plugin {
+                    Some(plugin) => {
+                        am.send_plugin_message(&session_id, content, plugin, &event_tx)
+                            .await
+                    }
+                    None => {
+                        am.send_message(&session_id, content, &event_tx, false, None)
+                            .await
+                    }
+                }
+                .map_err(|e| e.to_string())
             }
         )
     }
@@ -658,7 +671,13 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    fn inject_context(&self, session_id: String, role: String, content: String) -> BoxFut<()> {
+    fn inject_context(
+        &self,
+        session_id: String,
+        role: String,
+        content: String,
+        plugin: Option<String>,
+    ) -> BoxFut<()> {
         let am = self.agent_manager.clone();
         let sm = self.session_manager.clone();
         let event_tx = self.event_tx.clone();
@@ -670,6 +689,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 &session_id,
                 &role,
                 &content,
+                plugin.as_deref(),
             )
             .await
         })

@@ -165,6 +165,7 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
             &session.id,
             role,
             "refused",
+            None,
         )
         .await;
         assert!(result.is_err());

@@ -205,6 +205,7 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         &self,
         _: String,
         _: String,
+        _: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
         Box::pin(async { Ok("msg-001".to_string()) })
     }
@@ -290,6 +291,7 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         _session_id: String,
         _role: String,
         _content: String,
+        _plugin: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         Box::pin(async { Ok(()) })
     }

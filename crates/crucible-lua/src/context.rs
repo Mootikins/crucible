@@ -380,6 +380,7 @@ mod tests {
             &self,
             _: String,
             _: String,
+            _: Option<String>,
         ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
             unimplemented!()
         }
@@ -484,6 +485,7 @@ mod tests {
             _: String,
             _: String,
             _: String,
+            _: Option<String>,
         ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
             unimplemented!()
         }

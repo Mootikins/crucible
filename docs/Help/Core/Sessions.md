@@ -64,7 +64,8 @@ See [[Help/Extending/Agent Cards]] for card composition.
 ## Adding context from Lua
 
 `cru.session.inject(session_id, role, content)` accepts context for a running
-internal-agent session. The role is `system`, `user`, or `assistant`.
+internal-agent session. The role is `system`, `user`, or `assistant`. A
+plugin cannot inject a `user` message: a person writes those.
 Acceptance persists immediately, but does not send a message or start a turn.
 The next turn incorporates the context once; an in-flight turn is unchanged.
 The same ordering survives resume, including context accepted before a restart

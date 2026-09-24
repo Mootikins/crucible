@@ -184,13 +184,16 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         agent_config: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
-    /// Send a user message to a session, triggering agent processing.
+    /// Send a message to a session, triggering agent processing. With
+    /// `plugin`, the plugin of that name sends it, and the turn is a plugin
+    /// turn, never a user turn.
     ///
     /// Returns a request/response ID for tracking.
     fn send_message(
         &self,
         session_id: String,
         content: String,
+        plugin: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
 
     /// Clear context in the same session and optionally start one new turn.
@@ -327,12 +330,14 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// Inject a message into the session context without triggering LLM completion.
     ///
     /// Persists a `LogEvent` to the session's JSONL log and emits a broadcast event.
-    /// `role` must be `"system"`, `"user"`, or `"assistant"`.
+    /// `role` must be `"system"`, `"user"`, or `"assistant"`. `plugin` names
+    /// the plugin that injects, which may not write a `"user"` message.
     fn inject_context(
         &self,
         session_id: String,
         role: String,
         content: String,
+        plugin: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
     /// Wait for multiple background subagent jobs to complete.

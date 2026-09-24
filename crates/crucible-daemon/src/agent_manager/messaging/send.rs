@@ -209,6 +209,31 @@ impl AgentManager {
         .await
     }
 
+    /// Send `content` as a turn of the plugin `plugin`. No person stands
+    /// behind it, so it runs non-interactive with no override.
+    pub async fn send_plugin_message(
+        self: &Arc<Self>,
+        session_id: &str,
+        content: String,
+        plugin: String,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+    ) -> Result<String, AgentError> {
+        self.send_message_inner(
+            session_id,
+            content,
+            TurnRequest {
+                origin: TurnOrigin::Plugin(plugin),
+                clear_before: false,
+                review_context: None,
+                event_tx,
+                is_interactive: false,
+                permission_override: None,
+                completion_tx: None,
+            },
+        )
+        .await
+    }
+
     /// Like [`send_message`], with the review comments that the message
     /// attaches.
     pub async fn send_message_with_context(

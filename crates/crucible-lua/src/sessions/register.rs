@@ -321,7 +321,8 @@ pub(crate) async fn send_message_op(
     sid: &str,
     content: String,
 ) -> mlua::Result<(Value, Value)> {
-    match api.send_message(sid.to_string(), content).await {
+    let plugin = crate::plugin_context::current_plugin_name(lua);
+    match api.send_message(sid.to_string(), content, plugin).await {
         Ok(response_id) => {
             let s = lua.create_string(&response_id)?;
             Ok((Value::String(s), Value::Nil))
@@ -584,7 +585,11 @@ pub(crate) async fn inject_op(
     role: String,
     content: String,
 ) -> mlua::Result<(Value, Value)> {
-    match api.inject_context(sid.to_string(), role, content).await {
+    let plugin = crate::plugin_context::current_plugin_name(lua);
+    match api
+        .inject_context(sid.to_string(), role, content, plugin)
+        .await
+    {
         Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
         Err(e) => err_pair(lua, e),
     }

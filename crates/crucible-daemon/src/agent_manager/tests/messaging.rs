@@ -869,6 +869,7 @@ async fn turn_undo_restores_snapshotted_file() {
         &h.session_id,
         "system",
         "Remember the kiln",
+        None,
     )
     .await
     .unwrap();

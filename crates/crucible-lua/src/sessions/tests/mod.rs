@@ -387,6 +387,7 @@ impl DaemonSessionApi for MockDaemonApi {
         &self,
         session_id: String,
         _content: String,
+        _plugin: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
         self.send_calls.lock().unwrap().push(session_id);
         Box::pin(async { Ok("msg-response-001".to_string()) })
@@ -542,6 +543,7 @@ impl DaemonSessionApi for MockDaemonApi {
         _session_id: String,
         _role: String,
         _content: String,
+        _plugin: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         Box::pin(async { Ok(()) })
     }

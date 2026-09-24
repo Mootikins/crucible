@@ -126,6 +126,7 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
             &reader.id,
             "user",
             "INJECTED-PROVIDER-CONTEXT",
+            None,
         )
         .await
         .unwrap();

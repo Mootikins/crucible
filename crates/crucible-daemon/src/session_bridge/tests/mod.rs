@@ -324,7 +324,7 @@ async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
     let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
 
     bridge
-        .send_message(session_id, "go".to_string())
+        .send_message(session_id, "go".to_string(), None)
         .await
         .unwrap();
 

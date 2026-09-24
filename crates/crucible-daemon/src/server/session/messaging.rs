@@ -136,6 +136,9 @@ pub(crate) async fn handle_session_send_message(
 }
 
 /// Shared implementation for context injection -- used by both RPC handler and Lua bridge.
+///
+/// `plugin` names the plugin that injects; `None` for an RPC client. A plugin
+/// may not write a user message: a person writes those.
 pub(crate) async fn inject_context_impl(
     sm: &SessionManager,
     am: &AgentManager,
@@ -143,11 +146,17 @@ pub(crate) async fn inject_context_impl(
     session_id: &str,
     role: &str,
     content: &str,
+    plugin: Option<&str>,
 ) -> Result<(), String> {
     if !matches!(role, "system" | "user" | "assistant") {
         return Err(format!(
             "Invalid role '{}': must be 'system', 'user', or 'assistant'",
             role
+        ));
+    }
+    if let (Some(plugin), "user") = (plugin, role) {
+        return Err(format!(
+            "Plugin '{plugin}' cannot inject a user message; inject it as 'system'"
         ));
     }
 
@@ -211,7 +220,17 @@ pub(crate) async fn handle_session_inject_context(
     };
     let session_id = &params.session_id;
 
-    match inject_context_impl(sm, am, event_tx, session_id, &params.role, &params.content).await {
+    match inject_context_impl(
+        sm,
+        am,
+        event_tx,
+        session_id,
+        &params.role,
+        &params.content,
+        None,
+    )
+    .await
+    {
         Ok(()) => Response::success(req.id, serde_json::json!({ "status": "ok" })),
         Err(msg)
             if msg.starts_with("Invalid role") || msg.starts_with("Context injection requires") =>

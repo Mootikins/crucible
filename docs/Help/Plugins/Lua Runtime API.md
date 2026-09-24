@@ -542,7 +542,11 @@ in two cases:
 
 ### cru.session.send_message(session_id, content)
 
-Send a user message to a session, triggering agent processing. Returns a request/response ID for tracking.
+Send a message to a session, triggering agent processing. Returns a request/response ID for tracking.
+
+When a plugin calls it, the turn is a plugin turn, not a user turn: it shows
+with the name of the plugin, it runs non-interactive, and it counts toward the
+plugin turn limit of the session.
 
 ```lua
 local msg_id, err = cru.session.send_message(session_id, "What is Crucible?")
