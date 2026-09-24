@@ -364,10 +364,12 @@ impl SessionLifecycle {
     /// 2. The context attachment is released (not on a pause).
     /// 3. The session manager changes the state: pause, end, archive or delete.
     /// 4. `cleanup_session` frees the agent state (not on a pause).
-    /// 5. The handlers that the session activated and its statusline values
-    ///    are swept, after the hooks, which can write both.
+    /// 5. The `session:ended` observers that the session registered for its
+    ///    own end run. Then the handlers that the session activated and its
+    ///    statusline values are swept, after the hooks, which can write both.
     /// 6. One `session:ended` event goes to the system session, when the stop
-    ///    took a session out of service. Its `reason` names the cause.
+    ///    took a session out of service. Its `reason` names the cause. The
+    ///    daemon-wide observers get it from the bus.
     /// 7. For an archive or a delete, each delegated child stops the same way.
     ///
     /// Steps 1 to 5 run with the plugin-loader mutex held. A start that waits
@@ -477,14 +479,16 @@ impl SessionLifecycle {
                 agents.cleanup_session(session_id);
             }
         }
+        let ended = (in_service && changed.is_ok())
+            .then(|| crate::event_map::session_ended(session_id, cause.reason()));
+        if let (Some(loader), Some(ended)) = (loader.as_deref(), ended.as_ref()) {
+            run_scoped_observers(loader, session_id, ended).await;
+        }
         sweep_session(loader.as_deref(), agents.as_deref(), session_id);
         drop(guard);
 
-        if in_service && changed.is_ok() {
-            crate::event_emitter::emit_event(
-                &self.event_tx,
-                crate::event_map::session_ended(session_id, cause.reason()),
-            );
+        if let Some(ended) = ended {
+            crate::event_emitter::emit_event(&self.event_tx, ended);
         }
         changed.map_err(StopError::from)
     }
@@ -664,6 +668,49 @@ fn sweep_session(
             tracing::debug!(session_id = %session_id, forgotten, "swept session statusline expression values");
         }
     }
+}
+
+/// Run the observers of `event` that the stopping session registered for
+/// itself, before [`sweep_session`] takes them.
+///
+/// The bus delivers the event to the Lua dispatcher later, and by then the
+/// sweep removed these rows: a `session:ended` handler that code inside the
+/// session registered for its own end, the documented teardown observer,
+/// never ran. The rows run here instead, once. The dispatcher still runs the
+/// daemon-wide rows, and it cannot run these a second time, because they are
+/// gone when it reads the event.
+async fn run_scoped_observers(
+    loader: &DaemonPluginLoader,
+    session_id: &str,
+    event: &SessionEventMessage,
+) {
+    let Some(hooked) = crate::event_map::decode(event) else {
+        return;
+    };
+    let handlers = loader.plugin_handlers();
+    let own_scope = crucible_lua::SessionScope::Session(session_id.to_string());
+    let matched: Vec<_> = handlers
+        .runtime_handlers_for(
+            hooked.hook.as_str(),
+            hooked.identifier.as_deref(),
+            crucible_lua::Firing::InSession(session_id),
+        )
+        .into_iter()
+        .filter(|row| row.scope == own_scope)
+        .collect();
+    if matched.is_empty() {
+        return;
+    }
+    let lua = loader.plugin_lua();
+    holding_plugin_loader(crate::server::run_handlers(
+        &handlers,
+        &lua,
+        matched,
+        hooked.hook,
+        &hooked.event,
+        Some(session_id),
+    ))
+    .await;
 }
 
 /// The id of a stored session. Archive and delete read the session directory,

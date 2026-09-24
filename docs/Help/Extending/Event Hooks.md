@@ -210,7 +210,10 @@ the handler reads that session as `event.session_id` — but a scope on it could
 never fire, so it is refused rather than accepted and left quiet. For the same
 reason `ctx.session_id` is absent there: the dispatch belongs to the daemon.
 `session:ended` takes a scope normally, because code inside a session registers
-for that session's end while it is still running.
+for that session's end while it is still running. The daemon runs such a
+handler inside the stop, once, before it removes the handlers of the session.
+The daemon-wide `session:ended` handlers get the event from the bus after the
+stop.
 
 Every other event carries one. `session:created` and `session:ended` name the
 session they are about, and `search:rerank` names one when the search came

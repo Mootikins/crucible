@@ -49,10 +49,16 @@ impl Rig {
     /// A daemon with a live, isolated session that holds a claim, an
     /// attachment and a session-scoped handler.
     async fn new() -> Self {
+        Self::with_hooks(None).await
+    }
+
+    /// [`Self::new`], with `hook_lua` run on the plugin VM before the session
+    /// starts.
+    async fn with_hooks(hook_lua: Option<&str>) -> Self {
         let data_home = TempDir::new().unwrap();
         let kiln = TempDir::new().unwrap();
         let plugins = sandbox_plugin_with(data_home.path(), STOP_PLUGIN);
-        let daemon = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+        let daemon = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), hook_lua).await;
         let id = daemon.isolated_session().await;
         daemon
             .ctx
@@ -67,9 +73,8 @@ impl Rig {
             _data_home: data_home,
             _kiln: kiln,
         };
-        assert_eq!(
-            rig.scoped_handlers().await,
-            1,
+        assert!(
+            rig.scoped_handlers().await >= 1,
             "precondition: the start hook activated a handler for the session"
         );
         rig
@@ -262,4 +267,69 @@ async fn an_rpc_pause_runs_the_end_stage() {
         .await;
     assert!(resp.error.is_none(), "pause: {:?}", resp.error);
     rig.assert_stopped("session.pause", "paused").await;
+}
+
+/// A `session:ended` handler that code inside the session registers for the
+/// session's own end runs, once, and it reads the cause.
+///
+/// That is the documented teardown observer. Before the fix it never ran: the
+/// stop swept the session's handlers before the event went out, and the bus
+/// dispatcher reads the event later still.
+#[tokio::test]
+async fn a_session_ended_handler_scoped_to_the_session_runs_at_its_end() {
+    const HOOKS: &str = r#"
+cru.on("session:ended", function(_ctx, _event)
+  _G.global_ended = (_G.global_ended or 0) + 1
+end)
+cru.on_session_start(function(session)
+  cru.on("session:ended", { session = session.id }, function(ctx, event)
+    _G.scoped_ended = (_G.scoped_ended or 0) + 1
+    _G.scoped_reason = event.reason
+    _G.scoped_ctx = ctx.session_id
+  end)
+end)
+"#;
+    let rig = Rig::with_hooks(Some(HOOKS)).await;
+    // The daemon's own bus dispatcher, so the global handler runs as it does
+    // in production.
+    {
+        let guard = rig.daemon.ctx.plugin_loader.lock().await;
+        let loader = guard.as_ref().expect("the rig has a plugin runtime");
+        crate::server::spawn_file_event_hooks(
+            rig.daemon.ctx.event_tx.subscribe(),
+            loader.plugin_handlers(),
+            loader.plugin_lua(),
+        );
+    }
+
+    let resp = rig
+        .daemon
+        .rpc("session.end", json!({ "session_id": rig.id }))
+        .await;
+    assert!(resp.error.is_none(), "end: {:?}", resp.error);
+
+    let lua = rig.daemon.lua();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while lua
+            .globals()
+            .get::<Option<i64>>("global_ended")
+            .unwrap()
+            .is_none()
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("precondition: the bus delivered session:ended to the global handler");
+
+    let scoped: Option<i64> = lua.globals().get("scoped_ended").unwrap();
+    assert_eq!(
+        scoped,
+        Some(1),
+        "the session-scoped session:ended handler must run once at the session's end"
+    );
+    let reason: Option<String> = lua.globals().get("scoped_reason").unwrap();
+    assert_eq!(reason.as_deref(), Some("ended"));
+    let ctx_session: Option<String> = lua.globals().get("scoped_ctx").unwrap();
+    assert_eq!(ctx_session.as_deref(), Some(rig.id.as_str()));
 }

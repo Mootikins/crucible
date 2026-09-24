@@ -89,47 +89,64 @@ pub fn spawn_file_event_hooks(
                 continue;
             }
 
-            for handler in matched {
-                match handlers
-                    .execute_runtime_handler(&lua, handler.id, &event, session.as_deref())
-                    .await
-                {
-                    Ok(result) => {
-                        // Narrowed at the boundary: an event has already
-                        // happened and already been broadcast, so `Transform`,
-                        // `Inject` and `Handled` cannot apply. This loop used to
-                        // carry an arm that logged and dropped them; now the
-                        // type says they are not outcomes here, and the closure
-                        // reports anything a handler asked for that cannot.
-                        let outcome = result.into_event_outcome(&mut |dropped| {
-                            debug!(
-                                handler = handler.id,
-                                hook = %hook,
-                                dropped = dropped,
-                                "daemon event handler returned something an event cannot act on"
-                            );
-                        });
-                        match outcome {
-                            EventOutcome::Observed => {}
-                            EventOutcome::StopChain { reason } => {
-                                debug!(
-                                    handler = handler.id,
-                                    reason = %reason,
-                                    "daemon event handler stopped the chain"
-                                );
-                                break;
-                            }
-                        }
-                    }
-                    Err(e) => warn!(
-                        handler = handler.id,
-                        error = %e,
-                        "daemon event handler failed (continuing)"
-                    ),
-                }
-            }
+            run_handlers(&handlers, &lua, matched, hook, &event, session.as_deref()).await;
         }
     });
+}
+
+/// Run `matched` for one event, in order, with the fail-open policy of this
+/// module.
+///
+/// Shared with [`SessionLifecycle::stop`](crate::session_lifecycle::SessionLifecycle::stop),
+/// which runs the handlers scoped to the stopping session before it sweeps
+/// them. The bus dispatcher reads the event later, when the rows are gone.
+pub(crate) async fn run_handlers(
+    handlers: &crucible_lua::LuaScriptHandlerRegistry,
+    lua: &mlua::Lua,
+    matched: Vec<crucible_lua::Registration>,
+    hook: crucible_lua::EventName,
+    event: &crucible_core::events::SessionEvent,
+    session: Option<&str>,
+) {
+    for handler in matched {
+        match handlers
+            .execute_runtime_handler(lua, handler.id, event, session)
+            .await
+        {
+            Ok(result) => {
+                // Narrowed at the boundary: an event has already
+                // happened and already been broadcast, so `Transform`,
+                // `Inject` and `Handled` cannot apply. This loop used to
+                // carry an arm that logged and dropped them; now the
+                // type says they are not outcomes here, and the closure
+                // reports anything a handler asked for that cannot.
+                let outcome = result.into_event_outcome(&mut |dropped| {
+                    debug!(
+                        handler = handler.id,
+                        hook = %hook,
+                        dropped = dropped,
+                        "daemon event handler returned something an event cannot act on"
+                    );
+                });
+                match outcome {
+                    EventOutcome::Observed => {}
+                    EventOutcome::StopChain { reason } => {
+                        debug!(
+                            handler = handler.id,
+                            reason = %reason,
+                            "daemon event handler stopped the chain"
+                        );
+                        break;
+                    }
+                }
+            }
+            Err(e) => warn!(
+                handler = handler.id,
+                error = %e,
+                "daemon event handler failed (continuing)"
+            ),
+        }
+    }
 }
 
 #[cfg(test)]

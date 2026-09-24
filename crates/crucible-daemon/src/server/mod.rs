@@ -79,6 +79,9 @@ pub mod storage;
 
 pub(crate) use core::sweep_and_archive_stale_sessions;
 use core::*;
+pub(crate) use file_event_hooks::run_handlers;
+#[cfg(test)]
+pub(crate) use file_event_hooks::spawn_file_event_hooks;
 use plugins::*;
 
 /// How many events the broadcast ring retains before a slow receiver's cursor
