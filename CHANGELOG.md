@@ -43,6 +43,18 @@ is a Keep a Changelog category.
 - **The `title` of an ACP agent key table entry is a regular expression**
   (Rust regex syntax, not a Lua pattern). A bad expression fails the config
   load. A group named `tool` gives the tool name.
+- **A plugin's send is a plugin turn.** `cru.session.send_message` from a
+  plugin starts a plugin turn: it runs non-interactive, shows the plugin name
+  and counts toward the plugin turn limit. `cru.session.inject(sid, "user", …)`
+  from a plugin is refused. A person writes user messages.
+- **A permission prompt waits without a time limit.** The 300 s deny is gone.
+  A prompt stays open until a person answers it or a cancel ends the turn. A
+  client that attaches later shows it at once.
+- **A name that two sources share needs its full name.** Commands, skills and
+  agent cards keep both entries as `source:name`, for example
+  `/plugin:command` or `workspace:researcher`. A bare name works while it is
+  unique. An ambiguous bare name returns an error that lists the full names;
+  precedence no longer hides one of them.
 
 ### Fixed
 
@@ -64,6 +76,13 @@ is a Keep a Changelog category.
   guard. The loop guard also reads the title and the locations of an ACP call,
   so the different commands of an agent that sends no tool name are not one
   call repeated.
+- **Injected text cannot forge its element.** The daemon breaks each
+  `<system-message` tag in the body of an injection, so a note, a file or a
+  plugin text cannot close the element or give itself another source.
+- **Injected session context keeps its kind.** `cru.session.inject(sid,
+  "system", …)` and `session.inject_context` now reach the model in one
+  `<system-message kind="context">` element, and a resume, an undo and a fork
+  keep the kind and the source.
 - **A session's `env_overrides` now beats the profile's `env`.** The profile
   environment was merged twice — once onto the session and once at launch —
   and the launch copy put the config value back, so a `session.create`
@@ -77,6 +96,24 @@ is a Keep a Changelog category.
   `summary`. The TUI card, the web card, both permission prompts and `cru acp`
   draw this table. No client takes an icon, a label or a summary from the tool
   name.
+- **Plugin turns.** A turn that a plugin starts shows its full text under
+  `↻ <plugin>`, and the model gets it as a `system` message with the plugin
+  as its source, through replay, undo and fork. Each injected text (plugin
+  turns, Precognition, `@` attachments) goes to the model in one
+  `<system-message kind="…" source="…">` element. Anthropic and ACP agents
+  get it in a user-role message. The `tool:render` origin names the plugin:
+  `{ kind = "plugin", name = "goal" }`.
+- **A plugin approval value for each session.** Each plugin that starts turns
+  has `inherit`, `ask` or `stop`. The value can only make the session stricter:
+  `ask` prompts (and refuses when nobody can answer), and `stop` refuses, both
+  with a reason that names the plugin. After 25 plugin turns in a row with no
+  user turn, the plugin goes to `ask` with a notice; each session can change
+  the limit. The value is set over RPC and in the web session settings.
+- **`cru.session.clear(session_id, { prompt = "…" })`.** It clears the model
+  context in the same session and can start one turn with `prompt`. The
+  transcript keeps its history with a divider, and an ACP agent gets a new
+  ACP session. The new turn keeps the override and the interactivity of the
+  turn that asked. `/clear` is a shipped Lua command that calls it.
 - **Antigravity is a built-in ACP agent** (`cru chat --acp antigravity`). The
   command and the arguments come from the ACP registry entry `antigravity-acp`
   and Crucible passes them unchanged, as Zed and acpx do. On Linux that
