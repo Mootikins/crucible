@@ -460,6 +460,64 @@ async fn plugin_pre_tool_call_transform_rewrites_arguments() {
     );
 }
 
+/// A handler that rewrites the arguments of a write rewrites its diff too.
+/// The model's call came with the diff of its own path, and the card and
+/// the prompt must show the diff of the call that runs.
+#[tokio::test]
+async fn a_rewritten_write_is_announced_with_the_diff_of_the_rewrite() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let mut h = ReactorTestHarness::new().await;
+    let loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+    loader
+        .plugin_lua()
+        .load(
+            r#"
+        cru.on("pre_tool_call", { pattern = "write_file" }, function(ctx, event)
+            return { args = { path = "rewritten-a.md", content = event.args.content } }
+        end)
+        cru.permissions.on_request(function(r) return { allow = true } end)
+    "#,
+        )
+        .exec()
+        .expect("register the handlers");
+    h.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
+
+    let args = serde_json::json!({ "path": "a.md", "content": "new body" });
+    let call = crucible_core::types::CanonicalToolCall {
+        diffs: vec![crucible_core::types::acp::FileDiff {
+            path: "a.md".to_string(),
+            old_content: None,
+            new_content: "new body".to_string(),
+        }],
+        ..crucible_core::types::CanonicalToolCall::crucible_tool("write_file", &args)
+    };
+    h.inject_streaming_agent(vec![
+        TurnEvent::ToolCall {
+            id: "call-write".to_string(),
+            name: "write_file".to_string(),
+            args,
+            call: Some(Box::new(call)),
+        },
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_call = h.wait_for("tool_call").await;
+    h.wait_for("message_complete").await;
+
+    let path = tool_call.data["display"]["diffs"][0]["path"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        path.ends_with("rewritten-a.md"),
+        "the card must show the diff of the rewritten call; got {:?}",
+        tool_call.data["display"]["diffs"]
+    );
+}
+
 /// The shipped defaults format bash results as a terminal transcript — but
 /// the formatter can only format what the dispatcher hands it. Prove the
 /// whole crossing: real dispatch → `tool_result` seam → emitted string. The

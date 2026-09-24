@@ -122,14 +122,12 @@ pub(crate) fn card_refusal(
 
 /// Decide one tool call, and ask the user when no layer decides.
 ///
-/// `args` are the JSON arguments of `call`. `request` makes the prompt; it
-/// runs only when the user is asked. The prompt also gets the call, with its
-/// render, and the layer that asked.
+/// `args` are the JSON arguments of `call`. The prompt is
+/// [`PermRequest::from_call`], with the layer that asked.
 pub(crate) async fn decide_permission(
     ctx: &PermissionContext<'_>,
     call: &CanonicalToolCall,
     args: &serde_json::Value,
-    request: impl FnOnce() -> PermRequest,
 ) -> Decision {
     let layer = match decide_unprompted(ctx, call, args) {
         Unprompted::Allow(layer) => return Decision::Allow(layer),
@@ -140,12 +138,8 @@ pub(crate) async fn decide_permission(
         return Decision::Deny(no_prompt_refusal(&call.tool));
     };
     let request = PermRequest {
-        call: Some(Box::new(CanonicalToolCall {
-            diffs: Vec::new(),
-            ..call.clone()
-        })),
         layer: Some(layer),
-        ..request()
+        ..PermRequest::from_call(call, args.clone())
     };
     let Some(response) = prompt_user(prompt.slot, ctx.session_id, prompt.event_tx, request).await
     else {

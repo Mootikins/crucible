@@ -1403,10 +1403,9 @@ mod always_allow_covers_every_command_tool {
         // The prompt that the ACP gate puts to the user. The user answers
         // "always allow" with the pattern that the prompt suggests.
         let args = serde_json::json!({ "command": "cargo test" });
-        let pattern =
-            crate::agent_manager::messaging::permission::acp_prompt_request(&acp(), &args)
-                .suggested_pattern()
-                .expect("a command has a grant");
+        let pattern = PermRequest::from_call(&acp(), args)
+            .suggested_pattern()
+            .expect("a command has a grant");
 
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("whitelists.d").join("user.toml");

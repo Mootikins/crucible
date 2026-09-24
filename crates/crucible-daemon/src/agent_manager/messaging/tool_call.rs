@@ -504,19 +504,28 @@ impl AgentManager {
         // rewritten the arguments, so the gate decides the call that runs.
         // It is rendered before the gate, so the prompt and the event show
         // the same render.
+        //
+        // The diffs of the model's call apply only to its own arguments. A
+        // handler that rewrote them, or a call that came with no diffs, gets
+        // the diffs of the arguments that run.
+        let unchanged = tool_call
+            .arguments
+            .as_ref()
+            .unwrap_or(&serde_json::Value::Null)
+            == &args;
+        let diffs = if unchanged && !diffs.is_empty() {
+            diffs
+        } else {
+            crate::tools::diff_synth::synthesize_diffs(&tool_call.name, &args)
+        };
         let call = CanonicalToolCall {
             diffs,
             ..stream_ctx.rendered_call(&tool_call.name, &args).await
-        };
-        let request = || {
-            let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_call.name, &args);
-            PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs)
         };
         let auto_approved = match super::gate_decision::decide_permission(
             &stream_ctx.permission_context(),
             &call,
             &args,
-            request,
         )
         .await
         {

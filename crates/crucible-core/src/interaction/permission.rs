@@ -151,6 +151,26 @@ impl PermRequest {
         }
     }
 
+    /// The prompt for the tool call `call` with the JSON arguments `args`.
+    ///
+    /// The one builder for every gate: Crucible's own tools and the calls of
+    /// an ACP agent get the same prompt. The request holds the diffs of the
+    /// call once, in `diffs`, and the call with no diffs.
+    pub fn from_call(call: &CanonicalToolCall, args: JsonValue) -> Self {
+        Self {
+            action: PermAction::Tool {
+                name: call.tool.clone(),
+                args,
+            },
+            diffs: call.diffs.clone(),
+            call: Some(Box::new(CanonicalToolCall {
+                diffs: Vec::new(),
+                ..call.clone()
+            })),
+            layer: None,
+        }
+    }
+
     /// Builder: attach a set of file diffs to this permission.
     #[must_use]
     pub fn with_diffs(mut self, diffs: Vec<FileDiff>) -> Self {
@@ -292,6 +312,45 @@ impl PermResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The one prompt builder holds the diffs once, carries the call with
+    /// no diffs, and names the canonical tool. A command of Crucible's shell
+    /// and a command of an agent get the same kind of action.
+    #[test]
+    fn from_call_holds_the_diffs_once_and_names_the_canonical_tool() {
+        let args = serde_json::json!({"path": "a.md", "content": "x"});
+        let call = CanonicalToolCall {
+            diffs: vec![FileDiff {
+                path: "a.md".to_string(),
+                old_content: None,
+                new_content: "x".to_string(),
+            }],
+            ..CanonicalToolCall::crucible_tool("write_file", &args)
+        };
+        let request = PermRequest::from_call(&call, args.clone());
+        assert_eq!(
+            request.action,
+            PermAction::Tool {
+                name: "write_file".to_string(),
+                args
+            }
+        );
+        assert_eq!(request.diffs, call.diffs);
+        let held = request.call.expect("the request carries the call");
+        assert!(held.diffs.is_empty(), "the request holds the diffs once");
+
+        let command = serde_json::json!({"command": "cargo test"});
+        let shell = CanonicalToolCall::crucible_tool("bash", &command);
+        let agent = CanonicalToolCall {
+            tool: "command".to_string(),
+            ..shell.clone()
+        };
+        for call in [shell, agent] {
+            let request = PermRequest::from_call(&call, command.clone());
+            assert!(matches!(request.action, PermAction::Tool { .. }));
+            assert_eq!(request.suggested_pattern().as_deref(), Some("cargo test"));
+        }
+    }
 
     #[test]
     fn perm_request_bash_tokens() {

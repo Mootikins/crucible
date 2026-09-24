@@ -86,22 +86,6 @@ fn select_option(
         .unwrap_or(RequestPermissionOutcome::Cancelled)
 }
 
-/// The prompt for an ACP call.
-///
-/// A command asks as a `Bash` request. The prompt then shows the command
-/// line, and "always allow" offers the command line as the pattern, which is
-/// the pattern that the saved-pattern check reads for a `command` call.
-pub(in crate::agent_manager) fn acp_prompt_request(
-    call: &CanonicalToolCall,
-    args: &serde_json::Value,
-) -> PermRequest {
-    let request = match (call.kind.as_str(), &call.command) {
-        ("command", Some(command)) => PermRequest::bash([command]),
-        _ => PermRequest::tool(&call.tool, args.clone()),
-    };
-    request.with_diffs(call.diffs.clone())
-}
-
 /// What the ACP permission handler of one session reads.
 ///
 /// The handler lives as long as the cached agent handle. The turn state
@@ -171,8 +155,7 @@ impl AcpGate {
                 event_tx: &self.event_tx,
             }),
         };
-        let decision =
-            decide_permission(&ctx, &call, &args, || acp_prompt_request(&call, &args)).await;
+        let decision = decide_permission(&ctx, &call, &args).await;
         let id = (call.raw.as_ref()).and_then(|raw| raw.tool_call_id.clone());
         match (&decision, id) {
             (super::gate_decision::Decision::Allow(Some(layer)), Some(id)) => {
