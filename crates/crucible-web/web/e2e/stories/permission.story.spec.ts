@@ -31,6 +31,9 @@ function permFrame(id: string, newContent: string, oldContent = '# Draft\n\nold 
       tokens: [FILE],
       tool_args: { content: newContent },
       diffs: [{ path: FILE, old_content: oldContent, new_content: newContent }],
+      // The grant that the daemon suggests for a write of one path. Without
+      // it the card offers no wider scope.
+      pattern: FILE,
     },
   };
 }

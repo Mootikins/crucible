@@ -12,7 +12,7 @@
 use crate::tui::oil::chat_app::ChatAppMsg;
 
 use super::support::StoryRuntime;
-use super::vocab::{approve_permission, deny_permission, open_permission};
+use super::vocab::{approve_permission, deny_permission, open_permission, open_tool_permission};
 
 #[test]
 fn permission_modal_opens_and_shows_command() {
@@ -98,4 +98,24 @@ fn queued_permissions_open_in_arrival_order() {
         "queued request should open"
     );
     story.expect_frame(|f| f.contains("secret.txt"), 8);
+}
+
+/// A call that nothing names gets no grant, so the modal offers no
+/// "Allowlist", and `a` saves nothing: the modal stays open. A command
+/// still offers it.
+#[test]
+fn a_call_that_no_grant_can_name_offers_no_allowlist() {
+    let mut story = StoryRuntime::new(80, 24);
+    let _ = open_tool_permission(&mut story, "req-1", "tool", serde_json::json!({}));
+    let frame = story.fresh_screen();
+    assert!(!frame.contains("Allowlist"), "{frame}");
+    assert!(!frame.contains("y/n/a"), "{frame}");
+    let _ = story.key(crossterm::event::KeyCode::Char('a'));
+    assert!(story.app().has_interaction_modal(), "`a` must save nothing");
+
+    let mut story = StoryRuntime::new(80, 24);
+    let _ = open_permission(&mut story, "req-2", &["ls"]);
+    let frame = story.fresh_screen();
+    assert!(frame.contains("Allowlist"), "{frame}");
+    assert!(frame.contains("y/n/a"), "{frame}");
 }

@@ -7,43 +7,33 @@ use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
 use unicode_width::UnicodeWidthStr;
 
-/// "Always allow" with the grant that the request suggests. With no grant
-/// that can name the call, the answer allows this call only.
-fn always_allow(request: &PermRequest, scope: PermissionScope) -> PermResponse {
-    request
-        .suggested_pattern()
-        .map_or_else(PermResponse::allow, |p| {
-            PermResponse::allow_pattern(p, scope)
-        })
-}
-
 impl InteractionModal {
     pub(super) fn handle_perm_key(
         &mut self,
         key: KeyEvent,
         perm_request: PermRequest,
     ) -> InteractionModalOutput {
-        const TOTAL_OPTIONS: usize = 3;
+        // "Allowlist" is the third option. With no grant that can name the
+        // call it is not offered: a click would save nothing.
+        let grant = perm_request.suggested_pattern();
+        let total_options = 2 + usize::from(grant.is_some());
 
         match self.mode {
             InteractionMode::Selecting => match key.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    self.selected = Self::wrap_selection(self.selected, -1, TOTAL_OPTIONS);
+                    self.selected = Self::wrap_selection(self.selected, -1, total_options);
                     InteractionModalOutput::None
                 }
                 KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    self.selected = Self::wrap_selection(self.selected, 1, TOTAL_OPTIONS);
+                    self.selected = Self::wrap_selection(self.selected, 1, total_options);
                     InteractionModalOutput::None
                 }
                 KeyCode::Enter
                     if key.modifiers.contains(KeyModifiers::SHIFT) && self.selected == 2 =>
                 {
-                    InteractionModalOutput::PermissionResponse {
-                        request_id: self.request_id.clone(),
-                        response: always_allow(&perm_request, PermissionScope::User),
-                    }
+                    self.allowlist(grant, PermissionScope::User)
                 }
-                KeyCode::Enter => self.handle_perm_confirm(&perm_request),
+                KeyCode::Enter => self.handle_perm_confirm(grant),
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
                     InteractionModalOutput::PermissionResponse {
                         request_id: self.request_id.clone(),
@@ -57,15 +47,12 @@ impl InteractionModal {
                     }
                 }
                 KeyCode::Char('a') | KeyCode::Char('A') => {
-                    InteractionModalOutput::PermissionResponse {
-                        request_id: self.request_id.clone(),
-                        response: always_allow(&perm_request, PermissionScope::Project),
-                    }
+                    self.allowlist(grant, PermissionScope::Project)
                 }
                 KeyCode::Tab => {
                     self.mode = InteractionMode::TextInput;
                     if self.selected == 2 {
-                        self.other_text = perm_request.suggested_pattern().unwrap_or_default();
+                        self.other_text = grant.unwrap_or_default();
                     }
                     InteractionModalOutput::None
                 }
@@ -105,7 +92,19 @@ impl InteractionModal {
         }
     }
 
-    fn handle_perm_confirm(&self, perm_request: &PermRequest) -> InteractionModalOutput {
+    /// "Allowlist": allow the call and save `grant` at `scope`. With no
+    /// grant the option is not offered, so the key does nothing.
+    fn allowlist(&self, grant: Option<String>, scope: PermissionScope) -> InteractionModalOutput {
+        match grant {
+            Some(pattern) => InteractionModalOutput::PermissionResponse {
+                request_id: self.request_id.clone(),
+                response: PermResponse::allow_pattern(pattern, scope),
+            },
+            None => InteractionModalOutput::None,
+        }
+    }
+
+    fn handle_perm_confirm(&self, grant: Option<String>) -> InteractionModalOutput {
         match self.selected {
             0 => InteractionModalOutput::PermissionResponse {
                 request_id: self.request_id.clone(),
@@ -115,10 +114,7 @@ impl InteractionModal {
                 request_id: self.request_id.clone(),
                 response: PermResponse::deny(),
             },
-            2 => InteractionModalOutput::PermissionResponse {
-                request_id: self.request_id.clone(),
-                response: always_allow(perm_request, PermissionScope::Project),
-            },
+            2 => self.allowlist(grant, PermissionScope::Project),
             _ => InteractionModalOutput::None,
         }
     }
@@ -302,9 +298,10 @@ impl InteractionModal {
             lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));
         }
 
-        let options: [(&str, &str); 3] = [("y", "Yes"), ("n", "No"), ("a", "Allowlist")];
+        let options = [("y", "Yes"), ("n", "No"), ("a", "Allowlist")];
+        let offered = 2 + usize::from(perm_request.suggested_pattern().is_some());
 
-        for (i, (key, label)) in options.iter().enumerate() {
+        for (i, (key, label)) in options[..offered].iter().enumerate() {
             let is_selected = i == self.selected;
             if is_selected {
                 let content = format!("  > [{}] {}", key, label);
@@ -391,7 +388,7 @@ impl InteractionModal {
                     format!(" {} ", type_label),
                     Style::new().fg(t.resolve_color(t.colors.error)).bold(),
                 ),
-                styled("  y/n/a", key_style),
+                styled(if offered > 2 { "  y/n/a" } else { "  y/n" }, key_style),
                 styled(" options", hint_style),
                 styled("  ↑↓", key_style),
                 styled(" move", hint_style),

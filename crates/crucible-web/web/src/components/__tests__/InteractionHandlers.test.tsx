@@ -406,6 +406,27 @@ describe('PermissionInteraction', () => {
     });
   });
 
+  // With no grant that can name the call, a wider scope would save nothing.
+  it('offers the scopes only when the daemon suggested a grant', () => {
+    const request: InteractionOf<'permission'> = {
+      kind: 'permission',
+      id: 'perm-6',
+      action_type: 'tool',
+      tokens: ['tool'],
+      tool_name: 'tool',
+    };
+    const { unmount } = render(() => (
+      <PermissionInteraction request={request} onRespond={mockOnRespond} />
+    ));
+    expect(screen.queryByTestId('perm-scopes-toggle')).not.toBeInTheDocument();
+    unmount();
+
+    render(() => (
+      <PermissionInteraction request={{ ...request, pattern: 'mcp__github__create_pr' }} onRespond={mockOnRespond} />
+    ));
+    expect(screen.getByTestId('perm-scopes-toggle')).toBeInTheDocument();
+  });
+
   it('calls onRespond with allowed=false when Deny clicked', async () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',

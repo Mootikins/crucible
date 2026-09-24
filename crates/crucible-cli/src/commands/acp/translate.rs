@@ -278,25 +278,32 @@ fn humanize_title(name: &str) -> String {
 /// Build the permission options offered to the host for a Crucible permission
 /// request. ACP lets an agent offer any subset of the four kinds. There is no
 /// "reject always", because the daemon cannot store a deny rule: the option
-/// would give a one-time deny under a wider name.
-pub fn permission_options() -> Vec<PermissionOption> {
-    vec![
-        PermissionOption::new(
-            PermissionOptionId::new(OPT_ALLOW_ONCE),
+/// would give a one-time deny under a wider name. For the same reason there
+/// is no "allow always" when no grant can name the call.
+pub fn permission_options(request: &InteractionRequest) -> Vec<PermissionOption> {
+    let grant =
+        matches!(request, InteractionRequest::Permission(p) if p.suggested_pattern().is_some());
+    [
+        (
+            OPT_ALLOW_ONCE,
             "Allow once",
             PermissionOptionKind::AllowOnce,
         ),
-        PermissionOption::new(
-            PermissionOptionId::new(OPT_ALLOW_ALWAYS),
+        (
+            OPT_ALLOW_ALWAYS,
             "Allow always",
             PermissionOptionKind::AllowAlways,
         ),
-        PermissionOption::new(
-            PermissionOptionId::new(OPT_REJECT_ONCE),
+        (
+            OPT_REJECT_ONCE,
             "Reject once",
             PermissionOptionKind::RejectOnce,
         ),
     ]
+    .into_iter()
+    .filter(|(id, _, _)| grant || *id != OPT_ALLOW_ALWAYS)
+    .map(|(id, name, kind)| PermissionOption::new(PermissionOptionId::new(id), name, kind))
+    .collect()
 }
 
 /// Describe an interaction request as an ACP `ToolCallUpdate` for the permission
@@ -720,7 +727,8 @@ mod tests {
     /// "reject always", because the daemon cannot store a deny rule.
     #[test]
     fn permission_options_offer_the_three_ids_in_order() {
-        let offered: Vec<(String, PermissionOptionKind)> = permission_options()
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        let offered: Vec<(String, PermissionOptionKind)> = permission_options(&request)
             .into_iter()
             .map(|o| (o.option_id.0.to_string(), o.kind))
             .collect();
@@ -738,6 +746,18 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// With no grant that can name the call, "allow always" would save
+    /// nothing, so the host is not offered it.
+    #[test]
+    fn permission_options_offer_no_allow_always_without_a_grant() {
+        let request = InteractionRequest::Permission(PermRequest::tool("tool", json!({})));
+        let offered = permission_options(&request);
+        assert_eq!(offered.len(), 2);
+        assert!(offered
+            .iter()
+            .all(|o| o.kind != PermissionOptionKind::AllowAlways));
     }
 
     /// Allow once grants this call only: no pattern, no reason.

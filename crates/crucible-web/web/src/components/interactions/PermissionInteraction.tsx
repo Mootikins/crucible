@@ -210,14 +210,18 @@ export const PermissionInteraction: Component<Props> = (props) => {
           Allow
         </button>
 
-        {/* Quieter than either: a disclosure, not a third choice. */}
-        <button
-          onClick={() => setShowScopes(!showScopes())}
-          data-testid="perm-scopes-toggle"
-          class="px-2 py-1.5 text-xs text-muted hover:text-shell-ink transition-colors"
-        >
-          {showScopes() ? 'Hide options' : 'More options...'}
-        </button>
+        {/* Quieter than either: a disclosure, not a third choice. With no
+            grant that can name the call, a wider scope would save nothing,
+            so the disclosure is not offered. */}
+        <Show when={props.request.pattern}>
+          <button
+            onClick={() => setShowScopes(!showScopes())}
+            data-testid="perm-scopes-toggle"
+            class="px-2 py-1.5 text-xs text-muted hover:text-shell-ink transition-colors"
+          >
+            {showScopes() ? 'Hide options' : 'More options...'}
+          </button>
+        </Show>
       </div>
 
       <Show when={showScopes()}>

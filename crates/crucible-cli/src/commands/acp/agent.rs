@@ -332,7 +332,7 @@ impl CrucibleAcpAgent {
             let req = RequestPermissionRequest::new(
                 acp_session_id.clone(),
                 tool_call,
-                permission_options(),
+                permission_options(request),
             );
             match conn.send_request(req).block_task().await {
                 Ok(resp) => outcome_to_interaction_response(&resp.outcome, request),
