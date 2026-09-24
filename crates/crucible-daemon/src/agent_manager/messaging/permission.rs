@@ -307,11 +307,11 @@ impl AcpGate {
 /// and not as one prompt for each tool. The session lock is held across the
 /// whole wait, so caller N+1 emits only after caller N has its answer.
 ///
-/// A queued caller therefore waits while an earlier prompt waits. If the
-/// user leaves a prompt until the 300 s timeout, the next prompt appears
-/// only after that timeout, and the call is denied. A cancel of the turn
-/// drops every pending prompt of the session (`AgentManager::cancel`),
-/// which ends the wait at once with no answer: `None`.
+/// A queued caller therefore waits while an earlier prompt waits. A prompt
+/// waits without a limit, because a client that attaches later shows it at
+/// once. A cancel of the turn drops every pending prompt of the session
+/// (`AgentManager::cancel`), which ends the wait at once with no answer:
+/// `None`.
 pub(in crate::agent_manager) async fn prompt_user(
     slot: &crate::agent_manager::slot::SessionSlot,
     session_id: &str,
@@ -335,23 +335,15 @@ pub(in crate::agent_manager) async fn prompt_user(
         debug!(session_id = %session_id, "no subscribers for the permission prompt");
     }
 
-    match tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await {
-        Ok(Ok(response)) => {
-            open.answered = true;
-            Some(response)
-        }
-        Ok(Err(_)) => None,
-        Err(_) => Some(PermResponse::deny_with_reason(
-            "Permission request timed out",
-        )),
-    }
+    let response = response_rx.await.ok()?;
+    open.answered = true;
+    Some(response)
 }
 
 /// A prompt that waits for an answer.
 ///
-/// A prompt can end with no answer: the turn is cancelled, the wait times
-/// out, or the caller drops the wait (the ACP client drops it when the turn
-/// ends). Then the drop removes the prompt from the session, and tells each
+/// A prompt can end with no answer: the turn is cancelled, or the caller
+/// drops the wait (the ACP client drops it when the turn ends). Then the drop removes the prompt from the session, and tells each
 /// client to remove it. Without this the web Inbox listed a prompt that
 /// nobody waited for.
 struct OpenPrompt<'a> {
@@ -2110,28 +2102,30 @@ mod acp_permission_handler_tests {
         );
     }
 
-    /// Nobody answers. After 300 s the handler rejects the call. It does not
-    /// wait forever. It also removes the prompt from the registry.
+    /// Nobody answers. The prompt waits without a limit: after five minutes
+    /// it is still open, and the user can still answer it.
     #[tokio::test(start_paused = true)]
-    async fn an_unanswered_prompt_rejects_after_the_timeout() {
+    async fn an_unanswered_prompt_waits_past_five_minutes() {
         let am = create_test_agent_manager(temp_session_manager());
         let (event_tx, mut event_rx) = broadcast::channel(16);
         let handle = handler(&am, &event_tx, None);
 
         let pending = tokio::spawn(ask(&handle));
-        let _id = prompt_id(&mut event_rx).await;
+        let id = prompt_id(&mut event_rx).await;
+        tokio::time::advance(Duration::from_secs(301)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !pending.is_finished(),
+            "the user may answer after five minutes"
+        );
         assert_eq!(am.list_all_pending_permissions().len(), 1);
 
-        tokio::time::advance(Duration::from_secs(301)).await;
-        let outcome = tokio::time::timeout(Duration::from_secs(1), pending)
-            .await
-            .expect("the handler must return after the 300 s timeout")
-            .expect("join");
-
-        assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
-        assert!(
-            am.list_all_pending_permissions().is_empty(),
-            "a timed-out prompt must leave the registry"
+        am.respond_to_permission(SESSION, &id, PermResponse::allow())
+            .unwrap();
+        assert_eq!(
+            selected(&pending.await.unwrap()).as_deref(),
+            Some("allow_once")
         );
+        assert!(am.list_all_pending_permissions().is_empty());
     }
 }

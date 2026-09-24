@@ -39,8 +39,8 @@ impl AgentManager {
         // Drop any pending permission `oneshot::Sender`s for this session so
         // their receivers Err out immediately and the caller parked in
         // `prompt_user` releases the per-session prompt lock. Without
-        // this, partial cancel (user hits Esc) leaves prompts dangling for
-        // the full 300 s timeout, blocking subsequent prompts behind them.
+        // this, partial cancel (user hits Esc) leaves prompts dangling with
+        // no limit, blocking subsequent prompts behind them.
         let dropped_pending = self
             .existing_slot(session_id)
             .map(|slot| slot.drop_permissions())

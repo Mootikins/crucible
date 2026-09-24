@@ -221,8 +221,8 @@ async fn internal_edit_fixture_matches_a_live_capture() {
         CaptureArc::new(CaptureMutex::new(None));
 
     // `send_message` returns as soon as the turn is scheduled, so the gate has
-    // to be answered concurrently — otherwise `edit_file` waits out its 300 s
-    // permission timeout and the capture records a denial.
+    // to be answered concurrently — otherwise `edit_file` waits on its
+    // prompt with no limit.
     let send = h.agent_manager.send_message(
         &h.session_id,
         "fix the greeting".to_string(),

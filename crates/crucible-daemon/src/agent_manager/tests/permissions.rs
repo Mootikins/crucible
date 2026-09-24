@@ -741,8 +741,8 @@ mod permission_channel_tests {
     /// `cleanup_session_leaves_no_per_session_residue`. What is left here is the
     /// behaviour: dropping the `oneshot::Sender` is what makes a caller parked
     /// inside the permission gate return, and a teardown that freed the memory
-    /// without dropping the sender would leave that caller waiting out the full
-    /// 300 s timeout on a session that no longer exists.
+    /// without dropping the sender would leave that caller waiting with no
+    /// limit on a session that no longer exists.
     #[tokio::test]
     async fn cleanup_session_unblocks_a_waiting_permission_prompt() {
         let session_manager = temp_session_manager();
@@ -1257,7 +1257,7 @@ mod session_permission_config_tests {
 /// `commands/acp/agent.rs` sends `InteractionResponse::Cancelled` for a
 /// `perm-…` id. Routing by kind sent it to the interactions map, missed, and
 /// logged at debug. The permission waiter was never released, so the turn
-/// stalled the full 300 s and then denied.
+/// stalled.
 ///
 /// The TUI dodged it only by convention (Esc maps to `PermResponse::deny()`,
 /// never `Cancelled`), so nothing in the suite noticed.

@@ -699,8 +699,8 @@ async fn cleanup_session_cancels_pending_requests() {
 
 /// Partial cancel (user hits Esc) must drop any in-flight permission
 /// `oneshot::Sender`s for the session, otherwise queued prompts behind
-/// the session prompt lock stay blocked for the full 300s
-/// timeout. Regression test for the cancel-arm fix.
+/// the session prompt lock stay blocked with no limit. Regression test for
+/// the cancel-arm fix.
 #[tokio::test]
 async fn cancel_drops_pending_permission_senders() {
     use crucible_core::interaction::PermRequest;
