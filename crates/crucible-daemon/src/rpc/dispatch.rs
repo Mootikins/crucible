@@ -1419,9 +1419,8 @@ impl RpcDispatcher {
         // which was the only place firing them.
         //
         // Stays above `RpcContext::create_session_resolved`, not inside it: the
-        // start/end hooks hold the plugin loader mutex across their Lua call,
-        // and a plugin that creates a session from inside `on_session_end`
-        // (reflection does) would deadlock on a create path that fired them.
+        // plugin bridge runs the same checks after its own create, and this
+        // path emits `session:created` only after the checks pass.
         let started = self.enforce_plugin_session_start(mapped, req).await;
 
         // Daemon-wide report, addressed to the system session rather than the

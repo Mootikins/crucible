@@ -455,9 +455,10 @@ function M.review(opts: ReviewOpts): (string?, string?)
     return text, send_err
 end
 
---- The on_session_end handler. Reviews the finished session; the reviewer
---- writes whatever notes it earned with the note tools, in its own session,
---- so each note goes into a proposal that a human accepts or rejects. Answers with the
+--- The pass that the on_session_end handler starts in a task. Reviews the
+--- finished session; the reviewer writes whatever notes it earned with the
+--- note tools, in its own session, so each note goes into a proposal that a
+--- human accepts or rejects. Answers with the
 --- reviewer's one-line summary, or nil when the pass skipped the session or
 --- the review failed. Best-effort: any failure is logged, never raised (a
 --- reflection error must not disrupt session teardown).
@@ -574,16 +575,23 @@ local function register_handlers()
     end)
 
     cru.on_session_end(function(session)
-        -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
-        -- what the function returns. The inner function drops the summary
-        -- and returns nil, which gives `err` a slot the error message fits.
-        local ok, err = pcall(function()
-            M.run(session)
-            return nil
+        -- The pass creates its own session, and the daemon runs the start
+        -- hooks of that session. This hook holds the plugin runtime, and a
+        -- create from here is refused. So the pass runs in a task, which
+        -- gets the plugin runtime when this hook returns.
+        cru.timer.spawn(function()
+            -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type
+            -- of what the function returns. The inner function drops the
+            -- summary and returns nil, which gives `err` a slot the error
+            -- message fits.
+            local ok, err = pcall(function()
+                M.run(session)
+                return nil
+            end)
+            if not ok then
+                cru.log("error", "reflection: handler error: " .. tostring(err))
+            end
         end)
-        if not ok then
-            cru.log("error", "reflection: handler error: " .. tostring(err))
-        end
     end)
 end
 

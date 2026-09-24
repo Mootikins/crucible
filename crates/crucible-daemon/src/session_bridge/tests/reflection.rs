@@ -150,6 +150,25 @@ async fn shipped_reflection_proposes_a_note_on_session_end() {
     )
     .await
     .expect("reflection end hook completes without re-entering the loader lock");
+    // The hook starts the pass in a task, because the pass's own session runs
+    // the start hooks, and the hook holds the plugin runtime. Wait for the
+    // whole end of the pass: the Lua end marks the session ended, then drops
+    // its tool set and its provider handle.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while !sessions.list_sessions().iter().any(|s| {
+            s.session_type == SessionType::Plugin
+                && s.state == SessionState::Ended
+                && agents.active_tools().get(&s.id).is_none()
+                && !agents.has_cached_agent(&s.id)
+        }) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect(
+        "the reflection pass did not end its session, drop its tool set and release its \
+         provider handle",
+    );
 
     let passes: Vec<_> = sessions
         .list_sessions()

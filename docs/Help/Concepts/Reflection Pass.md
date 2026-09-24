@@ -22,7 +22,8 @@ The consolidation pass works the same way. It runs its review through the reflec
 
 **Key facts:**
 
-- **Trigger:** `on_session_end`. Every finished session is a candidate; a session with fewer than `min_turns` user turns is skipped.
+- **Trigger:** `on_session_end`. Every finished session is a candidate; a session with fewer than `min_turns` user turns is skipped. The hook starts the pass in a task (`cru.timer.spawn`), and the pass runs after the hook returns. The session of the pass runs the plugin start hooks, as every created session does, and a session hook cannot run them.
+- **Start checks:** the session of the pass must pass the same start checks as every other session. When an isolating plugin refuses it, the pass does not run, and the plugin logs the refusal. For example, the `oci` plugin with a configured image refuses a session with no workspace, and the pass has no workspace.
 - **Requires configuration:** the plugin is **inert until you configure an auxiliary model**. Without `plugins.reflection.model` it logs a warning and skips every session.
 - **Execution:** a separate auxiliary-model session of type `plugin`, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache. Plugin sessions are excluded from reflection, so a reviewer is never input to another reflection pass.
 - **Bounded by tool set:** before the prompt is sent, the plugin narrows the reviewer's session to `semantic_search`, `read_note`, `list_notes`, `grep_notes`, `create_note` and `update_note` with `cru.tools.set_active`. The daemon refuses every other tool at dispatch, so the reviewer reaches the kiln and nothing else — no workspace file, no shell. If the daemon cannot narrow the set, no prompt is sent.

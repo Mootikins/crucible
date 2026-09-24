@@ -92,7 +92,8 @@ impl SessionLifecycle {
     /// Every path that makes a stored session live again calls this too:
     /// revive-on-send, `session.resume`, `session.resume_from_storage` and the
     /// Lua `resume`. The isolation registry is memory, so a restart or an RPC
-    /// pause drops the claim, and only the start hooks put it back.
+    /// pause drops the claim, and only the start hooks put it back. The Lua
+    /// `create` calls it as the RPC `session.create` does.
     pub async fn enforce_session_start(&self, session_id: &str) -> anyhow::Result<()> {
         // The hooks need the plugin-loader mutex, and it is not reentrant. A
         // caller that already holds it would wait for itself forever, so the
@@ -106,8 +107,10 @@ impl SessionLifecycle {
             anyhow::bail!(
                 "session {session_id} cannot start or resume here: its start hooks and its \
                  isolation claim need the plugin runtime, and the Lua that asked holds the \
-                 plugin runtime (a plugin session hook or lua.eval). Resume the session from \
-                 outside that Lua, for example with the session.resume RPC or a later message"
+                 plugin runtime (a plugin session hook, lua.eval, or a plugin that loads). \
+                 Create or resume the session from Lua that does not hold it, for example in \
+                 a task that cru.timer.spawn starts, or with the session.resume RPC or a \
+                 later message"
             );
         }
 
@@ -330,6 +333,23 @@ impl SessionLifecycle {
                 );
             }
         }
+    }
+
+    /// Fire the end hooks for a session that plugin Lua ends.
+    ///
+    /// Lua that holds the plugin runtime (a session hook, `lua.eval`) cannot
+    /// wait for it. There the hooks run on another task, which gets the
+    /// runtime when that Lua returns. They are not skipped: the start hooks
+    /// of the session claimed isolation, and only the end hooks release it.
+    /// The session stays resident when it ends, so the hooks still find it.
+    pub(crate) async fn fire_session_end_from_lua(self: &Arc<Self>, session_id: &str) {
+        if this_task_holds_plugin_loader() {
+            let lifecycle = Arc::clone(self);
+            let session_id = session_id.to_string();
+            tokio::spawn(async move { lifecycle.fire_session_end(&session_id).await });
+            return;
+        }
+        self.fire_session_end(session_id).await;
     }
 
     async fn fire_session_start(&self, session_id: &str) -> anyhow::Result<()> {

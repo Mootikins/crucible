@@ -7,23 +7,44 @@
 
 use super::*;
 
-/// A plugin that creates a session from inside `on_session_end` must not hang
-/// the daemon.
+/// The Lua that creates a session from a plugin's `on_session_end` hook.
 ///
-/// `SessionLifecycle::fire_session_end` holds the plugin-loader mutex across
-/// the whole Lua call, and tokio's `Mutex` is not reentrant — so any step the
-/// bridge's create path takes that re-locks that handle deadlocks rather than
-/// failing. The reflection plugin is exactly this shape (`on_session_end` →
-/// create an aux session → configure its agent, `reflection/init.lua`), and
-/// `enforce_session_start` is exactly such a step, which is why it stays at the
-/// RPC layer instead of moving into `create_session_resolved`. This is the test
-/// that catches someone moving it.
-///
-/// The loader handle is shared with the `AgentManager`, as `server::bind` wires
-/// it: the manager locks it for `plugin_lua`/`plugin_registry`, so the second
-/// half of the hook (`configure_agent`) is on the same hook as the first.
-#[tokio::test]
-async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
+/// It records a failure in `_G.hook_error`, the new id in
+/// `_G.hook_session_id`, and `_G.hook_done` when it gets to its end.
+const CREATE_FROM_END_HOOK: &str = r#"
+local function create_aux()
+    local aux, err = cru.session.create({ type = "chat" })
+    if err or not aux then
+        _G.hook_error = "create: " .. tostring(err)
+        return
+    end
+    _G.hook_session_id = aux.id
+    local _, cfg_err = cru.session.configure_agent(aux.id, {
+        agent_type = "internal",
+        provider = "ollama",
+        provider_key = "ollama",
+        model = "llama3.2",
+        system_prompt = "reflect",
+    })
+    if cfg_err then
+        _G.hook_error = "configure_agent: " .. tostring(cfg_err)
+    end
+end
+"#;
+
+/// A daemon with a live plugin loader and `hook` registered on its VM, and a
+/// session to end. The loader handle is shared with the `AgentManager`, as
+/// `server::bind` wires it: the manager locks it for
+/// `plugin_lua`/`plugin_registry`.
+async fn end_hook_rig(
+    hook: &str,
+) -> (
+    TempDir,
+    Arc<SessionManager>,
+    Arc<RpcContext>,
+    Arc<mlua::Lua>,
+    String,
+) {
     use crate::daemon_plugins::DaemonPluginLoader;
 
     let tmp = TempDir::new().unwrap();
@@ -61,32 +82,9 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
     loader
         .upgrade_with_sessions(Arc::new(DaemonSessionBridge::new(ctx.clone())))
         .expect("wire the bridge into the plugin VM");
-    // Read back after the hook has run: a hang and a silent error both leave
-    // the assertions below unmet, and only the globals say which.
     let plugin_lua = loader.plugin_lua();
     loader
-        .eval(
-            r#"
-            cru.on_session_end(function(_session)
-                local aux, err = cru.session.create({ type = "chat" })
-                if err or not aux then
-                    _G.hook_error = "create: " .. tostring(err)
-                    return
-                end
-                _G.hook_session_id = aux.id
-                local _, cfg_err = cru.session.configure_agent(aux.id, {
-                    agent_type = "internal",
-                    provider = "ollama",
-                    provider_key = "ollama",
-                    model = "llama3.2",
-                    system_prompt = "reflect",
-                })
-                if cfg_err then
-                    _G.hook_error = "configure_agent: " .. tostring(cfg_err)
-                end
-            end)
-            "#,
-        )
+        .eval(&format!("{CREATE_FROM_END_HOOK}\n{hook}"))
         .await
         .expect("register the on_session_end hook");
     *plugin_loader.lock().await = Some(loader);
@@ -100,25 +98,109 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
         )
         .await
         .unwrap();
+    (tmp, session_manager, ctx, plugin_lua, ending.id.to_string())
+}
+
+/// A plugin that creates a session from inside `on_session_end` must not hang
+/// the daemon, and it must not get a session that skipped the start checks.
+///
+/// `SessionLifecycle::fire_session_end` holds the plugin-loader mutex across
+/// the whole Lua call, and tokio's `Mutex` is not reentrant. The plugin create
+/// runs `enforce_session_start`, and the start hooks need that mutex. So a
+/// create from inside a hook is refused with an error that says why, and the
+/// new session is ended.
+#[tokio::test]
+async fn a_plugin_creating_a_session_from_on_session_end_is_refused_and_does_not_deadlock() {
+    let (_tmp, session_manager, ctx, plugin_lua, ending) = end_hook_rig(
+        r#"
+        cru.on_session_end(function(_session)
+            create_aux()
+        end)
+        "#,
+    )
+    .await;
 
     tokio::time::timeout(
         Duration::from_secs(30),
-        ctx.session_lifecycle.fire_session_end(&ending.id),
+        ctx.session_lifecycle.fire_session_end(&ending),
     )
     .await
     .expect("fire_session_end deadlocked on the plugin loader mutex");
 
     let hook_error: Option<String> = plugin_lua.globals().get("hook_error").unwrap();
-    assert_eq!(hook_error, None, "the hook itself failed");
+    let hook_error = hook_error.expect(
+        "a create inside a session hook cannot run the start checks, and it was not refused",
+    );
+    assert!(
+        hook_error.starts_with("create: ") && hook_error.contains("plugin runtime"),
+        "the refusal must say why the start checks cannot run: {hook_error}"
+    );
+    assert!(
+        session_manager
+            .list_sessions()
+            .iter()
+            .all(|s| s.id == ending || s.state != crucible_core::session::SessionState::Active),
+        "a refused create must not leave a live session"
+    );
+}
+
+/// A plugin creates a session in a task that its `on_session_end` hook starts,
+/// as the reflection plugin does. The task gets the plugin runtime when the
+/// hook returns, so the start checks run, and the create succeeds.
+#[tokio::test]
+async fn a_plugin_creating_a_session_from_a_task_that_on_session_end_starts_gets_it() {
+    let (_tmp, session_manager, ctx, plugin_lua, ending) = end_hook_rig(
+        r#"
+        cru.on_session_start(function(session)
+            _G.started = session.id
+        end)
+        cru.on_session_end(function(_session)
+            cru.timer.spawn(function()
+                create_aux()
+                _G.hook_done = true
+            end)
+        end)
+        "#,
+    )
+    .await;
+
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        ctx.session_lifecycle.fire_session_end(&ending),
+    )
+    .await
+    .expect("fire_session_end deadlocked on the plugin loader mutex");
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while plugin_lua
+            .globals()
+            .get::<Option<bool>>("hook_done")
+            .unwrap()
+            != Some(true)
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the task that creates the session did not finish");
+
+    let hook_error: Option<String> = plugin_lua.globals().get("hook_error").unwrap();
+    assert_eq!(hook_error, None, "the task failed");
     let aux_id: String = plugin_lua
         .globals()
         .get("hook_session_id")
-        .expect("the hook created a session");
+        .expect("the task created a session");
+    let started: Option<String> = plugin_lua.globals().get("started").unwrap();
+    assert_eq!(
+        started.as_deref(),
+        Some(aux_id.as_str()),
+        "the start hooks fired for the session that the plugin created"
+    );
     // Not just "it returned": the create ran the daemon's real path, so the
     // session is registered and its agent configured.
     let aux = session_manager
         .get_session(&aux_id)
         .expect("aux registered");
+    assert_eq!(aux.state, crucible_core::session::SessionState::Active);
     assert!(
         aux.kilns.is_empty(),
         "a kiln-less create attaches no kiln — not the data root, which encloses \
@@ -126,7 +208,7 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
         aux.kilns
     );
     assert_eq!(
-        aux.agent.expect("hook configured the agent").model,
+        aux.agent.expect("the task configured the agent").model,
         "llama3.2"
     );
 }

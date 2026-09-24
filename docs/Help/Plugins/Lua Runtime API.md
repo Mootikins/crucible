@@ -428,6 +428,27 @@ passed.
 
 Also accepts a string for the legacy positional form: `cru.session.create("chat")`.
 
+The create runs the same start checks as the `session.create` RPC. The plugin
+start hooks fire, and a session that requires isolation must get an isolation
+claim. When a check fails, the call returns `(nil, err)`, and the daemon ends
+the new session. No plugin gets a session that did not pass the checks. See
+[[Help/Extending/Container Isolation#Per-session opt-in]].
+
+The start hooks need the plugin runtime. Lua in a session hook, in `lua.eval`,
+or in a plugin that loads holds the plugin runtime. A create from there returns
+`(nil, err)`. To create a session from a session hook, start a task with
+`cru.timer.spawn` and create the session in the task. The task gets the plugin
+runtime when the hook returns. The reflection plugin does this:
+
+```lua
+cru.on_session_end(function(session)
+    cru.timer.spawn(function()
+        local aux, err = cru.session.create({ type = "plugin" })
+        -- ...
+    end)
+end)
+```
+
 #### Delegated creates
 
 `delegate = true` turns the create into a delegation spawn through the
@@ -630,14 +651,19 @@ start hooks fire again, and an isolated session gets its isolation claim again.
 When a check fails, the call returns `(nil, err)` and the daemon ends the
 session. See [[Help/Extending/Container Isolation#Per-session opt-in]].
 
-The start hooks need the plugin runtime. Lua in a session hook or in `lua.eval`
-holds the plugin runtime, so a resume from there returns `(nil, err)`. A
-`send_message` from there that must bring a stored session back is refused for
-the same reason.
+The start hooks need the plugin runtime. Lua in a session hook, in `lua.eval`
+or in a plugin that loads holds the plugin runtime, so a resume from there
+returns `(nil, err)`. A `send_message` from there that must bring a stored
+session back is refused for the same reason.
 
 ### cru.session.end_session(session_id)
 
 End a session permanently. Returns `(true, nil)` on success.
+
+The end runs the plugin end hooks, as the `session.end` RPC does. The hooks
+release the isolation claim and the container that the start hooks made. Lua
+that holds the plugin runtime cannot run them at once, so there the hooks run
+after that Lua returns.
 
 ```lua
 cru.session.end_session(session_id)

@@ -68,13 +68,13 @@ impl RpcContext {
     /// Returns the `Session` rather than JSON because its two callers disagree
     /// on the projection — RPC answers `session_id`, plugins read `session.id`.
     ///
-    /// **`SessionLifecycle::enforce_session_start` is deliberately not here.**
-    /// It stays at the RPC layer (`RpcDispatcher::handle_session_create`) until
-    /// `fire_session_start`/`fire_session_end` stop holding `plugin_loader`'s
-    /// mutex across their Lua call: the reflection plugin calls
-    /// `cru.session.create` from inside `on_session_end`, and tokio's mutex is
-    /// not reentrant, so a plugin-side create that reached the start hooks
-    /// would deadlock the daemon.
+    /// **`SessionLifecycle::enforce_session_start` is not here.** Both callers
+    /// run it after this returns: `RpcDispatcher::handle_session_create` and
+    /// the plugin bridge's `create_session`. The RPC caller emits
+    /// `session:created` only after the checks pass, so the checks stay with
+    /// the callers. A plugin create from Lua that holds the plugin runtime
+    /// (a session hook, `lua.eval`) gets a refusal from the checks, not a
+    /// deadlock on the plugin-loader mutex.
     pub(crate) async fn create_session_resolved(
         &self,
         params: &crate::rpc_client::SessionCreateRequest,

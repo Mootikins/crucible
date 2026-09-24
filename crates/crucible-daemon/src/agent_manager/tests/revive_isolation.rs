@@ -60,6 +60,12 @@ end, { required = true })
 return { name = "sandbox", version = "0.1.0", description = "test configured isolation" }
 "#;
 
+/// A plugin that claims nothing: the plugin runtime is there, and no plugin in
+/// it isolates a session.
+const CLAIMS_NOTHING: &str = r#"
+return { name = "sandbox", version = "0.1.0", description = "claims nothing" }
+"#;
+
 /// Write [`CLAIMS_REQUESTED_ISOLATION`] as a plugin under `dir` and return the
 /// plugin root.
 fn sandbox_plugin(dir: &Path) -> std::path::PathBuf {
@@ -629,4 +635,185 @@ end)
     );
     let ends: i64 = daemon.lua().globals().get("ends").unwrap();
     assert_eq!(ends, 2, "each start is paired with one end");
+}
+
+/// A plugin create runs the start checks that an RPC create runs.
+///
+/// Before the fix `cru.session.create` skipped them. A session that asked for
+/// isolation, with no plugin to claim it, was created live on the host.
+#[tokio::test]
+async fn a_plugin_create_that_asks_for_isolation_is_refused_when_no_plugin_claims_it() {
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin_with(data_home.path(), CLAIMS_NOTHING);
+    let daemon = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+
+    daemon
+        .lua()
+        .load(
+            r#"_G.created, _G.err = cru.session.create({ type = "chat", isolation = "sandbox" })"#,
+        )
+        .exec_async()
+        .await
+        .expect("run the Lua create");
+
+    let err: Option<String> = daemon.lua().globals().get("err").unwrap();
+    let err = err.unwrap_or_else(|| {
+        panic!(
+            "a plugin created a session that asked for isolation \"sandbox\", no plugin \
+             claimed it, and the session is live on the host"
+        )
+    });
+    assert!(
+        err.contains("isolation") && err.contains("sandbox"),
+        "the refusal must name the isolation that is missing: {err}"
+    );
+    assert!(
+        daemon
+            .ctx
+            .sessions
+            .list_sessions()
+            .iter()
+            .all(|s| s.state != SessionState::Active),
+        "a refused create must not leave a live session"
+    );
+}
+
+/// A plugin create fires the start hooks, so a plugin claims the isolation
+/// that the new session asked for. A plugin end fires the end hooks, so the
+/// claim goes with the session.
+#[tokio::test]
+async fn a_plugin_create_gets_its_claim_and_a_plugin_end_releases_it() {
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin(data_home.path());
+    let daemon = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+
+    daemon
+        .lua()
+        .load(
+            r#"
+            local created, err = cru.session.create({ type = "chat", isolation = "sandbox" })
+            assert(created, err)
+            _G.created_id = created.id
+            "#,
+        )
+        .exec_async()
+        .await
+        .expect("the Lua create succeeds");
+    let id: String = daemon.lua().globals().get("created_id").unwrap();
+    assert!(
+        daemon.claimed(&id).await,
+        "a plugin created session {id} with no isolation claim"
+    );
+
+    daemon
+        .lua()
+        .load(format!(r#"assert(cru.session.end_session("{id}"))"#))
+        .exec_async()
+        .await
+        .expect("the Lua end succeeds");
+    assert!(
+        !daemon.claimed(&id).await,
+        "a plugin ended session {id}, and its isolation claim stayed: the end hooks \
+         did not run, so the plugin keeps its container"
+    );
+}
+
+/// Lua inside a session hook holds the plugin runtime. A plugin end from there
+/// cannot wait for the runtime, so the end hooks run after the hook returns.
+/// They must not be skipped, and they must not hang the daemon.
+#[tokio::test]
+async fn a_plugin_end_inside_a_session_hook_runs_the_end_hooks_later() {
+    const END_FROM_END_HOOK: &str = r#"
+cru.on_session_end(function(_session)
+  if _G.end_target then
+    local target = _G.end_target
+    _G.end_target = nil
+    _G.end_ok, _G.end_err = cru.session.end_session(target)
+  end
+end)
+"#;
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin(data_home.path());
+    let daemon = Daemon::boot(
+        data_home.path(),
+        kiln.path(),
+        Some(&plugins),
+        Some(END_FROM_END_HOOK),
+    )
+    .await;
+    let target = daemon.isolated_session().await;
+    daemon
+        .lua()
+        .globals()
+        .set("end_target", target.clone())
+        .unwrap();
+
+    let ending = daemon
+        .ctx
+        .sessions
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        daemon.ctx.session_lifecycle.fire_session_end(&ending.id),
+    )
+    .await
+    .expect("a plugin end inside a session hook waited for the plugin runtime its hook holds");
+
+    let err: Option<String> = daemon.lua().globals().get("end_err").unwrap();
+    assert_eq!(err, None, "the end itself succeeds");
+    assert_eq!(daemon.state(&target), Some(SessionState::Ended));
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while daemon.claimed(&target).await {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the end hooks of a session that a hook ended never ran: its claim stayed");
+}
+
+/// A plugin that loads runs its Lua with the plugin runtime held. A session
+/// create from that Lua cannot run the start hooks, so it is refused. It must
+/// not wait for the runtime that the reload holds.
+#[tokio::test]
+async fn a_plugin_create_while_the_plugin_loads_is_refused_and_does_not_hang() {
+    const CREATES_WHEN_IT_LOADS: &str = r#"
+if _G.create_on_load then
+  _G.load_created, _G.load_err = cru.session.create({ type = "chat" })
+end
+return { name = "sandbox", version = "0.1.0", description = "creates a session when it loads" }
+"#;
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin_with(data_home.path(), CREATES_WHEN_IT_LOADS);
+    let daemon = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+    daemon.lua().globals().set("create_on_load", true).unwrap();
+
+    let resp = tokio::time::timeout(
+        Duration::from_secs(30),
+        daemon.rpc("plugin.reload", json!({ "name": "sandbox" })),
+    )
+    .await
+    .expect("a create while the plugin loads waited for the plugin runtime that the reload holds");
+
+    assert!(resp.error.is_none(), "reload: {:?}", resp.error);
+    let err: Option<String> = daemon.lua().globals().get("load_err").unwrap();
+    let err = err.expect("a create that cannot run the start checks must be refused");
+    assert!(
+        err.contains("plugin runtime"),
+        "the refusal must say why the start checks cannot run: {err}"
+    );
+    assert!(
+        daemon
+            .ctx
+            .sessions
+            .list_sessions()
+            .iter()
+            .all(|s| s.state != SessionState::Active),
+        "a refused create must not leave a live session"
+    );
 }

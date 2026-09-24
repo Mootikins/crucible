@@ -267,9 +267,14 @@ impl DaemonSessionApi for DaemonSessionBridge {
     /// name, and `create_session_resolved` then does the whole job: scope
     /// refusal, trust validation against the kiln's classification, agent
     /// resolution (including agent cards), project registration, kiln open,
-    /// recording and the setup task. The one step it does not do is
-    /// `enforce_session_start` — see that method's doc for why a plugin-side
-    /// create must not reach it yet.
+    /// recording and the setup task.
+    ///
+    /// Then the start checks run, as they do after an RPC create: the plugin
+    /// start hooks fire, and the isolation requirement must have a claim. A
+    /// refused session is ended before the plugin gets it, so no plugin can
+    /// use a session that did not pass them. Lua that holds the plugin runtime
+    /// (a session hook, `lua.eval`) cannot run the start hooks, so a create
+    /// from there is refused.
     ///
     /// An omitted `kilns` stays omitted rather than being resolved to
     /// `crucible_home()` here: the fallback belongs to the daemon's own data
@@ -297,6 +302,10 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .create_session_resolved(&request)
                 .await
                 .map_err(|e| e.to_string())?;
+            ctx.session_lifecycle
+                .enforce_session_start(&session.id)
+                .await
+                .map_err(|e| format!("session refused: {e}"))?;
             Ok(serde_json::json!({
                 "id": session.id,
                 "session_type": session.session_type.as_prefix(),
@@ -396,18 +405,21 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
+    /// A plugin end runs the end hooks, as the RPC `session.end` does. The
+    /// start hooks of the session claimed isolation and maybe a container,
+    /// and only the end hooks release them.
     fn end_session(&self, session_id: String) -> BoxFut<()> {
-        bridge_async!(
-            self.session_manager,
-            self.agent_manager,
-            |sm, am| async move {
-                sm.end_session(&session_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                am.cleanup_session(&session_id);
-                Ok(())
-            }
-        )
+        bridge_async!(self.ctx, |ctx| async move {
+            ctx.session_lifecycle
+                .fire_session_end_from_lua(&session_id)
+                .await;
+            ctx.sessions
+                .end_session(&session_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            ctx.agents.cleanup_session(&session_id);
+            Ok(())
+        })
     }
 
     /// The mode a plugin's session runs its turns in.

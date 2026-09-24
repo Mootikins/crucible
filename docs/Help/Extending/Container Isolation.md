@@ -304,6 +304,12 @@ plugin claims the persisted value again. These paths are a message to an ended
 or stored session, `session.resume`, `session.resume_from_storage` and
 `cru.session.resume`.
 
+A plugin that creates a session with `cru.session.create` gets the same checks
+as `session.create`. The start hooks fire, and the new session must get its
+claim, or the daemon ends it and the call returns an error. A plugin that ends
+a session with `cru.session.end_session` runs the end hooks, as `session.end`
+does.
+
 Each firing of the start hooks is paired with one firing of the end hooks. So a
 session that ends, comes back and ends again runs the end hooks two times. The
 second end releases the claim and the container that the second start made.

@@ -207,7 +207,7 @@ and persistence.
 | `ToolCallTracker` | `crucible-daemon/src/agent_manager/tool_tracking.rs:3` | Counts repeated identical tool calls |
 | `SessionManager` | `crucible-daemon/src/session_manager.rs:147` | In-memory session map plus persistence |
 | `SessionError` | `crucible-daemon/src/session_manager.rs:925` | NotFound, AlreadyEnded, InvalidState, IoError |
-| `SessionLifecycle` | `crucible-daemon/src/session_lifecycle.rs:37` | Plugin start and end hooks for create, fork, delegation, resume and revive-on-send; refuses an unenforceable isolation claim and a persisted isolation request that no plugin claimed |
+| `SessionLifecycle` | `crucible-daemon/src/session_lifecycle.rs:37` | Plugin start and end hooks for create (RPC and Lua), fork, delegation, resume and revive-on-send; refuses an unenforceable isolation claim and a persisted isolation request or claim record that no plugin claimed |
 | `DelegationService` | `crucible-daemon/src/delegation.rs:93` | Spawn, await, cancel, list child sessions |
 | `DelegationRequest`, `DelegationSpawned` | `crucible-daemon/src/delegation.rs:41,55` | Spawn input and result |
 | `AgentFactoryError` | `crucible-daemon/src/agent_factory.rs:370` | ClientCreation, AgentBuild, UnsupportedAgentType |

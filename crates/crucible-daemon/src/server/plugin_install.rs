@@ -161,7 +161,12 @@ pub(crate) async fn handle_plugin_install(
                     let activated = match loader
                         .add_plugin_paths(&[(plugins_dir, crucible_lua::PluginSource::User)])
                     {
-                        Ok(()) => loader.activate_plugin(&result.name).await,
+                        Ok(()) => {
+                            crate::session_lifecycle::holding_plugin_loader(
+                                loader.activate_plugin(&result.name),
+                            )
+                            .await
+                        }
                         Err(e) => Err(e),
                     };
                     match activated {
@@ -277,7 +282,11 @@ pub(crate) async fn handle_plugin_remove(
                 .ok()
                 .and_then(|d| loader.plugin_name_for_dir(&d.join(&name)))
                 .unwrap_or_else(|| name.clone());
-            if let Err(e) = loader.deactivate_and_forget_plugin(&manager_name).await {
+            if let Err(e) = crate::session_lifecycle::holding_plugin_loader(
+                loader.deactivate_and_forget_plugin(&manager_name),
+            )
+            .await
+            {
                 return internal_error(req.id, e);
             }
         }

@@ -41,7 +41,9 @@ pub(crate) async fn handle_plugin_reload(
         None => return internal_error(req.id, "Plugin loader not initialized"),
     };
 
-    match loader.reload_plugin(name).await {
+    // A plugin that loads runs Lua with the loader mutex held, so a session
+    // start from that Lua is refused, not a wait for this lock.
+    match crate::session_lifecycle::holding_plugin_loader(loader.reload_plugin(name)).await {
         Ok(spec) => {
             spawn_plugin_services(loader);
 
@@ -888,7 +890,11 @@ pub(super) fn spawn_plugin_watcher(
                 pending.remove(&name);
                 let mut guard = plugin_loader.lock().await;
                 if let Some(ref mut loader) = *guard {
-                    match loader.reload_plugin(&name).await {
+                    match crate::session_lifecycle::holding_plugin_loader(
+                        loader.reload_plugin(&name),
+                    )
+                    .await
+                    {
                         Ok(_spec) => {
                             info!("Plugin '{}' auto-reloaded due to file change", name);
                             // Spawning inside the guard is safe — tokio::spawn

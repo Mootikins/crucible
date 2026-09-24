@@ -1474,7 +1474,12 @@ impl Server {
             if let Err(e) = loader.add_plugin_paths(&paths) {
                 warn!("Failed to add the plugin search paths: {}", e);
             }
-            if let Err(e) = loader.load_plugins_from_spec().await {
+            // Plugin setup runs here with the loader mutex held. A session
+            // start from that Lua is refused, not a wait for this lock.
+            if let Err(e) =
+                crate::session_lifecycle::holding_plugin_loader(loader.load_plugins_from_spec())
+                    .await
+            {
                 warn!("Failed to activate daemon plugins: {}", e);
             }
 
