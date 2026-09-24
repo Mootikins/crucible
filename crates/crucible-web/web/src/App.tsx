@@ -116,7 +116,7 @@ const App: Component = () => {
     {
       id: 'chat-clear',
       label: 'Clear Chat',
-      description: 'Clear visible chat messages.',
+      description: 'Clear the model context (the transcript stays).',
       shortcut: 'Ctrl+K',
       category: 'Chat',
       keywords: ['clear', 'chat', 'messages'],

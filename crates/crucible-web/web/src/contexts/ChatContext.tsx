@@ -26,6 +26,7 @@ import {
 } from '@/lib/turn';
 import { fetchPendingInteractionsOnce, useRespondToInteraction } from '@/lib/query/interactions';
 import { useCancelSession } from '@/lib/query/sessions';
+import { useExecuteCommand } from '@/lib/query/commands';
 import {
   fetchSessionHistoryOnce,
   useSendChatMessage,
@@ -626,12 +627,16 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   });
 
-  // Palette "Clear Chat" / Ctrl+K. Multiple chat providers can be mounted
-  // (split panes); only the one showing the active session clears — and the
-  // transcript it clears is the session's, so every pane of it clears.
+  // Palette "Clear Chat" / Ctrl+K is `/clear`: the daemon clears the model
+  // context, and its context_cleared draws the divider in each pane. Multiple
+  // chat providers can be mounted (split panes); only the one showing the
+  // active session sends it.
+  const runCommand = useExecuteCommand(() => props.sessionId);
   getBus().on('clearChat', () => {
     if (props.sessionId && statusBarStore.activeSessionId() === props.sessionId) {
-      clearMessages();
+      runCommand.mutate('/clear', {
+        onError: (err) => patchTranscript(props.sessionId, { error: err.message }),
+      });
     }
   });
 

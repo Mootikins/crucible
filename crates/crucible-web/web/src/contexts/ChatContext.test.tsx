@@ -9,6 +9,8 @@ import { keys } from '@/lib/query/keys';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
+import { getBus } from '@/lib/bus';
+import { statusBarActions } from '@/stores/statusBarStore';
 
 // The turn helpers now live in `lib/turn.ts`; the deterministic ids they
 // are mocked for live there too.
@@ -87,6 +89,8 @@ const historyAsked: string[] = [];
 const historyLimits: (string | null)[] = [];
 /** The bodies that reached the send route, in order. */
 const sentTurns: { session_id: string; content: string }[] = [];
+/** The slash commands that reached the command route of the main session. */
+const sentCommands: string[] = [];
 
 /** The daemon's refusal, as its routes serialise it. */
 const refusal = (status: number, message: string): Response =>
@@ -135,6 +139,10 @@ function serve(): void {
       modesOnce.length ? modesOnce.shift()!() : modesAnswer();
     routes[`POST /api/session/${id}/mode`] = () => setModeAnswer();
   }
+  routes[`POST /api/session/${ID}/command`] = async (request) => {
+    sentCommands.push(((await request.clone().json()) as { command: string }).command);
+    return { result: 'Context cleared', type: 'success' };
+  };
   env = createTestQueryEnv(routes);
 }
 
@@ -156,6 +164,7 @@ beforeEach(() => {
   historyAsked.length = 0;
   historyLimits.length = 0;
   sentTurns.length = 0;
+  sentCommands.length = 0;
   serve();
 });
 
@@ -1356,5 +1365,28 @@ describe('the shared session transcript', () => {
     setId('session-a');
     await flush();
     expect(asked()).toEqual(['session-a', 'session-b']);
+  });
+});
+
+describe('palette Clear Chat', () => {
+  // The palette entry (Ctrl+K) is the same clear as `/clear`: the daemon
+  // clears the model context and sends context_cleared. The pane does not
+  // drop its transcript on its own.
+  it('sends /clear to the daemon and keeps the transcript', async () => {
+    statusBarActions.setActiveSessionId(ID);
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
+    screen.getByText('Send').click();
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+
+    getBus().emit('clearChat', {});
+
+    await waitFor(() => expect(sentCommands).toEqual(['/clear']));
+    expect(screen.getByTestId('count').textContent).toBe('2');
+    statusBarActions.setActiveSessionId(null);
   });
 });
