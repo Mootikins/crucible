@@ -1032,63 +1032,48 @@ async fn the_shipped_bash_formatter_declines_without_a_command_argument() {
     assert_eq!(result, "raw");
 }
 
-/// The Lua layers decide an ACP permission request as they decide a call of
-/// Crucible's own tools: a `permission:request` hook, the stance of a mode,
-/// and the plan mode rule of the defaults.
+/// A `permission:request` hook decides an ACP permission request as it
+/// decides a call of Crucible's own tools. The mode of an ACP session is the
+/// agent's own, so no Crucible mode stance applies (`acp_permission_gate_e2e`).
 #[tokio::test]
-async fn the_lua_layers_decide_an_acp_request() {
+async fn a_lua_hook_decides_an_acp_request() {
     use agent_client_protocol::schema::v1::{PermissionOption, PermissionOptionKind};
     let (_vm, am, _sm, id) = session_with_lua(
         r#"
         cru.permissions.on_request(function(request)
           if request.kind == "command" then return { deny = true } end
         end)
-        cru.modes.locked = { tools = "*", permissions = "deny" }
         "#,
     )
     .await;
     let (event_tx, mut event_rx) = broadcast::channel(16);
     let handle = am.build_acp_permission_handler(&id, &event_tx, std::path::Path::new("/w"), None);
-    let acp = |frame: serde_json::Value| {
-        crucible_core::types::classify_acp(serde_json::from_value(frame).unwrap(), &[])
-    };
-    let command = acp(serde_json::json!({
-        "kind": "execute", "title": "Run", "rawInput": {"command": "cargo test"},
-    }));
-    let edit = acp(serde_json::json!({
-        "kind": "edit", "title": "Edit", "locations": [{"path": "/w/src/lib.rs"}],
-    }));
-    let options = || {
-        vec![
-            PermissionOption::new("allow", "Allow", PermissionOptionKind::AllowOnce),
-            PermissionOption::new("reject", "Reject", PermissionOptionKind::RejectOnce),
-        ]
-    };
-
-    for (mode, call, layer) in [
-        ("ask", command, "the Lua hook"),
-        ("locked", edit.clone(), "the mode stance"),
-        ("plan", edit, "the plan rule"),
-    ] {
-        am.slot(&id)
-            .set_turn_gate(crate::agent_manager::slot::TurnGate {
-                is_interactive: true,
-                permission_override: None,
-                mode: mode.to_string(),
-                ..Default::default()
-            });
-        let outcome =
-            tokio::time::timeout(std::time::Duration::from_secs(5), handle(call, options()))
-                .await
-                .unwrap_or_else(|_| panic!("{layer} must answer without a prompt"));
-        assert!(
-            matches!(&outcome,
-                agent_client_protocol::schema::v1::RequestPermissionOutcome::Selected(s)
-                    if s.option_id.to_string() == "reject"),
-            "{layer} must refuse: {outcome:?}"
-        );
-        assert!(event_rx.try_recv().is_err(), "{layer} asks nobody");
-    }
+    let command = crucible_core::types::classify_acp(
+        serde_json::from_value(serde_json::json!({
+            "kind": "execute", "title": "Run", "rawInput": {"command": "cargo test"},
+        }))
+        .unwrap(),
+        &[],
+    );
+    let options = vec![
+        PermissionOption::new("allow", "Allow", PermissionOptionKind::AllowOnce),
+        PermissionOption::new("reject", "Reject", PermissionOptionKind::RejectOnce),
+    ];
+    am.slot(&id)
+        .set_turn_gate(crate::agent_manager::slot::TurnGate {
+            is_interactive: true,
+            ..Default::default()
+        });
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), handle(command, options))
+        .await
+        .expect("the hook must answer without a prompt");
+    assert!(
+        matches!(&outcome,
+            agent_client_protocol::schema::v1::RequestPermissionOutcome::Selected(s)
+                if s.option_id.to_string() == "reject"),
+        "the hook must refuse: {outcome:?}"
+    );
+    assert!(event_rx.try_recv().is_err(), "the hook asks nobody");
 }
 
 /// Render `call` with the handlers of `vm`, as the daemon renders a tool

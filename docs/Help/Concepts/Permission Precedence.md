@@ -21,6 +21,10 @@ Crucible's own agents, the permission requests of an external ACP agent, a
 plugin's `cru.tools.call`, and a workflow validation command. A source differs
 only in the layers it cannot use. `cru.tools.call` and a workflow validation
 command have no card, no saved patterns, no hooks, no mode and no prompt.
+An ACP agent has no Crucible mode. Its mode is the agent's own, and its id can
+name a Crucible mode with another rule (Claude calls a mode `auto`). Thus no
+mode stance and no `plan` rule decides an ACP request, and a hook sees an empty
+`request.mode`.
 
 This page states that order once. The layers themselves are documented
 separately — [[Help/Config/permissions]], [[Help/Extending/Event Hooks]],

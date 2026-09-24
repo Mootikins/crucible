@@ -521,7 +521,6 @@ impl AgentManager {
             .set_turn_gate(crate::agent_manager::slot::TurnGate {
                 is_interactive,
                 permission_override,
-                mode: session_mode.clone(),
                 origin,
             });
         // The turn proposal ends with the turn, on every exit path below.

@@ -113,7 +113,6 @@ struct AcpGate {
     workspace: PathBuf,
     whitelists_dir: Option<PathBuf>,
     hooks: Option<DaemonPermissions>,
-    modes: crucible_lua::ModeRegistry,
     engine: PermissionEngine,
     tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
 }
@@ -153,8 +152,11 @@ impl AcpGate {
             permission_override: turn.permission_override,
             patterns: (self.whitelists_dir.as_deref()).map(|dir| (dir, self.workspace.as_path())),
             hooks: self.hooks.as_ref(),
-            mode: &turn.mode,
-            modes: &self.modes,
+            // The mode of an ACP session is the agent's own mode. Its id can
+            // name a Crucible mode (`auto`, `plan`) with another rule, so no
+            // Crucible mode stance applies.
+            mode: "",
+            modes: &crucible_lua::ModeRegistry::new(),
             mcp_read_only: &no_mcp,
             prompt: turn.is_interactive.then_some(Prompt {
                 slot: &self.slot,
@@ -226,7 +228,6 @@ impl AgentManager {
             workspace: workspace.to_path_buf(),
             whitelists_dir: self.whitelists_dir(),
             hooks: self.daemon_permissions(),
-            modes: self.modes.clone(),
             engine: self.session_permission_engine(session_id),
             tool_policy,
         });
@@ -858,7 +859,6 @@ mod acp_tool_policy_tests {
             workspace: PathBuf::new(),
             whitelists_dir: None,
             hooks: None,
-            modes: crucible_lua::ModeRegistry::new(),
             engine: PermissionEngine::new(config.as_ref()),
             tool_policy: Some(
                 card.iter()
@@ -1430,7 +1430,6 @@ mod acp_permission_handler_tests {
         let handle = handler(&am, &event_tx, None);
         am.slot(SESSION).set_turn_gate(TurnGate {
             is_interactive: true,
-            mode: "ask".to_string(),
             ..Default::default()
         });
         let request: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
@@ -1472,7 +1471,7 @@ mod acp_permission_handler_tests {
         assert!(call.render.is_some(), "the prompt carries the render");
         assert!(call.diffs.is_empty(), "the request holds the diff once");
         assert_eq!(asked.diffs[0].path, "/w/a.rs");
-        assert_eq!(asked.layer.as_deref(), Some("ask mode"));
+        assert_eq!(asked.layer.as_deref(), Some("agent"));
 
         let id = event.data["request_id"].as_str().unwrap().to_string();
         am.respond_to_permission(SESSION, &id, PermResponse::deny())

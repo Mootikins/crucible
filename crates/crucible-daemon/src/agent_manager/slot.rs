@@ -112,8 +112,6 @@ pub(crate) struct SessionSlot {
 pub(crate) struct TurnGate {
     pub is_interactive: bool,
     pub permission_override: Option<crucible_core::config::components::permissions::PermissionMode>,
-    /// The session mode at the turn start, whose stance the gate reads.
-    pub mode: String,
     /// Who asked for the turn. The render of a prompt reads it.
     pub origin: crucible_core::turn::TurnOrigin,
 }

@@ -1,0 +1,174 @@
+//! The permission gate of an ACP session, driven through `AgentManager`.
+//!
+//! A mock agent process asks `session/request_permission` during a turn.
+//! The daemon loads the Lua defaults, so the Crucible modes `auto` and
+//! `plan` exist. These tests assert on the prompt that the daemon emits.
+
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use crucible_core::interaction::PermResponse;
+use crucible_core::session::{SessionId, SessionType};
+use crucible_daemon::daemon_plugins::DaemonPluginLoader;
+use crucible_daemon::protocol::SessionEventMessage;
+use crucible_daemon::test_support::temp_session_manager;
+use crucible_daemon::AgentManager;
+use serde_json::json;
+use tempfile::TempDir;
+use tokio::sync::broadcast;
+
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
+#[path = "acp_support/mock_agent_bin.rs"]
+mod mock_agent_bin;
+use mock_agent::{logged, MockScript, Step};
+use mock_agent_bin::{
+    acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
+};
+
+const TURN_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// A session whose ACP agent asks about one edit in each turn.
+struct Gate {
+    _temp: TempDir,
+    _loader: DaemonPluginLoader,
+    log: PathBuf,
+    am: Arc<AgentManager>,
+    session_id: SessionId,
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    events: broadcast::Receiver<SessionEventMessage>,
+}
+
+/// The agent reports `mode` as its own current mode.
+async fn gate(mode: &str) -> Gate {
+    let temp = TempDir::new().expect("temp dir");
+    let log = temp.path().join("agent.log");
+    let script = MockScript {
+        mode: Some(mode.to_string()),
+        mode_ids: Some(vec![mode.to_string()]),
+        turn: vec![
+            Step::Permission(json!({
+                "toolCall": {
+                    "toolCallId": "call-1",
+                    "title": "Edit a.rs",
+                    "kind": "edit",
+                    "locations": [{ "path": "/w/a.rs" }],
+                },
+                "options": [
+                    { "optionId": "allow_once", "name": "Allow", "kind": "allow_once" },
+                    { "optionId": "reject_once", "name": "Reject", "kind": "reject_once" },
+                ],
+            })),
+            Step::Text("done".to_string()),
+        ],
+        log: Some(log.clone()),
+        ..MockScript::default()
+    };
+    let loader = DaemonPluginLoader::new(HashMap::new()).expect("daemon VM");
+    loader
+        .executor()
+        .lua()
+        .load(crucible_lua::BUILTIN_INIT_LUA)
+        .exec()
+        .expect("the Lua defaults load");
+    let session_manager = temp_session_manager();
+    let (event_tx, events) = broadcast::channel(256);
+    let am = Arc::new(
+        AgentManager::new(acp_manager_params(
+            session_manager.clone(),
+            BTreeMap::from([(
+                MOCK_PROFILE.to_string(),
+                mock_profile(BTreeMap::from([script.env()])),
+            )]),
+            &event_tx,
+        ))
+        .with_modes(Some(loader.mode_registry())),
+    );
+    am.set_daemon_permissions(loader.permission_registry());
+    let session = session_manager
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .expect("session");
+    am.configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
+        .await
+        .expect("configure the agent");
+    Gate {
+        _temp: temp,
+        _loader: loader,
+        log,
+        am,
+        session_id: session.id,
+        event_tx,
+        events,
+    }
+}
+
+impl Gate {
+    /// Run one turn. Answer a prompt with a denial. Return true if the
+    /// daemon asked the user before the turn finished.
+    async fn turn(&mut self, is_interactive: bool) -> bool {
+        let (_id, done) = self
+            .am
+            .send_message_notified(
+                &self.session_id,
+                "go".to_string(),
+                &self.event_tx,
+                is_interactive,
+                None,
+            )
+            .await
+            .expect("the turn is accepted");
+        let mut asked = false;
+        loop {
+            let msg = tokio::time::timeout(TURN_TIMEOUT, self.events.recv())
+                .await
+                .expect("the turn must finish")
+                .expect("event channel open");
+            match msg.event.as_str() {
+                "interaction_requested" => {
+                    asked = true;
+                    let id = msg.data["request_id"].as_str().expect("request_id");
+                    self.am
+                        .respond_to_permission(&self.session_id, id, PermResponse::deny())
+                        .expect("the prompt is registered");
+                }
+                "turn_finished" => break,
+                _ => {}
+            }
+        }
+        completed_turn(done, TURN_TIMEOUT).await;
+        asked
+    }
+
+    /// The option that the agent received for each of its questions.
+    fn answers(&self) -> Vec<String> {
+        logged(&self.log, "permission/answer")
+            .iter()
+            .map(|a| {
+                a["result"]["outcome"]["optionId"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect()
+    }
+}
+
+/// Claude and codex name a mode `auto`. That id is the agent's, so the
+/// Crucible `auto` stance (allow all) must not answer the question.
+#[tokio::test]
+async fn an_agent_mode_named_auto_does_not_take_the_crucible_auto_stance() {
+    let mut gate = gate("auto").await;
+    assert!(gate.turn(true).await, "the user must be asked");
+    assert_eq!(gate.answers(), ["reject_once"]);
+}
+
+/// The Crucible plan rule refuses each unsafe call. An agent mode named
+/// `plan` is the agent's own rule, so Crucible asks the user.
+#[tokio::test]
+async fn an_agent_mode_named_plan_does_not_take_the_crucible_plan_rule() {
+    let mut gate = gate("plan").await;
+    assert!(gate.turn(true).await, "the user must be asked");
+}

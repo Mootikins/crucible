@@ -260,6 +260,7 @@ fn decide_unprompted<'a>(
     let layer = match (card, asked_about) {
         (Some(ToolPolicy::Ask), _) => "agent card policy".to_string(),
         (_, true) => "permissions config".to_string(),
+        _ if ctx.mode.is_empty() => "agent".to_string(),
         _ => format!("{} mode", ctx.mode),
     };
     match ctx.prompt {
