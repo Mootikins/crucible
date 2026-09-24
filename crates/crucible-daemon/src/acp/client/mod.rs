@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 use crate::acp::session::ModelChoice;
 use crate::acp::{ClientError, Result};
 use crucible_core::turn::TurnEvent;
-use crucible_core::types::{classify_acp, AgentKeys, CanonicalToolCall, RawToolCall};
+use crucible_core::types::{AgentKeys, CanonicalToolCall};
 
 mod connection;
 mod recording;
@@ -139,7 +139,7 @@ impl CrucibleAcpClient {
                     async move |request: RequestPermissionRequest,
                                 responder,
                                 cx: ConnectionTo<Agent>| {
-                        let (mut call, cancel) = {
+                        let (call, cancel) = {
                             let mut shared = lock(&shared);
                             let Shared { turn, keys, .. } = &mut *shared;
                             match turn {
@@ -149,18 +149,14 @@ impl CrucibleAcpClient {
                                         .permission_call(&request.tool_call, keys),
                                     turn.cancel.clone(),
                                 ),
+                                // A request outside a turn has no frames to join.
                                 None => (
-                                    classify_acp(
-                                        tool_table::frame_fields(RawToolCall::from(
-                                            &request.tool_call,
-                                        )),
-                                        keys,
-                                    ),
+                                    tool_table::ToolCallTable::for_agent(&agent_name)
+                                        .permission_call(&request.tool_call, keys),
                                     CancellationToken::default(),
                                 ),
                             }
                         };
-                        call.agent = Some(agent_name.clone());
                         let options = request.options;
                         let permission = permission.clone();
                         // The dispatch loop waits for a handler. A user who

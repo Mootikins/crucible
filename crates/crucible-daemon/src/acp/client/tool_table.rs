@@ -77,6 +77,8 @@ struct Entry {
     raw: RawToolCall,
     /// `raw`, classified.
     call: CanonicalToolCall,
+    /// The agent profile that made the call.
+    agent: Option<String>,
     /// A `session/update` frame named this id. An entry that only a
     /// permission request made gets no card.
     seen: bool,
@@ -86,15 +88,26 @@ struct Entry {
 }
 
 impl Entry {
-    fn new(id: String) -> Self {
+    fn new(id: String, agent: Option<String>) -> Self {
         Self {
             id,
             raw: RawToolCall::default(),
             call: classify_acp(RawToolCall::default(), &[]),
+            agent,
             seen: false,
             announced: false,
             completions: 0,
             held: None,
+        }
+    }
+
+    /// Classify `raw` as a call of the agent. Each ACP call is classified
+    /// here, so each canonical call names its agent: the card, each update
+    /// and each permission request.
+    fn classify(&self, raw: RawToolCall, keys: &[AgentKeys]) -> CanonicalToolCall {
+        CanonicalToolCall {
+            agent: self.agent.clone(),
+            ..classify_acp(raw, keys)
         }
     }
 
@@ -112,7 +125,7 @@ impl Entry {
     /// a changed call.
     fn merge(&mut self, frame: RawToolCall, keys: &[AgentKeys], out: &mut Vec<TurnEvent>) {
         self.raw.merge(frame);
-        let call = classify_acp(self.raw.clone(), keys);
+        let call = self.classify(self.raw.clone(), keys);
         if self.announced && call != self.call {
             out.push(TurnEvent::ToolCallUpdate {
                 id: self.id.clone(),
@@ -155,14 +168,25 @@ impl Entry {
 pub(super) struct ToolCallTable {
     entries: Vec<Entry>,
     held_bytes: usize,
+    /// The agent profile that makes the calls.
+    agent: Option<String>,
 }
 
 impl ToolCallTable {
+    pub(super) fn for_agent(agent: &str) -> Self {
+        Self {
+            entries: Vec::new(),
+            held_bytes: 0,
+            agent: Some(agent.to_string()),
+        }
+    }
+
     fn entry_mut(&mut self, id: &str) -> &mut Entry {
         let index = match self.entries.iter().position(|entry| entry.id == id) {
             Some(index) => index,
             None => {
-                self.entries.push(Entry::new(id.to_string()));
+                let entry = Entry::new(id.to_string(), self.agent.clone());
+                self.entries.push(entry);
                 self.entries.len() - 1
             }
         };
@@ -264,7 +288,7 @@ impl ToolCallTable {
         let entry = self.entry_mut(&request.tool_call_id.to_string());
         let mut joined = entry.raw.clone();
         joined.merge(frame);
-        let mut call = classify_acp(joined.clone(), keys);
+        let mut call = entry.classify(joined.clone(), keys);
         // A call that nothing names has its kind as its name. The frames can
         // name it when the request does not (old codex replaces `rawInput`
         // in an MCP approval), and the more specific name wins.

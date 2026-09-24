@@ -7,6 +7,7 @@ use crucible_core::types::AgentKeys;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use super::tool_table::ToolCallTable;
 use super::types::StreamingState;
 use super::CrucibleAcpClient;
 use crate::acp::streaming::TurnSummary;
@@ -201,7 +202,10 @@ impl CrucibleAcpClient {
         let cancel = CancellationToken::new();
         super::lock(&self.shared).turn = Some(super::Turn {
             out: out.clone(),
-            state: StreamingState::default(),
+            state: StreamingState {
+                tool_calls: ToolCallTable::for_agent(&self.agent_name),
+                ..StreamingState::default()
+            },
             cancel: cancel.clone(),
         });
         let _slot = TurnSlot(&self.shared);

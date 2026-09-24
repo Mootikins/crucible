@@ -1483,6 +1483,31 @@ async fn a_new_codex_request_with_no_diff_gets_the_diff_of_its_tool_call() {
     );
 }
 
+/// Each classified call of an ACP agent names the agent: the card, each
+/// update of the card and the permission request. So the prompt, a hook and
+/// the transcript can show the agent of each call.
+#[tokio::test]
+async fn each_acp_call_names_its_agent() {
+    let turn = joined_turn("claude", "claude", "file_edit").await;
+    let updates = turn.chunks.iter().filter_map(|chunk| match chunk {
+        TurnEvent::ToolCallUpdate { call, .. } => Some(&**call),
+        _ => None,
+    });
+    let calls: Vec<_> = turn
+        .started()
+        .into_iter()
+        .chain(updates)
+        .chain(&turn.asked)
+        .collect();
+    assert!(
+        calls.len() >= 3,
+        "a card, an update and a request: {calls:?}"
+    );
+    for call in calls {
+        assert_eq!(call.agent.as_deref(), Some("claude"), "{call:?}");
+    }
+}
+
 /// The TypeScript codex adapter asks about an MCP call with `kind` alone.
 /// The tool comes from the `tool_call` before it, and the card shows the
 /// same canonical tool.
