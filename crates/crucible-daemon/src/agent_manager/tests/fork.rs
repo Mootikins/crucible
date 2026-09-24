@@ -182,3 +182,33 @@ async fn forks_read_cold_parents_and_refuse_unreadable_history_without_creating_
     assert!(am.fork_session(unreadable, None).await.is_err());
     assert_eq!(sm.storage().list().await.unwrap().len(), before);
 }
+
+/// A fork copies the record that a plugin isolated its parent, so the fork
+/// requires a claim when its start checks run. Without the record, a fork of a
+/// session that the plugin configuration isolated could start on the host
+/// when the plugin is gone.
+#[tokio::test]
+async fn a_fork_inherits_the_record_that_a_plugin_isolated_the_parent() {
+    let sm = temp_session_manager_with_kilns(&[]);
+    let am = create_test_agent_manager(sm.clone());
+    let record = crucible_core::session::IsolationRecord {
+        plugin: "fixture".into(),
+        requirement: crucible_core::session::IsolationRequirement::Configured,
+    };
+    let parent = sm
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    let parent = sm
+        .modify_session(&parent.id, |live| {
+            live.isolation_record = Some(record.clone());
+            true
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (child, _) = am.fork_session(parent, None).await.unwrap();
+
+    assert_eq!(child.isolation_record, Some(record));
+}

@@ -596,11 +596,9 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .ok_or_else(|| format!("Session not found: {session_id}"))?;
             // Lua can call from inside a lifecycle hook, whose loader lock is
             // not reentrant. Without running start hooks, a configured fork
-            // must not silently lose its parent's requested or active sandbox.
-            if parent
-                .isolation
-                .as_ref()
-                .is_some_and(|value| !value.is_null() && *value != false)
+            // must not silently lose its parent's requested, recorded or
+            // active sandbox.
+            if crate::session_lifecycle::required_isolation(&parent).is_some()
                 || am
                     .isolation()
                     .is_some_and(|registry| registry.get(&session_id).is_some())

@@ -304,11 +304,23 @@ plugin claims the persisted value again. These paths are a message to an ended
 or stored session, `session.resume`, `session.resume_from_storage` and
 `cru.session.resume`.
 
-When a session asked for isolation (any value except `false`) and no plugin
-claims it after the start hooks, the daemon refuses the session. The error says
-which isolation is missing. The isolating plugin can be absent after a restart,
-for example. To use the session again, load and configure the plugin. Then send
-or resume again.
+When a plugin claims isolation for a session for the first time, the daemon
+stores that fact with the session. The record names the plugin. It also says
+whether the session asked for the isolation or the plugin configuration gave
+it. A fork and a delegated child copy the record from their parent.
+
+A session requires isolation when it asked for isolation (any value except
+`false`), or when it has the record. When a session requires isolation and no
+plugin claims it after the start hooks, the daemon refuses the session. The
+error says which isolation is missing. The isolating plugin can be absent after
+a restart, for example. To use the session again, load and configure the
+plugin. Then send or resume again.
+
+The record is necessary because the project configuration can isolate a
+session that asked for nothing. That session has no `isolation` value, so
+without the record it would come back on the host. A session that an older
+daemon stored has no record. It keeps the old behavior: only its `isolation`
+value can require a claim.
 
 Because it arrives as a field on an object plugins already receive, any plugin
 can read it; `oci` is simply the one that acts on it.

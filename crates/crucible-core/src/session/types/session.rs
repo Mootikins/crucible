@@ -150,6 +150,19 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isolation: Option<serde_json::Value>,
 
+    /// The record that a plugin isolated this session.
+    ///
+    /// The daemon writes it when a plugin first claims isolation for the
+    /// session. The claim itself lives in memory, so a restart drops it. This
+    /// record stays, so the daemon can require the claim again: a session that
+    /// the plugin configuration isolated has no [`Session::isolation`] value,
+    /// and without the record it would come back on the host.
+    ///
+    /// `None` is a session that no plugin isolated, or a session that an older
+    /// daemon wrote before the record existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolation_record: Option<IsolationRecord>,
+
     /// Plugin-owned key/value pairs, written by Lua `session:set_variable`.
     ///
     /// The daemon knows nothing about the keys. It persists them so a resumed
@@ -172,6 +185,26 @@ pub struct Session {
     /// `meta.json` has ever used. See [`PersistedKilns`].
     #[serde(flatten)]
     persisted_kilns: PersistedKilns,
+}
+
+/// The persisted fact that a plugin isolated a session. See
+/// [`Session::isolation_record`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IsolationRecord {
+    /// The plugin that claimed isolation for the session.
+    pub plugin: String,
+    /// What asked for the isolation.
+    pub requirement: IsolationRequirement,
+}
+
+/// What asked for the isolation of a session.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolationRequirement {
+    /// The session's own [`Session::isolation`] value asked for it.
+    Requested,
+    /// The session asked for nothing, and the plugin configuration isolated it.
+    Configured,
 }
 
 /// The path-shaped, on-disk spelling of a session's kiln set.
@@ -241,6 +274,7 @@ impl Session {
             archived: false,
             last_activity: Some(Utc::now()),
             isolation: None,
+            isolation_record: None,
             variables: BTreeMap::new(),
             plugin: None,
         }
@@ -274,6 +308,14 @@ impl Session {
     #[must_use]
     pub fn with_isolation(mut self, isolation: Option<serde_json::Value>) -> Self {
         self.isolation = isolation;
+        self
+    }
+
+    /// Set the record that a plugin isolated the session (see
+    /// [`Session::isolation_record`]).
+    #[must_use]
+    pub fn with_isolation_record(mut self, record: Option<IsolationRecord>) -> Self {
+        self.isolation_record = record;
         self
     }
 

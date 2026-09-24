@@ -24,6 +24,7 @@
 use crate::agent_manager::AgentManager;
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::session_manager::SessionManager;
+use crucible_core::session::{IsolationRecord, IsolationRequirement, Session};
 use dashmap::DashSet;
 use std::sync::{Arc, OnceLock, Weak};
 use tokio::sync::Mutex;
@@ -125,26 +126,68 @@ impl SessionLifecycle {
             anyhow::bail!("{reason}");
         }
 
-        // The persisted request is the source, not the registry. An empty
-        // registry after a restart is not proof that the session never asked
-        // for a sandbox, so a request that no plugin claimed refuses the session.
+        // The persisted fields are the source, not the registry: the request,
+        // and the record of an earlier claim. An empty registry after a
+        // restart is not proof that the session never needed a sandbox, so a
+        // requirement that no plugin claimed refuses the session.
         if let Some(reason) = self.unclaimed_isolation(session_id).await {
             tracing::error!(session_id = %session_id, %reason, "refusing session");
             self.refuse_session(session_id).await;
             anyhow::bail!("{reason}");
         }
+
+        // The claim is memory, so the fact that it was made goes to storage.
+        // Without the record, a session that the plugin configuration
+        // isolated looks after a restart like a session that asked for nothing.
+        if let Err(e) = self.record_isolation(session_id).await {
+            tracing::error!(session_id = %session_id, error = %e, "refusing session");
+            self.refuse_session(session_id).await;
+            anyhow::bail!(
+                "a plugin isolated this session, but the daemon could not store that \
+                 fact with the session, so a restart could run it on the host: {e}"
+            );
+        }
         Ok(())
     }
 
-    /// The reason a session's persisted isolation request has no claim, or
-    /// `None` when it asked for none or a plugin claimed it.
+    /// The reason a session's persisted isolation requirement has no claim,
+    /// or `None` when it has no requirement or a plugin claimed it.
     async fn unclaimed_isolation(&self, session_id: &str) -> Option<String> {
         let session = self.sessions.get_session(session_id)?;
-        let requested = required_isolation(&session)?;
+        let requirement = required_isolation(&session)?;
         if self.isolation_claim(session_id).await.is_some() {
             return None;
         }
-        Some(unclaimed_isolation_reason(requested))
+        Some(unclaimed_isolation_reason(&requirement))
+    }
+
+    /// Store the record that a plugin isolated the session, when a plugin
+    /// claims isolation and the session has no record yet.
+    ///
+    /// The first claim writes the record, and later claims keep it. The record
+    /// is a requirement, so a later start without a claim is refused.
+    async fn record_isolation(&self, session_id: &str) -> anyhow::Result<()> {
+        let Some(claim) = self.isolation_claim(session_id).await else {
+            return Ok(());
+        };
+        self.sessions
+            .modify_session(session_id, |session| {
+                if session.isolation_record.is_some() {
+                    return false;
+                }
+                let requirement = if requested_isolation(session).is_some() {
+                    IsolationRequirement::Requested
+                } else {
+                    IsolationRequirement::Configured
+                };
+                session.isolation_record = Some(IsolationRecord {
+                    plugin: claim.plugin.clone(),
+                    requirement,
+                });
+                true
+            })
+            .await?;
+        Ok(())
     }
 
     /// Tear down a session being refused: plugin end hooks first (so an
@@ -377,20 +420,41 @@ fn this_task_holds_plugin_loader() -> bool {
 ///
 /// `None` when it asked for none: the field is absent, `null`, or `false`.
 /// `false` is an explicit opt out, not a request.
-pub(crate) fn required_isolation(
-    session: &crucible_core::session::Session,
-) -> Option<&serde_json::Value> {
+fn requested_isolation(session: &Session) -> Option<&serde_json::Value> {
     session
         .isolation
         .as_ref()
         .filter(|value| !value.is_null() && **value != serde_json::Value::Bool(false))
 }
 
-/// The refusal for a session whose isolation request no plugin claimed.
-pub(crate) fn unclaimed_isolation_reason(requested: &serde_json::Value) -> String {
+/// The isolation that a session's persisted fields require, as text for a
+/// refusal, or `None` when they require none.
+///
+/// Two fields can require it: the session's own `isolation` request, and the
+/// record that a plugin isolated the session before. A session with neither
+/// keeps the old behavior: it starts with or without a claim. That includes
+/// every session that a daemon wrote before the record existed.
+pub(crate) fn required_isolation(session: &Session) -> Option<String> {
+    if let Some(requested) = requested_isolation(session) {
+        return Some(format!("isolation {requested}"));
+    }
+    let record = session.isolation_record.as_ref()?;
+    Some(match record.requirement {
+        IsolationRequirement::Configured => format!(
+            "the isolation that plugin '{}' gave it from the plugin configuration",
+            record.plugin
+        ),
+        IsolationRequirement::Requested => {
+            format!("the isolation that plugin '{}' gave it", record.plugin)
+        }
+    })
+}
+
+/// The refusal for a session whose isolation requirement no plugin claimed.
+pub(crate) fn unclaimed_isolation_reason(requirement: &str) -> String {
     format!(
-        "this session requires isolation {requested}, but no plugin claimed isolation for \
-         it: the isolating plugin is not loaded, or it declined the session. The session \
+        "this session requires {requirement}, but no plugin claimed isolation for it: \
+         the isolating plugin is not loaded, or it declined the session. The session \
          would run on the host, so it is refused. Load and configure the isolating plugin, \
          then send or resume again"
     )

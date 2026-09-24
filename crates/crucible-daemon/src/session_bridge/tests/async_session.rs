@@ -73,6 +73,42 @@ fn install_scripted_agents(bridge: &DaemonSessionBridge) -> Arc<std::sync::atomi
     observed
 }
 
+/// The record that a plugin isolated a session is a requirement, as the
+/// request is. A Lua fork runs no start hooks, so it refuses a parent with
+/// the record, even with no workspace and no live claim.
+#[tokio::test]
+async fn lua_fork_refuses_a_parent_that_a_plugin_isolated_before() {
+    let (_tmp, bridge, lua) = rig();
+    let parent = bridge
+        .session_manager
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    bridge
+        .session_manager
+        .modify_session(&parent.id, |live| {
+            live.isolation_record = Some(crucible_core::session::IsolationRecord {
+                plugin: "fixture".into(),
+                requirement: crucible_core::session::IsolationRequirement::Configured,
+            });
+            true
+        })
+        .await
+        .unwrap();
+    lua.globals().set("parent", parent.id.to_string()).unwrap();
+    let before = bridge.session_manager.list_sessions().len();
+    lua.load(
+        r#"
+        local child, err = cru.session.fork(parent)
+        assert(child == nil and string.find(err, "isolated"), tostring(err))
+    "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+    assert_eq!(bridge.session_manager.list_sessions().len(), before);
+}
+
 #[tokio::test]
 async fn lua_fork_refuses_requested_or_claimed_isolation_without_creating_a_child() {
     let (tmp, bridge, lua) = rig();

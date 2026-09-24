@@ -653,9 +653,9 @@ impl AgentManager {
             // No lifecycle means no plugin runtime, so no plugin can claim
             // isolation. A session that asked for it cannot be live.
             None => {
-                if let Some(requested) = crate::session_lifecycle::required_isolation(&revived) {
+                if let Some(requirement) = crate::session_lifecycle::required_isolation(&revived) {
                     return Err(AgentError::SessionRefused(
-                        crate::session_lifecycle::unclaimed_isolation_reason(requested),
+                        crate::session_lifecycle::unclaimed_isolation_reason(&requirement),
                     ));
                 }
             }

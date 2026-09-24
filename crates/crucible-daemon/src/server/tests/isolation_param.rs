@@ -136,7 +136,18 @@ async fn isolation_survives_a_round_trip_through_session_storage() {
 async fn a_delegated_child_inherits_its_parents_isolation() {
     let f = Fixture::new();
     let parent_id = f.create(json!({ "isolation": "heavy" })).await;
-    let parent = f.sm.get_session(&parent_id).unwrap();
+    let record = crucible_core::session::IsolationRecord {
+        plugin: "oci".into(),
+        requirement: crucible_core::session::IsolationRequirement::Requested,
+    };
+    let parent =
+        f.sm.modify_session(&parent_id, |live| {
+            live.isolation_record = Some(record.clone());
+            true
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     let child =
         f.sm.create_child_session(
@@ -154,6 +165,11 @@ async fn a_delegated_child_inherits_its_parents_isolation() {
         Some(json!("heavy")),
         "an unsandboxed child of a sandboxed parent is the same escape by a \
          different door"
+    );
+    assert_eq!(
+        child.isolation_record,
+        Some(record),
+        "the record that a plugin isolated the parent is a requirement for the child too"
     );
 }
 

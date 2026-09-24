@@ -427,7 +427,8 @@ impl SessionManager {
         }
         let mut child = Session::new(parent.session_type, parent.kilns)
             .with_workspace(parent.workspace)
-            .with_isolation(parent.isolation);
+            .with_isolation(parent.isolation)
+            .with_isolation_record(parent.isolation_record);
         child.agent = parent.agent;
         child.variables = parent.variables;
         // Like delegation, configuration is inherited as a value. No provider
@@ -457,7 +458,8 @@ impl SessionManager {
     /// Children are full sessions in behavior but are hidden from default
     /// listings and lifecycle-subordinate to their parent.
     ///
-    /// Isolation is inherited for the same reason the workspace is: a child
+    /// Isolation, and the record that a plugin isolated the parent, are
+    /// inherited for the same reason the workspace is: a child
     /// runs the parent's tools against the parent's directory. Letting it
     /// resolve isolation independently would put a sandboxed parent's subagent
     /// on the host — the delegation escape, reopened through the resolution
@@ -471,6 +473,7 @@ impl SessionManager {
         let mut session = Session::new(SessionType::Agent, parent.kilns.clone())
             .with_workspace(parent.workspace.clone())
             .with_isolation(parent.isolation.clone())
+            .with_isolation_record(parent.isolation_record.clone())
             .with_parent(parent.id.clone());
         session.agent = Some(agent);
         session.title = title;

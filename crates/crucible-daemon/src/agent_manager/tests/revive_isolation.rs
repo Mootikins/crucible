@@ -46,13 +46,32 @@ end, { required = true })
 return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }
 "#;
 
+/// A plugin that claims isolation for every session, as the `oci` plugin does
+/// when the project configuration names an image.
+///
+/// The session asks for nothing. Only the plugin configuration isolates it, so
+/// the persisted `isolation` value stays absent.
+const CLAIMS_EVERY_SESSION: &str = r#"
+cru.on_session_start(function(session)
+  if session.isolation ~= false then
+    cru.isolation.require{ session = session.id, plugin = "sandbox" }
+  end
+end, { required = true })
+return { name = "sandbox", version = "0.1.0", description = "test configured isolation" }
+"#;
+
 /// Write [`CLAIMS_REQUESTED_ISOLATION`] as a plugin under `dir` and return the
 /// plugin root.
 fn sandbox_plugin(dir: &Path) -> std::path::PathBuf {
+    sandbox_plugin_with(dir, CLAIMS_REQUESTED_ISOLATION)
+}
+
+/// Write `init` as the `sandbox` plugin under `dir` and return the plugin root.
+fn sandbox_plugin_with(dir: &Path, init: &str) -> std::path::PathBuf {
     let root = dir.join("plugins");
     let plugin = root.join("sandbox");
     std::fs::create_dir_all(&plugin).expect("plugin dir");
-    std::fs::write(plugin.join("init.lua"), CLAIMS_REQUESTED_ISOLATION).expect("init.lua");
+    std::fs::write(plugin.join("init.lua"), init).expect("init.lua");
     root
 }
 
@@ -147,6 +166,13 @@ impl Daemon {
     /// A live session that asked for isolation and got a claim, made the way
     /// `session.create` makes one: stored, configured, then started.
     async fn isolated_session(&self) -> String {
+        self.started_session(Some(json!("sandbox"))).await
+    }
+
+    /// A live session with a claim, made the way `session.create` makes one:
+    /// stored, configured, then started. `isolation` is the value the caller
+    /// persisted. `None` leaves the decision to the plugin configuration.
+    async fn started_session(&self, isolation: Option<serde_json::Value>) -> String {
         let sm = &self.ctx.sessions;
         let session = sm
             .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
@@ -154,7 +180,7 @@ impl Daemon {
             .unwrap();
         let id = session.id.to_string();
         sm.modify_session(&id, |s| {
-            s.isolation = Some(json!("sandbox"));
+            s.isolation = isolation;
             true
         })
         .await
@@ -457,4 +483,94 @@ async fn a_send_with_no_session_lifecycle_refuses_a_session_that_asked_for_isola
     );
     assert!(err.to_string().contains("sandbox"), "{err}");
     drop(sm);
+}
+
+/// The claim itself is persisted. A session that the plugin configuration
+/// isolated has no `isolation` value, so only the stored record of the claim
+/// says that it must be sandboxed.
+///
+/// Before the fix a restart with the plugin gone revived the session with no
+/// requirement at all, and its turn ran on the host.
+#[tokio::test]
+async fn a_configured_isolation_is_required_after_a_restart_without_the_plugin() {
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin_with(data_home.path(), CLAIMS_EVERY_SESSION);
+
+    let first = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+    let id = first.started_session(None).await;
+    drop(first);
+
+    // The isolating plugin is gone after the restart.
+    let second = Daemon::boot(data_home.path(), kiln.path(), None, None).await;
+    second.inject_agent(&id);
+
+    let resp = second
+        .rpc(
+            "session.send_message",
+            json!({ "session_id": id, "content": "still there?" }),
+        )
+        .await;
+
+    let err = resp.error.unwrap_or_else(|| {
+        panic!(
+            "session {id} was sandboxed by plugin \"sandbox\" from the project \
+             configuration, the plugin is gone, and the send still ran a turn on the host"
+        )
+    });
+    assert!(
+        err.message.contains("isolation") && err.message.contains("sandbox"),
+        "the refusal must name the plugin that isolated the session: {}",
+        err.message
+    );
+    assert_ne!(
+        second.state(&id),
+        Some(SessionState::Active),
+        "a refused revive must not leave the session live"
+    );
+}
+
+/// A session that no plugin ever isolated keeps reviving on a daemon with no
+/// isolating plugin. The record is written only when a claim is made.
+#[tokio::test]
+async fn a_session_that_was_never_isolated_revives_without_the_plugin() {
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin(data_home.path());
+
+    let first = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+    let sm = &first.ctx.sessions;
+    let session = sm
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .unwrap();
+    let id = session.id.to_string();
+    first
+        .ctx
+        .agents
+        .configure_agent(&id, test_agent())
+        .await
+        .unwrap();
+    first
+        .ctx
+        .session_lifecycle
+        .enforce_session_start(&id)
+        .await
+        .expect("the session starts");
+    assert!(!first.claimed(&id).await, "precondition: no claim");
+    drop(first);
+
+    let second = Daemon::boot(data_home.path(), kiln.path(), None, None).await;
+    second.inject_agent(&id);
+    let resp = second
+        .rpc(
+            "session.send_message",
+            json!({ "session_id": id, "content": "still there?" }),
+        )
+        .await;
+    assert!(
+        resp.error.is_none(),
+        "a session that no plugin isolated must revive: {:?}",
+        resp.error
+    );
 }
