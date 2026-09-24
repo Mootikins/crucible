@@ -628,7 +628,9 @@ impl AgentManager {
             args: args.clone(),
             file_path,
             mode: Some(session_mode.to_string()),
-            is_safe: crate::agent_manager::believed_read_only(tool_name, mcp_read_only),
+            // A tool name that an agent sends is not Crucible's tool.
+            is_safe: call.runs_in_crucible()
+                && crate::agent_manager::believed_read_only(tool_name, mcp_read_only),
         };
 
         match execute_permission_hooks(
@@ -836,6 +838,15 @@ mod acp_tool_policy_tests {
         card: &[(&str, ToolPolicy)],
         config: Option<PermissionConfig>,
     ) -> Asked {
+        decide_with_hooks(call, card, config, None).await
+    }
+
+    async fn decide_with_hooks(
+        call: CanonicalToolCall,
+        card: &[(&str, ToolPolicy)],
+        config: Option<PermissionConfig>,
+        hooks: Option<DaemonPermissions>,
+    ) -> Asked {
         let (event_tx, mut events) = broadcast::channel::<SessionEventMessage>(16);
         let slot = Arc::new(crate::agent_manager::slot::SessionSlot::default());
         slot.set_turn_gate(crate::agent_manager::slot::TurnGate {
@@ -861,7 +872,7 @@ mod acp_tool_policy_tests {
             event_tx,
             workspace: PathBuf::new(),
             whitelists_dir: None,
-            hooks: None,
+            hooks,
             engine: PermissionEngine::new(config.as_ref()),
             tool_policy: Some(
                 card.iter()
@@ -946,6 +957,61 @@ mod acp_tool_policy_tests {
         assert_eq!(call.tool, "read_file");
         let asked = decide_call(call, &[], None).await;
         assert_eq!(asked.prompts, 1, "the agent's read_file is asked about");
+    }
+
+    /// A hook reads `request.is_safe` as "Crucible knows this tool only
+    /// reads". A name that an agent or a third-party MCP server sends does
+    /// not make that true. Codex names a third-party MCP tool by its server,
+    /// and gemini names its own tool in the id.
+    #[tokio::test]
+    async fn a_hook_does_not_see_an_agent_tool_as_safe() {
+        let loader =
+            crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
+                .expect("daemon VM");
+        loader
+            .executor()
+            .lua()
+            .load("cru.permissions.on_request(function(r) if r.is_safe then return { allow = true } end end)")
+            .exec()
+            .unwrap();
+        let codex: Vec<crucible_core::types::AgentKeys> =
+            serde_json::from_value(serde_json::json!([{
+                "title": "^Tool: ",
+                "args": ["/rawInput/arguments"],
+                "tool": ["/rawInput/tool"],
+                "server": ["/rawInput/server"],
+            }]))
+            .expect("the table parses");
+        let gemini: Vec<crucible_core::types::AgentKeys> =
+            serde_json::from_value(serde_json::json!([{ "id": "^(?P<tool>[a-z_]+?)__" }]))
+                .expect("the table parses");
+        for tool in ["read_file", "grep", "list_notes"] {
+            let codex_call = classify_acp(
+                serde_json::from_value(serde_json::json!({
+                    "toolCallId": "call-1",
+                    "title": format!("Tool: github/{tool}"),
+                    "kind": "execute",
+                    "rawInput": { "server": "github", "tool": tool, "arguments": {} },
+                }))
+                .expect("a raw tool call"),
+                &codex,
+            );
+            let gemini_call = classify_acp(
+                serde_json::from_value(serde_json::json!({
+                    "toolCallId": format!("{tool}__{tool}_1_2"),
+                    "kind": "other",
+                }))
+                .expect("a raw tool call"),
+                &gemini,
+            );
+            assert_eq!(gemini_call.tool, tool);
+            for call in [codex_call, gemini_call] {
+                let name = call.tool.clone();
+                let asked =
+                    decide_with_hooks(call, &[], None, Some(loader.permission_registry())).await;
+                assert_eq!(asked.prompts, 1, "{name} is asked about");
+            }
+        }
     }
 
     /// A card `deny` refuses a Crucible MCP tool, and asks nobody.

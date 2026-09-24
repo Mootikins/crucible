@@ -163,7 +163,9 @@ end, { pattern = "bash" })
 
 `request.is_safe` tells you whether the daemon classifies the tool as read-only.
 For external MCP tools that comes from the server's `readOnlyHint` annotation,
-so a read-only tool is not lumped in with the ones that write.
+so a read-only tool is not lumped in with the ones that write. A tool that an
+ACP agent runs itself is never safe here, also when its name is the name of a
+Crucible tool (gemini `read_file`, or a `grep` of another MCP server).
 
 **Hooks fail closed.** A hook that errors denies the call. This is the opposite
 of every other hook type in Crucible, which fails open — a permission hook that
