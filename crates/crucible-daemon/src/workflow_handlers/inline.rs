@@ -55,15 +55,6 @@ impl DaemonInlineHandler {
     }
 }
 
-/// The turn task clears the session's `request_state` slot before it reports
-/// the outcome, but a plugin turn that a `turn:complete` handler asked for
-/// claims the slot right after it, so a back-to-back step can still see
-/// `ConcurrentRequest`. Retry briefly to absorb that window; a genuinely busy
-/// session (for example a user turn in flight) still fails once the budget is
-/// exhausted.
-const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(50);
-const SEND_RETRY_BUDGET: u32 = 40;
-
 #[async_trait]
 impl StepHandler for DaemonInlineHandler {
     async fn execute(&self, ctx: &ExecContext<'_>) -> StepOutcome {
@@ -92,35 +83,18 @@ impl StepHandler for DaemonInlineHandler {
 
         let _turn = self.turn_guard.lock().await;
 
-        let mut attempts = 0u32;
-        let completion_rx = loop {
-            match self
-                .agents
-                .send_message_notified(
-                    &self.session_id,
-                    prompt.clone(),
-                    &self.event_tx,
-                    false,
-                    None,
-                )
-                .await
-            {
-                Ok((_message_id, rx)) => break rx,
-                Err(crate::agent_manager::AgentError::ConcurrentRequest(_))
-                    if attempts < SEND_RETRY_BUDGET =>
-                {
-                    attempts += 1;
-                    tokio::time::sleep(SEND_RETRY_DELAY).await;
-                }
-                Err(e) => {
-                    return StepOutcome::Fail {
-                        reason: format!("failed to start agent turn: {e}"),
-                    };
-                }
-            }
-        };
-
-        outcome_to_step(completion_rx.await)
+        // An awaited turn starts no follow-up turn, so the slot is free
+        // for the next step. A busy session fails the step.
+        match self
+            .agents
+            .send_message_notified(&self.session_id, prompt, &self.event_tx, false, None)
+            .await
+        {
+            Ok((_message_id, rx)) => outcome_to_step(rx.await),
+            Err(e) => StepOutcome::Fail {
+                reason: format!("failed to start agent turn: {e}"),
+            },
+        }
     }
 }
 

@@ -744,6 +744,10 @@ cancel clears a turn a handler asked for but that has not started yet.
 `cru acp` and `cru session send` answer when the turn THEY started is over.
 The turn the handler asked for then runs in the session.
 
+A workflow step and a delegated child get no `inject` turn. The daemon awaits
+their turns, and it starts the next turn of the session itself. An `inject`
+turn would take the session from the workflow, or run in a child that ends.
+
 The event carries what the turn knows about itself:
 
 | Field | What it says |

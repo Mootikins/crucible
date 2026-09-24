@@ -238,3 +238,35 @@ async fn a_user_cancel_clears_the_turn_a_handler_asked_for() {
         );
     }
 }
+
+/// A caller that awaits a turn owns the next turn of the session. A
+/// `turn:complete` inject starts no follow-up for an awaited turn, so the
+/// next send of the caller finds the slot free.
+#[tokio::test]
+async fn an_awaited_turn_starts_no_follow_up() {
+    let mut h = ReactorTestHarness::new().await;
+    let _vm = h.load_daemon_lua(
+        r#"
+            cru.on("turn:complete", function(ctx, event)
+                return { inject = { content = "keep going" } }
+            end)
+        "#,
+    );
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+
+    for step in ["one", "two"] {
+        let (_, done) = h
+            .agent_manager
+            .send_message_notified(&h.session_id, step.into(), &h.event_tx, false, None)
+            .await
+            .unwrap_or_else(|e| panic!("step {step} must start: {e}"));
+        assert_eq!(done.await.unwrap().status, TurnStatus::Completed);
+        let events = events_until_turn_finished(&mut h.event_rx).await;
+        let opening = events.iter().find(|e| e.event == "user_message").unwrap();
+        assert_eq!(
+            origin_of(opening),
+            TurnOrigin::User,
+            "no plugin turn starts"
+        );
+    }
+}

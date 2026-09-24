@@ -612,6 +612,10 @@ impl AgentManager {
             // proposal before an awaiter sees the outcome and sends again.
             proposals.end_turn(&proposal_session);
 
+            // A caller that awaits the turn (a workflow step, a delegation)
+            // owns the next turn of the session, so a `turn:complete` handler
+            // gets no follow-up turn: it would take the slot from the caller.
+            let awaited = completion_tx.is_some();
             // Single convergence point for ALL exit paths — this send must
             // happen before the request_state slot is released so an awaiter
             // observes the outcome strictly after the turn is over.
@@ -640,7 +644,7 @@ impl AgentManager {
             // a NEW turn, here, with the slot free. It is a normal turn, so it
             // takes admission, Precognition, persistence and undo like any
             // other; only its origin says who asked for it.
-            if let Some(follow_up) = slot.take_follow_up() {
+            if let Some(follow_up) = slot.take_follow_up().filter(|_| !awaited) {
                 manager
                     .start_follow_up_turn(
                         session_id_owned,
