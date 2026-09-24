@@ -616,12 +616,6 @@ impl Server {
                 .map(str::to_string),
             notifications,
         }));
-        // Same instance for both paths: delegated children fire plugin start
-        // hooks and get their own isolation claim, and the once-only teardown
-        // claim is shared, so a child ended by the delegation watcher and a
-        // parent ended by `session.end` cannot double-fire a plugin teardown.
-        delegation_service.bind_session_lifecycle(ctx.session_lifecycle.clone());
-
         let dispatcher = Arc::new(RpcDispatcher::new(ctx.clone()));
 
         info!("Daemon listening on {:?}", params.path);

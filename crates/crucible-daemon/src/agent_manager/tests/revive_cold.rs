@@ -36,7 +36,7 @@ use tokio::sync::{broadcast, Mutex};
 /// NAME, and the mapping back to a directory is daemon state, not session
 /// state. A restart that forgot it would revive a session whose kiln resolves
 /// to nothing, which is the thing this test would otherwise not notice.
-fn manager_over(data_home: &Path, kiln: &Path) -> Arc<SessionManager> {
+pub(super) fn manager_over(data_home: &Path, kiln: &Path) -> Arc<SessionManager> {
     let registry = crate::test_support::kiln_registry(data_home, &[("kiln", kiln)]);
     Arc::new(
         SessionManager::with_storage(Arc::new(
@@ -80,7 +80,7 @@ async fn session_surviving_a_restart() -> (TempDir, TempDir, String) {
 /// Built by hand rather than via `create_test_agent_manager` because the
 /// session manager has to be rooted at a specific data home, and that is only
 /// reachable at construction.
-async fn cold_manager(
+pub(super) async fn cold_manager(
     data_home: &Path,
     kiln: &Path,
     open_kiln: Option<&Path>,

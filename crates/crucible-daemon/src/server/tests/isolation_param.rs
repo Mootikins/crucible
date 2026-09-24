@@ -159,7 +159,7 @@ async fn a_delegated_child_inherits_its_parents_isolation() {
 
 /// The wiring that makes a delegated child go through the shared lifecycle.
 ///
-/// `Server::bind_with_plugin_config` is the only place `bind_session_lifecycle` is called, and
+/// `RpcContext::new` is the only place `bind_session_lifecycle` is called, and
 /// nothing observes it: unbound, `enforce_child_isolation` stops firing plugin
 /// start hooks and silently reopens the delegation escape — a sandboxed
 /// parent's subagent gets no container and runs every tool on the host, with no

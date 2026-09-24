@@ -987,6 +987,7 @@ mod reactor;
 mod review_capture;
 mod review_comment_context;
 mod revive_cold;
+mod revive_isolation;
 mod title;
 mod transcript_containment;
 mod trust_gate;

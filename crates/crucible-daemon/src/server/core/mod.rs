@@ -53,6 +53,10 @@ pub(super) fn agent_error_to_response(req_id: Option<RequestId>, err: AgentError
         }
         AgentError::NoAgentConfigured(id) => agent_not_configured(req_id, &id),
         AgentError::ConcurrentRequest(id) => concurrent_request(req_id, &id),
+        // The same answer `session.create` and `session.resume` give for a
+        // refused start, not an "Internal error": the refusal is a decision,
+        // and its text says what the caller can change.
+        e @ AgentError::SessionRefused(_) => Response::error(req_id, INTERNAL_ERROR, e.to_string()),
         e => internal_error(req_id, e),
     }
 }

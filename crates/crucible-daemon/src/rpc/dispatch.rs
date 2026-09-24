@@ -1717,14 +1717,18 @@ impl RpcDispatcher {
         let params: Params = parse_params(req)?;
         let loader_guard = self.ctx.plugin_loader.lock().await;
         match loader_guard.as_ref() {
-            Some(loader) => match loader.eval(&params.code).await {
-                Ok(result) => Ok(serde_json::json!({ "result": result })),
-                Err(e) => Err(RpcError {
-                    code: INTERNAL_ERROR,
-                    message: e.to_string(),
-                    data: None,
-                }),
-            },
+            Some(loader) => {
+                match crate::session_lifecycle::holding_plugin_loader(loader.eval(&params.code))
+                    .await
+                {
+                    Ok(result) => Ok(serde_json::json!({ "result": result })),
+                    Err(e) => Err(RpcError {
+                        code: INTERNAL_ERROR,
+                        message: e.to_string(),
+                        data: None,
+                    }),
+                }
+            }
             None => Err(RpcError {
                 code: INTERNAL_ERROR,
                 message: "Lua runtime not initialized".to_string(),

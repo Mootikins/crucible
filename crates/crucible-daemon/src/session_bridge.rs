@@ -380,12 +380,19 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
+    /// A plugin resume is the resume an RPC client gets: the session becomes
+    /// live, then the start checks run. An RPC pause released its isolation
+    /// claim with the end hooks, and only the start hooks claim it again.
     fn resume(&self, session_id: String) -> BoxFut<()> {
-        bridge_async!(self.session_manager, |sm| async move {
-            sm.resume_session(&session_id)
+        bridge_async!(self.ctx, |ctx| async move {
+            ctx.sessions
+                .resume_session(&session_id)
                 .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            ctx.session_lifecycle
+                .enforce_session_start(&session_id)
+                .await
+                .map_err(|e| format!("session refused: {e}"))
         })
     }
 

@@ -110,6 +110,12 @@ pub enum AgentError {
 
     #[error(transparent)]
     Chat(#[from] ChatError),
+
+    /// The session start checks refused a session that a send revived: a
+    /// required plugin start hook failed, or its isolation is not enforceable
+    /// or not claimed. The session is not live.
+    #[error("session refused: {0}")]
+    SessionRefused(String),
 }
 
 struct RequestState {

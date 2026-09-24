@@ -625,6 +625,16 @@ Pause a session. Returns `(true, nil)` on success.
 
 Resume a paused session. Returns `(true, nil)` on success.
 
+The resume runs the same start checks as the `session.resume` RPC. The plugin
+start hooks fire again, and an isolated session gets its isolation claim again.
+When a check fails, the call returns `(nil, err)` and the daemon ends the
+session. See [[Help/Extending/Container Isolation#Per-session opt-in]].
+
+The start hooks need the plugin runtime. Lua in a session hook or in `lua.eval`
+holds the plugin runtime, so a resume from there returns `(nil, err)`. A
+`send_message` from there that must bring a stored session back is refused for
+the same reason.
+
 ### cru.session.end_session(session_id)
 
 End a session permanently. Returns `(true, nil)` on success.

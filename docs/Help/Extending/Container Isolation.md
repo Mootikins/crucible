@@ -297,6 +297,19 @@ exactly as it was created, and a delegated child inherits its parent's — a chi
 that resolved isolation independently would land on the host while its parent is
 sandboxed.
 
+The daemon keeps the isolation claims in memory. A restart drops them, and a
+`session.pause` or `session.end` releases one with the end hooks. So every path
+that makes a stored session live again fires the start hooks again, and the
+plugin claims the persisted value again. These paths are a message to an ended
+or stored session, `session.resume`, `session.resume_from_storage` and
+`cru.session.resume`.
+
+When a session asked for isolation (any value except `false`) and no plugin
+claims it after the start hooks, the daemon refuses the session. The error says
+which isolation is missing. The isolating plugin can be absent after a restart,
+for example. To use the session again, load and configure the plugin. Then send
+or resume again.
+
 Because it arrives as a field on an object plugins already receive, any plugin
 can read it; `oci` is simply the one that acts on it.
 

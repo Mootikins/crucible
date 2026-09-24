@@ -84,7 +84,29 @@ impl SessionLifecycle {
     /// plugin's container is released) and ended, so a refused session leaves
     /// nothing behind. The `Err` describes *why* it was refused; callers shape
     /// it into their own error type.
+    ///
+    /// Every path that makes a stored session live again calls this too:
+    /// revive-on-send, `session.resume`, `session.resume_from_storage` and the
+    /// Lua `resume`. The isolation registry is memory, so a restart or an RPC
+    /// pause drops the claim, and only the start hooks put it back.
     pub async fn enforce_session_start(&self, session_id: &str) -> anyhow::Result<()> {
+        // The hooks need the plugin-loader mutex, and it is not reentrant. A
+        // caller that already holds it would wait for itself forever, so the
+        // session is refused instead. There were no start hooks, so there is
+        // nothing for end hooks to release, and they need the mutex too.
+        if this_task_holds_plugin_loader() {
+            tracing::error!(session_id = %session_id, "refusing a session start inside plugin Lua");
+            if let Err(e) = self.sessions.end_session(session_id).await {
+                tracing::error!(session_id = %session_id, error = %e, "refused session could not be ended");
+            }
+            anyhow::bail!(
+                "session {session_id} cannot start or resume here: its start hooks and its \
+                 isolation claim need the plugin runtime, and the Lua that asked holds the \
+                 plugin runtime (a plugin session hook or lua.eval). Resume the session from \
+                 outside that Lua, for example with the session.resume RPC or a later message"
+            );
+        }
+
         if let Err(e) = self.fire_session_start(session_id).await {
             tracing::error!(
                 session_id = %session_id,
@@ -102,7 +124,27 @@ impl SessionLifecycle {
             self.refuse_session(session_id).await;
             anyhow::bail!("{reason}");
         }
+
+        // The persisted request is the source, not the registry. An empty
+        // registry after a restart is not proof that the session never asked
+        // for a sandbox, so a request that no plugin claimed refuses the session.
+        if let Some(reason) = self.unclaimed_isolation(session_id).await {
+            tracing::error!(session_id = %session_id, %reason, "refusing session");
+            self.refuse_session(session_id).await;
+            anyhow::bail!("{reason}");
+        }
         Ok(())
+    }
+
+    /// The reason a session's persisted isolation request has no claim, or
+    /// `None` when it asked for none or a plugin claimed it.
+    async fn unclaimed_isolation(&self, session_id: &str) -> Option<String> {
+        let session = self.sessions.get_session(session_id)?;
+        let requested = required_isolation(&session)?;
+        if self.isolation_claim(session_id).await.is_some() {
+            return None;
+        }
+        Some(unclaimed_isolation_reason(requested))
     }
 
     /// Tear down a session being refused: plugin end hooks first (so an
@@ -204,7 +246,7 @@ impl SessionLifecycle {
             session = session.with_workspace(workspace.to_string_lossy());
         }
         session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
-        if let Err(e) = loader.fire_session_end(&session).await {
+        if let Err(e) = holding_plugin_loader(loader.fire_session_end(&session)).await {
             tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
         }
         // Drop the handlers this session activated, for the same reason the
@@ -301,7 +343,7 @@ pub(crate) async fn fire_start_hooks(
         session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
     }
 
-    let result = loader.fire_session_start(&session).await;
+    let result = holding_plugin_loader(loader.fire_session_start(&session)).await;
 
     // Record what the hooks chose even when one of them failed: the others
     // ran, and their writes are as real as a clean run's.
@@ -309,6 +351,49 @@ pub(crate) async fn fire_start_hooks(
         agents.commit_start_hook_scope(session_id, &scope);
     }
     result
+}
+
+tokio::task_local! {
+    /// Present while this task runs plugin Lua and holds the plugin-loader
+    /// mutex. Lua awaits the session bridge on the same task, so the bridge
+    /// sees it.
+    static HOLDS_PLUGIN_LOADER: ();
+}
+
+/// Run `lua`, which the caller runs with the plugin-loader mutex held.
+///
+/// [`SessionLifecycle::enforce_session_start`] reads the mark. Without it, Lua
+/// that revives a session from inside a session hook or `lua.eval` waits for
+/// the mutex that its own caller holds, and the daemon hangs.
+pub(crate) async fn holding_plugin_loader<F: std::future::Future>(lua: F) -> F::Output {
+    HOLDS_PLUGIN_LOADER.scope((), lua).await
+}
+
+fn this_task_holds_plugin_loader() -> bool {
+    HOLDS_PLUGIN_LOADER.try_with(|()| ()).is_ok()
+}
+
+/// The isolation a session asked for, as it persisted the request.
+///
+/// `None` when it asked for none: the field is absent, `null`, or `false`.
+/// `false` is an explicit opt out, not a request.
+pub(crate) fn required_isolation(
+    session: &crucible_core::session::Session,
+) -> Option<&serde_json::Value> {
+    session
+        .isolation
+        .as_ref()
+        .filter(|value| !value.is_null() && **value != serde_json::Value::Bool(false))
+}
+
+/// The refusal for a session whose isolation request no plugin claimed.
+pub(crate) fn unclaimed_isolation_reason(requested: &serde_json::Value) -> String {
+    format!(
+        "this session requires isolation {requested}, but no plugin claimed isolation for \
+         it: the isolating plugin is not loaded, or it declined the session. The session \
+         would run on the host, so it is refused. Load and configure the isolating plugin, \
+         then send or resume again"
+    )
 }
 
 /// Whether a claim can actually be enforced for an agent of this type.

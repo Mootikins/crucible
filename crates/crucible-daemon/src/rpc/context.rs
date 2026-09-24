@@ -246,6 +246,15 @@ impl RpcContext {
         let llm_config = agents.llm_handle();
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
         session_lifecycle.bind_agent_manager(&agents);
+        // Same instance for every path: delegated children and sessions that
+        // revive on send fire plugin start hooks and get their own isolation
+        // claim, and the once-only teardown claim is shared, so a child ended
+        // by the delegation watcher and a parent ended by `session.end` cannot
+        // double-fire a plugin teardown. Bound here, not in the server, so no
+        // context exists whose agent manager revives sessions without it.
+        agents
+            .delegation_service()
+            .bind_session_lifecycle(session_lifecycle.clone());
         Self {
             kiln,
             sessions,

@@ -147,6 +147,12 @@ impl DelegationService {
         self.session_lifecycle.get().is_some()
     }
 
+    /// The bound session lifecycle. The agent manager revives sessions on
+    /// send through it, so a revive runs the start checks that create runs.
+    pub(crate) fn session_lifecycle(&self) -> Option<&Arc<SessionLifecycle>> {
+        self.session_lifecycle.get()
+    }
+
     fn manager(&self) -> Result<Arc<AgentManager>, JobError> {
         self.agent_manager
             .get()

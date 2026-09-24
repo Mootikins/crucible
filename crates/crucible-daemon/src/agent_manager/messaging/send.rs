@@ -614,7 +614,7 @@ impl AgentManager {
         let validated = crucible_core::session::SessionId::parse(session_id)
             .map_err(|e| AgentError::InvalidSessionId(e.to_string()))?;
 
-        if let Some(session) = self.session_manager.get_session(session_id) {
+        let revived = if let Some(session) = self.session_manager.get_session(session_id) {
             // Resident but ended: reached because `end_session` keeps the session
             // in memory (see its comment — evicting there lost in-flight events).
             // Route it through the same always-resumable path as a non-resident
@@ -623,30 +623,49 @@ impl AgentManager {
             if session.state != crucible_core::session::SessionState::Ended {
                 return Ok(session);
             }
-            let revived = self
+            self.session_manager
+                .resume_session_from_storage(&validated)
+                .await?
+        } else {
+            match self
                 .session_manager
                 .resume_session_from_storage(&validated)
-                .await?;
-            self.refuse_untrusted_on_revive(&revived)?;
-            info!(session_id = %session_id, "Reactivated an ended session on send");
-            return Ok(revived);
-        }
+                .await
+            {
+                Ok(session) => session,
+                Err(SessionError::NotFound(_)) => {
+                    return Err(AgentError::SessionNotFound(session_id.to_string()))
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
+        self.refuse_untrusted_on_revive(&revived)?;
 
-        match self
-            .session_manager
-            .resume_session_from_storage(&validated)
-            .await
-        {
-            Ok(session) => {
-                self.refuse_untrusted_on_revive(&session)?;
-                info!(session_id = %session_id, "Revived idle session from storage on send");
-                Ok(session)
+        // A revived session owes the start checks a created one passed. The
+        // isolation registry is memory: after a restart, or after an ended
+        // session released its claim, only the start hooks claim it again.
+        // Without them an ACP agent would start on the host, not in its sandbox.
+        match self.delegation_service.session_lifecycle() {
+            Some(lifecycle) => lifecycle
+                .enforce_session_start(session_id)
+                .await
+                .map_err(|e| AgentError::SessionRefused(e.to_string()))?,
+            // No lifecycle means no plugin runtime, so no plugin can claim
+            // isolation. A session that asked for it cannot be live.
+            None => {
+                if let Some(requested) = crate::session_lifecycle::required_isolation(&revived) {
+                    return Err(AgentError::SessionRefused(
+                        crate::session_lifecycle::unclaimed_isolation_reason(requested),
+                    ));
+                }
             }
-            Err(SessionError::NotFound(_)) => {
-                Err(AgentError::SessionNotFound(session_id.to_string()))
-            }
-            Err(e) => Err(e.into()),
         }
+        info!(session_id = %session_id, "Revived a session on send");
+
+        // Start hooks can change the session, so answer with what they left.
+        self.session_manager
+            .get_session(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
     }
 
     /// The session's cached agent handle, building one if there is none.
