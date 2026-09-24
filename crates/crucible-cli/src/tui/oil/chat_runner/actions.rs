@@ -2,6 +2,7 @@ use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::commands::DropKind;
+use crate::tui::oil::commands::PLUGIN_APPROVAL;
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
 use std::io;
@@ -514,6 +515,25 @@ impl OilChatRunner {
                                     "Set plugin turn limit failed: {error}"
                                 )),
                             );
+                        }
+                    }
+                    ChatAppMsg::PluginApproval { plugin, set } => {
+                        let set = match set {
+                            Some(approval) => {
+                                params.agent.set_plugin_approval(plugin, *approval).await
+                            }
+                            None => Ok(()),
+                        };
+                        match set {
+                            Ok(()) => params.app.add_system_message(format!(
+                                "  {PLUGIN_APPROVAL}{plugin}={}",
+                                params.agent.get_plugin_approval(plugin).as_str()
+                            )),
+                            Err(error) => params.app.add_notification(
+                                crucible_core::types::Notification::warning(format!(
+                                    "Set plugin approval failed: {error}"
+                                )),
+                            ),
                         }
                     }
                     ChatAppMsg::CloseInteraction {

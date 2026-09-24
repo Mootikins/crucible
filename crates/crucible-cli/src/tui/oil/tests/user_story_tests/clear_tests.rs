@@ -70,3 +70,13 @@ fn a_resumed_plugin_turn_keeps_its_label() {
     assert!(screen.contains("↻ goal"), "{screen}");
     assert!(screen.contains("keep going"), "{screen}");
 }
+
+/// The plugin approval control refuses a value outside the three, on screen.
+#[test]
+fn an_unknown_plugin_approval_warns() {
+    let mut story = StoryRuntime::new(80, 24);
+    story.text(":set plugin_approval.goal=maybe");
+    let _ = story.enter();
+    let screen = story.screen();
+    assert!(screen.contains("expected inherit, ask or stop"), "{screen}");
+}

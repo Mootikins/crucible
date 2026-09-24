@@ -12,6 +12,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::events::EventRing;
+use crucible_core::session::PluginApproval;
 use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult, SessionKnobs};
 use crucible_oil::terminal::Terminal;
 use std::sync::Arc;
@@ -29,6 +30,8 @@ use crate::tui::oil::event::Event;
 #[derive(Default)]
 pub(super) struct KnobRecordingAgent {
     pub(super) calls: Vec<&'static str>,
+    /// What the daemon holds for each plugin, as a resumed handle reads it.
+    pub(super) approvals: std::collections::BTreeMap<String, PluginApproval>,
 }
 
 crucible_core::impl_noop_agent!(KnobRecordingAgent);
@@ -57,13 +60,15 @@ impl AgentHandle for KnobRecordingAgent {
 impl SessionKnobs for KnobRecordingAgent {
     async fn set_plugin_approval(
         &mut self,
-        _plugin: &str,
-        _approval: crucible_core::session::PluginApproval,
+        plugin: &str,
+        approval: PluginApproval,
     ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_plugin_approval".into()))
+        self.calls.push("set_plugin_approval");
+        self.approvals.insert(plugin.into(), approval);
+        Ok(())
     }
-    fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
-        crucible_core::session::PluginApproval::Inherit
+    fn get_plugin_approval(&self, plugin: &str) -> PluginApproval {
+        self.approvals.get(plugin).copied().unwrap_or_default()
     }
     async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
         self.calls.push("set_plugin_turn_limit");
@@ -144,6 +149,7 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 #[test_case("contextstrategy=summarize", "set_context_strategy" ; "context strategy")]
 #[test_case("precognition=off", "set_precognition" ; "precognition")]
 #[test_case("plugin_turn_limit=7", "set_plugin_turn_limit" ; "plugin turn limit")]
+#[test_case("plugin_approval.goal=ask", "set_plugin_approval" ; "plugin approval")]
 #[tokio::test]
 async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {
     let mut app = OilChatApp::default();
@@ -158,6 +164,42 @@ async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &st
         vec![expected_rpc],
         ":set {body} must invoke exactly the {expected_rpc} RPC once"
     );
+}
+
+/// `:set plugin_approval.<plugin>` writes through the handle and reads the
+/// value back from it, so the answer is what the daemon holds: after a
+/// resume, after a change by another client, and after this set.
+#[tokio::test]
+async fn plugin_approval_is_set_and_read_through_the_handle() {
+    let mut app = OilChatApp::default();
+    let mut agent = KnobRecordingAgent::default();
+    agent.approvals.insert("goal".into(), PluginApproval::Stop);
+    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+
+    let query = type_and_submit(&mut app, ":set plugin_approval.goal?");
+    runner
+        .process_action_for_test(query, &mut app, &mut agent, &bridge)
+        .await
+        .unwrap();
+    let set = type_and_submit(&mut app, ":set plugin_approval.goal=ask");
+    runner
+        .process_action_for_test(set, &mut app, &mut agent, &bridge)
+        .await
+        .unwrap();
+
+    assert_eq!(agent.approvals["goal"], PluginApproval::Ask);
+    let screen = crate::tui::oil::tests::helpers::vt_render(&mut app);
+    assert!(screen.contains("plugin_approval.goal=stop"), "{screen}");
+    assert!(screen.contains("plugin_approval.goal=ask"), "{screen}");
+}
+
+/// A value outside the three is refused before any call.
+#[test]
+fn an_unknown_plugin_approval_is_refused() {
+    let mut app = OilChatApp::default();
+    let action = type_and_submit(&mut app, ":set plugin_approval.goal=maybe");
+    assert!(matches!(action, Action::Continue), "{action:?}");
 }
 
 /// A handle that refuses every mode change, reporting the one it is really in.
@@ -265,12 +307,12 @@ impl SessionKnobs for ModeListingAgent {
     async fn set_plugin_approval(
         &mut self,
         _plugin: &str,
-        _approval: crucible_core::session::PluginApproval,
+        _approval: PluginApproval,
     ) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_plugin_approval".into()))
     }
-    fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
-        crucible_core::session::PluginApproval::Inherit
+    fn get_plugin_approval(&self, _plugin: &str) -> PluginApproval {
+        PluginApproval::Inherit
     }
     async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
         Err(ChatError::NotSupported("set_plugin_turn_limit".into()))

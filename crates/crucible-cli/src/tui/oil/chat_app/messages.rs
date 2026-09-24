@@ -179,6 +179,12 @@ pub enum ChatAppMsg {
     SetPrecognition(bool),
     /// **Command** (TUI → daemon): Limit consecutive plugin turns.
     SetPluginTurnLimit(u32),
+    /// **Command** (TUI → daemon): Set the approval of one plugin's turns
+    /// when `set` has a value, then show the value that the handle reads.
+    PluginApproval {
+        plugin: String,
+        set: Option<crucible_core::session::PluginApproval>,
+    },
     /// **Command** (TUI → daemon): Set precognition search results count.
     /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
     /// `None` clears the override; `Some(0.0)` disables auto-compaction.
@@ -431,6 +437,7 @@ impl ChatAppMsg {
             | Self::SetContextStrategy(_)
             | Self::SetPrecognition(_)
             | Self::SetPluginTurnLimit(_)
+            | Self::PluginApproval { .. }
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 
             Self::SubagentSpawned { .. }

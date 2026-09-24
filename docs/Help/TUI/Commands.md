@@ -160,6 +160,13 @@ These sync to the daemon and are session-scoped:
 | `perm.autoconfirm_session` | bool | Auto-approve all permissions for the session |
 | `perm.full_commands` | bool | Show the full command/args (wrapped) in permission prompts; off = compact one-line view. Default: on |
 
+### Plugin Turns
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `plugin_turn_limit` | number | Consecutive plugin turns before each plugin changes to `ask` |
+| `plugin_approval.<plugin>` | enum | `inherit`, `ask` or `stop` for the turns of `<plugin>` in this session. `:set plugin_approval.<plugin>?` shows the value that the daemon holds. The web control sets the same value. |
+
 ### App-Config Keys
 
 A key the classifier doesn't recognize is not an error: it is app config, and

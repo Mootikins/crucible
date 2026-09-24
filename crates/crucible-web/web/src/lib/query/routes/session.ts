@@ -122,6 +122,9 @@ function routeSessionSubEvent(
     case 'plugin_turn_limit_changed':
       void client.invalidateQueries({ queryKey: keys.sessionPluginTurnLimit(sessionId) });
       break;
+    case 'plugin_approval_changed':
+      void client.invalidateQueries({ queryKey: keys.sessionPluginApprovals(sessionId) });
+      break;
     case 'user_message':
       appendUserMessage(client, sessionId, event.data as SessionEventData);
       break;

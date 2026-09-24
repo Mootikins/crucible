@@ -107,6 +107,8 @@ pub enum SetRpcAction {
     SetContextStrategy(String),
     SetPrecognition(bool),
     SetPluginTurnLimit(u32),
+    /// The approval of one plugin's turns in this session.
+    SetPluginApproval(String, crucible_core::session::PluginApproval),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -261,9 +263,21 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 ),
             }),
         },
+        k if k.starts_with(PLUGIN_APPROVAL) => {
+            let plugin = k[PLUGIN_APPROVAL.len()..].to_string();
+            serde_json::from_value(serde_json::Value::String(value))
+                .map(|a| SetEffect::DaemonRpc(SetRpcAction::SetPluginApproval(plugin, a)))
+                .map_err(|_| SetError::InvalidValue {
+                    key,
+                    message: "expected inherit, ask or stop".into(),
+                })
+        }
         _ => Err(SetError::UnknownKey(key)),
     }
 }
+
+/// The key prefix of a plugin's approval: `plugin_approval.<plugin>`.
+pub const PLUGIN_APPROVAL: &str = "plugin_approval.";
 
 impl SetRpcAction {
     /// Map to the TUI message that performs the daemon sync.
@@ -276,6 +290,10 @@ impl SetRpcAction {
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
             SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
             SetRpcAction::SetPluginTurnLimit(limit) => Some(ChatAppMsg::SetPluginTurnLimit(limit)),
+            SetRpcAction::SetPluginApproval(plugin, approval) => Some(ChatAppMsg::PluginApproval {
+                plugin,
+                set: Some(approval),
+            }),
         }
     }
 }
@@ -361,6 +379,7 @@ fn is_tui_local_key(key: &str) -> bool {
 
 fn is_daemon_rpc_key(key: &str) -> bool {
     matches!(key, "model" | "contextstrategy" | "context_strategy")
+        || key.starts_with(PLUGIN_APPROVAL)
 }
 
 /// Declared `:set` targets whose value is not a boolean and whose home is

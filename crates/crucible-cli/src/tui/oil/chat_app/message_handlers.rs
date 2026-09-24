@@ -225,7 +225,7 @@ impl OilChatApp {
             ChatAppMsg::SetContextBudget(_)
             | ChatAppMsg::SetContextStrategy(_)
             | ChatAppMsg::SetPrecognition(_) => {}
-            ChatAppMsg::SetPluginTurnLimit(_) => {}
+            ChatAppMsg::SetPluginTurnLimit(_) | ChatAppMsg::PluginApproval { .. } => {}
             _ => {
                 tracing::warn!("unhandled config msg: {:?}", msg.category());
             }

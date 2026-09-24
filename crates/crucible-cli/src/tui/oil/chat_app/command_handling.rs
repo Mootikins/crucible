@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::commands::{
     classify_key_without_value, classify_set_value, key_home, CliValue, DropKind, KeyHome,
-    SetCommand, SetEffect, SetError, SetRpcAction,
+    SetCommand, SetEffect, SetError, SetRpcAction, PLUGIN_APPROVAL,
 };
 use crate::tui::oil::config::{ConfigValue, ModSource};
 
@@ -432,6 +432,10 @@ impl OilChatApp {
     /// config: a local answer was "not set" for every key `init.lua` wrote,
     /// while the daemon held the value.
     fn handle_set_query(&mut self, key: &str, history: bool) -> Action<ChatAppMsg> {
+        if let Some(plugin) = key.strip_prefix(PLUGIN_APPROVAL) {
+            let plugin = plugin.to_string();
+            return Action::Send(ChatAppMsg::PluginApproval { plugin, set: None });
+        }
         match key_home(key) {
             KeyHome::Client => {
                 let output = if history {
@@ -607,6 +611,8 @@ impl OilChatApp {
                     .set_str(key, &limit.to_string(), ModSource::Command);
                 self.send_setting_ack("plugin_turn_limit", limit);
             }
+            // No local copy: the runner shows the value that the daemon holds.
+            SetRpcAction::SetPluginApproval(..) => {}
         }
         match action.into_chat_msg() {
             Some(msg) => Action::Send(msg),

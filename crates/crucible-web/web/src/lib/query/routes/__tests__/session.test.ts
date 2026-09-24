@@ -153,6 +153,15 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([]);
   });
 
+  // The loop limit and the TUI change the approval too, so the web
+  // control reads it again.
+  it('invalidates the plugin approvals when the daemon changes one', () => {
+    openStream().emit('session_event', {
+      type: 'session_event', event: 'plugin_approval_changed', data: { plugin: 'goal', approval: 'ask' },
+    });
+    expect(invalidated).toEqual([keys.sessionPluginApprovals(SESSION)]);
+  });
+
   it('keeps the origin of an echoed plugin turn, so a rebind shows the plugin', () => {
     env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
     const data = { message_id: 'msg-1', content: 'go on', origin: { kind: 'plugin', name: 'goal' } };

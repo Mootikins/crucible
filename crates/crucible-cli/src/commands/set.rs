@@ -143,6 +143,12 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set plugin turn limit: {}", e))?;
             }
+            SetRpcAction::SetPluginApproval(plugin, approval) => {
+                client
+                    .session_set_plugin_approval(&session_id, plugin, *approval)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to set plugin approval: {}", e))?;
+            }
         }
         println!("Set {} on session {}", setting_str, session_id);
     }

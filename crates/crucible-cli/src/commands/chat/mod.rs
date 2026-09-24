@@ -890,6 +890,10 @@ async fn apply_rpc_action(
             .set_plugin_turn_limit(limit)
             .await
             .map_err(|e| e.to_string()),
+        SetRpcAction::SetPluginApproval(plugin, approval) => handle
+            .set_plugin_approval(&plugin, approval)
+            .await
+            .map_err(|e| e.to_string()),
     }
 }
 
