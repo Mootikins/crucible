@@ -308,7 +308,9 @@ cancels the turn before the end hooks run. So every path
 that makes a stored session live again fires the start hooks again, and the
 plugin claims the persisted value again. These paths are a message to an ended
 or stored session, `session.resume`, `session.resume_from_storage` and
-`cru.session.resume`.
+`cru.session.resume`. A read of the history does not make a session live:
+`session.history`, which the web history page uses, loads the stored events
+and runs no start hook, so it pulls no container.
 
 A plugin that creates a session with `cru.session.create` gets the same checks
 as `session.create`. The start hooks fire, and the new session must get its

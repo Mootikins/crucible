@@ -193,6 +193,7 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             not_found(),
         ),
         ("session.get_precognition", json!({}), not_found()),
+        ("session.history", json!({}), not_found()),
         // ── 2. refuses, naming the OPERATION and never the session ──────────
         // The session-manager state machine answers before anything reports a
         // missing session, so a client cannot tell "no such session" from

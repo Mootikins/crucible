@@ -374,6 +374,14 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        /// One page of a session's stored events, read without making the
+        /// session live.
+        Safe SessionHistory =>
+        session_history(session_id: &str, limit: Option<usize>, offset: Option<usize>)
+        -> serde_json::Value = session_history(&session_id, limit, offset);
+    }
+
+    forward_rpc! {
         Once SessionResumeFromStorage =>
         session_resume_from_storage(session_id: &str, limit: Option<usize>, offset: Option<usize>)
         -> serde_json::Value = session_resume_from_storage(&session_id, limit, offset);

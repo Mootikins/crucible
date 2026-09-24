@@ -826,3 +826,81 @@ return { name = "sandbox", version = "0.1.0", description = "creates a session w
         "a refused create must not leave a live session"
     );
 }
+
+/// A history read loads the transcript of a session without making it live.
+///
+/// The web history page used `session.resume_from_storage`, which revived the
+/// session and ran the start checks on every read: an ended session came back
+/// `Active`, and the isolating plugin claimed it and could pull a container.
+/// `session.history` reads storage and changes nothing.
+#[tokio::test]
+async fn a_history_read_does_not_revive_an_ended_session() {
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin(data_home.path());
+    let daemon = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+    let id = daemon.isolated_session().await;
+    let ended = daemon.rpc("session.end", json!({ "session_id": id })).await;
+    assert!(ended.error.is_none(), "end: {:?}", ended.error);
+    assert!(
+        !daemon.claimed(&id).await,
+        "precondition: the end released the claim"
+    );
+
+    let resp = daemon
+        .rpc("session.history", json!({ "session_id": id, "limit": 10 }))
+        .await;
+
+    let result = resp
+        .result
+        .unwrap_or_else(|| panic!("session.history answers: {:?}", resp.error));
+    assert_eq!(result["session_id"], id.as_str());
+    assert_eq!(
+        result["state"], "ended",
+        "the reply reports the stored state"
+    );
+    assert!(result["history"].is_array(), "{result}");
+    assert!(result["total_events"].is_u64(), "{result}");
+    assert_eq!(
+        daemon.state(&id),
+        Some(SessionState::Ended),
+        "a history read made the ended session live"
+    );
+    assert!(
+        !daemon.claimed(&id).await,
+        "a history read ran the start hooks, which claim isolation and can pull a container"
+    );
+}
+
+/// A history read of a session that only storage holds leaves it out of
+/// memory.
+#[tokio::test]
+async fn a_history_read_of_a_stored_session_leaves_it_stored() {
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin(data_home.path());
+
+    let first = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+    let id = first.isolated_session().await;
+    drop(first);
+
+    let second = Daemon::boot(data_home.path(), kiln.path(), Some(&plugins), None).await;
+    let resp = second
+        .rpc("session.history", json!({ "session_id": id }))
+        .await;
+    assert!(resp.error.is_none(), "history: {:?}", resp.error);
+    assert_eq!(
+        second.state(&id),
+        None,
+        "the read loaded the session into memory"
+    );
+    assert!(!second.claimed(&id).await, "the read ran the start hooks");
+
+    let missing = second
+        .rpc(
+            "session.history",
+            json!({ "session_id": "chat-2020-01-01T0000-absent" }),
+        )
+        .await;
+    assert!(missing.error.is_some(), "an unknown session is an error");
+}

@@ -21,7 +21,7 @@ pub(crate) mod scope;
 pub(crate) use create::handle_session_create;
 pub(crate) use lifecycle::{
     handle_session_archive, handle_session_compact, handle_session_delete, handle_session_end,
-    handle_session_pause, handle_session_replay, handle_session_resume,
+    handle_session_history, handle_session_pause, handle_session_replay, handle_session_resume,
     handle_session_resume_from_storage, handle_session_unarchive,
 };
 pub(crate) use list::{handle_session_get, handle_session_list, handle_session_search};

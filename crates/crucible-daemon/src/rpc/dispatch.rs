@@ -111,6 +111,7 @@ rpc_methods! {
     SessionPause = "session.pause",
     SessionResume = "session.resume",
     SessionResumeFromStorage = "session.resume_from_storage",
+    SessionHistory = "session.history",
     SessionEnd = "session.end",
     SessionArchive = "session.archive",
     SessionUnarchive = "session.unarchive",
@@ -538,6 +539,10 @@ impl RpcDispatcher {
             RpcMethod::SessionResumeFromStorage => {
                 to_response(id, self.handle_session_resume_from_storage(&req).await)
             }
+            RpcMethod::SessionHistory => forward!(
+                id,
+                crate::server::session::handle_session_history(req.clone(), &self.ctx.sessions)
+            ),
             RpcMethod::SessionEnd => to_response(id, self.handle_session_end(&req).await),
             RpcMethod::SessionArchive => forward!(
                 id,

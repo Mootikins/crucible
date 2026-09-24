@@ -906,7 +906,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // Mirrors the daemon's real response shape: a `history` array of
         // SessionEventMessage entries, NOT a `messages` array. Session id
         // "empty-session-001" yields an empty history for fallback tests.
-        "session.resume_from_storage" => {
+        "session.resume_from_storage" | "session.history" => {
             let session_id = msg
                 .get("params")
                 .and_then(|p| p.get("session_id"))

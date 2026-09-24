@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::rpc_client::{SessionIdRequest, SessionResumeFromStorageRequest};
+use crate::rpc_client::{SessionHistoryRequest, SessionIdRequest, SessionResumeFromStorageRequest};
 use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::session_lifecycle::{SessionLifecycle, StopCause, StopError, Stopped};
 
@@ -81,15 +81,50 @@ pub(crate) async fn handle_session_resume_from_storage(
         Err(e) => return invalid_state_error(req.id, "resume_from_storage", e),
     };
 
-    // Load event history with pagination
-    let history = match sm.load_session_events(session_id, limit, offset).await {
+    history_reply(req.id, &session, sm, limit, offset).await
+}
+
+/// Read a session's transcript without making the session live.
+///
+/// `session.resume_from_storage` answers the same shape, but it sets the
+/// session to `Active` and the dispatcher runs the start checks after it,
+/// which can pull a container. A page that only shows the transcript must not
+/// do that, so this reads memory or storage and changes nothing: the session
+/// keeps its state, it does not enter memory, and no hook runs.
+pub(crate) async fn handle_session_history(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let params = match typed_params::<SessionHistoryRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
+    let session = match sm.read_session(session_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return session_not_found(req.id, session_id),
+        Err(e) => return internal_error(req.id, e),
+    };
+    history_reply(req.id, &session, sm, params.limit, params.offset).await
+}
+
+/// The session and one page of its stored events.
+async fn history_reply(
+    req_id: Option<RequestId>,
+    session: &crucible_core::session::Session,
+    sm: &Arc<SessionManager>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Response {
+    let history = match sm.load_session_events(&session.id, limit, offset).await {
         Ok(events) => events,
         Err(e) => {
-            // Session resumed but history load failed - return session without history
-            // Log internally but don't expose error details to client
+            // The session is there but its history did not load: answer the
+            // session with no history. Log internally but don't expose error
+            // details to the client.
             warn!("Failed to load session history: {}", e);
             return Response::success(
-                req.id,
+                req_id,
                 serde_json::json!({
                     "session_id": session.id,
                     "type": session.session_type.as_prefix(),
@@ -103,10 +138,10 @@ pub(crate) async fn handle_session_resume_from_storage(
     };
 
     // Get total event count for pagination
-    let total = sm.count_session_events(session_id).await.unwrap_or(0);
+    let total = sm.count_session_events(&session.id).await.unwrap_or(0);
 
     Response::success(
-        req.id,
+        req_id,
         serde_json::json!({
             "session_id": session.id,
             "type": session.session_type.as_prefix(),

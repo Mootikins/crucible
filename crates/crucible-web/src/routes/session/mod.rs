@@ -697,13 +697,15 @@ async fn get_session_history(
     Path(id): Path<String>,
     axum::extract::Query(query): axum::extract::Query<HistoryQuery>,
 ) -> Result<Json<SessionHistoryResponse>, WebError> {
+    // A read, so the session stays as it is. `session.resume_from_storage`
+    // would make an ended session live and run its start checks.
     let result = state
         .daemon
-        .session_resume_from_storage(&id, query.limit, query.offset)
+        .session_history(&id, query.limit, query.offset)
         .await
         .daemon_err()?;
 
-    Ok(Json(daemon_shape(result, "session.resume_from_storage")?))
+    Ok(Json(daemon_shape(result, "session.history")?))
 }
 
 #[utoipa::path(

@@ -265,6 +265,17 @@ pub struct SessionResumeFromStorageRequest {
     pub offset: Option<usize>,
 }
 
+/// Request for `session.history`: one page of a session's stored events,
+/// read without making the session live.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionHistoryRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+}
+
 /// Request for `session.events_after`.
 ///
 /// `after` is the caller's seq cursor: the last event it APPLIED. The reply
@@ -589,6 +600,26 @@ impl DaemonClient {
         self.typed_call(
             "session.resume_from_storage",
             SessionResumeFromStorageRequest {
+                session_id: session_id.to_string(),
+                limit,
+                offset,
+            },
+        )
+        .await
+    }
+
+    /// One page of a session's stored events. Unlike
+    /// [`Self::session_resume_from_storage`], the session stays as it is: an
+    /// ended session stays ended, and no start hook runs.
+    pub async fn session_history(
+        &self,
+        session_id: &str,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "session.history",
+            SessionHistoryRequest {
                 session_id: session_id.to_string(),
                 limit,
                 offset,

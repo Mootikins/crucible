@@ -265,6 +265,12 @@ session, and it stops the children of an archive or a delete. A pause keeps
 the attachment and the agent state. Lua that holds the plugin runtime calls
 `stop_from_lua`, which runs the same stop on another task.
 
+`session.history` reads a page of stored events through
+`SessionManager::read_session`. It does not load the session into memory, it
+does not change the state, and it runs no start hook. The web history route
+uses it; `session.resume_from_storage` stays the path that makes a stored
+session live.
+
 **Confirmed problems.**
 
 - `AgentHandle` has 41 defaulted methods of 44. `MockSubagentHandle` implements

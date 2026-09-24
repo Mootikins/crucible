@@ -615,3 +615,37 @@ async fn list_modes_returns_the_daemon_s_modes_and_current_mode() {
     assert_eq!(json["modes"][0]["writes"], "apply");
     assert_eq!(json["modes"][2]["writes"], "propose");
 }
+
+/// Reading a session's history must not bring the session back to life.
+///
+/// The history route called `session.resume_from_storage`, which sets an
+/// ended session to `Active`, saves it, and runs the start checks, which can
+/// pull a container. A page that only showed the transcript revived the
+/// session every time it loaded.
+#[tokio::test]
+async fn reading_the_history_does_not_resume_the_session() {
+    use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon};
+    let (mock, client) = start_mock_daemon().await;
+    let response = build_test_app(build_mock_state(client))
+        .oneshot(
+            axum::http::Request::builder()
+                .method("GET")
+                .uri("/api/session/test-session-001/history?limit=5&offset=2")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let methods = mock.received_methods();
+    assert!(
+        !methods.iter().any(|m| m.starts_with("session.resume")),
+        "a history read must not resume the session: {methods:?}"
+    );
+    let params = mock
+        .received_params("session.history")
+        .unwrap_or_else(|| panic!("the history read must use session.history: {methods:?}"));
+    assert_eq!(params["session_id"], "test-session-001");
+    assert_eq!(params["limit"], 5);
+    assert_eq!(params["offset"], 2);
+}
