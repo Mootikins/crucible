@@ -289,6 +289,23 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.tools()[0]).toMatchObject(expected);
   });
 
+  // The render of a finished call replaces the render of the card, for a
+  // success and for a failure.
+  it.each([
+    { type: 'tool_result', id: 'tc-1', result: 'a\nb', render: { line: 'a.rs', summary: '2 lines' } },
+    { type: 'tool_result_error', id: 'tc-1', error: 'boom', render: { line: 'a.rs', summary: '2 lines' } },
+  ])('$type: the render of the result replaces the render of the card', (event) => {
+    const h = createHarness();
+    h.reducer({
+      type: 'tool_call',
+      id: 'tc-1',
+      title: 'read_file',
+      display: { kind: 'file_read', tool: 'read_file', render: { line: 'a.rs' } },
+    } as ChatEvent);
+    h.reducer(event as ChatEvent);
+    expect(h.tools()[0].display?.render).toEqual({ line: 'a.rs', summary: '2 lines' });
+  });
+
   // subagent_* / delegation_*: every variant mutates h.state.subagentEvents
   // via the same upsert path. Each row lists the events to dispatch and the
   // expected final array (strict equality preserves the array-length check).

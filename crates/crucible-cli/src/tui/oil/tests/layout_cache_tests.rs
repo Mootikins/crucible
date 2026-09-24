@@ -109,7 +109,7 @@ fn tool_call(name: &str, call_id: &str, diffs: Vec<FileDiff>) -> ChatAppMsg {
         call_id: Some(call_id.to_string()),
         description: None,
         source: None,
-        line: None,
+        render: None,
         diffs,
         auto_approved: None,
     }
@@ -179,7 +179,7 @@ fn a_tool_card_that_runs_gets_output_and_finishes_matches_a_fresh_layout() {
         call_id: "edit-1".into(),
         args: None,
         diffs: Some(vec![edit_diff()]),
-        line: None,
+        render: None,
         auto_approved: None,
     });
     let after = twin.frame(&mut app);

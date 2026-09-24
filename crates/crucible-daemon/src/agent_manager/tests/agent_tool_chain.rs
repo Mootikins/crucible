@@ -76,18 +76,18 @@ async fn an_agent_tool_call_leaves_the_same_tree_as_a_crucible_tool_call() {
     assert_eq!(agent_removed, internal_removed);
 }
 
-/// The display hooks run for an ACP call. They change what the user sees,
-/// and Crucible draws the card of every call.
+/// The render runs for an ACP call and for its result. It changes what the
+/// user sees, and Crucible draws the card of every call.
 #[tokio::test]
-async fn display_hooks_run_for_an_agent_tool_call() {
+async fn the_render_runs_for_an_agent_tool_call_and_its_result() {
     let mut h = ReactorTestHarness::new().await;
     let _vm = h.load_daemon_lua(
         r#"
-        cru.on("tool:display_start", function(ctx, event)
-            return { label = "Custom " .. event.name }
-        end)
-        cru.on("tool:display_complete", function(ctx, event)
-            return { summary = "Summary " .. event.result }
+        cru.on("tool:render", { pattern = "tool" }, function(ctx, call)
+            return {
+                line = "Custom " .. call.tool,
+                summary = call.result and ("Summary " .. call.result),
+            }
         end)
     "#,
     );
@@ -102,9 +102,12 @@ async fn display_hooks_run_for_an_agent_tool_call() {
     h.send("read a.txt").await;
 
     let tool_call = h.wait_for("tool_call").await;
-    assert_eq!(tool_call.data["description"], "Custom Read");
+    assert_eq!(tool_call.data["display"]["render"]["line"], "Custom Read");
     let tool_result = h.wait_for("tool_result").await;
-    assert_eq!(tool_result.data["result"]["summary"], "Summary one");
+    assert_eq!(
+        tool_result.data["result"]["render"]["summary"],
+        "Summary one"
+    );
 }
 
 /// The loop guard cannot stop an ACP call before it runs, so it ends the

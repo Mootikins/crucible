@@ -2,7 +2,7 @@
 //!
 //! Split out of `tool_render.rs`, and
 //! attached with `#[path]` rather than moved into `tui/oil/tests/` because
-//! `summary_key` and `collapse_result` are private to the module under test.
+//! `collapse_result` is private to the module under test.
 
 use super::*;
 use crate::tui::oil::viewport_cache::ToolSourceDisplay;
@@ -11,14 +11,13 @@ use std::sync::Arc;
 use test_case::test_case;
 
 /// A card with the line that the daemon sends when no Lua render runs: the
-/// line of the Rust fallback over the arguments.
+/// line of the Rust fallback over the arguments, with no fields.
 fn new_tool(name: &str, args: &str) -> CachedToolCall {
     let mut tool = CachedToolCall::new("tool-1", name, args);
     let args: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
     let call = crucible_core::types::CanonicalToolCall::crucible_tool(name, &args);
-    tool.line = crucible_core::types::ToolRender::fallback(&call, &args)
-        .line
-        .map(Into::into);
+    let line = crucible_core::types::ToolRender::fallback(&call, &args).line;
+    tool.render = line.as_deref().map(|l| Arc::new(l.into()));
     tool
 }
 
@@ -61,206 +60,44 @@ fn format_tool_args_truncates_long_values() {
     assert!(result.contains("…"));
 }
 
+/// The card shows the summary of the render of the result, and no summary
+/// that the TUI takes from the tool name.
 #[test]
-fn summarize_tool_result_read_file() {
-    let result = summarize_tool_result("mcp_read", "line1\nline2\nline3");
-    assert!(result.is_some());
-    assert!(result.unwrap().contains("lines"));
+fn the_card_shows_the_summary_of_the_result_render() {
+    let long = "line1\nline2\nline3";
+    let mut tool = test_tool_with_output("read_file", r#"{"path": "a.rs"}"#, long, true);
+    let plain = render_to_plain_text(&tool.render_compact(80), 80);
+    assert!(
+        !plain.contains("lines"),
+        "no summary from the name: {plain:?}"
+    );
+
+    tool.render = Some(Arc::new(crucible_core::types::ToolRender {
+        summary: Some("3 lines".into()),
+        .."a.rs".into()
+    }));
+    let plain = render_to_plain_text(&tool.render_compact(80), 80);
+    assert!(plain.contains("a.rs → 3 lines"), "{plain:?}");
+    assert!(
+        !plain.contains("line2"),
+        "the summary replaces the output: {plain:?}"
+    );
 }
 
+/// The card draws each field of the render on its own row.
 #[test]
-fn summarize_tool_result_glob() {
-    let result = summarize_tool_result("mcp_glob", "file1.rs\nfile2.rs\nfile3.rs");
-    assert_eq!(result, Some("3 files".to_string()));
-}
-
-#[test]
-fn summarize_tool_result_grep() {
-    let result = summarize_tool_result("mcp_grep", "file.rs:10: match1\nfile.rs:20: match2");
-    assert_eq!(result, Some("2 matches".to_string()));
-}
-
-#[test]
-fn summarize_tool_result_edit_success() {
-    let result = summarize_tool_result("mcp_edit", "Edit applied successfully");
-    assert_eq!(result, Some("applied".to_string()));
-}
-
-#[test]
-fn summarize_tool_result_bash_short() {
-    let result = summarize_tool_result("mcp_bash", "OK");
-    assert_eq!(result, Some("OK".to_string()));
-}
-
-#[test]
-fn summarize_tool_result_bash_long_returns_none() {
-    let result = summarize_tool_result("mcp_bash", "line1\nline2\nline3\nline4");
-    assert!(result.is_none());
-}
-
-/// Divergence A4: a delegated card's name is the agent's prose `title`
-/// run through `humanize_tool_title`, so the summary table has to answer
-/// to the humanized spelling as well as the snake_case one. The prose
-/// forms carry no underscore at all, which is why a snake_case-only
-/// normalizer would not have been enough.
-///
-/// The namespaced spelling `mcp__crucible__read_file` is deliberately
-/// absent — see [`a_namespaced_tool_reaches_no_summary_arm`]. Nothing is
-/// lost: a delegated agent's call is humanized to `Read`/`Read File`
-/// before it ever reaches here.
-#[test_case("read_file", "3 lines"; "internal_snake_case")]
-#[test_case("mcp_read", "3 lines"; "mcp_prefixed")]
-#[test_case("Read File", "3 lines"; "acp_title_two_words")]
-#[test_case("Read", "3 lines"; "acp_title_one_word")]
-fn every_spelling_of_read_summarizes_the_same(name: &str, expected: &str) {
-    assert_eq!(
-        summarize_tool_result(name, "line1\nline2\nline3"),
-        Some(expected.to_string()),
-        "`{name}` did not reach the read arm of the summary table"
-    );
-}
-
-#[test_case("glob", "2 files"; "glob_internal")]
-#[test_case("Glob", "2 files"; "glob_acp_title")]
-fn every_spelling_of_glob_summarizes_the_same(name: &str, expected: &str) {
-    assert_eq!(
-        summarize_tool_result(name, "a.rs\nb.rs"),
-        Some(expected.to_string())
-    );
-}
-
-#[test_case("grep", "2 matches"; "grep_internal")]
-#[test_case("Grep", "2 matches"; "grep_acp_title")]
-fn every_spelling_of_grep_summarizes_the_same(name: &str, expected: &str) {
-    assert_eq!(
-        summarize_tool_result(name, "a.rs:1: x\nb.rs:2: y"),
-        Some(expected.to_string())
-    );
-}
-
-#[test_case("edit"; "edit_internal")]
-#[test_case("mcp_edit"; "edit_mcp")]
-#[test_case("Edit"; "edit_acp_title")]
-fn every_spelling_of_edit_summarizes_the_same(name: &str) {
-    assert_eq!(
-        summarize_tool_result(name, "Edit applied successfully"),
-        Some("applied".to_string())
-    );
-}
-
-/// The normalization must not *widen* the table. `edit_file` and
-/// `write_file` were outside the `Edit`/`Write` arms before A4 and stay
-/// outside them: humanizing maps them to `Edit File`/`Write File`, which
-/// no arm lists. Both tools answer with one short line that
-/// `collapse_result` returns verbatim, so nothing is lost.
-#[test_case("edit_file", "Edit applied successfully"; "edit_file_is_not_edit")]
-#[test_case("write_file", "written successfully"; "write_file_is_not_write")]
-fn compound_internal_names_stay_out_of_the_short_arms(name: &str, result: &str) {
-    assert_eq!(summarize_tool_result(name, result), None);
-}
-
-/// A `__` in the name is a foreign namespace — `mcp__<server>__<tool>`,
-/// `plugin_<name>__<tool>`. That tool's `write` is somebody else's `write`,
-/// and `collapse_result`'s `Write` arm answers *unconditionally*: it
-/// replaces the whole result with the literal word `written`. Normalizing a
-/// namespaced name into the internal table therefore destroys the output of
-/// every MCP or plugin tool whose trailing segment happens to be `write` or
-/// `edit`, on every card, for users who never touch ACP.
-#[test_case("mcp__crucible__write"; "mcp_crucible_write")]
-#[test_case("mcp__crucible__edit"; "mcp_crucible_edit")]
-#[test_case("mcp__fs__write"; "mcp_third_party_write")]
-#[test_case("plugin_foo__write"; "plugin_write")]
-#[test_case("plugin_foo__edit"; "plugin_edit")]
-fn a_namespaced_tool_keeps_its_whole_result(name: &str) {
-    let long = "first line of real output\n\
-                second line the user needs to see\n\
-                third line, well past the sixty-character short-result branch";
-    assert_eq!(
-        collapse_result(name, long, None),
-        None,
-        "`{name}` had its result replaced by a one-word summary"
-    );
-}
-
-/// Same rule on the other table. The derived summaries are not
-/// word-for-word destructive like `collapse_result`, but they still hide a
-/// foreign tool's output behind a count invented for Crucible's own tools.
-#[test_case("mcp__crucible__read_file", "alpha\nbeta\ngamma"; "namespaced_read")]
-#[test_case("mcp__fs__glob", "a.rs\nb.rs"; "namespaced_glob")]
-#[test_case("plugin_foo__write", "Report written to the log\nand here is what it says"; "namespaced_write")]
-fn a_namespaced_tool_reaches_no_summary_arm(name: &str, result: &str) {
-    assert_eq!(
-        summarize_tool_result(name, result),
-        None,
-        "`{name}` was summarized as if it were an internal tool"
-    );
-}
-
-/// Divergence A4, second pass: the titles real ACP agents actually send.
-///
-/// The first fix keyed the summary tables on `humanize_tool_title(name)` and
-/// listed `Read File | Read | Glob | Grep | Edit | Write | Bash`. Those hold
-/// only when the agent's `title` happens to look like an internal snake_case
-/// tool name — which is exactly what the mock behind
-/// `acp_parity_read_delegated.jsonl` was written to emit, so the fixture could
-/// not falsify the fix.
-///
-/// The real recording disagrees. Claude Code titles its glob `Find` and a
-/// resolved read `Read tools/hello.rn`. Neither matched, so a delegated glob
-/// painted the whole file list and a delegated read painted the file body
-/// where the internal tool collapsed to one line.
-///
-/// Each case is checked to be *in* the recording before it is exercised, so
-/// re-recording the fixture with different titles fails here instead of
-/// quietly leaving the arms uncovered. `Terminal` — the recording's title for
-/// bash — is absent on purpose: see the `Bash` arm's comment, it would be an
-/// arm that changes nothing.
-#[test_case("Find", "a.rs\nb.rs", "2 files"; "claude_code_names_its_glob_Find")]
-#[test_case("Read File", "l1\nl2\nl3", "3 lines"; "read_before_the_path_resolves")]
-#[test_case("Read tools/hello.rn", "l1\nl2\nl3", "3 lines"; "read_once_the_path_resolves")]
-fn recorded_claude_code_titles_reach_their_summary_arm(title: &str, result: &str, expected: &str) {
-    let title = crate::tui::oil::tests::helpers::recorded_claude_code_title(title);
-    assert_eq!(
-        summarize_tool_result(title, result),
-        Some(expected.to_string()),
-        "`{title}` — a title a real Claude Code session sent — reached no arm \
-         of the summary table, so a delegated card paints its whole result"
-    );
-}
-
-/// The leading-run rule must not widen the table over names that were already
-/// outside it. `title_case` uppercases *every* word it makes from a snake_case
-/// or kebab-case name, so an internal tool never has a lowercase trailing word
-/// and never loses one — `read_notes` stays `Read Notes` and stays out of the
-/// `Read` arm, exactly as `read_file`-vs-`Read File` membership was preserved
-/// the first time.
-#[test_case("read_notes", "alpha\nbeta\ngamma"; "internal_compound_read")]
-#[test_case("glob_index", "a.rs\nb.rs"; "internal_compound_glob")]
-#[test_case("Get Kiln Info", "alpha\nbeta"; "recorded_title_that_is_not_a_verb_plus_arg")]
-#[test_case("Semantic Search", "alpha\nbeta"; "recorded_mcp_title")]
-fn the_leading_run_rule_does_not_widen_the_summary_table(name: &str, result: &str) {
-    assert_eq!(
-        summarize_tool_result(name, result),
-        None,
-        "`{name}` was pulled into a summary arm it did not belong to"
-    );
-}
-
-/// The other half of the table: the long-result fallback in
-/// `collapse_result` keys on the same identity.
-#[test_case("write", Some("written"); "write_internal")]
-#[test_case("Write", Some("written"); "write_acp_title")]
-#[test_case("mcp_write", Some("written"); "write_mcp")]
-#[test_case("edit", Some("applied"); "edit_internal")]
-#[test_case("Edit", Some("applied"); "edit_acp_title")]
-#[test_case("read_file", None; "read_has_no_long_fallback")]
-fn collapse_result_keys_on_the_humanized_name(name: &str, expected: Option<&str>) {
-    let long = "a line that is definitely longer than sixty characters so the \
-                short-result branch cannot claim it first";
-    assert_eq!(
-        collapse_result(name, long, None),
-        expected.map(str::to_string)
-    );
+fn the_card_draws_the_fields_of_the_render() {
+    let mut tool = test_tool("spawn_agent", "{}", false);
+    tool.render = Some(Arc::new(crucible_core::types::ToolRender {
+        fields: vec![crucible_core::types::RenderField {
+            label: "agent".into(),
+            value: serde_json::json!("claude"),
+        }],
+        .."fix the bug".into()
+    }));
+    let plain = render_to_plain_text(&tool.render_compact(80), 80);
+    assert!(plain.contains("fix the bug"), "{plain:?}");
+    assert!(plain.contains("    agent: claude"), "{plain:?}");
 }
 
 #[test]
@@ -340,17 +177,6 @@ fn tool_result_short_no_cap() {
         plain.contains("line1") && plain.contains("line2") && plain.contains("line3"),
         "All lines should be visible: {:?}",
         plain
-    );
-}
-
-#[test]
-fn summarize_read_tool_preserves_closing_bracket() {
-    let result = "[Directory Context: /home/user/project]";
-    let summary = summarize_tool_result("mcp_read", result);
-    assert!(
-        summary.as_ref().is_some_and(|s| s.ends_with(']')),
-        "Should preserve closing bracket: {:?}",
-        summary
     );
 }
 
@@ -617,7 +443,7 @@ fn format_output_tail_no_leading_blank() {
 
 #[test]
 fn format_tool_result_no_leading_blank() {
-    let node = format_tool_result("mcp_bash", "line1\nline2\nline3", 80);
+    let node = format_tool_result("line1\nline2\nline3", 80);
     let plain = render_to_plain_text(&node, 80);
     let lines: Vec<&str> = plain.lines().collect();
     assert!(
@@ -738,7 +564,7 @@ fn the_card_shows_the_render_line_on_one_row() {
         "the card rebuilt the call: {plain}"
     );
 
-    tool.line = Some("cd /tmp\ngrep foo".into());
+    tool.render = Some(Arc::new("cd /tmp\ngrep foo".into()));
     let plain = render_to_plain_text(&tool.render_compact(80), 80);
     assert!(plain.contains("cd /tmp grep foo"), "{plain}");
 }
@@ -937,40 +763,5 @@ fn source_badge_visibility(source: ToolSourceDisplay, badge: &str, should_show: 
         plain.contains(badge),
         should_show,
         "badge {badge} visibility mismatch: {plain:?}"
-    );
-}
-
-#[test]
-fn summarize_read_file_counts_lines_correctly() {
-    // read_file results should show actual line count, not "1 lines"
-    let content = "line1\nline2\nline3\nline4\nline5";
-    let result = summarize_tool_result("read_file", content);
-    assert_eq!(result, Some("5 lines".to_string()));
-}
-
-#[test]
-fn summarize_read_file_does_not_extract_spill_reference_as_summary() {
-    // If a spill reference somehow gets to summarize, it should not be shown as-is
-    let spill_ref = "[200 lines, 15KB — full output in $CRU_SESSION_DIR/tools/read-file-1.txt]";
-    let result = summarize_tool_result("read_file", spill_ref);
-    // Should not contain the full spill path
-    assert!(
-        !result
-            .as_ref()
-            .is_some_and(|s| s.contains("$CRU_SESSION_DIR")),
-        "Should not show spill path in summary: {:?}",
-        result
-    );
-}
-
-#[test]
-fn summarize_bash_spill_reference_not_shown_raw() {
-    let spill_ref = "[500 lines, 25KB — full output in $CRU_SESSION_DIR/tools/bash-1.txt]";
-    let result = summarize_tool_result("bash", spill_ref);
-    // Spill references are multi-line or >60 chars, so bash should return None
-    assert!(
-        result.is_none() || !result.as_ref().unwrap().contains("$CRU_SESSION_DIR"),
-        "Bash spill ref should not be shown as summary: {:?}",
-        result
     );
 }

@@ -1,4 +1,5 @@
 use crucible_core::types::acp::FileDiff;
+use crucible_core::types::ToolRender;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,8 +64,9 @@ pub struct CachedToolCall {
     pub description: Option<Arc<str>>,
     /// Optional source provenance for display (e.g., "[Crucible]" badge).
     pub source: Option<ToolSourceDisplay>,
-    /// The line of the render that the daemon sent: what the call does.
-    pub line: Option<Arc<str>>,
+    /// The render that the daemon sent: what the call does, its fields,
+    /// and, after the result, the summary of the result.
+    pub render: Option<Arc<ToolRender>>,
     /// File diffs surfaced by the agent (e.g. ACP `ToolCallContent::Diff`).
     /// Empty for tools that don't produce diffs or for backends that don't
     /// surface them yet. Rendered between header and result on completion.
@@ -95,7 +97,7 @@ impl CachedToolCall {
             superseded: false,
             description: None,
             source: None,
-            line: None,
+            render: None,
             diffs: Vec::new(),
             auto_approved: None,
             backgrounded: false,

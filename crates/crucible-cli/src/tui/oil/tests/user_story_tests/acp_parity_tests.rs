@@ -326,11 +326,10 @@ fn a_late_permission_grant_marks_the_acp_tool_card() {
 /// The edit pair above converges partly by luck: `Replaced 1 occurrence(s)` is
 /// 23 characters on one line, which `collapse_result`'s generic short-result
 /// branch renders identically whatever the tool is called. A result that does
-/// *not* fit on one line goes through `summarize_tool_result`'s per-tool table
-/// instead — and that table matched the internal snake_case name (`read_file`)
-/// and nothing else, so the delegated card, whose name is
-/// `humanize_tool_title(title)`, fell through to painting the file body into
-/// the card while the internal one showed `→ [3 lines read, 3 total]`.
+/// *not* fit on one line shows the summary of the render of the finished
+/// call, which the daemon makes from the kind `file_read` for both arms. A
+/// summary keyed on the tool name broke this once: the internal name is
+/// `read_file` and the delegated one is `Read File`.
 #[test]
 fn acp_and_internal_read_turns_render_identical_frames() {
     let mut internal = StoryRuntime::new(80, 24);
@@ -379,64 +378,13 @@ fn both_read_cards_collapse_their_result_to_a_summary() {
     }
 }
 
-/// US-307 (A4, second pass): the titles a *real* agent sends must collapse too.
+/// A short result shows itself, whatever the tool is called.
 ///
-/// The read pair above proves the tables answer to `Read File`. That is a
-/// spelling the mock behind `acp_parity_read_delegated.jsonl` was written to
-/// emit — and it is also, as it happens, one Claude Code really sends, which is
-/// how the first fix passed while covering almost nothing. The recording says
-/// the same agent titles its glob `Find` and its bash `Terminal`, neither of
-/// which the table listed, so a delegated glob painted its whole file list into
-/// the transcript.
+/// A recording titles Claude Code's bash `Terminal`. The card needs no
+/// synonym for it: `collapse_result`'s short-result branch reads no name, so
+/// a delegated shell command collapses exactly like the internal one.
 ///
-/// The titles come from [`recorded_claude_code_title`], which fails if
-/// `malformed-acp-recording.jsonl` stops containing them — the pair cannot
-/// drift into testing a spelling nothing produces.
-///
-/// The card *header* legitimately differs (`Glob` vs `Find`): ACP carries no
-/// tool name on the wire, only prose, so the two cards are entitled to
-/// different names for the same tool. What must not differ is the body — one
-/// summary line, not the file list.
-#[test]
-fn a_delegated_glob_collapses_its_file_list_like_the_internal_one() {
-    // A newline-separated list, which is what both Crucible's `glob` and
-    // Claude Code's Find answer with.
-    const FILES: &str = "alpha.rs\nbeta.rs\ngamma.rs";
-
-    for (tool, source) in [
-        ("glob", "Core"),
-        (recorded_claude_code_title("Find"), "Acp:claude"),
-    ] {
-        let mut story = StoryRuntime::new(80, 24);
-        send_user_message(&mut story, "find the rust files");
-        announce_tool_call(&mut story, tool, r#"{"pattern":"**/*.rs"}"#, Some(source));
-        complete_tool_call(&mut story, tool, &format!("{tool}-1"), FILES);
-
-        let frame = story.fresh_screen();
-        assert!(
-            frame.contains("\u{2192} 3 files"),
-            "`{tool}` did not collapse its file list into the card header:\n{frame}"
-        );
-        assert!(
-            !frame.contains("beta.rs"),
-            "`{tool}` painted the file list into the transcript instead of \
-             summarizing it:\n{frame}"
-        );
-    }
-}
-
-/// The counter-case, pinned so it is not "fixed" by reflex.
-///
-/// The same recording titles Claude Code's bash `Terminal`, which no arm of the
-/// summary table lists either — but unlike the glob, that costs nothing. The
-/// `Bash` arm only answers for a result of one line under 60 characters, and
-/// that is precisely when `collapse_result`'s *name-independent* short-result
-/// branch answers with the same string. So a delegated shell command already
-/// collapses exactly like the internal one, and adding `Terminal` to the arm
-/// would change no pixel while looking like coverage.
-///
-/// This fails if that short-result branch ever becomes name-dependent, which is
-/// what would make the synonym necessary.
+/// This fails if that short-result branch ever becomes name-dependent.
 #[test]
 fn a_delegated_shell_command_needs_no_synonym_to_match_the_internal_one() {
     for (tool, source) in [
@@ -575,7 +523,7 @@ fn an_internal_permission_modal_names_the_real_tool() {
 #[test]
 fn an_acp_shell_permission_modal_shows_the_command_not_the_derived_name() {
     // The divergence's boundary: for a `command` call the modal renders the
-    // command line of the call that the daemon sent and drops the tool name
+    // render line of the call that the daemon sent and drops the tool name
     // entirely, so the coarse `bash` never reaches the screen. Pinned so a
     // change that started printing the derived name — `bash (command="…")` —
     // shows up as a *behaviour* change rather than as cosmetics.
@@ -583,9 +531,10 @@ fn an_acp_shell_permission_modal_shows_the_command_not_the_derived_name() {
     send_user_message(&mut story, "clean up");
     let args = json!({"command": "rm -rf build"});
     let mut request = crucible_core::interaction::PermRequest::tool("bash", args.clone());
-    request.call = Some(Box::new(
-        crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args),
-    ));
+    request.call = Some(Box::new(crucible_core::types::CanonicalToolCall {
+        render: Some("rm -rf build".into()),
+        ..crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args)
+    }));
     let _ = story.app().open_interaction(
         "req-1".to_string(),
         crucible_core::interaction::InteractionRequest::Permission(request),

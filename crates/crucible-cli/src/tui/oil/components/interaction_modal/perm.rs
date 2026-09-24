@@ -167,34 +167,50 @@ impl InteractionModal {
         let panel_bg = t.resolve_color(t.colors.background);
         let border_fg = t.resolve_color(t.colors.border);
 
+        let mut rows: Vec<String> = Vec::new();
         let (type_label, action_detail, is_write) = match &perm_request.action {
             PermAction::Bash { tokens } => ("BASH", tokens.join(" "), false),
             PermAction::Read { segments } => ("READ", format!("/{}", segments.join("/")), false),
             PermAction::Write { segments } => ("WRITE", format!("/{}", segments.join("/")), true),
-            PermAction::Tool { name, args } => {
-                // A shell call reads as a command, not as `(command="…")` with
-                // escaped newlines. The daemon sent the call with its render,
-                // so the web and the deny messages show the same line.
-                let call = perm_request.call.as_deref();
-                match (call.and_then(|c| c.command.as_ref()), self.full_commands) {
-                    (Some(command), true) => ("BASH", command.clone(), false),
-                    (Some(_), false) => (
-                        "BASH",
-                        call.and_then(|c| c.summary(60)).unwrap_or_default(),
-                        false,
-                    ),
-                    (None, true) => (
-                        "TOOL",
-                        format!("{} {}", name, prettify_tool_args_full(args)),
-                        false,
-                    ),
-                    (None, false) => (
-                        "TOOL",
-                        format!("{} {}", name, prettify_tool_args(args)),
-                        false,
-                    ),
+            // The daemon sent the call with its render, so the card, the
+            // web and the deny messages show the same line. The label is
+            // the canonical kind, not a guess from the tool name.
+            PermAction::Tool { name, args } => match perm_request.call.as_deref() {
+                Some(call) => {
+                    // The fields of the render stand in place of the
+                    // arguments, as on the web card.
+                    let fields = call.render.as_ref().map_or(&[][..], |r| &r.fields[..]);
+                    rows = fields
+                        .iter()
+                        .map(|f| match &f.value {
+                            serde_json::Value::String(v) => format!("{}: {v}", f.label),
+                            v => format!("{}: {v}", f.label),
+                        })
+                        .collect();
+                    if rows.is_empty() && call.kind != "command" {
+                        rows.push(match self.full_commands {
+                            true => prettify_tool_args_full(args),
+                            false => prettify_tool_args(args),
+                        });
+                    }
+                    let line = match self.full_commands {
+                        true => call.render.as_ref().and_then(|r| r.line.clone()),
+                        false => call.summary(60),
+                    }
+                    .unwrap_or_default();
+                    match call.kind.as_str() {
+                        "command" => ("BASH", line, false),
+                        _ => ("TOOL", format!("{} {line}", call.tool), false),
+                    }
                 }
-            }
+                None => {
+                    let args = match self.full_commands {
+                        true => prettify_tool_args_full(args),
+                        false => prettify_tool_args(args),
+                    };
+                    ("TOOL", format!("{name} {args}"), false)
+                }
+            },
         };
 
         let queue_total = 1 + queue_size;
@@ -225,28 +241,28 @@ impl InteractionModal {
             String::new()
         };
 
-        if self.full_commands {
-            // Show the complete command/args: wrap to the panel width so
-            // nothing is clipped at the terminal edge. Each wrapped line is
-            // its own padded row (single overlong text nodes get clipped by
-            // the renderer, not wrapped).
-            let wrap_width = term_width.saturating_sub(4).max(20);
-            let full_text = format!("{}{}", queue_prefix, action_detail);
-            for line in crate::tui::oil::utils::wrap::wrap_words(&full_text, wrap_width) {
-                let text = format!("  {}", line);
-                let width = UnicodeWidthStr::width(text.as_str());
-                lines.push(pad_line(&text, width));
+        let texts = std::iter::once(format!("{queue_prefix}{action_detail}"))
+            .chain(rows.into_iter().filter(|r| !r.is_empty()));
+        for text in texts {
+            if self.full_commands {
+                // Show the complete command/args: wrap to the panel width so
+                // nothing is clipped at the terminal edge. Each wrapped line
+                // is its own padded row (single overlong text nodes get
+                // clipped by the renderer, not wrapped).
+                let wrap_width = term_width.saturating_sub(4).max(20);
+                for line in crate::tui::oil::utils::wrap::wrap_words(&text, wrap_width) {
+                    let text = format!("  {}", line);
+                    let width = UnicodeWidthStr::width(text.as_str());
+                    lines.push(pad_line(&text, width));
+                }
+            } else {
+                // Compact: first line only, ellipsized to the terminal width.
+                let text = format!("  {text}");
+                let truncated =
+                    crate::tui::oil::utils::truncate::truncate_first_line(&text, term_width, true);
+                let width = UnicodeWidthStr::width(truncated.as_ref());
+                lines.push(pad_line(&truncated, width));
             }
-        } else {
-            // Compact: first line only, ellipsized to the terminal width.
-            let action_text = format!("  {}{}", queue_prefix, action_detail);
-            let truncated = crate::tui::oil::utils::truncate::truncate_first_line(
-                &action_text,
-                term_width,
-                true,
-            );
-            let width = UnicodeWidthStr::width(truncated.as_ref());
-            lines.push(pad_line(&truncated, width));
         }
 
         // Everything else that is known: the agent, the tool name on the

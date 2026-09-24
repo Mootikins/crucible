@@ -229,12 +229,9 @@ pub enum StageId {
     TurnComplete,
     /// Immediately before execution, after admission.
     ToolBeforeExecute,
-    /// A tool call is about to be drawn.
-    ToolDisplayStart,
-    /// A tool call finished and its display is final.
-    ToolDisplayComplete,
-    /// The render function of a kind: display data for one tool call. The
-    /// pattern is the kind. The last registration for a kind wins.
+    /// The render function of a kind: display data for one tool call, and
+    /// again for its result. The pattern is the kind. The last registration
+    /// for a kind wins.
     ToolRender,
     /// Over the merged search hits, before the cut to the caller's limit.
     SearchRerank,
@@ -271,8 +268,6 @@ impl StageId {
         Self::PrecognitionFormat,
         Self::TurnComplete,
         Self::ToolBeforeExecute,
-        Self::ToolDisplayStart,
-        Self::ToolDisplayComplete,
         Self::ToolRender,
         Self::SearchRerank,
         Self::IndexBlocks,
@@ -297,8 +292,6 @@ impl StageId {
             Self::PrecognitionFormat => "precognition_format",
             Self::TurnComplete => "turn:complete",
             Self::ToolBeforeExecute => "tool:before_execute",
-            Self::ToolDisplayStart => "tool:display_start",
-            Self::ToolDisplayComplete => "tool:display_complete",
             Self::ToolRender => "tool:render",
             Self::SearchRerank => "search:rerank",
             Self::IndexBlocks => "index:blocks",
@@ -329,8 +322,6 @@ impl StageId {
             | Self::PrecognitionFormat
             | Self::TurnComplete
             | Self::ToolBeforeExecute
-            | Self::ToolDisplayStart
-            | Self::ToolDisplayComplete
             | Self::SearchRerank
             | Self::IndexBlocks
             | Self::ProviderAuth => TURN_STAGE_BUDGET,
@@ -374,8 +365,6 @@ impl StageId {
             | Self::PrecognitionFormat
             | Self::TurnComplete
             | Self::ToolBeforeExecute
-            | Self::ToolDisplayStart
-            | Self::ToolDisplayComplete
             | Self::ToolRender
             | Self::SearchRerank
             | Self::PermissionRequest
@@ -484,8 +473,6 @@ impl HookName {
                 | StageId::PrecognitionFormat
                 | StageId::TurnComplete
                 | StageId::ToolBeforeExecute
-                | StageId::ToolDisplayStart
-                | StageId::ToolDisplayComplete
                 | StageId::ToolRender
                 | StageId::SearchRerank
                 | StageId::IndexBlocks => None,

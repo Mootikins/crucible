@@ -408,7 +408,7 @@ fn invariant_multi_tool_turn() {
         call_id: Some("c1".into()),
         description: None,
         source: Some("Core".into()),
-        line: Some("ls -la".into()),
+        render: Some("ls -la".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -432,7 +432,7 @@ fn invariant_multi_tool_turn() {
         call_id: Some("c2".into()),
         description: None,
         source: Some("Core".into()),
-        line: Some("README.md".into()),
+        render: Some("README.md".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -501,7 +501,7 @@ fn invariant_reproduce_cast_pattern() {
         call_id: Some("c1".into()),
         description: None,
         source: Some("Core".into()),
-        line: Some("ls -la".into()),
+        render: Some("ls -la".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -515,7 +515,7 @@ fn invariant_reproduce_cast_pattern() {
         call_id: Some("c2".into()),
         description: None,
         source: Some("Core".into()),
-        line: Some("README*".into()),
+        render: Some("README*".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -538,7 +538,7 @@ fn invariant_reproduce_cast_pattern() {
         call_id: Some("c3".into()),
         description: None,
         source: Some("Core".into()),
-        line: Some("README.md".into()),
+        render: Some("README.md".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

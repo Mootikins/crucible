@@ -22,7 +22,7 @@ fn adjacent_tools_no_gap() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("a.rs".into()),
+        render: Some("a.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -38,7 +38,7 @@ fn adjacent_tools_no_gap() {
         call_id: Some("c2".into()),
         description: None,
         source: None,
-        line: Some("b.rs".into()),
+        render: Some("b.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -94,7 +94,7 @@ fn tool_then_text_one_blank_line() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("main.rs".into()),
+        render: Some("main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -177,7 +177,7 @@ fn thinking_then_tools_one_blank_line() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("ls src/".into()),
+        render: Some("ls src/".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -282,7 +282,7 @@ fn permission_modal_does_not_cause_double_blanks() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("ls -la".into()),
+        render: Some("ls -la".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -340,7 +340,7 @@ fn tools_across_graduation_batches_no_gap() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("echo hi".into()),
+        render: Some("echo hi".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -377,7 +377,7 @@ fn tools_across_graduation_batches_no_gap() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("echo hi".into()),
+        render: Some("echo hi".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -399,7 +399,7 @@ fn tools_across_graduation_batches_no_gap() {
         call_id: Some("c2".into()),
         description: None,
         source: None,
-        line: Some("*.rs".into()),
+        render: Some("*.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -446,7 +446,7 @@ fn tools_across_graduation_batches_no_gap() {
         call_id: Some("c2".into()),
         description: None,
         source: None,
-        line: Some("*.rs".into()),
+        render: Some("*.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

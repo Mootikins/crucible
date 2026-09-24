@@ -47,10 +47,10 @@ mod before_execute;
 mod conversion;
 mod cru_clear;
 mod cru_on;
-mod display_hooks;
 mod hook_name;
 mod permission;
 mod registry;
+mod render;
 mod script_handler;
 
 #[cfg(test)]
@@ -62,11 +62,6 @@ pub use before_execute::{
 };
 pub use cru_clear::register_cru_clear_api;
 pub use cru_on::register_cru_on_api;
-pub use display_hooks::{
-    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, execute_tool_render,
-    ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,
-    ToolDisplayStartHints, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
-};
 pub use hook_name::{hook_names, EventName, HookName, StageId};
 pub use permission::{
     execute_permission_hooks, register_permission_hook_api, PermissionHookResult,
@@ -79,6 +74,7 @@ pub use registry::{
     clear_source, ClearFilter, Firing, LuaScriptHandlerRegistry, Registration, RegistrationSpec,
     SessionScope,
 };
+pub use render::execute_tool_render;
 pub use script_handler::{interpret_handler_result, EventOutcome, ScriptHandlerResult};
 
 /// The VM's registration store, in its app data.

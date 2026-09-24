@@ -116,7 +116,6 @@ export { default as Sliders } from 'lucide-solid/icons/sliders';
 export { default as Key } from 'lucide-solid/icons/key';
 export { default as Mic } from 'lucide-solid/icons/mic';
 export { default as Sparkles } from 'lucide-solid/icons/sparkles';
-export { default as StickyNote } from 'lucide-solid/icons/sticky-note';
 export { default as Wrench } from 'lucide-solid/icons/wrench';
 export { default as Undo2 } from 'lucide-solid/icons/undo-2';
 export { default as Redo2 } from 'lucide-solid/icons/redo-2';

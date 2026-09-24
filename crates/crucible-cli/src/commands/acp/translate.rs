@@ -14,7 +14,7 @@ use crucible_core::interaction::{
 };
 use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
 use crucible_core::turn::{StopReason as CoreStopReason, TurnStatus};
-use crucible_core::types::CanonicalToolCall;
+use crucible_core::types::{CanonicalToolCall, ToolRender};
 use crucible_daemon::SessionEvent;
 
 /// Permission option IDs advertised to the host. Matching them back in
@@ -204,12 +204,29 @@ fn classify_tool_result(event: &SessionEvent) -> TurnStep {
         None => (ToolCallStatus::Completed, summarize_result(result)),
     };
 
-    let fields = ToolCallUpdateFields::new()
+    let mut fields = ToolCallUpdateFields::new()
         .status(status)
         .content(vec![ToolCallContent::from(ContentBlock::Text(
             TextContent::new(text),
         ))])
         .raw_output(result.clone());
+    // The render of the finished call gives the title its summary.
+    let render =
+        (result.get("render")).and_then(|r| serde_json::from_value::<ToolRender>(r.clone()).ok());
+    if let Some(render) = render.filter(|r| r.summary.is_some()) {
+        let tool = event
+            .data
+            .get("tool")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tool");
+        let summary = render.summary.clone().unwrap_or_default();
+        let call = CanonicalToolCall {
+            render: Some(render),
+            ..CanonicalToolCall::crucible_tool(tool, &serde_json::Value::Null)
+        };
+        let (title, _) = describe(tool, Some(&call));
+        fields = fields.title(format!("{title} → {summary}"));
+    }
     update(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
         call_id, fields,
     )))
@@ -436,6 +453,29 @@ mod tests {
                 SessionUpdate::ToolCallUpdate(tc) => {
                     assert_eq!(tc.tool_call_id.0.as_ref(), "tc1");
                     assert_eq!(tc.fields.status, Some(ToolCallStatus::Completed));
+                }
+                other => panic!("expected tool call update, got {other:?}"),
+            },
+            other => panic!("expected update, got {other:?}"),
+        }
+    }
+
+    /// The render of the result gives the title its summary.
+    #[test]
+    fn tool_result_render_titles_the_summary() {
+        let step = classify_event(&event(
+            "tool_result",
+            json!({"call_id": "tc1", "tool": "read_file", "result": {
+                "result": "a", "render": {"line": "a.rs", "summary": "1 lines"},
+            }}),
+        ));
+        match step {
+            TurnStep::Update(u) => match *u {
+                SessionUpdate::ToolCallUpdate(tc) => {
+                    assert_eq!(
+                        tc.fields.title.as_deref(),
+                        Some("read file: a.rs → 1 lines")
+                    );
                 }
                 other => panic!("expected tool call update, got {other:?}"),
             },

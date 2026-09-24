@@ -198,7 +198,9 @@ end)
 -- the call does, and `fields`, a list of { label = ..., value = ... }. It
 -- returns no terminal text and no HTML. The TUI and the web draw the same
 -- data, each in its own way. The daemon runs the render for each tool call
--- event and for each permission prompt.
+-- event, for each permission prompt and for each result. For a result, the
+-- call also has `result` (the text) and `error`, and the render can give a
+-- `summary`: one line that says what the result is.
 --
 -- The pattern is the kind. The call has kind, tool, command, paths, url,
 -- query, diffs, agent, raw (the ACP title, name, kind, rawInput, locations
@@ -219,11 +221,26 @@ cru.on("tool:render", { pattern = "command" }, function(ctx, call)
   return { line = call.command or title_of(call) }
 end)
 
-for _, kind in { "file_edit", "file_read" } do
-  cru.on("tool:render", { pattern = kind }, function(ctx, call)
-    return { line = table.concat(call.paths or {}, ", ") }
-  end)
-end
+cru.on("tool:render", { pattern = "file_edit" }, function(ctx, call)
+  return { line = table.concat(call.paths or {}, ", ") }
+end)
+
+-- The summary of a read is the counter that `read_file` puts at its end,
+-- for example "[3 lines read, 3 total]", or else its line count.
+cru.on("tool:render", { pattern = "file_read" }, function(ctx, call)
+  local summary: string? = nil
+  if call.result and not call.error then
+    summary = string.match(call.result, "(%[[^%[%]\n]*%])%s*$")
+    if not summary or #summary > 60 or string.find(summary, "CRU_SESSION_DIR", 1, true) then
+      local _, lines = string.gsub(call.result, "\n", "")
+      if call.result ~= "" and string.sub(call.result, -1) ~= "\n" then
+        lines += 1
+      end
+      summary = `{lines} lines`
+    end
+  end
+  return { line = table.concat(call.paths or {}, ", "), summary = summary }
+end)
 
 cru.on("tool:render", { pattern = "fetch" }, function(ctx, call)
   return { line = call.url or title_of(call) }

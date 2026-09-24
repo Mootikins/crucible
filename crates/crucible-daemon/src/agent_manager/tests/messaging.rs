@@ -546,23 +546,20 @@ async fn text_only_turn_emits_no_segment_complete() {
     assert_eq!(complete.data["full_response"], "just a plain answer");
 }
 
+/// One render chain draws the call and its result: the render of the call
+/// rides the `tool_call` event, and the render of the finished call rides
+/// the `tool_result` event with its summary.
 #[tokio::test]
-async fn display_hook_lua_tool_enriches_tool_call_metadata() {
+async fn a_lua_render_draws_the_call_and_its_result() {
     let mut h = ReactorTestHarness::new().await;
     std::fs::write(h.workspace().join("test.md"), "content").unwrap();
 
     let _vm = h.load_daemon_lua(
         r#"
-        cru.on("tool:display_start", function(ctx, event)
+        cru.on("tool:render", { pattern = "file_read" }, function(ctx, call)
             return {
-                label = "Custom " .. event.name,
-                detail = "LuaStart"
-            }
-        end)
-
-        cru.on("tool:display_complete", function(ctx, event)
-            return {
-                summary = "Summary " .. event.name
+                line = "Custom " .. call.tool,
+                summary = call.result and ("Summary " .. call.tool),
             }
         end)
     "#,
@@ -584,12 +581,17 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
 
     let tool_call = h.wait_for("tool_call").await;
     assert_eq!(tool_call.data["tool"], "read_file");
-    assert_eq!(tool_call.data["description"], "Custom read_file");
-    assert_eq!(tool_call.data["source"], "LuaStart");
+    assert_eq!(
+        tool_call.data["display"]["render"]["line"],
+        "Custom read_file"
+    );
+    assert!(tool_call.data["display"]["render"]["summary"].is_null());
 
     let tool_result = h.wait_for("tool_result").await;
     assert_eq!(tool_result.data["tool"], "read_file");
-    assert_eq!(tool_result.data["result"]["summary"], "Summary read_file");
+    let render = &tool_result.data["result"]["render"];
+    assert_eq!(render["line"], "Custom read_file");
+    assert_eq!(render["summary"], "Summary read_file");
 }
 
 #[tokio::test]

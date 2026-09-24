@@ -292,11 +292,15 @@ fn translate_tool_call_update_emits_chat_msg_with_args_and_diffs() {
             call_id,
             args,
             diffs,
-            line,
+            render,
             ..
         } => {
             assert_eq!(call_id, "tc-late-1");
-            assert_eq!(line.as_deref(), Some("src/late.rs"), "the new render line");
+            assert_eq!(
+                render.as_ref(),
+                Some(&"src/late.rs".into()),
+                "the new render"
+            );
             assert_eq!(args.as_deref(), Some(r#"{"file_path":"src/late.rs"}"#));
             assert_eq!(
                 diffs.as_ref(),
@@ -306,6 +310,29 @@ fn translate_tool_call_update_emits_chat_msg_with_args_and_diffs() {
         }
         other => panic!("expected ToolCallUpdate, got {other:?}"),
     }
+}
+
+/// The render of a finished call rides the result and replaces the render
+/// of the card, before the result completes the card.
+#[test]
+fn translate_tool_result_carries_the_render_of_the_result() {
+    let data = serde_json::json!({
+        "call_id": "c1", "tool": "read_file",
+        "result": { "result": "a\nb", "render": { "line": "a.rs", "summary": "2 lines" } },
+    });
+    let msgs = session_event_to_chat_msgs("tool_result", &data);
+    let render = crucible_core::types::ToolRender {
+        summary: Some("2 lines".into()),
+        .."a.rs".into()
+    };
+    assert!(
+        matches!(&msgs[..], [
+            ChatAppMsg::ToolCallUpdate { call_id, render: Some(r), args: None, diffs: None, .. },
+            ChatAppMsg::ToolResultDelta { .. },
+            ChatAppMsg::ToolResultComplete { .. },
+        ] if call_id == "c1" && *r == render),
+        "{msgs:?}"
+    );
 }
 
 #[test]

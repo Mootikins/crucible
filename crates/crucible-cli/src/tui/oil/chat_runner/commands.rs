@@ -158,12 +158,6 @@ fn non_empty(s: String) -> Option<String> {
     Some(s).filter(|s| !s.is_empty())
 }
 
-/// The line of the render that the daemon sent with a call. A recording from
-/// before the render has none, and the card shows no line.
-fn render_line(call: &crucible_core::types::CanonicalToolCall) -> Option<String> {
-    call.render.as_ref()?.line.clone().and_then(non_empty)
-}
-
 fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
     match turn {
         TurnPayload::UserMessage { content, .. } => non_empty(content)
@@ -204,7 +198,9 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 // consistency.
                 description: None,
                 source,
-                line: display.as_deref().and_then(render_line),
+                // A recording from before the render has none, and the card
+                // shows no line.
+                render: display.as_ref().and_then(|d| d.render.clone()),
                 diffs: display.map(|d| d.diffs).unwrap_or_default(),
                 auto_approved,
             }]
@@ -223,7 +219,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             let args = (!args.is_null() && args != serde_json::json!({}))
                 .then(|| serde_json::to_string(&args).unwrap_or_default())
                 .filter(|a| !a.is_empty());
-            let line = display.as_deref().and_then(render_line);
+            let render = display.as_ref().and_then(|d| d.render.clone());
             let diffs = display.map(|d| d.diffs);
             if args.is_none() && diffs.is_none() && auto_approved.is_none() {
                 return Vec::new();
@@ -232,7 +228,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 call_id,
                 args,
                 diffs,
-                line,
+                render,
                 auto_approved,
             }]
         }
@@ -245,12 +241,27 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             let name = non_empty(tool).unwrap_or_else(|| "tool".to_string());
             let call_id = non_empty(call_id);
             let body = ToolResultBody::of(&result);
+            // The render of the finished call replaces the render of the
+            // card, so the card shows the summary of the result.
+            let mut msgs: Vec<ChatAppMsg> = call_id
+                .clone()
+                .zip(body.as_ref().and_then(|b| b.render().cloned()))
+                .map(|(call_id, render)| ChatAppMsg::ToolCallUpdate {
+                    call_id,
+                    args: None,
+                    diffs: None,
+                    render: Some(render),
+                    auto_approved: None,
+                })
+                .into_iter()
+                .collect();
             if let Some(err) = body.as_ref().and_then(|b| b.error()) {
-                return vec![ChatAppMsg::ToolResultError {
+                msgs.push(ChatAppMsg::ToolResultError {
                     name,
                     error: strip_tool_error_prefix(err),
                     call_id,
-                }];
+                });
+                return msgs;
             }
             let result_str = match &body {
                 Some(ToolResultBody::Ok { result, .. }) => result.as_str().unwrap_or(""),
@@ -263,14 +274,13 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             } else {
                 result_str.to_string()
             };
-            vec![
-                ChatAppMsg::ToolResultDelta {
-                    name: name.clone(),
-                    delta: result_str,
-                    call_id: call_id.clone(),
-                },
-                ChatAppMsg::ToolResultComplete { name, call_id },
-            ]
+            msgs.push(ChatAppMsg::ToolResultDelta {
+                name: name.clone(),
+                delta: result_str,
+                call_id: call_id.clone(),
+            });
+            msgs.push(ChatAppMsg::ToolResultComplete { name, call_id });
+            msgs
         }
         TurnPayload::MessageComplete {
             full_response,

@@ -1153,6 +1153,36 @@ async fn each_builtin_kind_renders_through_the_lua_defaults() {
     }
 }
 
+/// The render of a finished read gives its summary: the counter at the end
+/// of the result, or else the line count. A failed read gives none.
+#[tokio::test]
+async fn the_read_render_summarizes_its_result() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+    let handlers = (vm.plugin_handlers(), vm.plugin_lua());
+    let args = serde_json::json!({ "path": "a.rs" });
+    let call = crucible_core::types::CanonicalToolCall::crucible_tool("read_file", &args);
+    let summary = |outcome| {
+        let (call, args, handlers) = (&call, &args, &handlers);
+        async move {
+            crate::agent_manager::messaging::tool_hooks::lua_render(
+                Some(handlers),
+                "test-session",
+                call,
+                args,
+                crucible_core::turn::TurnOrigin::User,
+                Some(outcome),
+            )
+            .await
+            .expect("the read render answers")
+            .summary
+        }
+    };
+    let counter = summary(("1\tx\n\n[1 lines read, 1 total]", None)).await;
+    assert_eq!(counter.as_deref(), Some("[1 lines read, 1 total]"));
+    assert_eq!(summary(("a\nb\nc", None)).await.as_deref(), Some("3 lines"));
+    assert_eq!(summary(("", Some("missing"))).await, None);
+}
+
 /// The completeness gate: each kind that the matchers or the shipped agent
 /// key tables give has a Lua render, except `tool`, which the fallback
 /// renders.

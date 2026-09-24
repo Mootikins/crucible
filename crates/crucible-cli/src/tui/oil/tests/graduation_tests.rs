@@ -46,7 +46,7 @@ fn no_spinners_in_scrollback_after_tool_use() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("echo hello".into()),
+        render: Some("echo hello".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -81,7 +81,7 @@ fn no_spinners_after_multi_tool_graduation() {
             call_id: Some(id.clone()),
             description: None,
             source: None,
-            line: None,
+            render: None,
             diffs: Vec::new(),
             auto_approved: None,
         });
@@ -186,7 +186,7 @@ fn graduation_preserves_tool_results() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("Cargo.toml".into()),
+        render: Some("Cargo.toml".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

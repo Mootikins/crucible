@@ -45,7 +45,5 @@ pub use status_component::StatusComponent;
 pub use subagent_render::render_subagent;
 pub use surface_modal::{SurfaceModal, SurfaceModalOutcome, SurfaceModalRow};
 pub use thinking_component::ThinkingComponent;
-pub use tool_render::{
-    format_streaming_output, format_tool_args, format_tool_result, summarize_tool_result,
-};
+pub use tool_render::{format_streaming_output, format_tool_args, format_tool_result};
 pub use turn_indicator::TurnIndicator;

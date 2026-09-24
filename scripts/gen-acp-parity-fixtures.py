@@ -12,16 +12,17 @@ Each pair describes *one* agent behaviour told two ways:
 
 The edit pair's result is 23 characters on one line, which *every* tool's card
 collapses the same way, so it proves parity only for one benign shape. The read
-pair is the one that bites: a multi-line result is summarized by a table keyed
-on the tool name, and the internal snake_case name and the ACP prose title are
-not the same string (divergence **A4**).
+pair is the one that bites: a multi-line result is summarized by the Lua render
+of the kind `file_read`, and the internal snake_case name and the ACP prose
+title are not the same string (divergence **A4**), so a summary keyed on the
+name would differ.
 
 **Provenance — these are not transcripts of a real `claude` session.** Each
 event was emitted by the daemon's own broadcast channel, driven by
 `ReactorTestHarness` with two mock agents: `StreamingMockAgent` for the
 internal arm (against the real `WorkspaceTools` dispatcher and the real
 permission gate) and `OwnsToolsMockAgent` with `agent_name: "claude"` for the
-delegated arm. The mocks supply the `TurnEvent`s a real handle would; every
+delegated arm, with the shipped Lua defaults loaded. The mocks supply the `TurnEvent`s a real handle would; every
 field downstream of them — the `display` object, the `Core`/`Acp:claude`
 source, the plain one-wrap result shape both arms share, `terminate: false` —
 is the daemon's own work, not this script's invention.
@@ -60,23 +61,25 @@ ARGS_ACP = {
 }
 
 
-def display(tool, kind, diffs=None, raw=None, args=None):
+def display(tool, kind, diffs=None, raw=None):
     """The canonical call. The diffs of a call ride in it, and an ACP call
-    keeps the fields of its frames as `raw`. The capture runs with no Lua VM,
-    so the render is the fallback of `ToolRender::fallback`: every field."""
+    keeps the fields of its frames as `raw`. The capture loads the shipped
+    Lua defaults, so the render is the Lua render of the kind: the path."""
     out = {"kind": kind, "tool": tool, "paths": ["greeting.rs"]}
     if diffs:
         out["diffs"] = diffs
     if raw:
         out["raw"] = raw
-    fields = [{"label": "kind", "value": kind}, {"label": "tool", "value": tool}]
-    for key, label in (("name", "name"), ("kind", "acp kind"), ("content", "content")):
-        if raw and key in raw:
-            fields.append({"label": label, "value": raw[key]})
-    raw_input = raw["rawInput"] if raw else args
-    fields.append({"label": "rawInput", "value": raw_input})
-    out["render"] = {"line": "greeting.rs", "fields": fields}
+    out["render"] = {"line": "greeting.rs"}
     return out
+
+
+def result(text, summary=None):
+    """A result body with the Lua render of the finished call."""
+    render = {"line": "greeting.rs"}
+    if summary:
+        render["summary"] = summary
+    return {"result": text, "render": render}
 
 
 # The frame fields the ACP client merged for the delegated edit. The late
@@ -153,7 +156,7 @@ internal = common_head + [
                 "action": {"type": "tool", "name": "edit_file", "args": ARGS},
                 "diffs": DIFFS,
                 # The prompt holds the diffs once, so its call has none.
-                "call": display("edit_file", "file_edit", args=ARGS),
+                "call": display("edit_file", "file_edit"),
                 "layer": "ask mode",
             },
         },
@@ -169,7 +172,7 @@ internal = common_head + [
             "source": "Core",
             # The diffs are synthesized up-front by `tools::diff_synth` and
             # ride in the canonical call.
-            "display": display("edit_file", "file_edit", diffs=DIFFS, args=ARGS),
+            "display": display("edit_file", "file_edit", diffs=DIFFS),
         },
     ),
     (
@@ -181,7 +184,7 @@ internal = common_head + [
             # the event as the tool's own output (the old
             # `{"result": {"result": …}}` double wrap is gone — executors hand
             # plain text and `tool_call.rs` serializes only structured values).
-            "result": {"result": "Replaced 1 occurrence(s)"},
+            "result": result("Replaced 1 occurrence(s)"),
             "terminate": False,
         },
     ),
@@ -227,7 +230,7 @@ delegated = common_head + [
             "call_id": "call-edit-1",
             "tool": "Edit File",
             # `extract_tool_result` stringifies the agent's `rawOutput`.
-            "result": {"result": "Replaced 1 occurrence(s)"},
+            "result": result("Replaced 1 occurrence(s)"),
             "terminate": False,
         },
     ),
@@ -288,7 +291,7 @@ read_internal = (
                 "args": READ_ARGS,
                 "description": "Read file contents. Returns content with line numbers.",
                 "source": "Core",
-                "display": display("read_file", "file_read", args=READ_ARGS),
+                "display": display("read_file", "file_read"),
             },
         ),
         (
@@ -297,7 +300,7 @@ read_internal = (
                 "call_id": "call-read-1",
                 "tool": "read_file",
                 # Flat, identical to the delegated arm (see the edit pair).
-                "result": {"result": READ_OUTPUT},
+                "result": result(READ_OUTPUT, "[3 lines read, 3 total]"),
                 "terminate": False,
             },
         ),
@@ -334,7 +337,7 @@ read_delegated = (
                 # once. The text is the internal tool's own output, because the
                 # pair is about presenting equivalent output — not about two
                 # tools formatting it differently.
-                "result": {"result": READ_OUTPUT},
+                "result": result(READ_OUTPUT, "[3 lines read, 3 total]"),
                 "terminate": False,
             },
         ),

@@ -40,6 +40,11 @@ pub enum ChatEvent {
         /// a "Terminated" badge on the tool card.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         terminate: bool,
+        /// The render of the finished call, a
+        /// `crucible_core::types::ToolRender`. It replaces the render of
+        /// the card.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        render: Option<serde_json::Value>,
     },
 
     ToolResultDelta {
@@ -54,6 +59,9 @@ pub enum ChatEvent {
     ToolResultError {
         id: String,
         error: String,
+        /// The render of the failed call. See [`Self::ToolResult`].
+        #[serde(skip_serializing_if = "Option::is_none")]
+        render: Option<serde_json::Value>,
     },
 
     Thinking {
@@ -310,16 +318,23 @@ impl ChatEvent {
                     // an error object into the success field — the browser then
                     // rendered a failed tool as a completed one, while the TUI
                     // (which does decode) showed the error.
-                    match ToolResultBody::of(&result) {
-                        Some(ToolResultBody::Err { error, .. }) => {
-                            ChatEvent::ToolResultError { id: call_id, error }
-                        }
+                    let body = ToolResultBody::of(&result);
+                    let render = (body.as_ref())
+                        .and_then(|b| b.render())
+                        .map(|r| serde_json::to_value(r).unwrap_or_default());
+                    match body {
+                        Some(ToolResultBody::Err { error, .. }) => ChatEvent::ToolResultError {
+                            id: call_id,
+                            error,
+                            render,
+                        },
                         // Unwrap the envelope so the UI gets the tool's own
                         // output rather than the `{"result": …}` wrapper.
                         Some(ToolResultBody::Ok { result, .. }) => ChatEvent::ToolResult {
                             id: call_id,
                             result: Self::stringify_result(&result),
                             terminate,
+                            render,
                         },
                         // A shape neither variant covers — a bare string, or an
                         // object with neither key. Keep the existing fallback
@@ -329,6 +344,7 @@ impl ChatEvent {
                             id: call_id,
                             result: Self::stringify_result(&result),
                             terminate,
+                            render,
                         },
                     }
                 }
@@ -729,13 +745,19 @@ mod tests {
             "s1",
             "call-1",
             "read_file",
-            serde_json::json!({ "error": "No such file (os error 2)" }),
+            serde_json::json!({
+                "error": "No such file (os error 2)",
+                "render": { "line": "a.rs", "summary": "missing" },
+            }),
         );
 
         match ChatEvent::from_daemon_event(&event) {
-            ChatEvent::ToolResultError { id, error } => {
+            ChatEvent::ToolResultError { id, error, render } => {
                 assert_eq!(id, "call-1");
                 assert_eq!(error, "No such file (os error 2)");
+                // The render of the result reaches the browser, which draws
+                // its summary on the card.
+                assert_eq!(render.unwrap()["summary"], "missing");
             }
             other => panic!(
                 "a failed tool must map to ToolResultError; got {other:?} — \

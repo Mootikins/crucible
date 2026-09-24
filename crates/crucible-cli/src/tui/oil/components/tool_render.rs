@@ -51,7 +51,9 @@ impl CachedToolCall {
 
         let display_name = self.display_name();
         // One row: the line of the render collapses to one line.
-        let line = self.line.as_deref().unwrap_or_default();
+        let line = (self.render.as_ref())
+            .and_then(|r| r.line.as_deref())
+            .unwrap_or_default();
         let one_line = line.replace('\n', " ").replace('\r', "");
         let primary_arg: &str = &one_line;
         let result_str = self.result();
@@ -73,12 +75,35 @@ impl CachedToolCall {
             )
         };
 
+        let fields = self.render_fields(width);
         let description_node = self.render_description();
-        if matches!(description_node, Node::Empty) {
+        if matches!(description_node, Node::Empty) && fields.is_empty() {
             inner
         } else {
-            col([inner, description_node])
+            col(std::iter::once(inner)
+                .chain(fields)
+                .chain(std::iter::once(description_node)))
         }
+    }
+
+    /// One dim row for each field of the render, cut to the width.
+    fn render_fields(&self, width: usize) -> Vec<Node> {
+        let t = crate::tui::oil::theme::active();
+        let fields = self.render.as_ref().map_or(&[][..], |r| &r.fields[..]);
+        fields
+            .iter()
+            .map(|f| {
+                let value = match &f.value {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                let text = format!("    {}: {}", f.label, value.replace('\n', " "));
+                styled(
+                    fit_arg_to_width(&text, width),
+                    fg(t, t.colors.text_muted).dim(),
+                )
+            })
+            .collect()
     }
 
     fn display_name(&self) -> String {
@@ -182,13 +207,8 @@ impl CachedToolCall {
         width: usize,
         show_diffs: bool,
     ) -> Node {
-        let result_summary = if !result_str.is_empty() {
-            summarize_tool_result(&self.name, result_str)
-        } else {
-            None
-        };
-
-        let collapsed = collapse_result(&self.name, result_str, result_summary.as_deref());
+        let summary = self.render.as_ref().and_then(|r| r.summary.as_deref());
+        let collapsed = collapse_result(result_str, summary);
         let has_arrow_suffix = collapsed.is_some();
 
         let t = crate::tui::oil::theme::active();
@@ -238,7 +258,7 @@ impl CachedToolCall {
         let result_node = if has_arrow_suffix || result_str.is_empty() {
             Node::Empty
         } else {
-            format_tool_result(&self.name, result_str, width)
+            format_tool_result(result_str, width)
         };
 
         let diff_node = if show_diffs && !self.diffs.is_empty() {
@@ -376,90 +396,9 @@ pub(crate) fn format_elapsed(duration: Duration) -> String {
     }
 }
 
-/// The identity a result summary is keyed on.
-///
-/// **Divergence A4.** These tables used to match `self.name` literally, which
-/// only ever named the internal agent's tools. ACP carries no tool name on the
-/// wire — only a prose `title` — so a delegated card's `name` is
-/// `humanize_tool_title(title)`: `Read File`, `Read`. `"read_file"` equals
-/// neither, so a delegated read painted the file body into the transcript
-/// while the internal read of the same file collapsed to a one-line summary.
-///
-/// Routing the match through the humanizer keys the summary on exactly the
-/// identity [`CachedToolCall::display_name`] already puts in the card header,
-/// so the two can no longer disagree. The function is idempotent on an
-/// already-clean title, which is what lets one arm serve `read_file`,
-/// `mcp_read`, `mcp__crucible__read_file` and a bare prose `Read`.
-///
-/// Membership is preserved exactly: every name each arm used to list maps into
-/// the arm it now lists (`read_file` → `Read File`, `mcp_read` → `Read`,
-/// `edit`/`mcp_edit` → `Edit`, …). `edit_file` and `write_file` stay outside
-/// the `Edit`/`Write` arms, as they were — and that costs no parity, because
-/// both tools answer with one short line (`Replaced N occurrence(s)`), which
-/// [`collapse_result`] returns verbatim before it ever reaches the table.
-///
-/// # Namespaced names are not keys
-///
-/// The humanizer exists to build a *display name*, so it strips whatever
-/// namespace a tool arrived under: `mcp__crucible__write`, `mcp__fs__write` and
-/// `plugin_foo__write` all show as `Write`. That is right in a header and wrong
-/// as a summary key — [`collapse_result`]'s `Write` arm is unconditional and
-/// replaces the entire result with the word `written`, so keying on the
-/// stripped name would silently destroy the output of any third-party MCP or
-/// plugin tool whose trailing segment happened to be `write` or `edit`.
-///
-/// So a `__` in the name — the separator every namespacing scheme here uses —
-/// disqualifies it. That costs nothing on the ACP path this normalization was
-/// added for: a delegated card's name has *already* been through the humanizer
-/// (`acp_handle/translate.rs`), and its title-caser splits on `_`, so a
-/// humanized name never contains `__`. The rule is what keeps the change
-/// additive — it admits the prose spellings ACP needs and no name that did not
-/// already reach these tables before.
-///
-/// # A title is prose, so it carries its subject
-///
-/// The first version of this stopped at the humanizer, which covers a title
-/// that happens to *look* like an internal tool name and nothing else. The
-/// repo's richest recording of a real Claude Code session that ran tools
-/// (`assets/fixtures/malformed-acp-recording.jsonl`) shows that is not what
-/// agents send: its
-/// titles are `Find`, `Terminal`, `Read File` and `Read tools/hello.rn`. A
-/// resolved title appends the thing being acted on, so the key is the leading
-/// Title-Cased run — everything up to the first word that does not start
-/// uppercase.
-///
-/// That cut cannot pull an internal tool into a new arm: `title_case`
-/// uppercases *every* word it produces from a snake_case or kebab-case name,
-/// so `read_notes` → `Read Notes` has no lowercase tail to lose and stays out
-/// of the `Read` arm exactly as it was. It only bites on agent-authored prose,
-/// which is the only thing that has a subject appended. A title whose *first*
-/// word is not Title-Cased (a bare shell command, say) keeps its whole
-/// humanized form and, as before, matches nothing.
-///
-/// The one synonym the arms below list — `Find` for glob — is read off that
-/// same recording rather than guessed. ACP has no tool name on the wire, so
-/// there is no closed set here; the pinned schema (1.5.0) carries no
-/// tool-name field in `v1` or `v2`. See `acp_tool_name`
-/// (`agent_manager/messaging/permission.rs`), which is the other place paying
-/// for the same missing field. Keying on ACP's `kind` instead would not close
-/// it either: `Glob` and `Grep` are both `ToolKind::Search`, so the two arms
-/// below could not be told apart without the title anyway.
-fn summary_key(name: &str) -> Option<String> {
-    if name.contains("__") {
-        return None;
-    }
-    let humanized = crucible_daemon::acp::streaming::humanize_tool_title(name);
-    let leading_run: Vec<&str> = humanized
-        .split_whitespace()
-        .take_while(|word| word.starts_with(char::is_uppercase))
-        .collect();
-    if leading_run.is_empty() {
-        return Some(humanized);
-    }
-    Some(leading_run.join(" "))
-}
-
-fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<String> {
+/// The one-line form of a result: the summary of the render, else a short
+/// result itself.
+fn collapse_result(result: &str, summary: Option<&str>) -> Option<String> {
     if let Some(s) = summary {
         return Some(s.to_string());
     }
@@ -469,16 +408,7 @@ fn collapse_result(name: &str, result: &str, summary: Option<&str>) -> Option<St
     }
 
     let inner = unwrap_json_result(result);
-    let lines: Vec<&str> = inner.lines().collect();
-    if lines.len() == 1 && inner.len() <= 60 {
-        return Some(inner.trim().to_string());
-    }
-
-    match summary_key(name).as_deref() {
-        Some("Write") => Some("written".to_string()),
-        Some("Edit") => Some("applied".to_string()),
-        _ => None,
-    }
+    (inner.lines().count() == 1 && inner.len() <= 60).then(|| inner.trim().to_string())
 }
 
 /// Format tool arguments for display.
@@ -547,59 +477,9 @@ fn fit_arg_to_width(arg: &str, available: usize) -> String {
 }
 
 /// Format tool result for display.
-pub fn format_tool_result(name: &str, result: &str, width: usize) -> Node {
-    if let Some(summary) = summarize_tool_result(name, result) {
-        let t = crate::tui::oil::theme::active();
-        return styled(format!("   {}", summary), fg(t, t.colors.text_muted));
-    }
+pub fn format_tool_result(result: &str, width: usize) -> Node {
     let inner = unwrap_json_result(result);
     format_output_tail(&inner, "   ", width)
-}
-
-/// Summarize tool result into a short string.
-pub fn summarize_tool_result(name: &str, result: &str) -> Option<String> {
-    let inner = unwrap_json_result(result);
-    match summary_key(name).as_deref() {
-        Some("Read File" | "Read") => {
-            // Extract short bracketed metadata (e.g., "[Directory Context: ...]") if present,
-            // but not spill references or long content
-            let bracket_summary = inner.rfind('[').and_then(|i| {
-                let bracket = &inner[i..];
-                if bracket.len() <= 60 && !bracket.contains("$CRU_SESSION_DIR") {
-                    Some(bracket.to_string())
-                } else {
-                    None
-                }
-            });
-            bracket_summary.or_else(|| Some(format!("{} lines", inner.lines().count())))
-        }
-        // `Find` is Claude Code's title for its glob (malformed-acp-recording.jsonl).
-        Some("Glob" | "Find") => count_newline_items(&inner).map(|n| format!("{} files", n)),
-        Some("Grep") => count_grep_matches(&inner).map(|n| format!("{} matches", n)),
-        Some("Edit") if inner.contains("success") || inner.contains("applied") => {
-            Some("applied".to_string())
-        }
-        Some("Write") if inner.contains("success") || inner.contains("written") => {
-            Some("written".to_string())
-        }
-        // `Terminal` — Claude Code's title for its bash (malformed-acp-recording.jsonl) — is
-        // deliberately *not* listed here. This arm answers only when the
-        // result is one line under 60 characters, which is exactly when
-        // `collapse_result`'s name-independent short-result branch answers with
-        // the same string; adding the synonym would be an arm with no
-        // observable effect, and a test for it would pass either way. Bash
-        // parity holds by that route instead — pinned by
-        // `a_delegated_shell_command_needs_no_synonym_to_match_the_internal_one`.
-        Some("Bash") => {
-            let lines: Vec<&str> = inner.lines().collect();
-            if lines.len() <= 1 && inner.len() < 60 {
-                Some(inner.trim().to_string())
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
 }
 
 /// Format streaming output from a running tool.
@@ -664,21 +544,6 @@ pub(crate) fn unwrap_json_result(result: &str) -> String {
         }
     }
     result.to_string()
-}
-
-fn count_newline_items(result: &str) -> Option<usize> {
-    let newline_count = result.matches('\n').count();
-    let escaped_newline_count = result.matches("\\n").count();
-    let count = newline_count.max(escaped_newline_count) + 1;
-    (count > 1).then_some(count)
-}
-
-fn count_grep_matches(result: &str) -> Option<usize> {
-    let count = result
-        .lines()
-        .filter(|l| l.contains(':') && !l.trim().is_empty())
-        .count();
-    (count > 0).then_some(count)
 }
 
 #[cfg(test)]

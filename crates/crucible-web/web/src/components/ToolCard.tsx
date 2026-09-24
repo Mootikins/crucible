@@ -15,10 +15,20 @@ import {
   Globe,
   Pencil,
   Search,
-  StickyNote,
   Wrench,
   Zap,
 } from '@/lib/icons';
+
+// The icon of the canonical kind. The card does not guess the kind from
+// the tool name: a kind with no icon here, and a recording from before
+// the kind, gets the wrench.
+const KIND_ICONS: Record<string, Component<{ class?: string }>> = {
+  command: Zap,
+  file_edit: Pencil,
+  file_read: FileText,
+  search: Search,
+  fetch: Globe,
+};
 
 interface ToolCardProps {
   toolCall: ToolCallDisplay;
@@ -34,17 +44,6 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
       setExpanded(true);
     }
   });
-
-  const iconForTool = (name: string): Component<{ class?: string }> => {
-    const lower = name.toLowerCase();
-    if (lower.includes('read') || lower.includes('file')) return FileText;
-    if (lower.includes('write') || lower.includes('edit')) return Pencil;
-    if (lower.includes('search') || lower.includes('find')) return Search;
-    if (lower.includes('bash') || lower.includes('shell') || lower.includes('exec')) return Zap;
-    if (lower.includes('web') || lower.includes('fetch') || lower.includes('http')) return Globe;
-    if (lower.includes('note') || lower.includes('memory')) return StickyNote;
-    return Wrench;
-  };
 
   const statusIcon = () => {
     switch (props.toolCall.status) {
@@ -141,6 +140,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // about which argument matters.
   const argSummary = createMemo(() => display()?.render?.line?.split('\n')[0] ?? null);
 
+  // What the result is, from the render of the finished call.
+  const resultSummary = createMemo(() => display()?.render?.summary ?? null);
+
   // The call's proposed edits ride in the canonical call. The card renders
   // them; it does not derive a diff from the tool name and arguments.
   const diffs = createMemo(() => toolDiffsFromWire(display()?.diffs));
@@ -192,7 +194,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         class="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-hover-wash transition-colors text-left"
       >
         <Dynamic
-          component={iconForTool(toolName())}
+          component={KIND_ICONS[display()?.kind ?? ''] ?? Wrench}
           class="w-3.5 h-3.5 flex-shrink-0 text-muted"
         />
         <span class="flex-shrink-0 max-w-[45%] text-xs font-medium text-shell-ink truncate font-mono">
@@ -201,6 +203,14 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         <span class="flex-1 min-w-0 text-floor text-muted-dark truncate font-mono">
           {argSummary() ?? ''}
         </span>
+        <Show when={resultSummary()}>
+          <span
+            class="flex-shrink-0 max-w-[40%] text-floor text-muted truncate font-mono"
+            data-testid="tool-result-summary"
+          >
+            → {resultSummary()}
+          </span>
+        </Show>
         <Show when={props.toolCall.autoApproved}>
           <span
             class="flex-shrink-0 text-floor uppercase tracking-wider px-1.5 py-0.5 rounded bg-precog/15 text-precog border border-precog/50 font-semibold"

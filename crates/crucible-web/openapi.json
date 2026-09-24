@@ -4672,6 +4672,9 @@
                 "type": "boolean",
                 "description": "True if this tool requested an agent-turn early-stop\n(daemon's conjunctive batch-terminate check fired). UI renders\na \"Terminated\" badge on the tool card."
               },
+              "render": {
+                "description": "The render of the finished call, a\n`crucible_core::types::ToolRender`. It replaces the render of\nthe card."
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -4733,6 +4736,9 @@
               },
               "error": {
                 "type": "string"
+              },
+              "render": {
+                "description": "The render of the failed call. See [`Self::ToolResult`]."
               },
               "type": {
                 "type": "string",

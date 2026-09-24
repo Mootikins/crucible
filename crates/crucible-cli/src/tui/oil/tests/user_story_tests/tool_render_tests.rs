@@ -33,6 +33,49 @@ fn a_tool_card_shows_the_line_that_the_daemon_rendered() {
     assert!(!frame.contains("from the arguments"), "{frame}");
 }
 
+/// A render that a plugin gives reaches the card: its line, each field on a
+/// row, and the summary of the result render. The TUI takes nothing from
+/// the tool name.
+#[test]
+fn a_tool_card_draws_the_fields_and_the_result_summary() {
+    let mut story = StoryRuntime::new(80, 24);
+    send_user_message(&mut story, "search it");
+    relay_session_event(
+        &mut story,
+        "tool_call",
+        json!({
+            "call_id": "c1", "tool": "web_search", "args": { "query": "rust" },
+            "display": {
+                "kind": "search", "tool": "web_search", "query": "rust",
+                "render": { "line": "rust", "fields": [{ "label": "provider", "value": "ddg" }] },
+            },
+        }),
+    );
+    relay_session_event(
+        &mut story,
+        "tool_result",
+        json!({
+            "call_id": "c1", "tool": "web_search",
+            "result": {
+                "result": "one\ntwo\nthree",
+                "render": {
+                    "line": "rust",
+                    "fields": [{ "label": "provider", "value": "ddg" }],
+                    "summary": "ddg · 3 results",
+                },
+            },
+        }),
+    );
+
+    let frame = story.fresh_screen();
+    assert!(frame.contains("rust → ddg · 3 results"), "{frame}");
+    assert!(frame.contains("provider: ddg"), "{frame}");
+    assert!(
+        !frame.contains("three"),
+        "the summary stands for the output: {frame}"
+    );
+}
+
 /// A later update of the call brings a new render, and the card takes its line.
 #[test]
 fn a_tool_call_update_replaces_the_line() {
@@ -89,6 +132,31 @@ fn the_permission_modal_shows_the_agent_the_wire_name_and_the_layer() {
         frame.contains("agent claude · wire name Edit · asked by ask mode"),
         "{frame}"
     );
+}
+
+/// The prompt draws the render line and the render fields, not the
+/// arguments of the call.
+#[test]
+fn the_permission_modal_draws_the_render_line_and_fields() {
+    let mut story = StoryRuntime::new(100, 30);
+    send_user_message(&mut story, "delegate it");
+    let request = json!({
+        "kind": "permission",
+        "action": { "type": "tool", "name": "spawn", "args": { "prompt": "from the arguments" } },
+        "call": {
+            "kind": "delegate", "tool": "spawn",
+            "render": { "line": "fix the parser", "fields": [{ "label": "agent", "value": "claude" }] },
+        },
+    });
+    let _ = story.app().open_interaction(
+        "req-1".to_string(),
+        serde_json::from_value(request).expect("the daemon's request decodes"),
+    );
+
+    let frame = story.fresh_screen();
+    assert!(frame.contains("spawn fix the parser"), "{frame}");
+    assert!(frame.contains("agent: claude"), "{frame}");
+    assert!(!frame.contains("from the arguments"), "{frame}");
 }
 
 /// A transcript from before the render still shows each card line and each

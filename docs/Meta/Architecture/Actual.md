@@ -872,7 +872,7 @@ plugin_install}.rs`, `server/mod.rs` (`Server::boot_plugins`), `rpc/ui.rs`, `run
 | `EventOutcome` | `crucible-lua/src/handlers/script_handler.rs:110` | Observed or StopChain for broadcast events |
 | `PermissionRequest`, `PermissionHookResult` | `crucible-lua/src/handlers/permission.rs` | `cru.permissions.on_request` payload and answer |
 | `Owner` | `crucible-lua/src/plugin_context.rs` | Who a registration belongs to: `Plugin(name)`, `UserLua`, `Builtin`, `Eval`. Total, so no registration sits outside every group |
-| `ToolBeforeExecuteEvent`, `ToolDisplayStartHints`, `ToolDisplayCompleteHints` | `handlers/before_execute.rs:12`, `display_hooks.rs:18,42` | Tool hook payloads |
+| `ToolBeforeExecuteEvent`, `execute_tool_render` | `handlers/before_execute.rs:12`, `handlers/render.rs` | Tool hook payloads |
 | `DaemonSessionApi` | `crucible-lua/src/sessions/mod.rs:103` | `cru.session.*` contract; the daemon implements it |
 | `DaemonSessionBridge` | `crucible-daemon/src/session_bridge.rs:23` | The one production `DaemonSessionApi` |
 | `DaemonToolsApi`, `DaemonToolsBridge` | `crucible-lua/src/tools_api.rs:95`, `crucible-daemon/src/tools_bridge.rs:19` | `cru.tools.*` contract and impl |

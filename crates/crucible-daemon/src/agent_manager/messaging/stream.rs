@@ -275,12 +275,14 @@ impl AgentManager {
         // as "dispatched" made the empty-response guard fire on every
         // delegated turn that ran tools and narrated nothing.
         let mut saw_tool_activity = false;
-        // The args and the open review bracket of each call that an agent
-        // runs itself, from its `ToolCall` to its `ToolResult`, by call id.
-        // The result handlers get the same `{tool, args, ...}` payload as
-        // for a Crucible tool. A bracket that no result closes deregisters
-        // itself when the turn drops it.
-        let mut agent_tool_args: HashMap<String, serde_json::Value> = HashMap::new();
+        // The args, the canonical call and the open review bracket of each
+        // call that an agent runs itself, from its `ToolCall` to its
+        // `ToolResult`, by call id. The result handlers get the same
+        // `{tool, args, ...}` payload as for a Crucible tool, and the result
+        // renders the last canonical call. A bracket that no result closes
+        // deregisters itself when the turn drops it.
+        let mut agent_calls: HashMap<String, (serde_json::Value, CanonicalToolCall)> =
+            HashMap::new();
         let mut agent_brackets: HashMap<String, crate::review::CaptureHandle> = HashMap::new();
 
         // Conjunctive early-stop signals collected per batch. The loop
@@ -443,9 +445,9 @@ impl AgentManager {
                                 })
                             });
                         stream_ctx
-                            .announce_tool_call(&id, &args, (None, source), call, None)
+                            .announce_tool_call(&id, &args, (None, source), call.clone(), None)
                             .await;
-                        agent_tool_args.insert(id, args);
+                        agent_calls.insert(id, (args, call));
                         continue;
                     }
 
@@ -595,7 +597,11 @@ impl AgentManager {
                     // The result is a notification: the agent's model read
                     // it already, so the hooks shape what subscribers, the
                     // transcript and the tree get, not what the model saw.
-                    let args = agent_tool_args.remove(&id).unwrap_or_default();
+                    let (args, call) = agent_calls.remove(&id).unwrap_or_else(|| {
+                        let args = serde_json::Value::Null;
+                        let call = CanonicalToolCall::crucible_tool(&name, &args);
+                        (args, call)
+                    });
                     // The agent got only a reject option. The reason of the
                     // gate says why, where the agent can only say "rejected".
                     let denial = stream_ctx.slot.take_denial(&id);
@@ -605,7 +611,7 @@ impl AgentManager {
                         other => other.to_string(),
                     };
                     let (text, error) = stream_ctx
-                        .finish_tool_result(&id, &name, &args, text, error, false)
+                        .finish_tool_result(&id, call, &args, text, error, false)
                         .await;
                     if let Some(bracket) = agent_brackets.remove(&id) {
                         stream_ctx.close_review_bracket(bracket, &id).await;
@@ -648,6 +654,9 @@ impl AgentManager {
                         stream_ctx.origin,
                     )
                     .await;
+                    if let Some((_, known)) = agent_calls.get_mut(&id) {
+                        *known = (*call).clone();
+                    }
                     if !emit_event(
                         &stream_ctx.event_tx,
                         SessionEventMessage::tool_call_update(

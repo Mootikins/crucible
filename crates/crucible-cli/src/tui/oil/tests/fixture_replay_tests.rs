@@ -203,13 +203,10 @@ fn styled_snapshot_basic_conversation() {
 
 /// A completed read, in colour.
 ///
-/// `Read File` is the ACP spelling — what `humanize_tool_title` stores for a
-/// delegated agent's read. Until divergence **A4** was fixed this snapshot
-/// recorded the bug: the summary table keyed on `read_file` alone, so this
-/// card painted the file body into the transcript while the identical
-/// internal read collapsed to `→ 3 lines`. The body-line styling that used to
-/// live here is now pinned by `styled_snapshot_tool_call_with_body`, which
-/// uses a tool the table deliberately does not summarize.
+/// The summary `→ 3 lines` comes from the render of the finished call that
+/// the daemon sends, never from the tool name. The body-line styling is
+/// pinned by `styled_snapshot_tool_call_with_body`, whose result has no
+/// summary.
 #[test]
 fn styled_snapshot_tool_call() {
     let _colors = force_colors();
@@ -225,7 +222,7 @@ fn styled_snapshot_tool_call() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("src/main.rs".into()),
+        render: Some("src/main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -233,6 +230,17 @@ fn styled_snapshot_tool_call() {
         name: "Read File".into(),
         delta: "fn main() {\n    println!(\"Hello\");\n}".into(),
         call_id: Some("c1".into()),
+    });
+    // The render of the finished read, as the daemon sends it.
+    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolCallUpdate {
+        call_id: "c1".into(),
+        args: None,
+        diffs: None,
+        render: Some(crucible_core::types::ToolRender {
+            summary: Some("3 lines".into()),
+            .."src/main.rs".into()
+        }),
+        auto_approved: None,
     });
     app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultComplete {
         name: "Read File".into(),
@@ -250,7 +258,7 @@ fn styled_snapshot_tool_call() {
 
 /// The other half of a tool card: the result body, in colour.
 ///
-/// A multi-line `bash` result has no entry in the summary table and is too
+/// A multi-line `bash` result has no summary in its render and is too
 /// long for `collapse_result`'s one-line branch, so it renders through
 /// `format_output_tail` — the `│`-prefixed dim rows. This is the only styled
 /// snapshot that covers them.
@@ -269,7 +277,7 @@ fn styled_snapshot_tool_call_with_body() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("cat src/main.rs".into()),
+        render: Some("cat src/main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

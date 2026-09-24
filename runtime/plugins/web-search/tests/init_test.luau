@@ -370,7 +370,7 @@ describe("web-search plugin", function()
         -- Activation seeds `package.loaded`, and the searcher caches the
         -- instance the `require` above made. Without the cache, the
         -- documented `require("web-search").setup{}` from a user's init.lua
-        -- ran the whole module again and registered a SECOND display hook,
+        -- ran the whole module again and registered a SECOND render,
         -- outside any plugin's ownership, which `clear_plugin_handlers`
         -- could never reap.
         it("returns the same module rather than re-running the file", function()

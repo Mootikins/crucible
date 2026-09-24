@@ -38,7 +38,7 @@ use serde_json::Value;
 use crate::events::session_event::ScriptingEvent;
 use crate::interaction::{InteractionRequest, InteractionResponse};
 use crate::traits::chat::PrecognitionNoteInfo;
-use crate::types::CanonicalToolCall;
+use crate::types::{CanonicalToolCall, ToolRender};
 
 /// Turn-stream events, adjacently tagged so the enum's serialization *is* the
 /// `{event, data}` pair the envelope carries.
@@ -310,7 +310,7 @@ impl TurnPayload {
 ///
 /// [`Systems`](../../../../../docs/Meta/Analysis/Systems.md) documented this as
 /// "the `{"result"|"error": …}` envelope": a two-key description of a four-key
-/// reality. `spill_path` and `summary` are the other two.
+/// reality. `spill_path` and `render` are the other two.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum ToolResultBody {
@@ -323,14 +323,15 @@ pub enum ToolResultBody {
         /// event, so this is the recovery path for the full output.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         spill_path: Option<String>,
-        /// Display summary from a `tool:display_complete` Lua hook.
+        /// The render of the finished call. It replaces the render of
+        /// the call, and its `summary` says what the result is.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        summary: Option<String>,
+        render: Option<ToolRender>,
     },
     Err {
         error: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        summary: Option<String>,
+        render: Option<ToolRender>,
     },
 }
 
@@ -350,6 +351,13 @@ impl ToolResultBody {
         match self {
             Self::Err { error, .. } => Some(error),
             Self::Ok { .. } => None,
+        }
+    }
+
+    /// The render of the finished call, if the daemon made one.
+    pub fn render(&self) -> Option<&ToolRender> {
+        match self {
+            Self::Ok { render, .. } | Self::Err { render, .. } => render.as_ref(),
         }
     }
 }

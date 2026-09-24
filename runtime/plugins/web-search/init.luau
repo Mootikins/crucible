@@ -22,7 +22,7 @@
 ---
 --- Every provider ends in `contract.normalise`, so the model sees one result
 --- shape regardless of which one answered. What the *user* sees is the extra
---- `tool:display_complete` summary line — a separate channel, already wired.
+--- summary line of the `tool:render` of the result — a separate channel.
 
 -- `ws_config`, not `config`: three shipped plugins have a lua/config.lua, and
 -- package.loaded is keyed on the bare module name. Whichever plugin loaded last
@@ -261,7 +261,7 @@ local MAX_DEGRADED_SHOWN = 3
 ---   searxng · 8 results · brave, startpage unavailable
 ---
 --- Deliberately *not* what the model receives: the model gets the normalised
---- rows, and this is the separate `tool:display_complete` channel. It names the
+--- rows, and this is the separate `tool:render` channel. It names the
 --- provider because a network call must never be invisible.
 ---
 --- Returns nil when `payload` is not a web_search result, so the hook can leave
@@ -299,35 +299,31 @@ function M.summarise(payload: any): string?
     return table.concat(parts, " · ")
 end
 
---- Register the display hook, once, at load.
+--- Register the render of a finished search, once, at load.
 ---
---- No `pattern` opt, and the tool name is checked inside the handler instead.
---- `execute_tool_display_complete_hooks` calls `runtime_handlers_for(event,
---- None)`, and a handler carrying a pattern is filtered out when the caller
---- passes no identifier (registry.rs:290) — so `{ pattern = "web_search" }`
---- would compile, register, and never once fire.
+--- The pattern is the kind `search`, so the handler checks the tool name and
+--- answers nil for another tool and for a call with no result. A nil answer
+--- leaves the call to the render in runtime/defaults/init.luau.
 ---
 --- rawget because the spec-extraction sandbox stubs `crucible` with a
 --- metatable whose __index answers every lookup with a function, and the plugin
 --- test runner has no `crucible` global at all.
-local function register_display_hook(): boolean
+local function register_render(): boolean
     local crucible = rawget(_G, "crucible")
     local on = type(crucible) == "table" and rawget(crucible, "on") or nil
     if type(on) ~= "function" then return false end
 
-    on("tool:display_complete", function(_ctx, event): { [string]: any }?
-        if type(event) ~= "table" or event.name ~= TOOL then return nil end
+    on("tool:render", { pattern = "search" }, function(_ctx, call): { [string]: any }?
+        if type(call) ~= "table" or call.tool ~= TOOL or not call.result then return nil end
 
-        -- `event.result` is the serialised tool result, or the error text when
-        -- the call failed; on failure it is not JSON and decoding gives up,
-        -- which is the right outcome — the raw error is already the best thing
-        -- to show.
-        local ok, payload = pcall(cru.json.decode, event.result or "")
+        -- A failed call has no JSON result; the error is the best thing to
+        -- show, and the client shows it.
+        local ok, payload = pcall(cru.json.decode, call.result)
         if not ok then return nil end
 
         local summary = M.summarise(payload)
         if not summary then return nil end
-        return { summary = summary }
+        return { line = call.query, summary = summary }
     end)
 
     return true
@@ -389,7 +385,7 @@ end
 --- `{ error = …, tried = { … } }` rather than raising: a raised Lua error
 --- reaches the model with a stack traceback attached (`format_lua_error` keeps
 --- frames that mention a .lua file), and this message is long and load-bearing
---- enough already. `tried` is the structured half the display hook reads.
+--- enough already. `tried` is the structured half the render reads.
 --- What a tool handler answers with: either `{ error = "..." }` or the
 --- handler's own result shape. Both cross to JSON, and the daemon reads
 --- `error` first.
@@ -478,10 +474,10 @@ end
 --
 -- A _G sentinel was tried here and was WORSE than the problem. `clear_plugin_handlers`
 -- drops this plugin's handlers on reload and then re-executes the module — but a
--- global outlives the clearing, so the guard skipped re-registration and the display
+-- global outlives the clearing, so the guard skipped re-registration and the render
 -- summary was gone until the daemon restarted. State that has to be reset in step with
 -- the handler registry does not belong in a namespace nothing resets.
-M.display_hook_registered = register_display_hook()
+M.render_registered = register_render()
 
 -- ============================================================================
 -- Plugin spec

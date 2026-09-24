@@ -165,7 +165,7 @@ fn tool_call_creates_tool_group() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("main.rs".into()),
+        render: Some("main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -187,7 +187,7 @@ fn tool_call_update_replaces_empty_diffs_with_late_content() {
         call_id: Some("late-1".into()),
         description: None,
         source: None,
-        line: Some("src/late.rs".into()),
+        render: Some("src/late.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -201,7 +201,7 @@ fn tool_call_update_replaces_empty_diffs_with_late_content() {
         call_id: "late-1".into(),
         args: None,
         diffs: Some(diffs.clone()),
-        line: None,
+        render: None,
         auto_approved: None,
     });
 
@@ -231,7 +231,7 @@ fn tool_call_update_for_unknown_call_id_is_a_noop() {
         call_id: "ghost".into(),
         args: None,
         diffs: Some(diffs),
-        line: None,
+        render: None,
         auto_approved: None,
     });
     assert_eq!(
@@ -250,7 +250,7 @@ fn tool_result_error_sets_error_on_tool() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: None,
+        render: None,
         diffs: Vec::new(),
         auto_approved: None,
     });

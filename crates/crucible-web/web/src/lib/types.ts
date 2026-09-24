@@ -268,6 +268,9 @@ interface ToolRender {
   line?: string;
   /** The other facts of the call, in order. */
   fields?: Array<{ label: string; value: unknown }>;
+  /** The one line that says what the result is. Only the render of a
+   * finished call has it. */
+  summary?: string;
 }
 
 /** The fields of an ACP tool call. Mirrors `crucible_core::types::RawToolCall`. */

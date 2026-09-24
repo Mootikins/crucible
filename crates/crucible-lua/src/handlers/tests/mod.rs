@@ -1,10 +1,10 @@
 mod budget;
 mod clear;
 mod conversion;
-mod display;
 mod interpret;
 mod once;
 mod permission;
 mod registry;
+mod render;
 mod runtime;
 mod scope;

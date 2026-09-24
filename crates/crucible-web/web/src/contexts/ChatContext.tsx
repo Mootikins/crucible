@@ -55,7 +55,7 @@ import {
   type QueuedTurn,
 } from './transcriptStore';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
-import { finalizeDanglingTool, mergeToolCallUpdate } from './chatEventReducer';
+import { finalizeDanglingTool, mergeToolCallUpdate, withResultRender } from './chatEventReducer';
 import { FALLBACK_MODES } from '@/components/ChatModeControl';
 
 interface ChatProviderProps {
@@ -332,7 +332,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
                   ? body.result
                   : data.result;
           target.toolCall = {
-            ...target.toolCall,
+            ...withResultRender(target.toolCall, body.render),
             status: failed ? 'error' : 'complete',
             result:
               raw === undefined

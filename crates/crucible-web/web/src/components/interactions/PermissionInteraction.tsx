@@ -22,13 +22,17 @@ const ACTION_LABELS: Record<string, { label: string; chip: string }> = {
 };
 
 /**
- * Full tool arguments as display pairs. A user must be able to see everything
- * they are approving — structured args (queries, URLs, nested objects) were
- * previously invisible unless mirrored into `tokens` (TUI parity:
- * `perm.full_commands`). No truncation; long values wrap.
+ * The facts of the request as display pairs. The daemon rendered the call,
+ * so the fields of its render come first and stand in place of the
+ * arguments, as on the tool card. With no fields, the full tool arguments
+ * show: a user must be able to see everything they are approving (TUI
+ * parity: `perm.full_commands`). A command shows as its line, so its
+ * arguments do not repeat it. No truncation; long values wrap.
  */
-function toolArgPairs(request: InteractionOf<'permission'>): [string, string][] {
-  if (request.action_type !== 'tool') return [];
+function detailPairs(request: InteractionOf<'permission'>): [string, string][] {
+  const fields = request.call?.render?.fields ?? [];
+  if (fields.length > 0) return fields.map((f) => [f.label, prettyPrintMaybeJson(f.value)]);
+  if (request.action_type !== 'tool' || request.call?.kind === 'command') return [];
   if (!request.tool_args || typeof request.tool_args !== 'object') return [];
   return Object.entries(request.tool_args as Record<string, unknown>).map(([k, v]) => [
     k,
@@ -64,12 +68,13 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const isNamedTool = () =>
     props.request.action_type === 'tool' && !!props.request.tool_name;
   const chipLabel = () => (isNamedTool() ? props.request.tool_name! : actionInfo().label);
-  // The command line as the request carries it, for the display only. The
-  // grant that "always allow" saves is `request.pattern`, which the daemon
-  // made from the canonical call: the daemon checks the grant against that
-  // call, so a grant that the browser made could never match it.
-  const commandPattern = () => props.request.tokens.join(' ');
-  const commandDisplay = () => prettyPrintMaybeJson(commandPattern());
+  // The line of the render that the daemon made, or the tokens of a request
+  // with no call, for the display only. The grant that "always allow" saves
+  // is `request.pattern`, which the daemon made from the canonical call: the
+  // daemon checks the grant against that call, so a grant that the browser
+  // made could never match it.
+  const commandDisplay = () =>
+    prettyPrintMaybeJson(props.request.call?.render?.line ?? props.request.tokens.join(' '));
 
   // The proposed edits as the daemon attached them to the request — the
   // authoritative change, with its true baseline. This page used to guess a
@@ -127,13 +132,14 @@ export const PermissionInteraction: Component<Props> = (props) => {
         </div>
       </Show>
 
-      {/* Full tool arguments — everything being approved must be visible */}
-      <Show when={toolArgPairs(props.request).length > 0}>
+      {/* The render fields, or the full tool arguments — everything being
+          approved must be visible */}
+      <Show when={detailPairs(props.request).length > 0}>
         <div
           class="bg-surface-base rounded-md p-2 mb-3 max-h-40 overflow-y-auto font-mono text-floor leading-4 text-shell-ink"
           data-testid="perm-tool-args"
         >
-          {toolArgPairs(props.request).map(([key, value]) => (
+          {detailPairs(props.request).map(([key, value]) => (
             <div class="whitespace-pre-wrap break-all">
               <span class="text-muted">{key}=</span>
               {value}
@@ -178,9 +184,8 @@ export const PermissionInteraction: Component<Props> = (props) => {
         </div>
       </Show>
 
-      {/* Fallback: show raw command text when neither a diff nor the
-          tool-args block already covers the request */}
-      <Show when={!hasDiff() && (commandDisplay() !== '' || toolArgPairs(props.request).length === 0)}>
+      {/* The render line, when no diff already covers the request */}
+      <Show when={!hasDiff() && (commandDisplay() !== '' || detailPairs(props.request).length === 0)}>
         <div class="bg-surface-base rounded-md p-2 mb-3 font-mono text-floor leading-4 text-shell-ink overflow-x-auto">
           {commandDisplay() || '(no arguments)'}
         </div>

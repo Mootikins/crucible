@@ -115,6 +115,20 @@ pub struct ToolRender {
     /// The other facts of the call, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<RenderField>,
+    /// The one line that says what the result is, for example `42 lines`.
+    /// Only the render of a finished call sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+/// A render with only a line.
+impl From<&str> for ToolRender {
+    fn from(line: &str) -> Self {
+        Self {
+            line: Some(line.to_string()),
+            ..Self::default()
+        }
+    }
 }
 
 /// One fact of a [`ToolRender`]. The value is JSON, so a client can draw a
@@ -163,7 +177,11 @@ impl ToolRender {
             Value::Object(map) => map.values().find_map(scalar_to_string),
             other => scalar_to_string(other),
         });
-        Self { line, fields }
+        Self {
+            line,
+            fields,
+            summary: None,
+        }
     }
 }
 
@@ -491,10 +509,7 @@ mod tests {
     /// A call whose render line is `line`.
     fn rendered(line: &str) -> CanonicalToolCall {
         CanonicalToolCall {
-            render: Some(ToolRender {
-                line: Some(line.to_string()),
-                fields: Vec::new(),
-            }),
+            render: Some(line.into()),
             ..of("bash", &json!({}))
         }
     }

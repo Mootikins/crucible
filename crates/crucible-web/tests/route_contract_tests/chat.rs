@@ -38,6 +38,7 @@ fn chat_event_tool_result_event_name() {
         id: "1".to_string(),
         result: Some("found it".to_string()),
         terminate: false,
+        render: None,
     };
     assert_eq!(event.event_name(), "tool_result");
 }

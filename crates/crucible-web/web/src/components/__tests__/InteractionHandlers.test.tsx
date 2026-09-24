@@ -267,6 +267,30 @@ describe('PermissionInteraction', () => {
     );
   });
 
+  it('draws the render line and the render fields in place of the arguments', () => {
+    // The daemon rendered the call; the card draws the table and does not
+    // read the arguments. A plugin render changes what the prompt shows.
+    const request: InteractionOf<'permission'> = {
+      kind: 'permission',
+      id: 'perm-render',
+      action_type: 'tool',
+      tokens: [],
+      tool_name: 'spawn',
+      tool_args: { prompt: 'from the arguments' },
+      call: {
+        kind: 'delegate',
+        tool: 'spawn',
+        render: { line: 'fix the parser', fields: [{ label: 'agent', value: 'claude' }] },
+      },
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    expect(screen.getByText('fix the parser')).toBeInTheDocument();
+    expect(screen.getByTestId('perm-tool-args').textContent).toBe('agent=claude');
+    expect(screen.queryByText(/from the arguments/)).not.toBeInTheDocument();
+  });
+
   it('keeps the verb chip for non-tool permissions', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',

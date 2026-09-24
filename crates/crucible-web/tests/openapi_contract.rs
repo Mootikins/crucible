@@ -212,6 +212,7 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
             id: String::new(),
             result: None,
             terminate: false,
+            render: None,
         },
         ChatEvent::ToolResultDelta {
             id: String::new(),
@@ -221,6 +222,7 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
         ChatEvent::ToolResultError {
             id: String::new(),
             error: String::new(),
+            render: None,
         },
         ChatEvent::Thinking {
             content: String::new(),

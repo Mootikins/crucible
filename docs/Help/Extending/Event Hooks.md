@@ -99,9 +99,7 @@ disagree.
 | `precognition_format` | over the surviving notes, to render the context block |
 | `turn:complete` | once the whole turn has finished |
 | `tool:before_execute` | immediately before execution, after permission |
-| `tool:display_start` | to customise how a running tool card renders |
-| `tool:display_complete` | to customise how a finished tool card renders |
-| `tool:render` | to give the display data of one kind of tool call |
+| `tool:render` | to give the display data of one kind of tool call and of its result |
 | `search:rerank` | over the merged search hits, before the cut to the caller's limit |
 | `index:blocks` | over a note's block rows, before the pipeline writes them |
 | `FileChanged` | a watched file was created or modified |
@@ -405,7 +403,7 @@ one's output; `{ result = ... }` and `{ error = ... }` replace those halves,
 omitted keys keep the current value. Execution already happened, so Cancel
 and Handle are ignored here; a handler that must be able to veto belongs in
 `pre_tool_call`. Use for redaction and summarisation of what the model sees;
-`tool:display_complete` is the equivalent for what the *user* sees.
+the `summary` of `tool:render` is the equivalent for what the *user* sees.
 
 For an ACP agent, this hook fires when the agent reports the result. The
 agent's model read the result already, so a patch changes only what the
@@ -419,17 +417,15 @@ happens to be JSON stays text instead of rendering as a `{...}` object). It
 runs first — a bash handler of yours sees its output and can strip or rework
 it.
 
-### `tool:display_start` / `tool:display_complete`
-
-Fire around tool output display in the TUI. Use these to transform or filter how tool output is shown to the user (they don't affect the result returned to the agent). They fire for the calls of an ACP agent too.
-
 ### `tool:render`
 
 A render function gives the display data of one kind of tool call. The
 pattern is the kind: `command`, `file_edit`, `file_read`, `mcp_tool`,
 `fetch`, `search`, `tool`, or a kind that an agent key table gives. The
-daemon runs the render once for each tool call event and once for each
-permission prompt, so the TUI, the web and `cru acp` read the same data.
+daemon runs the render once for each tool call event, once for each
+permission prompt and once for each result, so the TUI, the web and
+`cru acp` read the same data. It is the only display hook, and it runs for
+the calls of an ACP agent too.
 
 ```lua
 cru.on("tool:render", { pattern = "delegate" }, function(ctx, call)
@@ -446,6 +442,19 @@ The call has `kind`, `tool`, `command`, `paths`, `url`, `query`, `diffs`,
 `{ kind = "plugin" }`). Return a table with `line`, the one line that says
 what the call does, and `fields`, a list of `{ label, value }`. Return no
 terminal text and no HTML: each client draws the data in its own way.
+
+For a result, the call also has `result` (the text) and `error` (absent on
+success), and the render can return `summary`: one line that says what the
+result is, for example `42 lines`. The render of the result replaces the
+render of the call on the card. A render that answers `nil` leaves the call
+to the next render of its kind.
+
+```lua
+cru.on("tool:render", { pattern = "command" }, function(ctx, call)
+  local summary = call.result and not call.error and "done" or nil
+  return { line = call.command, summary = summary }
+end)
+```
 
 The last render of a kind wins, so a render in your `init.lua` or in a
 plugin replaces a shipped render. `runtime/defaults/init.luau` renders each

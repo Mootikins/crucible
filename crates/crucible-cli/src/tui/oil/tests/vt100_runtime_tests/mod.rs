@@ -35,7 +35,7 @@ fn tool(app: &mut OilChatApp, name: &str, call_id: &str) {
         call_id: Some(call_id.into()),
         description: None,
         source: None,
-        line: None,
+        render: None,
         diffs: Vec::new(),
         auto_approved: None,
     });

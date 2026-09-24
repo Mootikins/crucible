@@ -1,20 +1,16 @@
-//! Display, before-execute, and tool-result hook resolution for tool calls.
+//! Render, before-execute, and tool-result hook resolution for tool calls.
 //!
 //! Each resolver runs the handler VM's handlers (under the session
 //! state lock), then the plugin VM's with the lock released — plugin Lua may
 //! run for seconds and must not hold the session's whole state hostage.
-//! Display hints are first-non-empty-wins; env maps merge with session
+//! Env maps merge with session
 //! entries winning a key collision (the more specific scope overrides).
 //! `apply_tool_result_handlers` is the odd one out: chained partial patches
 //! that shape the finished result as the model receives it, so every handler
 //! sees the previous ones' edits rather than the first answer winning.
 
 use crucible_lua::StageId;
-use crucible_lua::{
-    execute_tool_before_execute_hooks, execute_tool_display_complete_hooks,
-    execute_tool_display_start_hooks, ToolBeforeExecuteEvent, ToolDisplayCompleteEvent,
-    ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints,
-};
+use crucible_lua::{execute_tool_before_execute_hooks, ToolBeforeExecuteEvent};
 use std::ops::ControlFlow;
 use tracing::warn;
 
@@ -22,57 +18,23 @@ use crate::agent_manager::vm_pass::run_handlers;
 
 use super::StreamContext;
 
-/// A display stage a tool call passes through, with the Lua hook that
-/// resolves its hints. The two stages differ only in their event, their
-/// hints, and the hook they call.
-pub(super) trait DisplayStage: Sync {
-    type Hints: Send;
-    const STAGE: &'static str;
-
-    fn tool_name(&self) -> &str;
-
-    fn run(
-        &self,
-        lua: &mlua::Lua,
-        registry: &crucible_lua::LuaScriptHandlerRegistry,
-        session_id: &str,
-    ) -> impl std::future::Future<Output = mlua::Result<Option<Self::Hints>>> + Send;
-}
-
-impl DisplayStage for ToolDisplayStartEvent {
-    type Hints = ToolDisplayStartHints;
-    const STAGE: &'static str = "tool:display_start";
-
-    fn tool_name(&self) -> &str {
-        &self.name
-    }
-
-    async fn run(
-        &self,
-        lua: &mlua::Lua,
-        registry: &crucible_lua::LuaScriptHandlerRegistry,
-        session_id: &str,
-    ) -> mlua::Result<Option<Self::Hints>> {
-        execute_tool_display_start_hooks(lua, registry, Some(session_id), self).await
-    }
-}
-
-impl DisplayStage for ToolDisplayCompleteEvent {
-    type Hints = ToolDisplayCompleteHints;
-    const STAGE: &'static str = "tool:display_complete";
-
-    fn tool_name(&self) -> &str {
-        &self.name
-    }
-
-    async fn run(
-        &self,
-        lua: &mlua::Lua,
-        registry: &crucible_lua::LuaScriptHandlerRegistry,
-        session_id: &str,
-    ) -> mlua::Result<Option<Self::Hints>> {
-        execute_tool_display_complete_hooks(lua, registry, Some(session_id), self).await
-    }
+/// The Lua render of `call`, or `None` when no render answers or a render
+/// fails. `outcome` is the result text and the error of a finished call.
+pub(crate) async fn lua_render(
+    handlers: Option<&crate::agent_manager::vm_pass::PluginHandlers>,
+    session_id: &str,
+    call: &crucible_core::types::CanonicalToolCall,
+    args: &serde_json::Value,
+    origin: crucible_core::turn::TurnOrigin,
+    outcome: Option<(&str, Option<&str>)>,
+) -> Option<crucible_core::types::ToolRender> {
+    let (registry, lua) = handlers?;
+    crucible_lua::execute_tool_render(lua, registry, Some(session_id), call, args, origin, outcome)
+        .await
+        .unwrap_or_else(|error| {
+            warn!(session_id, kind = %call.kind, %error, "tool:render failed");
+            None
+        })
 }
 
 /// Set the render of `call`: the Lua render of its kind, else the fallback.
@@ -87,22 +49,7 @@ pub(crate) async fn render_call(
     args: &serde_json::Value,
     origin: crucible_core::turn::TurnOrigin,
 ) {
-    let render = match handlers {
-        Some((registry, lua)) => crucible_lua::execute_tool_render(
-            lua,
-            registry,
-            Some(session_id),
-            call,
-            args,
-            origin,
-        )
-        .await
-        .unwrap_or_else(|error| {
-            warn!(session_id, kind = %call.kind, %error, "tool:render failed, using the fallback");
-            None
-        }),
-        None => None,
-    };
+    let render = lua_render(handlers, session_id, call, args, origin, None).await;
     call.render =
         Some(render.unwrap_or_else(|| crucible_core::types::ToolRender::fallback(call, args)));
 }
@@ -119,37 +66,6 @@ impl StreamContext {
         render_call(handlers, &self.session_id, &mut call, args, self.origin).await;
         call
     }
-}
-
-/// Resolve the display hints for one stage from the handler VM's handlers,
-/// then the plugin VM's. A hook error falls back to the default metadata.
-pub(super) async fn resolve_hints<E: DisplayStage>(
-    stream_ctx: &StreamContext,
-    event: &E,
-) -> Option<E::Hints> {
-    run_handlers(
-        stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
-        None,
-        |registry, lua, _| {
-            Box::pin(async move {
-                match event.run(&lua, &registry, &stream_ctx.session_id).await {
-                    Ok(Some(hints)) => ControlFlow::Break(Some(hints)),
-                    Ok(None) => ControlFlow::Continue(None),
-                    Err(error) => {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %event.tool_name(),
-                            error = %error,
-                            "{} hook error, falling back to default metadata",
-                            E::STAGE
-                        );
-                        ControlFlow::Continue(None)
-                    }
-                }
-            })
-        },
-    )
-    .await
 }
 
 /// The `tool_result` seam: chained partial patches over a finished tool

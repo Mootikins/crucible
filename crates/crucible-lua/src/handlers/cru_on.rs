@@ -176,7 +176,7 @@ mod tests {
         let err = resolve_hook_name("on_everything_please").expect_err("must not register");
         let msg = err.to_string();
         assert!(msg.contains("pre_tool_call"), "{msg}");
-        assert!(msg.contains("tool:display_complete"), "{msg}");
+        assert!(msg.contains("tool:render"), "{msg}");
     }
 
     /// The four merged names share the store, not the calling convention. A

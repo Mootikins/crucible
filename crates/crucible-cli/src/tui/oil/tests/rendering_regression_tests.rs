@@ -23,7 +23,7 @@ fn cancelled_stream_keeps_all_containers() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("test.rs".into()),
+        render: Some("test.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -195,7 +195,7 @@ fn no_triple_blanks_tool_heavy_conversation() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("src/main.rs".into()),
+        render: Some("src/main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -216,7 +216,7 @@ fn no_triple_blanks_tool_heavy_conversation() {
         call_id: Some("c2".into()),
         description: None,
         source: None,
-        line: Some("cargo test".into()),
+        render: Some("cargo test".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -260,7 +260,7 @@ fn no_triple_blanks_thinking_then_tools_then_text() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("config.toml".into()),
+        render: Some("config.toml".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -385,7 +385,7 @@ fn multiple_thinking_blocks_render_without_duplication() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: None,
+        render: None,
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -440,7 +440,7 @@ fn continuation_after_tool_has_no_bullet() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: None,
+        render: None,
         diffs: Vec::new(),
         auto_approved: None,
     });

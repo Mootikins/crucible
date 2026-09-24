@@ -58,7 +58,7 @@ fn deny_emits_deny_and_turn_continues_with_error() {
         call_id: Some("c1".into()),
         description: None,
         source: Some("Core".into()),
-        line: Some("rm -rf /".into()),
+        render: Some("rm -rf /".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

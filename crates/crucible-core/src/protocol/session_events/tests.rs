@@ -605,7 +605,7 @@ fn tool_result_body_covers_every_shape_the_daemon_produces() {
         ToolResultBody::of(&bare),
         Some(ToolResultBody::Ok {
             spill_path: None,
-            summary: None,
+            render: None,
             ..
         })
     ));
@@ -618,13 +618,9 @@ fn tool_result_body_covers_every_shape_the_daemon_produces() {
         other => panic!("expected Ok with spill_path, got {other:?}"),
     }
 
-    let summarized = serde_json::json!({"result": "ok", "summary": "read 3 files"});
-    match ToolResultBody::of(&summarized) {
-        Some(ToolResultBody::Ok { summary, .. }) => {
-            assert_eq!(summary.as_deref(), Some("read 3 files"))
-        }
-        other => panic!("expected Ok with summary, got {other:?}"),
-    }
+    let rendered = serde_json::json!({"result": "ok", "render": {"summary": "read 3 files"}});
+    let summary = ToolResultBody::of(&rendered).and_then(|b| b.render()?.summary.clone());
+    assert_eq!(summary.as_deref(), Some("read 3 files"));
 
     let failed = serde_json::json!({"error": "User denied permission"});
     assert_eq!(

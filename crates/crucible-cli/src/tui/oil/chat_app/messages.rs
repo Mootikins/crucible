@@ -50,7 +50,7 @@ use crucible_core::interaction::{InteractionRequest, InteractionResponse};
 use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
 use crucible_core::traits::chat::PrecognitionNoteInfo;
 use crucible_core::types::acp::FileDiff;
-use crucible_core::types::ProviderInfo;
+use crucible_core::types::{ProviderInfo, ToolRender};
 
 use super::{McpServerDisplay, PluginStatusEntry};
 
@@ -73,8 +73,8 @@ pub enum ChatAppMsg {
         description: Option<String>,
         /// Source provenance string (e.g. "Core", "Crucible", "Mcp:github").
         source: Option<String>,
-        /// The line of the render that the daemon sent with the call.
-        line: Option<String>,
+        /// The render that the daemon sent with the call.
+        render: Option<ToolRender>,
         /// File modification previews when the daemon can derive them
         /// (ACP `ToolCallContent::Diff` or args-based synthesis). Empty
         /// when the tool does not produce diffs or the daemon hasn't
@@ -97,8 +97,9 @@ pub enum ChatAppMsg {
         /// The diffs of the new canonical call. `None` when the update has
         /// no canonical call: a transcript line from before the field.
         diffs: Option<Vec<FileDiff>>,
-        /// The line of the new render. `None` keeps the line of the card.
-        line: Option<String>,
+        /// The new render: of a later frame, or of the result. `None` keeps
+        /// the render of the card.
+        render: Option<ToolRender>,
         /// Which layer granted the call without asking.
         auto_approved: Option<String>,
     },

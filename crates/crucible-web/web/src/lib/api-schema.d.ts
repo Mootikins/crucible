@@ -2220,6 +2220,12 @@ export interface components {
             type: "tool_call";
         } | {
             id: string;
+            /**
+             * @description The render of the finished call, a
+             *     `crucible_core::types::ToolRender`. It replaces the render of
+             *     the card.
+             */
+            render?: unknown;
             result?: string | null;
             /**
              * @description True if this tool requested an agent-turn early-stop
@@ -2241,6 +2247,8 @@ export interface components {
         } | {
             error: string;
             id: string;
+            /** @description The render of the failed call. See [`Self::ToolResult`]. */
+            render?: unknown;
             /** @enum {string} */
             type: "tool_result_error";
         } | {

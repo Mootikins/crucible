@@ -53,6 +53,14 @@ const TURN_WITH_LATE_ARGS = [
   { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 5 },
 ];
 
+// A turn whose tool result carries the render of the finished call.
+const TURN_WITH_RESULT_RENDER = [
+  TURN_WITH_DANGLING_TOOL[0],
+  { type: 'event', session_id: 's1', event: 'tool_call', data: { call_id: 'call-1', tool: 'read_file', args: {}, display: { kind: 'file_read', tool: 'read_file', render: { line: 'a.rs' } } }, timestamp: new Date(T0 + 1000).toISOString(), seq: 2 },
+  { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: { result: 'x', render: { line: 'a.rs', summary: '1 lines' } } }, timestamp: new Date(T0 + 2000).toISOString(), seq: 3 },
+  { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 4 },
+];
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ChatProvider, useChat } from '../ChatContext';
@@ -126,6 +134,14 @@ describe('ChatContext reloads the state a tool was left in', () => {
     const tool = ctx.messages().find((m) => m.role === 'tool');
     expect(tool?.toolCall?.args).toBe(JSON.stringify({ command: 'ls crates' }));
     expect(tool?.toolCall?.result).toBe('out');
+  });
+
+  it('replays the render of the result, as the live card shows it', async () => {
+    held = TURN_WITH_RESULT_RENDER;
+    const ctx = mountProvider();
+    await waitFor(() => expect(ctx.messages().length).toBe(3));
+    const tool = ctx.messages().find((m) => m.role === 'tool');
+    expect(tool?.toolCall?.display?.render?.summary).toBe('1 lines');
   });
 
   it('shows the card line and the diffs of an old transcript', async () => {

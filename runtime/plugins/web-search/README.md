@@ -201,8 +201,8 @@ provider was never set up, and could not tell you what to fix.
 
 ### What you see versus what the model sees
 
-The model gets the normalised rows. You additionally get a one-line summary via
-the `tool:display_complete` hook:
+The model gets the normalised rows. You additionally get a one-line summary
+from the `tool:render` of the result:
 
 ```
 searxng · 8 results · brave, startpage unavailable
@@ -218,7 +218,7 @@ so a network call is never invisible.
 | Path | What |
 |---|---|
 | `plugin.yaml` | Manifest and the declaration of record for the config keys. |
-| `init.lua` | The tool, the chain, `setup()`, and the display hook. |
+| `init.lua` | The tool, the chain, `setup()`, and the render. |
 | `lua/config.lua` | Config resolution, including the secret-from-environment step. |
 | `lua/contract.lua` | The normalised result shape. Every provider ends here; nothing else constructs a result. |
 | `lua/providers/*.lua` | One adapter per provider: transport and parsing only. |

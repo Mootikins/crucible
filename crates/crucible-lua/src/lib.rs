@@ -227,18 +227,15 @@ pub use check::{
     check_plugin_with, find_checker, CheckReport, Checker, CheckerChoice, Finding, TypecheckStatus,
 };
 pub use handlers::{
-    clear_source, execute_permission_hooks, execute_tool_before_execute_hooks,
-    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, execute_tool_render,
+    clear_source, execute_permission_hooks, execute_tool_before_execute_hooks, execute_tool_render,
     install_registry, interpret_handler_result, register_cru_clear_api, register_cru_on_api,
     register_permission_hook_api, registry_of, ClearFilter, EventOutcome, Firing,
     LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest, Registration,
     RegistrationSpec, ScriptHandlerResult, SessionScope, ToolBeforeExecuteEvent,
-    ToolBeforeExecuteResult, ToolDisplayCompleteEvent, ToolDisplayCompleteHints,
-    ToolDisplayStartEvent, ToolDisplayStartHints,
+    ToolBeforeExecuteResult,
 };
 pub use handlers::{
     hook_names, EventName, HookName, StageId, PERMISSION_REQUEST_HOOK, TOOL_BEFORE_EXECUTE_EVENT,
-    TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use host_api::render_declarations;
 pub use host_registry::{HostSignatures, LuauArgs, LuauValue, Ns};

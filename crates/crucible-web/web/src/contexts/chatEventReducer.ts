@@ -102,6 +102,16 @@ export function mergeToolCallUpdate(
   };
 }
 
+/**
+ * Put the render of a finished call on its card. The render of the result
+ * replaces the render of the call, so the card shows its summary. The
+ * history loader applies the same rule.
+ */
+export function withResultRender(tool: ToolCallDisplay, render: unknown): ToolCallDisplay {
+  if (!render || typeof render !== 'object' || !tool.display) return tool;
+  return { ...tool, display: { ...tool.display, render: render as NonNullable<ToolCallDisplay['display']>['render'] } };
+}
+
 export function finalizeDanglingTool(tool: ToolCallDisplay): ToolCallDisplay {
   const hasResult = tool.result != null && tool.result !== '';
   return {
@@ -251,7 +261,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
 
       case 'tool_result':
         deps.updateToolMessage(event.id, (tool) => ({
-          ...tool,
+          ...withResultRender(tool, event.render),
           result: event.result ?? '',
           status: 'complete',
           terminate: event.terminate ?? false,
@@ -271,7 +281,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
 
       case 'tool_result_error':
         deps.updateToolMessage(event.id, (tool) => ({
-          ...tool,
+          ...withResultRender(tool, event.render),
           result: event.error,
           status: 'error',
         }));

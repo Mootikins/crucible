@@ -2,7 +2,7 @@ use super::super::*;
 use crucible_core::types::acp::FileDiff;
 use crucible_core::types::{CanonicalToolCall, ToolSource};
 use crucible_lua::StageId;
-use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
+use crucible_lua::ToolBeforeExecuteEvent;
 use std::ops::ControlFlow;
 
 use crate::agent_manager::vm_pass::run_handlers;
@@ -562,7 +562,7 @@ impl AgentManager {
             })
             .unwrap_or((None, None));
         stream_ctx
-            .announce_tool_call(&call_id, &args, labels, call, auto_approved)
+            .announce_tool_call(&call_id, &args, labels, call.clone(), auto_approved)
             .await;
 
         let before_event = ToolBeforeExecuteEvent {
@@ -629,14 +629,7 @@ impl AgentManager {
         };
 
         let (result, error) = stream_ctx
-            .finish_tool_result(
-                &call_id,
-                &tool_call.name,
-                &args,
-                result_str,
-                error_str,
-                true,
-            )
+            .finish_tool_result(&call_id, call, &args, result_str, error_str, true)
             .await;
         crucible_core::traits::chat::ChatToolResult {
             name: tool_call.name.clone(),
@@ -743,8 +736,8 @@ impl StreamContext {
         tree.add_child(parent, node);
     }
 
-    /// Run the `tool:display_start` hooks, then emit the `tool_call` event.
-    /// `labels` is the description and the source before the hooks.
+    /// Emit the `tool_call` event. `labels` is the description and the
+    /// source of the tool.
     pub(super) async fn announce_tool_call(
         &self,
         call_id: &str,
@@ -753,15 +746,7 @@ impl StreamContext {
         call: CanonicalToolCall,
         auto_approved: Option<String>,
     ) {
-        let (mut description, mut source) = labels;
-        let hook_event = ToolDisplayStartEvent {
-            name: call.tool.clone(),
-            args: serde_json::to_string(args).unwrap_or_else(|_| "null".to_string()),
-        };
-        if let Some(hints) = super::tool_hooks::resolve_hints(self, &hook_event).await {
-            description = hints.label.or(description);
-            source = hints.detail.or(source);
-        }
+        let (description, source) = labels;
         let tool = call.tool.clone();
         if !emit_event(
             &self.event_tx,
@@ -781,22 +766,35 @@ impl StreamContext {
     }
 
     /// Run the `tool_result` hooks, spill a large output when `spill` is
-    /// set, run the `tool:display_complete` hooks, then emit the
-    /// `tool_result` event. Returns the result and the error that the hooks
-    /// made, which is what the model of a Crucible tool reads.
+    /// set, render the finished `call`, then emit the `tool_result` event.
+    /// Returns the result and the error that the hooks made, which is what
+    /// the model of a Crucible tool reads.
     pub(super) async fn finish_tool_result(
         &self,
         call_id: &str,
-        tool: &str,
+        call: CanonicalToolCall,
         args: &serde_json::Value,
         result: String,
         error: Option<String>,
         spill: bool,
     ) -> (String, Option<String>) {
+        let tool = call.tool.clone();
+        let tool = tool.as_str();
         // The hooks run BEFORE the spill, so a redacted secret never reaches
         // the spill file either.
         let (mut result, error) =
             super::tool_hooks::apply_tool_result_handlers(self, tool, args, result, error).await;
+        // The render reads the whole result, before a spill cuts it. With
+        // no Lua render the card keeps the render of the call.
+        let render = super::tool_hooks::lua_render(
+            self.agent_stream_config.plugin_handlers.as_ref(),
+            &self.session_id,
+            &call,
+            args,
+            self.origin,
+            Some((&result, error.as_deref())),
+        )
+        .await;
 
         // Skip tools whose output is trivially reproducible from existing
         // data on disk.
@@ -835,16 +833,8 @@ impl StreamContext {
         if let Some(path) = spill_path {
             event_result["spill_path"] = serde_json::json!(path);
         }
-        let complete_event = ToolDisplayCompleteEvent {
-            name: tool.to_string(),
-            args: serde_json::to_string(args).unwrap_or_else(|_| "null".to_string()),
-            result: error.clone().unwrap_or_else(|| result.clone()),
-        };
-        if let Some(summary) = super::tool_hooks::resolve_hints(self, &complete_event)
-            .await
-            .and_then(|hints| hints.summary)
-        {
-            event_result["summary"] = serde_json::json!(summary);
+        if let Some(render) = render {
+            event_result["render"] = serde_json::json!(render);
         }
         if !emit_event(
             &self.event_tx,

@@ -79,7 +79,7 @@ fn tool_complete_creates_tool_group() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("src/main.rs".into()),
+        render: Some("src/main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -123,7 +123,7 @@ fn multi_turn_creates_containers_in_order() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("lib.rs".into()),
+        render: Some("lib.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -219,7 +219,7 @@ fn snapshot_tool_pending() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        line: Some("ls".into()),
+        render: Some("ls".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -288,7 +288,7 @@ fn show_diffs_off_omits_diff_body() {
         call_id: Some("e1".into()),
         description: None,
         source: None,
-        line: Some("src/lib.rs".into()),
+        render: Some("src/lib.rs".into()),
         diffs: vec![FileDiff::from_contents(
             "src/lib.rs",
             Some("fn old() {}\n".to_string()),
@@ -324,7 +324,7 @@ fn show_diffs_on_includes_diff_body() {
         call_id: Some("e1".into()),
         description: None,
         source: None,
-        line: Some("src/lib.rs".into()),
+        render: Some("src/lib.rs".into()),
         diffs: vec![FileDiff::from_contents(
             "src/lib.rs",
             Some("fn old() {}\n".to_string()),

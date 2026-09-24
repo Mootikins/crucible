@@ -846,20 +846,24 @@ mod tool_call_tests {
     }
 
     #[test]
-    fn known_tool_shows_summary() {
-        let tool = test_tool_complete("mcp_glob", r#"{"pattern": "*.rs"}"#, "a.rs\nb.rs\nc.rs");
+    fn the_render_summary_stands_for_the_result() {
+        let mut tool = test_tool_complete("mcp_glob", r#"{"pattern": "*.rs"}"#, "a.rs\nb.rs\nc.rs");
+        tool.render = Some(std::sync::Arc::new(crucible_core::types::ToolRender {
+            summary: Some("3 files".into()),
+            ..Default::default()
+        }));
         let node = tool.render_compact_with_frame(0, 80);
         let plain = render_to_plain_text(&node, 80);
 
         assert!(
             plain.contains("→ 3 files"),
-            "Should show file count summary: {:?}",
+            "Should show the summary of the render: {:?}",
             plain
         );
     }
 
     #[test]
-    fn edit_success_shows_applied() {
+    fn a_short_result_shows_itself_whatever_the_tool_name() {
         let tool = test_tool_complete(
             "mcp_edit",
             r#"{"path": "test.rs"}"#,
@@ -869,8 +873,8 @@ mod tool_call_tests {
         let plain = render_to_plain_text(&node, 80);
 
         assert!(
-            plain.contains("→ applied"),
-            "Should show 'applied': {:?}",
+            plain.contains("→ Edit applied successfully"),
+            "Should show the one-line result: {:?}",
             plain
         );
     }

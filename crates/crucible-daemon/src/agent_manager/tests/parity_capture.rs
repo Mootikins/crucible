@@ -170,6 +170,16 @@ fn drain(rx: &mut broadcast::Receiver<SessionEventMessage>) -> Vec<SessionEventM
     }
 }
 
+/// Load the shipped Lua defaults, so the capture renders each call as a
+/// daemon does. Keep the loader alive for the turn.
+fn load_shipped_defaults(h: &ReactorTestHarness) -> crate::daemon_plugins::DaemonPluginLoader {
+    crucible_lua::seed_app_config(
+        serde_json::to_value(crucible_core::config::CliAppConfig::default())
+            .expect("serialize default config"),
+    );
+    h.load_daemon_lua(crucible_lua::BUILTIN_INIT_LUA)
+}
+
 async fn configure_delegated(h: &ReactorTestHarness) {
     h.reconfigure(SessionAgent {
         agent_type: "acp".to_string(),
@@ -182,6 +192,7 @@ async fn configure_delegated(h: &ReactorTestHarness) {
 #[tokio::test]
 async fn internal_edit_fixture_matches_a_live_capture() {
     let h = ReactorTestHarness::new().await;
+    let _defaults = load_shipped_defaults(&h);
     std::fs::write(h.workspace().join("greeting.rs"), GREETING).unwrap();
     // The same synthesizer the permission gate and `GenaiAgentHandle` both call.
     // The mock stands in for the handle, so it supplies what the handle would;
@@ -248,6 +259,7 @@ async fn internal_edit_fixture_matches_a_live_capture() {
 #[tokio::test]
 async fn delegated_edit_fixture_matches_a_live_capture() {
     let mut h = ReactorTestHarness::new().await;
+    let _defaults = load_shipped_defaults(&h);
     std::fs::write(h.workspace().join("greeting.rs"), GREETING).unwrap();
     // The ACP client classifies the frames; the mock supplies what it would.
     // Claude Code announces the call with empty content and attaches the
@@ -294,6 +306,7 @@ async fn delegated_edit_fixture_matches_a_live_capture() {
 #[tokio::test]
 async fn internal_read_fixture_matches_a_live_capture() {
     let mut h = ReactorTestHarness::new().await;
+    let _defaults = load_shipped_defaults(&h);
     std::fs::write(h.workspace().join("greeting.rs"), GREETING).unwrap();
 
     h.inject_streaming_agent(vec![
@@ -321,6 +334,7 @@ async fn internal_read_fixture_matches_a_live_capture() {
 #[tokio::test]
 async fn delegated_read_fixture_matches_a_live_capture() {
     let mut h = ReactorTestHarness::new().await;
+    let _defaults = load_shipped_defaults(&h);
     std::fs::write(h.workspace().join("greeting.rs"), GREETING).unwrap();
 
     configure_delegated(&h).await;

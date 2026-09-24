@@ -136,30 +136,30 @@ describe('ToolCard — collapsed header', () => {
 describe('ToolCard — icon selection', () => {
   // Header icon precedes the tool name; lucide stamps a kebab-case class on
   // the rendered svg, which is the stable hook for which icon was chosen.
+  // The icon comes from the canonical kind, never from the tool name.
   const cases: Array<[string, string]> = [
-    ['read_file', 'lucide-file-text'],
-    ['file_lookup', 'lucide-file-text'],
-    ['write_note', 'lucide-pencil'],
-    ['edit_block', 'lucide-pencil'],
-    ['search_codebase', 'lucide-search'],
-    ['find_refs', 'lucide-search'],
-    ['bash_exec', 'lucide-zap'],
-    ['run_shell', 'lucide-zap'],
-    ['exec_command', 'lucide-zap'],
-    ['web_fetch', 'lucide-globe'],
-    ['http_get', 'lucide-globe'],
-    ['fetch_url', 'lucide-globe'],
-    ['note_create', 'lucide-sticky-note'],
-    ['memory_get', 'lucide-sticky-note'],
-    ['weird_tool_name', 'lucide-wrench'],
+    ['file_read', 'lucide-file-text'],
+    ['file_edit', 'lucide-pencil'],
+    ['search', 'lucide-search'],
+    ['command', 'lucide-zap'],
+    ['fetch', 'lucide-globe'],
+    ['mcp_tool', 'lucide-wrench'],
+    ['delegate', 'lucide-wrench'],
   ];
 
-  for (const [name, iconClass] of cases) {
-    it(`maps "${name}" to ${iconClass}`, () => {
-      const { container } = render(() => <ToolCard toolCall={makeTool({ name })} />);
+  for (const [kind, iconClass] of cases) {
+    it(`maps the kind "${kind}" to ${iconClass}`, () => {
+      const { container } = render(() => (
+        <ToolCard toolCall={makeTool({ name: 'x', display: { kind, tool: 'x' } })} />
+      ));
       expect(container.querySelector(`svg.${iconClass}`)).toBeInTheDocument();
     });
   }
+
+  it('does not guess the icon from the tool name', () => {
+    const { container } = render(() => <ToolCard toolCall={makeTool({ name: 'bash_exec' })} />);
+    expect(container.querySelector('svg.lucide-wrench')).toBeInTheDocument();
+  });
 });
 
 describe('ToolCard — status indicators', () => {
@@ -667,6 +667,31 @@ describe('ToolCard — the render table', () => {
     expect(fields.textContent).toContain('rawInput:');
     // The fields show the input, so the Arguments block does not repeat it.
     expect(screen.queryByTestId('tool-args')).not.toBeInTheDocument();
+  });
+});
+
+describe('ToolCard — the render of the result', () => {
+  // The render of the finished call gives the summary of the result, and a
+  // plugin render changes what the card shows.
+  it('shows the summary of the result in the header', () => {
+    render(() => (
+      <ToolCard
+        toolCall={makeTool({
+          name: 'web_search',
+          display: {
+            kind: 'search',
+            tool: 'web_search',
+            render: { line: 'rust', summary: 'ddg · 3 results' },
+          },
+        })}
+      />
+    ));
+    expect(screen.getByTestId('tool-result-summary').textContent).toBe('→ ddg · 3 results');
+  });
+
+  it('shows no summary when the render gives none', () => {
+    render(() => <ToolCard toolCall={makeTool()} />);
+    expect(screen.queryByTestId('tool-result-summary')).not.toBeInTheDocument();
   });
 });
 
