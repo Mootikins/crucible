@@ -58,7 +58,7 @@ async fn agent_calls(
         log: Some(log.clone()),
         ..MockScript::default()
     };
-    let session = mock_session(&[("kiln", kiln), ("other-kiln", other)], script).await;
+    let session = mock_session(&[("kiln", kiln), ("other-kiln", other)], None, script).await;
 
     // The mock logs the MCP reply before it answers the prompt, so a
     // completed turn means the log holds the reply.

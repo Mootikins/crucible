@@ -59,6 +59,9 @@ pub struct MockScript {
     pub models: bool,
     /// Advertise the agent's own options, with this `thought_level`.
     pub agent_options: Option<String>,
+    /// A `session/update` payload that the agent sends before it answers
+    /// `initialize` and `session/new`, as codex-acp does.
+    pub handshake_update: Option<Value>,
     /// What each prompt turn does, in order. The turn ends with `end_turn`
     /// unless a step says otherwise.
     pub turn: Vec<Step>,
@@ -79,6 +82,7 @@ impl Default for MockScript {
             mode_ids: None,
             models: false,
             agent_options: None,
+            handshake_update: None,
             turn: Vec::new(),
             log: None,
         }
@@ -105,6 +109,10 @@ pub enum Step {
     Text(String),
     /// An `agent_thought_chunk`.
     Thought(String),
+    /// A line on stdout outside the JSON-RPC framing, as npx can print. Only
+    /// the binary sends it to the client: in process, the line goes to the
+    /// stdout of the test.
+    Raw(String),
     /// A raw `session/update` payload, sent as it is.
     Update(Value),
     /// `session/request_permission` with these params; `sessionId` is added.
@@ -288,6 +296,20 @@ fn mode_state(script: &MockScript) -> Value {
     json!({"currentModeId": current, "availableModes": available})
 }
 
+/// Send `update` as a `session/update` for `session_id`.
+fn send_update(cx: &ConnectionTo<Client>, session_id: &str, update: Value) {
+    let params = json!({"sessionId": session_id, "update": update});
+    let message = UntypedMessage::new("session/update", params).expect("an update serializes");
+    let _ = cx.send_notification(message);
+}
+
+/// Send the `handshake_update` of `script`, if it has one.
+fn handshake_update(cx: &ConnectionTo<Client>, script: &MockScript, session_id: &str) {
+    if let Some(update) = &script.handshake_update {
+        send_update(cx, session_id, update.clone());
+    }
+}
+
 /// Serve the agent role over `transport` until the client closes it or a
 /// turn runs an [`Step::Exit`].
 #[allow(dead_code)]
@@ -305,9 +327,10 @@ pub async fn serve(script: MockScript, transport: impl ConnectTo<Agent> + 'stati
         .on_receive_request(
             {
                 let shared = shared.clone();
-                async move |req: InitializeRequest, responder, _cx| {
+                async move |req: InitializeRequest, responder, cx| {
                     log(&shared, req.method(), &req);
                     let script = lock(&shared).script.clone();
+                    handshake_update(&cx, &script, "mock-session-none");
                     if script.fail_initialize {
                         return responder.respond_with_error(Error::new(
                             -32000,
@@ -337,9 +360,11 @@ pub async fn serve(script: MockScript, transport: impl ConnectTo<Agent> + 'stati
         .on_receive_request(
             {
                 let shared = shared.clone();
-                async move |req: NewSessionRequest, responder, _cx| {
+                async move |req: NewSessionRequest, responder, cx| {
                     log(&shared, req.method(), &req);
+                    let session_id = format!("mock-session-{}", uuid::Uuid::new_v4());
                     let mut state = lock(&shared);
+                    handshake_update(&cx, &state.script, &session_id);
                     state.mcp_url =
                         serde_json::to_value(&req.mcp_servers)
                             .ok()
@@ -363,7 +388,7 @@ pub async fn serve(script: MockScript, transport: impl ConnectTo<Agent> + 'stati
                     }
                     let options = (!options.is_empty()).then_some(options);
                     responder.respond(answer::<NewSessionResponse>(json!({
-                        "sessionId": format!("mock-session-{}", uuid::Uuid::new_v4()),
+                        "sessionId": session_id,
                         "modes": mode_state(&state.script),
                         "configOptions": options
                     })))
@@ -510,12 +535,12 @@ impl Turn {
                 Step::Thought(text) => self.update(SessionUpdate::AgentThoughtChunk(
                     ContentChunk::new(ContentBlock::from(text)),
                 )),
-                Step::Update(update) => {
-                    let params = json!({"sessionId": self.session_id, "update": update});
-                    let message = UntypedMessage::new("session/update", params)
-                        .expect("an update serializes");
-                    let _ = self.cx.send_notification(message);
+                Step::Raw(line) => {
+                    use std::io::Write;
+                    let mut stdout = std::io::stdout().lock();
+                    let _ = writeln!(stdout, "{line}").and_then(|()| stdout.flush());
                 }
+                Step::Update(update) => send_update(&self.cx, &self.session_id.to_string(), update),
                 Step::Permission(mut params) => {
                     params["sessionId"] = json!(self.session_id);
                     let request: RequestPermissionRequest =

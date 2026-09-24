@@ -239,11 +239,13 @@ pub struct MockSession {
     pub events: broadcast::Receiver<SessionEventMessage>,
 }
 
-/// Register `kilns` and start a chat session that attaches the first one.
-/// The session agent is the mock binary, which runs `script`.
+/// Register `kilns` and start a chat session that attaches the first one,
+/// in `workspace` if it is given. The session agent is the mock binary,
+/// which runs `script`.
 #[allow(dead_code)]
 pub async fn mock_session(
     kilns: &[(&str, &Path)],
+    workspace: Option<&Path>,
     script: super::mock_agent::MockScript,
 ) -> MockSession {
     let session_manager = crucible_daemon::test_support::temp_session_manager_with_kilns(kilns);
@@ -258,7 +260,7 @@ pub async fn mock_session(
         .create_session(
             crucible_core::session::SessionType::Chat,
             vec![crucible_daemon::test_support::kiln_name(kilns[0].0)],
-            None,
+            workspace.map(Path::to_path_buf),
             None,
         )
         .await

@@ -62,7 +62,7 @@ async fn an_isolation_claim_launches_the_acp_agent_through_the_sandbox_prefix() 
         ..MockScript::default()
     };
     let (key, value) = script.env();
-    let session = mock_session(&[("kiln", &kiln)], script).await;
+    let session = mock_session(&[("kiln", &kiln)], None, script).await;
 
     // The claim that a plugin makes in a `session_start` hook. The launcher
     // is `/bin/sh <script>`, and `env(1)` takes the bare `K=V` operands.

@@ -115,7 +115,7 @@ async fn setup_with(script: MockScript) -> Harness {
         session_id,
         event_tx,
         ..
-    } = mock_session(&[("kiln", &kiln)], script).await;
+    } = mock_session(&[("kiln", &kiln)], None, script).await;
 
     Harness {
         _temp: temp,
