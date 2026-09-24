@@ -163,9 +163,11 @@ impl SessionInput {
     }
 }
 
+/// A plugin clear that waits for the end of the turn that runs. `gate` is
+/// that turn's gate, with the plugin as its origin.
 pub(crate) struct ClearAfterTurn {
     pub prompt: Option<String>,
-    pub plugin: String,
+    pub gate: TurnGate,
 }
 
 /// The two values a turn builds from the session's config, and the generation

@@ -507,9 +507,9 @@ async fn clear_keeps_the_plugin_turn_count_and_user_turn_resets_it() {
     assert_eq!(slot.plugin_turn_count.load(Ordering::Relaxed), 0);
 }
 
-#[tokio::test]
-async fn a_plugin_can_clear_and_start_one_turn_from_turn_complete() {
-    let mut h = ReactorTestHarness::new().await;
+/// Run `code` in a daemon VM as the plugin `alpha`, with `cru.session`
+/// bound to the harness's daemon.
+fn plugin_lua(h: &ReactorTestHarness, code: &str) -> crate::daemon_plugins::DaemonPluginLoader {
     let loader = h.load_daemon_lua("");
     let temp = TempDir::new().unwrap();
     let ctx = Arc::new(crate::rpc::RpcContext::for_test(
@@ -529,22 +529,29 @@ async fn a_plugin_can_clear_and_start_one_turn_from_turn_complete() {
     )
     .unwrap();
     let previous = crucible_lua::enter_plugin(&lua, "alpha");
-    lua.load(
-        r#"
-        clear_error = nil
-        completed = 0
-        cru.on("turn:complete", function(ctx, event)
-            completed += 1
-            if completed == 1 then
-                local _, err = cru.session.clear(event.session_id, { prompt = "after clear" })
-                clear_error = err
-            end
-        end)
-    "#,
-    )
-    .exec()
-    .unwrap();
+    lua.load(code).exec().unwrap();
     crucible_lua::set_source(&lua, previous);
+    loader
+}
+
+/// A plugin clears the context once, from `turn:complete`, and starts a
+/// turn with a prompt.
+const CLEAR_ONCE: &str = r#"
+    clear_error = nil
+    completed = 0
+    cru.on("turn:complete", function(ctx, event)
+        completed += 1
+        if completed == 1 then
+            local _, err = cru.session.clear(event.session_id, { prompt = "after clear" })
+            clear_error = err
+        end
+    end)
+"#;
+
+#[tokio::test]
+async fn a_plugin_can_clear_and_start_one_turn_from_turn_complete() {
+    let mut h = ReactorTestHarness::new().await;
+    let loader = plugin_lua(&h, CLEAR_ONCE);
 
     h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
     h.send("before clear").await;
@@ -554,6 +561,44 @@ async fn a_plugin_can_clear_and_start_one_turn_from_turn_complete() {
     assert!(second
         .iter()
         .any(|event| event.event == "user_message" && event.data["content"] == "after clear"));
-    let err: Option<String> = lua.globals().get("clear_error").unwrap();
+    let err: Option<String> = loader.plugin_lua().globals().get("clear_error").unwrap();
     assert!(err.is_none(), "clear failed: {err:?}");
+}
+
+/// The turn after a plugin clear keeps the override and the interactivity
+/// of the turn that asked. Else `--permissions deny` would end at the first
+/// clear, and a plugin could widen what the session allows.
+#[tokio::test]
+async fn a_plugin_clear_keeps_the_override_of_the_turn_that_asked() {
+    let mut h = ReactorTestHarness::new().await;
+    let _loader = plugin_lua(&h, CLEAR_ONCE);
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-1", "bash", serde_json::json!({"command": "pwd"})),
+        TurnEvent::Done {
+            stop_reason: StopReason::EndTurn,
+        },
+    ]);
+
+    h.agent_manager
+        .send_message(
+            &h.session_id,
+            "before clear".into(),
+            &h.event_tx,
+            false,
+            Some(PermissionMode::Deny),
+        )
+        .await
+        .unwrap();
+    events_until_turn_finished(&mut h.event_rx).await;
+    let second = events_until_turn_finished(&mut h.event_rx).await;
+    assert!(second.iter().any(|event| event.event == "context_cleared"));
+    let result = second
+        .iter()
+        .find(|event| event.event == "tool_result")
+        .expect("the turn after the clear calls the tool");
+    assert!(
+        result.data.to_string().contains("permission override"),
+        "the override must still deny: {}",
+        result.data
+    );
 }

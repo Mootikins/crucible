@@ -39,6 +39,9 @@ pub(crate) struct TurnRequest<'a> {
 impl AgentManager {
     /// Clear context in this session. With a prompt, the marker and the new
     /// turn share one request claim, so another sender cannot slip between.
+    ///
+    /// A plugin clear outside a turn has no turn to copy. Its turn runs
+    /// non-interactive with no override, as a plugin's own send does.
     pub fn clear_session<'a>(
         self: &'a Arc<Self>,
         session_id: &'a str,
@@ -46,33 +49,51 @@ impl AgentManager {
         plugin: Option<String>,
         event_tx: &'a broadcast::Sender<SessionEventMessage>,
     ) -> futures::future::BoxFuture<'a, Result<Option<String>, AgentError>> {
+        let origin = plugin.map_or(TurnOrigin::User, TurnOrigin::Plugin);
+        let gate = crate::agent_manager::slot::TurnGate {
+            is_interactive: origin == TurnOrigin::User,
+            permission_override: None,
+            origin,
+        };
+        self.clear_with_gate(session_id, prompt, gate, event_tx)
+    }
+
+    /// Clear context. The turn of `prompt` takes the interactivity and the
+    /// override of `gate`. A plugin clear during a turn waits for the end
+    /// of that turn, and then takes the gate of that turn.
+    fn clear_with_gate<'a>(
+        self: &'a Arc<Self>,
+        session_id: &'a str,
+        prompt: Option<String>,
+        gate: crate::agent_manager::slot::TurnGate,
+        event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    ) -> futures::future::BoxFuture<'a, Result<Option<String>, AgentError>> {
         Box::pin(async move {
-            if let Some(name) = plugin.as_ref() {
-                if let dashmap::mapref::entry::Entry::Occupied(_) =
-                    self.request_state.entry(session_id.to_string())
-                {
-                    self.slot(session_id).set_clear_after_turn(
-                        crate::agent_manager::slot::ClearAfterTurn {
-                            prompt,
-                            plugin: name.clone(),
-                        },
-                    );
-                    return Ok(None);
-                }
+            if gate.origin.plugin().is_some() && self.request_state.contains_key(session_id) {
+                let slot = self.slot(session_id);
+                let turn = slot.turn_gate().unwrap_or_default();
+                slot.set_clear_after_turn(crate::agent_manager::slot::ClearAfterTurn {
+                    prompt,
+                    gate: crate::agent_manager::slot::TurnGate {
+                        origin: gate.origin,
+                        ..turn
+                    },
+                });
+                return Ok(None);
             }
+            let plugin = gate.origin.plugin().map(str::to_owned);
             if let Some(prompt) = prompt {
-                let origin = plugin.map_or(TurnOrigin::User, TurnOrigin::Plugin);
                 return self
                     .send_message_inner(
                         session_id,
                         prompt,
                         TurnRequest {
-                            origin,
+                            origin: gate.origin,
                             clear_before: true,
                             review_context: None,
                             event_tx,
-                            is_interactive: true,
-                            permission_override: None,
+                            is_interactive: gate.is_interactive,
+                            permission_override: gate.permission_override,
                             completion_tx: None,
                         },
                     )
@@ -865,10 +886,10 @@ impl AgentManager {
             if let Some(clear) = slot.take_clear_after_turn() {
                 drop(slot.take_follow_up());
                 let clear_request: futures::future::BoxFuture<'_, _> =
-                    Box::pin(manager.clear_session(
+                    Box::pin(manager.clear_with_gate(
                         &session_id_owned,
                         clear.prompt,
-                        Some(clear.plugin),
+                        clear.gate,
                         &event_tx_clone,
                     ));
                 if let Err(error) = clear_request.await {

@@ -75,6 +75,13 @@ ACP sessions refuse this operation: the external ACP agent owns its conversation
 history. Precognition's ACP prompt context is a separate mechanism. Plugins and
 review rejection use this daemon primitive; it needs no separate TUI/web setting.
 
+`cru.session.clear(session_id, { prompt = "…" })` clears the model context and
+can start one turn with `prompt`. A plugin clear during a turn waits for the
+end of that turn. The new turn keeps the interactivity and the permission
+override of that turn, so a clear cannot widen what the session allows. A
+plugin clear outside a turn starts a non-interactive turn with no override,
+as a plugin's own send does.
+
 ## Session Storage
 
 Sessions are saved under the daemon's data root — `~/.crucible/sessions/` by
