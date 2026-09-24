@@ -18,7 +18,7 @@
 
 use super::permission::prompt_user;
 use crate::agent_manager::slot::SessionSlot;
-use crate::agent_manager::{is_safe, AgentManager, DaemonPermissions};
+use crate::agent_manager::{is_safe, AgentManager, PluginHandlers};
 use crate::protocol::SessionEventMessage;
 use crucible_core::agent::{ToolPolicy, ToolPolicyMap};
 use crucible_core::config::components::permissions::{
@@ -43,7 +43,7 @@ pub(crate) struct PermissionContext<'a> {
     /// The `whitelists.d` directory and the project of the saved patterns.
     /// `None`: no saved patterns.
     pub patterns: Option<(&'a Path, &'a Path)>,
-    pub hooks: Option<&'a DaemonPermissions>,
+    pub hooks: Option<&'a PluginHandlers>,
     pub mode: &'a str,
     pub modes: &'a ModeRegistry,
     pub mcp_read_only: &'a HashSet<String>,

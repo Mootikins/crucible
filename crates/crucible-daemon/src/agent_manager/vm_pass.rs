@@ -23,21 +23,18 @@ use crucible_lua::LuaScriptHandlerRegistry;
 use futures::future::BoxFuture;
 use mlua::Lua;
 
-/// A plugin registry with the `Lua` state it belongs to.
-pub(crate) type PluginHandlers = (Arc<LuaScriptHandlerRegistry>, Arc<Lua>);
-
-/// The daemon VM's permission hooks and the state their bodies live in.
+/// The daemon VM's handler registry with the `Lua` state it belongs to.
 ///
-/// The permission hooks share the ONE registration store with every other
-/// `cru.*` callback, so this is the same pair as [`PluginHandlers`]. It keeps
-/// its own name because the tool gate reads it synchronously and the handler
-/// passes do not.
+/// ONE registration store holds every `cru.*` callback: the `cru.on`
+/// handlers, the `cru.permissions.on_request` hooks and the render
+/// functions. So one pair serves the turn loop, the tool gate and the ACP
+/// gate, and both agent paths render a call with the same functions.
 ///
 /// The `Lua` travels with the registry rather than being taken from
 /// `plugin_lua`: that handle is bound with the VALIDATOR registry, so reading
 /// it here made permission dispatch depend on whether validators happened to
 /// be wired.
-pub type DaemonPermissions = (Arc<LuaScriptHandlerRegistry>, Arc<Lua>);
+pub type PluginHandlers = (Arc<LuaScriptHandlerRegistry>, Arc<Lua>);
 
 /// Run `pass` against the handler VM, if one is bound.
 ///

@@ -370,9 +370,6 @@ pub struct AgentManager {
     /// initializing. Empty in tests and isolated managers, where plugin hooks
     /// simply don't fire.
     plugin_handlers: std::sync::OnceLock<PluginHandlers>,
-    /// `cru.permissions.on_request` hooks from the daemon VM — the only VM
-    /// that runs Lua files, so the only place they can be registered.
-    daemon_permissions: std::sync::OnceLock<DaemonPermissions>,
     /// Plugin isolation claims, bound at daemon startup alongside the handlers.
     isolation: std::sync::OnceLock<crucible_lua::IsolationRegistry>,
 
@@ -511,7 +508,6 @@ impl AgentManager {
             plugin_loader: params.plugin_loader,
             card_roots: params.card_roots,
             plugin_handlers: std::sync::OnceLock::new(),
-            daemon_permissions: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
             context_attach: std::sync::Arc::new(crucible_lua::ContextAttachRegistry::default()),
             statusline_exprs: std::sync::Arc::new(crucible_lua::StatuslineExprRegistry::new()),
@@ -587,15 +583,6 @@ impl AgentManager {
 
     /// Snapshot of the plugin hook registry for the stream loop. `None` when
     /// no plugin loader has bound one.
-    /// Bind the daemon VM's permission hooks. Idempotent, like the others.
-    pub fn set_daemon_permissions(&self, registry: DaemonPermissions) {
-        let _ = self.daemon_permissions.set(registry);
-    }
-
-    pub(crate) fn daemon_permissions(&self) -> Option<DaemonPermissions> {
-        self.daemon_permissions.get().cloned()
-    }
-
     pub(crate) fn plugin_handlers(&self) -> Option<PluginHandlers> {
         self.plugin_handlers
             .get()
@@ -1750,8 +1737,7 @@ pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
 pub(crate) mod vm_pass;
-pub use vm_pass::DaemonPermissions;
-pub(crate) use vm_pass::PluginHandlers;
+pub use vm_pass::PluginHandlers;
 
 #[cfg(test)]
 mod tests;

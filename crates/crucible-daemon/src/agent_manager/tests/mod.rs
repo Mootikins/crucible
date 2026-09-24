@@ -525,8 +525,6 @@ impl ReactorTestHarness {
                 .expect("daemon VM");
         loader.executor().lua().load(script).exec().unwrap();
         self.agent_manager
-            .set_daemon_permissions(loader.permission_registry());
-        self.agent_manager
             .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
         crucible_lua::register_context_attach(
             &loader.plugin_lua(),

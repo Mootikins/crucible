@@ -86,7 +86,7 @@ async fn gate(mode: &str) -> Gate {
         ))
         .with_modes(Some(loader.mode_registry())),
     );
-    am.set_daemon_permissions(loader.permission_registry());
+    am.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
     let session = session_manager
         .create_session(SessionType::Chat, vec![], None, None)
         .await

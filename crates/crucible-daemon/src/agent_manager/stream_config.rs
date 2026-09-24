@@ -42,9 +42,6 @@ pub(crate) struct AgentStreamConfig {
     /// load once into the loader's VM, and a `RegistryKey` is only valid
     /// against the state that created it.
     pub(crate) plugin_handlers: Option<PluginHandlers>,
-    /// `cru.permissions.on_request` hooks, from the one VM that runs files.
-    /// The `Lua` travels with them: see `DaemonPermissions`.
-    pub(crate) daemon_permissions: Option<super::DaemonPermissions>,
     /// Sessions a plugin claimed isolation for. When set and the session is
     /// claimed, a host-touching tool that no handler took over is refused.
     pub(crate) isolation: Option<crucible_lua::IsolationRegistry>,
@@ -88,7 +85,6 @@ pub(crate) struct AgentStreamConfig {
 /// mid-run cannot reshape a turn already in progress.
 pub(crate) struct TurnEnvironment {
     pub(crate) plugin_handlers: Option<PluginHandlers>,
-    pub(crate) daemon_permissions: Option<super::DaemonPermissions>,
     pub(crate) isolation: Option<crucible_lua::IsolationRegistry>,
     pub(crate) plugin_tool_names: std::collections::HashSet<String>,
     pub(crate) modes: crucible_lua::ModeRegistry,
@@ -99,7 +95,6 @@ impl AgentStreamConfig {
     pub(crate) fn from_session_agent(session_agent: &SessionAgent, env: TurnEnvironment) -> Self {
         let TurnEnvironment {
             plugin_handlers,
-            daemon_permissions,
             isolation,
             plugin_tool_names,
             modes,
@@ -116,7 +111,6 @@ impl AgentStreamConfig {
                 .map(|c| c.timeout_secs),
             tool_policy: session_agent.tool_policy.clone(),
             plugin_handlers,
-            daemon_permissions,
             isolation,
             plugin_tool_names,
             modes,

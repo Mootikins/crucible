@@ -148,7 +148,6 @@ impl Daemon {
                 // falls back to the loader mutex, which production never does.
                 let agents = &ctx.agents;
                 agents.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
-                agents.set_daemon_permissions(loader.permission_registry());
                 agents.set_isolation(loader.isolation());
                 agents.set_plugin_tool_registry(loader.plugin_registry());
                 agents.set_publications(loader.publications());

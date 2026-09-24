@@ -113,7 +113,7 @@ struct AcpGate {
     event_tx: broadcast::Sender<SessionEventMessage>,
     workspace: PathBuf,
     whitelists_dir: Option<PathBuf>,
-    hooks: Option<DaemonPermissions>,
+    hooks: Option<PluginHandlers>,
     engine: PermissionEngine,
     tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
 }
@@ -298,7 +298,7 @@ impl AgentManager {
             event_tx: event_tx.clone(),
             workspace: workspace.to_path_buf(),
             whitelists_dir: self.whitelists_dir(),
-            hooks: self.daemon_permissions(),
+            hooks: self.plugin_handlers(),
             engine: self.session_permission_engine(session_id),
             tool_policy,
         });
@@ -673,7 +673,7 @@ impl AgentManager {
     /// `crucible_lua::handler_budget` gives the hooks 1 s. The VM stops a hook
     /// that runs longer, and this then returns `Prompt`.
     pub(in crate::agent_manager) fn run_permission_hooks(
-        registry: Option<&super::super::DaemonPermissions>,
+        registry: Option<&super::super::PluginHandlers>,
         call: &CanonicalToolCall,
         args: &serde_json::Value,
         session_id: &str,
@@ -727,7 +727,7 @@ impl StreamContext {
             permission_override: self.permission_override,
             patterns: (self.whitelists_dir.as_deref())
                 .map(|dir| (dir, self.workspace_path.as_path())),
-            hooks: config.daemon_permissions.as_ref(),
+            hooks: config.plugin_handlers.as_ref(),
             mode: &self.session_mode,
             modes: &config.modes,
             mcp_read_only: &config.mcp_read_only_tools,
@@ -922,7 +922,7 @@ mod acp_tool_policy_tests {
         call: CanonicalToolCall,
         card: &[(&str, ToolPolicy)],
         config: Option<PermissionConfig>,
-        hooks: Option<DaemonPermissions>,
+        hooks: Option<PluginHandlers>,
     ) -> Asked {
         let (event_tx, mut events) = broadcast::channel::<SessionEventMessage>(16);
         let slot = Arc::new(crate::agent_manager::slot::SessionSlot::default());
@@ -1232,8 +1232,7 @@ mod acp_tool_policy_tests {
             assert_eq!(gemini_call.tool, tool);
             for call in [codex_call, gemini_call] {
                 let name = call.tool.clone();
-                let asked =
-                    decide_with_hooks(call, &[], None, Some(loader.permission_registry())).await;
+                let asked = decide_with_hooks(call, &[], None, Some(loader.handlers())).await;
                 assert_eq!(asked.prompts, 1, "{name} is asked about");
             }
         }

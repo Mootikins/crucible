@@ -648,8 +648,9 @@ impl DaemonPluginLoader {
         self.modes.clone()
     }
 
-    /// The permission hooks registered on this VM, for the tool gate.
-    pub fn permission_registry(&self) -> crate::agent_manager::DaemonPermissions {
+    /// The handler registry of this VM with its `Lua` state: the `cru.on`
+    /// handlers, the permission hooks and the render functions.
+    pub fn handlers(&self) -> crate::agent_manager::PluginHandlers {
         (self.handler_registry.clone(), self.plugin_lua())
     }
 

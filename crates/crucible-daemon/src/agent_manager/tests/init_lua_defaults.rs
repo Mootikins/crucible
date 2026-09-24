@@ -60,7 +60,6 @@ async fn session_with_lua(
             .expect("the fixture hands out the only reference")
             .with_modes(Some(loader.mode_registry())),
     );
-    agent_manager.set_daemon_permissions(loader.permission_registry());
     agent_manager.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
     // The same call `SessionLifecycle` makes at session create — the one fire
     // site. Driving it here rather than reimplementing it keeps the harness
@@ -83,7 +82,7 @@ fn run_permission_hooks(
     loader: &crate::daemon_plugins::DaemonPluginLoader,
     request: &PermissionRequest,
 ) -> PermissionHookResult {
-    let (hooks, lua) = loader.permission_registry();
+    let (hooks, lua) = loader.handlers();
     assert!(
         !hooks
             .runtime_handlers_for(
@@ -191,7 +190,7 @@ async fn a_permission_hook_sees_the_kind_and_the_command() {
 
     let args = serde_json::json!({ "command": "cargo test" });
     let result = AgentManager::run_permission_hooks(
-        Some(&vm.permission_registry()),
+        Some(&vm.handlers()),
         &crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args),
         &args,
         &id,
@@ -662,7 +661,7 @@ async fn shipped_modes_register_no_permission_hooks(mode: &str, expected: Permis
     // for conditional policy, which is why "Prompt" (no hook had an opinion) is
     // the right answer here; the stance is applied later, in the gate.
     let (vm, _am, _sm, _session_id) = session_with_lua("").await;
-    let (hooks, lua) = vm.permission_registry();
+    let (hooks, lua) = vm.handlers();
 
     let result = crucible_lua::execute_permission_hooks(
         &lua,

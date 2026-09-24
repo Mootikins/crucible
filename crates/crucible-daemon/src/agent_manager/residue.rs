@@ -50,7 +50,6 @@ impl AgentManager {
             card_roots: _,       // daemon config
             plugin_loader: _,    // shared service
             plugin_handlers: _,  // startup-bound OnceLock
-            daemon_permissions: _, // startup-bound OnceLock; one registry for the process
             isolation: _,        // startup-bound OnceLock
             context_attach: _,   // process-wide buffer, drained per turn
             // Session-keyed, and swept by `SessionLifecycle::stop` rather

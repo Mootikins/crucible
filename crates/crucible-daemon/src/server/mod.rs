@@ -1224,14 +1224,11 @@ impl Server {
 
             // Same pairing for `cru.on` hooks — without this bind,
             // plugins register handlers into a registry the stream loop
-            // never reads.
+            // never reads. The same registry holds the
+            // `cru.permissions.on_request` hooks of the defaults file and
+            // of the user's `init.lua`, for the tool gate.
             self.agent_manager
                 .set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
-            // `cru.permissions.on_request` from the defaults file and from the
-            // user's `init.lua`. Both ran on this VM; the tool gate needs the
-            // registry and the VM together.
-            self.agent_manager
-                .set_daemon_permissions(loader.permission_registry());
             // `cru.context.attach` — the drain is per turn, so a handler that
             // attaches must reach the manager's registry, not a second one.
             if let Err(e) = crucible_lua::register_context_attach(
