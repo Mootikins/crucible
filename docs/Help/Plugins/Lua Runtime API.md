@@ -406,8 +406,13 @@ local session, err = cru.session.create({
 
 `type` is one of `chat`, `agent`, `workflow` and `plugin`. A `plugin` session
 is one a plugin starts for its own work, such as a reflection review or a
-consolidation pass. It is never a user's conversation: the reflection plugin
-does not review it, and the consolidation sample leaves it out.
+consolidation pass. It is never a user's conversation: the consolidation
+sample leaves it out.
+
+The daemon records the plugin that creates a session, on every type. The
+reflection plugin reviews a session that a plugin created only when that plugin
+emits `reflection:request` with the session id. See
+[[Help/Concepts/Reflection Pass#Reviews of plugin sessions]].
 
 The options table is passed through to the daemon's `session.create` whole, so
 every field that RPC accepts is available here — `isolation`, `recording_mode`,
@@ -499,8 +504,9 @@ if session then
 end
 ```
 
-The handle also has `workspace` and `isolation` when the session has them.
-Each is `nil` when the session has none. To start a session like this one,
+The handle also has `workspace`, `isolation` and `plugin` (the plugin that
+created the session) when the session has them. Each is `nil` when the session
+has none. To start a session like this one,
 pass both to `cru.session.create`. The reflection pass does this.
 
 ### cru.session.list()
@@ -1063,6 +1069,14 @@ end, {
 ### cru.emitter.new()
 
 Create a new event emitter. Implemented in pure Lua.
+
+### cru.emitter.global()
+
+The one emitter that every plugin in the daemon's plugin runtime shares. A
+plugin uses it to send an event to another plugin. A handler runs under the
+source of the plugin that emits, so it must not write to `cru.storage` for
+its own plugin there. The reflection plugin listens for `reflection:request`;
+see [[Help/Concepts/Reflection Pass#Reviews of plugin sessions]].
 
 ```lua
 local events = cru.emitter.new()

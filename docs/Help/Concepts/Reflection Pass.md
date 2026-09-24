@@ -22,17 +22,41 @@ The consolidation pass works the same way. It runs its review through the reflec
 
 **Key facts:**
 
-- **Trigger:** `on_session_end`. Every finished session is a candidate; a session with fewer than `min_turns` user turns is skipped. The hook starts the pass in a task (`cru.timer.spawn`), and the pass runs after the hook returns. The session of the pass runs the plugin start hooks, as every created session does, and a session hook cannot run them.
+- **Trigger:** `on_session_end`. Every finished session that a user created is a candidate; a session with fewer than `min_turns` user turns is skipped. A session that a plugin created is a candidate only when that plugin asks for a review; see [[#Reviews of plugin sessions]]. The hook starts the pass in a task (`cru.timer.spawn`), and the pass runs after the hook returns. The session of the pass runs the plugin start hooks, as every created session does, and a session hook cannot run them.
 - **Workspace and isolation:** the pass runs on the workspace of the session it reviews, with the same `isolation` value. So an isolating plugin isolates the pass as it isolated that session. For example, the `oci` plugin with a configured image refuses a session with no workspace. When the reviewed session had no workspace, the pass has none either.
 - **Start checks:** the session of the pass must pass the same start checks as every other session. When an isolating plugin refuses it, the pass does not run, and the plugin logs the refusal.
 - **Requires configuration:** the plugin is **inert until you configure an auxiliary model**. Without `plugins.reflection.model` it logs a warning and skips every session.
-- **Execution:** a separate auxiliary-model session of type `plugin`, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache. Plugin sessions are excluded from reflection, so a reviewer is never input to another reflection pass.
+- **Execution:** a separate auxiliary-model session of type `plugin`, with the same kiln attached, reviews the transcript. It never touches the main session or its prompt cache. No plugin asks to review a pass, so a reviewer is never input to another reflection pass.
 - **Bounded by tool set:** before the prompt is sent, the plugin narrows the reviewer's session to `semantic_search`, `read_note`, `list_notes`, `grep_notes`, `create_note` and `update_note` with `cru.tools.set_active`. The daemon refuses every other tool at dispatch, so the reviewer reaches the kiln and nothing else — no workspace file, no shell. If the daemon cannot narrow the set, no prompt is sent.
 - **Propose mode:** the plugin puts the reviewer's session in `propose` before it sends. A non-interactive turn in the default `ask` mode is denied, so every note write would fail. `propose` allows every tool, and its note writes go into a proposal, so no review gate holds a write that nobody can answer. The `mode` key selects a different mode.
 - **Agent configuration:** the daemon resolves the auxiliary model and provider when it creates the pass, with the reviewer's system prompt and an explicitly empty MCP server list. No second configuration call can silently leave the pass using another model or restore external tools. The pass uses the workspace of the reviewed session, but its tool set still reaches only the kiln.
 - **Reads before it writes:** the reviewer searches the kiln with `semantic_search` and reads the closest note with `read_note`. When a note already covers the idea, it calls `update_note` on that note instead of `create_note`.
 - **Output:** one proposal for the turn of the pass. It holds each note write, with the text the file had when the reviewer read it. The reviewer answers with one line naming what it proposed, or "Nothing to save".
 - **Disposition:** the proposal. Accept writes every note of the proposal through the daemon's checked write. If the note changed on disk after the pass read it, the daemon merges the two changes. A merge conflict writes no file, and the proposal holds the conflict until you resolve it. Reject keeps the proposal and its reason, and changes no file. Dismiss removes a proposal from the Inbox with no decision. The pass's session is titled `Reflection: <the reviewed session>`, and the proposal names the plugin that ran the pass as its author.
+
+## Reviews of plugin sessions
+
+A session that a plugin created is reviewed only when that plugin asks. The
+daemon records the plugin that created each session, on every session type.
+To ask, the plugin emits the `reflection:request` event on the shared event
+emitter of the plugin runtime, `cru.emitter.global()`. The one argument is the
+session id:
+
+```lua
+local session, err = cru.session.create({ type = "chat", kilns = { "notes" } })
+if session then
+    cru.emitter.global():emit("reflection:request", session.id)
+end
+```
+
+The plugin can emit the event at any time before the session ends. The
+reflection plugin keeps the request in memory, so a daemon restart forgets
+it, and the session is then not reviewed. A session that a user created needs
+no request.
+
+The Discord plugin emits no request, so reflection does not review Discord
+sessions. A Discord session that an older daemon created has no record of its
+plugin, so reflection reviews it as a user session.
 
 ## Why a proposed note waits outside the kiln
 

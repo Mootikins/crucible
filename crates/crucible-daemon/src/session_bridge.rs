@@ -1119,7 +1119,8 @@ pub(crate) fn session_json(s: &crucible_core::session::SessionSummary) -> serde_
 /// [`session_json`] fields, and the fields that a plugin needs to start a
 /// session like it.
 ///
-/// `workspace` and `isolation` are present only when the session has them.
+/// `workspace`, `isolation` and `plugin` (the plugin that created the session)
+/// are present only when the session has them.
 /// mlua maps a JSON `null` to a truthy `null` userdata, so an absent value
 /// must be an absent key: a plugin that copies it into `cru.session.create`
 /// then asks for nothing.
@@ -1130,6 +1131,9 @@ pub(crate) fn session_record_json(session: &crucible_core::session::Session) -> 
     }
     if let Some(isolation) = &session.isolation {
         json["isolation"] = isolation.clone();
+    }
+    if let Some(plugin) = &session.plugin {
+        json["plugin"] = serde_json::Value::String(plugin.clone());
     }
     json
 }

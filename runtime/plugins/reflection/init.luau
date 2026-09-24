@@ -463,6 +463,42 @@ function M.review(opts: ReviewOpts): (string?, string?)
     return text, send_err
 end
 
+-- ============================================================================
+-- Review requests from other plugins
+-- ============================================================================
+
+--- The event a plugin emits on `cru.emitter.global()` to ask for a review of
+--- a session that it created. The one argument is the session id:
+---
+---   cru.emitter.global():emit("reflection:request", session.id)
+---
+--- A session that a user created needs no request.
+M.REQUEST_EVENT = "reflection:request"
+
+-- Session ids that a plugin asked to review. In memory, not in `cru.storage`:
+-- the handler runs under the source of the plugin that emits, so a storage
+-- write would land in that plugin's namespace. A restart forgets a request,
+-- and the session is then not reviewed.
+local review_requests: { [string]: boolean } = {}
+
+--- Record a request to review `session_id`. The `reflection:request` handler.
+function M.request_review(session_id: any)
+    if type(session_id) ~= "string" or session_id == "" then
+        cru.log("warn", "reflection: " .. M.REQUEST_EVENT .. " needs a session id, got "
+            .. tostring(session_id))
+        return
+    end
+    review_requests[session_id] = true
+end
+
+--- Whether a plugin asked to review `session_id`. Forgets the request: a
+--- session ends once, so nothing reads it again.
+function M.take_review_request(session_id: string): boolean
+    local requested = review_requests[session_id] == true
+    review_requests[session_id] = nil
+    return requested
+end
+
 --- The pass that the on_session_end handler starts in a task. Reviews the
 --- finished session; the reviewer writes whatever notes it earned with the
 --- note tools, in its own session, so each note goes into a proposal that a
@@ -490,11 +526,15 @@ function M.run(session: any): string?
 
     local info = cru.session.get(session_id)
 
-    -- A plugin session is never input to another pass, including when its
-    -- end arrives through the daemon's lifecycle hook path. Read the type
-    -- the daemon recorded, not a turn count or a prompt marker.
-    if info and info.session_type == "plugin" then
-        cru.log("debug", "reflection: skipping a plugin session")
+    -- A session that a plugin created is reviewed only when that plugin
+    -- asked for it (`reflection:request`). Take the request on every path,
+    -- so it does not outlive the session. Read what the daemon recorded, the
+    -- type and the creating plugin, not a turn count or a prompt marker. A
+    -- pass session is a plugin session that nobody asks to review, so a pass
+    -- is never input to another pass.
+    local requested = M.take_review_request(session_id)
+    if info and (info.session_type == "plugin" or info.plugin ~= nil) and not requested then
+        cru.log("debug", "reflection: skipping a plugin session that asked for no review")
         return nil
     end
 
@@ -587,6 +627,12 @@ local function register_handlers()
         return nil
     end)
 
+    -- Other plugins ask for a review through the shared emitter of the
+    -- plugin VM. The owner lets a reload drop the old handler first.
+    local events = cru.emitter.global()
+    events:unregister_owner("reflection")
+    events:on(M.REQUEST_EVENT, M.request_review, "reflection")
+
     cru.on_session_end(function(session)
         -- The pass creates its own session, and the daemon runs the start
         -- hooks of that session. This hook holds the plugin runtime, and a
@@ -614,6 +660,8 @@ local plugin = {
     -- lifecycle.
     run = M.run,
     review = M.review,
+    request_review = M.request_review,
+    REQUEST_EVENT = M.REQUEST_EVENT,
     load_hunks = M.load_hunks,
     load_rejected = M.load_rejected,
     render_rejected = M.render_rejected,

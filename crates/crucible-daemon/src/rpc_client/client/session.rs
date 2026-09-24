@@ -106,10 +106,11 @@ pub struct SessionCreateRequest {
     /// `Some([])` disables configured MCP servers for this session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<String>>,
-    /// The plugin that creates a `plugin` session. The Lua binding of
+    /// The plugin that creates the session. The Lua binding of
     /// `cru.session.create` writes it from the running plugin and removes a
-    /// value that the Lua caller supplies. A proposal of the session names
-    /// this plugin as its author. The daemon ignores it for another type.
+    /// value that the Lua caller supplies. The daemon stores it on every
+    /// type. A proposal names this plugin as its author only on a `plugin`
+    /// session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
 }

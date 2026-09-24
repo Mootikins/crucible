@@ -479,3 +479,66 @@ async fn a_session_with_no_workspace_gets_a_review_with_no_workspace() {
     assert_eq!(passes.len(), 1, "one review makes one pass");
     assert_eq!(passes[0].workspace, None);
 }
+
+/// Create a finished session as the plugin `courier` creates one, through
+/// `cru.session.create` under the plugin's own source. When `request_review`
+/// is true, the plugin then asks for a review with the `reflection:request`
+/// event on `cru.emitter.global()`.
+async fn courier_session(rig: &Rig, request_review: bool) -> String {
+    let previous =
+        crucible_lua::set_source(&rig.lua, crucible_lua::LuaSource::Plugin("courier".into()));
+    let created = rig
+        .lua
+        .load(format!(
+            r#"
+            local s, err = cru.session.create({{ type = "chat", kilns = {{ "knowledge" }} }})
+            assert(s, err)
+            if {request_review} then
+                cru.emitter.global():emit("reflection:request", s.id)
+            end
+            return s.id
+            "#
+        ))
+        .eval_async::<String>()
+        .await;
+    crucible_lua::set_source(&rig.lua, previous);
+    let id = created.expect("the plugin creates its session");
+    let session = rig.sessions.get_session(&id).unwrap();
+    rig.transcript(&session).await;
+    id
+}
+
+/// A session that a plugin created is reviewed only when that plugin asks for
+/// a review. Before the fix the daemon kept no record that a plugin created a
+/// `chat` session, so every such session was reviewed like a user's own.
+#[tokio::test]
+async fn a_plugin_session_is_reviewed_only_when_its_plugin_asks() {
+    let rig = Rig::new(None).await;
+
+    let silent = courier_session(&rig, false).await;
+    assert_eq!(
+        rig.review(&silent).await,
+        None,
+        "plugin session {silent} ended with no reflection:request event and got a review"
+    );
+    assert!(
+        rig.passes().is_empty(),
+        "no pass for a session nobody asked to review"
+    );
+
+    let asked = courier_session(&rig, true).await;
+    assert!(
+        rig.review(&asked).await.is_some(),
+        "plugin session {asked} asked for a review with reflection:request and got none"
+    );
+    assert_eq!(rig.passes().len(), 1, "one request makes one pass");
+}
+
+/// A session that a user created is reviewed as before, with no event.
+#[tokio::test]
+async fn a_user_session_is_reviewed_without_a_request() {
+    let rig = Rig::new(None).await;
+    let source = rig.finished_session(None).await;
+
+    assert!(rig.review(&source.id).await.is_some());
+}

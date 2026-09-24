@@ -165,6 +165,16 @@ async fn a_plugin_session_proposal_names_the_plugin() {
     );
     assert_eq!(proposal.session.as_ref(), Some(&session.id));
 
+    // A plugin that created a session of another type is not the author of
+    // its proposals: that session is a conversation, and it names itself.
+    let chat = Session::new(SessionType::Chat, vec![]).with_plugin(Some("discord".into()));
+    assert_eq!(
+        super::super::author_of(&chat),
+        ProposalAuthor::Session {
+            id: chat.id.clone()
+        }
+    );
+
     // A plugin session with no plugin name names the session instead.
     let unnamed = Session::new(SessionType::Plugin, vec![]);
     assert_eq!(

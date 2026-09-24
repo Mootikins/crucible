@@ -351,6 +351,18 @@ impl UserData for Session {
                     Some(v) => lua.to_value(v),
                     None => Ok(Value::Nil),
                 },
+                // The plugin that created the session, from the record. Nil
+                // for a session that no plugin created, not an unknown
+                // property: the reflection pass reads it on every session.
+                "plugin" => match this
+                    .record
+                    .as_ref()
+                    .and_then(|record| record.get("plugin"))
+                    .and_then(|v| v.as_str())
+                {
+                    Some(name) => lua.create_string(name).map(Value::String),
+                    None => Ok(Value::Nil),
+                },
                 // A handle from `get`/`list` binds no RPC, so the daemon's
                 // record is the only place the model can come from. A bound
                 // handle still answers with the live value.

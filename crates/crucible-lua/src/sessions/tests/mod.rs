@@ -341,6 +341,7 @@ impl DaemonSessionApi for MockDaemonApi {
                     "state": "ended",
                     "workspace": "/work/project",
                     "isolation": { "image": "alpine" },
+                    "plugin": "discord",
                 })))
             } else {
                 Ok(None)

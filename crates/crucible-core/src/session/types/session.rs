@@ -171,13 +171,17 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub variables: BTreeMap<String, serde_json::Value>,
 
-    /// The plugin that created this session, for a session of type
-    /// [`SessionType::Plugin`]. The Lua binding of `cru.session.create`
-    /// writes it from the running plugin, and a plugin cannot name another.
+    /// The plugin that created this session. The Lua binding of
+    /// `cru.session.create` writes it from the running plugin, and a plugin
+    /// cannot name another.
     ///
-    /// `None` for every other session, and for a plugin session that a
-    /// socket client or an older daemon created. A proposal of that session
-    /// names the session as its author, not a plugin.
+    /// A proposal names this plugin as its author only on a session of type
+    /// [`SessionType::Plugin`]. The reflection pass reads it on every type: a
+    /// session that a plugin created is reviewed only when that plugin asks.
+    ///
+    /// `None` for a session that a socket client created. `None` also for a
+    /// session that an older daemon created, which stored the name only on a
+    /// plugin session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
 

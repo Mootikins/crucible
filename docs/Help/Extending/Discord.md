@@ -266,8 +266,10 @@ be set anyway.
 it straight to `cru.session.create`, which takes names; a path is not a name,
 resolves to nothing, and produces a session with no kiln at all.
 
-Without a kiln a session has no note tools, so the reflection pass has nothing
-to write with and its reviewer produces no note at all. The plugin refuses to
+Without a kiln a session has no note tools, so a reviewer has nothing to write
+with. The reflection pass does not review Discord sessions: it reviews a
+session that a plugin created only when that plugin asks, and the Discord
+plugin does not ask. See [[Help/Concepts/Reflection Pass#Reviews of plugin sessions]]. The plugin refuses to
 create a session rather than run that way, and logs
 `no kiln configured — set [plugins.discord] kiln`.
 

@@ -38,12 +38,17 @@ fn session_json_leaves_model_null_without_an_agent() {
 fn session_record_json_names_the_workspace_and_the_isolation() {
     let session = Session::new(SessionType::Chat, Vec::new())
         .with_workspace(Some("/work/project".into()))
-        .with_isolation(Some(serde_json::json!("rust")));
+        .with_isolation(Some(serde_json::json!("rust")))
+        .with_plugin(Some("discord".into()));
 
     let json = session_record_json(&session);
 
     assert_eq!(json["workspace"], "/work/project");
     assert_eq!(json["isolation"], "rust");
+    assert_eq!(
+        json["plugin"], "discord",
+        "the reflection pass reads the creating plugin"
+    );
 }
 
 /// An absent workspace or isolation is an absent key, not `null`: mlua maps
@@ -57,4 +62,5 @@ fn session_record_json_leaves_out_an_absent_workspace_and_isolation() {
 
     assert!(json.get("workspace").is_none(), "{json}");
     assert!(json.get("isolation").is_none(), "{json}");
+    assert!(json.get("plugin").is_none(), "{json}");
 }

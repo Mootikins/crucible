@@ -422,6 +422,37 @@ describe("reflection", function()
       expect.equal(0, #test_mocks.get_calls("session", "send_and_collect"))
     end)
 
+    it("reviews a session that a plugin created only when the plugin asks", function()
+      local function mock_plugin_session(id)
+        test_mocks.setup({
+          kiln = { roots = { notes = kiln_root } },
+          fs = { real_dirs = true },
+          sessions = {
+            info = { id = id, session_type = "chat", state = "ended", kilns = { "notes" }, plugin = "discord" },
+            messages = {
+              { role = "user", content = "question" },
+              { role = "assistant", content = "answer" },
+            },
+            response_parts = { { type = "text", content = "[]" } },
+          },
+        })
+      end
+
+      mock_plugin_session("chat-quiet")
+      expect.is_nil(plugin.run({ id = "chat-quiet" }))
+      expect.equal(0, #test_mocks.get_calls("session", "create"))
+
+      mock_plugin_session("chat-asked")
+      cru.emitter.global():emit(plugin.REQUEST_EVENT, "chat-asked")
+      plugin.run({ id = "chat-asked" })
+      expect.equal(1, #test_mocks.get_calls("session", "create"))
+
+      -- The request is taken once: the next end of that id is not reviewed.
+      mock_plugin_session("chat-asked")
+      plugin.run({ id = "chat-asked" })
+      expect.equal(0, #test_mocks.get_calls("session", "create"))
+    end)
+
     it("gives the reviewer the session's outcome evidence", function()
       -- The mock has no review ledger; a test that wants hunks supplies them.
       (cru.session :: any).review_list_hunks = function(id)

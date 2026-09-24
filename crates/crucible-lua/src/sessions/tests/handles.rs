@@ -142,6 +142,31 @@ async fn workspace_and_isolation_on_a_get_handle_read_the_record() {
     );
 }
 
+/// A handle from `get` names the plugin that created the session, and a
+/// session that no plugin created reads `plugin` as nil, not as an unknown
+/// property. The reflection pass reads it on every session.
+#[tokio::test]
+async fn plugin_on_a_get_handle_names_the_creating_plugin_or_nil() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let (plugin, bare_is_nil): (Option<String>, bool) = lua
+        .load(
+            r#"
+            local s = cru.session.get("isolated-123")
+            local bare = cru.session.get("exists-123")
+            return s.plugin, bare.plugin == nil
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert_eq!(plugin.as_deref(), Some("discord"));
+    assert!(bare_is_nil);
+}
+
 /// A record with no model reads as nil, the same answer a bound handle
 /// gives when the daemon has no model for the session.
 #[tokio::test]
