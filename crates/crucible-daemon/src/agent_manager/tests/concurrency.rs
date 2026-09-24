@@ -556,3 +556,83 @@ async fn workflow_cancel_stops_the_running_step_turn() {
         .unwrap()
         .unwrap();
 }
+
+/// `workflow.cancel` stops a run between two steps, when no turn runs.
+///
+/// Step one asks for the cancel and ends. Step two never ends. The run must
+/// stop before step two, or the cancel waits for the lock forever.
+#[tokio::test]
+async fn workflow_cancel_between_steps_stops_the_next_step() {
+    use crucible_core::workflow::{
+        DispatchTable, ExecContext, StepHandler, StepOutcome, WorkflowExecution,
+    };
+
+    /// Step one: start the cancel, and end once it waits for the lock.
+    struct CancelThenHang {
+        ctx: Arc<crate::rpc::RpcContext>,
+        cancel: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    }
+    #[async_trait::async_trait]
+    impl StepHandler for CancelThenHang {
+        async fn execute(&self, _: &ExecContext<'_>) -> StepOutcome {
+            if self.cancel.lock().unwrap().is_some() {
+                return std::future::pending().await;
+            }
+            let rpc = self.ctx.clone();
+            let mut cancel = Box::pin(async move {
+                let request = crate::protocol::Request {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(crate::protocol::RequestId::Number(1)),
+                    method: "workflow.cancel".to_string(),
+                    params: serde_json::json!({ "session_id": "wf" }),
+                };
+                crate::rpc::workflow_handlers::handle_workflow_cancel(&rpc, &request)
+                    .await
+                    .unwrap();
+            });
+            assert!(
+                futures::poll!(&mut cancel).is_pending(),
+                "the run holds the lock"
+            );
+            *self.cancel.lock().unwrap() = Some(tokio::spawn(cancel));
+            StepOutcome::Advance { output: None }
+        }
+    }
+
+    let (tmp, session_manager, _session) = setup_session_manager().await;
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let ctx = Arc::new(crate::rpc::RpcContext::for_test(
+        agent_manager.kiln_manager.clone(),
+        session_manager,
+        agent_manager,
+        Arc::new(crate::project_manager::ProjectManager::new(
+            tmp.path().join("projects.json"),
+        )),
+        broadcast::channel(16).0,
+        tmp.path().into(),
+    ));
+    let source = "---\ntype: workflow\n---\n# W\n\n## One\n\nA.\n\n## Two\n\nB.\n";
+    let mut note = crucible_core::parser::types::ParsedNote::new("w.md".into());
+    note.frontmatter = crucible_core::parser::types::extract_yaml_frontmatter(source);
+    let doc = crucible_core::parser::types::WorkflowDoc::from_parsed(&note, source).unwrap();
+    let cancel = Arc::default();
+    let handler = CancelThenHang {
+        ctx: ctx.clone(),
+        cancel: Arc::clone(&cancel),
+    };
+    let exec = WorkflowExecution::new(doc, DispatchTable::new(Box::new(handler)));
+    let handle = ctx.workflows.insert("wf", exec);
+
+    let status = timeout(
+        Duration::from_secs(5),
+        crate::rpc::workflow_handlers::drive(&ctx, "wf", &handle),
+    )
+    .await
+    .expect("the run stops at the cancel, before step two");
+    assert_eq!(status, crucible_core::workflow::WorkflowStatus::Cancelled);
+    let cancel = cancel.lock().unwrap().take().expect("step one ran");
+    timeout(Duration::from_secs(5), cancel)
+        .await
+        .expect("the cancel ends")
+        .unwrap();
+}

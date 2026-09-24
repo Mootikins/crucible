@@ -210,8 +210,12 @@ pub async fn handle_workflow_cancel(
         }
     };
 
-    // The driver holds the execution lock for the whole step turn. Thus the
-    // cancel stops that turn first, or the lock below waits for its end.
+    // The driver holds the execution lock across its steps. The token stops
+    // it before the next step, and the cancel stops the turn of this step.
+    // Else the lock below waits for the end of the run.
+    if let Some(token) = ctx.workflows.cancel_token(&p.session_id) {
+        token.cancel();
+    }
     ctx.agents.cancel(&p.session_id).await;
     {
         let mut guard = handle.lock().await;
@@ -255,9 +259,17 @@ fn build_dispatch(ctx: &RpcContext, session_id: &str) -> DispatchTable {
 
 // ---------- driver ----------
 
-async fn drive(ctx: &RpcContext, session_id: &str, handle: &ExecutionHandle) -> WorkflowStatus {
+pub(crate) async fn drive(
+    ctx: &RpcContext,
+    session_id: &str,
+    handle: &ExecutionHandle,
+) -> WorkflowStatus {
+    let cancel = ctx.workflows.cancel_token(session_id).unwrap_or_default();
     let mut guard = handle.lock().await;
     loop {
+        if cancel.is_cancelled() {
+            guard.cancel();
+        }
         let status = guard.tick().await.clone();
         drain_and_broadcast(ctx, session_id, &mut guard);
         if !matches!(&status, WorkflowStatus::Running) {
