@@ -131,9 +131,13 @@ pub(crate) async fn decide_permission(
     args: &serde_json::Value,
     request: impl FnOnce() -> PermRequest,
 ) -> Decision {
-    let (prompt, layer) = match decide_unprompted(ctx, call, args) {
-        Ok(decision) => return decision,
-        Err(asked) => asked,
+    let layer = match decide_unprompted(ctx, call, args) {
+        Unprompted::Allow(layer) => return Decision::Allow(layer),
+        Unprompted::Deny(reason) => return Decision::Deny(reason),
+        Unprompted::Ask(layer) => layer,
+    };
+    let Some(prompt) = ctx.prompt else {
+        return Decision::Deny(no_prompt_refusal(&call.tool));
     };
     let request = PermRequest {
         call: Some(Box::new(CanonicalToolCall {
@@ -169,8 +173,18 @@ pub(crate) async fn decide_permission(
     })
 }
 
-/// Every layer but the prompt, in the order of the policy. `Err` is the
-/// prompt that must decide the call, and the layer that asks.
+/// What the layers before the prompt decide.
+enum Unprompted {
+    /// Run the call. `Some` names the layer that granted it.
+    Allow(Option<String>),
+    /// Refuse the call. The text says why.
+    Deny(String),
+    /// Only a person can decide the call. The text names the layer that
+    /// asks.
+    Ask(String),
+}
+
+/// Every layer but the prompt, in the order of the policy.
 ///
 /// 1. A card `deny` refuses.
 /// 2. An operator `deny` refuses, also for a card `allow`: an untrusted kiln
@@ -183,35 +197,33 @@ pub(crate) async fn decide_permission(
 /// 7. A saved pattern runs the call.
 /// 8. A Lua `permission:request` hook decides; if none does, the mode rules
 ///    and the mode stance decide.
-/// 9. With nobody to ask, the call is refused. Otherwise the user is asked.
+/// 9. The caller asks the user, or refuses the call when nobody can answer.
 ///
 /// The engine is asked as interactive. It folds `ask` into `deny` when
-/// nobody can be asked, and step 9 does that here instead.
-fn decide_unprompted<'a>(
-    ctx: &PermissionContext<'a>,
+/// nobody can be asked, and the caller does that instead.
+fn decide_unprompted(
+    ctx: &PermissionContext<'_>,
     call: &CanonicalToolCall,
     args: &serde_json::Value,
-) -> Result<Decision, (Prompt<'a>, String)> {
+) -> Unprompted {
     let tool = call.tool.as_str();
     let card = card_policy(ctx.tool_policy, call);
     if let Some(reason) = card_refusal(ctx.tool_policy, call) {
-        return Ok(Decision::Deny(reason));
+        return Unprompted::Deny(reason);
     }
     let rule = ctx.engine.evaluate_call(call, args, true);
     if let PermissionDecision::Deny { reason } = &rule {
-        return Ok(Decision::Deny(format!(
+        return Unprompted::Deny(format!(
             "Tool '{tool}' denied by permissions config: {reason}"
-        )));
+        ));
     }
     if card == Some(ToolPolicy::Allow) {
-        return Ok(allow("agent card policy"));
+        return allow("agent card policy");
     }
     match ctx.permission_override {
-        Some(PermissionMode::Allow) => return Ok(allow("permission override")),
+        Some(PermissionMode::Allow) => return allow("permission override"),
         Some(PermissionMode::Deny) => {
-            return Ok(Decision::Deny(
-                "Tool call denied by permission override".to_string(),
-            ))
+            return Unprompted::Deny("Tool call denied by permission override".to_string())
         }
         Some(PermissionMode::Ask) | None => {}
     }
@@ -220,10 +232,10 @@ fn decide_unprompted<'a>(
     // agent's own tool with a Crucible name is not Crucible's tool.
     let asked_about = matches!(rule, PermissionDecision::Ask { rule_matched: true });
     if card.is_none() && !asked_about && is_safe(tool) && call.runs_in_crucible() {
-        return Ok(Decision::Allow(None));
+        return Unprompted::Allow(None);
     }
     if rule == PermissionDecision::Allow {
-        return Ok(allow("permissions config"));
+        return allow("permissions config");
     }
     if let Some((dir, project)) = ctx.patterns {
         let project = project.to_string_lossy();
@@ -231,7 +243,7 @@ fn decide_unprompted<'a>(
             .unwrap_or_default()
             .merge(&PatternStore::load_user_sync_in(dir).unwrap_or_default());
         if AgentManager::check_pattern_match(call, &store) {
-            return Ok(allow("saved pattern"));
+            return allow("saved pattern");
         }
     }
 
@@ -250,7 +262,7 @@ fn decide_unprompted<'a>(
         } else {
             "Lua permission hook"
         })),
-        PermissionHookResult::Deny => Some(Decision::Deny(format!(
+        PermissionHookResult::Deny => Some(Unprompted::Deny(format!(
             "Lua hook denied permission to {tool} {}",
             call.summary(50).unwrap_or_default()
         ))),
@@ -258,28 +270,29 @@ fn decide_unprompted<'a>(
     };
     // The plugin approval check (feat/plugin-turns 75ffa651d) goes here.
     if let Some(decision) = stance {
-        return Ok(decision);
+        return decision;
     }
 
     // A card `ask` or an operator `ask` rule makes a read-only tool ask.
     // Otherwise the mode did not decide.
-    let layer = match (card, asked_about) {
+    Unprompted::Ask(match (card, asked_about) {
         (Some(ToolPolicy::Ask), _) => "agent card policy".to_string(),
         (_, true) => "permissions config".to_string(),
         _ if ctx.mode.is_empty() => "agent".to_string(),
         _ => format!("{} mode", ctx.mode),
-    };
-    match ctx.prompt {
-        Some(prompt) => Err((prompt, layer)),
-        None => Ok(Decision::Deny(format!(
-            "Permission required for '{tool}' but this session runs non-interactively. \
-             Allow it via a permission pattern, Lua permission hook, or permissions config."
-        ))),
-    }
+    })
 }
 
-fn allow(layer: &str) -> Decision {
-    Decision::Allow(Some(layer.to_string()))
+/// The refusal of a call that needs a prompt when nobody can answer one.
+fn no_prompt_refusal(tool: &str) -> String {
+    format!(
+        "Permission required for '{tool}' but this session runs non-interactively. \
+         Allow it via a permission pattern, Lua permission hook, or permissions config."
+    )
+}
+
+fn allow(layer: &str) -> Unprompted {
+    Unprompted::Allow(Some(layer.to_string()))
 }
 
 /// The decision of the session mode: its rules, then its default stance.
@@ -292,7 +305,7 @@ fn mode_stance(
     ctx: &PermissionContext<'_>,
     call: &CanonicalToolCall,
     args: &serde_json::Value,
-) -> Option<Decision> {
+) -> Option<Unprompted> {
     let permissions = ctx.modes.get(ctx.mode)?.permissions;
     let stance = match permissions.has_rules() {
         true => match AgentManager::evaluate_mode_rules(&permissions, call, args) {
@@ -303,8 +316,8 @@ fn mode_stance(
         false => permissions.default,
     };
     match stance {
-        ModeStance::Allow => Some(Decision::Allow(Some(format!("{} mode", ctx.mode)))),
-        ModeStance::Deny => Some(Decision::Deny(format!(
+        ModeStance::Allow => Some(Unprompted::Allow(Some(format!("{} mode", ctx.mode)))),
+        ModeStance::Deny => Some(Unprompted::Deny(format!(
             "Tool '{}' is not permitted in {} mode",
             call.tool, ctx.mode
         ))),
@@ -318,11 +331,11 @@ fn mode_stance(
 /// hooks, no mode and no prompt. An operator `deny` is absolute, an `allow`
 /// runs, a read-only tool runs, and a tool that can mutate needs an explicit
 /// `allow`.
-pub(crate) fn unattended_decision(
+pub(crate) fn unattended_refusal(
     engine: &PermissionEngine,
     name: &str,
     args: &serde_json::Value,
-) -> Decision {
+) -> Option<String> {
     let modes = ModeRegistry::new();
     let no_mcp = HashSet::new();
     let ctx = PermissionContext {
@@ -338,11 +351,11 @@ pub(crate) fn unattended_decision(
         prompt: None,
     };
     let call = CanonicalToolCall::crucible_tool(name, args);
-    decide_unprompted(&ctx, &call, args).unwrap_or_else(|_| {
-        Decision::Deny(format!(
-            "Permission required for '{name}', and nobody can answer a prompt"
-        ))
-    })
+    match decide_unprompted(&ctx, &call, args) {
+        Unprompted::Allow(_) => None,
+        Unprompted::Deny(reason) => Some(reason),
+        Unprompted::Ask(_) => Some(no_prompt_refusal(name)),
+    }
 }
 
 #[cfg(test)]
@@ -384,7 +397,11 @@ mod tests {
             mcp_read_only: &no_mcp,
             prompt: None,
         };
-        decide_unprompted(&ctx, &call, &args).unwrap_or_else(|_| panic!("no prompt"))
+        match decide_unprompted(&ctx, &call, &args) {
+            Unprompted::Allow(layer) => Decision::Allow(layer),
+            Unprompted::Deny(reason) => Decision::Deny(reason),
+            Unprompted::Ask(_) => Decision::Deny(no_prompt_refusal(tool)),
+        }
     }
 
     fn denied(decision: &Decision, why: &str) -> bool {

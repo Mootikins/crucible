@@ -170,7 +170,7 @@ pub(crate) fn isolated_session_refusal(
 
 /// `Some(reason)` if a caller with nobody to prompt must not run `name`.
 ///
-/// The one tool policy (`gate_decision::unattended_decision`) with no card,
+/// The one tool policy (`gate_decision::unattended_refusal`) with no card,
 /// no saved patterns, no hooks, no mode and no prompt: an operator `deny` is
 /// absolute, an `allow` runs, a read-only tool runs, and a tool that can
 /// mutate needs an explicit `allow`.
@@ -184,12 +184,8 @@ pub(crate) fn unattended_refusal(
     args: &serde_json::Value,
     caller: &str,
 ) -> Option<String> {
-    use crate::agent_manager::messaging::gate_decision::{unattended_decision, Decision};
-    match unattended_decision(permissions, name, args) {
-        Decision::Deny(reason) => Some(format!("{caller} has no prompt: {reason}")),
-        Decision::NoAnswer => Some(format!("{caller} has no prompt")),
-        Decision::Allow(_) | Decision::UserAllowed => None,
-    }
+    crate::agent_manager::messaging::gate_decision::unattended_refusal(permissions, name, args)
+        .map(|reason| format!("{caller} has no prompt: {reason}"))
 }
 
 /// `Some(reason)` when `session` cannot carry an active tool set.
