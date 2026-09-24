@@ -3,9 +3,10 @@
 //! Provides CLI commands for listing, showing, and validating agent cards.
 
 use anyhow::Result;
-use crucible_core::agent::{AgentCard, AgentCardLoader, AgentCardRegistry};
-use crucible_daemon::agent_cards::{card_directories, CardRoots};
+use crucible_core::agent::{AgentCard, AgentCardLoader};
+use crucible_daemon::agent_cards::{card_directories, discover_agent_cards_in, CardRoots};
 use crucible_daemon::DaemonClient;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::cli::AgentsCommands;
@@ -32,30 +33,25 @@ pub async fn execute(config: CliConfig, command: Option<AgentsCommands>) -> Resu
     }
 }
 
-/// Load all agent cards from configured directories
-fn load_agent_registry(config: &CliConfig) -> AgentCardRegistry {
-    let mut registry = AgentCardRegistry::default();
-    let dirs = collect_agent_directories(config, &current_workspace());
-
-    for dir in dirs {
-        if dir.exists() && dir.is_dir() {
-            if let Ok(count) = registry.load_from_directory(dir.to_string_lossy().as_ref()) {
-                if count > 0 {
-                    tracing::debug!("Loaded {} agent cards from {:?}", count, dir);
-                }
-            }
-        }
-    }
-
-    registry
+/// The cards visible from `workspace`, resolved the way the daemon resolves
+/// them: [`discover_agent_cards_in`], highest-priority root first, first
+/// write wins.
+///
+/// This used to be a second registry built by `insert`-ing over the same
+/// highest-first list, which kept the LAST card loaded — the lowest-priority
+/// one — on a name collision. That is how `cru agents show` could return a
+/// card `session.create --agent` would never resolve.
+fn load_agent_cards(config: &CliConfig, workspace: &Path) -> HashMap<String, AgentCard> {
+    let roots = card_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
+    discover_agent_cards_in(&roots, workspace, Some(&config.kiln_path))
 }
 
 /// The agent card directories a session started from `workspace` would
-/// search, in load order (later sources override earlier by agent name).
+/// search, in precedence order (highest first, first match wins).
 ///
 /// This is the daemon's own list, [`crucible_daemon::agent_cards::card_directories`],
-/// built from the same config: global cards, then `agent_directories`, then
-/// the kiln's `.crucible/agents/`, then the workspace's. A second
+/// built from the same config: the workspace's `.crucible/agents/`, then the
+/// kiln's, then `agent_directories`, then global cards. A second
 /// implementation is how `cru agents list` came to advertise cards the daemon
 /// would not resolve. The kiln's visible `agents/` is deliberately not in it;
 /// see the daemon function for why.
@@ -68,23 +64,19 @@ pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<Pa
     card_directories(&roots, workspace, Some(&config.kiln_path))
 }
 
-/// The roots behind [`collect_agent_directories`], with the config home and
-/// the home directory injected as values. The callers above read them from
-/// `dirs` once; a test passes its own, so it does not see the developer's
-/// real `~/.config/crucible/agents`.
-pub fn card_roots(
-    config: &CliConfig,
-    config_home: Option<PathBuf>,
-    home: Option<&Path>,
-) -> CardRoots {
-    CardRoots {
-        config_home,
-        agent_directories: config
-            .agent_directories
-            .iter()
-            .map(|dir| crucible_core::config::expand_tilde(&dir.to_string_lossy(), home))
-            .collect(),
-    }
+/// The roots behind [`collect_agent_directories`] and [`load_agent_cards`],
+/// read the same way the daemon reads them:
+/// [`CardRoots::from_app_config`] over the config serialized to JSON. A
+/// second, struct-field reader here is how the CLI came to build its own
+/// `agent_directories` list instead of the daemon's.
+///
+/// `config_home` and `home` are injected values, never read from `dirs`
+/// inside this function; the callers above read them once, and a test passes
+/// its own, so it does not see the developer's real
+/// `~/.config/crucible/agents`.
+fn card_roots(config: &CliConfig, config_home: Option<PathBuf>, home: Option<&Path>) -> CardRoots {
+    let app_config = serde_json::to_value(config).ok();
+    CardRoots::from_app_config(config_home, app_config.as_ref(), home)
 }
 
 /// The workspace `cru agents` answers for: the current directory, which is
@@ -142,12 +134,11 @@ async fn list_cards(config: &CliConfig, client: Option<&DaemonClient>) -> Vec<Ag
             return cards;
         }
     }
-    let registry = load_agent_registry(config);
-    registry
-        .list()
-        .iter()
-        .filter_map(|name| registry.get(name).cloned())
-        .collect()
+    let mut cards: Vec<AgentCard> = load_agent_cards(config, &current_workspace())
+        .into_values()
+        .collect();
+    cards.sort_by(|a, b| a.name.cmp(&b.name));
+    cards
 }
 
 /// The ACP profiles the daemon knows, or an empty list.
@@ -316,9 +307,9 @@ fn truncate_description(description: &str) -> std::borrow::Cow<'_, str> {
 
 /// Show details of a specific agent card
 async fn show(config: &CliConfig, name: String, format: TextFormat, full: bool) -> Result<()> {
-    let registry = load_agent_registry(config);
+    let cards = load_agent_cards(config, &current_workspace());
 
-    let card = match registry.get(&name) {
+    let card = match cards.get(&name) {
         Some(c) => c,
         None => {
             anyhow::bail!("Agent card '{}' not found.", name);
@@ -699,8 +690,14 @@ You are a test agent.
         assert_eq!(dirs.first(), Some(&PathBuf::from("/ws/.crucible/agents")));
     }
 
+    /// A workspace no test card ever lives under, so these tests only see
+    /// the kiln- and config-level directories they set up.
+    fn no_workspace() -> PathBuf {
+        PathBuf::from("/nonexistent-test-workspace")
+    }
+
     #[test]
-    fn test_load_agent_registry_from_kiln() {
+    fn test_load_agent_cards_from_kiln() {
         // Create temp dir structure with agents
         let temp_dir = TempDir::new().unwrap();
         let agents_dir = temp_dir.path().join(".crucible").join("agents");
@@ -711,22 +708,58 @@ You are a test agent.
 
         // Create config pointing to temp dir as kiln
         let config = test_config(temp_dir.path().to_path_buf());
-        let registry = load_agent_registry(&config);
+        let cards = load_agent_cards(&config, &no_workspace());
 
         // Should have loaded the agent
-        assert_eq!(registry.count(), 1);
-        assert!(registry.has("Test Agent"));
+        assert_eq!(cards.len(), 1);
+        assert!(cards.contains_key("Test Agent"));
+    }
+
+    /// Two cards share a name in a higher-priority root (the kiln's
+    /// `.crucible/agents/`) and a lower-priority one (a configured
+    /// `agent_directories` entry). `card_directories` lists the kiln first —
+    /// see `test_collect_agent_directories_order` — so the daemon's resolver
+    /// (`discover_agent_cards_in`, first write wins) keeps the kiln's card.
+    /// `load_agent_cards` used to insert unconditionally while walking that
+    /// same highest-first list, so the LAST directory visited won instead:
+    /// the opposite card from the one `session.create --agent` would resolve.
+    #[test]
+    fn test_load_agent_cards_keeps_the_highest_priority_card_on_a_name_collision() {
+        let kiln = TempDir::new().unwrap();
+        let shared = TempDir::new().unwrap();
+        let kiln_agents = kiln.path().join(".crucible").join("agents");
+        fs::create_dir_all(&kiln_agents).unwrap();
+        fs::write(
+            kiln_agents.join("shared.md"),
+            "---\nname: \"shared\"\nversion: \"1.0.0\"\ndescription: \"kiln version\"\n---\n\nKiln prompt.\n",
+        )
+        .unwrap();
+        fs::write(
+            shared.path().join("shared.md"),
+            "---\nname: \"shared\"\nversion: \"1.0.0\"\ndescription: \"configured version\"\n---\n\nConfigured prompt.\n",
+        )
+        .unwrap();
+
+        let mut config = test_config(kiln.path().to_path_buf());
+        config.agent_directories = vec![shared.path().to_path_buf()];
+
+        let cards = load_agent_cards(&config, &no_workspace());
+        let card = cards.get("shared").expect("card present");
+        assert_eq!(
+            card.description, "kiln version",
+            "the kiln's .crucible/agents/ must outrank a configured agent_directories entry"
+        );
     }
 
     #[test]
-    fn test_load_agent_registry_empty_when_no_dirs() {
+    fn test_load_agent_cards_empty_when_no_dirs() {
         // Create temp dir without agents directory
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(temp_dir.path().to_path_buf());
-        let registry = load_agent_registry(&config);
+        let cards = load_agent_cards(&config, &no_workspace());
 
         // Should be empty (no dirs exist)
-        assert_eq!(registry.count(), 0);
+        assert_eq!(cards.len(), 0);
     }
 
     /// A card in the kiln's visible tree is ignored; the one in `.crucible/`
@@ -737,7 +770,7 @@ You are a test agent.
     /// kiln is notes, and a cloned one must not be able to introduce an agent
     /// card just by containing a directory.
     #[test]
-    fn test_load_agent_registry_ignores_the_kilns_visible_tree() {
+    fn test_load_agent_cards_ignores_the_kilns_visible_tree() {
         let temp_dir = TempDir::new().unwrap();
 
         let hidden_dir = temp_dir.path().join(".crucible").join("agents");
@@ -757,10 +790,10 @@ You are a test agent.
         .unwrap();
 
         let config = test_config(temp_dir.path().to_path_buf());
-        let registry = load_agent_registry(&config);
+        let cards = load_agent_cards(&config, &no_workspace());
 
-        assert_eq!(registry.count(), 1);
-        let agent = registry.get("Shared Agent").unwrap();
+        assert_eq!(cards.len(), 1);
+        let agent = cards.get("Shared Agent").unwrap();
         assert_eq!(
             agent.version, "1.0.0",
             "the .crucible/ card must win; the visible one must not be read at all"
