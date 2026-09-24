@@ -42,15 +42,15 @@ async fn events_until_turn_finished(
     events
 }
 
-/// No second `turn_finished` follows the first one.
-async fn assert_no_more_turn_finished(rx: &mut broadcast::Receiver<SessionEventMessage>) {
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    while let Ok(event) = rx.try_recv() {
-        assert_ne!(
-            event.event, "turn_finished",
-            "a turn sent turn_finished twice"
-        );
-    }
+/// No second `turn_finished` follows the first one. A probe turn is the end
+/// signal: its `user_message` comes before the next `turn_finished`.
+async fn assert_no_more_turn_finished(h: &mut ReactorTestHarness) {
+    h.send("probe").await;
+    let events = events_until_turn_finished(&mut h.event_rx).await;
+    assert!(
+        events.iter().any(|e| e.event == "user_message"),
+        "a turn sent turn_finished twice"
+    );
 }
 
 /// The origin of a `user_message` event.
@@ -86,7 +86,7 @@ async fn a_turn_finishes_once_with_the_stop_reason_of_its_last_call() {
         finished_fields(finished),
         (TurnStatus::Completed, Some(StopReason::MaxTokens), None)
     );
-    assert_no_more_turn_finished(&mut h.event_rx).await;
+    assert_no_more_turn_finished(&mut h).await;
 }
 
 /// A handler cancel has its own status, apart from a user cancel.
@@ -112,7 +112,7 @@ async fn a_pre_llm_call_cancel_finishes_the_turn_as_handler_cancelled() {
         error.as_deref().is_some_and(|e| e.contains("pre_llm_call")),
         "the reason names the handler stage: {error:?}"
     );
-    assert_no_more_turn_finished(&mut h.event_rx).await;
+    assert_no_more_turn_finished(&mut h).await;
 }
 
 /// An agent error finishes the turn as failed, with the error text.
@@ -230,13 +230,20 @@ async fn a_user_cancel_clears_the_turn_a_handler_asked_for() {
         slot.take_follow_up().is_none(),
         "the cancel must clear the stored follow-up"
     );
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    while let Ok(event) = rx.try_recv() {
-        assert_ne!(
-            event.event, "user_message",
-            "no turn may start after the cancel"
-        );
-    }
+    // A probe turn is the end signal. A follow-up turn would take the slot
+    // or open with its own `user_message` before the probe ends.
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    h.agent_manager
+        .send_message(&h.session_id, "probe".into(), &h.event_tx, true, None)
+        .await
+        .expect("no turn holds the slot after the cancel");
+    let opened: Vec<_> = events_until_turn_finished(&mut rx)
+        .await
+        .into_iter()
+        .filter(|e| e.event == "user_message")
+        .map(|e| e.data["content"].clone())
+        .collect();
+    assert_eq!(opened, ["probe"], "no turn may start after the cancel");
 }
 
 /// The permission state of a turn ends with the turn. An ACP permission
