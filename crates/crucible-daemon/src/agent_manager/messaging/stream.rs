@@ -319,8 +319,10 @@ impl AgentManager {
                     }
 
                     // Dedup: some providers send the whole accumulated
-                    // text as their final delta. Skip if it matches.
-                    if !accumulated_response.is_empty() && delta == *accumulated_response {
+                    // text as their final delta. Skip if it matches. An
+                    // answer of only whitespace is not an answer, so a
+                    // second "\n" after a first one is not a resend.
+                    if !accumulated_response.trim().is_empty() && delta == *accumulated_response {
                         debug!(
                             session_id = %stream_ctx.session_id,
                             delta_len = delta.len(),
