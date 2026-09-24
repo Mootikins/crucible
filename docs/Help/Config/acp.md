@@ -175,9 +175,19 @@ agents, and explains each field. A table that you set replaces the shipped table
 agent.
 
 Each entry applies to a call when all of its match fields match: `name` (the ACP tool
-name), `acp_kind` (the ACP kind) and `title` (plain text in the ACP title). Then the entry
-gives a `kind` and lists of keys for `args`, `tool`, `command`, `paths`, `url` and `query`.
-A key that starts with `/` is a JSON pointer into the whole call.
+name), `acp_kind` (the ACP kind), `title` (a regular expression for the ACP title) and `id`
+(a regular expression for the ACP `toolCallId`). The expressions use the syntax of the Rust
+`regex` crate, not Lua patterns. A bad expression fails the config load. A group named
+`tool` gives the tool name: `[[^Run (?P<tool>\w+)\?$]]` names the call of the title
+"Run edit_file?" `edit_file`. Then the entry gives a `kind` and lists of keys for `args`,
+`tool`, `server`, `command`, `paths`, `url` and `query`. A key that starts with `/` is a
+JSON pointer into the whole call. The `server` keys name the MCP server when the agent sends
+it apart from the tool name. The tool name is then `mcp__<server>__<tool>`, so a call to
+Crucible's own server is the Crucible tool, and a rule for `search_notes` decides it.
+
+An agent's own tool can have the name of a Crucible tool, for example gemini's
+`read_file`. The agent runs that tool, so it does not skip the prompt as Crucible's
+read-only tools do.
 
 ```lua
 cru.config.set({
@@ -187,7 +197,7 @@ cru.config.set({
                 command = "/usr/local/bin/my-agent",
                 tools = {
                     { acp_kind = "execute", command = { "cmd" } },
-                    { title = "Fetch ", kind = "fetch", url = { "/rawInput/target" } },
+                    { title = "^Fetch ", kind = "fetch", url = { "/rawInput/target" } },
                 },
             },
         },

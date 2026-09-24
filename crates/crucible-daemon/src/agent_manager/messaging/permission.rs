@@ -925,6 +925,26 @@ mod acp_tool_policy_tests {
         );
     }
 
+    /// An agent's own tool can have the name of a read-only Crucible tool.
+    /// Gemini names its read tool `read_file` in the id. The agent runs it,
+    /// so it does not take the read-only exemption of Crucible's tool.
+    #[tokio::test]
+    async fn an_agent_tool_with_a_crucible_name_does_not_skip_the_prompt() {
+        let gemini: Vec<crucible_core::types::AgentKeys> =
+            serde_json::from_value(serde_json::json!([{ "id": "^(?P<tool>[a-z_]+?)__" }]))
+                .expect("the table parses");
+        let raw = serde_json::from_value(serde_json::json!({
+            "toolCallId": "read_file__read_file_1_2",
+            "kind": "read",
+            "locations": [{"path": "/etc/passwd"}],
+        }))
+        .expect("a raw tool call");
+        let call = classify_acp(raw, &gemini);
+        assert_eq!(call.tool, "read_file");
+        let asked = decide_call(call, &[], None).await;
+        assert_eq!(asked.prompts, 1, "the agent's read_file is asked about");
+    }
+
     /// A card `deny` refuses a Crucible MCP tool, and asks nobody.
     ///
     /// The card names the tool the daemon's own path names — `read_note` —

@@ -54,7 +54,7 @@ pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
 
 // Re-export tool reference types
 pub use crate::types::tool_call::{CanonicalToolCall, RenderField, ToolRender};
-pub use crate::types::tool_match::{classify_acp, AgentKeys, RawToolCall};
+pub use crate::types::tool_match::{classify_acp, AgentKeys, KeyPattern, RawToolCall};
 pub use crate::types::tool_ref::{ToolRef, ToolSource};
 
 // Re-export popup types

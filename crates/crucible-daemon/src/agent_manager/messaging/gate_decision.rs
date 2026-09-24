@@ -210,9 +210,10 @@ fn decide_unprompted<'a>(
         Some(PermissionMode::Ask) | None => {}
     }
     // `is_safe`, never `believed_read_only`: an MCP server must not annotate
-    // its way past the hooks and the mode stance with `readOnlyHint`.
+    // its way past the hooks and the mode stance with `readOnlyHint`. An
+    // agent's own tool with a Crucible name is not Crucible's tool.
     let asked_about = matches!(rule, PermissionDecision::Ask { rule_matched: true });
-    if card.is_none() && !asked_about && is_safe(tool) {
+    if card.is_none() && !asked_about && is_safe(tool) && call.runs_in_crucible() {
         return Ok(Decision::Allow(None));
     }
     if rule == PermissionDecision::Allow {

@@ -788,6 +788,13 @@ fn each_tool_frame_decodes_as_its_sdk_type() {
 /// The ACP config after a boot that runs the shipped
 /// `runtime/defaults/init.luau` of this repository, then `init_lua`.
 async fn boot_acp_config(init_lua: &str) -> crucible_core::config::AcpConfig {
+    let (acp, error) = boot(init_lua).await;
+    assert_eq!(error, None, "init.lua evaluates");
+    acp
+}
+
+/// The ACP config of a boot, and the error of its evaluation.
+async fn boot(init_lua: &str) -> (crucible_core::config::AcpConfig, Option<String>) {
     use crucible_daemon::daemon_plugins::{evaluate_boot_config_with_paths, PluginPathsFn};
 
     let tmp = tempfile::tempdir().unwrap();
@@ -803,8 +810,7 @@ async fn boot_acp_config(init_lua: &str) -> crucible_core::config::AcpConfig {
     )
     .await
     .expect("the boot evaluates");
-    assert_eq!(boot.eval_error, None, "init.lua evaluates");
-    boot.config.acp
+    (boot.config.acp, boot.eval_error)
 }
 
 /// The key table of `agent`, as the agent profile resolves it.
@@ -1014,7 +1020,7 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "codex-rust",
         10,
-        r#"{"kind":"mcp_tool","tool":"search_notes","query":"rust"}"#,
+        r#"{"kind":"search","tool":"search_notes","query":"rust"}"#,
     ),
     ("codex-rust", 11, r#"{"kind":"mcp_tool","tool":"mcp_tool"}"#),
     ("codex-rust", 12, r#"{"kind":"tool","tool":"tool"}"#),
@@ -1085,51 +1091,59 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "gemini",
         2,
-        r#"{"kind":"command","tool":"command","command":"ls -la src"}"#,
+        r#"{"kind":"command","tool":"run_shell_command","command":"ls -la src"}"#,
     ),
     (
         "gemini",
         3,
-        r#"{"kind":"command","tool":"command","command":"ls -la src"}"#,
+        r#"{"kind":"command","tool":"run_shell_command","command":"ls -la src"}"#,
     ),
     (
         "gemini",
         4,
-        r#"{"kind":"command","tool":"command","command":"ls -la src"}"#,
+        r#"{"kind":"command","tool":"run_shell_command","command":"ls -la src"}"#,
     ),
     (
         "gemini",
         5,
-        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/config.py"]}"#,
+        r#"{"kind":"file_edit","tool":"replace","paths":["/home/user/proj/config.py"]}"#,
     ),
     (
         "gemini",
         6,
-        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/config.py"]}"#,
+        r#"{"kind":"file_edit","tool":"replace","paths":["/home/user/proj/config.py"]}"#,
     ),
     (
         "gemini",
         7,
-        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/config.py"]}"#,
+        r#"{"kind":"file_edit","tool":"replace","paths":["/home/user/proj/config.py"]}"#,
     ),
     (
         "gemini",
         8,
-        r#"{"kind":"file_read","tool":"file_read","paths":["/home/user/proj/src/main.rs"]}"#,
+        r#"{"kind":"file_read","tool":"read_file","paths":["/home/user/proj/src/main.rs"]}"#,
     ),
     (
         "gemini",
         9,
-        r#"{"kind":"file_read","tool":"file_read","paths":["/home/user/proj/src/main.rs"]}"#,
+        r#"{"kind":"file_read","tool":"read_file","paths":["/home/user/proj/src/main.rs"]}"#,
     ),
-    ("gemini", 10, r#"{"kind":"tool","tool":"tool"}"#),
-    ("gemini", 11, r#"{"kind":"tool","tool":"tool"}"#),
-    ("gemini", 12, r#"{"kind":"tool","tool":"tool"}"#),
-    ("gemini", 13, r#"{"kind":"search","tool":"search"}"#),
-    ("gemini", 14, r#"{"kind":"search","tool":"search"}"#),
-    ("gemini", 15, r#"{"kind":"fetch","tool":"fetch"}"#),
-    ("gemini", 16, r#"{"kind":"fetch","tool":"fetch"}"#),
-    ("gemini", 17, r#"{"kind":"fetch","tool":"fetch"}"#),
+    ("gemini", 10, r#"{"kind":"tool","tool":"mcp_docs_search"}"#),
+    ("gemini", 11, r#"{"kind":"tool","tool":"mcp_docs_search"}"#),
+    ("gemini", 12, r#"{"kind":"tool","tool":"mcp_docs_search"}"#),
+    (
+        "gemini",
+        13,
+        r#"{"kind":"search","tool":"google_web_search"}"#,
+    ),
+    (
+        "gemini",
+        14,
+        r#"{"kind":"search","tool":"google_web_search"}"#,
+    ),
+    ("gemini", 15, r#"{"kind":"fetch","tool":"web_fetch"}"#),
+    ("gemini", 16, r#"{"kind":"fetch","tool":"web_fetch"}"#),
+    ("gemini", 17, r#"{"kind":"fetch","tool":"web_fetch"}"#),
     (
         "antigravity",
         2,
@@ -1149,23 +1163,23 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "antigravity",
         6,
-        r#"{"kind":"file_edit","tool":"file_edit","paths":["/work/app/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"edit_file","paths":["/work/app/src/lib.rs"]}"#,
     ),
     (
         "antigravity",
         7,
-        r#"{"kind":"file_edit","tool":"file_edit","paths":["/work/app/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"edit_file","paths":["/work/app/src/lib.rs"]}"#,
     ),
     (
         "antigravity",
         8,
-        r#"{"kind":"file_edit","tool":"file_edit","paths":["/work/app/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"edit_file","paths":["/work/app/src/lib.rs"]}"#,
     ),
     ("antigravity", 9, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "antigravity",
         10,
-        r#"{"kind":"file_read","tool":"file_read","paths":["/work/app/src/main.rs"]}"#,
+        r#"{"kind":"file_read","tool":"view_file","paths":["/work/app/src/main.rs"]}"#,
     ),
     ("antigravity", 11, r#"{"kind":"tool","tool":"tool"}"#),
     (
@@ -1187,33 +1201,33 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "antigravity",
         16,
-        r#"{"kind":"search","tool":"search","query":"acp tool call schema"}"#,
+        r#"{"kind":"search","tool":"search_web","query":"acp tool call schema"}"#,
     ),
     (
         "antigravity",
         17,
-        r#"{"kind":"search","tool":"search","query":"acp tool call schema"}"#,
+        r#"{"kind":"search","tool":"search_web","query":"acp tool call schema"}"#,
     ),
     (
         "antigravity",
         18,
-        r#"{"kind":"search","tool":"search","query":"acp tool call schema"}"#,
+        r#"{"kind":"search","tool":"search_web","query":"acp tool call schema"}"#,
     ),
     ("antigravity", 19, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "antigravity",
         20,
-        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+        r#"{"kind":"fetch","tool":"read_url_content","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
     ),
     (
         "antigravity",
         21,
-        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+        r#"{"kind":"fetch","tool":"read_url_content","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
     ),
     (
         "antigravity",
         22,
-        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+        r#"{"kind":"fetch","tool":"read_url_content","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
     ),
     ("antigravity", 23, r#"{"kind":"tool","tool":"tool"}"#),
 ];
@@ -1250,7 +1264,7 @@ async fn each_tool_frame_gives_its_canonical_call() {
 /// The other agents keep their shipped tables.
 #[tokio::test]
 async fn a_user_key_table_replaces_the_shipped_one() {
-    use crucible_core::types::AgentKeys;
+    use crucible_core::types::{AgentKeys, KeyPattern};
 
     let shipped = boot_acp_config("").await;
     assert!(
@@ -1260,17 +1274,31 @@ async fn a_user_key_table_replaces_the_shipped_one() {
 
     let acp = boot_acp_config(
         r#"cru.config.set { acp = { agents = { gemini = { tools = {
-            { title = "Run ", tool = { "/title" } },
+            { title = "^Run ", tool = { "/title" } },
         } } } } }"#,
     )
     .await;
     let want = AgentKeys {
-        title: Some("Run ".into()),
+        title: Some(KeyPattern::new("^Run ").unwrap()),
         tool: vec!["/title".into()],
         ..AgentKeys::default()
     };
     assert_eq!(key_table(&acp, "gemini"), vec![want]);
     assert_eq!(key_table(&acp, "codex"), key_table(&shipped, "codex"));
+}
+
+/// A title pattern is a regular expression. A bad one fails when the config
+/// loads, and the error names the pattern.
+#[tokio::test]
+async fn a_bad_title_pattern_fails_at_config_load() {
+    let (_, error) = boot(
+        r#"cru.config.set { acp = { agents = { gemini = { tools = {
+            { title = "Run (" },
+        } } } } }"#,
+    )
+    .await;
+    let error = error.expect("the config load fails");
+    assert!(error.contains("invalid pattern `Run (`"), "{error}");
 }
 
 /// What one turn over a tool_frames case showed: the canonical call of each

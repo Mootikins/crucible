@@ -248,7 +248,11 @@ end)
 -- Each entry applies to a call when all of its match fields match:
 --   name      the ACP tool name, exactly
 --   acp_kind  the ACP kind ("execute", "read", "other", ...)
---   title     plain text that the ACP title contains (not a Lua pattern)
+--   title     a regular expression (Rust regex syntax, not a Lua pattern)
+--             that matches the ACP title
+--   id        a regular expression that matches the ACP toolCallId
+-- A group named `tool` in `title` or `id` gives the tool name, for example
+-- [[^Run (?P<tool>\w+)\?$]]. A bad expression fails the config load.
 -- Then the entry gives:
 --   kind                          the kind, if the ACP kind gives none
 --   args                          keys for the argument object, if the agent
@@ -256,6 +260,9 @@ end)
 --   tool, command, paths, url,    lists of keys. A key is a key of the
 --   query                         argument object, or a JSON pointer into the
 --                                 call ("/title", "/_meta/mcp/tool")
+--   server                        keys for the MCP server name, when the
+--                                 agent sends it apart from the tool name.
+--                                 The tool name is then mcp__<server>__<tool>.
 --
 -- A call to Crucible's own MCP server (mcp__crucible__x or mcp.crucible.x)
 -- gets the kind of the native Crucible tool, so one hook matches both.
@@ -272,9 +279,11 @@ type AgentKeys = {
   name: string?,
   acp_kind: string?,
   title: string?,
+  id: string?,
   kind: string?,
   args: { string }?,
   tool: { string }?,
+  server: { string }?,
   command: { string }?,
   paths: { string }?,
   url: { string }?,
@@ -283,36 +292,41 @@ type AgentKeys = {
 
 -- Both codex adapters send an MCP call as { server, tool, arguments }.
 local codex_tools: { AgentKeys } = {
-  -- The Rust adapter.
+  -- The Rust adapter. The title is "Tool: <server>/<tool>".
   {
-    title = "Tool: ",
+    title = "^Tool: ",
     kind = "mcp_tool",
     args = { "/rawInput/arguments" },
     tool = { "/rawInput/tool" },
+    server = { "/rawInput/server" },
   },
-  { title = "Approve MCP tool call", kind = "mcp_tool" },
-  { title = "Searching for:", kind = "search" },
-  { title = "Opening:", kind = "fetch", url = { "/rawInput/action/url" } },
+  { title = "^Approve MCP tool call", kind = "mcp_tool" },
+  { title = "^Searching for:", kind = "search" },
+  { title = "^Opening:", kind = "fetch", url = { "/rawInput/action/url" } },
   -- The TypeScript adapter.
-  { title = "mcp.", args = { "/rawInput/arguments" } },
-  { title = "Web search:", kind = "search" },
-  { title = "Open page:", kind = "fetch", url = { "/rawInput/action/url" } },
+  { title = [[^mcp\.]], args = { "/rawInput/arguments" } },
+  { title = "^Web search:", kind = "search" },
+  { title = "^Open page:", kind = "fetch", url = { "/rawInput/action/url" } },
 }
 
--- Gemini sends no tool name and no rawInput. The shell command is only in
--- the title.
+-- Gemini sends no tool name and no rawInput. The id starts with the tool
+-- name ("read_file__read_file_1758580000002_2"). The shell command is only
+-- in the title.
 local gemini_tools: { AgentKeys } = {
+  { id = [[^(?P<tool>[a-z_]+?)__]] },
   { acp_kind = "execute", command = { "/title" } },
 }
 
--- Antigravity uses its own rawInput keys. It sends no tool name, and the
--- title of an MCP call is "<server>_<tool>".
+-- Antigravity uses its own rawInput keys. It sends no tool name. The title
+-- of a call is "Run <tool>?" or "Running <tool>", and the title of an MCP
+-- call is "<server>_<tool>".
 local antigravity_tools: { AgentKeys } = {
   {
     command = { "CommandLine", "command_line" },
     paths = { "TargetFile", "absolute_path" },
     url = { "Url" },
   },
+  { title = [[^Run(?:ning)? (?P<tool>\w+)\??$]] },
   { acp_kind = "other", kind = "mcp_tool", tool = { "/title" } },
 }
 

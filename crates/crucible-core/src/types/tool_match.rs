@@ -33,6 +33,10 @@ use super::tool_call::{is_shell_tool, CanonicalToolCall};
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawToolCall {
+    /// The ACP `toolCallId`. Some agents put the tool name in it, for
+    /// example gemini (`read_file__read_file_1758580000002_2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,6 +57,7 @@ pub struct RawToolCall {
 impl From<&ToolCall> for RawToolCall {
     fn from(call: &ToolCall) -> Self {
         Self {
+            tool_call_id: Some(call.tool_call_id.to_string()),
             title: Some(call.title.clone()).filter(|t| !t.is_empty()),
             name: call.name.clone(),
             kind: Some(call.kind),
@@ -68,6 +73,7 @@ impl From<&ToolCallUpdate> for RawToolCall {
     fn from(update: &ToolCallUpdate) -> Self {
         let f = &update.fields;
         Self {
+            tool_call_id: Some(update.tool_call_id.to_string()),
             title: f.title.clone(),
             name: f.name.clone(),
             kind: f.kind,
@@ -85,6 +91,7 @@ impl RawToolCall {
     /// without `locations` or `content` keeps the ones that came before.
     pub fn merge(&mut self, frame: RawToolCall) {
         let RawToolCall {
+            tool_call_id,
             title,
             name,
             kind,
@@ -93,6 +100,7 @@ impl RawToolCall {
             content,
             meta,
         } = frame;
+        self.tool_call_id = tool_call_id.or(self.tool_call_id.take());
         self.title = title.or(self.title.take());
         self.name = name.or(self.name.take());
         self.kind = kind.or(self.kind.take());
@@ -123,21 +131,65 @@ pub struct AgentKeys {
     pub name: Option<String>,
     /// Match: the ACP `kind` is equal to this.
     pub acp_kind: Option<ToolKind>,
-    /// Match: the ACP `title` contains this text. The text is plain, not a
-    /// pattern: a Lua pattern needs a Lua VM for each call.
-    pub title: Option<String>,
+    /// Match: the ACP `title` matches this pattern.
+    pub title: Option<KeyPattern>,
+    /// Match: the ACP `toolCallId` matches this pattern.
+    pub id: Option<KeyPattern>,
     /// The canonical kind, if the diff and the ACP `kind` give no kind.
     pub kind: Option<String>,
     /// Keys for the argument object, if the agent wraps it. For example,
     /// codex sends an MCP call as `{server, tool, arguments}`.
     pub args: Vec<String>,
     /// Keys for the canonical tool name. A value here wins over the ACP
-    /// `name`, because the `name` is only a match field.
+    /// `name`, because the `name` is only a match field. A group `tool` in
+    /// the `title` or `id` pattern wins over these keys.
     pub tool: Vec<String>,
+    /// Keys for the MCP server name, if the agent sends it apart from the
+    /// tool name. The call then has the MCP name `mcp__<server>__<tool>`,
+    /// so a call to Crucible's own server is the Crucible tool.
+    pub server: Vec<String>,
     pub command: Vec<String>,
     pub paths: Vec<String>,
     pub url: Vec<String>,
     pub query: Vec<String>,
+}
+
+/// A regular expression of a key table. It compiles when the config loads,
+/// so a bad pattern fails the load and not a tool call. A named group `tool`
+/// gives the canonical tool name, for example `^Run (?P<tool>\w+)\?$`.
+#[derive(Debug, Clone)]
+pub struct KeyPattern(regex::Regex);
+
+impl KeyPattern {
+    pub fn new(pattern: &str) -> Result<Self, regex::Error> {
+        regex::Regex::new(pattern).map(Self)
+    }
+
+    /// The text of the group `tool`, if `text` matches and has one.
+    fn tool(&self, text: Option<&str>) -> Option<String> {
+        let group = self.0.captures(text?)?.name("tool")?.as_str();
+        Some(group.to_string()).filter(|t| !t.is_empty())
+    }
+}
+
+impl PartialEq for KeyPattern {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl Serialize for KeyPattern {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyPattern {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let pattern = String::deserialize(deserializer)?;
+        Self::new(&pattern)
+            .map_err(|e| serde::de::Error::custom(format!("invalid pattern `{pattern}`: {e}")))
+    }
 }
 
 /// The MCP name prefixes of Crucible's own MCP server.
@@ -160,13 +212,26 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         .cloned()
         .unwrap_or_else(|| raw_input.clone());
 
+    // The tool name that the table gives: a group `tool` of a pattern, or
+    // else a `tool` key. With a `server` key it is an MCP name.
+    let captured = |p: &Option<KeyPattern>, text: &Option<String>| {
+        p.as_ref().and_then(|p| p.tool(text.as_deref()))
+    };
+    let table_tool = entries.iter().find_map(|e| {
+        let tool = captured(&e.title, &raw.title)
+            .or_else(|| captured(&e.id, &raw.tool_call_id))
+            .or_else(|| first_string(&whole, &input, &e.tool))?;
+        Some(match first_string(&whole, &input, &e.server) {
+            Some(server) => format!("mcp__{server}__{tool}"),
+            None => tool,
+        })
+    });
     // An MCP tool name is also a name when it is only in the title, because
     // the TypeScript codex adapter puts it there.
-    let mcp_name = raw
-        .name
-        .clone()
+    let mcp_name = (raw.name.clone())
         .or_else(|| raw.title.clone())
-        .filter(|n| is_mcp_name(n));
+        .filter(|n| is_mcp_name(n))
+        .or_else(|| table_tool.clone().filter(|n| is_mcp_name(n)));
 
     // One hook must match a native call and an MCP call of one Crucible tool.
     if let Some(tool) = mcp_name.as_deref().and_then(crucible_mcp_tool) {
@@ -276,9 +341,7 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
 
     // A call that nothing names gets its kind as the name, so a UI and a
     // rule always have a name to show or to match.
-    call.tool = entries
-        .iter()
-        .find_map(|e| first_string(&whole, &input, &e.tool))
+    call.tool = table_tool
         .or(mcp_name)
         .or_else(|| raw.name.clone())
         .unwrap_or_else(|| call.kind.clone());
@@ -302,6 +365,20 @@ fn file_diffs(content: &[ToolCallContent]) -> Vec<FileDiff> {
         })
         .filter(|d| !d.is_oversize())
         .collect()
+}
+
+impl CanonicalToolCall {
+    /// Whether Crucible runs the call: a call of Crucible's own tool, or an
+    /// ACP call to Crucible's MCP server. An ACP agent runs its other tools,
+    /// also a tool that has the name of a Crucible tool (gemini's
+    /// `read_file`). So only a call that Crucible runs can take the
+    /// read-only exemption of its tool.
+    pub fn runs_in_crucible(&self) -> bool {
+        self.raw.as_ref().is_none_or(|raw| {
+            (raw.name.as_deref().or(raw.title.as_deref()))
+                .is_some_and(|n| crucible_mcp_tool(n).is_some())
+        })
+    }
 }
 
 /// The Crucible tool that an MCP name of Crucible's own server names.
@@ -331,9 +408,15 @@ fn acp_kind_name(kind: ToolKind) -> Option<&'static str> {
 fn entry_matches(e: &AgentKeys, raw: &RawToolCall) -> bool {
     e.name.as_ref().is_none_or(|n| raw.name.as_ref() == Some(n))
         && e.acp_kind.is_none_or(|k| raw.kind == Some(k))
-        && e.title
-            .as_ref()
-            .is_none_or(|t| raw.title.as_ref().is_some_and(|rt| rt.contains(t.as_str())))
+        && matches(&e.title, &raw.title)
+        && matches(&e.id, &raw.tool_call_id)
+}
+
+/// An absent pattern matches each call. A pattern matches no absent text.
+fn matches(pattern: &Option<KeyPattern>, text: &Option<String>) -> bool {
+    pattern
+        .as_ref()
+        .is_none_or(|p| text.as_deref().is_some_and(|t| p.0.is_match(t)))
 }
 
 /// Set each field that is still empty from the first key that has a value.
@@ -492,7 +575,7 @@ mod tests {
     fn an_entry_applies_only_when_each_match_field_matches() {
         let table = [AgentKeys {
             name: Some("Bash".into()),
-            title: Some("ls".into()),
+            title: Some(pattern("^ls")),
             kind: Some("command".into()),
             command: vec!["/title".into()],
             ..AgentKeys::default()
@@ -580,10 +663,14 @@ mod tests {
         assert_eq!(c.query.as_deref(), Some("rust"));
     }
 
+    fn pattern(p: &str) -> KeyPattern {
+        KeyPattern::new(p).expect("a valid pattern")
+    }
+
     #[test]
-    fn a_title_match_is_plain_text() {
+    fn a_title_match_is_a_regular_expression() {
         let table = [AgentKeys {
-            title: Some("mcp.".into()),
+            title: Some(pattern(r"^mcp\.")),
             kind: Some("mcp_tool".into()),
             ..AgentKeys::default()
         }];
@@ -591,6 +678,54 @@ mod tests {
         assert_eq!(hit.kind, "mcp_tool");
         let miss = classify_acp(raw(json!({"title": "mcpxsrv"})), &table);
         assert_eq!(miss.kind, "tool");
+    }
+
+    /// A group `tool` of a title or id pattern gives the tool name. It wins
+    /// over the `tool` keys of the entry.
+    #[test]
+    fn a_pattern_group_gives_the_tool_name() {
+        let table = [
+            AgentKeys {
+                title: Some(pattern(r"^Run (?P<tool>\w+)\?$")),
+                tool: vec!["/title".into()],
+                ..AgentKeys::default()
+            },
+            AgentKeys {
+                id: Some(pattern(r"^(?P<tool>[a-z_]+?)__")),
+                ..AgentKeys::default()
+            },
+        ];
+        let c = classify_acp(raw(json!({"title": "Run edit_file?"})), &table);
+        assert_eq!(c.tool, "edit_file");
+        let c = classify_acp(raw(json!({"toolCallId": "read_file__read_file_1"})), &table);
+        assert_eq!(c.tool, "read_file");
+    }
+
+    /// A table `server` key makes an MCP name. Crucible's own server gives
+    /// the native Crucible tool.
+    #[test]
+    fn a_server_key_makes_an_mcp_name() {
+        let table = [AgentKeys {
+            args: vec!["/rawInput/arguments".into()],
+            tool: vec!["/rawInput/tool".into()],
+            server: vec!["/rawInput/server".into()],
+            ..AgentKeys::default()
+        }];
+        let call = |server: &str| {
+            let input =
+                json!({"server": server, "tool": "search_notes", "arguments": {"query": "q"}});
+            classify_acp(raw(json!({"rawInput": input})), &table)
+        };
+        let native = call("crucible");
+        assert_eq!(
+            (native.kind.as_str(), native.tool.as_str()),
+            ("search", "search_notes")
+        );
+        let other = call("github");
+        assert_eq!(
+            (other.kind.as_str(), other.tool.as_str()),
+            ("mcp_tool", "mcp__github__search_notes")
+        );
     }
 
     #[test]
@@ -666,6 +801,6 @@ mod tests {
         }))
         .unwrap();
         let v = serde_json::to_value(RawToolCall::from(&call)).unwrap();
-        assert_eq!(v, json!({"title": "t", "kind": "other"}));
+        assert_eq!(v, json!({"toolCallId": "1", "title": "t", "kind": "other"}));
     }
 }
