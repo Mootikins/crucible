@@ -2,7 +2,7 @@
 //!
 //! Five resolvers used to answer "where does this asset come from", each with
 //! its own root list and its own precedence rule. They drifted, and the drift
-//! shipped bugs: `cru agents list` advertised cards the daemon would not
+//! shipped bugs: `cru agents` advertised cards the daemon would not
 //! resolve, an installed `cru` found none of its bundled plugins, and a theme
 //! copied by `cru setup` was never listed.
 //!

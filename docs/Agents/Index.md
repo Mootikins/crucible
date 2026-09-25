@@ -17,7 +17,7 @@ To use one of these agents:
 
 2. Verify it's picked up:
    ```bash
-   cru agents list
+   cru agents
    ```
 
 3. Start a session with it:

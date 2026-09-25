@@ -97,7 +97,7 @@ pub struct SkillsSearchRequest {
 
 /// Request for `agents.list_cards`.
 ///
-/// Paths, not kiln names: the caller is `cru agents list`, which knows the
+/// Paths, not kiln names: the caller is `cru agents`, which knows the
 /// directory it runs in and the kiln path its config names, and the daemon
 /// resolves cards by directory (`agent_cards::card_directories`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

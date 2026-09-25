@@ -22,7 +22,7 @@ Commands:
   status       Display storage status and statistics for the knowledge base
   doctor       Run installation diagnostics for Crucible
   storage      Manage storage operations (migration, verification, backup, cleanup)
-  agents       Manage agent cards (list, show, validate)
+  agents       List agent cards and ACP profiles, or validate agent cards
   tasks        Manage tasks from a TASKS.md file (list, next, pick, done)
   workflow     Inspect and run workflow notes in the active kiln
   daemon       Manage the Crucible daemon (start, stop, status, logs)

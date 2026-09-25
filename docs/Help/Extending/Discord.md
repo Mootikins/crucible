@@ -248,7 +248,7 @@ All keys live under `plugins.discord`.
 
 `agent_card` names a card the daemon resolves at session create, against the
 kiln you configured — the card's prompt, model and MCP servers instead of
-`system_prompt` and `model`. `cru agents list` shows what a kiln can see.
+`system_prompt` and `model`. `cru agents` shows what a kiln can see.
 
 The access tier still decides what the session may *do*: the tier's tool policy
 is applied over the card's own `tools:` block, never under it. A card cannot

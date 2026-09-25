@@ -26,11 +26,11 @@ fn wants_bare_id(quiet: bool, interactive: bool, format: &str) -> bool {
 /// ranked, because guessing which one a name belongs to would make a card
 /// called `claude` permanently unreachable — the built-in profiles (`claude`,
 /// `gemini`, `codex`, `cursor`, `opencode`) always exist, and
-/// `cru agents show "Claude Code"` is the documented example of a card named
+/// a card named "Claude Code" is the documented example of a card named
 /// after one.
 ///
 /// `--agent` is the card because that is what `cru agents` lists. The two
-/// disagreed until now: `cru agents list` showed cards while `--agent` took a
+/// disagreed until now: `cru agents` showed cards while `--agent` took a
 /// profile, so the flag named the one thing the command did not.
 ///
 /// Pure so it is testable without a live `DaemonClient`; `create` needs one.
@@ -89,7 +89,7 @@ fn annotate_unknown_agent(
         "'{name}' is an ACP profile, not an agent card. Start the session with \
          `--acp {name}` instead.\n\n\
          `--agent` names an agent card — the prompt, model and tool policy of an \
-         internal agent, as listed by `cru agents list`. It named an ACP profile \
+         internal agent, as listed by `cru agents`. It named an ACP profile \
          in earlier versions."
     )
 }
@@ -718,7 +718,7 @@ mod tests {
         assert_eq!(agent.endpoint, endpoint);
     }
 
-    /// `--agent` names a card, which is what `cru agents list` shows. It named
+    /// `--agent` names a card, which is what `cru agents` shows. It named
     /// an ACP profile until the two were split, which is why a card was
     /// unreachable from the CLI at all.
     #[test]

@@ -248,7 +248,7 @@ card]]'s prompt, model, tool policy and MCP servers layered over your config
 defaults. `--acp` instead launches an external agent subprocess by profile name
 (`claude`, `gemini`, `codex`, `cursor`, `opencode`, or anything under
 `acp.agents.*`).
-`cru agents list` shows both. Either way the daemon resolves the name before
+`cru agents` shows both. Either way the daemon resolves the name before
 the session exists, so an unknown one fails without leaving a session behind.
 
 `--agent` named an ACP profile in earlier versions. It names a card now, so

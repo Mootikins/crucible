@@ -208,7 +208,7 @@ fn test_session_create_with_type_parses() {
     assert_eq!(workspace, None);
 }
 
-/// `--agent` names an agent card, matching what `cru agents list` shows. It
+/// `--agent` names an agent card, matching what `cru agents` shows. It
 /// named an ACP profile in earlier versions, which is why a card could not be
 /// selected from the CLI at all.
 #[test]

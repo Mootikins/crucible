@@ -32,7 +32,7 @@ Complete reference for all Crucible CLI commands.
 
 | Command | Description |
 |---------|-------------|
-| `cru agents` | Manage agent cards (list, show, validate) |
+| `cru agents` | List agent cards and ACP profiles; `validate` checks card files |
 | `cru mcp` | Start MCP server exposing Crucible tools (SSE on port 3847 by default; `--stdio` for stdio transport) |
 | `cru acp` | Run Crucible as an ACP agent for editors (speaks ACP over stdio) — [[Help/CLI/acp]] |
 | `cru skills` | Discover and manage agent skills (list, show, search) |

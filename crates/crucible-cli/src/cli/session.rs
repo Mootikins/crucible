@@ -118,13 +118,13 @@ pub enum SessionCommands {
         session_type: String,
 
         /// Agent card to configure for the new session — the prompt, model and
-        /// tool policy of an internal agent. `cru agents list` shows them.
+        /// tool policy of an internal agent. `cru agents` shows them.
         #[arg(short = 'a', long)]
         agent: Option<String>,
 
         /// ACP profile to configure instead: an external agent subprocess
         /// (claude, gemini, codex, cursor, opencode, or a profile defined
-        /// under `[acp.agents.*]`). `cru agents list` shows these too.
+        /// under `[acp.agents.*]`). `cru agents` shows these too.
         #[arg(long)]
         acp: Option<String>,
 

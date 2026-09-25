@@ -5,7 +5,7 @@
 //! match over a highest-first list; agent cards took the last match over a
 //! lowest-first list; skills sorted by a scope enum and then took the last of
 //! an equal-scope run. A reader could not carry one rule to the next file, and
-//! the drift shipped bugs: `cru agents list` advertised cards the daemon would
+//! the drift shipped bugs: `cru agents` advertised cards the daemon would
 //! not resolve, and an installed `cru` found none of its bundled plugins.
 //!
 //! This is the [`crate::runtime_path`] half that says WHAT lives under a root.

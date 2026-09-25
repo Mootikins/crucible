@@ -14,7 +14,7 @@ const PROBE_TIMEOUT_MS: u64 = 2000;
 /// A built-in agent: everything Crucible knows about it, in one place.
 ///
 /// Single source of truth for the default profiles and for the order in which
-/// `cru agents list` shows them (array order). It used to be parallel tables,
+/// `cru agents` shows them (array order). It used to be parallel tables,
 /// which is how `opencode` spent several releases pointing at an unrelated
 /// project and how two different descriptions of the same agent drifted apart.
 struct BuiltinAgent {
@@ -248,7 +248,7 @@ const TRUST_PATH_COMMANDS: &[&str] = &[
     // The Antigravity server comes from the ACP registry archive and its
     // flags are not documented, so nobody knows whether it answers
     // `--version`. A server that does not would be on PATH and still report
-    // as unavailable, which hides the agent from `cru agents list` and from
+    // as unavailable, which hides the agent from `cru agents` and from
     // discovery. Trusting the PATH lookup costs a failed spawn at worst.
     ANTIGRAVITY_COMMAND,
 ];
@@ -610,7 +610,7 @@ mod tests {
     /// The binary comes from the ACP registry archive and its flags are not
     /// documented, so nobody knows whether it answers `--version`. A server
     /// that does not would pass the PATH lookup, fail the version probe, and
-    /// disappear from `cru agents list` and from discovery. The command the
+    /// disappear from `cru agents` and from discovery. The command the
     /// built-in declares must therefore stay in `TRUST_PATH_COMMANDS`, and
     /// this reads the built-in rather than the literal name so that renaming
     /// the command breaks here.

@@ -49,7 +49,7 @@ before you share it in a kiln. The order is, highest first:
    name prefix
 
 A bare name resolves to the card of the highest source that has it, in
-`cru session create --agent`, in delegation and in `cru agents show`. Every
+`cru session create --agent`, in delegation and in `cru agents`. Every
 card also keeps its full name `source:name`, such as `personal:researcher` or
 `notes:researcher`, and a full name always works. Two cards of one name in two
 sources at the same priority are ambiguous: the bare name returns an error
@@ -184,9 +184,8 @@ The child runs as a real (hidden) session: the card's system prompt, tool policy
 ## Using Cards from the CLI
 
 ```bash
-# List / inspect / validate cards
-cru agents list
-cru agents show researcher
+# List the cards and ACP profiles, with full names; validate the card files
+cru agents
 cru agents validate
 
 # Create a session with a card-configured internal agent
@@ -198,7 +197,7 @@ cru session create --agent researcher
 external agent subprocess. They are refused together rather than ranked,
 because `claude`, `gemini`, `codex`, `cursor` and `opencode` always exist as
 profiles — guessing would make a card of that name permanently unreachable, and
-`cru agents show "Claude Code"` is a documented example of exactly such a card.
+a card named "Claude Code" is a documented example of exactly such a card.
 
 `agent_name` still selects a card on an internal session, but it is deprecated
 there: on an ACP session the same field names a subprocess *profile*, so one

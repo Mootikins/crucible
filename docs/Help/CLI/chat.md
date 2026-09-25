@@ -44,7 +44,7 @@ cru chat --acp gemini
 cru chat --acp codex
 ```
 
-Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, `antigravity`, or any custom profile defined in `init.lua`. The agent must be installed and available in your PATH; `cru agents list` reports which are.
+Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, `antigravity`, or any custom profile defined in `init.lua`. The agent must be installed and available in your PATH; `cru agents` reports which are.
 
 #### `--card <NAME>`
 
@@ -59,7 +59,7 @@ The daemon resolves the card in the selected workspace and kiln scope; the
 CLI does not discover or compose it. An unknown card creates no session.
 `--card` cannot combine with `--acp`, `--resume` or `--replay`. `--agent`
 remains an alias for `--acp` here; `cru session create --agent <card>` keeps
-its existing card meaning. Use `cru agents list` to see available names.
+its existing card meaning. Use `cru agents` to see available names.
 
 #### `--provider <PROVIDER>`
 

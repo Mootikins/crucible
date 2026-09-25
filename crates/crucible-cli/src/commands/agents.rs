@@ -1,50 +1,34 @@
 //! Agent card management commands
 //!
-//! Provides CLI commands for listing, showing, and validating agent cards.
+//! `cru agents` lists the agent cards and ACP profiles the daemon resolves;
+//! `cru agents validate` checks the card files on disk.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crucible_core::agent::{AgentCard, AgentCardLoader};
-use crucible_daemon::agent_cards::{card_directories, discover_agent_cards_in, resolve_card};
+use crucible_daemon::agent_cards::card_directories;
 use crucible_daemon::runtime_path::SourceRoots;
 use crucible_daemon::DaemonClient;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::cli::AgentsCommands;
+use crate::common::daemon_client;
 use crate::config::CliConfig;
-use crate::formatting::{OutputFormat, TextFormat};
+use crate::formatting::OutputFormat;
 
-/// Width of the DESCRIPTION column in the `cru agents list` table.
+/// Width of the DESCRIPTION column in the `cru agents` table.
 const DESCRIPTION_MAX_CHARS: usize = 35;
 
-/// Execute agent subcommand
-pub async fn execute(config: CliConfig, command: Option<AgentsCommands>) -> Result<()> {
-    // When no subcommand is given, default to list
-    let cmd = command.unwrap_or(AgentsCommands::List {
-        tag: None,
-        format: None,
-    });
-
-    match cmd {
-        AgentsCommands::List { tag, format } => {
-            list(&config, tag, OutputFormat::for_stdout(format)).await
-        }
-        AgentsCommands::Show { name, format, full } => show(&config, name, format, full).await,
-        AgentsCommands::Validate { verbose } => validate(&config, verbose).await,
+/// Execute `cru agents`: the list, or the `validate` subcommand.
+pub async fn execute(
+    config: CliConfig,
+    tag: Option<String>,
+    format: Option<OutputFormat>,
+    command: Option<AgentsCommands>,
+) -> Result<()> {
+    match command {
+        None => list(&config, tag, OutputFormat::for_stdout(format)).await,
+        Some(AgentsCommands::Validate { verbose }) => validate(&config, verbose).await,
     }
-}
-
-/// The cards visible from `workspace`, resolved the way the daemon resolves
-/// them: [`discover_agent_cards_in`], highest-priority root first, first
-/// write wins.
-///
-/// This used to be a second registry built by `insert`-ing over the same
-/// highest-first list, which kept the LAST card loaded — the lowest-priority
-/// one — on a name collision. That is how `cru agents show` could return a
-/// card `session.create --agent` would never resolve.
-fn load_agent_cards(config: &CliConfig, workspace: &Path) -> HashMap<String, AgentCard> {
-    let roots = source_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
-    discover_agent_cards_in(&roots, workspace, std::slice::from_ref(&config.kiln_path))
 }
 
 /// The agent card directories a session started from `workspace` would
@@ -53,19 +37,18 @@ fn load_agent_cards(config: &CliConfig, workspace: &Path) -> HashMap<String, Age
 /// This is the daemon's own list, [`crucible_daemon::agent_cards::card_directories`],
 /// built from the same config: the workspace's `.crucible/agents/`, then the
 /// kiln's, then `agent_directories`, then global cards. A second
-/// implementation is how `cru agents list` came to advertise cards the daemon
+/// implementation is how `cru agents` came to advertise cards the daemon
 /// would not resolve. The kiln's visible `agents/` is deliberately not in it;
 /// see the daemon function for why.
 ///
-/// `list` asks a running daemon first (`agents.list_cards`) and reads disk
-/// only when no daemon answers; `show` and `validate` always read disk,
-/// because `validate` reports per-file errors the daemon does not expose.
+/// `list` asks the daemon (`agents.list_cards`); `validate` reads disk,
+/// because it reports per-file errors the daemon does not expose.
 pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<PathBuf> {
     let roots = source_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
     card_directories(&roots, workspace, std::slice::from_ref(&config.kiln_path))
 }
 
-/// The roots behind [`collect_agent_directories`] and [`load_agent_cards`],
+/// The roots behind [`collect_agent_directories`],
 /// read the same way the daemon reads them:
 /// [`SourceRoots::from_app_config`] over the config serialized to JSON. A
 /// second, struct-field reader here is how the CLI came to build its own
@@ -97,7 +80,7 @@ fn current_workspace() -> PathBuf {
     std::env::current_dir().unwrap_or_default()
 }
 
-/// An ACP profile as `cru agents list` shows it.
+/// An ACP profile as `cru agents` shows it.
 ///
 /// Flattened out of the daemon's `agents.list_profiles` reply at the edge so
 /// the rendering below is not four `["x"].as_str().unwrap_or("")` chains.
@@ -107,59 +90,16 @@ struct AcpProfile {
     available: bool,
 }
 
-/// A running daemon, or `None` when there is none to ask.
-///
-/// `connect`, never `connect_or_start`: listing is a read-only inspection,
-/// and `connect_or_start` spawns `cru daemon serve` — worse, on a version
-/// mismatch it shuts the running daemon down and starts a fresh one. Someone
-/// running `cru agents list` to find out why their card is not loading
-/// should not have it restart their daemon as a side effect.
-async fn running_daemon() -> Option<DaemonClient> {
-    DaemonClient::connect().await.ok()
-}
-
-/// The cards the daemon resolves for the current workspace.
-///
-/// The daemon's list is the one `session.create --agent` resolves against,
-/// so asking it is how this command stops advertising a card the daemon
-/// would refuse. `None` when the daemon does not answer: the caller then
-/// reads disk, so a user debugging a card that does not load is not told the
-/// daemon is down instead.
-async fn daemon_cards(client: &DaemonClient, config: &CliConfig) -> Option<Vec<AgentCard>> {
-    let reply = client
-        .agents_list_cards(&current_workspace(), Some(&config.kiln_path))
-        .await
-        .ok()?;
-    parse_cards_reply(reply)
-}
-
 /// The `cards` array of an `agents.list_cards` reply, as the shared type.
 fn parse_cards_reply(reply: serde_json::Value) -> Option<Vec<AgentCard>> {
     let cards = reply.get("cards")?.clone();
     serde_json::from_value(cards).ok()
 }
 
-/// The cards `list` shows: the daemon's when it answers, else disk.
-async fn list_cards(config: &CliConfig, client: Option<&DaemonClient>) -> Vec<AgentCard> {
-    if let Some(client) = client {
-        if let Some(cards) = daemon_cards(client, config).await {
-            return cards;
-        }
-    }
-    let mut cards: Vec<AgentCard> = load_agent_cards(config, &current_workspace())
-        .into_values()
-        .collect();
-    cards.sort_by(|a, b| a.name.cmp(&b.name));
-    cards
-}
-
 /// The ACP profiles the daemon knows, or an empty list.
 ///
-/// Best-effort on purpose: an unreachable daemon simply means no ACP section.
-async fn acp_profiles(client: Option<&DaemonClient>) -> Vec<AcpProfile> {
-    let Some(client) = client else {
-        return Vec::new();
-    };
+/// Best-effort on purpose: a failed profile query means no ACP section.
+async fn acp_profiles(client: &DaemonClient) -> Vec<AcpProfile> {
     let Ok(reply) = client.agents_list_profiles().await else {
         return Vec::new();
     };
@@ -181,8 +121,11 @@ async fn acp_profiles(client: Option<&DaemonClient>) -> Vec<AcpProfile> {
 /// talk to?" is one question, and answering half of it was why `--agent` and
 /// this command disagreed about what an agent is. Two sections, one command.
 async fn list(config: &CliConfig, tag: Option<String>, format: OutputFormat) -> Result<()> {
-    let client = running_daemon().await;
-    let all_cards = list_cards(config, client.as_ref()).await;
+    let client = daemon_client().await?;
+    let reply = client
+        .agents_list_cards(&current_workspace(), Some(&config.kiln_path))
+        .await?;
+    let all_cards = parse_cards_reply(reply).context("The daemon reply has no agent cards")?;
 
     // Get cards, optionally filtered by tag
     let cards: Vec<&AgentCard> = match &tag {
@@ -197,7 +140,7 @@ async fn list(config: &CliConfig, tag: Option<String>, format: OutputFormat) -> 
     // showing them all under a filtered heading would misreport them as matches.
     let profiles = match tag {
         Some(_) => Vec::new(),
-        None => acp_profiles(client.as_ref()).await,
+        None => acp_profiles(&client).await,
     };
 
     if cards.is_empty() && profiles.is_empty() {
@@ -309,71 +252,12 @@ fn availability_label(available: bool) -> &'static str {
     }
 }
 
-/// Fit an agent-card description into the `cru agents list` table column.
+/// Fit an agent-card description into the `cru agents` table column.
 ///
 /// Truncates by chars, not bytes: descriptions are hand-authored frontmatter, so
 /// an em dash or an accent straddling the cut used to abort the whole command.
 fn truncate_description(description: &str) -> std::borrow::Cow<'_, str> {
     crucible_oil::truncate_to_chars(description, DESCRIPTION_MAX_CHARS, true)
-}
-
-/// Show details of a specific agent card
-async fn show(config: &CliConfig, name: String, format: TextFormat, full: bool) -> Result<()> {
-    let cards = load_agent_cards(config, &current_workspace());
-
-    // The daemon's own resolution, so `show` and `session.create --agent`
-    // agree on a bare name.
-    let card = match resolve_card(&cards, &name).map_err(anyhow::Error::msg)? {
-        Some(c) => c,
-        None => {
-            anyhow::bail!("Agent card '{}' not found.", name);
-        }
-    };
-
-    match format {
-        TextFormat::Json => {
-            let json = serde_json::to_string_pretty(card)?;
-            println!("{}", json);
-        }
-        TextFormat::Text => {
-            // Table/human-readable format
-            println!("Name:        {}", card.name);
-            println!("Version:     {}", card.version);
-            println!("Description: {}", card.description);
-
-            if !card.tags.is_empty() {
-                println!("Tags:        {}", card.tags.join(", "));
-            }
-
-            if !card.mcp_servers.is_empty() {
-                println!("MCP Servers: {}", card.mcp_servers.join(", "));
-            }
-
-            if !card.config.is_empty() {
-                println!("Config:      {} entries", card.config.len());
-            }
-
-            println!("\nSystem Prompt:");
-            println!("{}", "-".repeat(50));
-
-            if full || card.system_prompt.lines().count() <= 10 {
-                println!("{}", card.system_prompt);
-            } else {
-                // Truncate to first 10 lines
-                let truncated: String = card
-                    .system_prompt
-                    .lines()
-                    .take(10)
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                println!("{}", truncated);
-                println!("...");
-                println!("\n(Use --full to see complete system prompt)");
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Validation result for an agent card file
@@ -506,8 +390,6 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
 
     /// Cross-platform test path helper
     fn test_path(name: &str) -> PathBuf {
@@ -519,30 +401,6 @@ mod tests {
             kiln_path,
             ..Default::default()
         }
-    }
-
-    fn create_test_agent_card(dir: &std::path::Path, name: &str) -> std::io::Result<()> {
-        let content = format!(
-            r#"---
-type: agent
-name: "{name}"
-version: "1.0.0"
-description: "Test agent for unit testing"
-tags:
-  - "test"
-  - "documentation"
----
-
-# System Prompt
-
-You are a test agent.
-"#,
-            name = name
-        );
-        fs::write(
-            dir.join(format!("{}.md", name.to_lowercase().replace(" ", "-"))),
-            content,
-        )
     }
 
     /// The CLI reads the daemon's `agents.list_cards` reply through the
@@ -570,7 +428,7 @@ You are a test agent.
         assert_eq!(cards[0].tags, vec!["review".to_string()]);
     }
 
-    /// A reply without `cards` is not a list; the caller reads disk instead.
+    /// A reply without `cards` is not a list.
     #[test]
     fn parse_cards_reply_without_cards_is_none() {
         assert!(parse_cards_reply(serde_json::json!({})).is_none());
@@ -642,7 +500,7 @@ You are a test agent.
     }
 
     /// The CLI's list is the daemon's — the kiln's visible `agents/` is not
-    /// a discovery path, so `cru agents list` never advertises a card the
+    /// a discovery path, so `cru agents` never advertises a card the
     /// daemon will not resolve.
     #[test]
     fn test_collect_agent_directories_excludes_the_kilns_visible_tree() {
@@ -706,158 +564,5 @@ You are a test agent.
         let dirs = hermetic_dirs(&config);
         assert_eq!(dirs.first(), Some(&PathBuf::from("/cfg/crucible/agents")));
         assert_eq!(dirs.get(1), Some(&PathBuf::from("/ws/.crucible/agents")));
-    }
-
-    /// A workspace no test card ever lives under, so these tests only see
-    /// the kiln- and config-level directories they set up.
-    fn no_workspace() -> PathBuf {
-        PathBuf::from("/nonexistent-test-workspace")
-    }
-
-    #[test]
-    fn test_load_agent_cards_from_kiln() {
-        // Create temp dir structure with agents
-        let temp_dir = TempDir::new().unwrap();
-        let agents_dir = temp_dir.path().join(".crucible").join("agents");
-        fs::create_dir_all(&agents_dir).unwrap();
-
-        // Create a test agent card
-        create_test_agent_card(&agents_dir, "Test Agent").unwrap();
-
-        // Create config pointing to temp dir as kiln
-        let config = test_config(temp_dir.path().to_path_buf());
-        let cards = load_agent_cards(&config, &no_workspace());
-
-        // Should have loaded the agent
-        assert_eq!(cards.len(), 1);
-        assert!(cards.contains_key("Test Agent"));
-    }
-
-    /// Two cards share a name in the kiln's `.crucible/agents/` and in a
-    /// configured `agent_directories` entry, which is personal. The personal
-    /// layer is on top, so the bare name resolves to its card, as the
-    /// daemon's `session.create --agent` does. Each full name reaches its card.
-    #[test]
-    fn test_load_agent_cards_resolves_a_bare_name_to_the_personal_card() {
-        let kiln = TempDir::new().unwrap();
-        let shared = TempDir::new().unwrap();
-        let kiln_agents = kiln.path().join(".crucible").join("agents");
-        fs::create_dir_all(&kiln_agents).unwrap();
-        fs::write(
-            kiln_agents.join("shared.md"),
-            "---\nname: \"shared\"\nversion: \"1.0.0\"\ndescription: \"kiln version\"\n---\n\nKiln prompt.\n",
-        )
-        .unwrap();
-        fs::write(
-            shared.path().join("shared.md"),
-            "---\nname: \"shared\"\nversion: \"1.0.0\"\ndescription: \"configured version\"\n---\n\nConfigured prompt.\n",
-        )
-        .unwrap();
-
-        let mut config = test_config(kiln.path().to_path_buf());
-        config.agent_directories = vec![shared.path().to_path_buf()];
-        config.kilns.insert(
-            "notes".to_string(),
-            crucible_core::config::KilnEntry::Path(kiln.path().to_path_buf()),
-        );
-
-        let cards = load_agent_cards(&config, &no_workspace());
-        let description = |name| {
-            resolve_card(&cards, name)
-                .unwrap()
-                .unwrap()
-                .description
-                .clone()
-        };
-        assert_eq!(description("shared"), "configured version");
-        assert_eq!(description("agent-dir-1:shared"), "configured version");
-        assert_eq!(
-            description("notes:shared"),
-            "kiln version",
-            "a kiln card's full name uses the registered kiln name"
-        );
-    }
-
-    /// A card of one name in an `agent_directories` entry and in
-    /// `~/.config/crucible/agents/`: `cru agents show` resolves the bare name
-    /// to the `agent_directories` card, as the daemon does.
-    #[test]
-    fn test_show_resolves_a_bare_name_to_the_agent_directories_card() {
-        let kiln = TempDir::new().unwrap();
-        let home = TempDir::new().unwrap();
-        let shared = TempDir::new().unwrap();
-        let home_agents = home.path().join("crucible").join("agents");
-        fs::create_dir_all(&home_agents).unwrap();
-        fs::write(
-            home_agents.join("shared.md"),
-            "---\nname: \"shared\"\ndescription: \"home version\"\n---\n\nHome prompt.\n",
-        )
-        .unwrap();
-        fs::write(
-            shared.path().join("shared.md"),
-            "---\nname: \"shared\"\ndescription: \"configured version\"\n---\n\nConfigured prompt.\n",
-        )
-        .unwrap();
-
-        let mut config = test_config(kiln.path().to_path_buf());
-        config.agent_directories = vec![shared.path().to_path_buf()];
-        let roots = source_roots(&config, Some(home.path().to_path_buf()), None);
-        let cards = discover_agent_cards_in(
-            &roots,
-            &no_workspace(),
-            std::slice::from_ref(&config.kiln_path),
-        );
-
-        let card = resolve_card(&cards, "shared").unwrap().unwrap();
-        assert_eq!(card.description, "configured version");
-    }
-
-    #[test]
-    fn test_load_agent_cards_empty_when_no_dirs() {
-        // Create temp dir without agents directory
-        let temp_dir = TempDir::new().unwrap();
-        let config = test_config(temp_dir.path().to_path_buf());
-        let cards = load_agent_cards(&config, &no_workspace());
-
-        // Should be empty (no dirs exist)
-        assert_eq!(cards.len(), 0);
-    }
-
-    /// A card in the kiln's visible tree is ignored; the one in `.crucible/`
-    /// loads.
-    ///
-    /// This test used to assert the opposite — that `KILN/agents/` overrode
-    /// `KILN/.crucible/agents/`. The visible tree is no longer searched: a
-    /// kiln is notes, and a cloned one must not be able to introduce an agent
-    /// card just by containing a directory.
-    #[test]
-    fn test_load_agent_cards_ignores_the_kilns_visible_tree() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let hidden_dir = temp_dir.path().join(".crucible").join("agents");
-        let visible_dir = temp_dir.path().join("agents");
-        fs::create_dir_all(&hidden_dir).unwrap();
-        fs::create_dir_all(&visible_dir).unwrap();
-
-        fs::write(
-            hidden_dir.join("shared-agent.md"),
-            "---\nname: \"Shared Agent\"\nversion: \"1.0.0\"\ndescription: \"Configured version\"\n---\n\nConfigured.\n",
-        )
-        .unwrap();
-        fs::write(
-            visible_dir.join("shared-agent.md"),
-            "---\nname: \"Shared Agent\"\nversion: \"2.0.0\"\ndescription: \"Ambient version\"\n---\n\nAmbient.\n",
-        )
-        .unwrap();
-
-        let config = test_config(temp_dir.path().to_path_buf());
-        let cards = load_agent_cards(&config, &no_workspace());
-
-        assert_eq!(cards.len(), 1);
-        let agent = cards.get("Shared Agent").unwrap();
-        assert_eq!(
-            agent.version, "1.0.0",
-            "the .crucible/ card must win; the visible one must not be read at all"
-        );
     }
 }

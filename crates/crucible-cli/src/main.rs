@@ -536,7 +536,11 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
 
-        Some(Commands::Agents { command }) => commands::agents::execute(config, command).await?,
+        Some(Commands::Agents {
+            tag,
+            format,
+            command,
+        }) => commands::agents::execute(config, tag, format, command).await?,
 
         Some(Commands::Tasks { file, command }) => {
             commands::tasks::execute(config, file, command).await?

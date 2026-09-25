@@ -319,7 +319,7 @@ pub(crate) async fn handle_agents_list_profiles(
 
 /// The agent cards a session started from the request's workspace would
 /// resolve, sorted by name. The daemon's own discovery answers, so
-/// `cru agents list` cannot advertise a card `session.create` would refuse.
+/// `cru agents` cannot advertise a card `session.create` would refuse.
 pub(crate) async fn handle_agents_list_cards(
     req: Request,
     agent_manager: &Arc<AgentManager>,

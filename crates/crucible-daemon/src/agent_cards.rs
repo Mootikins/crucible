@@ -23,8 +23,8 @@
 //! Discovery runs per use (like skills discovery) rather than through a
 //! cached registry — card sets are tiny and this avoids staleness/watchers.
 //!
-//! The CLI (`cru agents`) reads cards off disk through [`card_directories`]
-//! too, so the two never disagree about where a card may come from.
+//! `cru agents validate` reads card files off disk through
+//! [`card_directories`] too, so it checks the directories the daemon reads.
 
 use crate::runtime_path::SourceRoots;
 use crucible_core::agent::{AgentCard, AgentCardLoader};

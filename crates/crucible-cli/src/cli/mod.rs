@@ -388,11 +388,21 @@ Examples:
     )]
     Storage(StorageCommands),
 
-    /// Manage agent cards (list, show, validate)
+    /// List agent cards and ACP profiles, or validate agent cards
     #[command(
-        long_about = "Manage agent cards - list, show details, and validate configurations.\n\nAgent cards define AI assistant profiles with system prompts, capabilities, and settings.\n\nExamples:\n  # List all agent cards\n  cru agents list\n\n  # Filter by tag\n  cru agents list -t documentation\n\n  # Show agent details\n  cru agents show \"Claude Code\"\n\n  # Show full system prompt\n  cru agents show \"Claude Code\" --full\n\n  # Validate all agent cards\n  cru agents validate --verbose"
+        args_conflicts_with_subcommands = true,
+        long_about = "List the agent cards and ACP profiles that the daemon resolves for this directory, or validate the agent card files.\n\nAgent cards define AI assistant profiles with system prompts, capabilities, and settings.\n\nExamples:\n  # List all agent cards and ACP profiles\n  cru agents\n\n  # Filter cards by tag\n  cru agents -t documentation\n\n  # Validate all agent cards\n  cru agents validate --verbose"
     )]
     Agents {
+        /// Filter by tag
+        #[arg(short = 't', long)]
+        tag: Option<String>,
+
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
+
         #[command(subcommand)]
         command: Option<AgentsCommands>,
     },
