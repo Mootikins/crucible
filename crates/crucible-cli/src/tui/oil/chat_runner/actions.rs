@@ -724,21 +724,7 @@ impl OilChatRunner {
                                             .unwrap_or("nil")
                                             .to_string()
                                     })
-                                    .map_err(|e| {
-                                        // Surface just the daemon's message, not
-                                        // the raw `RPC error: {json}` wrapper.
-                                        let raw = e.to_string();
-                                        raw.strip_prefix("RPC error: ")
-                                            .and_then(|j| {
-                                                serde_json::from_str::<serde_json::Value>(j).ok()
-                                            })
-                                            .and_then(|v| {
-                                                v.get("message")
-                                                    .and_then(|m| m.as_str())
-                                                    .map(String::from)
-                                            })
-                                            .unwrap_or(raw)
-                                    }),
+                                    .map_err(|e| crucible_daemon::rpc_error_message(&e)),
                                 Err(e) => Err(format!("daemon connect failed: {}", e)),
                             };
                             let msg = match evaled {
@@ -1042,8 +1028,12 @@ impl OilChatRunner {
                                         )));
                                     }
                                     Err(e) => {
+                                        // The daemon's message names the plugin
+                                        // and its reason; the envelope does not
+                                        // help the user.
                                         let _ = tx.send(ChatAppMsg::Error(format!(
-                                            "/{name} failed: {e}"
+                                            "/{name} failed: {}",
+                                            crucible_daemon::rpc_error_message(&e)
                                         )));
                                     }
                                 },

@@ -389,10 +389,28 @@ impl PluginRegistry {
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
         crucible_lua::set_source(&lua, restore);
-        result
-            .map(Some)
-            .map_err(|e| anyhow::anyhow!("plugin command '{name}': {e}"))
+        result.map(Some).map_err(|e| {
+            let command = name
+                .strip_prefix(plugin.as_str())
+                .and_then(|rest| rest.strip_prefix(':'))
+                .unwrap_or(name);
+            let error = e.to_string();
+            let reason = command_failure_reason(&error);
+            e.context(format!(
+                "plugin '{plugin}' command '{command}' failed: {reason}"
+            ))
+        })
     }
+}
+
+/// The reason a person reads when a command raises: the first line of the
+/// Lua error, without mlua's `runtime error: ` prefix.
+///
+/// The traceback stays on the error's source, which `{:#}` prints for the
+/// log. A user who typed `/generate` has no use for the frames.
+fn command_failure_reason(error: &str) -> &str {
+    let first = error.lines().next().unwrap_or(error).trim();
+    first.strip_prefix("runtime error: ").unwrap_or(first)
 }
 
 /// Call a plugin `fn` with JSON args and convert its return value back to JSON.

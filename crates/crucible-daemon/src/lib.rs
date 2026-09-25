@@ -136,7 +136,7 @@ pub use rpc_client::{
     LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionEvent, VectorHit,
     VersionCheck,
 };
-pub use rpc_client::{ChatResultExt, DaemonNoteStore, DaemonStorageClient};
+pub use rpc_client::{rpc_error_message, ChatResultExt, DaemonNoteStore, DaemonStorageClient};
 pub use scm::ScmCloneResponse;
 // The wire shapes of the `fs.*` RPCs. The web file-tree routes forward them
 // verbatim, so they read the type rather than keeping a second copy of it.

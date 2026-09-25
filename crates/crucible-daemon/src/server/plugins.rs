@@ -444,7 +444,13 @@ pub(crate) async fn handle_plugin_run_command(
             serde_json::json!({ "name": name, "result": result }),
         ),
         Ok(None) => internal_error(req.id, format!("Unknown plugin command: {name}")),
-        Err(e) => internal_error(req.id, e),
+        // A plugin that raises is not a fault of the daemon: the message
+        // names the plugin and its reason, without an "Internal error"
+        // prefix. The log keeps the Lua traceback.
+        Err(e) => {
+            warn!(command = %name, "{e:#}");
+            Response::error(req.id, INTERNAL_ERROR, e.to_string())
+        }
     }
 }
 
@@ -990,6 +996,29 @@ mod plugin_command_rpc_tests {
         assert_eq!(
             resp.result.expect("a result")["result"],
             serde_json::json!("table:nil")
+        );
+    }
+
+    /// A command that raises reaches the user with the plugin, the command
+    /// and the reason, and nothing else: no "Internal error", no mlua
+    /// prefix, no traceback.
+    #[tokio::test]
+    async fn a_command_that_raises_names_the_plugin_and_the_reason() {
+        let (_root, loader) = loader_with_probe(
+            "return { commands = { probe = { desc = 'probe', \
+             fn = function() error('the kiln is not open', 0) end } } }",
+        )
+        .await;
+
+        let resp = handle_plugin_run_command(
+            request(serde_json::json!({ "name": "probe:probe" })),
+            &loader,
+        )
+        .await;
+
+        assert_eq!(
+            resp.error.expect("the command raised").message,
+            "plugin 'probe' command 'probe' failed: the kiln is not open"
         );
     }
 }

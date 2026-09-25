@@ -44,7 +44,7 @@ pub use client::{
     SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
     SurfaceRequest, VectorHit, VersionCheck,
 };
-pub use error_ext::ChatResultExt;
+pub use error_ext::{rpc_error_message, ChatResultExt};
 // `DaemonClient::fts_search` returns this type, so callers of the client
 // must name it without a path into the storage module.
 pub use crate::storage::sqlite::FtsResult;
