@@ -315,6 +315,25 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
     // than inferred from a plugin that silently did not appear.
     results.extend(runtime_path_checks(&loaded_config));
 
+    // Check 10: two sources of cards or skills with one name. A kiln and a
+    // plugin take their own names as source names, so one can take a name
+    // that another source has; the lower one is skipped.
+    if let Some(config) = &loaded_config {
+        let app_config = serde_json::to_value(config).ok();
+        let roots = crucible_daemon::runtime_path::SourceRoots::from_app_config_with_registry(
+            dirs::config_dir(),
+            app_config.as_ref(),
+            dirs::home_dir().as_deref(),
+            crucible_core::config::crucible_home(),
+        );
+        let workspace = std::env::current_dir().unwrap_or_default();
+        results.push(source_name_check(
+            &roots,
+            &workspace,
+            dirs::home_dir().as_deref(),
+        ));
+    }
+
     let total_checks = results.len();
 
     match format {
@@ -572,6 +591,72 @@ fn runtime_path_checks(config: &Option<CliConfig>) -> Vec<DoctorCheckResult> {
         .collect()
 }
 
+/// One line: every source of cards and skills whose name a higher source
+/// already has. Such a source is skipped, so its entries are unreachable.
+fn source_name_check(
+    roots: &crucible_daemon::runtime_path::SourceRoots,
+    workspace: &Path,
+    home: Option<&Path>,
+) -> DoctorCheckResult {
+    use crucible_core::runtime_path::{name_clashes, RuntimeAsset};
+
+    let kilns: Vec<PathBuf> = roots
+        .kiln_registry
+        .as_ref()
+        .map(|registry| {
+            registry
+                .entries()
+                .iter()
+                .map(|k| k.path().to_path_buf())
+                .collect()
+        })
+        .unwrap_or_default();
+    let config_home = roots.config_home.as_ref().map(|d| d.join("crucible"));
+    let runtime = crucible_daemon::runtime_path::machine_runtime(config_home.as_deref());
+    let paths = [
+        (
+            RuntimeAsset::Cards,
+            crucible_daemon::agent_cards::card_path(roots, workspace, &kilns),
+        ),
+        (
+            RuntimeAsset::Skills,
+            crucible_daemon::skills::discovery::skills_path(
+                roots,
+                Some(workspace),
+                &kilns,
+                home,
+                &runtime,
+            ),
+        ),
+    ];
+    let clashes: Vec<String> = paths
+        .iter()
+        .flat_map(|(asset, path)| {
+            name_clashes(*asset, path).into_iter().map(|clash| {
+                format!(
+                    "{}: {} is skipped, because a higher source is also named '{}'",
+                    asset.subdir(),
+                    clash.value.path.display(),
+                    clash.name
+                )
+            })
+        })
+        .collect();
+    let (status, message) = if clashes.is_empty() {
+        (
+            "pass",
+            "no two sources of cards or skills share a name".to_string(),
+        )
+    } else {
+        ("fail", clashes.join("; "))
+    };
+    DoctorCheckResult {
+        check_name: "Source names".to_string(),
+        status: status.to_string(),
+        message,
+    }
+}
+
 async fn check_providers(config: Option<&CliConfig>) -> Vec<ProviderCheck> {
     let Some(config) = config else {
         return Vec::new();
@@ -729,6 +814,38 @@ pub fn validate_kiln_references(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A kiln named like another source is reported, not silently skipped.
+    #[test]
+    fn a_kiln_named_like_another_source_fails_the_source_name_check() {
+        let data = tempfile::TempDir::new().unwrap();
+        let config = serde_json::json!({ "kilns": { "personal": "/k/personal" } });
+        let roots = crucible_daemon::runtime_path::SourceRoots::from_app_config_with_registry(
+            Some(PathBuf::from("/cfg")),
+            Some(&config),
+            None,
+            data.path().to_path_buf(),
+        );
+        let check = source_name_check(&roots, Path::new(""), None);
+        assert_eq!(check.status, "fail", "{}", check.message);
+        assert!(
+            check.message.contains("/k/personal/.crucible"),
+            "{}",
+            check.message
+        );
+
+        let config = serde_json::json!({ "kilns": { "notes": "/k/notes" } });
+        let roots = crucible_daemon::runtime_path::SourceRoots::from_app_config_with_registry(
+            Some(PathBuf::from("/cfg")),
+            Some(&config),
+            None,
+            data.path().to_path_buf(),
+        );
+        assert_eq!(
+            source_name_check(&roots, Path::new(""), None).status,
+            "pass"
+        );
+    }
 
     #[test]
     fn ollama_probe_accepts_a_tags_body() {

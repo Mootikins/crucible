@@ -105,8 +105,10 @@ shape; the examples are Lua.
 | `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. Move the cards to `~/.config/crucible/agents/`, or to the `agents/` directory of a `runtimepath` entry. Still honoured, warns once. |
 | `runtimepath` | list | `[]` | Extra roots. Each entry's `agents/`, `skills/`, `themes/`, `plugins/` and `defaults/` subdirectories are searched. The shipped runtime is always searched too. For cards, skills and themes, the first entry has priority 600 and each later entry is one lower: below your personal, workspace and kiln sources, above the shipped runtime. For plugins, an entry outranks `~/.config/crucible/plugins/`. |
 
+| `sources.priority` | table | `{}` | A new priority for each source level it names, such as `{ workspace = 950 }`. See [[#sources — the order of cards, skills and themes]]. |
+
 The location-naming keys (`kiln_path`, `kilns`, `projects`, `data_home`,
-`session_kiln`, `agent_directories`, `runtimepath`) freeze when the boot
+`session_kiln`, `agent_directories`, `runtimepath`, `sources`) freeze when the boot
 evaluation ends: a runtime `config.set` — from a plugin or over RPC — cannot
 change where the daemon acts. Your `init.lua` may set them freely; changing
 them afterwards takes a restart.
@@ -122,6 +124,7 @@ cru.config.set({
     vault = "~/vault",
     docs = "~/crucible/docs",
     work = { path = "~/work/notes", lazy = true },
+    notes = { path = "~/notes", priority = "personal" },
   },
 })
 ```
@@ -130,6 +133,7 @@ cru.config.set({
 |-------|------|---------|-------------|
 | `path` | string | required | Filesystem path to the kiln root |
 | `lazy` | bool | `false` | If true, the kiln is not opened at daemon start. It is still listed and addressable, and the first request that uses it opens it |
+| `priority` | string or number | `"kiln"` | The priority of the kiln's cards and skills: a level name such as `"personal"`, or a number. A kiln with `"personal"` is your personal kiln: its cards and skills come first, before `~/.config/crucible/`. Only this file sets it; `cru kiln register` and a kiln's own config cannot |
 
 A name holds `[A-Za-z0-9._- ]`, at most 64 characters. It keeps the case and
 the spaces you wrote — `"Crucible Help"` shows as `Crucible Help` — and it
@@ -149,6 +153,40 @@ kiln at all, the default is the bundled help corpus, `crucible-docs`.
 
 Config-declared kilns are one of two layers — see
 [[#Registration versus authorship]] for the other.
+
+### sources — the order of cards, skills and themes
+
+Cards, skills and themes come from **sources**. Each source has a name and a
+priority, and a higher priority wins a bare name. Each source is also reached
+by its full name `source:name`, such as `notes:helper`. Two sources at one
+priority make a bare name ambiguous. The sources belong to levels:
+
+| Level | Sources | Default priority |
+|-------|---------|------------------|
+| `env` | `$CRUCIBLE_PLUGIN_PATH`, `$CRUCIBLE_RUNTIME` | 1000 |
+| `personal` | a kiln with `priority = "personal"`, then `agent_directories`, then `~/.config/crucible/` | 900 |
+| `workspace` | `<workspace>/.crucible/`; `.agents/`, `.claude/`, `.codex/`, `.opencode/` are 10 lower | 800 |
+| `kiln` | every other attached kiln | 700 |
+| `runtimepath` | each `runtimepath` entry, one lower per entry | 600 |
+| `harness` | each harness row you enabled | 500 |
+| `runtime` | `~/.config/crucible/runtime/` | 300 |
+| `plugin` | each active plugin's own directory | 200 |
+| `builtin` | the tree Crucible ships | 100 |
+
+Inside `personal` the order is fixed, so a card in two personal sources is
+not ambiguous. To move a level, give it a new number:
+
+```lua
+cru.config.set({
+  sources = {
+    priority = { workspace = 950 },  -- a level you do not name keeps its default
+  },
+})
+```
+
+An unknown level name is a config error. A kiln and a plugin take their own
+names as source names. When one takes a name that another source has, the
+lower source is skipped, and `cru doctor` reports it.
 
 ### projects — project registry
 

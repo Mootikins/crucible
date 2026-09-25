@@ -22,5 +22,8 @@ pub mod resolve;
 
 pub use asset::{EntryShape, RuntimeAsset};
 pub use build::{build_path, KilnRoot, PathInputs};
-pub use entry::{default_priority, EntryKind, Origin, PriorityLevel, RuntimeEntry, SearchPath};
-pub use resolve::{search_paths, search_sources};
+pub use entry::{
+    default_priority, level_priority, EntryKind, LevelPriorities, Origin, Priority, PriorityLevel,
+    RuntimeEntry, SearchPath,
+};
+pub use resolve::{name_clashes, search_paths, search_sources};

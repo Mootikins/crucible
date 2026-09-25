@@ -348,26 +348,7 @@ pub fn default_discovery_paths_from(
     home: Option<&Path>,
     runtime: &MachineRuntime,
 ) -> Vec<SearchPath> {
-    // `SourceRoots::config_home` is the raw config dir, as for cards.
-    let config_home = roots.config_home.as_ref().map(|d| d.join("crucible"));
-    let workspace_roots = workspace_root_names();
-    let harnesses = home.map(enabled_harnesses).unwrap_or_default();
-
-    let kiln_roots = roots.kiln_roots(kilns);
-    let path = build_path(&PathInputs {
-        workspace,
-        workspace_roots: &workspace_roots,
-        kilns: &kiln_roots,
-        harnesses: &harnesses,
-        config_home: config_home.as_deref(),
-        runtimepath: &roots.runtimepath,
-        env_runtime: runtime.env.as_deref(),
-        user_runtime: runtime.user.as_deref(),
-        runtime_roots: &runtime.shipped,
-        plugin_dirs: &roots.plugin_dirs.dirs(),
-        ..PathInputs::default()
-    });
-
+    let path = skills_path(roots, workspace, kilns, home, runtime);
     let sources = match search_sources(RuntimeAsset::Skills, &path) {
         Ok(sources) => sources,
         Err(error) => {
@@ -387,6 +368,36 @@ pub fn default_discovery_paths_from(
             within: source.within,
         })
         .collect()
+}
+
+/// The roots skill discovery reads, before the asset filter.
+pub fn skills_path(
+    roots: &SourceRoots,
+    workspace: Option<&Path>,
+    kilns: &[PathBuf],
+    home: Option<&Path>,
+    runtime: &MachineRuntime,
+) -> Vec<RuntimeEntry> {
+    // `SourceRoots::config_home` is the raw config dir, as for cards.
+    let config_home = roots.config_home.as_ref().map(|d| d.join("crucible"));
+    let workspace_roots = workspace_root_names();
+    let harnesses = home.map(enabled_harnesses).unwrap_or_default();
+
+    let kiln_roots = roots.kiln_roots(kilns);
+    build_path(&PathInputs {
+        workspace,
+        workspace_roots: &workspace_roots,
+        kilns: &kiln_roots,
+        harnesses: &harnesses,
+        config_home: config_home.as_deref(),
+        runtimepath: &roots.runtimepath,
+        env_runtime: runtime.env.as_deref(),
+        user_runtime: runtime.user.as_deref(),
+        runtime_roots: &runtime.shipped,
+        plugin_dirs: &roots.plugin_dirs.dirs(),
+        levels: &roots.levels,
+        ..PathInputs::default()
+    })
 }
 
 /// The relative roots searched inside a workspace and a kiln.

@@ -11,7 +11,11 @@
 //! `runtime_skill_paths` and `defaults_candidates_from` were each split out to
 //! end.
 
-use crucible_core::runtime_path::{build_path, KilnRoot, PathInputs, RuntimeEntry};
+use crucible_core::config::{find_kiln_entry, KilnEntry, SourcesConfig};
+use crucible_core::runtime_path::{
+    build_path, level_priority, KilnRoot, LevelPriorities, PathInputs, Priority, PriorityLevel,
+    RuntimeEntry,
+};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -102,6 +106,11 @@ pub struct SourceRoots {
     /// caller with no registry) names the kilns `kiln`, `kiln-2`, ... by
     /// attach order.
     pub kiln_registry: Option<std::sync::Arc<crate::kiln_registry::KilnRegistry>>,
+    /// `sources.priority`: a new priority for each level it names.
+    pub levels: LevelPriorities,
+    /// `kilns.<name>.priority`, by kiln name. Read from the user's config
+    /// only: `kilns.json` and a kiln's own config cannot set a priority.
+    pub kiln_priorities: BTreeMap<String, Priority>,
 }
 
 /// The directories of the active plugins, by plugin name.
@@ -171,13 +180,45 @@ impl SourceRoots {
                 })
                 .unwrap_or_default()
         };
+        let sources: SourcesConfig = app_config
+            .and_then(|v| v.get("sources"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        let kilns: BTreeMap<String, KilnEntry> = app_config
+            .and_then(|v| v.get("kilns"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
         Self {
             config_home,
             agent_directories: paths("agent_directories"),
             runtimepath: paths("runtimepath"),
             plugin_dirs: ActivePluginDirs::default(),
             kiln_registry: None,
+            levels: sources.priority,
+            kiln_priorities: kilns
+                .into_iter()
+                .filter_map(|(name, entry)| Some((name, entry.priority()?)))
+                .collect(),
         }
+    }
+
+    /// [`Self::from_app_config`], with the kiln registry the same config
+    /// builds under `data_home`. For a client that reads cards and skills
+    /// with no daemon: it names each kiln as the daemon does.
+    pub fn from_app_config_with_registry(
+        config_home: Option<PathBuf>,
+        app_config: Option<&serde_json::Value>,
+        home: Option<&Path>,
+        data_home: PathBuf,
+    ) -> Self {
+        let mut roots = Self::from_app_config(config_home, app_config, home);
+        roots.kiln_registry = crate::kiln_registry::KilnRegistry::from_app_config(
+            crate::kiln_registry::KilnRegistryContext::for_daemon(data_home),
+            app_config,
+        )
+        .ok()
+        .map(std::sync::Arc::new);
+        roots
     }
 
     /// The attached kilns as sources: each takes its registered name. A kiln
@@ -192,12 +233,22 @@ impl SourceRoots {
                     .kiln_registry
                     .as_ref()
                     .and_then(|registry| registry.name_for(path));
+                let priority = registered
+                    .as_ref()
+                    .and_then(|name| find_kiln_entry(&self.kiln_priorities, name.as_str()))
+                    .map_or_else(
+                        || level_priority(&self.levels, PriorityLevel::Kiln),
+                        |(_, priority)| priority.resolve(&self.levels),
+                    );
                 let name = match registered {
                     Some(name) => name.to_string(),
                     None if index == 0 => "kiln".to_string(),
                     None => format!("kiln-{}", index + 1),
                 };
-                KilnRoot::new(name, path.clone())
+                KilnRoot {
+                    priority,
+                    ..KilnRoot::new(name, path.clone())
+                }
             })
             .collect()
     }
@@ -288,5 +339,46 @@ mod tests {
             .map(|k| k.name)
             .collect();
         assert_eq!(named, ["notes", "kiln-2"]);
+    }
+
+    /// A kiln's priority is its config entry's `priority`: a level name, or a
+    /// number. `sources.priority` moves a level, and a kiln at that level
+    /// moves with it.
+    #[test]
+    fn a_kiln_takes_the_priority_its_config_entry_gives() {
+        let data = tempfile::TempDir::new().unwrap();
+        let config = serde_json::json!({
+            "kilns": {
+                "notes": { "path": "/k/notes", "priority": "personal" },
+                "team": { "path": "/k/team", "priority": 750 },
+                "plain": "/k/plain",
+            },
+            "sources": { "priority": { "personal": 950 } },
+        });
+        let mut roots = SourceRoots::from_app_config(None, Some(&config), None);
+        roots.kiln_registry = Some(std::sync::Arc::new(
+            crate::kiln_registry::KilnRegistry::from_app_config(
+                crate::kiln_registry::KilnRegistryContext::for_daemon(data.path().to_path_buf()),
+                Some(&config),
+            )
+            .unwrap(),
+        ));
+        let kilns: Vec<(String, i32, u8)> = roots
+            .kiln_roots(&[
+                PathBuf::from("/k/notes"),
+                PathBuf::from("/k/team"),
+                PathBuf::from("/k/plain"),
+            ])
+            .into_iter()
+            .map(|k| (k.name, k.priority, k.within))
+            .collect();
+        assert_eq!(
+            kilns,
+            [
+                ("notes".to_string(), 950, 0),
+                ("team".to_string(), 750, 0),
+                ("plain".to_string(), 700, 0),
+            ]
+        );
     }
 }

@@ -60,6 +60,8 @@ cru.config.set({
 
         -- Full form, with options:
         -- work = { path = "~/work/notes", lazy = true },  -- not opened at start
+        -- To put a kiln's cards and skills first, make it your personal kiln:
+        -- notes = { path = "~/notes", priority = "personal" },
     },
 
     -- Legacy single-kiln shorthand, still honoured when `kilns` is empty:
@@ -82,6 +84,11 @@ cru.config.set({
     -- cards, skills and themes, your personal, workspace and kiln sources
     -- rank above an entry.
     -- runtimepath = { "/opt/crucible/runtime" },
+
+    -- The order of the sources of cards, skills and themes. Give a level a
+    -- new priority; a level you do not name keeps its default. See
+    -- Help/Configuration.md.
+    -- sources = { priority = { workspace = 950 } },
 
     -- =========================================================================
     -- projects - Project registry

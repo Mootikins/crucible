@@ -890,6 +890,79 @@ mod tests {
         .expect("boot must not error for a Lua-level failure")
     }
 
+    /// `kilns.<name>.priority` and `sources.priority`, written in `init.lua`,
+    /// reach the roots every skill reader uses. A kiln made personal takes a
+    /// bare skill name from another kiln; the full name still reaches both.
+    #[tokio::test]
+    async fn a_kiln_made_personal_in_init_lua_wins_a_bare_skill_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let notes = tmp.path().join("notes");
+        let team = tmp.path().join("team");
+        for (kiln, text) in [(&notes, "notes"), (&team, "team")] {
+            let dir = kiln.join(".crucible/skills/helper");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("SKILL.md"),
+                format!("---\nname: helper\ndescription: {text}\n---\n\nBody."),
+            )
+            .unwrap();
+        }
+        let boot = boot_with(
+            &tmp.path().join("config"),
+            &format!(
+                r#"cru.config.set({{
+                    kilns = {{
+                        notes = {{ path = {:?}, priority = "personal" }},
+                        team = {{ path = {:?} }},
+                    }},
+                    sources = {{ priority = {{ kiln = 650 }} }},
+                }})"#,
+                notes.display().to_string(),
+                team.display().to_string(),
+            ),
+        )
+        .await;
+
+        let app_config = serde_json::to_value(&boot.config).unwrap();
+        let mut roots =
+            crate::runtime_path::SourceRoots::from_app_config(None, Some(&app_config), None);
+        roots.kiln_registry = Some(Arc::new(
+            crate::kiln_registry::KilnRegistry::from_app_config(
+                crate::kiln_registry::KilnRegistryContext::for_daemon(tmp.path().join("data")),
+                Some(&app_config),
+            )
+            .unwrap(),
+        ));
+        assert_eq!(
+            roots
+                .levels
+                .get(&crucible_core::runtime_path::PriorityLevel::Kiln),
+            Some(&650)
+        );
+
+        let paths = crate::skills::discovery::default_discovery_paths_from(
+            &roots,
+            None,
+            &[team.clone(), notes.clone()],
+            None,
+            &crate::runtime_path::MachineRuntime::default(),
+        );
+        let found = crate::skills::FolderDiscovery::new(paths)
+            .discover()
+            .unwrap();
+        let description = |name: &str| {
+            crate::skills::discovery::resolve_skill(&found, name)
+                .unwrap()
+                .unwrap()
+                .skill
+                .description
+                .clone()
+        };
+        assert_eq!(description("helper"), "notes");
+        assert_eq!(description("team:helper"), "team");
+        assert_eq!(description("notes:helper"), "notes");
+    }
+
     /// Plant a runtime tree at the roots an INSTALLED Crucible owns, and say
     /// which marker hook its defaults file registers.
     ///

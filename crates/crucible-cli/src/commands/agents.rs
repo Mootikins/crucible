@@ -81,18 +81,14 @@ fn source_roots(
     home: Option<&Path>,
 ) -> SourceRoots {
     let app_config = serde_json::to_value(config).ok();
-    let mut roots = SourceRoots::from_app_config(config_home, app_config.as_ref(), home);
     // The daemon names each kiln source by its registered name. The same
     // registry builder, over the same config, gives the CLI the same names.
-    roots.kiln_registry = crucible_daemon::kiln_registry::KilnRegistry::from_app_config(
-        crucible_daemon::kiln_registry::KilnRegistryContext::for_daemon(
-            crucible_core::config::crucible_home(),
-        ),
+    SourceRoots::from_app_config_with_registry(
+        config_home,
         app_config.as_ref(),
+        home,
+        crucible_core::config::crucible_home(),
     )
-    .ok()
-    .map(std::sync::Arc::new);
-    roots
 }
 
 /// The workspace `cru agents` answers for: the current directory, which is

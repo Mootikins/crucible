@@ -752,6 +752,7 @@ pub fn theme_roots(
     config_dir: &Path,
     runtimepath: &[PathBuf],
     plugin_dirs: &[PathBuf],
+    levels: &crucible_core::runtime_path::LevelPriorities,
 ) -> Result<Sources<SearchPath>, SourcesError> {
     use crucible_core::runtime_path::{build_path, search_sources, PathInputs, RuntimeAsset};
 
@@ -763,6 +764,7 @@ pub fn theme_roots(
         user_runtime: Some(&user_runtime),
         runtime_roots: &shipped,
         plugin_dirs,
+        levels,
         ..PathInputs::default()
     });
     search_sources(RuntimeAsset::Themes, &path)
@@ -1675,8 +1677,13 @@ mod tests {
         let kit = tmp.path().join("kit");
         std::fs::create_dir_all(kit.join("themes")).unwrap();
         std::fs::write(kit.join("themes").join("kit-only.luau"), "return {}").unwrap();
-        let roots =
-            theme_roots(&tmp.path().join("config"), std::slice::from_ref(&kit), &[]).unwrap();
+        let roots = theme_roots(
+            &tmp.path().join("config"),
+            std::slice::from_ref(&kit),
+            &[],
+            &Default::default(),
+        )
+        .unwrap();
         assert!(list_available_themes(&roots).contains(&"kit-only".to_string()));
         assert_eq!(
             resolve_theme_file(&roots, "config-1:kit-only"),

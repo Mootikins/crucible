@@ -35,6 +35,12 @@ pub enum KilnEntry {
         /// written back by anything that ever does.
         #[serde(default)]
         auto: bool,
+        /// The priority of this kiln as a source of cards and skills: a level
+        /// name such as `"personal"`, or a number. `None` is the level
+        /// `kiln`. Only the user's config sets it: `kilns.json` and a kiln's
+        /// own config have no such field.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        priority: Option<crate::runtime_path::Priority>,
     },
 }
 
@@ -44,6 +50,14 @@ impl KilnEntry {
         match self {
             KilnEntry::Path(p) => p.clone(),
             KilnEntry::Config { path, .. } => path.clone(),
+        }
+    }
+
+    /// The priority this entry gives its kiln as a source, if any.
+    pub fn priority(&self) -> Option<crate::runtime_path::Priority> {
+        match self {
+            KilnEntry::Path(_) => None,
+            KilnEntry::Config { priority, .. } => *priority,
         }
     }
 
@@ -141,6 +155,7 @@ pub fn resolve_kiln_entries(
                         // use — it simply does not open unasked.
                         lazy: true,
                         auto: false,
+                        priority: None,
                     },
                 )])
             })
@@ -155,6 +170,7 @@ pub fn resolve_kiln_entries(
                 path: docs,
                 lazy: true,
                 auto: false,
+                priority: None,
             });
     }
 

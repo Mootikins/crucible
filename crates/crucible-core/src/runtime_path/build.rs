@@ -8,7 +8,9 @@
 //! `runtime_skill_paths` and `defaults_candidates_from` were found.
 
 use super::asset::RuntimeAsset;
-use super::entry::{Origin, RuntimeEntry, AGENT_DIRECTORIES_WITHIN};
+use super::entry::{
+    level_priority, LevelPriorities, Origin, RuntimeEntry, AGENT_DIRECTORIES_WITHIN,
+};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +21,10 @@ use std::path::{Path, PathBuf};
 /// the borrow-free way to say "no harness rows", which is also the shipped
 /// default: a row IS the opt-in.
 static NO_HARNESSES: BTreeMap<String, PathBuf> = BTreeMap::new();
+
+/// The empty level table `PathInputs::default()` borrows: every level keeps
+/// its default priority.
+static NO_OVERRIDES: LevelPriorities = BTreeMap::new();
 
 /// An attached kiln as a source: its name, its directory and its priority.
 ///
@@ -86,6 +92,9 @@ pub struct PathInputs<'a> {
     /// deliberately includes both, and passing that list unfiltered would let
     /// a disabled plugin put text into an agent's system prompt.
     pub plugin_dirs: &'a [PathBuf],
+    /// `sources.priority`: a new priority for each level it names. A kiln's
+    /// priority is already resolved in its [`KilnRoot`].
+    pub levels: &'a LevelPriorities,
 }
 
 impl Default for PathInputs<'_> {
@@ -103,6 +112,7 @@ impl Default for PathInputs<'_> {
             runtime_roots: &[],
             agent_directories: &[],
             plugin_dirs: &[],
+            levels: &NO_OVERRIDES,
         }
     }
 }
@@ -195,6 +205,13 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
             entry.within = u8::try_from(index).unwrap_or(u8::MAX);
         }
         path.push(entry);
+    }
+
+    // A level the config moved moves every source in it by the same amount,
+    // so the order inside the level stays.
+    for entry in path.iter_mut().filter(|e| e.origin != Origin::Kiln) {
+        let level = entry.origin.level();
+        entry.priority += level_priority(inputs.levels, level) - level.default_priority();
     }
 
     path
@@ -434,5 +451,32 @@ mod tests {
         });
         assert_eq!(built[0].origin, Origin::Bundled);
         assert_eq!(built[0].name, "builtin");
+    }
+
+    /// `sources.priority` moves the levels it names, and nothing else.
+    #[test]
+    fn a_level_override_moves_its_sources() {
+        let config_home = PathBuf::from("/c");
+        let roots = vec![".crucible".to_string(), ".agents".to_string()];
+        let levels = LevelPriorities::from([(super::super::entry::PriorityLevel::Workspace, 950)]);
+        let built = build_path(&PathInputs {
+            config_home: Some(&config_home),
+            workspace: Some(Path::new("/ws")),
+            workspace_roots: &roots,
+            levels: &levels,
+            ..inputs()
+        });
+        let named: Vec<(&str, i32)> = built
+            .iter()
+            .map(|e| (e.name.as_str(), e.priority))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("workspace", 950),
+                ("workspace-agents", 940),
+                ("personal", 900)
+            ]
+        );
     }
 }

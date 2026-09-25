@@ -35,7 +35,7 @@ const TRACKED_FIELDS: &[(&str, &str)] = &[
 /// Kept sorted, and paired with [`SETTINGS_CONFIG_KEYS`] so that
 /// `every_config_key_is_classified` fails when a new field belongs to neither.
 /// That is what stops this from being a denylist that misses the next key.
-pub const LOCATION_CONFIG_KEYS: [&str; 7] = [
+pub const LOCATION_CONFIG_KEYS: [&str; 8] = [
     "agent_directories",
     "data_home",
     "kiln_path",
@@ -43,6 +43,9 @@ pub const LOCATION_CONFIG_KEYS: [&str; 7] = [
     "projects",
     "runtimepath",
     "session_kiln",
+    // Not a place, but it decides which directory's text reaches a system
+    // prompt, so it follows the same rule: boot-only, refused at runtime.
+    "sources",
 ];
 
 /// Top-level [`CliAppConfig`] keys that configure *behaviour* rather than
@@ -81,6 +84,17 @@ use tracing::{debug, error, info, warn};
 extern crate toml;
 
 use super::errors::ConfigError;
+
+/// `sources`: how the sources of cards, skills and themes are ordered.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourcesConfig {
+    /// `sources.priority = { workspace = 950 }`: a new priority for each
+    /// level it names. A level it does not name keeps its default. An
+    /// unknown level name is a config error.
+    #[serde(default)]
+    pub priority: crate::runtime_path::LevelPriorities,
+}
 use super::provider::EffectiveLlmConfig;
 use super::server::{LoggingConfig, WebConfig, WorkspaceConfig};
 
@@ -189,6 +203,10 @@ pub struct CliAppConfig {
     /// ```
     #[serde(default)]
     pub runtimepath: Vec<std::path::PathBuf>,
+
+    /// The order of the sources of cards, skills and themes.
+    #[serde(default)]
+    pub sources: SourcesConfig,
 
     /// Per-plugin configuration sections (e.g. `[plugins.discord]`)
     #[serde(default)]
@@ -353,6 +371,7 @@ impl Default for CliAppConfig {
             permissions: None,
             schedules: Vec::new(),
             runtimepath: Vec::new(),
+            sources: SourcesConfig::default(),
             plugins: BTreeMap::new(),
             web: None,
             server: super::server::ServerConfig::default(),

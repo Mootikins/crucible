@@ -51,7 +51,20 @@ pub enum Origin {
 ///
 /// A closed set: [`Self::name`] and [`Self::default_priority`] are
 /// exhaustive, and [`Self::parse`] walks every variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    strum::EnumIter,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum PriorityLevel {
     Env,
     Personal,
@@ -100,6 +113,38 @@ impl PriorityLevel {
             PriorityLevel::Runtime => 300,
             PriorityLevel::Plugin => 200,
             PriorityLevel::Builtin => 100,
+        }
+    }
+}
+
+/// The level overrides a config gives in `sources.priority`. A level the map
+/// does not name keeps its default priority.
+pub type LevelPriorities = std::collections::BTreeMap<PriorityLevel, i32>;
+
+/// The priority of `level` under `overrides`.
+pub fn level_priority(overrides: &LevelPriorities, level: PriorityLevel) -> i32 {
+    overrides
+        .get(&level)
+        .copied()
+        .unwrap_or_else(|| level.default_priority())
+}
+
+/// The priority a config gives one source: a level name or a number.
+///
+/// `kilns.<name>.priority = "personal"` or `= 750`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum Priority {
+    Level(PriorityLevel),
+    Number(i32),
+}
+
+impl Priority {
+    /// The number this priority stands for under `overrides`.
+    pub fn resolve(self, overrides: &LevelPriorities) -> i32 {
+        match self {
+            Priority::Level(level) => level_priority(overrides, level),
+            Priority::Number(number) => number,
         }
     }
 }
@@ -305,6 +350,39 @@ mod tests {
         .collect();
         assert!(order.windows(2).all(|w| w[0] > w[1]), "{order:?}");
         assert_eq!(order.len(), PriorityLevel::iter().count());
+    }
+
+    /// The name a config file writes for a level is [`PriorityLevel::name`],
+    /// so the serde names and the table cannot drift.
+    #[test]
+    fn a_level_serializes_under_its_name() {
+        for level in PriorityLevel::iter() {
+            assert_eq!(
+                serde_json::to_value(level).unwrap(),
+                serde_json::json!(level.name())
+            );
+        }
+        assert_eq!(
+            serde_json::from_value::<Priority>(serde_json::json!("personal")).unwrap(),
+            Priority::Level(PriorityLevel::Personal)
+        );
+        assert_eq!(
+            serde_json::from_value::<Priority>(serde_json::json!(750)).unwrap(),
+            Priority::Number(750)
+        );
+        assert!(serde_json::from_value::<Priority>(serde_json::json!("nope")).is_err());
+    }
+
+    /// An override moves one level and leaves the others.
+    #[test]
+    fn an_override_moves_only_the_level_it_names() {
+        let overrides = LevelPriorities::from([(PriorityLevel::Workspace, 950)]);
+        assert_eq!(level_priority(&overrides, PriorityLevel::Workspace), 950);
+        assert_eq!(level_priority(&overrides, PriorityLevel::Kiln), 700);
+        assert_eq!(
+            Priority::Level(PriorityLevel::Workspace).resolve(&overrides),
+            950
+        );
     }
 
     /// A later `runtimepath` entry ranks below the one before it.

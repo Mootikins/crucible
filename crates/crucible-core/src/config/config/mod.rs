@@ -12,7 +12,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use cli_app::{CliAppConfig, LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
+pub use cli_app::{CliAppConfig, SourcesConfig, LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use errors::{ConfigError, ConfigValidationError};
 pub use kiln_name::{InvalidKilnName, KilnName};
 pub use provider::EffectiveLlmConfig;

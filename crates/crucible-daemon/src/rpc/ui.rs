@@ -77,9 +77,13 @@ pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json
     // `list_available_themes`, so the two could disagree about what exists.
     // They now resolve through the same list: a theme that is listed is a
     // theme that loads.
-    let roots =
-        crucible_lua::theme_roots(&config_dir, &roots.runtimepath, &roots.plugin_dirs.dirs())
-            .map_err(|e| e.to_string())?;
+    let roots = crucible_lua::theme_roots(
+        &config_dir,
+        &roots.runtimepath,
+        &roots.plugin_dirs.dirs(),
+        &roots.levels,
+    )
+    .map_err(|e| e.to_string())?;
 
     let source = match crucible_lua::resolve_theme_file(&roots, name)? {
         Some(path) => std::fs::read_to_string(&path)

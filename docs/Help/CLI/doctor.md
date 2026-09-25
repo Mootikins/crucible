@@ -32,6 +32,7 @@ The `doctor` command runs targeted health checks against your Crucible installat
 | Plugins | The daemon answers `plugin.list` | Warning only; skipped entirely if the daemon is down |
 | Kiln references | Every kiln named by a `projects.*` entry exists in `kilns` | Add the kiln to `kilns` or drop the reference |
 | Config validation | The loaded config passed structural validation | See the Config check above |
+| Source names | No source of cards or skills takes a name that a higher source has | Rename the kiln or the plugin; the lower source is skipped until you do |
 
 Not every check emits a line on every run: the plugin check is skipped when the daemon is
 unreachable, the kiln-reference check is skipped when no projects are registered, and an

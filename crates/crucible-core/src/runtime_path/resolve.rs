@@ -28,23 +28,9 @@ use crate::sources::{sources_new, Source, Sources, SourcesError};
 /// leaf belonging to a different asset. Both are containment, not tidiness:
 /// the origin check is what keeps a cloned kiln from becoming a plugin root.
 pub fn search_paths(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<SearchPath> {
-    path.iter()
-        .filter(|entry| asset.reaches(entry.origin))
-        .filter_map(|entry| {
-            let dir = match &entry.kind {
-                EntryKind::Root(root) => root.join(asset.subdir()),
-                EntryKind::Leaf(leaf, owner) if *owner == asset => leaf.clone(),
-                EntryKind::Leaf(_, _) => return None,
-            };
-            Some((dir, entry))
-        })
-        .enumerate()
-        .map(|(rank, (path, entry))| SearchPath {
-            path,
-            origin: entry.origin,
-            harness: entry.harness.clone(),
-            rank,
-        })
+    candidates(asset, path)
+        .into_iter()
+        .map(|source| source.value)
         .collect()
 }
 
@@ -59,8 +45,25 @@ pub fn search_sources(
     asset: RuntimeAsset,
     path: &[RuntimeEntry],
 ) -> Result<Sources<SearchPath>, SourcesError> {
-    let list = path
-        .iter()
+    let (kept, clashes) = drop_repeated_sources(candidates(asset, path));
+    for clash in &clashes {
+        tracing::warn!(
+            source = %clash.name,
+            skipped = %clash.value.path.display(),
+            "two sources have one name; the lower one is skipped"
+        );
+    }
+    sources_new(kept)
+}
+
+/// The sources of `asset` that [`search_sources`] skips because a higher
+/// source has the same name. `cru doctor` reports each one as an error.
+pub fn name_clashes(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<Source<SearchPath>> {
+    drop_repeated_sources(candidates(asset, path)).1
+}
+
+fn candidates(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<Source<SearchPath>> {
+    path.iter()
         .filter(|entry| asset.reaches(entry.origin))
         .filter_map(|entry| {
             let dir = match &entry.kind {
@@ -82,21 +85,23 @@ pub fn search_sources(
                 rank,
             },
         })
-        .collect::<Vec<Source<SearchPath>>>();
-    sources_new(drop_repeated_sources(list))
+        .collect()
 }
 
-/// Keep one source per directory and one per name: the higher one.
+/// Keep one source per directory and one per name: the higher one. The
+/// second list holds the sources dropped for a name clash.
 ///
 /// A kiln that is also the workspace, or `~/.config/crucible` on
 /// `runtimepath`, would otherwise offer each entry twice. A plugin or a kiln
 /// takes its own name as its source name, so it can clash with another
-/// source; the lower source is skipped with a warning, and `cru doctor`
-/// reports it. The paths are compared as written; nothing here reads the
-/// filesystem.
-fn drop_repeated_sources(list: Vec<Source<SearchPath>>) -> Vec<Source<SearchPath>> {
+/// source; the lower source is skipped. The paths are compared as written;
+/// nothing here reads the filesystem.
+fn drop_repeated_sources(
+    list: Vec<Source<SearchPath>>,
+) -> (Vec<Source<SearchPath>>, Vec<Source<SearchPath>>) {
     let rank = |i: usize, s: &Source<SearchPath>| (std::cmp::Reverse(s.priority), s.within, i);
-    let keep: Vec<bool> = list
+    // `Some(true)`: keep. `Some(false)`: same directory. `None`: name clash.
+    let verdicts: Vec<Option<bool>> = list
         .iter()
         .enumerate()
         .map(|(i, source)| {
@@ -106,25 +111,25 @@ fn drop_repeated_sources(list: Vec<Source<SearchPath>>) -> Vec<Source<SearchPath
                 .filter(|(j, other)| rank(*j, other) < rank(i, source));
             for (_, other) in higher {
                 if other.value.path == source.value.path {
-                    return false;
+                    return Some(false);
                 }
                 if other.name == source.name {
-                    tracing::warn!(
-                        source = %source.name,
-                        skipped = %source.value.path.display(),
-                        kept = %other.value.path.display(),
-                        "two sources have one name; the lower one is skipped"
-                    );
-                    return false;
+                    return None;
                 }
             }
-            true
+            Some(true)
         })
         .collect();
-    list.into_iter()
-        .zip(keep)
-        .filter_map(|(source, keep)| keep.then_some(source))
-        .collect()
+    let mut kept = Vec::new();
+    let mut clashes = Vec::new();
+    for (source, verdict) in list.into_iter().zip(verdicts) {
+        match verdict {
+            Some(true) => kept.push(source),
+            Some(false) => {}
+            None => clashes.push(source),
+        }
+    }
+    (kept, clashes)
 }
 
 #[cfg(test)]
@@ -287,5 +292,8 @@ mod tests {
         let skills = search_sources(RuntimeAsset::Skills, &path).unwrap();
         let dirs: Vec<PathBuf> = skills.list().iter().map(|s| s.value.path.clone()).collect();
         assert_eq!(dirs, [PathBuf::from("/user/skills")]);
+        let clashes = name_clashes(RuntimeAsset::Skills, &path);
+        assert_eq!(clashes.len(), 1);
+        assert_eq!(clashes[0].value.path, PathBuf::from("/p/personal/skills"));
     }
 }

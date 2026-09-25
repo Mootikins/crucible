@@ -29,7 +29,7 @@
 use crate::runtime_path::SourceRoots;
 use crucible_core::agent::{AgentCard, AgentCardLoader};
 use crucible_core::runtime_path::{
-    build_path, search_sources, PathInputs, RuntimeAsset, SearchPath,
+    build_path, search_sources, PathInputs, RuntimeAsset, RuntimeEntry, SearchPath,
 };
 use crucible_core::sources::{Entry, Sources};
 use std::collections::HashMap;
@@ -83,6 +83,16 @@ pub fn card_directories(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]
 /// sources (`agent_directories`, then the config home), the workspace, then
 /// each kiln.
 fn card_sources(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Sources<SearchPath> {
+    search_sources(RuntimeAsset::Cards, &card_path(roots, workspace, kilns)).unwrap_or_else(
+        |error| {
+            warn!(%error, "Agent card directories are invalid; no cards load");
+            Sources::default()
+        },
+    )
+}
+
+/// The roots card discovery reads, before the asset filter.
+pub fn card_path(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Vec<RuntimeEntry> {
     // `kiln == workspace` would otherwise offer `<kiln>/.crucible/agents`
     // twice. The kiln entry is the one kept, because a session with no
     // separate workspace is a kiln session.
@@ -99,7 +109,7 @@ fn card_sources(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Sou
     let config_root = roots.config_home.as_ref().map(|home| home.join("crucible"));
 
     let kiln_roots = roots.kiln_roots(kilns);
-    let path = build_path(&PathInputs {
+    build_path(&PathInputs {
         workspace: distinct_workspace,
         workspace_roots: &workspace_roots,
         kilns: &kiln_roots,
@@ -107,11 +117,8 @@ fn card_sources(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Sou
         agent_directories: &roots.agent_directories,
         runtimepath: &roots.runtimepath,
         plugin_dirs: &roots.plugin_dirs.dirs(),
+        levels: &roots.levels,
         ..PathInputs::default()
-    });
-    search_sources(RuntimeAsset::Cards, &path).unwrap_or_else(|error| {
-        warn!(%error, "Agent card directories are invalid; no cards load");
-        Sources::default()
     })
 }
 
@@ -442,6 +449,8 @@ mod tests {
                 runtimepath: Vec::new(),
                 plugin_dirs: Default::default(),
                 kiln_registry: None,
+                levels: Default::default(),
+                kiln_priorities: Default::default(),
             },
             kiln.path(),
             &[kiln.path().to_path_buf()],
@@ -481,6 +490,8 @@ mod tests {
             runtimepath: Vec::new(),
             plugin_dirs: Default::default(),
             kiln_registry: None,
+            levels: Default::default(),
+            kiln_priorities: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let description = |name| {
@@ -522,6 +533,8 @@ mod tests {
             runtimepath: Vec::new(),
             plugin_dirs: Default::default(),
             kiln_registry: None,
+            levels: Default::default(),
+            kiln_priorities: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
         let description = |name| {
@@ -565,6 +578,8 @@ mod tests {
             runtimepath: Vec::new(),
             plugin_dirs: Default::default(),
             kiln_registry: None,
+            levels: Default::default(),
+            kiln_priorities: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let error = resolve_card(&cards, "helper").unwrap_err();
@@ -608,6 +623,8 @@ mod tests {
             runtimepath: Vec::new(),
             plugin_dirs: Default::default(),
             kiln_registry: None,
+            levels: Default::default(),
+            kiln_priorities: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         assert_eq!(cards["kiln:helper"].description, "kiln helper");
@@ -635,6 +652,8 @@ mod tests {
             runtimepath: Vec::new(),
             plugin_dirs: Default::default(),
             kiln_registry: None,
+            levels: Default::default(),
+            kiln_priorities: Default::default(),
         };
 
         let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
@@ -658,6 +677,8 @@ mod tests {
             runtimepath: Vec::new(),
             plugin_dirs: Default::default(),
             kiln_registry: None,
+            levels: Default::default(),
+            kiln_priorities: Default::default(),
         };
         let dirs = card_directories(&roots, Path::new("/ws"), &[PathBuf::from("/kiln")]);
         assert_eq!(
@@ -701,5 +722,54 @@ mod tests {
         };
         assert_eq!(description("helper"), "kiln");
         assert_eq!(description("config-1:helper"), "kit");
+    }
+
+    /// Inside level 900 the order is fixed: a personal kiln, then
+    /// `agent_directories`, then the config home. A card name in all three is
+    /// not ambiguous.
+    #[test]
+    fn a_personal_kiln_is_first_inside_level_900() {
+        let config = TempDir::new().unwrap();
+        let shared = TempDir::new().unwrap();
+        let kiln = TempDir::new().unwrap();
+        for (dir, text) in [
+            (config.path().join("crucible/agents"), "home"),
+            (shared.path().to_path_buf(), "shared"),
+            (kiln.path().join(".crucible/agents"), "kiln"),
+        ] {
+            write_card(
+                &dir,
+                "helper.md",
+                &format!("---\ndescription: {text}\n---\n\nPrompt.\n"),
+            );
+        }
+        let data = TempDir::new().unwrap();
+        let app_config = serde_json::json!({
+            "kilns": { "notes": { "path": kiln.path(), "priority": "personal" } },
+        });
+        let mut roots = SourceRoots::from_app_config(
+            Some(config.path().to_path_buf()),
+            Some(&app_config),
+            None,
+        );
+        roots.agent_directories = vec![shared.path().to_path_buf()];
+        roots.kiln_registry = Some(std::sync::Arc::new(
+            crate::kiln_registry::KilnRegistry::from_app_config(
+                crate::kiln_registry::KilnRegistryContext::for_daemon(data.path().to_path_buf()),
+                Some(&app_config),
+            )
+            .unwrap(),
+        ));
+        let cards = discover_agent_cards_in(&roots, Path::new(""), &[kiln.path().to_path_buf()]);
+        let description = |name| {
+            resolve_card(&cards, name)
+                .unwrap()
+                .unwrap()
+                .description
+                .clone()
+        };
+        assert_eq!(description("helper"), "kiln");
+        assert_eq!(description("agent-dir-1:helper"), "shared");
+        assert_eq!(description("personal:helper"), "home");
     }
 }
