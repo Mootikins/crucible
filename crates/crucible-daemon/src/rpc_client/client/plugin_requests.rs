@@ -62,9 +62,14 @@ pub struct PluginOptionCallRequest {
 pub struct PluginRunCommandRequest {
     pub name: String,
     /// Whatever the command's Lua `fn` expects. `null` when the caller sends
-    /// nothing.
+    /// nothing; the command then gets an empty table.
     #[serde(default)]
     pub args: serde_json::Value,
+    /// The session the user ran the command from, when there is one. The
+    /// command reads it as `ctx.session_id`, so a command that acts on "this
+    /// session" does not need the user to type an id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 /// Request for `plugin.install`.

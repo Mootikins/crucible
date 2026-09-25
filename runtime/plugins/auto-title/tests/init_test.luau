@@ -53,7 +53,7 @@ describe("declaration", function()
     fresh()
     plugin.setup()
     expect.truthy(publications["session_title"])
-    expect.equals("auto-title.generate", publications["session_title"].command)
+    expect.equals("auto-title:generate", publications["session_title"].command)
   end)
 
   -- The module body publishes nothing: `cru plugin check` reports a
@@ -74,17 +74,17 @@ describe("declaration", function()
 
   it("declares the command it published", function()
     fresh()
-    expect.truthy(plugin.commands["auto-title.generate"])
-    expect.equals("function", type(plugin.commands["auto-title.generate"].fn))
+    expect.truthy(plugin.commands.generate)
+    expect.equals("function", type(plugin.commands.generate.fn))
   end)
 end)
 
-describe("auto-title.generate", function()
+describe("generate, called by the daemon", function()
   it("asks the session's own model and sanitizes the answer", function()
     fresh()
     next_answer = { '"Fixing the auth flow."' }
 
-    local result = plugin.commands["auto-title.generate"].fn({
+    local result = plugin.commands.generate.fn({
       session_id = "chat-1",
       user = "help me fix the auth flow",
       assistant = "sure, where does it break?",
@@ -105,7 +105,7 @@ describe("auto-title.generate", function()
     fresh()
     plugin.setup({ prompt = "Name it.", clip = 4, timeout = 7 })
 
-    plugin.commands["auto-title.generate"].fn({ session_id = "chat-2", user = "abcdefgh" })
+    plugin.commands.generate.fn({ session_id = "chat-2", user = "abcdefgh" })
 
     expect.equals("Name it.", completions[1].opts.system)
     expect.equals("User: abcd", completions[1].opts.prompt)
@@ -119,7 +119,7 @@ describe("auto-title.generate", function()
     plugin.setup({ clip = 4 })
     plugin.setup({ timeout = 9 })
 
-    plugin.commands["auto-title.generate"].fn({ session_id = "chat-3", user = "abcdefgh" })
+    plugin.commands.generate.fn({ session_id = "chat-3", user = "abcdefgh" })
 
     expect.equals("User: abcd", completions[1].opts.prompt)
     expect.equals(9, completions[1].opts.timeout)
@@ -132,7 +132,7 @@ describe("auto-title.generate", function()
     plugin.setup({ prompt = "Name it.", clip = 4, timeout = 7 })
 
     fresh()
-    plugin.commands["auto-title.generate"].fn({ session_id = "chat-6", user = "abcdefgh" })
+    plugin.commands.generate.fn({ session_id = "chat-6", user = "abcdefgh" })
 
     expect.truthy(completions[1].opts.system:find("3 to 7 words", 1, true))
     expect.equals("User: abcdefgh", completions[1].opts.prompt)
@@ -146,15 +146,91 @@ describe("auto-title.generate", function()
     fresh()
     next_answer = { nil, "no API key" }
     expect.has_error(function()
-      plugin.commands["auto-title.generate"].fn({ session_id = "chat-4", user = "hi" })
+      plugin.commands.generate.fn({ session_id = "chat-4", user = "hi" })
     end)
   end)
 
-  it("raises when there is no user message", function()
+  it("raises when the user message is empty", function()
     fresh()
     expect.has_error(function()
-      plugin.commands["auto-title.generate"].fn({ session_id = "chat-5" })
-    end)
+      plugin.commands.generate.fn({ session_id = "chat-5", user = "" })
+    end, "no user message")
     expect.equals(0, #completions)
+  end)
+end)
+
+describe("generate, run by a user", function()
+  -- What `cru.session.messages` answers, and the titles the command set.
+  local rows: { any } = {}
+  local titles: { { session_id: string, title: string } } = {}
+
+  local function fresh_session(messages: { any })
+    fresh()
+    rows = messages
+    titles = {}
+    cru.session.messages = function(_session_id, _opts)
+      return rows, nil
+    end
+    cru.session.set_title = function(session_id, new_title)
+      table.insert(titles, { session_id = session_id, title = new_title })
+      return true, nil
+    end
+  end
+
+  -- The TUI sends no exchange. The command reads the session it ran from,
+  -- titles its latest exchange, and sets the title itself.
+  it("titles the session it runs from after the latest exchange", function()
+    fresh_session({
+      { role = "user", content = "first question" },
+      { role = "assistant", content = "first answer" },
+      { role = "user", content = "fix the auth flow" },
+      { role = "assistant", content = "let me look" },
+      { role = "system", content = "a plugin injected this" },
+      { role = "assistant", content = "it is fixed" },
+    })
+    next_answer = { '"Fixing the auth flow."' }
+
+    local result = plugin.commands.generate.fn({}, { session_id = "chat-7" })
+
+    expect.equals("Session titled: Fixing the auth flow", result)
+    expect.equals("chat-7", completions[1].session_id)
+    expect.equals("User: fix the auth flow\n\nAssistant: it is fixed", completions[1].opts.prompt)
+    expect.equals(1, #titles)
+    expect.equals("chat-7", titles[1].session_id)
+    expect.equals("Fixing the auth flow", titles[1].title)
+  end)
+
+  it("titles a session whose latest message has no reply yet", function()
+    fresh_session({ { role = "user", content = "just asked" } })
+
+    plugin.commands.generate.fn({ input = "ignored" }, { session_id = "chat-8" })
+
+    expect.equals("User: just asked", completions[1].opts.prompt)
+  end)
+
+  it("names the reason when there is no session", function()
+    fresh_session({})
+    expect.has_error(function()
+      plugin.commands.generate.fn({}, {})
+    end, "run /generate in a chat session")
+    expect.equals(0, #completions)
+  end)
+
+  it("names the reason when the session has no user message", function()
+    fresh_session({ { role = "assistant", content = "hello" } })
+    expect.has_error(function()
+      plugin.commands.generate.fn({}, { session_id = "chat-9" })
+    end, "has no user message")
+    expect.equals(0, #completions)
+    expect.equals(0, #titles)
+  end)
+
+  it("sets no title when the completion fails", function()
+    fresh_session({ { role = "user", content = "hi" } })
+    next_answer = { nil, "no API key" }
+    expect.has_error(function()
+      plugin.commands.generate.fn({}, { session_id = "chat-10" })
+    end, "no API key")
+    expect.equals(0, #titles)
   end)
 end)

@@ -175,7 +175,10 @@ impl AgentManager {
             );
             return None;
         };
-        let answer = match registry.run_command(command, args).await {
+        let answer = match registry
+            .run_command_in(command, args, Some(session_id))
+            .await
+        {
             Ok(Some(answer)) => answer,
             Ok(None) => {
                 warn!(

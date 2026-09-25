@@ -5,6 +5,7 @@ use crate::kiln_manager::KilnManager;
 use crate::session_manager::SessionManager;
 use crate::test_support::temp_session_manager;
 mod async_session;
+mod auto_title;
 mod create;
 mod delegate;
 mod lifecycle;

@@ -21,7 +21,7 @@ local M = {}
 --- to make editable: override it with
 --- `require("auto-title").setup{ prompt = "..." }` or `[plugins.auto-title]
 --- prompt = "..."`.
-M.SYSTEM_PROMPT = "You name conversations. Given the opening exchange of a "
+M.SYSTEM_PROMPT = "You name conversations. Given an exchange from a "
   .. "session, reply with a short descriptive title (3 to 7 words) capturing its topic. "
   .. "Reply with the title only - no quotes, no trailing punctuation, no explanations."
 
@@ -47,7 +47,7 @@ function M.clip(text, max)
   return text:sub(1, utf8.offset(text, max + 1) - 1)
 end
 
---- Render the opening exchange as the user turn of the title prompt.
+--- Render one exchange as the user turn of the title prompt.
 ---
 --- An absent or empty assistant reply is left out entirely, rather than
 --- appearing as an empty `Assistant:` line the model then tries to explain.

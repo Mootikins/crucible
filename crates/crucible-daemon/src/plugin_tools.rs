@@ -342,15 +342,36 @@ impl PluginRegistry {
         }
     }
 
-    /// Invoke a plugin command by name. `Ok(None)` means no such command.
+    /// Invoke a plugin command by name, from no session. `Ok(None)` means no
+    /// such command.
     pub async fn run_command(
         &self,
         name: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<Option<serde_json::Value>> {
+        self.run_command_in(name, args, None).await
+    }
+
+    /// Invoke a plugin command by name as `fn(args, ctx)`. `Ok(None)` means
+    /// no such command.
+    ///
+    /// `ctx.session_id` is `session`, and is absent when there is none. The
+    /// call also enters `session`, as a plugin tool enters the session of its
+    /// turn, so what the command registers is scoped to that session.
+    pub async fn run_command_in(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+        session: Option<&str>,
+    ) -> anyhow::Result<Option<serde_json::Value>> {
         let Some((plugin, lua, func)) = self.command_func(name)? else {
             return Ok(None);
         };
+        let _session = crucible_lua::enter_session(&lua, session);
+        let mut ctx = serde_json::Map::new();
+        if let Some(session) = session {
+            ctx.insert("session_id".to_string(), session.into());
+        }
         // Enter the owning plugin's context for the call, exactly as the
         // loader does around a plugin's body and the handler dispatcher does
         // around a handler. Without it a command runs under whatever context
@@ -364,7 +385,7 @@ impl PluginRegistry {
         // not a bit the caller narrows: what a command registers holds exactly
         // the grant the operator installed, as the plugin's own body does.
         let restore = crucible_lua::enter_plugin(&lua, &plugin);
-        let result = call_plugin_fn(&lua, &func, args).await;
+        let result = call_plugin_fn(&lua, &func, args, Some(ctx.into())).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
         crucible_lua::set_source(&lua, restore);
@@ -379,20 +400,27 @@ impl PluginRegistry {
 /// Absent args become an empty table. The docs promise `fn` a table, and a
 /// JSON null would cross as mlua's null light userdata, which is truthy: the
 /// idiom `args or {}` keeps it, and the first `args.x` raises.
+///
+/// `ctx` is the second argument, which a command gets and a tool does not.
 async fn call_plugin_fn(
     lua: &mlua::Lua,
     func: &mlua::Function,
     args: serde_json::Value,
+    ctx: Option<serde_json::Value>,
 ) -> anyhow::Result<serde_json::Value> {
     let args = if args.is_null() {
         serde_json::Value::Object(serde_json::Map::new())
     } else {
         args
     };
-    let lua_args =
-        json_to_lua(lua, args).map_err(|e| anyhow::anyhow!("argument conversion: {e}"))?;
+    let convert =
+        |value| json_to_lua(lua, value).map_err(|e| anyhow::anyhow!("argument conversion: {e}"));
+    let mut lua_args = vec![convert(args)?];
+    if let Some(ctx) = ctx {
+        lua_args.push(convert(ctx)?);
+    }
     let ret: mlua::Value = func
-        .call_async(lua_args)
+        .call_async(mlua::MultiValue::from_vec(lua_args))
         .await
         .map_err(|e| anyhow::anyhow!("{}", crucible_lua::format_lua_error(None, &e)))?;
     lua_to_json(lua, ret).map_err(|e| anyhow::anyhow!("result conversion: {e}"))
@@ -433,7 +461,7 @@ impl ToolExecutor for PluginToolExecutor {
         // plugin tool reached `cru.storage`'s wrong namespace and held the
         // operator's own authority rather than its plugin's.
         let restore = crucible_lua::enter_plugin(&lua, &plugin);
-        let result = call_plugin_fn(&lua, &func, params).await;
+        let result = call_plugin_fn(&lua, &func, params, None).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
         crucible_lua::set_source(&lua, restore);

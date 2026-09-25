@@ -118,7 +118,7 @@ and its pass stays off until its `opts` say so:
 
 | Plugin | What it adds |
 |--------|--------------|
-| `auto-title` | Names a session after its opening exchange |
+| `auto-title` | Names a session after its opening exchange; `/generate` names it again from its latest exchange |
 | `consolidation` | Periodic pass that proposes pattern notes; off until its `opts` say `enabled = true` |
 | `daily-notes` | `daily_create`, `daily_open`, `daily_list`, `/daily` |
 | `discord` | Discord gateway + REST integration |

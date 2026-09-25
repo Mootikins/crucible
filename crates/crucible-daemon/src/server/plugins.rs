@@ -422,6 +422,7 @@ pub(crate) async fn handle_plugin_run_command(
     };
     let name = params.name;
     let args = params.args;
+    let session = params.session_id;
 
     // Clone the registry Arc out of the guard: a command handler can call back
     // into daemon APIs, and holding the loader mutex across that awaits a lock
@@ -434,7 +435,10 @@ pub(crate) async fn handle_plugin_run_command(
         return internal_error(req.id, "Plugin loader not initialized");
     };
 
-    match registry.run_command(&name, args).await {
+    match registry
+        .run_command_in(&name, args, session.as_deref())
+        .await
+    {
         Ok(Some(result)) => Response::success(
             req.id,
             serde_json::json!({ "name": name, "result": result }),

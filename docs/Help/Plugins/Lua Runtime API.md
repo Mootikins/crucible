@@ -1361,7 +1361,9 @@ Some keys the daemon itself reads:
 name, so publishing the same key replaces it. The command is called with
 `{ session_id, user, assistant }` and answers `{ title = "…" }` (or a bare
 string). Raising, or answering with a blank title, leaves the daemon's
-truncation fallback in place.
+truncation fallback in place. Name the command by its full name
+(`auto-title:generate`), so that a command of the same bare name in another
+plugin cannot take the call.
 
 ## Options
 
@@ -1434,6 +1436,8 @@ return {
 ```
 
 A tool's `fn` receives one table of arguments and returns any JSON-representable value. `params` becomes the JSON Schema the model sees; a param is required unless marked `optional = true`.
+
+A command's `fn` is called as `fn(args, ctx)`. `args` is always a table: it is empty when the caller sends no arguments, and `/name some text` in the TUI sends `{ input = "some text" }`. `ctx.session_id` is the session the user ran the command from. It is absent when the caller names no session, as for a command that the web Plugin Blocks panel runs. The call enters that session, so what the command registers is scoped to it.
 
 Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_command`. `plugin.run_command` is client-initiated (a user typing `/name`), so it does not pass the model-facing permission gate — anything with socket access can invoke any plugin command; treat commands as user-facing entry points, not as a place to hide privileged operations behind. The TUI consumes both: a plugin command appears in slash autocomplete (tagged `(plugin)`) and `/name args` invokes it, with the result shown as a system message. A full `/plugin:name` always works; a bare `/name` works while unique. When plugins share a command name, both full names are listed and the bare name returns an error naming them. Built-in slashes always dispatch first — a plugin cannot shadow `/plan` or `/help`. The web client lists commands in the Plugin Blocks panel and **generates** an argument dialog from `params`, so a command that declares types gets a form and one that declares only a `hint` gets an empty one.
 

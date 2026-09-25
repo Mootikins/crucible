@@ -1020,10 +1020,16 @@ impl OilChatRunner {
                         } else {
                             serde_json::json!({ "input": args })
                         };
+                        // The command learns the session it runs from, so a
+                        // command that acts on "this session" needs no id.
+                        let session_id = params.agent.session_id().map(str::to_string);
                         let tx = params.msg_tx.clone();
                         params.background_tasks.push(tokio::spawn(async move {
                             match crucible_daemon::DaemonClient::connect().await {
-                                Ok(client) => match client.plugin_run_command(&name, args).await {
+                                Ok(client) => match client
+                                    .plugin_run_command_in(&name, args, session_id.as_deref())
+                                    .await
+                                {
                                     Ok(result) => {
                                         let rendered = match result.get("result") {
                                             Some(serde_json::Value::String(s)) => s.clone(),

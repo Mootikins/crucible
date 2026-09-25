@@ -36,8 +36,13 @@ local title = require("auto_title")
 --- contract.
 local CHANNEL = "session_title"
 
---- The command the publication names, and the one the spec declares.
-local COMMAND = "auto-title.generate"
+--- The command the spec declares. A user runs it as `/generate`, or as
+--- `/auto-title:generate` when another plugin also declares `generate`.
+local COMMAND = "generate"
+
+--- The command the publication names. The full name, so that the daemon
+--- finds this command even when another plugin declares a `generate`.
+local QUALIFIED = "auto-title:" .. COMMAND
 
 --- What `[plugins.auto-title]` may set. Declared, rather than inferred from
 --- an empty table: under `--!strict` an empty initializer types `config` as a
@@ -58,27 +63,81 @@ local config: Config = {}
 --- Raises rather than returning a fallback: the daemon owns the fallback (it
 --- truncates the first user message), and a plugin inventing a second one
 --- would make which of the two you got depend on where the failure happened.
-local function generate(options: { [string]: any }?)
+local function title_for(session_id: string, user: string, assistant: string?): string
+  local answer, err = cru.session.complete(session_id, {
+    system = config.prompt or title.SYSTEM_PROMPT,
+    prompt = title.exchange(user, assistant, config.clip or title.CLIP),
+    timeout = config.timeout,
+  })
+  if err or not answer then
+    error("auto-title: " .. tostring(err or "the model answered with nothing"), 0)
+  end
+  return title.sanitize(answer)
+end
+
+--- The latest user message of a session, and the last assistant reply after it.
+---
+--- The last reply, not the first: a turn that calls tools writes an assistant
+--- row before each call, and the last row is the answer. A message that a
+--- plugin injected comes back with the role `system`, so it is not a user turn.
+local function last_exchange(session_id: string): (string?, string?)
+  local rows, err = cru.session.messages(session_id)
+  if not rows then
+    error("auto-title: cannot read session " .. session_id .. ": " .. tostring(err), 0)
+  end
+  local user: string?, assistant: string? = nil, nil
+  for _, row in rows do
+    if row.role == "user" then
+      user, assistant = row.content, nil
+    elseif row.role == "assistant" and user then
+      assistant = row.content
+    end
+  end
+  return user, assistant
+end
+
+--- The command. It has two callers.
+---
+--- The daemon titles a session after its first turn. It sends the opening
+--- exchange as `{ session_id, user, assistant }`, and it persists the title
+--- that comes back.
+---
+--- A user runs `/generate` in a session. The client sends no exchange, so the
+--- command titles the session from its latest exchange, and it sets the title
+--- itself. The latest exchange, because a user who asks for a new title
+--- usually does so when the topic of the session moved.
+local function generate(options: { [string]: any }?, ctx: { [string]: any }?): any
   -- Annotate the LOCAL, not the expression. `options or {}` widens to
   -- `T | {}`, and reading a field off that union fails against the empty
   -- half — which is why the whole `args = args or {}` idiom reads as a
   -- defect under a typechecker while being perfectly correct Lua.
   local args: { [string]: any } = options or {}
-  local user = args.user
-  if type(user) ~= "string" or user == "" then
-    error("auto-title: no user message to derive a title from")
+  if args.user ~= nil then
+    local user = args.user
+    if type(user) ~= "string" or user == "" then
+      error("auto-title: no user message to derive a title from", 0)
+    end
+    return { title = title_for(args.session_id, user, args.assistant) }
   end
 
-  local answer, err = cru.session.complete(args.session_id, {
-    system = config.prompt or title.SYSTEM_PROMPT,
-    prompt = title.exchange(user, args.assistant, config.clip or title.CLIP),
-    timeout = config.timeout,
-  })
-  if err or not answer then
-    error("auto-title: " .. tostring(err or "the model answered with nothing"))
+  local context: { [string]: any } = ctx or {}
+  local session_id = args.session_id or context.session_id
+  if type(session_id) ~= "string" or session_id == "" then
+    error("auto-title: no session to title; run /generate in a chat session", 0)
   end
-
-  return { title = title.sanitize(answer) }
+  local user, assistant = last_exchange(session_id)
+  if not user or user == "" then
+    error("auto-title: session " .. session_id .. " has no user message to title", 0)
+  end
+  local new_title = title_for(session_id, user, assistant)
+  if new_title == "" then
+    error("auto-title: the model answered with a blank title", 0)
+  end
+  local ok, err = cru.session.set_title(session_id, new_title)
+  if not ok then
+    error("auto-title: cannot set the title: " .. tostring(err), 0)
+  end
+  return "Session titled: " .. new_title
 end
 
 -- Declares the provider, not the title. The plugin publishes the command
@@ -95,13 +154,13 @@ local published = false
 local function publish_provider()
   if published then return end
   published = true
-  cru.plugin.publish(CHANNEL, { command = COMMAND })
+  cru.plugin.publish(CHANNEL, { command = QUALIFIED })
 end
 
 local plugin = {
   commands = {
     [COMMAND] = {
-      desc = "Generate a topic title for a session's opening exchange",
+      desc = "Title this session from its latest exchange",
       fn = generate,
     },
   },

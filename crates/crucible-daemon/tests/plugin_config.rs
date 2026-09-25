@@ -822,7 +822,7 @@ cru.session.complete = function(session_id, opts)
 end
 "#;
 
-/// Run `auto-title.generate` the way the daemon does — through the command
+/// Run `auto-title:generate` the way the daemon does — through the command
 /// handle the loader captured at load — and answer with the recorded options.
 async fn generate_title(
     loader: &crucible_daemon::daemon_plugins::DaemonPluginLoader,
@@ -832,7 +832,7 @@ async fn generate_title(
     let result = loader
         .plugin_registry()
         .run_command(
-            "auto-title.generate",
+            "auto-title:generate",
             serde_json::json!({ "session_id": "chat-1", "user": user }),
         )
         .await

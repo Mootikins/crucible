@@ -1120,17 +1120,29 @@ impl DaemonClient {
     }
 
     /// Invoke a plugin command. `args` is passed to the command's Lua `fn` as
-    /// its single table argument.
+    /// its first argument, a table.
     pub async fn plugin_run_command(
         &self,
         name: &str,
         args: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        self.plugin_run_command_in(name, args, None).await
+    }
+
+    /// Invoke a plugin command from a session. The command reads `session`
+    /// as `ctx.session_id`, its second argument.
+    pub async fn plugin_run_command_in(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+        session: Option<&str>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "plugin.run_command",
             plugin_requests::PluginRunCommandRequest {
                 name: name.to_string(),
                 args,
+                session_id: session.map(str::to_string),
             },
         )
         .await
