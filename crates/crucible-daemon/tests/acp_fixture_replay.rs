@@ -806,7 +806,7 @@ async fn boot(init_lua: &str) -> (crucible_core::config::AcpConfig, Option<Strin
         None,
         None,
         no_plugins,
-        vec![runtime],
+        crucible_daemon::runtime_defaults::shipped_roots(&[runtime]),
     )
     .await
     .expect("the boot evaluates");

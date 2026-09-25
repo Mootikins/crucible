@@ -40,6 +40,13 @@ pub struct Sources<T> {
     list: Vec<Source<T>>,
 }
 
+impl<T> Default for Sources<T> {
+    /// No sources.
+    fn default() -> Self {
+        Self { list: Vec::new() }
+    }
+}
+
 impl<T> Sources<T> {
     /// The sources, highest first. An [`Entry::source`] indexes this slice.
     pub fn list(&self) -> &[Source<T>] {

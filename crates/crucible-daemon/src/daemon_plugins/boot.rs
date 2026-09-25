@@ -194,15 +194,15 @@ pub async fn evaluate_boot_config(
 /// [`evaluate_boot_config`] with the plugin-path resolution and the runtime
 /// roots injected as values — the hermetic door for tests.
 ///
-/// `runtime_roots` are where the shipped defaults file is found, after the
-/// runtimepath entries. Production gives
+/// `runtime_roots` are where the shipped defaults file is found, beside the
+/// runtimepath entries by priority. Production gives
 /// [`crate::runtime_defaults::machine_runtime_roots`].
 pub async fn evaluate_boot_config_with_paths(
     config_file: Option<PathBuf>,
     embedding_url: Option<String>,
     embedding_model: Option<String>,
     plugin_paths: PluginPathsFn,
-    runtime_roots: Vec<PathBuf>,
+    runtime_roots: Vec<crucible_core::runtime_path::RuntimeEntry>,
 ) -> anyhow::Result<BootConfig> {
     // Step 1: the config root — the DIRECTORY the named file sits in, which
     // is where `init.lua` and `settings.json` are read from.
@@ -489,7 +489,11 @@ fn load_settings_layer(config_root: &Path) {
 /// once before `init.lua`, and again on the fresh VM the rollback builds when
 /// `init.lua` fails — because this file is the only definition of the default
 /// prompt, the shipped modes and the plan-mode deny hook.
-fn load_shipped_defaults(lua: &Lua, runtimepath: &[PathBuf], roots: &[PathBuf]) {
+fn load_shipped_defaults(
+    lua: &Lua,
+    runtimepath: &[PathBuf],
+    roots: &[crucible_core::runtime_path::RuntimeEntry],
+) {
     let (src, origin) = crate::runtime_defaults::load_defaults(runtimepath, roots);
     debug!(source = %origin, "Loading Lua defaults");
     // This file ships with the daemon, so its registrations are the host's

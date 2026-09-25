@@ -27,14 +27,14 @@ pub fn sid(id: &str) -> crucible_core::session::SessionId {
 /// A test binary runs from `target/debug/deps`, so the exe-relative roots do
 /// not exist, and the machine roots fall through to an installed tree of
 /// another build. A test gives these roots to the boot instead.
-pub fn repo_runtime_roots() -> Vec<std::path::PathBuf> {
+pub fn repo_runtime_roots() -> Vec<crucible_core::runtime_path::RuntimeEntry> {
     let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime"));
     assert!(
         root.join("defaults").join("init.luau").is_file(),
         "the repository runtime tree must hold the shipped defaults: {}",
         root.display()
     );
-    vec![root]
+    crate::runtime_defaults::shipped_roots(&[root])
 }
 
 /// Canonical mock implementation of `KnowledgeRepository` for tests.
