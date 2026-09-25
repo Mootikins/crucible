@@ -14,13 +14,11 @@ use crate::protocol::SessionEventMessage;
 use crucible_core::protocol::session_events::SystemPayload;
 use crucible_core::session::PluginApproval;
 use crucible_core::status_color::StatusColorGroup;
-use crucible_core::types::{StatusDisplayItem, StatusItemKind};
+use crucible_core::types::{
+    StatusDisplayItem, StatusItemKind, PLUGIN_APPROVAL_ACTION, PLUGIN_TURNS_ID_PREFIX,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use tokio::sync::broadcast;
-
-/// The engine method that the plugin-turn item opens: the menu of plugins
-/// with their three approval values.
-pub(crate) const PLUGIN_APPROVAL_ACTION: &str = "plugin_approval";
 
 /// The engine items of one session. One item for each plugin whose
 /// approval is not `inherit` or whose turn runs now. Each item is pinned:
@@ -57,7 +55,7 @@ pub(crate) fn plugin_turn_items(
                 text.push_str(approval.as_str());
             }
             StatusDisplayItem {
-                id: format!("plugin_turns:{plugin}"),
+                id: format!("{PLUGIN_TURNS_ID_PREFIX}{plugin}"),
                 text,
                 priority: 0,
                 color_group: group,

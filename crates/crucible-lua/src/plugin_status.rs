@@ -10,9 +10,11 @@
 //! knowing what plugins exist.
 
 use crucible_core::status_color::{plugin_hue, StatusColorGroup};
-use crucible_core::types::{StatusDisplayItem, StatusProgress};
+use crucible_core::types::{
+    StatusDisplayItem, StatusProgress, PLUGIN_APPROVAL_ACTION, PLUGIN_TURNS_ID_PREFIX,
+};
 use mlua::{Lua, Table};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 /// One status slot.
@@ -52,15 +54,20 @@ impl StatusEntry {
     }
 }
 
-/// Status slots per session, keyed within a session.
+/// Status items per session, one list for each author, keyed within it.
 ///
-/// Written by the plugin Lua runtime, read by the RPC layer for TUI and web.
-/// Same shape as the handler and isolation registries.
+/// The author is the Lua source that runs the call: a plugin's name, or
+/// `init.lua`, `builtin` or `lua.eval`. A plugin names no author itself, so
+/// it can neither write into another plugin's list nor erase it. Written by
+/// the plugin Lua runtime, read by the RPC layer for TUI and web.
 #[derive(Debug, Clone, Default)]
 pub struct StatusRegistry {
-    entries: Arc<Mutex<HashMap<String, HashMap<String, StatusEntry>>>>,
+    entries: Arc<Mutex<HashMap<String, SessionLists>>>,
     on_change: crate::host_hook::HostHook<crate::statusline_exprs::ChangeNotifier>,
 }
+
+/// The lists of one session: author, then item key.
+type SessionLists = BTreeMap<String, BTreeMap<String, StatusEntry>>;
 
 impl StatusRegistry {
     pub fn new() -> Self {
@@ -78,63 +85,72 @@ impl StatusRegistry {
         }
     }
 
-    pub fn set(&self, session_id: &str, key: &str, entry: StatusEntry) {
-        let changed = if let Ok(mut g) = self.entries.lock() {
-            g.entry(session_id.to_string())
+    /// Change the lists of `session_id`, and notify when `change` says it
+    /// changed something. The lock is free before the notifier runs, because
+    /// the notifier reads the lists.
+    fn change(&self, session_id: &str, change: impl FnOnce(&mut SessionLists) -> bool) {
+        let changed = match self.entries.lock() {
+            Ok(mut g) => change(g.entry(session_id.to_string()).or_default()),
+            Err(_) => false,
+        };
+        if changed {
+            self.notify(session_id);
+        }
+    }
+
+    /// Set one item of `author`'s list.
+    pub fn set(&self, session_id: &str, author: &str, key: &str, entry: StatusEntry) {
+        self.change(session_id, |lists| {
+            lists
+                .entry(author.to_string())
                 .or_default()
                 .insert(key.to_string(), entry.clone())
                 != Some(entry)
-        } else {
-            false
-        };
-        if changed {
-            self.notify(session_id);
-        }
+        });
     }
 
-    /// Replace one session's complete authored list atomically.
-    pub fn publish(&self, session_id: &str, items: Vec<(String, StatusEntry)>) {
-        let changed = if let Ok(mut g) = self.entries.lock() {
-            let replacement: HashMap<_, _> = items.into_iter().collect();
-            g.insert(session_id.to_string(), replacement.clone()) != Some(replacement)
-        } else {
-            false
-        };
-        if changed {
-            self.notify(session_id);
-        }
-    }
-
-    /// Remove one slot. Setting empty text is *not* the same as clearing —
-    /// a plugin that wants the slot gone should say so.
-    pub fn clear(&self, session_id: &str, key: &str) {
-        let removed = if let Ok(mut g) = self.entries.lock() {
-            if let Some(session) = g.get_mut(session_id) {
-                session.remove(key).is_some()
+    /// Replace `author`'s whole list in one step. The lists of other authors
+    /// stay as they are.
+    pub fn publish(&self, session_id: &str, author: &str, items: Vec<(String, StatusEntry)>) {
+        self.change(session_id, |lists| {
+            let replacement: BTreeMap<_, _> = items.into_iter().collect();
+            let previous = if replacement.is_empty() {
+                lists.remove(author)
             } else {
-                false
-            }
-        } else {
-            false
-        };
-        if removed {
-            self.notify(session_id);
-        }
+                lists.insert(author.to_string(), replacement.clone())
+            };
+            previous.unwrap_or_default() != replacement
+        });
     }
 
-    /// Every slot for a session, sorted by priority and key so the render order is stable
-    /// rather than hash order — a status bar that reshuffles on every update
-    /// is worse than no status bar.
+    /// Remove one item of `author`'s list. Setting empty text is *not* the
+    /// same as clearing — a plugin that wants the slot gone should say so.
+    pub fn clear(&self, session_id: &str, author: &str, key: &str) {
+        self.change(session_id, |lists| {
+            lists
+                .get_mut(author)
+                .is_some_and(|list| list.remove(key).is_some())
+        });
+    }
+
+    /// Every item of a session, as `(id, entry)`. The id is `author/key`,
+    /// so two authors that use one key stay two items. Sorted by priority
+    /// and id so the render order is stable rather than hash order — a
+    /// status bar that reshuffles on every update is worse than no status
+    /// bar.
     pub fn get(&self, session_id: &str) -> Vec<(String, StatusEntry)> {
         let Ok(g) = self.entries.lock() else {
             return Vec::new();
         };
-        let Some(session) = g.get(session_id) else {
+        let Some(lists) = g.get(session_id) else {
             return Vec::new();
         };
-        let mut out: Vec<_> = session
+        let mut out: Vec<_> = lists
             .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .flat_map(|(author, list)| {
+                list.iter()
+                    .map(move |(key, entry)| (format!("{author}/{key}"), entry.clone()))
+            })
             .collect();
         out.sort_by(|a, b| a.1.priority.cmp(&b.1.priority).then_with(|| a.0.cmp(&b.0)));
         out
@@ -147,6 +163,22 @@ impl StatusRegistry {
             .collect()
     }
 
+    /// Drop every list of `author` in every session, and notify each session
+    /// that lost items. Called when a plugin goes inert: an item that
+    /// outlives its plugin stays painted in every attached client.
+    pub fn release_plugin(&self, author: &str) {
+        let sessions: Vec<String> = match self.entries.lock() {
+            Ok(mut g) => g
+                .iter_mut()
+                .filter_map(|(session, lists)| lists.remove(author).map(|_| session.clone()))
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        for session in sessions {
+            self.notify(&session);
+        }
+    }
+
     /// Drop a session's slots. Called at session end so a finished session's
     /// status can't be shown against a live one.
     pub fn release(&self, session_id: &str) {
@@ -154,6 +186,26 @@ impl StatusRegistry {
             g.remove(session_id);
         }
     }
+}
+
+/// The author of a status call: the Lua source that runs it.
+fn author(lua: &Lua) -> String {
+    crate::plugin_context::current_source(lua).to_string()
+}
+
+/// Refuse a key or an action that belongs to the engine's plugin-turn items.
+fn refuse_engine_names(function: &str, key: &str, action: Option<&str>) -> mlua::Result<()> {
+    if key.starts_with(PLUGIN_TURNS_ID_PREFIX) {
+        return Err(mlua::Error::runtime(format!(
+            "{function}: the id prefix `{PLUGIN_TURNS_ID_PREFIX}` is reserved for the engine"
+        )));
+    }
+    if action == Some(PLUGIN_APPROVAL_ACTION) {
+        return Err(mlua::Error::runtime(format!(
+            "{function}: the action `{PLUGIN_APPROVAL_ACTION}` is reserved for the engine"
+        )));
+    }
+    Ok(())
 }
 
 /// Register `cru.plugin.set_status` / `cru.plugin.clear_status`.
@@ -176,15 +228,16 @@ pub fn register_status_module(
     let mut ns = crate::host_registry::Ns::over(lua, "cru.plugin", plugin);
 
     // One options TABLE, not a string: `session`, `key` and `text` are
-    // required — the closure raises a named error for each — while `plugin`,
-    // `level`, `color` and `progress` have defaults. `progress` is `true` for
+    // required — the closure raises a named error for each — while `level`,
+    // `color` and `progress` have defaults. The running source is the
+    // author; the table cannot name one. `progress` is `true` for
     // indeterminate or a fraction, so it is neither boolean nor number alone.
     let set_registry = registry.clone();
     ns.func(
         "set_status",
-        "(status: { session: string, key: string, text: string, plugin: string?, \
+        "(status: { session: string, key: string, text: string, \
          level: string?, color: string?, progress: (boolean | number)? }) -> ()",
-        move |_, opts: Table| {
+        move |lua, opts: Table| {
             let session: String = opts.get("session").map_err(|_| {
                 mlua::Error::runtime(
                     "cru.plugin.set_status: `session` is required (use session.id)",
@@ -196,7 +249,8 @@ pub fn register_status_module(
             let text: String = opts
                 .get("text")
                 .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `text` is required"))?;
-            let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
+            refuse_engine_names("cru.plugin.set_status", &key, None)?;
+            let plugin = author(lua);
             let level: String = opts.get("level").unwrap_or_else(|_| "info".to_string());
             let color_group = match opts.get::<String>("color") {
                 Ok(name) => StatusColorGroup::from_name(&name),
@@ -221,6 +275,7 @@ pub fn register_status_module(
 
             set_registry.set(
                 &session,
+                &plugin.clone(),
                 &key,
                 StatusEntry {
                     plugin,
@@ -243,14 +298,14 @@ pub fn register_status_module(
     ns.func(
         "clear_status",
         "(slot: { session: string, key: string }) -> ()",
-        move |_, opts: Table| {
+        move |lua, opts: Table| {
             let session: String = opts.get("session").map_err(|_| {
                 mlua::Error::runtime("cru.plugin.clear_status: `session` is required")
             })?;
             let key: String = opts
                 .get("key")
                 .map_err(|_| mlua::Error::runtime("cru.plugin.clear_status: `key` is required"))?;
-            clear_registry.clear(&session, &key);
+            clear_registry.clear(&session, &author(lua), &key);
             Ok(())
         },
     )?;
@@ -262,13 +317,14 @@ pub fn register_status_module(
     let mut sl = crate::host_registry::Ns::over(lua, "cru.statusline", statusline);
     sl.func(
         "item",
-        "(item: { id: string, text: string, priority: number?, color: string?, action: string?, pinned: boolean?, plugin: string? }) -> any",
+        "(item: { id: string, text: string, priority: number?, color: string?, action: string?, pinned: boolean? }) -> any",
         |_, item: Table| Ok(item),
     )?;
     sl.func(
         "publish",
         "(session: string, items: any) -> ()",
-        move |_, (session, items): (String, Table)| {
+        move |lua, (session, items): (String, Table)| {
+            let plugin = author(lua);
             let mut published = Vec::new();
             let mut seen = std::collections::HashSet::new();
             for value in items.sequence_values::<Table>() {
@@ -288,13 +344,13 @@ pub fn register_status_module(
                     .chars()
                     .take(50)
                     .collect();
-                let plugin: String = item.get("plugin").unwrap_or_else(|_| "unknown".into());
                 let color_group = item
                     .get::<String>("color")
                     .map(|name| StatusColorGroup::from_name(&name))
                     .unwrap_or_else(|_| plugin_hue(&plugin));
                 let priority = item.get::<i64>("priority").unwrap_or(128).clamp(0, 255) as u8;
                 let action: Option<String> = item.get("action").ok();
+                refuse_engine_names("cru.statusline.publish", &id, action.as_deref())?;
                 // Lua decides `pinned` for its own items. The engine pins the
                 // plugin-turn items (`ask`, `stop`, a running turn) itself,
                 // from the approval knob; an action name here says nothing
@@ -303,7 +359,7 @@ pub fn register_status_module(
                 published.push((
                     id,
                     StatusEntry {
-                        plugin,
+                        plugin: plugin.clone(),
                         text,
                         color_group,
                         priority,
@@ -313,7 +369,7 @@ pub fn register_status_module(
                     },
                 ));
             }
-            publish_registry.publish(&session, published);
+            publish_registry.publish(&session, &plugin, published);
             Ok(())
         },
     )?;
@@ -326,16 +382,88 @@ mod tests {
     use super::*;
     use crucible_core::status_color::{plugin_hue, StatusColorGroup};
 
+    /// Publish `text` as the one item of `plugin`, with the context that the
+    /// loader enters when that plugin's code runs.
+    fn publish_as(lua: &Lua, plugin: &str, item: &str) -> mlua::Result<()> {
+        let previous = crate::plugin_context::enter_plugin(lua, plugin);
+        let result = lua
+            .load(format!(
+                r#"cru.statusline.publish("s1", {{ cru.statusline.item{item} }})"#
+            ))
+            .exec();
+        crate::plugin_context::set_source(lua, previous);
+        result
+    }
+
+    /// Two plugins publish in one session. A publish replaces only the list
+    /// of the plugin that runs, and the item names that plugin, not the
+    /// `plugin` field that the item declares.
+    #[test]
+    fn a_publish_replaces_only_the_list_of_the_running_plugin() {
+        let reg = StatusRegistry::new();
+        let lua = lua_with_status(reg.clone());
+        publish_as(
+            &lua,
+            "sync",
+            r#"{ id = "state", text = "sync idle", plugin = "forged" }"#,
+        )
+        .unwrap();
+        publish_as(&lua, "index", r#"{ id = "state", text = "index ready" }"#).unwrap();
+        publish_as(&lua, "sync", r#"{ id = "state", text = "sync busy" }"#).unwrap();
+
+        let mut seen: Vec<_> = reg
+            .display_items("s1")
+            .into_iter()
+            .map(|item| (item.plugin, item.text))
+            .collect();
+        seen.sort();
+        assert_eq!(
+            seen,
+            [
+                ("index".to_string(), "index ready".to_string()),
+                ("sync".to_string(), "sync busy".to_string()),
+            ]
+        );
+    }
+
+    /// The engine's plugin-turn item is the engine's. A plugin cannot
+    /// publish its id prefix or its action, so no plugin item can copy an
+    /// `ask` or a `stop` that the knob does not hold.
+    #[test]
+    fn a_plugin_cannot_publish_the_engine_item() {
+        let reg = StatusRegistry::new();
+        let lua = lua_with_status(reg.clone());
+        for item in [
+            r#"{ id = "plugin_turns:goal", text = "goal · ask" }"#,
+            r#"{ id = "ask", text = "goal · ask", action = "plugin_approval", pinned = true }"#,
+        ] {
+            let error = publish_as(&lua, "goal", item).expect_err(item).to_string();
+            assert!(error.contains("reserved for the engine"), "{error}");
+        }
+        assert!(reg.display_items("s1").is_empty());
+        let key = lua
+            .load(
+                r#"cru.plugin.set_status{ session = "s1", key = "plugin_turns:goal", text = "x" }"#,
+            )
+            .exec()
+            .expect_err("the prefix is reserved in set_status too")
+            .to_string();
+        assert!(key.contains("reserved for the engine"), "{key}");
+    }
+
     #[test]
     fn plugin_status_uses_named_color_groups() {
         let reg = StatusRegistry::new();
         let lua = lua_with_status(reg.clone());
-        lua.load(
-            r#"cru.plugin.set_status{ session="s1", key="a", plugin="goal", text="running" }"#,
-        )
-        .exec()
-        .unwrap();
-        assert_eq!(reg.get("s1")[0].1.color_group, plugin_hue("goal"));
+        let previous = crate::plugin_context::enter_plugin(&lua, "goal");
+        lua.load(r#"cru.plugin.set_status{ session="s1", key="a", text="running" }"#)
+            .exec()
+            .unwrap();
+        assert_eq!(
+            reg.get("s1")[0].1.color_group,
+            plugin_hue("goal"),
+            "the hue of the running plugin"
+        );
         lua.load(r#"cru.plugin.set_status{ session="s1", key="a", plugin="goal", text="running", color="warn" }"#)
             .exec()
             .unwrap();
@@ -344,6 +472,7 @@ mod tests {
             .exec()
             .unwrap();
         assert_eq!(reg.get("s1")[0].1.color_group, StatusColorGroup::Info);
+        crate::plugin_context::set_source(&lua, previous);
     }
 
     #[test]
@@ -355,8 +484,8 @@ mod tests {
             local sl = cru.statusline
             sl.publish("s1", {
               sl.item{ id="later", text="later", priority=40, plugin="weather" },
-              sl.item{ id="approval", text="goal · ask", priority=20,
-                       color="warn", action="plugin_approval", pinned=false },
+              sl.item{ id="approval", text="goal · asks", priority=20,
+                       color="warn", action="open_goal", pinned=false },
               sl.item{ id="pin", text="pinned", priority=30, pinned=true },
               sl.item{ id="first", text="first", priority=10, color="hue-3" },
             })
@@ -367,22 +496,28 @@ mod tests {
         let items = reg.get("s1");
         assert_eq!(
             items.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
-            ["first", "approval", "pin", "later"]
+            [
+                "init.lua/first",
+                "init.lua/approval",
+                "init.lua/pin",
+                "init.lua/later"
+            ]
         );
         assert_eq!(items[0].1.priority, 10);
         assert_eq!(items[0].1.color_group, StatusColorGroup::Hue3);
-        assert!(
-            !items[1].1.pinned,
-            "an action name does not pin: the engine owns the approval state"
-        );
+        assert!(!items[1].1.pinned, "an action name does not pin");
         assert!(items[2].1.pinned);
-        assert_eq!(items[1].1.action.as_deref(), Some("plugin_approval"));
+        assert_eq!(items[1].1.action.as_deref(), Some("open_goal"));
         lua.load(
             r#"cru.statusline.publish("s1", { cru.statusline.item{ id="new", text="new" } })"#,
         )
         .exec()
         .unwrap();
-        assert_eq!(reg.get("s1").len(), 1, "publish replaces the whole list");
+        assert_eq!(
+            reg.get("s1").len(),
+            1,
+            "publish replaces the author's whole list"
+        );
         assert!(reg.get("other").is_empty());
     }
 
@@ -398,8 +533,8 @@ mod tests {
                 .unwrap()
                 .push((session.to_owned(), reader.get(session).len()));
         })));
-        reg.publish("s1", vec![("one".into(), entry("one"))]);
-        reg.clear("s1", "one");
+        reg.publish("s1", "oci", vec![("one".into(), entry("one"))]);
+        reg.clear("s1", "oci", "one");
         assert_eq!(*seen.lock().unwrap(), [("s1".into(), 1), ("s1".into(), 0)]);
     }
 
@@ -487,7 +622,7 @@ mod tests {
     #[test]
     fn slots_are_scoped_to_their_session() {
         let reg = StatusRegistry::new();
-        reg.set("s1", "oci", entry("sandboxed"));
+        reg.set("s1", "oci", "oci", entry("sandboxed"));
         assert_eq!(reg.get("s1").len(), 1);
         assert!(
             reg.get("s2").is_empty(),
@@ -498,8 +633,8 @@ mod tests {
     #[test]
     fn setting_the_same_key_replaces_rather_than_appends() {
         let reg = StatusRegistry::new();
-        reg.set("s1", "oci", entry("starting"));
-        reg.set("s1", "oci", entry("sandboxed"));
+        reg.set("s1", "oci", "oci", entry("starting"));
+        reg.set("s1", "oci", "oci", entry("sandboxed"));
         let slots = reg.get("s1");
         assert_eq!(slots.len(), 1, "a key is a slot, not a log");
         assert_eq!(slots[0].1.text, "sandboxed");
@@ -508,13 +643,13 @@ mod tests {
     #[test]
     fn slots_render_in_stable_key_order() {
         let reg = StatusRegistry::new();
-        reg.set("s1", "zebra", entry("z"));
-        reg.set("s1", "alpha", entry("a"));
-        reg.set("s1", "middle", entry("m"));
+        reg.set("s1", "oci", "zebra", entry("z"));
+        reg.set("s1", "oci", "alpha", entry("a"));
+        reg.set("s1", "oci", "middle", entry("m"));
         let keys: Vec<_> = reg.get("s1").into_iter().map(|(k, _)| k).collect();
         assert_eq!(
             keys,
-            vec!["alpha", "middle", "zebra"],
+            vec!["oci/alpha", "oci/middle", "oci/zebra"],
             "unstable order makes a status bar reshuffle on every update"
         );
     }
@@ -522,17 +657,41 @@ mod tests {
     #[test]
     fn clearing_removes_only_the_named_slot() {
         let reg = StatusRegistry::new();
-        reg.set("s1", "oci", entry("sandboxed"));
-        reg.set("s1", "other", entry("something"));
-        reg.clear("s1", "oci");
+        reg.set("s1", "oci", "oci", entry("sandboxed"));
+        reg.set("s1", "oci", "other", entry("something"));
+        reg.clear("s1", "oci", "oci");
         let keys: Vec<_> = reg.get("s1").into_iter().map(|(k, _)| k).collect();
-        assert_eq!(keys, vec!["other"]);
+        assert_eq!(keys, vec!["oci/other"]);
+    }
+
+    /// A plugin that goes inert takes its items with it, in each session,
+    /// and each of those sessions hears of it. Other plugins keep theirs.
+    #[test]
+    fn releasing_a_plugin_drops_its_lists_and_notifies() {
+        let reg = StatusRegistry::new();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let notices = seen.clone();
+        assert!(reg.set_change_notifier(std::sync::Arc::new(move |session| {
+            notices.lock().unwrap().push(session.to_owned());
+        })));
+        reg.set("s1", "oci", "oci", entry("sandboxed"));
+        reg.set("s2", "oci", "oci", entry("sandboxed"));
+        reg.set("s1", "sync", "state", entry("idle"));
+        seen.lock().unwrap().clear();
+
+        reg.release_plugin("oci");
+        let mut notified = seen.lock().unwrap().clone();
+        notified.sort();
+        assert_eq!(notified, ["s1", "s2"]);
+        let left: Vec<_> = reg.get("s1").into_iter().map(|(id, _)| id).collect();
+        assert_eq!(left, ["sync/state"]);
+        assert!(reg.get("s2").is_empty());
     }
 
     #[test]
     fn releasing_a_session_drops_its_slots() {
         let reg = StatusRegistry::new();
-        reg.set("s1", "oci", entry("sandboxed"));
+        reg.set("s1", "oci", "oci", entry("sandboxed"));
         reg.release("s1");
         assert!(
             reg.get("s1").is_empty(),

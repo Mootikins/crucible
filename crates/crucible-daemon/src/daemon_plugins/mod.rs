@@ -1074,8 +1074,9 @@ impl DaemonPluginLoader {
     /// them — the loader mutex is what makes the Active-but-inert window
     /// unobservable.
     ///
-    /// `IsolationRegistry` and `StatusRegistry` are session-keyed, not
-    /// plugin-keyed, so no plugin-scoped release exists for them or is needed.
+    /// `IsolationRegistry` is session-keyed, not plugin-keyed, so no
+    /// plugin-scoped release exists for it or is needed. `StatusRegistry`
+    /// keeps one list for each plugin, and an inert plugin's list goes.
     /// `StatuslineExprRegistry` is session-keyed TOO and still needs one: it
     /// records the source of each value, so the plugin's are nameable, and a
     /// value left in it stays painted in every attached client. Being keyed by
@@ -1113,6 +1114,7 @@ impl DaemonPluginLoader {
         );
         self.publications.release_plugin(name);
         self.surfaces.release_plugin(name);
+        self.status.release_plugin(name);
         self.options.release_plugin(name);
         // Its statusline values, in every session that has one. `clear_source`
         // above stops the next push; this stops the last one from staying

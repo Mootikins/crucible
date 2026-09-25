@@ -1,6 +1,14 @@
 use crate::status_color::StatusColorGroup;
 use serde::{Deserialize, Serialize};
 
+/// The engine method that opens the menu of plugin approvals. Only the
+/// engine's plugin-turn items carry it; a plugin cannot publish it.
+pub const PLUGIN_APPROVAL_ACTION: &str = "plugin_approval";
+
+/// The id prefix of the engine's plugin-turn items. A plugin cannot publish
+/// an id with it.
+pub const PLUGIN_TURNS_ID_PREFIX: &str = "plugin_turns:";
+
 /// The client-facing status item.
 ///
 /// The one wire shape of a status item: the `session.status` reply and the

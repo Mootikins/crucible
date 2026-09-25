@@ -207,8 +207,7 @@ pub struct Surface {
 /// `layoutRestore.dangling.test.ts` exists to cover. Re-declaration after a
 /// reload lands on the same key, so a client's window still resolves.
 ///
-/// Unlike `StatusRegistry`, which is session-keyed and has no plugin-scoped
-/// release, this one is dropped whenever a plugin goes inert — see
+/// Like `StatusRegistry`, this one is dropped whenever a plugin goes inert — see
 /// [`Self::release_plugin`]. A successful reload never goes through that path,
 /// so a reload stays invisible.
 #[derive(Clone, Default)]

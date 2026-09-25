@@ -76,6 +76,7 @@ pub use crate::types::provider_info::ProviderInfo;
 pub use crate::types::plugin_status::PluginStatusEntry;
 pub use crate::types::status_item::{
     IndeterminateProgress, StatusDisplayItem, StatusItemKind, StatusProgress,
+    PLUGIN_APPROVAL_ACTION, PLUGIN_TURNS_ID_PREFIX,
 };
 
 // NOTE: `mcp_status::McpServerInfo` is intentionally NOT re-exported at

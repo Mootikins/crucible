@@ -1252,9 +1252,8 @@ whether a session is sandboxed.
 ```lua
 cru.plugin.set_status{
   session = session.id,      -- required
-  key     = "oci",           -- required; one slot per key per session
+  key     = "oci",           -- required; one slot per key in this plugin's list
   text    = "sandboxed: alpine:latest",  -- required; keep it short
-  plugin  = "oci",           -- optional; used for a stable default color
   level   = "info",          -- info | warn | error (default info)
   color   = "hue-4",         -- optional named status color group
   progress = 0.4,            -- optional: fraction 0..1, or `true` for a spinner
@@ -1272,23 +1271,31 @@ through `hue-7`. An unknown name uses `info`. Without `color`, warning and
 error levels use their semantic groups; other slots get a stable hue from the
 plugin name. The TUI and web resolve the same group name in their own palettes.
 
+The daemon files each slot under the plugin whose code runs the call; the
+options cannot name another plugin. Each plugin has its own list in the
+session, so two plugins can use the same key. A key cannot start with
+`plugin_turns:`, which the engine reserves.
+
 ### cru.statusline.item(opts) / cru.statusline.publish(session_id, items)
 
-Publish one ordered list for a session. `publish` replaces the previous list
-atomically; an empty list clears it. The same list feeds `sl.items` in the TUI
-and the web composer's status slot.
+Publish the calling plugin's ordered list for a session. `publish` replaces
+that plugin's previous list atomically, and an empty list clears it. The lists
+of other plugins stay: the daemon takes the plugin from the code that runs the
+call, not from the items. The same lists feed `sl.items` in the TUI and the
+web composer's status slot.
 
 ```lua
 local sl = cru.statusline
 sl.publish(session.id, {
-  sl.item{ id = "forecast", text = "Rain soon", priority = 40,
-           plugin = "weather", color = "hue-4" },
-  sl.item{ id = "sync", text = "sync idle", priority = 10,
-           plugin = "sync", color = "ok", pinned = true },
+  sl.item{ id = "forecast", text = "Rain soon", priority = 40, color = "hue-4" },
+  sl.item{ id = "sync", text = "sync idle", priority = 10, color = "ok", pinned = true },
 })
 ```
 
-Each `id` must be nonempty and unique within the list. Lower priorities appear
+Each `id` must be nonempty and unique within the list. The id prefix
+`plugin_turns:` and the action `plugin_approval` belong to the engine's
+plugin-turn item, and `publish` refuses them, so no plugin item copies an
+approval state that the session does not hold. Lower priorities appear
 first (0–255; default 128). Text is cleaned to one line and capped at 50
 characters. `pinned = true` keeps an item visible when space runs out. An
 omitted color uses the plugin's stable hue. The clients use the action name to

@@ -599,7 +599,7 @@ local function on_session_start(session: any)
     register(session.id, workspace)
     claim_isolation(session.id, cfg.exempt, shared.runtime, shared.name, shared.target)
     cru.plugin.set_status{
-      session = session.id, key = "oci", plugin = "oci",
+      session = session.id, key = "oci",
       text = string.format("sandboxed: %s (%s)", cfg.image, shared.runtime), level = "info",
     }
     cru.log("info", "oci: session " .. session.id .. " joined container " .. shared.name)
@@ -622,7 +622,7 @@ local function on_session_start(session: any)
     -- reason the CLI is reached for: `features` and the lifecycle commands are
     -- exactly the parts an approximation would get subtly wrong.
     cru.plugin.set_status{
-      session = session.id, key = "oci", plugin = "oci",
+      session = session.id, key = "oci",
       text = "devcontainer up", level = "info",
     }
     local up_args = { "up", "--workspace-folder", workspace }
@@ -651,7 +651,7 @@ local function on_session_start(session: any)
   else
     if cfg.dockerfile and cfg.dockerfile ~= "" then
       cru.plugin.set_status{
-        session = session.id, key = "oci", plugin = "oci",
+        session = session.id, key = "oci",
         text = "building " .. cfg.image, level = "info",
       }
       local b = container.build(runtime, {
@@ -660,7 +660,7 @@ local function on_session_start(session: any)
         -- is on and spins rather than inventing a fraction.
         on_progress = function(line)
           cru.plugin.set_status{
-            session = session.id, key = "oci", plugin = "oci",
+            session = session.id, key = "oci",
             text = "building " .. cfg.image .. ": " .. line,
             level = "info", progress = true,
           }
@@ -679,7 +679,7 @@ local function on_session_start(session: any)
     end
 
     cru.plugin.set_status{
-      session = session.id, key = "oci", plugin = "oci",
+      session = session.id, key = "oci",
       text = "starting " .. cfg.image, level = "info",
     }
 
@@ -744,7 +744,7 @@ local function on_session_start(session: any)
   end
 
   cru.plugin.set_status{
-    session = session.id, key = "oci", plugin = "oci", text = text, level = level,
+    session = session.id, key = "oci", text = text, level = level,
   }
   cru.log("info", "oci: container started " .. name .. " (" .. cfg.image .. ")")
 end
