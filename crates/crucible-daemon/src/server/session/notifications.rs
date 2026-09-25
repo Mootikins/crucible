@@ -3,17 +3,17 @@ use crate::require_param;
 use crate::rpc_client::{SessionDismissNotificationRequest, SessionIdRequest};
 use crate::rpc_helpers::typed_params;
 
-/// The refusal when the session is neither live nor in storage. A session
-/// in storage only, after a restart, has notifications too.
-async fn refusal(
+/// The session, live or in storage, or the refusal when it is neither. A
+/// session in storage only, after a restart, has notifications too.
+async fn stored(
     sessions: &crate::session_manager::SessionManager,
     session_id: &str,
     id: Option<RequestId>,
-) -> Option<Response> {
+) -> Result<crucible_core::session::Session, Box<Response>> {
     match sessions.read_session(session_id).await {
-        Ok(Some(_)) => None,
-        Ok(None) => Some(session_not_found(id, session_id)),
-        Err(e) => Some(internal_error(id, e)),
+        Ok(Some(session)) => Ok(session),
+        Ok(None) => Err(Box::new(session_not_found(id, session_id))),
+        Err(e) => Err(Box::new(internal_error(id, e))),
     }
 }
 
@@ -33,8 +33,8 @@ pub(crate) async fn handle_session_add_notification(
         Err(e) => return Response::error(req.id, -32602, format!("Invalid notification: {}", e)),
     };
 
-    if let Some(response) = refusal(sessions, session_id, req.id.clone()).await {
-        return response;
+    if let Err(response) = stored(sessions, session_id, req.id.clone()).await {
+        return *response;
     }
     match hub.add_for_session(session_id, notification) {
         Ok(_) => Response::success(
@@ -48,7 +48,7 @@ pub(crate) async fn handle_session_add_notification(
     }
 }
 
-/// The notifications of one session, from the hub.
+/// Every notification the hub delivers to one session.
 pub(crate) async fn handle_session_list_notifications(
     req: Request,
     sessions: &Arc<crate::session_manager::SessionManager>,
@@ -58,15 +58,15 @@ pub(crate) async fn handle_session_list_notifications(
         Ok(p) => p,
         Err(response) => return *response,
     };
-    let session_id = &params.session_id;
-    if let Some(response) = refusal(sessions, session_id, req.id.clone()).await {
-        return response;
-    }
+    let session = match stored(sessions, &params.session_id, req.id.clone()).await {
+        Ok(session) => session,
+        Err(response) => return *response,
+    };
     Response::success(
         req.id,
         serde_json::json!({
-            "session_id": session_id,
-            "notifications": hub.list_for_session(session_id),
+            "session_id": params.session_id,
+            "notifications": hub.list_for_session(&session),
         }),
     )
 }
@@ -82,8 +82,8 @@ pub(crate) async fn handle_session_dismiss_notification(
         Err(response) => return *response,
     };
     let (session_id, notification_id) = (&params.session_id, &params.notification_id);
-    if let Some(response) = refusal(sessions, session_id, req.id.clone()).await {
-        return response;
+    if let Err(response) = stored(sessions, session_id, req.id.clone()).await {
+        return *response;
     }
     Response::success(
         req.id,

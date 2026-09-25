@@ -403,3 +403,68 @@ async fn the_setting_turns_the_no_kiln_notice_off() {
     assert!(no_kiln_notices(&daemon).await.is_empty());
     daemon.stop().await.unwrap();
 }
+
+/// A session lists every notice the daemon would deliver to it: a notice
+/// for its workspace and a global notice, not a notice for another
+/// workspace. A session cannot dismiss a shared notice for everyone.
+#[tokio::test]
+async fn a_session_lists_the_shared_notices_that_reach_it() {
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let mine = daemon.home().join("mine");
+    let theirs = daemon.home().join("theirs");
+    std::fs::create_dir_all(&mine).unwrap();
+    std::fs::create_dir_all(&theirs).unwrap();
+    let created = conn
+        .call_method(
+            "session.create",
+            json!({ "type": "chat", "workspace": mine }),
+            1,
+        )
+        .await;
+    let session_id = created["result"]["session_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a session: {created}"))
+        .to_string();
+    let code = format!(
+        "cru.log.notify('global') \
+         cru.log.notify('workspace', cru.log.levels.INFO, {{ workspace = {mine:?} }}) \
+         cru.log.notify('other', cru.log.levels.INFO, {{ workspace = {theirs:?} }}) \
+         return 'ok'"
+    );
+    let eval = conn
+        .call_method("lua.eval", json!({ "code": code }), 2)
+        .await;
+    assert_eq!(eval["result"]["result"], "ok", "{eval}");
+
+    // The hub stores what `cru.log.notify` queued on its own task.
+    let ring = loop {
+        let listed = conn
+            .call_method("notification.list", json!({ "all": true }), 3)
+            .await;
+        let ring = listed["result"]["notifications"]
+            .as_array()
+            .unwrap()
+            .clone();
+        if ring.len() == 3 {
+            break ring;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+
+    let mut listed = list_messages(&mut conn, &session_id).await;
+    listed.sort();
+    assert_eq!(listed, ["global", "workspace"]);
+
+    let global = ring.iter().find(|n| n["message"] == "global").unwrap();
+    let refused = conn
+        .call_method(
+            "session.dismiss_notification",
+            json!({ "session_id": session_id, "notification_id": global["id"] }),
+            4,
+        )
+        .await;
+    assert_eq!(refused["result"]["success"], false, "{refused}");
+    assert_eq!(list_messages(&mut conn, &session_id).await.len(), 2);
+
+    daemon.stop().await.unwrap();
+}

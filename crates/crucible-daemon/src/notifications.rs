@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use crucible_core::config::KilnName;
-use crucible_core::session::SessionState;
+use crucible_core::session::{Session, SessionState};
 use crucible_core::types::{Notification, NotificationScope};
 use crucible_lua::{NotificationSink, NotifyRequest};
 use serde::{Deserialize, Serialize};
@@ -190,17 +190,28 @@ impl NotificationHub {
             .collect()
     }
 
-    /// The notifications of the session `session_id`, newest first.
-    pub fn list_for_session(&self, session_id: &str) -> Vec<Notification> {
+    /// Every notification the hub delivers to `session`, newest first.
+    pub fn list_for_session(&self, session: &Session) -> Vec<Notification> {
         let mut items = self.list(None, &[], true);
-        items.retain(|n| n.scope.session.as_deref() == Some(session_id));
+        items.retain(|n| {
+            reaches(
+                n,
+                session.id.as_str(),
+                session.workspace.as_deref(),
+                &session.kilns,
+            )
+        });
         items
     }
 
     /// Drop one notification of the session `session_id`. False when the
-    /// session has no notification with that id.
+    /// session has no notification of its own with that id: a shared
+    /// notification is not one session's to drop for everyone.
     pub fn dismiss_for_session(&self, session_id: &str, id: &str) -> bool {
-        let owned = self.list_for_session(session_id).iter().any(|n| n.id == id);
+        let owned = self
+            .list(None, &[], true)
+            .iter()
+            .any(|n| n.id == id && n.scope.session.as_deref() == Some(session_id));
         owned && self.dismiss(id)
     }
 
@@ -293,11 +304,12 @@ impl NotificationHub {
             if session.archived || session.state == SessionState::Ended {
                 continue;
             }
-            let workspace = session.workspace.as_deref().map(canonical);
-            if !notification
-                .scope
-                .matches(workspace.as_deref(), &session.kilns)
-            {
+            if !reaches(
+                notification,
+                session.id.as_str(),
+                session.workspace.as_deref(),
+                &session.kilns,
+            ) {
                 continue;
             }
             emit_event(
@@ -321,6 +333,19 @@ impl NotificationHub {
             .filter_map(|name| KilnName::parse(name).ok())
             .collect()
     }
+}
+
+/// True when the hub delivers `notification` to `session`. Delivery and
+/// `list_for_session` both ask this, so they cannot disagree.
+fn reaches(
+    notification: &Notification,
+    session_id: &str,
+    workspace: Option<&Path>,
+    kilns: &[KilnName],
+) -> bool {
+    let workspace = workspace.map(canonical);
+    notification.scope.session.as_deref() == Some(session_id)
+        || notification.scope.matches(workspace.as_deref(), kilns)
 }
 
 /// The canonical path, or the path as given when it does not resolve.

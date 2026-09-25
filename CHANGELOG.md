@@ -64,6 +64,9 @@ is a Keep a Changelog category.
   the store that `cru.log.notify` uses. A notification for a session has a
   session scope: only that session sees it, lists it and dismisses it. A
   notification that an older daemon kept on a session is not carried over.
+  `session.list_notifications` also returns the workspace, kiln and global
+  notifications that the daemon delivers to the session. A session cannot
+  dismiss one of these shared notifications.
 
 ### Fixed
 

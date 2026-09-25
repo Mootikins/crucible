@@ -540,7 +540,8 @@ impl DaemonClient {
         decode_status_items(self.session_status(session_id).await?)
     }
 
-    /// `session.list_notifications`: the notifications of one session.
+    /// `session.list_notifications`: every notification the daemon delivers
+    /// to one session.
     pub async fn session_list_notifications(
         &self,
         session_id: &str,
