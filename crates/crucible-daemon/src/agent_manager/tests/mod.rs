@@ -475,6 +475,14 @@ impl ReactorTestHarness {
             .await
             .unwrap();
         let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        agent_manager.set_notification_hub(Arc::new(crate::notifications::NotificationHub::new(
+            tmp.path(),
+            session_manager.clone(),
+            Arc::new(crate::project_manager::ProjectManager::new(
+                tmp.path().join("projects.json"),
+            )),
+            event_tx.clone(),
+        )));
         Self {
             agent_manager,
             session_id: session.id.to_string(),

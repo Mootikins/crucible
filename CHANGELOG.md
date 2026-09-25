@@ -14,6 +14,11 @@ is a Keep a Changelog category.
 
 ### Breaking
 
+- **The daemon has one notification store.** The session notification queue
+  and the RPC methods `session.list_notifications` and
+  `session.dismiss_notification` are removed. `session.add_notification` and
+  the engine store each notification in the notification hub. Use
+  `notification.list` and `notification.dismiss` to read and remove them.
 - **An ACP profile no longer inherits.** The `extends` key on
   `[acp.agents.<name>]` is removed. A profile named after a built-in lays its
   fields over that built-in; any other name must define `command`. A config

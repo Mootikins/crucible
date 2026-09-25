@@ -234,7 +234,7 @@ pub struct SessionListRequest {
 ///
 /// Used by: `session.get`, `session.status`, `session.pause`, `session.resume`,
 /// `session.end`, `session.cancel`, `session.list_models`, `session.list_modes`,
-/// `session.list_notifications`, `session.load_events`,
+/// `session.load_events`,
 /// `session.get_precognition`, `session.archive`, `session.unarchive`,
 /// `session.delete`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -347,13 +347,6 @@ pub struct SessionForkRequest {
     /// omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub up_to: Option<u64>,
-}
-
-/// Request for `session.dismiss_notification`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionDismissNotificationRequest {
-    pub session_id: String,
-    pub notification_id: String,
 }
 
 /// Request for `session.set_title`.

@@ -1,12 +1,11 @@
 use super::super::*;
 use crate::require_param;
-use crate::rpc_client::{SessionDismissNotificationRequest, SessionIdRequest};
-use crate::rpc_helpers::typed_params;
 
+/// Store a notification in the hub, scoped to the session.
 pub(crate) async fn handle_session_add_notification(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    hub: &Arc<crate::notifications::NotificationHub>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let notification_obj = require_param!(req, "notification", as_object);
@@ -18,75 +17,23 @@ pub(crate) async fn handle_session_add_notification(
         Err(e) => return Response::error(req.id, -32602, format!("Invalid notification: {}", e)),
     };
 
-    match am
-        .add_notification(session_id, notification, Some(event_tx))
-        .await
-    {
-        Ok(()) => Response::success(
+    if am.get_session(session_id).is_err() {
+        return session_not_found(req.id, session_id);
+    }
+    let request = crucible_lua::NotifyRequest {
+        notification,
+        session_id: Some(session_id.to_string()),
+        workspace: None,
+        kiln: None,
+    };
+    match hub.add(request) {
+        Ok(_) => Response::success(
             req.id,
             serde_json::json!({
                 "session_id": session_id,
                 "success": true,
             }),
         ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_list_notifications(
-    req: Request,
-    am: &Arc<AgentManager>,
-) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let session_id = &params.session_id;
-
-    match am.list_notifications(session_id).await {
-        Ok(notifications) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "notifications": notifications,
-            }),
-        ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(e) => internal_error(req.id, e),
-    }
-}
-
-pub(crate) async fn handle_session_dismiss_notification(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let params = match typed_params::<SessionDismissNotificationRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let (session_id, notification_id) = (&params.session_id, &params.notification_id);
-
-    match am
-        .dismiss_notification(session_id, notification_id, Some(event_tx))
-        .await
-    {
-        Ok(success) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "notification_id": notification_id,
-                "success": success,
-            }),
-        ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
         Err(e) => internal_error(req.id, e),
     }
 }

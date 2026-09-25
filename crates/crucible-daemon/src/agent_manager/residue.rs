@@ -59,6 +59,7 @@ impl AgentManager {
             statusline_exprs: _,
             publications: _, // startup-bound OnceLock; describes plugins, not sessions
             status: _,       // startup-bound OnceLock; the registry releases its own sessions
+            notifications: _, // startup-bound OnceLock; the hub keeps its own ring
             plugin_tool_registry: _, // startup-bound OnceLock
             external_watch: _, // startup-bound OnceLock; per-session watches are its own
             agent_factory_override: _, // test-support seam, set once

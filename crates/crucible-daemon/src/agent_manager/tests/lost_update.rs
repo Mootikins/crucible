@@ -196,39 +196,6 @@ async fn record_discovered_context_window_keeps_a_title_set_in_its_gap() {
 }
 
 #[tokio::test]
-async fn add_notification_keeps_a_title_set_in_its_gap() {
-    let fx = fixture().await;
-    let note = crucible_core::types::Notification::toast("hello");
-
-    assert_title_survives(&fx, fx.agents.add_notification(&fx.id, note, None))
-        .await
-        .unwrap();
-
-    let live = fx.session_manager.get_session(&fx.id).unwrap();
-    assert_eq!(live.notifications.list().len(), 1);
-}
-
-#[tokio::test]
-async fn dismiss_notification_keeps_a_title_set_in_its_gap() {
-    let fx = fixture().await;
-    let note = crucible_core::types::Notification::toast("hello");
-    let note_id = note.id.clone();
-    fx.agents
-        .add_notification(&fx.id, note, None)
-        .await
-        .unwrap();
-
-    let dismissed =
-        assert_title_survives(&fx, fx.agents.dismiss_notification(&fx.id, &note_id, None))
-            .await
-            .unwrap();
-
-    assert!(dismissed);
-    let live = fx.session_manager.get_session(&fx.id).unwrap();
-    assert!(live.notifications.list().is_empty());
-}
-
-#[tokio::test]
 async fn persist_acp_session_id_keeps_a_title_set_in_its_gap() {
     let fx = fixture().await;
 

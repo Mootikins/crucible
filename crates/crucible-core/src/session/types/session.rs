@@ -152,13 +152,6 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_mode: Option<RecordingMode>,
 
-    /// Notification queue for this session
-    #[serde(
-        default,
-        skip_serializing_if = "crate::types::NotificationQueue::is_empty"
-    )]
-    pub notifications: crate::types::NotificationQueue,
-
     /// Whether this session is archived
     #[serde(default)]
     pub archived: bool,
@@ -316,7 +309,6 @@ impl Session {
             agent: None,
             acp_session_id: None,
             recording_mode: None,
-            notifications: crate::types::NotificationQueue::new(),
             archived: false,
             last_activity: Some(Utc::now()),
             isolation: None,

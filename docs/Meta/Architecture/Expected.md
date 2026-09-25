@@ -1623,7 +1623,7 @@ below follow the product docs where the docs name a method. [D10]
 - `session.set_*` and `session.get_*` for every `SessionConfig` field and for `temperature`, `max_tokens` and `system_prompt`
 - `session.request_compaction`, `session.compact`, `session.cache_stats`
 - `session.pending_interactions`, `session.respond_interaction`
-- `session.add_notification`, `session.list_notifications`, `session.dismiss_notification`
+- `session.add_notification`, `notification.list`, `notification.dismiss`
 - `session.subscribe`, `session.unsubscribe`, `session.configure`
 - `subagent.collect`
 - `kiln.open`, `kiln.close`, `kiln.list`, `kiln.info`, `kiln.graph`, `kiln.stats`

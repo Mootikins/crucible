@@ -136,8 +136,6 @@ rpc_methods! {
     SessionSetAgentOption = "session.set_agent_option",
     SessionCacheStats = "session.cache_stats",
     SessionAddNotification = "session.add_notification",
-    SessionListNotifications = "session.list_notifications",
-    SessionDismissNotification = "session.dismiss_notification",
     NotificationList = "notification.list",
     NotificationDismiss = "notification.dismiss",
     SessionInteractionRespond = "session.interaction_respond",
@@ -832,26 +830,7 @@ impl RpcDispatcher {
                     crate::server::session::handle_session_add_notification(
                         req.clone(),
                         &self.ctx.agents,
-                        &self.ctx.event_tx
-                    )
-                )
-            }
-            RpcMethod::SessionListNotifications => {
-                forward!(
-                    id,
-                    crate::server::session::handle_session_list_notifications(
-                        req.clone(),
-                        &self.ctx.agents
-                    )
-                )
-            }
-            RpcMethod::SessionDismissNotification => {
-                forward!(
-                    id,
-                    crate::server::session::handle_session_dismiss_notification(
-                        req.clone(),
-                        &self.ctx.agents,
-                        &self.ctx.event_tx
+                        &self.ctx.notifications
                     )
                 )
             }

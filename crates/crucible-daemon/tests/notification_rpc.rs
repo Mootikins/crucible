@@ -4,9 +4,7 @@
 //! RPC methods.
 //!
 //! Contract methods:
-//! - `session.add_notification` - Add notification to session queue
-//! - `session.list_notifications` - Get all notifications for session
-//! - `session.dismiss_notification` - Remove notification by ID
+//! - `session.add_notification` - Add a notification, scoped to the session
 //! - `notification.list` - The daemon's own ring, as a client may see it
 //! - `notification.dismiss` - Drop one entry of that ring
 
@@ -77,74 +75,6 @@ async fn test_add_notification_contract() {
         session_id
     );
     assert!(response["result"]["success"].as_bool().unwrap());
-
-    daemon.stop().await.expect("Failed to stop daemon");
-}
-
-#[tokio::test]
-
-async fn test_list_notifications_contract() {
-    let (mut daemon, mut conn) = setup_daemon().await;
-    let session_id = create_test_session(&mut conn, &daemon).await;
-
-    let params = json!({
-        "session_id": session_id,
-    });
-
-    let response = conn
-        .call_method("session.list_notifications", params, 2)
-        .await;
-
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert_eq!(response["id"], 2);
-    assert!(response["result"].is_object(), "Expected result object");
-    assert_eq!(
-        response["result"]["session_id"].as_str().unwrap(),
-        session_id
-    );
-    assert!(
-        response["result"]["notifications"].is_array(),
-        "Expected notifications array"
-    );
-
-    let notifications = response["result"]["notifications"]
-        .as_array()
-        .expect("notifications should be array");
-    assert_eq!(notifications.len(), 0, "Should start with no notifications");
-
-    daemon.stop().await.expect("Failed to stop daemon");
-}
-
-#[tokio::test]
-
-async fn test_dismiss_notification_contract() {
-    let (mut daemon, mut conn) = setup_daemon().await;
-    let session_id = create_test_session(&mut conn, &daemon).await;
-
-    let params = json!({
-        "session_id": session_id,
-        "notification_id": "notif-12345678",
-    });
-
-    let response = conn
-        .call_method("session.dismiss_notification", params, 2)
-        .await;
-
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert_eq!(response["id"], 2);
-    assert!(response["result"].is_object(), "Expected result object");
-    assert_eq!(
-        response["result"]["session_id"].as_str().unwrap(),
-        session_id
-    );
-    assert_eq!(
-        response["result"]["notification_id"].as_str().unwrap(),
-        "notif-12345678"
-    );
-    assert!(
-        response["result"]["success"].is_boolean(),
-        "Expected success boolean"
-    );
 
     daemon.stop().await.expect("Failed to stop daemon");
 }
@@ -229,12 +159,9 @@ async fn test_list_notifications_after_adding() {
     conn.call_method("session.add_notification", add_params, 2)
         .await;
 
-    let list_params = json!({
-        "session_id": session_id,
-    });
-
+    // The hub is the one store, so the ring lists what the session added.
     let response = conn
-        .call_method("session.list_notifications", list_params, 3)
+        .call_method("notification.list", json!({ "all": true }), 3)
         .await;
 
     let notifications = response["result"]["notifications"]
@@ -252,92 +179,16 @@ async fn test_list_notifications_after_adding() {
 
 #[tokio::test]
 
-async fn test_dismiss_notification_removes_from_list() {
-    let (mut daemon, mut conn) = setup_daemon().await;
-    let session_id = create_test_session(&mut conn, &daemon).await;
-
-    let notification = Notification::toast("Test message");
-    let add_params = json!({
-        "session_id": session_id,
-        "notification": {
-            "id": notification.id.clone(),
-            "kind": "toast",
-            "message": notification.message.clone(),
-        }
-    });
-
-    conn.call_method("session.add_notification", add_params, 2)
-        .await;
-
-    let dismiss_params = json!({
-        "session_id": session_id,
-        "notification_id": notification.id,
-    });
-
-    let dismiss_response = conn
-        .call_method("session.dismiss_notification", dismiss_params, 3)
-        .await;
-
-    assert!(
-        dismiss_response["result"]["success"].as_bool().unwrap(),
-        "Dismiss should succeed"
-    );
-
-    let list_params = json!({
-        "session_id": session_id,
-    });
-
-    let list_response = conn
-        .call_method("session.list_notifications", list_params, 4)
-        .await;
-
-    let notifications = list_response["result"]["notifications"]
-        .as_array()
-        .expect("notifications should be array");
-    assert_eq!(
-        notifications.len(),
-        0,
-        "Should have no notifications after dismiss"
-    );
-
-    daemon.stop().await.expect("Failed to stop daemon");
-}
-
-#[tokio::test]
-
-async fn test_dismiss_nonexistent_notification_returns_false() {
-    let (mut daemon, mut conn) = setup_daemon().await;
-    let session_id = create_test_session(&mut conn, &daemon).await;
-
-    let params = json!({
-        "session_id": session_id,
-        "notification_id": "notif-nonexist",
-    });
-
-    let response = conn
-        .call_method("session.dismiss_notification", params, 2)
-        .await;
-
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert!(
-        !response["result"]["success"].as_bool().unwrap(),
-        "Should return false when notification not found"
-    );
-
-    daemon.stop().await.expect("Failed to stop daemon");
-}
-
-#[tokio::test]
-
 async fn test_session_not_found_error() {
     let (mut daemon, mut conn) = setup_daemon().await;
 
     let params = json!({
         "session_id": "sess-nonexistent",
+        "notification": { "id": "n", "kind": "toast", "message": "m" },
     });
 
     let response = conn
-        .call_method("session.list_notifications", params, 1)
+        .call_method("session.add_notification", params, 1)
         .await;
 
     assert!(response["error"].is_object(), "Expected error object");

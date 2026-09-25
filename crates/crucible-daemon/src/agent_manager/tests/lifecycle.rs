@@ -17,22 +17,32 @@ async fn test_configure_agent() {
     assert_eq!(updated.agent.as_ref().unwrap().model, "llama3.2");
 }
 
+/// A notification goes through the hub: it is stored there, and the event
+/// that reaches the session carries the body.
 #[tokio::test]
-async fn a_session_notification_event_carries_the_body() {
-    let (_tmp, session_manager, session) = setup_session_manager().await;
-    let agent_manager = create_test_agent_manager(session_manager);
+async fn a_session_notification_goes_through_the_hub() {
+    let (tmp, session_manager, session) = setup_session_manager().await;
+    let agent_manager = create_test_agent_manager(session_manager.clone());
     let (event_tx, mut events) = broadcast::channel(16);
+    let hub = Arc::new(crate::notifications::NotificationHub::new(
+        tmp.path(),
+        session_manager,
+        Arc::new(crate::project_manager::ProjectManager::new(
+            tmp.path().join("projects.json"),
+        )),
+        event_tx,
+    ));
+    agent_manager.set_notification_hub(hub.clone());
 
     let notification = crucible_core::types::Notification::toast("saved");
-    agent_manager
-        .add_notification(&session.id, notification.clone(), Some(&event_tx))
-        .await
-        .unwrap();
+    agent_manager.notify(&session.id, notification.clone());
 
+    let stored = hub.list(None, &[], true);
+    assert_eq!(stored.len(), 1, "{stored:?}");
+    assert_eq!(stored[0].id, notification.id);
     let event = events.try_recv().unwrap();
     assert_eq!(event.session_id, session.id.to_string());
     assert_eq!(event.event, "notification_added");
-    assert_eq!(event.data["notification_id"], notification.id);
     assert_eq!(event.data["notification"]["message"], "saved");
     assert_eq!(event.data["notification"]["kind"], "toast");
 }

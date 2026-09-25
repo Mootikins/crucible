@@ -477,13 +477,7 @@ impl AgentManager {
                             "Plugin {plugin} reached the {} consecutive turn limit; approval is now Ask",
                             session.plugin_turn_limit
                         ));
-                        if let Err(error) = self
-                            .add_notification(session_id, notice, Some(event_tx))
-                            .await
-                        {
-                            self.request_state.remove(session_id);
-                            return Err(error);
-                        }
+                        self.notify(session_id, notice);
                     }
                 }
             }

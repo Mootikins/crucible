@@ -6,7 +6,6 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 /// A notification message with metadata.
@@ -155,61 +154,6 @@ pub enum NotificationKind {
     Warning,
 }
 
-/// A queue of notifications with expiration and dismissal support.
-///
-/// Manages a collection of notifications with FIFO ordering and provides
-/// methods for adding, dismissing, and expiring old notifications.
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct NotificationQueue {
-    notifications: VecDeque<Notification>,
-}
-
-impl NotificationQueue {
-    /// Create a new empty notification queue.
-    pub fn new() -> Self {
-        Self {
-            notifications: VecDeque::new(),
-        }
-    }
-
-    /// Add a notification to the queue.
-    pub fn add(&mut self, notification: Notification) {
-        self.notifications.push_back(notification);
-    }
-
-    /// Dismiss a notification by ID.
-    ///
-    /// Returns `true` if a notification was dismissed, `false` if not found.
-    pub fn dismiss(&mut self, id: &str) -> bool {
-        if let Some(pos) = self.notifications.iter().position(|n| n.id == id) {
-            self.notifications.remove(pos);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Get all notifications as a Vec (for serialization).
-    pub fn list(&self) -> Vec<Notification> {
-        self.notifications.iter().cloned().collect()
-    }
-
-    /// Get the number of notifications in the queue.
-    pub fn len(&self) -> usize {
-        self.notifications.len()
-    }
-
-    /// Check if the queue is empty.
-    pub fn is_empty(&self) -> bool {
-        self.notifications.is_empty()
-    }
-
-    /// Clear all notifications.
-    pub fn clear(&mut self) {
-        self.notifications.clear();
-    }
-}
-
 /// Generate a unique notification ID.
 fn generate_notification_id() -> String {
     use rand::RngExt;
@@ -279,44 +223,6 @@ mod tests {
         assert_eq!(json, "\"warning\"");
         let parsed: NotificationKind = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, NotificationKind::Warning);
-    }
-
-    #[test]
-    fn test_notification_queue_add_and_dismiss() {
-        let mut queue = NotificationQueue::new();
-        assert!(queue.is_empty());
-
-        let notif1 = Notification::toast("First");
-        let notif2 = Notification::warning("Second");
-        let id1 = notif1.id.clone();
-        let id2 = notif2.id.clone();
-
-        queue.add(notif1);
-        queue.add(notif2);
-        assert_eq!(queue.len(), 2);
-
-        // Dismiss first notification
-        assert!(queue.dismiss(&id1));
-        assert_eq!(queue.len(), 1);
-
-        // Try to dismiss again (should fail)
-        assert!(!queue.dismiss(&id1));
-        assert_eq!(queue.len(), 1);
-
-        // Dismiss second notification
-        assert!(queue.dismiss(&id2));
-        assert!(queue.is_empty());
-    }
-
-    #[test]
-    fn test_notification_queue_clear() {
-        let mut queue = NotificationQueue::new();
-        queue.add(Notification::toast("One"));
-        queue.add(Notification::toast("Two"));
-        assert_eq!(queue.len(), 2);
-
-        queue.clear();
-        assert!(queue.is_empty());
     }
 
     #[test]

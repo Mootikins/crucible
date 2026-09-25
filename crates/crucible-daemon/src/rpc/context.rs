@@ -256,6 +256,9 @@ impl RpcContext {
         agents
             .delegation_service()
             .bind_session_lifecycle(session_lifecycle.clone());
+        // One notification store: what the engine reports goes where the
+        // plugins' notifications go.
+        agents.set_notification_hub(notifications.clone());
         Self {
             kiln,
             sessions,

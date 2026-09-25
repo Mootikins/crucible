@@ -406,6 +406,8 @@ pub struct AgentManager {
     /// bound at daemon startup. The engine adds its plugin-turn items to them
     /// when a client reads the list; see [`status_items`].
     status: std::sync::OnceLock<crucible_lua::StatusRegistry>,
+    /// The daemon's one notification store, bound with the RPC context.
+    notifications: std::sync::OnceLock<Arc<crate::notifications::NotificationHub>>,
     /// Explicit per-session tool sets written by `cru.tools.set_active`.
     ///
     /// Owned here rather than by the tools bridge because three places read
@@ -520,6 +522,7 @@ impl AgentManager {
             plugin_tool_registry: std::sync::OnceLock::new(),
             publications: std::sync::OnceLock::new(),
             status: std::sync::OnceLock::new(),
+            notifications: std::sync::OnceLock::new(),
             active_tools: crate::tools::active_tools::ActiveToolSets::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
@@ -586,6 +589,33 @@ impl AgentManager {
     /// plugins can register handlers that never fire. Idempotent.
     pub fn set_plugin_handlers(&self, registry: Arc<LuaScriptHandlerRegistry>, lua: Arc<Lua>) {
         let _ = self.plugin_handlers.set((registry, lua));
+    }
+
+    /// Bind the daemon's notification hub. Idempotent.
+    pub fn set_notification_hub(&self, hub: Arc<crate::notifications::NotificationHub>) {
+        let _ = self.notifications.set(hub);
+    }
+
+    /// Send `notification` to the clients of `session_id` through the hub.
+    /// A failure here has no other route to the user, so it goes to the log.
+    pub(crate) fn notify(
+        &self,
+        session_id: &str,
+        notification: crucible_core::types::Notification,
+    ) {
+        let Some(hub) = self.notifications.get() else {
+            warn!(session_id, message = %notification.message, "no notification hub is bound");
+            return;
+        };
+        let request = crucible_lua::NotifyRequest {
+            notification,
+            session_id: Some(session_id.to_string()),
+            workspace: None,
+            kiln: None,
+        };
+        if let Err(error) = hub.add(request) {
+            warn!(session_id, %error, "failed to send a notification");
+        }
     }
 
     /// Snapshot of the plugin hook registry for the stream loop. `None` when
@@ -1702,7 +1732,10 @@ impl AgentManager {
         self.debug_assert_no_residue(session_id, review_harvest_spawned);
     }
 
-    fn get_session(&self, session_id: &str) -> Result<crucible_core::session::Session, AgentError> {
+    pub(crate) fn get_session(
+        &self,
+        session_id: &str,
+    ) -> Result<crucible_core::session::Session, AgentError> {
         self.session_manager
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
