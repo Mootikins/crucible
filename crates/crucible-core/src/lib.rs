@@ -32,6 +32,7 @@ pub mod runtime_path;
 pub mod runtime_roots;
 pub mod serde_helpers;
 pub mod session;
+pub mod sources;
 pub mod storage;
 // Test helpers only. The `cru` binary never compiles them.
 #[cfg(any(test, feature = "test-utils"))]
