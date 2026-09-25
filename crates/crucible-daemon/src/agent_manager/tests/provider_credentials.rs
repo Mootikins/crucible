@@ -32,6 +32,10 @@ struct Rig {
 }
 
 impl Rig {
+    /// The environment lock is held across the awaits on purpose, for the
+    /// life of the rig: nextest runs each test in its own process, so it
+    /// waits for nothing, and it keeps the provider environment clear.
+    #[allow(clippy::await_holding_lock)]
     async fn new() -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
