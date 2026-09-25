@@ -273,10 +273,24 @@ function M.daily_list(args: { [string]: any }): ToolResult
     return { count = #notes, notes = notes }
 end
 
+--- The words that the user typed after the command: `/daily list` sends
+--- `{ input = "list" }`.
+local function words(args: any): { string }
+    local out = {}
+    local input = if type(args) == "table" and type(args.input) == "string" then args.input else ""
+    for word in string.gmatch(input, "%S+") do
+        table.insert(out, word)
+    end
+    return out
+end
+
 --- /daily [today|yesterday|YYYY-MM-DD|list]
-function M.daily_command(args: { [string]: any }, ctx: any): ()
-    local subcommand = args._positional and args._positional[1] or "today"
-    local date = nil
+---
+--- The client shows the string that the command returns. A failure raises,
+--- and the client shows the reason.
+function M.daily_command(args: any): string
+    local subcommand = words(args)[1] or "today"
+    local date: string? = nil
 
     if subcommand == "today" then
         date = nil
@@ -290,19 +304,16 @@ function M.daily_command(args: { [string]: any }, ctx: any): ()
         for _, note in ipairs(result.notes) do
             lines[#lines + 1] = string.format("  %s %s", note.exists and "✓" or "○", note.date)
         end
-        ctx.display_info(table.concat(lines, "\n"))
-        return
+        return table.concat(lines, "\n")
     else
-        ctx.display_error("Usage: /daily [today|yesterday|YYYY-MM-DD|list]")
-        return
+        error("Usage: /daily [today|yesterday|YYYY-MM-DD|list]", 0)
     end
 
     local result = M.daily_open({ date = date })
     if result.error then
-        ctx.display_error(result.error)
-    else
-        ctx.display_info(string.format("%s: %s", result.created and "Created" or "Opened", result.path))
+        error(result.error, 0)
     end
+    return string.format("%s: %s", result.created and "Created" or "Opened", result.path)
 end
 
 return {

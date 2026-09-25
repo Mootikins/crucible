@@ -329,9 +329,24 @@ function M.tasks_next(args: { [string]: any }): ToolResult
     return { message = "All tasks completed!", file = path, total = #tasks }
 end
 
+--- The words that the user typed after the command: `/tasks add buy milk`
+--- sends `{ input = "add buy milk" }`.
+local function words(args: any): { string }
+    local out = {}
+    local input = if type(args) == "table" and type(args.input) == "string" then args.input else ""
+    for word in string.gmatch(input, "%S+") do
+        table.insert(out, word)
+    end
+    return out
+end
+
 --- /tasks [list|add|next]
-function M.tasks_command(args: { [string]: any }, ctx: any): ()
-    local subcommand = args._positional and args._positional[1] or "list"
+---
+--- The client shows the string that the command returns. A failure raises,
+--- and the client shows the reason.
+function M.tasks_command(args: any): string
+    local argv = words(args)
+    local subcommand = argv[1] or "list"
 
     if subcommand == "list" then
         local result = M.tasks_list({ show_completed = true })
@@ -340,29 +355,25 @@ function M.tasks_command(args: { [string]: any }, ctx: any): ()
             lines[#lines + 1] =
                 string.format("  %s %d. %s", task.completed and "✓" or "○", task.id, task.text)
         end
-        ctx.display_info(table.concat(lines, "\n"))
+        return table.concat(lines, "\n")
     elseif subcommand == "add" then
-        local text = table.concat(args._positional or {}, " ", 2)
+        local text = table.concat(argv, " ", 2)
         if text == "" then
-            ctx.display_error("Usage: /tasks add <task description>")
-            return
+            error("Usage: /tasks add <task description>", 0)
         end
         local result = M.tasks_add({ text = text })
         if result.error then
-            ctx.display_error(result.error)
-        else
-            ctx.display_info(result.message)
+            error(result.error, 0)
         end
+        return result.message
     elseif subcommand == "next" then
         local result = M.tasks_next({})
         if result.text then
-            ctx.display_info(string.format("Next: %s (ID: %d)", result.text, result.id))
-        else
-            ctx.display_info(result.message)
+            return string.format("Next: %s (ID: %d)", result.text, result.id)
         end
-    else
-        ctx.display_error("Unknown subcommand: " .. subcommand)
+        return result.message
     end
+    error("Unknown subcommand: " .. subcommand .. ". Usage: /tasks [list|add|next]", 0)
 end
 
 return {

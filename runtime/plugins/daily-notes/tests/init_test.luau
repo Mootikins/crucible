@@ -287,4 +287,31 @@ describe("daily-notes", function()
             expect.equal(type(plugin.commands.daily.fn), "function")
         end)
     end)
+
+    -- The daemon calls a command as fn(args, ctx), where `args` is a table
+    -- and `/daily list` sends `{ input = "list" }`. The client shows what the
+    -- command returns. The command used to read `args._positional` and call
+    -- `ctx.display_info`, which the daemon never gave it.
+    describe("the /daily command", function()
+        it("opens today's note when the user types no argument", function()
+            local answer = plugin.commands.daily.fn({}, {})
+            expect.equal(answer, "Created: " .. KILN .. "/Journal/" .. os.date("%Y-%m-%d") .. ".md")
+        end)
+
+        it("opens the note of a date that the user types", function()
+            local answer = plugin.commands.daily.fn({ input = " 2025-06-15 " }, {})
+            expect.equal(answer, "Created: " .. KILN .. "/Journal/2025-06-15.md")
+        end)
+
+        it("lists the recent notes", function()
+            local answer = plugin.commands.daily.fn({ input = "list" }, {})
+            expect.truthy(string.find(answer, "Recent daily notes:", 1, true) ~= nil)
+        end)
+
+        it("names the usage for an unknown argument", function()
+            expect.has_error(function()
+                plugin.commands.daily.fn({ input = "tomorrow" }, {})
+            end, "Usage: /daily")
+        end)
+    end)
 end)

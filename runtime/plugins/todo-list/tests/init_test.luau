@@ -356,4 +356,35 @@ describe("todo-list", function()
             expect.equal(type(plugin.commands.tasks.fn), "function")
         end)
     end)
+
+    -- The daemon calls a command as fn(args, ctx), where `args` is a table
+    -- and `/tasks add buy milk` sends `{ input = "add buy milk" }`. The client
+    -- shows what the command returns. The command used to read
+    -- `args._positional` and call `ctx.display_info`, which the daemon never
+    -- gave it.
+    describe("the /tasks command", function()
+        it("lists the tasks when the user types no argument", function()
+            with_file()
+            local answer = plugin.commands.tasks.fn({}, {})
+            expect.equal(answer, "Tasks:\n  ○ 1. write the parser\n  ✓ 2. read the file\n  ○ 3. ship it")
+        end)
+
+        it("adds the words after `add` as one task", function()
+            with_file()
+            local answer = plugin.commands.tasks.fn({ input = "add  buy milk" }, {})
+            expect.truthy(string.find(answer, "buy milk", 1, true) ~= nil)
+            expect.truthy(string.find(written() or "", "- [ ] buy milk", 1, true) ~= nil)
+        end)
+
+        it("names the next open task", function()
+            with_file()
+            expect.equal(plugin.commands.tasks.fn({ input = "next" }, {}), "Next: write the parser (ID: 1)")
+        end)
+
+        it("names the usage for an unknown argument", function()
+            expect.has_error(function()
+                plugin.commands.tasks.fn({ input = "drop" }, {})
+            end, "Usage: /tasks")
+        end)
+    end)
 end)
