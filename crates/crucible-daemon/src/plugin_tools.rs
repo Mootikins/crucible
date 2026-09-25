@@ -12,6 +12,7 @@
 //!   list and run plugin commands.
 
 use async_trait::async_trait;
+use crucible_core::sources::{self, Entry, Lookup, Source, Sources};
 use crucible_core::traits::tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };
@@ -38,6 +39,43 @@ struct PluginCallable {
     /// alone doesn't hand its `Lua` back.
     lua: mlua::Lua,
     func: mlua::Function,
+}
+
+/// Every plugin as a source of its commands.
+///
+/// All plugins share one priority, so a command name that two plugins
+/// declare is ambiguous, and each full name `plugin:command` reaches its own.
+fn command_sources(
+    commands: &HashMap<String, PluginCallable>,
+) -> anyhow::Result<(Sources<()>, Vec<Entry<&PluginCallable>>)> {
+    let plugins: std::collections::BTreeSet<&str> =
+        commands.values().map(|c| c.plugin.as_str()).collect();
+    let sources = sources::sources_new(
+        plugins
+            .iter()
+            .map(|plugin| Source {
+                name: plugin.to_string(),
+                priority: 0,
+                within: 0,
+                value: (),
+            })
+            .collect(),
+    )?;
+    // Every plugin of a command is a source, so `position` always finds it.
+    let entries = commands
+        .values()
+        .filter_map(|command| {
+            Some(Entry {
+                source: sources
+                    .list()
+                    .iter()
+                    .position(|s| s.name == command.plugin)?,
+                name: command.definition.name.clone(),
+                value: command,
+            })
+        })
+        .collect();
+    Ok((sources, entries))
 }
 
 /// Tools and commands contributed by loaded plugins.
@@ -227,18 +265,17 @@ impl PluginRegistry {
     /// safe to do without asking first.
     pub fn commands_json(&self) -> Vec<serde_json::Value> {
         let commands = self.commands.read().expect("plugin commands lock poisoned");
-        let mut counts = HashMap::<&str, usize>::new();
-        for entry in commands.values() {
-            *counts.entry(&entry.definition.name).or_default() += 1;
-        }
-        let mut out: Vec<serde_json::Value> = commands
-            .values()
-            .map(|entry| {
-                let name = if counts[entry.definition.name.as_str()] > 1 {
-                    format!("{}:{}", entry.plugin, entry.definition.name)
-                } else {
-                    entry.definition.name.clone()
-                };
+        let (sources, entries) = match command_sources(&commands) {
+            Ok(built) => built,
+            Err(error) => {
+                warn!(%error, "Plugin commands not listed");
+                return Vec::new();
+            }
+        };
+        let mut out: Vec<serde_json::Value> = sources::listing(&sources, &entries)
+            .into_iter()
+            .map(|(name, index)| {
+                let entry = entries[index].value;
                 serde_json::json!({
                     "plugin": entry.plugin,
                     "name": name,
@@ -275,32 +312,17 @@ impl PluginRegistry {
         name: &str,
     ) -> anyhow::Result<Option<(String, mlua::Lua, mlua::Function)>> {
         let commands = self.commands.read().expect("plugin commands lock poisoned");
-        if let Some(entry) = commands.get(name) {
-            return Ok(Some((
-                entry.plugin.clone(),
-                entry.lua.clone(),
-                entry.func.clone(),
-            )));
-        }
-        let mut matches: Vec<_> = commands
-            .iter()
-            .filter(|(_, entry)| entry.definition.name == name)
-            .collect();
-        matches.sort_by_key(|(full_name, _)| *full_name);
-        match matches.as_slice() {
-            [] => Ok(None),
-            [(_, entry)] => Ok(Some((
-                entry.plugin.clone(),
-                entry.lua.clone(),
-                entry.func.clone(),
+        let (sources, entries) = command_sources(&commands)?;
+        match sources::lookup(&sources, &entries, name) {
+            Lookup::Found(entry) => Ok(Some((
+                entry.value.plugin.clone(),
+                entry.value.lua.clone(),
+                entry.value.func.clone(),
             ))),
-            _ => anyhow::bail!(
+            Lookup::Missing => Ok(None),
+            Lookup::Ambiguous(names) => anyhow::bail!(
                 "Ambiguous command '{name}'. Use one of: {}",
-                matches
-                    .iter()
-                    .map(|(full_name, _)| full_name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                names.join(", ")
             ),
         }
     }
