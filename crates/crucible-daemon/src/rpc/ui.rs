@@ -66,7 +66,10 @@ pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json
         return Err(format!("invalid theme name '{name}'"));
     }
 
-    let config_dir = dirs::config_dir()
+    let roots = ctx.agents.source_roots();
+    let config_dir = roots
+        .config_home
+        .as_ref()
         .ok_or_else(|| "no config directory".to_string())?
         .join("crucible");
     // One root list for both halves. This handler used to build its own path
@@ -74,7 +77,8 @@ pub fn handle_ui_set_theme(ctx: &RpcContext, req: &Request) -> Result<serde_json
     // `list_available_themes`, so the two could disagree about what exists.
     // They now resolve through the same list: a theme that is listed is a
     // theme that loads.
-    let roots = crucible_lua::theme_roots(&config_dir).map_err(|e| e.to_string())?;
+    let roots =
+        crucible_lua::theme_roots(&config_dir, &roots.runtimepath).map_err(|e| e.to_string())?;
 
     let source = match crucible_lua::resolve_theme_file(&roots, name)? {
         Some(path) => std::fs::read_to_string(&path)

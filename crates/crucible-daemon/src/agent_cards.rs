@@ -54,8 +54,9 @@ pub fn warn_if_deprecated(roots: &SourceRoots) {
 /// The advice [`warn_if_deprecated`] gives. It names only a directory that
 /// card discovery reads today.
 const DEPRECATION_ADVICE: &str = "`agent_directories` is deprecated. \
-     To keep a card, move it to ~/.config/crucible/agents/ \
-     or to <project>/.crucible/agents/.";
+     To keep a card, move it to ~/.config/crucible/agents/, \
+     to <project>/.crucible/agents/, \
+     or to the agents/ directory of a runtimepath entry.";
 
 /// Candidate card directories for a session context, highest priority first.
 ///
@@ -103,6 +104,7 @@ fn card_sources(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Sou
         kilns,
         config_home: config_root.as_deref(),
         agent_directories: &roots.agent_directories,
+        runtimepath: &roots.runtimepath,
         ..PathInputs::default()
     });
     search_sources(RuntimeAsset::Cards, &path).unwrap_or_else(|error| {
@@ -204,10 +206,11 @@ pub fn resolve_card<'a>(
 
 #[cfg(test)]
 mod tests {
-    /// `runtimepath` does not reach cards, so the advice must not name it.
+    /// The advice names only directories that card discovery reads.
+    /// `a_runtimepath_entry_supplies_cards` proves the runtimepath one.
     #[test]
     fn the_deprecation_advice_names_a_card_directory_that_is_read() {
-        assert!(!super::DEPRECATION_ADVICE.contains("runtimepath"));
+        assert!(super::DEPRECATION_ADVICE.contains("runtimepath"));
         assert!(super::DEPRECATION_ADVICE.contains("~/.config/crucible/agents/"));
     }
 
@@ -434,6 +437,7 @@ mod tests {
             &SourceRoots {
                 config_home: Some(config.path().to_path_buf()),
                 agent_directories: Vec::new(),
+                runtimepath: Vec::new(),
             },
             kiln.path(),
             &[kiln.path().to_path_buf()],
@@ -470,6 +474,7 @@ mod tests {
         let roots = SourceRoots {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: Vec::new(),
+            runtimepath: Vec::new(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let description = |name| {
@@ -508,6 +513,7 @@ mod tests {
         let roots = SourceRoots {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: vec![shared.path().to_path_buf()],
+            runtimepath: Vec::new(),
         };
         let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
         let description = |name| {
@@ -548,6 +554,7 @@ mod tests {
         let roots = SourceRoots {
             config_home: None,
             agent_directories: vec![first.path().to_path_buf(), second.path().to_path_buf()],
+            runtimepath: Vec::new(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let error = resolve_card(&cards, "helper").unwrap_err();
@@ -588,6 +595,7 @@ mod tests {
         let roots = SourceRoots {
             config_home: None,
             agent_directories: vec![shared.path().to_path_buf()],
+            runtimepath: Vec::new(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         assert_eq!(cards["kiln:helper"].description, "kiln helper");
@@ -612,6 +620,7 @@ mod tests {
         let roots = SourceRoots {
             config_home: None,
             agent_directories: vec![shared.path().to_path_buf()],
+            runtimepath: Vec::new(),
         };
 
         let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
@@ -632,6 +641,7 @@ mod tests {
         let roots = SourceRoots {
             config_home: Some(PathBuf::from("/cfg")),
             agent_directories: vec![PathBuf::from("/shared")],
+            runtimepath: Vec::new(),
         };
         let dirs = card_directories(&roots, Path::new("/ws"), &[PathBuf::from("/kiln")]);
         assert_eq!(
@@ -643,5 +653,37 @@ mod tests {
                 PathBuf::from("/kiln/.crucible/agents"),
             ]
         );
+    }
+
+    /// A `runtimepath` entry supplies cards from its `agents/`, below the
+    /// workspace and the kiln.
+    #[test]
+    fn a_runtimepath_entry_supplies_cards() {
+        let kit = TempDir::new().unwrap();
+        let kiln = TempDir::new().unwrap();
+        write_card(
+            &kit.path().join("agents"),
+            "helper.md",
+            "---\ndescription: kit\n---\n\nPrompt.\n",
+        );
+        write_card(
+            &kiln.path().join(".crucible/agents"),
+            "helper.md",
+            "---\ndescription: kiln\n---\n\nPrompt.\n",
+        );
+        let roots = SourceRoots {
+            runtimepath: vec![kit.path().to_path_buf()],
+            ..SourceRoots::default()
+        };
+        let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
+        let description = |name| {
+            resolve_card(&cards, name)
+                .unwrap()
+                .unwrap()
+                .description
+                .clone()
+        };
+        assert_eq!(description("helper"), "kiln");
+        assert_eq!(description("config-1:helper"), "kit");
     }
 }

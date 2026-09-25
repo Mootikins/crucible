@@ -1,5 +1,6 @@
 //! Folder-based skill discovery with source-qualified collisions.
 
+use crate::runtime_path::SourceRoots;
 use crate::skills::error::{SkillError, SkillResult};
 use crate::skills::parser::SkillParser;
 use crate::skills::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
@@ -92,11 +93,13 @@ impl FolderDiscovery {
     /// - `~/.config/crucible/skills/` (personal)
     /// - `<workspace>/.<agent>/skills/` for each known agent (workspace)
     /// - `<kiln>/.crucible/skills/` for each attached kiln (kiln)
+    /// - `<entry>/skills/` for each `runtimepath` entry
     ///
     /// Every workspace- and kiln-relative entry is under a dot-directory, the
     /// same rule plugins and agent cards follow.
-    pub fn with_default_paths(workspace: &Path, kilns: &[PathBuf]) -> Self {
-        let paths = default_discovery_paths(Some(workspace), kilns, dirs::home_dir().as_deref());
+    pub fn with_default_paths(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Self {
+        let paths =
+            default_discovery_paths(roots, Some(workspace), kilns, dirs::home_dir().as_deref());
         Self::new(paths)
     }
 
@@ -295,6 +298,7 @@ pub fn resolve_skill<'a>(
 /// Tests inject a tempdir so they don't depend on the host's real
 /// `~/.claude/skills` / `~/.codex/skills` contents.
 pub fn default_discovery_paths(
+    roots: &SourceRoots,
     workspace: Option<&Path>,
     kilns: &[PathBuf],
     home: Option<&Path>,
@@ -303,7 +307,7 @@ pub fn default_discovery_paths(
         Ok(base) => vec![PathBuf::from(base)],
         Err(_) => crucible_core::runtime_roots::for_current_exe(),
     };
-    default_discovery_paths_from(workspace, kilns, home, &runtime_roots, &[])
+    default_discovery_paths_from(roots, workspace, kilns, home, &runtime_roots, &[])
 }
 
 /// The harness home directories to read skills from, by name.
@@ -340,13 +344,15 @@ pub fn harness_roots(home: &Path, harnesses: &BTreeMap<String, PathBuf>) -> Vec<
 /// passes on CI and fails on any machine where `cru` has been installed and
 /// run — which is every developer's.
 pub fn default_discovery_paths_from(
+    roots: &SourceRoots,
     workspace: Option<&Path>,
     kilns: &[PathBuf],
     home: Option<&Path>,
     runtime_roots: &[PathBuf],
     plugin_dirs: &[PathBuf],
 ) -> Vec<SearchPath> {
-    let config_home = dirs::config_dir().map(|d| d.join("crucible"));
+    // `SourceRoots::config_home` is the raw config dir, as for cards.
+    let config_home = roots.config_home.as_ref().map(|d| d.join("crucible"));
     let workspace_roots = workspace_root_names();
     let harnesses = home.map(enabled_harnesses).unwrap_or_default();
 
@@ -356,6 +362,7 @@ pub fn default_discovery_paths_from(
         kilns,
         harnesses: &harnesses,
         config_home: config_home.as_deref(),
+        runtimepath: &roots.runtimepath,
         runtime_roots,
         plugin_dirs,
         ..PathInputs::default()
@@ -445,7 +452,7 @@ mod tests {
     /// needed `.rev()` to undo the scope sort. Bundled skills now live at
     /// `<root>/skills` like every other kind, and position is precedence.
     fn bundled_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
-        default_discovery_paths_from(None, &[], None, roots, &[])
+        default_discovery_paths_from(&SourceRoots::default(), None, &[], None, roots, &[])
             .into_iter()
             .filter(|p| {
                 p.path
@@ -662,6 +669,20 @@ mod tests {
                 .description,
             "Workspace style"
         );
+    }
+
+    /// A `runtimepath` entry supplies skills from its `skills/`.
+    #[test]
+    fn a_runtimepath_entry_supplies_skills() {
+        let kit = TempDir::new().unwrap();
+        write_skill(&kit.path().join("skills"), "kit-only", "From the kit");
+        let roots = SourceRoots {
+            runtimepath: vec![kit.path().to_path_buf()],
+            ..SourceRoots::default()
+        };
+        let paths = default_discovery_paths_from(&roots, None, &[], None, &[], &[]);
+        let found = FolderDiscovery::new(paths).discover().unwrap();
+        assert_eq!(found["kit-only"].skill.source.namespace, "config-1");
     }
 
     #[test]
@@ -969,7 +990,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // Inject an empty home dir so the test isn't affected by the
         // host's real ~/.claude / ~/.codex / ~/.pi skill libraries.
-        let paths = default_discovery_paths_from(Some(tmp.path()), &[], Some(tmp.path()), &[], &[]);
+        let paths = default_discovery_paths_from(
+            &SourceRoots::default(),
+            Some(tmp.path()),
+            &[],
+            Some(tmp.path()),
+            &[],
+            &[],
+        );
         let discovery = FolderDiscovery::new(paths);
 
         // Should not panic, and discover should work on nonexistent paths
@@ -998,6 +1026,7 @@ mod tests {
         std::fs::create_dir_all(kiln.join(".crucible").join("skills")).unwrap();
 
         let paths = default_discovery_paths_from(
+            &SourceRoots::default(),
             Some(&ws),
             std::slice::from_ref(&kiln),
             Some(tmp.path()),
@@ -1148,7 +1177,7 @@ mod tests {
         let _guard =
             crucible_core::test_support::EnvVarGuard::remove("CRUCIBLE_CROSS_HARNESS_SKILLS");
 
-        let paths = default_discovery_paths(None, &[], Some(home));
+        let paths = default_discovery_paths(&SourceRoots::default(), None, &[], Some(home));
         // None of the discovered paths should reference `.claude/skills`.
         for p in &paths {
             // The cross-harness path is `.claude/skills`, not any path that
@@ -1177,7 +1206,7 @@ mod tests {
             "1".to_string(),
         );
 
-        let paths = default_discovery_paths(None, &[], Some(home));
+        let paths = default_discovery_paths(&SourceRoots::default(), None, &[], Some(home));
         let has_claude = paths
             .iter()
             .any(|p| p.path.to_string_lossy().contains(".claude"));

@@ -1848,6 +1848,7 @@ mod acp_permission_handler_tests {
                 source_roots: crate::runtime_path::SourceRoots {
                     config_home: Some(config_home.path().to_path_buf()),
                     agent_directories: Vec::new(),
+                    runtimepath: Vec::new(),
                 },
                 review_snapshot_root: crate::test_support::scratch_snapshot_root(),
             },

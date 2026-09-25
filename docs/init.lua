@@ -73,12 +73,14 @@ cru.config.set({
     -- data_home = "~/.crucible",
 
     -- Extra directories to search for agent cards, beyond the built-in
-    -- locations. Deprecated. `runtimepath` does not supply cards, so move
-    -- the cards to ~/.config/crucible/agents/ instead.
+    -- locations. Deprecated. Move the cards to ~/.config/crucible/agents/,
+    -- or to the agents/ directory of a runtimepath entry.
     -- agent_directories = { "~/shared-agents" },
 
-    -- Extra roots for plugins, themes, skills and agent cards. This is the
-    -- list of *additional* roots; the well-known ones always apply.
+    -- Extra roots. Crucible reads the agents/, skills/, themes/ and plugins/
+    -- directories of each entry. The well-known roots always apply. For
+    -- cards, skills and themes, your personal, workspace and kiln sources
+    -- rank above an entry.
     -- runtimepath = { "/opt/crucible/runtime" },
 
     -- =========================================================================

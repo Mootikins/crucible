@@ -102,9 +102,8 @@ shape; the examples are Lua.
 | `default_kiln` | string | first alphabetically, else the bundled `crucible-docs` | Name of the default kiln (session storage, tool scoping). A pointer to a name in `kilns`; it never names a kiln of its own |
 | `session_kiln` | path | *(unset)* | Kiln where `cru chat` stores sessions, if not the default kiln |
 | `data_home` | path | `$CRUCIBLE_HOME`, else `~/.crucible` | Daemon data root — project registry, default session storage, home kiln |
-| `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. `runtimepath` does not supply cards; move them to `~/.config/crucible/agents/` instead. Still honoured, warns once. |
-| `runtimepath` | list | `[]` | Extra roots. Each entry's `agents/`, `skills/`, `plugins/` and `themes/` subdirectories are searched, ahead of the shipped runtime. |
-| `runtimepath` | list | `[]` | *Extra* runtime roots for plugins and themes, searched after the well-known ones (`~/.config/crucible/runtime`, `$CRUCIBLE_RUNTIME`, next to the binary). Skills discovery does not read it yet |
+| `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. Move the cards to `~/.config/crucible/agents/`, or to the `agents/` directory of a `runtimepath` entry. Still honoured, warns once. |
+| `runtimepath` | list | `[]` | Extra roots. Each entry's `agents/`, `skills/`, `themes/`, `plugins/` and `defaults/` subdirectories are searched. The shipped runtime is always searched too. For cards, skills and themes, the first entry has priority 600 and each later entry is one lower: below your personal, workspace and kiln sources, above the shipped runtime. For plugins, an entry outranks `~/.config/crucible/plugins/`. |
 
 The location-naming keys (`kiln_path`, `kilns`, `projects`, `data_home`,
 `session_kiln`, `agent_directories`, `runtimepath`) freeze when the boot

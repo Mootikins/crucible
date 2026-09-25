@@ -169,10 +169,12 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub schedules: Vec<super::types::ScheduleEntry>,
 
-    /// Runtime search path for plugins, themes, and skills.
+    /// Runtime search path for plugins, themes, skills and agent cards.
     ///
-    /// Directories are searched in order (first match wins). Each directory
-    /// can contain `plugins/`, `themes/`, and `skills/` subdirectories.
+    /// Each directory can contain `plugins/`, `themes/`, `skills/` and
+    /// `agents/` subdirectories. For skills, cards and themes, the first
+    /// entry has priority 600 and each later entry is one lower, below the
+    /// personal, workspace and kiln sources (see `crucible_core::sources`).
     ///
     /// **Empty by default** — this is the list of *extra* directories you
     /// configure, not the full search path. The well-known roots are resolved
@@ -181,10 +183,6 @@ pub struct CliAppConfig {
     /// binary. See `crucible_core::runtime_roots`.
     ///
     /// Set `CRUCIBLE_PLUGIN_PATH` to prepend additional plugin paths.
-    ///
-    /// Honoured by plugin discovery and `defaults/init.lua`. **Not yet by
-    /// skills discovery**, which reads only the well-known roots — so a
-    /// `skills/` subdirectory here is currently ignored.
     ///
     /// ```toml
     /// runtimepath = ["~/.config/crucible", "/opt/crucible/runtime"]

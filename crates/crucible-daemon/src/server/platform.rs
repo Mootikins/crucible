@@ -147,6 +147,7 @@ pub(crate) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManag
 /// Discover the skills visible from `kiln_path` and the caller's
 /// `workspace`, off the async runtime.
 async fn discover_skills(
+    roots: crate::runtime_path::SourceRoots,
     kiln_path: String,
     workspace: Option<String>,
 ) -> Result<
@@ -157,6 +158,7 @@ async fn discover_skills(
         let workspace = workspace.map(PathBuf::from);
         let kiln = PathBuf::from(&kiln_path);
         let paths = default_discovery_paths(
+            &roots,
             workspace.as_deref(),
             std::slice::from_ref(&kiln),
             dirs::home_dir().as_deref(),
@@ -166,7 +168,10 @@ async fn discover_skills(
     .await
 }
 
-pub(crate) async fn handle_skills_list(req: Request) -> Response {
+pub(crate) async fn handle_skills_list(
+    req: Request,
+    roots: &crate::runtime_path::SourceRoots,
+) -> Response {
     let params = match typed_params::<crate::rpc_client::SkillsListRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -174,7 +179,7 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
     let kiln_path = params.kiln_path;
     let scope_filter = params.scope_filter;
 
-    let result = discover_skills(kiln_path, params.workspace).await;
+    let result = discover_skills(roots.clone(), kiln_path, params.workspace).await;
 
     match result {
         Ok(Ok(skills)) => {
@@ -202,7 +207,10 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
     }
 }
 
-pub(crate) async fn handle_skills_get(req: Request) -> Response {
+pub(crate) async fn handle_skills_get(
+    req: Request,
+    roots: &crate::runtime_path::SourceRoots,
+) -> Response {
     let params = match typed_params::<crate::rpc_client::SkillsGetRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -210,7 +218,7 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
     let name = params.name;
     let kiln_path = params.kiln_path;
 
-    let result = discover_skills(kiln_path, params.workspace).await;
+    let result = discover_skills(roots.clone(), kiln_path, params.workspace).await;
 
     match result {
         Ok(Ok(skills)) => match crate::skills::discovery::resolve_skill(&skills, &name) {
@@ -239,7 +247,10 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
     }
 }
 
-pub(crate) async fn handle_skills_search(req: Request) -> Response {
+pub(crate) async fn handle_skills_search(
+    req: Request,
+    roots: &crate::runtime_path::SourceRoots,
+) -> Response {
     let params = match typed_params::<crate::rpc_client::SkillsSearchRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -248,7 +259,7 @@ pub(crate) async fn handle_skills_search(req: Request) -> Response {
     let kiln_path = params.kiln_path;
     let limit = params.limit.unwrap_or(20);
 
-    let result = discover_skills(kiln_path, params.workspace).await;
+    let result = discover_skills(roots.clone(), kiln_path, params.workspace).await;
 
     match result {
         Ok(Ok(skills)) => {
@@ -403,7 +414,7 @@ mod tests {
             params: serde_json::json!({ "name": "commit" }),
         };
 
-        let resp = handle_skills_get(req).await;
+        let resp = handle_skills_get(req, &crate::runtime_path::SourceRoots::default()).await;
 
         let error = resp.error.expect("a request with no `kiln_path` must fail");
         assert_eq!(error.code, INVALID_PARAMS);
@@ -437,7 +448,10 @@ mod tests {
             }),
         };
 
-        let result = handle_skills_list(req).await.result.expect("a reply");
+        let result = handle_skills_list(req, &crate::runtime_path::SourceRoots::default())
+            .await
+            .result
+            .expect("a reply");
 
         assert!(
             result.to_string().contains("\"ws-only\""),

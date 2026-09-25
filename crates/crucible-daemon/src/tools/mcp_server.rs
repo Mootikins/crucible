@@ -54,6 +54,8 @@ pub struct CrucibleMcpServer {
     /// Every kiln the session attaches, in attach order. Each is a source of
     /// skills and agent cards.
     kilns: Vec<PathBuf>,
+    /// Where skills come from besides the workspace and the kilns.
+    source_roots: crate::runtime_path::SourceRoots,
     delegation_context: Option<DelegationContext>,
     tool_router: ToolRouter<Self>,
     /// The permission gate of the session that the calls run for. `None`:
@@ -202,6 +204,7 @@ impl CrucibleMcpServer {
             kiln_tools: KilnTools::new(kiln_path).with_containment(containment),
             workspace_path,
             kilns: vec![kiln_path_buf.clone()],
+            source_roots: crate::runtime_path::SourceRoots::ambient(),
             kiln_path: kiln_path_buf,
             delegation_context,
             tool_router: Self::tool_router(),
@@ -221,6 +224,13 @@ impl CrucibleMcpServer {
     #[must_use]
     pub fn with_kilns(mut self, kilns: Vec<PathBuf>) -> Self {
         self.kilns = kilns;
+        self
+    }
+
+    /// Read skills from the roots the daemon was bound with.
+    #[must_use]
+    pub fn with_source_roots(mut self, roots: crate::runtime_path::SourceRoots) -> Self {
+        self.source_roots = roots;
         self
     }
 
@@ -481,8 +491,11 @@ impl CrucibleMcpServer {
         params: Parameters<SkillViewParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let name = params.0.name;
-        let discovery =
-            crate::skills::FolderDiscovery::with_default_paths(&self.workspace_path, &self.kilns);
+        let discovery = crate::skills::FolderDiscovery::with_default_paths(
+            &self.source_roots,
+            &self.workspace_path,
+            &self.kilns,
+        );
         let body = match discovery.discover() {
             Ok(skills) => match crate::skills::discovery::resolve_skill(&skills, &name) {
                 Ok(Some(resolved)) => {

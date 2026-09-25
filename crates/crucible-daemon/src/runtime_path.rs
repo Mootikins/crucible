@@ -71,29 +71,46 @@ pub struct SourceRoots {
     /// line instead of three knobs. Kept working;
     /// [`crate::agent_cards::warn_if_deprecated`] says so once.
     pub agent_directories: Vec<PathBuf>,
+    /// `runtimepath` from the app config, tilde already expanded. Each entry
+    /// is a root: its `agents/`, `skills/` and `themes/` are sources, at
+    /// priority 600 minus the index.
+    pub runtimepath: Vec<PathBuf>,
 }
 
 impl SourceRoots {
-    /// Read `agent_directories` out of the serialized app config. `home`
-    /// expands a leading `~`; `None` leaves the path as written.
+    /// The config home of this user and nothing else: the roots of a server
+    /// that no session binds, such as `cru mcp`.
+    pub fn ambient() -> Self {
+        Self {
+            config_home: dirs::config_dir(),
+            ..Self::default()
+        }
+    }
+
+    /// Read `agent_directories` and `runtimepath` out of the serialized app
+    /// config. `home` expands a leading `~`; `None` leaves the path as
+    /// written.
     pub fn from_app_config(
         config_home: Option<PathBuf>,
         app_config: Option<&serde_json::Value>,
         home: Option<&Path>,
     ) -> Self {
-        let agent_directories = app_config
-            .and_then(|v| v.get("agent_directories"))
-            .and_then(|v| v.as_array())
-            .map(|dirs| {
-                dirs.iter()
-                    .filter_map(|d| d.as_str())
-                    .map(|d| crucible_core::config::expand_tilde(d, home))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let paths = |key: &str| -> Vec<PathBuf> {
+            app_config
+                .and_then(|v| v.get(key))
+                .and_then(|v| v.as_array())
+                .map(|dirs| {
+                    dirs.iter()
+                        .filter_map(|d| d.as_str())
+                        .map(|d| crucible_core::config::expand_tilde(d, home))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
         Self {
             config_home,
-            agent_directories,
+            agent_directories: paths("agent_directories"),
+            runtimepath: paths("runtimepath"),
         }
     }
 }
@@ -153,6 +170,10 @@ mod tests {
                 PathBuf::from("/abs/agents")
             ]
         );
+
+        let config = serde_json::json!({ "runtimepath": ["~/kit"] });
+        let roots = SourceRoots::from_app_config(None, Some(&config), Some(home));
+        assert_eq!(roots.runtimepath, vec![PathBuf::from("/home/tester/kit")]);
 
         let roots = SourceRoots::from_app_config(None, None, Some(home));
         assert!(roots.agent_directories.is_empty());

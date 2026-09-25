@@ -289,6 +289,7 @@ async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
     let source_roots = crate::runtime_path::SourceRoots {
         config_home: Some(config_home.path().to_path_buf()),
         agent_directories: Vec::new(),
+        runtimepath: Vec::new(),
     };
     let (event_tx, _keep_open) = broadcast::channel(256);
     let (_tmp, bridge, session_id) =

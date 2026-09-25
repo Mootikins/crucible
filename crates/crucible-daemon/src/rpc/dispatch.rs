@@ -1259,14 +1259,29 @@ impl RpcDispatcher {
 
             // Skills RPC handlers
             RpcMethod::SkillsList => {
-                forward!(id, crate::server::platform::handle_skills_list(req.clone()))
+                forward!(
+                    id,
+                    crate::server::platform::handle_skills_list(
+                        req.clone(),
+                        self.ctx.agents.source_roots()
+                    )
+                )
             }
             RpcMethod::SkillsGet => {
-                forward!(id, crate::server::platform::handle_skills_get(req.clone()))
+                forward!(
+                    id,
+                    crate::server::platform::handle_skills_get(
+                        req.clone(),
+                        self.ctx.agents.source_roots()
+                    )
+                )
             }
             RpcMethod::SkillsSearch => forward!(
                 id,
-                crate::server::platform::handle_skills_search(req.clone())
+                crate::server::platform::handle_skills_search(
+                    req.clone(),
+                    self.ctx.agents.source_roots()
+                )
             ),
 
             // Agents RPC handlers

@@ -42,6 +42,8 @@ before you share it in a kiln. The order is, highest first:
 3. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo),
    with the full name `workspace:`
 4. `KILN/.crucible/agents/` — kiln-scoped cards, with the full name `kiln:`
+5. `ENTRY/agents/` for each `runtimepath` entry, with the full name
+   `config-1:`, `config-2:` and so on
 
 A bare name resolves to the card of the highest source that has it, in
 `cru session create --agent`, in delegation and in `cru agents show`. Every
@@ -53,9 +55,9 @@ priority. The personal sources have a fixed order, so a card in an
 `agent_directories` entry and a card in `~/.config/crucible/agents/` are not
 ambiguous.
 
-`agent_directories` is deprecated. It still works and warns once. A
-`runtimepath` entry does not supply cards, so to keep a card, move it to
-`~/.config/crucible/agents/` or to `PROJECT/.crucible/agents/`.
+`agent_directories` is deprecated. It still works and warns once. To keep a
+card, move it to `~/.config/crucible/agents/`, to `PROJECT/.crucible/agents/`
+or to the `agents/` directory of a `runtimepath` entry.
 
 Only `.crucible/` directories. A kiln's visible tree is **not** searched:
 `KILN/agents/` and `KILN/Agents/` used to be, which meant any kiln you cloned,

@@ -398,8 +398,12 @@ pub enum AgentFactoryError {
 /// (name + description per skill) for the system prompt. The agent loads full
 /// instructions on demand via the `skill_view` tool. Best-effort: discovery
 /// failures yield an empty catalog rather than blocking agent creation.
-fn discover_skills_catalog(workspace: &Path, kilns: &[std::path::PathBuf]) -> String {
-    let discovery = crate::skills::FolderDiscovery::with_default_paths(workspace, kilns);
+fn discover_skills_catalog(
+    roots: &crate::runtime_path::SourceRoots,
+    workspace: &Path,
+    kilns: &[std::path::PathBuf],
+) -> String {
+    let discovery = crate::skills::FolderDiscovery::with_default_paths(roots, workspace, kilns);
     match discovery.discover() {
         Ok(skills) => crate::skills::format_skills_for_context(&skills),
         Err(e) => {
@@ -764,7 +768,7 @@ pub async fn create_agent_from_session_config(
     // but a kiln-less session has no `skill_view` to load them — so we skip the
     // catalog entirely rather than advertise skills the agent can't open.
     let skills_catalog = if kiln_path.is_some() {
-        discover_skills_catalog(workspace, kilns)
+        discover_skills_catalog(source_roots, workspace, kilns)
     } else {
         String::new()
     };

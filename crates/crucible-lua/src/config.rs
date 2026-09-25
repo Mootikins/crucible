@@ -735,8 +735,9 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
 
 /// The `themes/` directories to search, as sources sorted by priority.
 ///
-/// The config directory is `personal`, so a user's own theme wins. Every
-/// runtime root follows — `cru setup` copies the shipped tree into
+/// The config directory is `personal`, so a user's own theme wins. Each
+/// `runtimepath` entry follows, then every runtime root — `cru setup` copies
+/// the shipped tree into
 /// `~/.config/crucible/runtime`, which is a runtime root and is NOT the config
 /// directory. Reading only the config directory is why a shipped theme was
 /// never listed.
@@ -747,12 +748,16 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
 /// It resolves through `search_sources` rather than joining `themes` itself,
 /// so `RuntimeAsset::Themes::reaches` stays in force: a workspace, kiln or
 /// harness root must never supply Lua the theme VM executes.
-pub fn theme_roots(config_dir: &Path) -> Result<Sources<SearchPath>, SourcesError> {
+pub fn theme_roots(
+    config_dir: &Path,
+    runtimepath: &[PathBuf],
+) -> Result<Sources<SearchPath>, SourcesError> {
     use crucible_core::runtime_path::{build_path, search_sources, PathInputs, RuntimeAsset};
 
     let runtime = crucible_core::runtime_roots::for_current_exe();
     let path = build_path(&PathInputs {
         config_home: Some(config_dir),
+        runtimepath,
         runtime_roots: &runtime,
         ..PathInputs::default()
     });
@@ -1658,6 +1663,21 @@ mod tests {
             ..PathInputs::default()
         });
         search_sources(RuntimeAsset::Themes, &path).unwrap()
+    }
+
+    /// A `runtimepath` entry supplies themes from its `themes/`.
+    #[test]
+    fn a_runtimepath_entry_supplies_themes() {
+        let tmp = TempDir::new().unwrap();
+        let kit = tmp.path().join("kit");
+        std::fs::create_dir_all(kit.join("themes")).unwrap();
+        std::fs::write(kit.join("themes").join("kit-only.luau"), "return {}").unwrap();
+        let roots = theme_roots(&tmp.path().join("config"), std::slice::from_ref(&kit)).unwrap();
+        assert!(list_available_themes(&roots).contains(&"kit-only".to_string()));
+        assert_eq!(
+            resolve_theme_file(&roots, "config-1:kit-only"),
+            Ok(Some(kit.join("themes").join("kit-only.luau")))
+        );
     }
 
     #[test]

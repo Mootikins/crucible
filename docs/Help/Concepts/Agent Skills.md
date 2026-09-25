@@ -112,6 +112,7 @@ and a priority. A higher priority wins.
 | `<workspace>/.crucible/` | `workspace` | 800 | Workspace |
 | `<workspace>/.agents/`, `.claude/`, `.codex/`, `.opencode/` | `workspace-agents`, ... | 790 | Workspace |
 | `<kiln>/.crucible/` | `kiln` | 700 | Kiln |
+| each `runtimepath` entry, in the order you wrote it | `config-1`, `config-2`, ... | 600, 599, ... | Personal |
 | each `[harnesses]` row you enabled | the row name | 500 | Personal |
 | `~/.config/crucible/runtime/` (what `cru setup` writes) | `runtime` | 300 | Builtin |
 | a loaded plugin's own directory | the plugin name | 200 | Builtin |
@@ -135,7 +136,8 @@ cru.config.set({
 
 `~/team-kit/skills/`, `~/team-kit/agents/`, `~/team-kit/plugins/` and
 `~/team-kit/themes/` are all found. From `init.lua`, `cru.rtp.append("...")`
-does the same thing at boot.
+does the same thing at boot. A skill in `~/team-kit/skills/` has the full name
+`config-1:<name>`. Your personal, workspace and kiln skills rank above it.
 
 ### Reading another agent tool's skills
 
