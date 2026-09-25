@@ -4,7 +4,8 @@ use super::asset::RuntimeAsset;
 use super::entry::{EntryKind, RuntimeEntry, SearchPath};
 use crate::sources::{sources_new, Source, Sources, SourcesError};
 
-/// Every candidate directory for `asset`, highest priority first.
+/// Every candidate directory for `asset`, in path order. The order is not
+/// precedence: [`search_sources`] sorts by priority.
 ///
 /// # Candidates are returned UNFILTERED
 ///
@@ -73,8 +74,7 @@ fn candidates(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<Source<SearchPa
             };
             Some((dir, entry))
         })
-        .enumerate()
-        .map(|(rank, (dir, entry))| Source {
+        .map(|(dir, entry)| Source {
             name: entry.name.clone(),
             priority: entry.priority,
             within: entry.within,
@@ -82,7 +82,6 @@ fn candidates(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<Source<SearchPa
                 path: dir,
                 origin: entry.origin,
                 harness: entry.harness.clone(),
-                rank,
             },
         })
         .collect()
@@ -236,22 +235,6 @@ mod tests {
         assert!(
             search_paths(RuntimeAsset::Plugins, &path).is_empty(),
             "plugin discovery must not recurse into plugin roots"
-        );
-    }
-
-    /// Rank is dense and ascending after skipped entries are dropped.
-    #[test]
-    fn rank_is_dense_after_skips() {
-        let path = vec![
-            RuntimeEntry::root("/kiln", Origin::Kiln),
-            RuntimeEntry::root("/user", Origin::UserConfig),
-            RuntimeEntry::root("/bundled", Origin::Bundled),
-        ];
-        let found = search_paths(RuntimeAsset::Plugins, &path);
-        assert_eq!(
-            found.iter().map(|s| s.rank).collect::<Vec<_>>(),
-            vec![0, 1],
-            "the kiln entry is skipped, so ranks must close up"
         );
     }
 

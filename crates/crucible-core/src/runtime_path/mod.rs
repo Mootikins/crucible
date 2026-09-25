@@ -8,9 +8,9 @@
 //!
 //! - [`asset`] — WHAT lives under a root, as one enumerated table with a gate.
 //! - [`build`] — turning config, environment and session into that list.
-//! - [`entry`] — WHICH roots there are, in precedence order.
-//! - [`resolve`] — the join. Position in the list is precedence, for every
-//!   kind.
+//! - [`entry`] — WHICH roots there are, and the priority of each.
+//! - [`resolve`] — the join. [`search_sources`] sorts by priority, for every
+//!   kind; [`crate::sources`] names the entries.
 //!
 //! Lives in `crucible-core` because the CLI and the daemon both resolve paths;
 //! `paths.rs` and `runtime_roots.rs` are here for the same reason.

@@ -1,18 +1,19 @@
 //! The roots on the path, and where each came from.
 //!
 //! [`super::asset`] says what lives under a root. This says which roots there
-//! are and in what order. Position in the list is precedence, for every kind —
-//! replacing three different rules that ran in two different directions.
+//! are, and the priority of each: one table, [`default_priority`], for every
+//! kind — replacing three different rules that ran in two different
+//! directions.
 
 use std::path::PathBuf;
 
-/// Where a root came from. **Declaration order is precedence order**, highest
-/// first, and [`super::resolve::search_paths`] preserves it.
+/// Where a root came from. [`Origin::level`] and [`default_priority`] give its
+/// priority; the declaration order means nothing.
 ///
 /// The ranking is not arbitrary. Anything the user named outranks anything
 /// Crucible supplies, and a plugin's own contribution sits below every
 /// user-named root so a plugin can never shadow what the user wrote.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Origin {
     /// `$CRUCIBLE_PLUGIN_PATH`: plugin directories. Highest, for dev and CI.
     Env,
@@ -297,16 +298,12 @@ impl RuntimeEntry {
 }
 
 /// One directory a kind may be resolved from, with the entry it came from.
-///
-/// Carries the index so a caller that must report precedence — `cru doctor`,
-/// the skills view — does not recompute it.
+/// Its priority is on the [`crate::sources::Source`] that holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchPath {
     pub path: PathBuf,
     pub origin: Origin,
     pub harness: Option<String>,
-    /// Position in the resolved list. Lower wins.
-    pub rank: usize,
 }
 
 #[cfg(test)]
@@ -393,14 +390,15 @@ mod tests {
         assert_eq!(Origin::Config(2).default_source_name(), "config-3");
     }
 
-    /// Origin ordering is precedence, and the two user roots are distinct.
+    /// The priorities rank the user roots above a plugin and the shipped tree.
     #[test]
-    fn origin_order_ranks_user_roots_above_plugin_and_bundled() {
-        assert!(Origin::Env < Origin::Workspace);
-        assert!(Origin::Config(0) < Origin::Harness);
-        assert!(Origin::UserConfig < Origin::UserRuntime);
-        assert!(Origin::UserRuntime < Origin::Plugin);
-        assert!(Origin::Plugin < Origin::Bundled);
+    fn priority_ranks_user_roots_above_plugin_and_bundled() {
+        let p = default_priority;
+        assert!(p(Origin::Env) > p(Origin::Workspace));
+        assert!(p(Origin::Config(0)) > p(Origin::Harness));
+        assert!(p(Origin::UserConfig) > p(Origin::UserRuntime));
+        assert!(p(Origin::UserRuntime) > p(Origin::Plugin));
+        assert!(p(Origin::Plugin) > p(Origin::Bundled));
     }
 
     /// A plugin never outranks a root the user named.
@@ -415,10 +413,6 @@ mod tests {
             Origin::UserConfig,
             Origin::UserRuntime,
         ] {
-            assert!(
-                user < Origin::Plugin,
-                "{user:?} must outrank a plugin's own directory"
-            );
             assert!(
                 default_priority(user) > default_priority(Origin::Plugin),
                 "{user:?} must have a higher priority than a plugin"

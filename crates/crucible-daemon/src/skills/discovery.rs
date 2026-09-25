@@ -463,7 +463,7 @@ mod tests {
     ///
     /// Replaces `runtime_skill_paths`, which globbed `<root>/*/skills` and
     /// needed `.rev()` to undo the scope sort. Bundled skills now live at
-    /// `<root>/skills` like every other kind, and position is precedence.
+    /// `<root>/skills` like every other kind, and priority is precedence.
     fn bundled_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
         let runtime = MachineRuntime {
             shipped: roots.to_vec(),

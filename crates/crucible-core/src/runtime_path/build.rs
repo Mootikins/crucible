@@ -117,11 +117,10 @@ impl Default for PathInputs<'_> {
     }
 }
 
-/// The ordered path, highest precedence first.
+/// The path: every root with its source name and its priority.
 ///
-/// Origin order is the order below, and it is the same order
-/// [`Origin`]'s declaration gives. Position is precedence for every asset
-/// kind; `search_paths` preserves it.
+/// The position of an entry decides nothing. `search_sources` sorts by
+/// priority, and the position only orders the display of a tie.
 pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
     let mut path = Vec::new();
 
