@@ -9,7 +9,7 @@ use test_case::test_case;
     ; "openai"
 )]
 #[test_case(
-    BackendType::ZAI, "zai-dynamic", None, false,
+    BackendType::ZAI, "zai-dynamic", None, true,
     serde_json::json!({ "data": [ { "id": "GLM-5" }, { "id": "GLM-4.7" }, { "id": "GLM-4.5-Flash" } ] }),
     &["zai-dynamic/GLM-5", "zai-dynamic/GLM-4.7", "zai-dynamic/GLM-4.5-Flash"]
     ; "zai"
@@ -32,9 +32,9 @@ async fn list_models_dynamic_discovery_succeeds(
 ) {
     use crucible_core::config::{LlmConfig, LlmProviderConfig};
 
-    // openai/openrouter read their API key from the process env when none is
-    // configured, so those cases must serialize on ENV_LOCK and clear the vars;
-    // zai has no such env fallback and runs without the guard.
+    // Discovery reads the API key from the process env when none is
+    // configured, so a case without a configured key must serialize on
+    // ENV_LOCK and clear the vars.
     let _env_guard = clear_env.then(|| {
         let lock = ENV_LOCK.lock().expect("env lock poisoned");
         (lock, clear_provider_env())
@@ -836,4 +836,56 @@ async fn test_model_cache_does_not_cache_errors() {
         models1, cached_models,
         "Cached models should match returned models"
     );
+}
+
+/// A key that `cru auth login --provider zai-coding` stored under the
+/// provider key reaches model discovery, as it reaches the chat client.
+/// Discovery read only the config value, so it listed nothing and warned
+/// with a 401 while the turn worked.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn discovery_sends_the_key_stored_under_the_provider_key() {
+    use crucible_core::config::credentials::SecretsFile;
+    use crucible_core::config::{LlmConfig, LlmProviderConfig};
+
+    let _lock = ENV_LOCK.lock().expect("env lock poisoned");
+    let _env = clear_provider_env();
+    let home = TempDir::new().unwrap();
+    let _home = EnvVarGuard::set("XDG_CONFIG_HOME", home.path().display().to_string());
+    SecretsFile::with_path(home.path().join("crucible").join("secrets.toml"))
+        .set("zai-coding", "stored-key")
+        .unwrap();
+    let (_tmp, session_manager, session) = setup_session_manager().await;
+    let (endpoint, server) = start_mock_openai_models_server(
+        200,
+        serde_json::json!({ "data": [ { "id": "glm-5.3" } ] }),
+        Some("stored-key"),
+    )
+    .await;
+    let mut providers = std::collections::BTreeMap::new();
+    providers.insert(
+        "zai-coding".to_string(),
+        LlmProviderConfig::builder(BackendType::ZAI)
+            .endpoint(&endpoint)
+            .build(),
+    );
+    let agent_manager = create_test_agent_manager_with_llm_config(
+        session_manager.clone(),
+        LlmConfig {
+            default: Some("zai-coding".to_string()),
+            providers,
+            models: Default::default(),
+        },
+    );
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+
+    let models = agent_manager.list_models(&session.id, None).await.unwrap();
+    server
+        .await
+        .expect("the mock asserts the Authorization header");
+
+    assert_eq!(models, vec!["zai-coding/glm-5.3".to_string()]);
 }

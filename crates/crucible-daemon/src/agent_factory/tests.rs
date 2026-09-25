@@ -217,6 +217,7 @@ fn test_unsupported_agent_type() {
 
     let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
         create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+            configured_api_key: None,
             modes: None,
             agent_config: &config,
             lua: None,
@@ -410,6 +411,7 @@ async fn rules_file_contents_reach_the_system_prompt() {
 
     let config = test_agent_config();
     let handle = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+        configured_api_key: None,
         modes: None,
         agent_config: &config,
         lua: None,
@@ -481,6 +483,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
     };
 
     let handle = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+        configured_api_key: None,
         modes: None,
         agent_config: &config,
         lua: None,
@@ -524,6 +527,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
 async fn test_create_ollama_agent() {
     let config = test_agent_config();
     let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+        configured_api_key: None,
         modes: None,
         agent_config: &config,
         lua: None,
@@ -561,6 +565,7 @@ async fn internal_agent_type_dispatches_to_internal_branch() {
     assert_eq!(config.agent_type, "internal");
 
     let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+        configured_api_key: None,
         modes: None,
         agent_config: &config,
         lua: None,
@@ -600,6 +605,7 @@ async fn acp_agent_type_dispatches_to_acp_branch() {
     config.agent_type = "acp".to_string();
 
     let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
+        configured_api_key: None,
         modes: None,
         agent_config: &config,
         lua: None,

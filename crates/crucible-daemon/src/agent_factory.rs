@@ -57,6 +57,9 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     /// live tool set. `None` keeps the shipped plan-mode behaviour.
     pub modes: Option<crucible_lua::ModeRegistry>,
     pub agent_config: &'a SessionAgent,
+    /// `llm.providers.<provider_key>.api_key` from the live config. The
+    /// session record holds no secret, so the caller passes it here.
+    pub configured_api_key: Option<&'a str>,
     pub lua: Option<&'a Lua>,
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
@@ -509,11 +512,15 @@ fn build_enriched_prompt(
 
 /// Build a bare genai chat client + model identity from a session's agent
 /// config, resolving credentials the same way full agent construction does
-/// (env var → Lua auth hooks → Copilot OAuth exchange). Shared by agent
-/// creation and one-shot completions (e.g. session title generation) that
-/// must not spin up tools or touch conversation history.
+/// (env var → credential store → config → Lua auth hooks → Copilot OAuth
+/// exchange). Shared by agent creation and one-shot completions (e.g. session
+/// title generation) that must not spin up tools or touch conversation history.
+///
+/// `configured_key` is `llm.providers.<provider_key>.api_key`: the session
+/// record holds no secret, so the caller reads it from the live config.
 pub(crate) fn build_chat_client_for_agent(
     agent_config: &SessionAgent,
+    configured_key: Option<&str>,
     lua: Option<&Lua>,
 ) -> Result<(genai::Client, genai::ModelIden), AgentFactoryError> {
     let provider_type = agent_config.provider;
@@ -522,57 +529,43 @@ pub(crate) fn build_chat_client_for_agent(
     if let Some(endpoint) = agent_config.endpoint.clone() {
         llm_config = llm_config.endpoint(endpoint);
     }
-    let mut llm_config = llm_config
-        .model(agent_config.model.clone())
-        .with_api_key_env_var_name()
-        .build();
+    let mut llm_config = llm_config.model(agent_config.model.clone()).build();
 
-    // Resolve the env var value — with_api_key_env_var_name() stores the env var
-    // NAME (e.g. "GLM_AUTH_TOKEN"), not the actual token. Look it up now so genai
-    // sends the real credential in the Authorization header.
-    // `provider_type.as_str()` rather than `format!("{:?}")`: the Debug form
-    // happens to match for every current variant except GitHubCopilot, but it
-    // would silently diverge on the next multi-word one, and this string is
-    // the key credentials are stored under.
-    let provider_name = provider_type.as_str().to_string();
+    // The name the provider has in the config (`zai-coding`), which is where
+    // `cru auth login --provider zai-coding` stores its key. The backend name
+    // (`zai`) is only the fallback: looking there alone never found that key.
+    // `as_str()` rather than `format!("{:?}")` for the fallback: the Debug
+    // form diverges for GitHubCopilot, and this string is a store key.
+    let provider_key = agent_config
+        .provider_key
+        .as_deref()
+        .unwrap_or_else(|| provider_type.as_str());
 
-    let env_resolved = llm_config
-        .api_key
-        .as_ref()
-        .and_then(|name| match std::env::var(name) {
-            Ok(v) if !v.is_empty() => Some(v),
-            _ => None,
-        });
-
-    if let Some(resolved) = env_resolved {
-        llm_config.api_key = Some(resolved);
-    } else {
-        // Fall back to the credential store. `cru auth login` and the
-        // first-run wizard both write there and both print "stored securely",
-        // but nothing on this path ever read it, so those keys silently did
-        // nothing and the user's next turn failed with a raw provider error.
-        //
-        // Deliberately outside the `api_key.is_some()` branch:
-        // `with_api_key_env_var_name` yields None for Custom, Ollama,
-        // FastEmbed, Burn and Mock, so gating on it would reproduce the same
-        // bug for anyone running `cru auth login --provider custom`.
-        let store = SecretsFile::new();
-        match crucible_core::config::credentials::resolve_api_key(&provider_name, &store, None) {
-            Some((key, source)) => {
-                debug!("Resolved API key for {provider_name} from {source:?}");
-                llm_config.api_key = Some(key);
-            }
-            None => {
-                // Only a problem for providers that actually need a key —
-                // Ollama and the local backends legitimately have none, so
-                // do not cry wolf at them.
-                if llm_config.api_key.is_some() {
-                    warn!(
-                        "No API key for {provider_name}: the environment variable is unset \
-                         and the credential store has no entry — try `cru auth login`"
-                    );
-                }
-                llm_config.api_key = None;
+    // The credential store as well as the environment. `cru auth login` and
+    // the first-run wizard both write there and both print "stored securely",
+    // so a path that did not read it made those keys do nothing. Not gated on
+    // the backend needing a key: `cru auth login --provider custom` is valid.
+    let store = SecretsFile::new();
+    match crucible_core::config::credentials::resolve_provider_api_key(
+        provider_key,
+        provider_type,
+        &store,
+        configured_key,
+    ) {
+        Some((key, source)) => {
+            debug!("Resolved API key for {provider_key} from {source:?}");
+            llm_config.api_key = Some(key);
+        }
+        None => {
+            // Only a problem for providers that actually need a key —
+            // Ollama and the local backends legitimately have none, so
+            // do not cry wolf at them.
+            if provider_type.api_key_env_var().is_some() {
+                warn!(
+                    "No API key for {provider_key}: the environment variable is unset, \
+                     the credential store has no entry and the config sets none — \
+                     try `cru auth login --provider {provider_key}`"
+                );
             }
         }
     }
@@ -674,6 +667,7 @@ pub async fn create_agent_from_session_config(
     let CreateAgentFromSessionConfigParams {
         modes,
         agent_config,
+        configured_api_key,
         lua,
         workspace,
         kiln_path,
@@ -760,7 +754,8 @@ pub async fn create_agent_from_session_config(
         "Creating agent from session config"
     );
 
-    let (genai_client, model_iden) = build_chat_client_for_agent(agent_config, lua)?;
+    let (genai_client, model_iden) =
+        build_chat_client_for_agent(agent_config, configured_api_key, lua)?;
 
     // Skills are surfaced via the kiln-scoped `skill_view` tool, so only inject
     // the catalog when a kiln is present (keeps catalog and tool in lockstep).

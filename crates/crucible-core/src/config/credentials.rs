@@ -399,6 +399,45 @@ pub fn resolve_api_key(
     None
 }
 
+/// Resolve the API key of a configured provider.
+///
+/// A provider has two names: its key under `llm.providers` (`zai-coding`) and
+/// its backend type (`zai`). `cru auth login --provider zai-coding` stores the
+/// key under the first name, so a lookup under the backend name alone never
+/// finds it. The chain:
+///
+/// 1. The backend's environment variable (`GLM_AUTH_TOKEN`)
+/// 2. The credential store, under the provider key
+/// 3. The credential store, under the backend name, when that is different
+/// 4. The config value (`llm.providers.<key>.api_key`)
+pub fn resolve_provider_api_key(
+    provider_key: &str,
+    backend: crate::config::BackendType,
+    store: &SecretsFile,
+    config_key: Option<&str>,
+) -> Option<(String, CredentialSource)> {
+    let backend_name = backend.as_str();
+    if provider_key != backend_name {
+        if let Some(env_var) = backend.api_key_env_var() {
+            if let Ok(value) = std::env::var(env_var) {
+                if !value.is_empty() {
+                    debug!("Resolved API key for {provider_key} from env var {env_var}");
+                    return Some((value, CredentialSource::EnvVar));
+                }
+            }
+        }
+        match store.get(provider_key) {
+            Ok(Some(key)) => {
+                debug!("Resolved API key for {provider_key} from credential store");
+                return Some((key, CredentialSource::Store));
+            }
+            Ok(None) => {}
+            Err(e) => warn!("Failed to read credential store for {provider_key}: {e}"),
+        }
+    }
+    resolve_api_key(backend_name, store, config_key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -628,6 +667,60 @@ mod tests {
         assert_eq!(
             result,
             Some(("custom-key".to_string(), CredentialSource::Store))
+        );
+    }
+
+    // =========================================================================
+    // resolve_provider_api_key: the provider key, then the backend name
+    // =========================================================================
+
+    /// The regression: `cru auth login --provider zai-coding` stored the key
+    /// under `zai-coding`, and the chat path looked only under `zai`.
+    #[test]
+    #[serial]
+    fn a_provider_key_finds_the_key_stored_under_its_own_name() {
+        let (mut store, _dir) = temp_store();
+        store.set("zai-coding", "coding-key").expect("set");
+        let _guard = EnvVarGuard::remove("GLM_AUTH_TOKEN");
+
+        let result =
+            resolve_provider_api_key("zai-coding", crate::config::BackendType::ZAI, &store, None);
+        assert_eq!(
+            result,
+            Some(("coding-key".to_string(), CredentialSource::Store))
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn a_provider_key_falls_back_to_the_backend_name_then_the_config() {
+        let (mut store, _dir) = temp_store();
+        let _guard = EnvVarGuard::remove("GLM_AUTH_TOKEN");
+        let zai = crate::config::BackendType::ZAI;
+
+        assert_eq!(
+            resolve_provider_api_key("zai-coding", zai, &store, Some("config-key")),
+            Some(("config-key".to_string(), CredentialSource::Config))
+        );
+        store.set("zai", "zai-key").expect("set");
+        assert_eq!(
+            resolve_provider_api_key("zai-coding", zai, &store, Some("config-key")),
+            Some(("zai-key".to_string(), CredentialSource::Store))
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn the_backend_environment_variable_wins_for_a_provider_key() {
+        let (mut store, _dir) = temp_store();
+        store.set("zai-coding", "coding-key").expect("set");
+        let _guard = EnvVarGuard::set("GLM_AUTH_TOKEN", "env-key".to_string());
+
+        let result =
+            resolve_provider_api_key("zai-coding", crate::config::BackendType::ZAI, &store, None);
+        assert_eq!(
+            result,
+            Some(("env-key".to_string(), CredentialSource::EnvVar))
         );
     }
 

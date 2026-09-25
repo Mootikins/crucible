@@ -51,8 +51,12 @@ impl AgentManager {
         // `plugin_lua`. Every caller of this is a background nicety and must
         // never queue behind a session start's plugin hooks.
         let lua_handle: Option<Lua> = self.plugin_lua().await;
-        let (client, model) =
-            crate::agent_factory::build_chat_client_for_agent(&agent_config, lua_handle.as_ref())?;
+        let configured_key = self.configured_api_key(&agent_config);
+        let (client, model) = crate::agent_factory::build_chat_client_for_agent(
+            &agent_config,
+            configured_key.as_deref(),
+            lua_handle.as_ref(),
+        )?;
 
         crate::provider::oneshot::complete(
             &client,

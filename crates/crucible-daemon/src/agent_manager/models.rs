@@ -51,6 +51,22 @@ impl AgentManager {
         None
     }
 
+    /// The API key that `llm.providers` sets for `agent`'s provider, if any.
+    ///
+    /// Read from the live config at each build, not stored with the session:
+    /// the session record is a file on disk, and it holds no secret.
+    pub(crate) fn configured_api_key(
+        &self,
+        agent: &crucible_core::session::SessionAgent,
+    ) -> Option<String> {
+        let provider_key = agent
+            .provider_key
+            .as_deref()
+            .unwrap_or_else(|| agent.provider.as_str());
+        let table = self.llm_config();
+        table.as_deref()?.providers.get(provider_key)?.api_key()
+    }
+
     /// Parse a model ID into optional provider key and model name.
     ///
     /// Splits on the first `/` and checks if the prefix matches a configured provider key.
@@ -436,7 +452,16 @@ impl AgentManager {
             return provider_config.effective_models();
         }
         let endpoint = provider_config.endpoint();
-        let api_key = provider_config.api_key();
+        // The same lookup the chat client makes, so a key that makes a turn
+        // work also lists the models. Discovery read only the config value,
+        // and a key in the environment or the credential store got a 401.
+        let api_key = crucible_core::config::credentials::resolve_provider_api_key(
+            provider_key,
+            provider_config.provider_type,
+            &crucible_core::config::credentials::SecretsFile::new(),
+            provider_config.api_key().as_deref(),
+        )
+        .map(|(key, _)| key);
 
         match model_listing::list_models(
             provider_config.provider_type,

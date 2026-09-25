@@ -1429,9 +1429,11 @@ impl AgentManager {
         let plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>> =
             self.plugin_registry().await;
 
+        let configured_api_key = self.configured_api_key(&resolved_config);
         let agent = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
             modes: Some(self.modes.clone()),
             agent_config: &resolved_config,
+            configured_api_key: configured_api_key.as_deref(),
             lua: lua_handle.as_ref(),
             workspace,
             kiln_path,

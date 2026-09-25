@@ -976,6 +976,7 @@ mod parity_capture;
 mod permissions;
 mod precognition;
 mod propose_turn;
+mod provider_credentials;
 mod providers_concurrency;
 mod reactor;
 mod review_capture;

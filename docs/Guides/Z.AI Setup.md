@@ -84,6 +84,12 @@ cru.config.set({
 
 `os.getenv("GLM_AUTH_TOKEN")` reads the key from your environment at boot, which keeps the secret out of the config file.
 
+To keep the key out of the environment too, store it with
+`cru auth login --provider zai-coding`. The daemon looks for the key in this
+order: the `GLM_AUTH_TOKEN` environment variable, the credential store under
+the provider name (`zai-coding`), the credential store under `zai`, and last
+the `api_key` of the provider in the config.
+
 ## Important: Model Names
 
 Which model names to use depends on which endpoint you configured:
