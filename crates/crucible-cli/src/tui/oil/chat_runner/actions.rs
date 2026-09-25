@@ -193,6 +193,41 @@ impl OilChatRunner {
         }));
     }
 
+    /// The message of a status read: the list, or a warning when the read
+    /// fails or an item does not decode. A list that is shorter without a
+    /// word could hide an `ask` or a `stop` (rule 7).
+    pub(super) fn status_items_msg(
+        read: anyhow::Result<Vec<crucible_core::types::StatusDisplayItem>>,
+    ) -> ChatAppMsg {
+        match read {
+            Ok(items) => ChatAppMsg::StatusItemsLoaded(items),
+            Err(e) => ChatAppMsg::Error(format!("The status list is not available: {e:#}")),
+        }
+    }
+
+    /// Read the first status list of the session.
+    ///
+    /// The caller starts this after the session's events flow, so a change
+    /// between the read and the subscription reaches the TUI as an event.
+    /// A session without an id has no daemon session and no status list.
+    pub(super) fn spawn_status_fetch(
+        session_id: Option<String>,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) {
+        let Some(session_id) = session_id else {
+            return;
+        };
+        let tx = msg_tx.clone();
+        background_tasks.push(tokio::spawn(async move {
+            let read = match crucible_daemon::DaemonClient::connect().await {
+                Ok(client) => client.session_status_items(&session_id).await,
+                Err(e) => Err(e),
+            };
+            let _ = tx.send(Self::status_items_msg(read));
+        }));
+    }
+
     /// Read the proposals in the Inbox for the count and the `:proposals`
     /// view.
     ///

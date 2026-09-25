@@ -2,7 +2,7 @@
 //!
 //! Methods for managing chat sessions, sending messages, and configuring agents.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crucible_core::config::KilnName;
 use std::path::{Path, PathBuf};
 
@@ -532,6 +532,14 @@ impl DaemonClient {
         self.session_id_call("session.status", session_id).await
     }
 
+    /// `session.status`, decoded into the items that the TUI draws.
+    pub async fn session_status_items(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crucible_core::types::StatusDisplayItem>> {
+        decode_status_items(self.session_status(session_id).await?)
+    }
+
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {
         self.session_id_call("session.pause", session_id).await
     }
@@ -896,4 +904,19 @@ impl DaemonClient {
         )
         .await
     }
+}
+
+/// Decode a `session.status` reply.
+///
+/// An item that does not decode fails the whole read. A client then shows
+/// the failure, where a list without that item would hide it: the item that
+/// fails can be the one that says `stop`.
+pub fn decode_status_items(
+    reply: serde_json::Value,
+) -> Result<Vec<crucible_core::types::StatusDisplayItem>> {
+    let Some(list) = reply.get("status") else {
+        anyhow::bail!("the session.status reply has no status list");
+    };
+    serde_json::from_value(list.clone())
+        .context("the session.status reply has an item that this client cannot read")
 }

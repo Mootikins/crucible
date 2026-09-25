@@ -844,17 +844,19 @@ fn status_event_replaces_the_rendered_list_in_the_app() {
 #[test]
 fn status_command_opens_every_item_in_a_keyboard_picker() {
     let mut app = OilChatApp::default();
-    app.set_status_items(vec![crucible_core::types::StatusDisplayItem {
-        id: "older".into(),
-        text: "older hidden status".into(),
-        priority: 40,
-        color_group: crucible_core::status_color::StatusColorGroup::from_name("info"),
-        action: None,
-        pinned: false,
-        plugin: "weather".into(),
-        kind: Default::default(),
-        progress: None,
-    }]);
+    app.on_message(ChatAppMsg::StatusItemsLoaded(vec![
+        crucible_core::types::StatusDisplayItem {
+            id: "older".into(),
+            text: "older hidden status".into(),
+            priority: 40,
+            color_group: crucible_core::status_color::StatusColorGroup::from_name("info"),
+            action: None,
+            pinned: false,
+            plugin: "weather".into(),
+            kind: Default::default(),
+            progress: None,
+        },
+    ]));
     app.handle_repl_command(":status");
     assert!(app.popup.show);
     assert!(app

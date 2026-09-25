@@ -69,7 +69,6 @@ impl OilChatRunner {
             }
             app.set_plugin_status(entries);
         }
-        app.set_status_items(std::mem::take(&mut self.status_items));
         app.set_show_thinking(self.show_thinking);
         app.set_show_diffs(self.show_diffs);
         if !self.slash_commands.is_empty() {
@@ -244,6 +243,14 @@ impl OilChatRunner {
                 Some(context_limit),
             )));
         }
+
+        // The first status list, read now that the session's events flow:
+        // a status that changes after this read arrives as an event.
+        Self::spawn_status_fetch(
+            agent.session_id().map(str::to_string),
+            &msg_tx,
+            &mut background_tasks,
+        );
 
         self.apply_initial_sets(&mut app, &mut agent, bridge, &msg_tx, &mut background_tasks)
             .await?;

@@ -6,6 +6,7 @@ mod knob_rpc;
 mod model_prefetch;
 mod proposal_fetch;
 mod replay;
+mod status_read;
 mod stream_gap;
 mod surface_refresh;
 mod system_channel;

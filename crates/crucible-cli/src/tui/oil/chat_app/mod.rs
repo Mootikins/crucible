@@ -453,10 +453,6 @@ impl OilChatApp {
         self.plugin_status = entries;
     }
 
-    pub(crate) fn set_status_items(&mut self, items: Vec<crucible_core::types::StatusDisplayItem>) {
-        self.status_items = items;
-    }
-
     /// Tests seed the model list without a daemon round trip.
     #[cfg(test)]
     pub(crate) fn set_available_models(&mut self, models: Vec<String>) {
