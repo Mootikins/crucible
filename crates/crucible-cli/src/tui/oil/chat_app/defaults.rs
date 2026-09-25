@@ -33,6 +33,7 @@ impl Default for OilChatApp {
             available_models: Vec::new(),
 
             model_list_state: ModelListState::NotLoaded,
+            session_list: Default::default(),
 
             // UI Chrome
             input: InputBuffer::new(),

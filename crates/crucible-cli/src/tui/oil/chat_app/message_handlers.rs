@@ -335,6 +335,15 @@ impl OilChatApp {
             }
             // Both fetches are the runner's work.
             ChatAppMsg::OpenDiff(_) | ChatAppMsg::FetchDiffFile(_) => {}
+            // The runner lists the sessions and does the switch.
+            ChatAppMsg::FetchSessions | ChatAppMsg::ResumeSession(_) => {}
+            ChatAppMsg::SessionsLoaded(sessions) => {
+                self.session_list = super::model_state::SessionListState::Loaded(sessions);
+                self.popup.selected = 0;
+            }
+            ChatAppMsg::SessionsFetchFailed(reason) => {
+                self.session_list = super::model_state::SessionListState::Failed(reason);
+            }
             // Both fetches are the runner's work; nothing for the reducer to do.
             ChatAppMsg::OpenSurface(_) | ChatAppMsg::RefreshSurface(_) => {}
             ChatAppMsg::LuaEvaled { output, is_error } => {

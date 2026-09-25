@@ -83,6 +83,8 @@ pub struct OilChatApp {
     available_models: Vec<String>,
     /// Fetch-state of the model list
     model_list_state: ModelListState,
+    /// The session list of the `/resume` picker.
+    session_list: model_state::SessionListState,
 
     // ─── UI Chrome (purely local state) ───────────────────────────────
     // Everything here is display-only and never round-trips to the
@@ -814,6 +816,16 @@ impl OilChatApp {
     #[cfg(test)]
     pub(crate) fn has_notifications(&self) -> bool {
         !self.notification_area.is_empty()
+    }
+
+    /// The text of every notification, oldest first.
+    #[cfg(test)]
+    pub(crate) fn notification_messages(&self) -> Vec<String> {
+        self.notification_area
+            .history()
+            .iter()
+            .map(|(n, _)| n.message.clone())
+            .collect()
     }
 
     #[cfg(test)]

@@ -1087,3 +1087,161 @@ fn an_app_config_query_answer_is_printed_and_not_recorded() {
         "the daemon's answer must reach the transcript: {output}"
     );
 }
+
+// ════════════════════════════════════════════════════════════════
+// US-912: `/resume` picker and `/resume <id>`
+// ════════════════════════════════════════════════════════════════
+
+fn choice(id: &str, title: Option<&str>) -> crate::tui::oil::chat_app::model_state::SessionChoice {
+    crate::tui::oil::chat_app::model_state::SessionChoice {
+        id: id.to_string(),
+        title: title.map(str::to_string),
+        when: "2026-09-25 15:01".to_string(),
+    }
+}
+
+#[test]
+fn slash_resume_is_advertised() {
+    assert!(
+        crate::commands::chat::known_slash_commands()
+            .iter()
+            .any(|(name, _)| name == "resume"),
+        "the slash popup and the palette must offer /resume"
+    );
+}
+
+#[test]
+fn slash_resume_opens_the_session_picker_and_asks_for_the_list() {
+    let mut app = app();
+    let action = app.handle_slash_command("/resume");
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::FetchSessions)),
+        "{action:?}"
+    );
+    assert!(app.popup.show, "the picker must open at once");
+    assert_eq!(
+        app.popup.kind,
+        super::super::state::AutocompleteKind::Session
+    );
+    let items = app.get_popup_items();
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0].label, "Loading sessions...");
+}
+
+#[test]
+fn slash_resume_with_an_id_asks_to_resume_that_session() {
+    let mut app = app();
+    let action = app.handle_slash_command("/resume chat-2026-09-25T1501-2ecnzu");
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::ResumeSession(ref id)) if id == "chat-2026-09-25T1501-2ecnzu"),
+        "{action:?}"
+    );
+}
+
+#[test]
+fn the_session_picker_lists_the_sessions_with_title_and_time() {
+    let mut app = app();
+    app.handle_slash_command("/resume");
+    app.on_message(ChatAppMsg::SessionsLoaded(vec![
+        choice("chat-b", Some("Fix the parser")),
+        choice("chat-a", None),
+    ]));
+
+    let items = app.get_popup_items();
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert_eq!(labels, ["chat-b", "chat-a"], "the daemon order is kept");
+    assert_eq!(
+        items[0].description.as_deref(),
+        Some("Fix the parser · 2026-09-25 15:01")
+    );
+    assert_eq!(
+        items[1].description.as_deref(),
+        Some("(untitled) · 2026-09-25 15:01")
+    );
+}
+
+#[test]
+fn typing_in_the_session_picker_filters_on_the_title() {
+    let mut app = app();
+    app.handle_slash_command("/resume");
+    app.on_message(ChatAppMsg::SessionsLoaded(vec![
+        choice("chat-b", Some("Fix the parser")),
+        choice("chat-a", Some("Write the docs")),
+    ]));
+    for c in "docs".chars() {
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char(c),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+    }
+
+    let labels: Vec<String> = app.get_popup_items().into_iter().map(|i| i.label).collect();
+    assert_eq!(labels, ["chat-a"]);
+}
+
+#[test]
+fn enter_in_the_session_picker_resumes_the_selected_session() {
+    let mut app = app();
+    app.handle_slash_command("/resume");
+    app.on_message(ChatAppMsg::SessionsLoaded(vec![
+        choice("chat-b", Some("Fix the parser")),
+        choice("chat-a", None),
+    ]));
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Down,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    let action = app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::ResumeSession(ref id)) if id == "chat-a"),
+        "{action:?}"
+    );
+    assert!(!app.popup.show, "the picker closes on a choice");
+    assert_eq!(app.input.content(), "", "the command leaves no draft");
+}
+
+#[test]
+fn the_session_picker_says_so_when_there_is_nothing_to_resume() {
+    let mut app = app();
+    app.handle_slash_command("/resume");
+    app.on_message(ChatAppMsg::SessionsLoaded(vec![]));
+    let items = app.get_popup_items();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].label, "No other session in this workspace");
+    let action = app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(
+        !matches!(action, Action::Send(ChatAppMsg::ResumeSession(_))),
+        "an information row resumes nothing: {action:?}"
+    );
+}
+
+#[test]
+fn a_failed_session_list_shows_the_reason_in_the_picker() {
+    let mut app = app();
+    app.handle_slash_command("/resume");
+    app.on_message(ChatAppMsg::SessionsFetchFailed("daemon down".into()));
+    let items = app.get_popup_items();
+    assert_eq!(items[0].label, "Failed to list sessions");
+    assert_eq!(items[0].description.as_deref(), Some("daemon down"));
+}
+
+#[test]
+fn pick_sessions_opens_the_resume_picker() {
+    let mut app = app();
+    let action = app.handle_repl_command(":pick sessions");
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::FetchSessions)),
+        "{action:?}"
+    );
+    assert_eq!(
+        app.popup.kind,
+        super::super::state::AutocompleteKind::Session
+    );
+}

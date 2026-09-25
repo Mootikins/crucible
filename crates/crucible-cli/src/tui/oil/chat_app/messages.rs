@@ -290,6 +290,16 @@ pub enum ChatAppMsg {
         proposals: Vec<crucible_core::proposal::Proposal>,
         open: bool,
     },
+    /// **Command** (TUI → daemon): list the sessions that `/resume` can
+    /// open: the chat sessions of this workspace, newest first.
+    FetchSessions,
+    /// **Event** (daemon → TUI): the session list of the `/resume` picker.
+    SessionsLoaded(Vec<super::model_state::SessionChoice>),
+    /// **Event** (daemon → TUI): the session list failed, with the reason.
+    SessionsFetchFailed(String),
+    /// **Command** (TUI → daemon): leave this session and open the session
+    /// with this id (`/resume <id>`). The daemon must know the id.
+    ResumeSession(String),
     /// **Command** (TUI → daemon): compute the branch diff of the workspace
     /// and open it (`:diff [base]`). `None` compares with the default branch.
     OpenDiff(Option<String>),
@@ -485,6 +495,10 @@ impl ChatAppMsg {
             | Self::ProposalsLoaded { .. }
             | Self::FetchPluginApprovals
             | Self::PluginApprovalsLoaded(_)
+            | Self::FetchSessions
+            | Self::SessionsLoaded(_)
+            | Self::SessionsFetchFailed(_)
+            | Self::ResumeSession(_)
             | Self::OpenDiff(_)
             | Self::DiffLoaded(_)
             | Self::FetchDiffFile(_)

@@ -786,6 +786,51 @@ impl OilChatRunner {
                             }
                         }));
                     }
+                    // `/resume`. Same replay gate: a replay must reach no daemon.
+                    ChatAppMsg::FetchSessions if !self.is_replay => {
+                        let current = params.agent.session_id().map(str::to_string);
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match fetch_resumable_sessions(current.as_deref()).await {
+                                Ok(sessions) => ChatAppMsg::SessionsLoaded(sessions),
+                                Err(e) => ChatAppMsg::SessionsFetchFailed(format!("{e:#}")),
+                            };
+                            let _ = tx.send(msg);
+                        }));
+                    }
+                    // `/resume <id>`: stop this run, and let the caller open
+                    // the session through the `--resume` path. The daemon must
+                    // know the id first, because the switch leaves this session.
+                    ChatAppMsg::ResumeSession(ref id) if !self.is_replay => {
+                        if params.agent.session_id() == Some(id.as_str()) {
+                            params
+                                .app
+                                .add_notification(crucible_core::types::Notification::toast(
+                                    format!("This console already shows session {id}"),
+                                ));
+                            return Ok(false);
+                        }
+                        if params.app.is_streaming() {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(
+                                    "Cannot resume another session while a turn runs".to_string(),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                        match check_session_exists(id).await {
+                            Ok(()) => {
+                                self.next_session = Some(id.clone());
+                                return Ok(true);
+                            }
+                            Err(e) => {
+                                params.app.on_message(ChatAppMsg::Error(format!(
+                                    "Cannot resume {id}: {e:#}"
+                                )));
+                                return Ok(false);
+                            }
+                        }
+                    }
                     // `:diff`. Same replay gate: a replay must reach no daemon.
                     // The root is the git top level of the workspace, and the
                     // daemon admits it or refuses it.
@@ -1048,6 +1093,8 @@ impl OilChatRunner {
                     | ChatAppMsg::FetchDiffFile(_)
                     | ChatAppMsg::FetchProposals { .. }
                     | ChatAppMsg::FetchPluginApprovals
+                    | ChatAppMsg::FetchSessions
+                    | ChatAppMsg::ResumeSession(_)
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ConfigQuery { .. }
@@ -1134,6 +1181,93 @@ async fn export_session(session_id: &str, path: &std::path::Path) -> anyhow::Res
     client
         .session_export_to_file(session_id, Some(path), None)
         .await
+}
+
+/// The most sessions the `/resume` picker offers.
+const RESUME_PICKER_LIMIT: usize = 20;
+
+/// List the sessions that `/resume` offers: the chat sessions that share the
+/// kilns and the workspace of the open session.
+///
+/// The daemon holds both the scope and the list. Without an open session
+/// the scope is empty, and the daemon lists what it can see.
+async fn fetch_resumable_sessions(
+    current: Option<&str>,
+) -> anyhow::Result<Vec<crate::tui::oil::chat_app::model_state::SessionChoice>> {
+    let client = crucible_daemon::DaemonClient::connect().await?;
+    let mut params = serde_json::json!({ "type": "chat" });
+    if let Some(current) = current {
+        let session = client.session_get(current).await?;
+        params["kilns"] = session
+            .get("kilns")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
+        if let Some(workspace) = session.get("workspace").filter(|w| !w.is_null()) {
+            params["workspace"] = workspace.clone();
+        }
+    }
+    let listed = client.call("session.list", params).await?;
+    Ok(resumable_sessions(
+        current.unwrap_or_default(),
+        &listed,
+        RESUME_PICKER_LIMIT,
+    ))
+}
+
+/// The picker rows of a `session.list` reply: every session but `current`,
+/// the most recent activity first, at most `limit` of them.
+pub(super) fn resumable_sessions(
+    current: &str,
+    listed: &serde_json::Value,
+    limit: usize,
+) -> Vec<crate::tui::oil::chat_app::model_state::SessionChoice> {
+    use chrono::{DateTime, Utc};
+
+    let time = |row: &serde_json::Value, key: &str| {
+        row.get(key)
+            .and_then(|t| t.as_str())
+            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+            .map(|t| t.with_timezone(&Utc))
+    };
+    let mut rows: Vec<(Option<DateTime<Utc>>, _)> = listed
+        .get("sessions")
+        .and_then(|s| s.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|row| {
+            let id = row.get("session_id")?.as_str()?;
+            if id == current {
+                return None;
+            }
+            let active = time(row, "last_activity").or_else(|| time(row, "started_at"));
+            let choice = crate::tui::oil::chat_app::model_state::SessionChoice {
+                id: id.to_string(),
+                title: row
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .filter(|t| !t.trim().is_empty())
+                    .map(str::to_string),
+                when: active
+                    .map(|t| {
+                        t.with_timezone(&chrono::Local)
+                            .format("%Y-%m-%d %H:%M")
+                            .to_string()
+                    })
+                    .unwrap_or_else(|| "unknown time".to_string()),
+            };
+            Some((active, choice))
+        })
+        .collect();
+    // Newest first; a session with no time goes last.
+    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
+    rows.into_iter().take(limit).map(|(_, c)| c).collect()
+}
+
+/// Whether the daemon knows the session `id`, live or stored.
+async fn check_session_exists(id: &str) -> anyhow::Result<()> {
+    let client = crucible_daemon::DaemonClient::connect().await?;
+    client.session_get(id).await?;
+    Ok(())
 }
 
 /// Compute the branch diff of the workspace against `base`.

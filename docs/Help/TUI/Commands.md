@@ -33,7 +33,8 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:export <path>` | Export session to markdown |
 | `:messages` | Toggle the notification drawer (aliases: `:msgs`, `:notifications`) |
 | `:palette` | Open command palette (alias: `:commands`, key: `F1`) |
-| `:pick [source]` | Open a fuzzy picker (notes, files, commands) |
+| `:pick [source]` | Open a fuzzy picker (notes, files, commands, sessions) |
+| `/resume [id]` | Open an earlier session: a picker, or the session with that id |
 | `:mcp` | Show MCP server status |
 | `:plugins` | Show loaded plugins |
 | `:status` | Open every status item, including the items that fold into `+N` |
@@ -249,9 +250,24 @@ Open a fuzzy picker popup:
 ```
 
 Selecting a note inserts a `[[wikilink]]`, a file inserts an `@path`
-attachment, and a command puts the command in the input. (`:pick sessions`
-is accepted but currently lists nothing — sessions aren't tracked in TUI
-state yet.)
+attachment, and a command puts the command in the input. `:pick sessions`
+opens the `/resume` picker.
+
+## The `/resume` Command
+
+Open an earlier session in this console:
+
+```
+/resume                 # Pick from the sessions of this workspace
+/resume <id>            # Open the session with that id
+```
+
+The picker lists the chat sessions that share the kilns and the workspace of
+the open session, the most recent first. Each row shows the id, the title and
+the time of the last activity. Type to filter, then press Enter. The TUI leaves
+the open session and loads the chosen one with its history, as
+`cru chat --resume <id>` does. The web opens an earlier session from its
+Sessions panel. See [[Help/Core/Sessions]].
 
 ## Other Commands
 

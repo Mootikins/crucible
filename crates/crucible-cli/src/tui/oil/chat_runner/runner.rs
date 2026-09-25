@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::{
-    session_event_consumer, DrainMessagesOutcome, DrainPhaseOutcome, EventLoopParams,
+    session_event_consumer, ChatExit, DrainMessagesOutcome, DrainPhaseOutcome, EventLoopParams,
     EventLoopSelectOutcome, HandleSelectOutcomeParams, HandleSelectedEventParams, OilChatRunner,
     ProcessActionParams, SessionEventStream,
 };
@@ -25,7 +25,7 @@ impl OilChatRunner {
         &mut self,
         bridge: &AgentEventBridge,
         create_agent: F,
-    ) -> Result<()>
+    ) -> Result<ChatExit>
     where
         F: Fn(AgentSelection) -> Fut,
         Fut: std::future::Future<
@@ -204,7 +204,7 @@ impl OilChatRunner {
             // Always restore terminal before propagating errors
             self.exit_terminal(&mut app);
             event_loop_result?;
-            return Ok(());
+            return Ok(ChatExit::Quit);
         }
 
         let selection = self.discover_agent().await;
@@ -296,6 +296,12 @@ impl OilChatRunner {
         self.exit_terminal(&mut app);
         event_loop_result?;
 
+        // `/resume` chose another session: the caller opens it at once, so a
+        // hint to resume this one later is noise.
+        if let Some(next) = self.next_session.take() {
+            return Ok(ChatExit::Resume(next));
+        }
+
         // Print resume hint after terminal is restored to main screen
         if let Some(id) = session_id {
             use colored::Colorize;
@@ -305,7 +311,7 @@ impl OilChatRunner {
             );
         }
 
-        Ok(())
+        Ok(ChatExit::Quit)
     }
 
     /// Apply `cru chat --set` startup overrides.

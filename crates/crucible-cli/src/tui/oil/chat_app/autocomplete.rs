@@ -10,7 +10,7 @@ use crate::tui::oil::event::InputAction;
 use crucible_oil::node::PopupItemNode;
 
 use super::messages::ChatAppMsg;
-use super::model_state::ModelListState;
+use super::model_state::{ModelListState, SessionListState};
 use super::repl_command::ReplCommand;
 use super::state::AutocompleteKind;
 use super::OilChatApp;
@@ -39,6 +39,12 @@ impl OilChatApp {
         let cursor = self.input.cursor();
 
         if let Some((kind, trigger_pos, filter)) = self.detect_trigger(content, cursor) {
+            // `/resume ` typed by hand: the list may never have loaded.
+            let needs_session_fetch = kind == AutocompleteKind::Session
+                && matches!(
+                    self.session_list,
+                    SessionListState::NotLoaded | SessionListState::Failed(_)
+                );
             let needs_model_fetch = kind == AutocompleteKind::Model
                 && matches!(
                     self.model_list_state,
@@ -62,6 +68,14 @@ impl OilChatApp {
                 self.popup.show = true;
                 return Some(Action::Send(ChatAppMsg::FetchModels));
             }
+            if self.popup.kind == AutocompleteKind::Session {
+                // The picker stays open with a row that says what happens.
+                self.popup.show = true;
+                if needs_session_fetch {
+                    self.session_list = SessionListState::Loading;
+                    return Some(Action::Send(ChatAppMsg::FetchSessions));
+                }
+            }
         } else if self.popup.kind != AutocompleteKind::None {
             self.popup.kind = AutocompleteKind::None;
             self.popup.filter.clear();
@@ -76,6 +90,18 @@ impl OilChatApp {
         cursor: usize,
     ) -> Option<(AutocompleteKind, usize, String)> {
         let before_cursor = &content[..cursor];
+
+        // `/resume <filter>`: the argument picks a session. The slash
+        // trigger below stops at the first space, so it cannot see this.
+        const RESUME: &str = "/resume ";
+        if let Some(rest) = before_cursor.strip_prefix(RESUME) {
+            let filter = rest.trim_start();
+            return Some((
+                AutocompleteKind::Session,
+                cursor - filter.len(),
+                filter.to_string(),
+            ));
+        }
 
         if let Some(slash_pos) = before_cursor.rfind('/') {
             let preceded_by_whitespace = slash_pos == 0
@@ -252,6 +278,7 @@ impl OilChatApp {
                 self.get_set_option_completions(option.as_deref(), &filter)
             }
             AutocompleteKind::Pick { ref source } => self.get_pick_items(source, &filter),
+            AutocompleteKind::Session => self.session_popup_items(&filter),
             AutocompleteKind::None => vec![],
         }
     }
@@ -272,6 +299,61 @@ impl OilChatApp {
                 )
             })
         })
+    }
+
+    /// The rows of the `/resume` picker. A row that is not a session has the
+    /// kind `info` or `error`, and Enter on it does nothing.
+    fn session_popup_items(&self, filter: &str) -> Vec<PopupItemNode> {
+        let note = |label: &str, kind: &str, description: Option<String>| {
+            vec![PopupItemNode {
+                label: label.to_string(),
+                description,
+                kind: Some(kind.to_string()),
+            }]
+        };
+        let sessions = match &self.session_list {
+            SessionListState::NotLoaded | SessionListState::Loading => {
+                return note("Loading sessions...", "info", None);
+            }
+            SessionListState::Failed(reason) => {
+                return note("Failed to list sessions", "error", Some(reason.clone()));
+            }
+            SessionListState::Loaded(sessions) if sessions.is_empty() => {
+                return note("No other session in this workspace", "info", None);
+            }
+            SessionListState::Loaded(sessions) => sessions,
+        };
+
+        // The title and the id are both searchable; the daemon's order
+        // (newest first) stays when there is no filter.
+        let haystacks: Vec<String> = sessions
+            .iter()
+            .map(|s| format!("{} {}", s.title.as_deref().unwrap_or_default(), s.id))
+            .collect();
+        let order: Vec<usize> = if filter.is_empty() {
+            (0..sessions.len()).collect()
+        } else {
+            FuzzyMatcher::new()
+                .match_items(filter, &haystacks)
+                .into_iter()
+                .map(|(idx, _)| idx)
+                .collect()
+        };
+        order
+            .into_iter()
+            .map(|idx| {
+                let session = &sessions[idx];
+                PopupItemNode {
+                    label: session.id.clone(),
+                    description: Some(format!(
+                        "{} · {}",
+                        session.title.as_deref().unwrap_or("(untitled)"),
+                        session.when
+                    )),
+                    kind: Some("session".to_string()),
+                }
+            })
+            .collect()
     }
 
     pub(super) fn filter_to_popup_items(
@@ -580,6 +662,9 @@ impl OilChatApp {
                         self.set_input("");
                     }
                 }
+            }
+            AutocompleteKind::Session => {
+                self.set_input(&format!("/resume {label}"));
             }
             AutocompleteKind::None => {}
         }

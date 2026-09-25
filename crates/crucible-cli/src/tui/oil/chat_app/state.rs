@@ -115,6 +115,8 @@ pub enum AutocompleteKind {
     Pick {
         source: PickSource,
     },
+    /// The sessions that `/resume` can open.
+    Session,
 }
 
 /// Source category for the `:pick` command.

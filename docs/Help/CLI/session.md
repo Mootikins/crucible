@@ -117,7 +117,8 @@ scan when the daemon is unreachable.
 
 ### `cru session open [<id>]`
 
-Opens the session in the TUI — the same as `cru chat --resume <id>`.
+Opens the session in the TUI — the same as `cru chat --resume <id>`. Inside the
+TUI, `/resume` lists the sessions of the workspace and opens the one you pick.
 
 ### `cru session export [<id>]`
 

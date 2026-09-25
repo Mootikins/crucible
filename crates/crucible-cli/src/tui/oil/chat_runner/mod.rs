@@ -106,6 +106,19 @@ pub struct OilChatRunner {
     /// it again.
     pub(super) shell_was_open: bool,
     pub(super) copier: crate::tui::oil::fullscreen::clipboard::Copier,
+    /// The session that `/resume` chose. The event loop stops, and
+    /// `run_with_factory` hands the id to the caller as [`ChatExit::Resume`].
+    pub(super) next_session: Option<String>,
+}
+
+/// How one run of the chat TUI ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatExit {
+    /// The user quit.
+    Quit,
+    /// `/resume` chose this session. The caller runs the TUI again on it,
+    /// through the same path as `cru chat --resume`.
+    Resume(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +175,7 @@ impl OilChatRunner {
             fullscreen: None,
             shell_was_open: false,
             copier: Default::default(),
+            next_session: None,
         }
     }
 

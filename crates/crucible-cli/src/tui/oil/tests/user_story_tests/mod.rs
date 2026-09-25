@@ -26,6 +26,7 @@ mod notification_tests; // US-701 / US-702
 mod paste_tests; // US-106
 mod permission_tests; // US-401
 mod precognition_tests; // US-209
+mod resume_tests; // US-912
 mod scroll_tests; // US-801
 mod shell_tests; // US-601 / US-602
 mod status_items_tests; // US-911

@@ -197,7 +197,10 @@ impl OilChatApp {
                     self.close_popup();
                     return Action::Continue;
                 }
-                self.check_autocomplete_trigger();
+                // A trigger that needs a list asks for it here too.
+                return self
+                    .check_autocomplete_trigger()
+                    .unwrap_or(Action::Continue);
             }
             KeyCode::Char(_c) if self.is_ctrl_c(key) => {
                 self.input.handle(InputAction::Clear);
@@ -205,7 +208,9 @@ impl OilChatApp {
             }
             KeyCode::Char(c) => {
                 self.input.handle(InputAction::Insert(c));
-                self.check_autocomplete_trigger();
+                return self
+                    .check_autocomplete_trigger()
+                    .unwrap_or(Action::Continue);
             }
             _ => {}
         }
@@ -218,8 +223,10 @@ impl OilChatApp {
             return Action::Continue;
         };
 
-        if self.popup.kind == AutocompleteKind::Model
-            && matches!(item.kind.as_deref(), Some("info") | Some("error"))
+        if matches!(
+            self.popup.kind,
+            AutocompleteKind::Model | AutocompleteKind::Session
+        ) && matches!(item.kind.as_deref(), Some("info") | Some("error"))
         {
             return Action::Continue;
         }
@@ -236,6 +243,10 @@ impl OilChatApp {
             AutocompleteKind::ReplCommand => {
                 self.input.handle(InputAction::Clear);
                 self.handle_repl_command(&label)
+            }
+            AutocompleteKind::Session => {
+                self.input.handle(InputAction::Clear);
+                self.handle_slash_command(&format!("/resume {label}"))
             }
             AutocompleteKind::Command => {
                 self.close_popup();

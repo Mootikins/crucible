@@ -7,6 +7,26 @@ pub enum ModelListState {
     Failed,
 }
 
+/// One session that the `/resume` picker offers, as the TUI shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionChoice {
+    pub id: String,
+    /// The title that the daemon holds. `None` is an untitled session.
+    pub title: Option<String>,
+    /// When the session was last active, in the form the picker shows.
+    pub when: String,
+}
+
+/// The session list of the `/resume` picker.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SessionListState {
+    #[default]
+    NotLoaded,
+    Loading,
+    Loaded(Vec<SessionChoice>),
+    Failed(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct McpServerDisplay {
     pub name: String,

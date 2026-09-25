@@ -284,7 +284,8 @@ async fn run_replay(
         ))
     };
 
-    runner.run_with_factory(&bridge, factory).await
+    // A replay reaches no daemon, so `/resume` cannot end it.
+    runner.run_with_factory(&bridge, factory).await.map(|_| ())
 }
 
 fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<String, String> {
@@ -474,7 +475,7 @@ async fn run_interactive_chat(
     let parsed_env = parse_env_overrides(&env_overrides);
     let working_dir = std::env::current_dir().ok();
     use crate::chat::bridge::AgentEventBridge;
-    use crate::tui::oil::OilChatRunner;
+    use crate::tui::oil::{ChatExit, OilChatRunner};
     use crucible_core::events::EventRing;
 
     // `--set` plus the `--no-context` / `--context-size` flags. All of these
@@ -512,44 +513,10 @@ async fn run_interactive_chat(
     let recording_mode = record.as_ref().map(|_| "granular".to_string());
     let recording_path = record;
 
-    let mut runner = OilChatRunner::new()?
-        .with_mode(mode)
-        .with_model(&display_model)
-        .with_context_limit(0)
-        .with_show_thinking(config.chat.show_thinking)
-        .with_show_diffs(config.chat.show_diffs)
-        .with_agent_name(agent_name)
-        .with_initial_sets(parsed_set_overrides)
-        .with_screen(screen);
-
     info!(
         "Starting oil chat with model: {} (display: {})",
         model_name, display_model
     );
-
-    if let Some(ref session_id) = resume_session_id {
-        info!("Will resume session: {}", session_id);
-        runner = runner.with_resume_session(session_id.clone());
-
-        match fetch_resume_history(session_id).await {
-            Ok(history) if !history.is_empty() => {
-                info!(
-                    count = history.len(),
-                    "Fetched resume history for viewport hydration"
-                );
-                runner = runner.with_resume_history(history);
-            }
-            Ok(_) => {
-                info!("No history events found for session {}", session_id);
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to fetch resume history, starting with blank viewport: {}",
-                    e
-                );
-            }
-        }
-    }
 
     // Daemon owns setup (indexing, plugin discovery, MCP config read,
     // provider detection, context-length fetch). Results arrive as session
@@ -581,129 +548,191 @@ async fn run_interactive_chat(
     }
 
     // After the project kilns open, so the banner names them too.
-    if let Some(client) = setup_client.as_ref() {
-        runner = runner.with_connected_kilns(attached_kilns(client).await);
-    }
-
-    // Pull the Lua-defined theme before the first frame. Strictly an upgrade:
-    // the TUI already holds a complete compiled-in default, so a missing daemon,
-    // an RPC error, or an older daemon that does not know `ui.config` all leave a
-    // correct screen. Never make this a precondition for rendering.
-    //
-    // The session-scoped values ride along only for a session that exists: a
-    // resumed one. A new session has no id yet.
-    if let Some(client) = setup_client.as_ref() {
-        let ui_params = match resume_session_id.as_deref() {
-            Some(id) => serde_json::json!({ "session_id": id }),
-            None => serde_json::json!({}),
-        };
-        match client.call("ui.config", ui_params).await {
-            Ok(payload) => {
-                crate::tui::oil::theme::apply_ui_config(&payload);
-            }
-            Err(e) => debug!("ui.config unavailable, using the built-in theme: {e}"),
-        }
-    }
+    let connected_kilns = match setup_client.as_ref() {
+        Some(client) => attached_kilns(client).await,
+        None => Vec::new(),
+    };
 
     // Plugin-declared slash commands: `/name` dispatches to the daemon's
     // `plugin.run_command` and autocompletes alongside the built-ins. The
     // daemon's plugin loader holds the set, so it needs no session.
-    if let Some(client) = setup_client.as_ref() {
-        match client.plugin_commands().await {
-            Ok(commands) => {
-                let plugin_commands = plugin_command_entries(&commands);
-                if !plugin_commands.is_empty() {
-                    runner = runner.with_plugin_commands(plugin_commands);
-                }
+    let plugin_commands = match setup_client.as_ref() {
+        Some(client) => match client.plugin_commands().await {
+            Ok(commands) => plugin_command_entries(&commands),
+            Err(e) => {
+                warn!("Failed to read the plugin commands: {}", e);
+                Vec::new()
             }
-            Err(e) => warn!("Failed to read the plugin commands: {}", e),
-        }
-    }
-
-    runner = runner.with_slash_commands(known_slash_commands());
+        },
+        None => Vec::new(),
+    };
 
     // Saved shell output is TUI state, so it goes in a folder that the client
     // owns. Not in the daemon's session store: a folder there is a session
     // the daemon cannot load. Not in a kiln: a kiln holds knowledge, and
     // shipping a kiln should not ship somebody's captured shell output.
-    runner = runner.with_shell_output_dir(shell_output_dir(&config));
+    let shell_dir = shell_output_dir(&config);
 
-    // The ids of the Lua sessions the factory opened, for the shutdown below.
+    // The ids of the Lua sessions the factory opened, for the shutdown after
+    // each run.
     let lua_sessions: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
 
-    let config_for_factory = config;
-    let resume_id_for_factory = resume_session_id;
-    let recording_mode_for_factory = recording_mode.clone();
-    let recording_path_for_factory = recording_path.clone();
-    let lua_sessions_for_factory = lua_sessions.clone();
-    let factory = move |selection: AgentSelection| {
-        let config = config_for_factory.clone();
+    // One run of the TUI for each session. `/resume` ends a run with the id of
+    // the next session, and the next run opens it through the same path as
+    // `cru chat --resume`: history, factory, Lua session and all.
+    let mut resume = resume_session_id;
+    // `--set` and `--no-context` name the session this command started with,
+    // so only the first run applies them.
+    let mut initial_sets = parsed_set_overrides;
+    loop {
+        let mut runner = OilChatRunner::new()?
+            .with_mode(mode.clone())
+            .with_model(&display_model)
+            .with_context_limit(0)
+            .with_show_thinking(config.chat.show_thinking)
+            .with_show_diffs(config.chat.show_diffs)
+            .with_agent_name(agent_name.clone())
+            .with_initial_sets(std::mem::take(&mut initial_sets))
+            .with_screen(screen)
+            .with_connected_kilns(connected_kilns.clone())
+            .with_slash_commands(known_slash_commands())
+            .with_shell_output_dir(shell_dir.clone());
+        if !plugin_commands.is_empty() {
+            runner = runner.with_plugin_commands(plugin_commands.clone());
+        }
+
+        if let Some(ref session_id) = resume {
+            info!("Will resume session: {}", session_id);
+            runner = runner.with_resume_session(session_id.clone());
+
+            match fetch_resume_history(session_id).await {
+                Ok(history) if !history.is_empty() => {
+                    info!(
+                        count = history.len(),
+                        "Fetched resume history for viewport hydration"
+                    );
+                    runner = runner.with_resume_history(history);
+                }
+                Ok(_) => {
+                    info!("No history events found for session {}", session_id);
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to fetch resume history, starting with blank viewport: {}",
+                        e
+                    );
+                }
+            }
+        }
+
+        // Pull the Lua-defined theme before the first frame. Strictly an
+        // upgrade: the TUI already holds a complete compiled-in default, so a
+        // missing daemon, an RPC error, or an older daemon that does not know
+        // `ui.config` all leave a correct screen. Never make this a
+        // precondition for rendering.
+        //
+        // The session-scoped values ride along only for a session that
+        // exists: a resumed one. A new session has no id yet.
+        if let Some(client) = setup_client.as_ref() {
+            let ui_params = match resume.as_deref() {
+                Some(id) => serde_json::json!({ "session_id": id }),
+                None => serde_json::json!({}),
+            };
+            match client.call("ui.config", ui_params).await {
+                Ok(payload) => {
+                    crate::tui::oil::theme::apply_ui_config(&payload);
+                }
+                Err(e) => debug!("ui.config unavailable, using the built-in theme: {e}"),
+            }
+        }
+
+        let config_for_factory = config.clone();
         let default_agent = default_agent.clone();
         let agent_card = agent_card.clone();
         let provider_key = provider_key.clone();
         let parsed_env = parsed_env.clone();
         let working_dir = working_dir.clone();
-        let resume_session_id = resume_id_for_factory.clone();
-        let recording_mode = recording_mode_for_factory.clone();
-        let recording_path = recording_path_for_factory.clone();
+        let resume_id_for_factory = resume.clone();
+        let recording_mode_for_factory = recording_mode.clone();
+        let recording_path_for_factory = recording_path.clone();
         let kiln_root = kiln_root.clone();
-        let lua_sessions = lua_sessions_for_factory.clone();
+        let lua_sessions_for_factory = lua_sessions.clone();
+        let factory = move |selection: AgentSelection| {
+            let config = config_for_factory.clone();
+            let default_agent = default_agent.clone();
+            let agent_card = agent_card.clone();
+            let provider_key = provider_key.clone();
+            let parsed_env = parsed_env.clone();
+            let working_dir = working_dir.clone();
+            let resume_session_id = resume_id_for_factory.clone();
+            let recording_mode = recording_mode_for_factory.clone();
+            let recording_path = recording_path_for_factory.clone();
+            let kiln_root = kiln_root.clone();
+            let lua_sessions = lua_sessions_for_factory.clone();
 
-        async move {
-            // Build common params once
-            let mut params = factories::AgentInitParams::new()
-                .with_agent_card(agent_card)
-                .with_provider_opt(provider_key)
-                .with_env_overrides(parsed_env)
-                .with_resume_session_id(resume_session_id)
-                .with_recording_mode(recording_mode)
-                .with_recording_path(recording_path);
+            async move {
+                // Build common params once
+                let mut params = factories::AgentInitParams::new()
+                    .with_agent_card(agent_card)
+                    .with_provider_opt(provider_key)
+                    .with_env_overrides(parsed_env)
+                    .with_resume_session_id(resume_session_id)
+                    .with_recording_mode(recording_mode)
+                    .with_recording_path(recording_path);
 
-            // Apply ACP-specific fields if needed
-            if let AgentSelection::Acp(agent_name) = &selection {
-                params = params
-                    .with_type(factories::AgentType::Acp)
-                    .with_agent_name_opt(Some(agent_name.clone()).or(default_agent));
+                // Apply ACP-specific fields if needed
+                if let AgentSelection::Acp(agent_name) = &selection {
+                    params = params
+                        .with_type(factories::AgentType::Acp)
+                        .with_agent_name_opt(Some(agent_name.clone()).or(default_agent));
+                }
+
+                // Apply working directory if provided
+                if let Some(wd) = working_dir {
+                    params = params.with_working_dir(wd);
+                }
+
+                let (handle, session_id, event_rx) =
+                    factories::create_daemon_agent_with_events(&config, &params).await?;
+                if init_lua_session(&session_id, &kiln_root).await {
+                    lua_sessions
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push(session_id);
+                }
+                Ok((handle, Some(event_rx)))
             }
+        };
 
-            // Apply working directory if provided
-            if let Some(wd) = working_dir {
-                params = params.with_working_dir(wd);
-            }
+        // Context length now arrives via the daemon's `context_limit_resolved`
+        // setup event (internal-agent sessions only). The runner's
+        // SessionEventStream updates its AtomicUsize handle as that event fires.
 
-            let (handle, session_id, event_rx) =
-                factories::create_daemon_agent_with_events(&config, &params).await?;
-            if init_lua_session(&session_id, &kiln_root).await {
-                lua_sessions
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .push(session_id);
+        let run_result = runner.run_with_factory(&bridge, factory).await;
+
+        // The session this run showed ends here, so its Lua session does too.
+        let opened = std::mem::take(
+            &mut *lua_sessions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        if let Some(client) = setup_client.as_ref() {
+            for session_id in opened {
+                let shutdown_params = LuaShutdownSessionRequest { session_id };
+                if let Err(e) = client.lua_shutdown_session(shutdown_params).await {
+                    warn!("Failed to shutdown Lua session via daemon RPC: {}", e);
+                }
             }
-            Ok((handle, Some(event_rx)))
         }
-    };
 
-    // Context length now arrives via the daemon's `context_limit_resolved`
-    // setup event (internal-agent sessions only). The runner's
-    // SessionEventStream updates its AtomicUsize handle as that event fires.
-
-    let run_result = runner.run_with_factory(&bridge, factory).await;
-
-    let opened = std::mem::take(
-        &mut *lua_sessions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
-    );
-    if let Some(client) = setup_client.as_ref() {
-        for session_id in opened {
-            let shutdown_params = LuaShutdownSessionRequest { session_id };
-            if let Err(e) = client.lua_shutdown_session(shutdown_params).await {
-                warn!("Failed to shutdown Lua session via daemon RPC: {}", e);
+        match run_result? {
+            ChatExit::Quit => return Ok(()),
+            ChatExit::Resume(next) => {
+                info!(session_id = %next, "Switching to the session /resume chose");
+                resume = Some(next);
             }
         }
     }
-
-    run_result
 }
 
 /// Await `work`, re-drawing `status` each second with the elapsed time.
@@ -1012,6 +1041,7 @@ pub fn known_slash_commands() -> Vec<(String, String)> {
         ("plan".into(), "Set plan mode (read-only)".into()),
         ("auto".into(), "Set auto mode (full access)".into()),
         ("undo".into(), "Undo last exchange(s)".into()),
+        ("resume".into(), "Resume an earlier session".into()),
         ("help".into(), "Show help".into()),
     ]
 }

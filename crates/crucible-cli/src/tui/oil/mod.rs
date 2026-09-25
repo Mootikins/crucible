@@ -40,7 +40,7 @@ pub use app::{Action, ViewContext};
 pub use chat_app::{
     ChatAppMsg, KilnSummary, McpServerDisplay, OilChatApp, PluginStatusEntry, DEFAULT_MODE,
 };
-pub use chat_runner::OilChatRunner;
+pub use chat_runner::{ChatExit, OilChatRunner};
 pub use component::Component;
 #[cfg(any(test, feature = "test-utils"))]
 pub use component::ComponentHarness;

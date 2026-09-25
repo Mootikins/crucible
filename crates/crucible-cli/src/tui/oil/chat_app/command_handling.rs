@@ -133,6 +133,12 @@ impl OilChatApp {
                     .max(1);
                 Action::Send(ChatAppMsg::Undo(count))
             }
+            // `/resume <id>` leaves this session for that one; a bare
+            // `/resume` opens the picker. The daemon holds the list.
+            "resume" => match parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                Some(id) => Action::Send(ChatAppMsg::ResumeSession(id.to_string())),
+                None => self.open_session_picker(),
+            },
             // Alias for :help — the command palette advertises "/help".
             "help" => {
                 self.handle_help_repl(parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()))
@@ -923,9 +929,11 @@ impl OilChatApp {
             Some("commands" | "command" | "cmd") => PickSource::Commands,
             Some("files" | "file") => PickSource::Files,
             Some("status" | "statuses") => PickSource::Status,
+            // The daemon holds the sessions, so this is the `/resume` picker.
+            Some("sessions" | "session") => return self.open_session_picker(),
             Some(unknown) => {
                 self.add_notification(crucible_core::types::Notification::warning(format!(
-                    "Unknown pick source: '{}'. Valid: notes, commands, files, status, all",
+                    "Unknown pick source: '{}'. Valid: notes, commands, files, status, sessions, all",
                     unknown
                 )));
                 return Action::Continue;
@@ -959,6 +967,22 @@ impl OilChatApp {
         // Not a `:pick` source: the rows exist only after the daemon answers.
         self.show_picker(super::state::PickSource::PluginApproval);
         Action::Continue
+    }
+
+    /// Open the `/resume` picker, and ask the runner for a fresh list: the
+    /// sessions change while this console runs.
+    fn open_session_picker(&mut self) -> Action<ChatAppMsg> {
+        use super::model_state::SessionListState;
+
+        const PREFIX: &str = "/resume ";
+        self.set_input(PREFIX);
+        self.popup.kind = super::state::AutocompleteKind::Session;
+        self.popup.trigger_pos = PREFIX.len();
+        self.popup.filter.clear();
+        self.popup.selected = 0;
+        self.popup.show = true;
+        self.session_list = SessionListState::Loading;
+        Action::Send(ChatAppMsg::FetchSessions)
     }
 
     pub(super) fn handle_mcp_command(&mut self) {

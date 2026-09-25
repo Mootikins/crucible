@@ -18,7 +18,7 @@ Sessions follow Crucible's "plaintext first" philosophy:
 
 - **Plaintext is truth** — Each session saves as JSONL; markdown is a readable export
 - **Daemon manages state** — the daemon tracks active sessions via RPC
-- **Resume anytime** — Pick up previous sessions with `cru session open`
+- **Resume anytime** — Pick up previous sessions with `cru session open`, or with `/resume` inside the TUI
 
 ### Daemon Integration
 
@@ -347,22 +347,27 @@ cru session search "auth" -f json | jq '.[].session_id'
 cru chat                     # Auto-creates a new session
 ```
 
-Running `cru chat` starts a fresh session. If there's a recent session for the current workspace, it may auto-resume.
+Running `cru chat` starts a fresh session. To continue an earlier one, give its id to `cru chat --resume <id>`, or use `/resume` inside the TUI.
 
 ## In-TUI Session Management
 
-### Resume on Send
-
-When you start `cru chat`, if there's a recent session for the current workspace, it auto-resumes. Your first message continues the previous conversation.
-
 ### Switch Sessions
 
-Use the `:session` command:
+Use the `/resume` command:
 
 ```
-:session list              # Show available sessions
-:session new               # Start fresh session
+/resume                    # Pick from the sessions of this workspace
+/resume <id>               # Open that session
 ```
+
+The picker lists the chat sessions that share the kilns and the workspace of
+the open session, the most recent first, and leaves out the open session. Type
+to filter on the title or the id, move with the arrow keys, and press Enter to
+open the session. `:pick sessions` opens the same picker.
+
+The TUI then leaves the open session and shows the chosen one with its full
+history, the same way `cru chat --resume <id>` does. The daemon must know the
+id, and a turn that runs must end first.
 
 ## Session Archiving
 
