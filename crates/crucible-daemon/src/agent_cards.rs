@@ -6,16 +6,16 @@
 //! per session context and uses them as delegation targets and for
 //! `session.create` agent resolution.
 //!
-//! Discovery sources, highest priority first:
-//! 1. `agent_directories` from the app config, in config order
-//! 2. `~/.config/crucible/agents/`. A user develops a card personally before
-//!    sharing it, so these two personal layers are on top.
-//! 3. `WORKSPACE/.crucible/agents/` — project-scoped cards (repos)
-//! 4. `KILN/.crucible/agents/` — kiln config
+//! Discovery sources, highest priority first (see `crucible_core::sources`):
+//! 1. `agent_directories` from the app config (`agent-dir-N`), then
+//!    `~/.config/crucible/agents/` (`personal`). A user develops a card
+//!    personally before sharing it, so the personal sources are on top.
+//! 2. `WORKSPACE/.crucible/agents/` (`workspace`) — project-scoped cards
+//! 3. `KILN/.crucible/agents/` (`kiln`, `kiln-2`, ...) — kiln config
 //!
-//! Layers override: a bare name resolves to the card of the highest layer
-//! that has it. Every card also keeps its full name (`kiln:helper`). Two
-//! cards of one name in the same layer are ambiguous.
+//! A bare name resolves to the card of the highest source that has it.
+//! Every card also keeps its full name (`kiln:helper`). Two cards of one
+//! name at one priority are ambiguous.
 //!
 //! Only `.crucible/` directories. See [`card_directories`] for why a kiln's
 //! visible top level is not scanned.
@@ -27,10 +27,13 @@
 //! too, so the two never disagree about where a card may come from.
 
 use crucible_core::agent::{AgentCard, AgentCardLoader};
-use crucible_core::runtime_path::{build_path, search_paths, Origin, PathInputs, RuntimeAsset};
+use crucible_core::runtime_path::{
+    build_path, search_sources, PathInputs, RuntimeAsset, SearchPath,
+};
+use crucible_core::sources::{Entry, Sources};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// The session-independent roots of agent-card discovery: the global config
 /// directory and the directories the app config names.
@@ -116,22 +119,16 @@ const DEPRECATION_ADVICE: &str = "`agent_directories` is deprecated. \
 /// not go looking.
 pub fn card_directories(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) -> Vec<PathBuf> {
     card_sources(roots, workspace, kilns)
-        .into_iter()
-        .map(|(path, _, _)| path)
+        .list()
+        .iter()
+        .map(|source| source.value.path.clone())
         .collect()
 }
 
-/// A card layer: the origin of a directory, and whether an
-/// `agent_directories` entry named it. `agent_directories` and the config
-/// home share `Origin::UserConfig`, but the user ranks `agent_directories`
-/// above the config home, so they are two layers.
-type Layer = (Origin, bool);
-
-fn card_sources(
-    roots: &CardRoots,
-    workspace: &Path,
-    kilns: &[PathBuf],
-) -> Vec<(PathBuf, Layer, String)> {
+/// The card directories as sources, sorted by priority: the personal
+/// sources (`agent_directories`, then the config home), the workspace, then
+/// each kiln.
+fn card_sources(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) -> Sources<SearchPath> {
     // `kiln == workspace` would otherwise offer `<kiln>/.crucible/agents`
     // twice. The kiln entry is the one kept, because a session with no
     // separate workspace is a kiln session.
@@ -155,41 +152,18 @@ fn card_sources(
         agent_directories: &roots.agent_directories,
         ..PathInputs::default()
     });
-
-    // Cards only: the personal layer is on top. The other sources keep the
-    // runtimepath order below it. `sort_by_key` is stable.
-    let mut paths = search_paths(RuntimeAsset::Cards, &path);
-    paths.sort_by_key(|c| c.origin != Origin::UserConfig);
-    paths
-        .into_iter()
-        .map(|c| {
-            let namespace = match c.origin {
-                Origin::Workspace => "workspace".to_string(),
-                Origin::Kiln => "kiln".to_string(),
-                Origin::Config(index) => format!("config-{}", index + 1),
-                Origin::Plugin => c
-                    .path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "plugin".into()),
-                Origin::Env => "env".to_string(),
-                Origin::Harness => "harness".to_string(),
-                Origin::UserConfig => "personal".to_string(),
-                Origin::UserRuntime => "runtime".to_string(),
-                Origin::Bundled => "builtin".to_string(),
-            };
-            let named = roots.agent_directories.contains(&c.path);
-            (c.path, (c.origin, named), namespace)
-        })
-        .collect()
+    search_sources(RuntimeAsset::Cards, &path).unwrap_or_else(|error| {
+        warn!(%error, "Agent card directories are invalid; no cards load");
+        Sources::default()
+    })
 }
 
-/// Discover agent cards visible to a session. The card of the highest layer
-/// takes the bare name; each other card of that name takes its full name
-/// (`kiln:helper`). Two cards of one name in the highest layer both take full
-/// names, so the bare name is ambiguous. Best-effort: unreadable directories
-/// or invalid cards are skipped (the loader warns per file).
+/// Discover agent cards visible to a session, keyed by the name each is
+/// listed under. The card of the highest source takes the bare name; each
+/// other card takes its full name (`kiln:helper`). Two cards of one name at
+/// one priority both take full names, so the bare name is ambiguous.
+/// Best-effort: unreadable directories or invalid cards are skipped (the
+/// loader warns per file).
 ///
 /// `roots` is injected rather than read from the environment; see
 /// [`CardRoots`] for why.
@@ -199,9 +173,11 @@ pub fn discover_agent_cards_in(
     kilns: &[PathBuf],
 ) -> HashMap<String, AgentCard> {
     warn_if_deprecated(roots);
-    let mut discovered = Vec::new();
+    let sources = card_sources(roots, workspace, kilns);
+    let mut entries: Vec<Entry<AgentCard>> = Vec::new();
     let mut loader = AgentCardLoader::new();
-    for (dir, layer, namespace) in card_sources(roots, workspace, kilns) {
+    for (index, source) in sources.list().iter().enumerate() {
+        let dir = &source.value.path;
         if !dir.is_dir() {
             continue;
         }
@@ -211,45 +187,31 @@ pub fn discover_agent_cards_in(
         match loader.load_from_directory(dir_str) {
             Ok(loaded) => {
                 for mut card in loaded {
-                    card.namespace = Some(namespace.clone());
-                    discovered.push((layer, card));
+                    // One name twice in one directory is the directory's
+                    // defect, not a tie between sources.
+                    if entries
+                        .iter()
+                        .any(|e| e.source == index && e.name == card.name)
+                    {
+                        warn!(dir = %dir.display(), card = %card.name, "Second agent card of one name skipped");
+                        continue;
+                    }
+                    card.namespace = Some(source.name.clone());
+                    entries.push(Entry {
+                        source: index,
+                        name: card.name.clone(),
+                        value: card,
+                    });
                 }
             }
             Err(e) => debug!(dir = %dir.display(), error = %e, "Agent card directory skipped"),
         }
     }
-    // The layer of the highest card of each name, and how many cards of that
-    // name it holds. One card there takes the bare name.
-    let mut top: HashMap<String, (Layer, usize)> = HashMap::new();
-    for (layer, card) in &discovered {
-        let entry = top.entry(card.name.clone()).or_insert((*layer, 0));
-        if entry.0 == *layer {
-            entry.1 += 1;
-        }
-    }
-    let mut cards = HashMap::new();
-    for (layer, card) in discovered {
-        let full = |suffix: String| {
-            format!(
-                "{}{suffix}:{}",
-                card.namespace.as_deref().unwrap_or("card"),
-                card.name
-            )
-        };
-        let mut key = match top.get(&card.name) {
-            Some((top_layer, 1)) if *top_layer == layer && !cards.contains_key(&card.name) => {
-                card.name.clone()
-            }
-            _ => full(String::new()),
-        };
-        let mut suffix = 2;
-        while cards.contains_key(&key) {
-            key = full(format!("-{suffix}"));
-            suffix += 1;
-        }
-        cards.insert(key, card);
-    }
-    cards
+    let keys = crucible_core::sources::listing(&sources, &entries);
+    let mut cards: Vec<Option<AgentCard>> = entries.into_iter().map(|e| Some(e.value)).collect();
+    keys.into_iter()
+        .filter_map(|(key, index)| Some((key, cards[index].take()?)))
+        .collect()
 }
 
 /// The card `name` names: a bare name, which [`discover_agent_cards_in`]
@@ -604,10 +566,16 @@ mod tests {
         };
         assert_eq!(description("helper"), "shared");
         assert_eq!(description("personal:helper"), "home");
+        assert_eq!(
+            description("agent-dir-1:helper"),
+            "shared",
+            "an agent_directories card has a full name of its own"
+        );
     }
 
-    /// Two cards of one name in ONE layer are ambiguous: the bare name is
-    /// refused, and the error lists the full names.
+    /// Two cards of one name at ONE priority are ambiguous: the bare name
+    /// is refused, and the error lists the full names. Each
+    /// `agent_directories` entry is a source of its own.
     #[test]
     fn two_cards_of_one_name_in_one_layer_are_ambiguous() {
         let first = TempDir::new().unwrap();
@@ -631,7 +599,7 @@ mod tests {
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let error = resolve_card(&cards, "helper").unwrap_err();
         assert!(
-            error.contains("personal:helper") && error.contains("personal-2:helper"),
+            error.contains("agent-dir-1:helper") && error.contains("agent-dir-2:helper"),
             "{error}"
         );
         assert_eq!(

@@ -756,7 +756,7 @@ You are a test agent.
                 .clone()
         };
         assert_eq!(description("shared"), "configured version");
-        assert_eq!(description("personal:shared"), "configured version");
+        assert_eq!(description("agent-dir-1:shared"), "configured version");
         assert_eq!(description("kiln:shared"), "kiln version");
     }
 
