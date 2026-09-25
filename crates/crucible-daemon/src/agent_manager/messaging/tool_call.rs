@@ -629,7 +629,14 @@ impl AgentManager {
         };
 
         let (result, error) = stream_ctx
-            .finish_tool_result(&call_id, call, &args, result_str, error_str, true)
+            .finish_tool_result(
+                &call_id,
+                call,
+                &args,
+                serde_json::Value::String(result_str),
+                error_str,
+                true,
+            )
             .await;
         crucible_core::traits::chat::ChatToolResult {
             name: tool_call.name.clone(),
@@ -774,16 +781,23 @@ impl StreamContext {
         call_id: &str,
         call: CanonicalToolCall,
         args: &serde_json::Value,
-        result: String,
+        structured: serde_json::Value,
         error: Option<String>,
         spill: bool,
     ) -> (String, Option<String>) {
         let tool = call.tool.clone();
         let tool = tool.as_str();
+        // The hooks and the model read text. The clients get the structure
+        // when no hook and no spill changed that text.
+        let text = match &structured {
+            serde_json::Value::String(text) => text.clone(),
+            other => other.to_string(),
+        };
         // The hooks run BEFORE the spill, so a redacted secret never reaches
         // the spill file either.
         let (mut result, error) =
-            super::tool_hooks::apply_tool_result_handlers(self, tool, args, result, error).await;
+            super::tool_hooks::apply_tool_result_handlers(self, tool, args, text.clone(), error)
+                .await;
         // The render reads the whole result, before a spill cuts it. With
         // no Lua render the card keeps the render of the call.
         let render = super::tool_hooks::lua_render(
@@ -829,7 +843,11 @@ impl StreamContext {
             }
         }
 
-        let mut event_result = tool_result_body(&result, error.as_deref());
+        let mut event_result = if result == text {
+            tool_result_body(&structured, error.as_deref())
+        } else {
+            tool_result_body(&result, error.as_deref())
+        };
         if let Some(path) = spill_path {
             event_result["spill_path"] = serde_json::json!(path);
         }

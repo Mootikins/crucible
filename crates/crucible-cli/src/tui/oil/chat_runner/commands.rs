@@ -278,15 +278,19 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 return msgs;
             }
             let result_str = match &body {
-                Some(ToolResultBody::Ok { result, .. }) => result.as_str().unwrap_or(""),
-                _ => "",
+                Some(ToolResultBody::Ok {
+                    result: serde_json::Value::String(text),
+                    ..
+                }) => text.clone(),
+                Some(ToolResultBody::Ok { result, .. }) => result.to_string(),
+                _ => String::new(),
             };
             // Strip nested tool-error prefixes from result text that looks like
             // an error (matches old handle_stream_chunk behaviour).
             let result_str = if result_str.starts_with("Error: ") {
-                strip_tool_error_prefix(result_str)
+                strip_tool_error_prefix(&result_str)
             } else {
-                result_str.to_string()
+                result_str
             };
             msgs.push(ChatAppMsg::ToolResultDelta {
                 name: name.clone(),

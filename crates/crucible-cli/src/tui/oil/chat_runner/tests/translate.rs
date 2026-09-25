@@ -335,6 +335,21 @@ fn translate_tool_result_carries_the_render_of_the_result() {
     );
 }
 
+/// A structured result is not a string. The card shows its JSON, not nothing.
+#[test]
+fn translate_tool_result_shows_a_structured_result() {
+    let data = serde_json::json!({
+        "call_id": "c1", "tool": "Bash",
+        "result": { "result": { "exit_code": 0 } },
+    });
+    let msgs = session_event_to_chat_msgs("tool_result", &data);
+    assert!(
+        matches!(&msgs[..], [ChatAppMsg::ToolResultDelta { delta, .. }, ChatAppMsg::ToolResultComplete { .. }]
+            if delta == r#"{"exit_code":0}"#),
+        "{msgs:?}"
+    );
+}
+
 #[test]
 fn translate_tool_call_update_with_nothing_in_it_drops_msg() {
     use serde_json::json;

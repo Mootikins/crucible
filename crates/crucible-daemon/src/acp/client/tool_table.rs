@@ -48,14 +48,19 @@ const HELD_RESULT_DROPPED: &str = "tool result dropped: held results are over th
 /// A completion that arrived before its call had a name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HeldResult {
-    result: Option<String>,
+    result: Option<serde_json::Value>,
     error: Option<String>,
 }
 
 impl HeldResult {
+    /// A string counts its text; a structured result counts its JSON.
     fn bytes(&self) -> usize {
-        let len = |s: &Option<String>| s.as_ref().map_or(0, String::len);
-        len(&self.result) + len(&self.error)
+        let result = match &self.result {
+            None => 0,
+            Some(serde_json::Value::String(text)) => text.len(),
+            Some(other) => other.to_string().len(),
+        };
+        result + self.error.as_ref().map_or(0, String::len)
     }
 }
 
@@ -112,11 +117,11 @@ impl Entry {
     }
 
     /// The `ToolResult` event of this call, under its canonical name.
-    fn result(&self, result: Option<String>, error: Option<String>) -> TurnEvent {
+    fn result(&self, result: Option<serde_json::Value>, error: Option<String>) -> TurnEvent {
         TurnEvent::ToolResult {
             id: self.id.clone(),
             name: self.call.tool.clone(),
-            result: serde_json::Value::String(result.unwrap_or_default()),
+            result: result.unwrap_or_else(|| serde_json::Value::String(String::new())),
             error,
         }
     }
@@ -507,6 +512,27 @@ mod tests {
                 error: None,
             }]
         );
+    }
+
+    /// A structured `rawOutput` stays structured, announced or held.
+    #[test]
+    fn a_structured_raw_output_stays_structured() {
+        let mut table = ToolCallTable::default();
+        let output = json!({"exit_code": 0, "stdout": "ok"});
+        let frame = |id: &str| {
+            update(json!({"toolCallId": id, "status": "completed", "rawOutput": output}))
+        };
+        upsert_call(&mut table, json!({"toolCallId": "t1", "title": "Run"}));
+        let held = upsert_update(&mut table, frame("t2"));
+        assert!(held.is_empty(), "{held:?}");
+        let announced = upsert_update(&mut table, frame("t1"));
+        let flushed = table.flush("end_turn");
+        for events in [&announced[..], &flushed[1..]] {
+            let [TurnEvent::ToolResult { result, .. }] = events else {
+                panic!("expected one ToolResult, got {events:?}")
+            };
+            assert_eq!(result, &output);
+        }
     }
 
     #[test]
@@ -901,6 +927,18 @@ mod tests {
         upsert_update(
             &mut table,
             completed("huge", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)),
+        );
+        assert!(held_ids(&table).is_empty());
+    }
+
+    /// A structured result counts its JSON, not zero.
+    #[test]
+    fn an_oversized_structured_result_is_refused() {
+        let mut table = ToolCallTable::default();
+        let big = json!({"stdout": "x".repeat(MAX_HELD_RESULT_BYTES)});
+        upsert_update(
+            &mut table,
+            update(json!({"toolCallId": "huge", "status": "completed", "rawOutput": big})),
         );
         assert!(held_ids(&table).is_empty());
     }

@@ -839,7 +839,7 @@ fn raw_output_wins_over_content_when_both_exist() {
             _ => None,
         })
         .expect("completed update must emit ToolResult");
-    assert_eq!(result, r#"{"hits":3}"#);
+    assert_eq!(result, json!({"hits": 3}));
 }
 
 /// Hermes drains a queued prompt inside one `session/prompt` reply. It then

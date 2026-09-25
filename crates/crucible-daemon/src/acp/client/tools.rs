@@ -12,10 +12,10 @@ impl CrucibleAcpClient {
     pub(super) fn extract_tool_result(
         raw_output: Option<&serde_json::Value>,
         content: &[ToolCallContent],
-    ) -> Option<String> {
+    ) -> Option<serde_json::Value> {
         raw_output
-            .map(Self::format_json_value)
-            .or_else(|| Self::content_text(content))
+            .cloned()
+            .or_else(|| Self::content_text(content).map(serde_json::Value::String))
     }
 
     pub(super) fn extract_tool_error(

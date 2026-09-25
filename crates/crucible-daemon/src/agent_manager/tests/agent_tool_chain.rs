@@ -110,6 +110,31 @@ async fn the_render_runs_for_an_agent_tool_call_and_its_result() {
     );
 }
 
+/// A structured result of an agent reaches the clients as JSON, not as the
+/// text of the JSON.
+#[tokio::test]
+async fn a_structured_agent_result_reaches_the_clients_structured() {
+    let mut h = ReactorTestHarness::new().await;
+    let output = serde_json::json!({"exit_code": 0, "stdout": "ok"});
+    h.inject_agent(Box::new(OwnsToolsMockAgent {
+        events: vec![
+            script::tool_call("call1", "Bash", serde_json::json!({"command": "true"})),
+            TurnEvent::ToolResult {
+                id: "call1".to_string(),
+                name: "Bash".to_string(),
+                result: output.clone(),
+                error: None,
+            },
+            script::done(),
+        ],
+    }));
+
+    h.send("run").await;
+
+    let tool_result = h.wait_for("tool_result").await;
+    assert_eq!(tool_result.data["result"]["result"], output);
+}
+
 /// The loop guard cannot stop an ACP call before it runs, so it ends the
 /// turn. Three failures in a row of one call block the tool, as for a
 /// Crucible tool, and the next call of the tool cancels the turn.

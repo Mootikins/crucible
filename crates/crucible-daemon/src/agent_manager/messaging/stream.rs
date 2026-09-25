@@ -606,10 +606,6 @@ impl AgentManager {
                     // gate says why, where the agent can only say "rejected".
                     let denial = stream_ctx.slot.take_denial(&id);
                     let error = error.map(|e| denial.unwrap_or(e));
-                    let text = match result {
-                        serde_json::Value::String(text) => text,
-                        other => other.to_string(),
-                    };
                     // An agent can send no tool name and put the command
                     // only in the title (Gemini), so the title and the
                     // locations tell its calls apart for the loop guard.
@@ -618,7 +614,7 @@ impl AgentManager {
                         call.raw.as_ref().map(|raw| (&raw.title, &raw.locations)),
                     ]);
                     let (text, error) = stream_ctx
-                        .finish_tool_result(&id, call, &args, text, error, false)
+                        .finish_tool_result(&id, call, &args, result, error, false)
                         .await;
                     if let Some(bracket) = agent_brackets.remove(&id) {
                         stream_ctx.close_review_bracket(bracket, &id).await;
