@@ -43,6 +43,121 @@ pub enum Origin {
     Bundled,
 }
 
+/// A named band of priority. The user moves a level with
+/// `sources.priority = { <level> = N }`, and a kiln takes a level with
+/// `priority = "<level>"`.
+///
+/// A closed set: [`Self::name`] and [`Self::default_priority`] are
+/// exhaustive, and [`Self::parse`] walks every variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter)]
+pub enum PriorityLevel {
+    Env,
+    Personal,
+    Workspace,
+    Kiln,
+    Runtimepath,
+    Harness,
+    Runtime,
+    Plugin,
+    Builtin,
+}
+
+impl PriorityLevel {
+    /// The name a config file uses.
+    pub fn name(self) -> &'static str {
+        match self {
+            PriorityLevel::Env => "env",
+            PriorityLevel::Personal => "personal",
+            PriorityLevel::Workspace => "workspace",
+            PriorityLevel::Kiln => "kiln",
+            PriorityLevel::Runtimepath => "runtimepath",
+            PriorityLevel::Harness => "harness",
+            PriorityLevel::Runtime => "runtime",
+            PriorityLevel::Plugin => "plugin",
+            PriorityLevel::Builtin => "builtin",
+        }
+    }
+
+    /// The level a config file names, or `None` for an unknown name.
+    pub fn parse(name: &str) -> Option<Self> {
+        use strum::IntoEnumIterator;
+        Self::iter().find(|level| level.name() == name)
+    }
+
+    /// The priority of the level when the config does not move it. The user
+    /// names personal text, so it is above everything except the environment,
+    /// which is for development and CI.
+    pub fn default_priority(self) -> i32 {
+        match self {
+            PriorityLevel::Env => 1000,
+            PriorityLevel::Personal => 900,
+            PriorityLevel::Workspace => 800,
+            PriorityLevel::Kiln => 700,
+            PriorityLevel::Runtimepath => 600,
+            PriorityLevel::Harness => 500,
+            PriorityLevel::Runtime => 300,
+            PriorityLevel::Plugin => 200,
+            PriorityLevel::Builtin => 100,
+        }
+    }
+}
+
+impl Origin {
+    /// The level of a root of this origin.
+    pub fn level(self) -> PriorityLevel {
+        match self {
+            Origin::Env => PriorityLevel::Env,
+            Origin::Workspace => PriorityLevel::Workspace,
+            Origin::Kiln => PriorityLevel::Kiln,
+            Origin::Config(_) => PriorityLevel::Runtimepath,
+            Origin::Harness => PriorityLevel::Harness,
+            Origin::UserConfig => PriorityLevel::Personal,
+            Origin::UserRuntime => PriorityLevel::Runtime,
+            Origin::Plugin => PriorityLevel::Plugin,
+            Origin::Bundled => PriorityLevel::Builtin,
+        }
+    }
+
+    /// The source name of a root of this origin, before `build_path` makes
+    /// it specific. A `runtimepath` entry is `config-N`, from 1.
+    pub fn default_source_name(self) -> String {
+        match self {
+            Origin::Config(index) => format!("config-{}", index + 1),
+            Origin::Env
+            | Origin::Workspace
+            | Origin::Kiln
+            | Origin::Harness
+            | Origin::UserConfig
+            | Origin::UserRuntime
+            | Origin::Plugin
+            | Origin::Bundled => self.level().name().to_string(),
+        }
+    }
+}
+
+/// The default priority of a root of `origin`. A later `runtimepath` entry
+/// is one lower than the entry before it.
+pub fn default_priority(origin: Origin) -> i32 {
+    let base = origin.level().default_priority();
+    match origin {
+        Origin::Config(index) => base.saturating_sub(i32::try_from(index).unwrap_or(i32::MAX)),
+        Origin::Env
+        | Origin::Workspace
+        | Origin::Kiln
+        | Origin::Harness
+        | Origin::UserConfig
+        | Origin::UserRuntime
+        | Origin::Plugin
+        | Origin::Bundled => base,
+    }
+}
+
+/// The position of the config home inside level 900: after a personal kiln
+/// (0) and `agent_directories` (1). A tie at 900 is never ambiguous.
+pub const CONFIG_HOME_WITHIN: u8 = 2;
+/// The position of `agent_directories` inside level 900.
+pub const AGENT_DIRECTORIES_WITHIN: u8 = 1;
+
 /// One root on the path.
 ///
 /// Two existing knobs name a *leaf* directory rather than a root, so this is
@@ -72,16 +187,18 @@ pub struct RuntimeEntry {
     /// An open string, not an enum: adding a vendor must be a config row, not
     /// a code change. Render layers treat it as an opaque label.
     pub harness: Option<String>,
+    /// The prefix of a full name, such as `personal` in `personal:helper`.
+    pub name: String,
+    /// A higher priority wins. See [`crate::sources`].
+    pub priority: i32,
+    /// The position inside one priority. See [`crate::sources::Source`].
+    pub within: u8,
 }
 
 impl RuntimeEntry {
     /// A root serving every kind that reaches `origin`.
     pub fn root(path: impl Into<PathBuf>, origin: Origin) -> Self {
-        Self {
-            kind: EntryKind::Root(path.into()),
-            origin,
-            harness: None,
-        }
+        Self::new(EntryKind::Root(path.into()), origin)
     }
 
     /// A directory that *is* one kind's directory, not a root above it.
@@ -90,10 +207,27 @@ impl RuntimeEntry {
         origin: Origin,
         asset: super::asset::RuntimeAsset,
     ) -> Self {
+        Self::new(EntryKind::Leaf(path.into(), asset), origin)
+    }
+
+    fn new(kind: EntryKind, origin: Origin) -> Self {
         Self {
-            kind: EntryKind::Leaf(path.into(), asset),
+            kind,
             origin,
             harness: None,
+            name: origin.default_source_name(),
+            priority: default_priority(origin),
+            within: match origin {
+                Origin::UserConfig => CONFIG_HOME_WITHIN,
+                Origin::Env
+                | Origin::Workspace
+                | Origin::Kiln
+                | Origin::Config(_)
+                | Origin::Harness
+                | Origin::UserRuntime
+                | Origin::Plugin
+                | Origin::Bundled => 0,
+            },
         }
     }
 
@@ -128,6 +262,53 @@ pub struct SearchPath {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::IntoEnumIterator;
+
+    /// Each level name parses back to its level, and no two levels share a
+    /// name or a default priority.
+    #[test]
+    fn every_level_name_parses_back() {
+        let mut names = std::collections::BTreeSet::new();
+        let mut priorities = std::collections::BTreeSet::new();
+        for level in PriorityLevel::iter() {
+            assert_eq!(PriorityLevel::parse(level.name()), Some(level));
+            assert!(names.insert(level.name()), "{level:?} reuses a name");
+            assert!(
+                priorities.insert(level.default_priority()),
+                "{level:?} reuses a priority"
+            );
+        }
+        assert_eq!(PriorityLevel::parse("nope"), None);
+    }
+
+    /// The default priorities follow the documented order, highest first.
+    #[test]
+    fn levels_are_ordered_personal_first_after_env() {
+        let order: Vec<i32> = [
+            PriorityLevel::Env,
+            PriorityLevel::Personal,
+            PriorityLevel::Workspace,
+            PriorityLevel::Kiln,
+            PriorityLevel::Runtimepath,
+            PriorityLevel::Harness,
+            PriorityLevel::Runtime,
+            PriorityLevel::Plugin,
+            PriorityLevel::Builtin,
+        ]
+        .iter()
+        .map(|l| l.default_priority())
+        .collect();
+        assert!(order.windows(2).all(|w| w[0] > w[1]), "{order:?}");
+        assert_eq!(order.len(), PriorityLevel::iter().count());
+    }
+
+    /// A later `runtimepath` entry ranks below the one before it.
+    #[test]
+    fn a_later_runtimepath_entry_ranks_lower() {
+        assert_eq!(default_priority(Origin::Config(0)), 600);
+        assert_eq!(default_priority(Origin::Config(2)), 598);
+        assert_eq!(Origin::Config(2).default_source_name(), "config-3");
+    }
 
     /// Origin ordering is precedence, and the two user roots are distinct.
     #[test]
@@ -154,6 +335,10 @@ mod tests {
             assert!(
                 user < Origin::Plugin,
                 "{user:?} must outrank a plugin's own directory"
+            );
+            assert!(
+                default_priority(user) > default_priority(Origin::Plugin),
+                "{user:?} must have a higher priority than a plugin"
             );
         }
     }

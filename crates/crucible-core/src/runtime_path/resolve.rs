@@ -2,6 +2,7 @@
 
 use super::asset::RuntimeAsset;
 use super::entry::{EntryKind, Origin, RuntimeEntry, SearchPath};
+use crate::sources::{sources_new, Source, Sources, SourcesError};
 
 /// Every candidate directory for `asset`, highest priority first.
 ///
@@ -58,6 +59,44 @@ pub fn search_paths(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<SearchPat
             rank,
         })
         .collect()
+}
+
+/// Every candidate directory for `asset` as a source, sorted by priority.
+///
+/// The same filter as [`search_paths`]: an origin the asset does not reach
+/// and a leaf of another asset are skipped, so a priority never gives an
+/// origin an asset that [`RuntimeAsset::reaches`] refuses. The order comes
+/// from each entry's priority, not from its position. Nothing here reads
+/// the filesystem.
+pub fn search_sources(
+    asset: RuntimeAsset,
+    path: &[RuntimeEntry],
+) -> Result<Sources<SearchPath>, SourcesError> {
+    let list = path
+        .iter()
+        .filter(|entry| asset.reaches(entry.origin))
+        .filter_map(|entry| {
+            let dir = match &entry.kind {
+                EntryKind::Root(root) => root.join(asset.subdir()),
+                EntryKind::Leaf(leaf, owner) if *owner == asset => leaf.clone(),
+                EntryKind::Leaf(_, _) => return None,
+            };
+            Some((dir, entry))
+        })
+        .enumerate()
+        .map(|(rank, (dir, entry))| Source {
+            name: entry.name.clone(),
+            priority: entry.priority,
+            within: entry.within,
+            value: SearchPath {
+                path: dir,
+                origin: entry.origin,
+                harness: entry.harness.clone(),
+                rank,
+            },
+        })
+        .collect();
+    sources_new(list)
 }
 
 #[cfg(test)]
@@ -181,5 +220,20 @@ mod tests {
             vec![0, 1],
             "the kiln entry is skipped, so ranks must close up"
         );
+    }
+
+    /// The sources of an asset sort by priority and skip what the asset does
+    /// not reach.
+    #[test]
+    fn search_sources_sort_by_priority_and_keep_containment() {
+        let path = vec![
+            RuntimeEntry::root("/bundled", Origin::Bundled),
+            RuntimeEntry::root("/kiln/.crucible", Origin::Kiln),
+            RuntimeEntry::root("/user", Origin::UserConfig),
+        ];
+        let themes = search_sources(RuntimeAsset::Themes, &path).unwrap();
+        let names: Vec<&str> = themes.list().iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["personal", "builtin"]);
+        assert_eq!(themes.list()[0].value.path, PathBuf::from("/user/themes"));
     }
 }

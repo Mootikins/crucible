@@ -8,7 +8,7 @@
 //! `runtime_skill_paths` and `defaults_candidates_from` were found.
 
 use super::asset::RuntimeAsset;
-use super::entry::{Origin, RuntimeEntry};
+use super::entry::{Origin, RuntimeEntry, AGENT_DIRECTORIES_WITHIN};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -80,22 +80,32 @@ impl Default for PathInputs<'_> {
 pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
     let mut path = Vec::new();
 
-    for dir in inputs.env_plugin_dirs {
-        path.push(RuntimeEntry::leaf(
-            dir.clone(),
-            Origin::Env,
-            RuntimeAsset::Plugins,
-        ));
+    for (index, dir) in inputs.env_plugin_dirs.iter().enumerate() {
+        let mut entry = RuntimeEntry::leaf(dir.clone(), Origin::Env, RuntimeAsset::Plugins);
+        entry.name = format!("env-{}", index + 1);
+        entry.priority -= offset(index);
+        path.push(entry);
     }
 
     if let Some(workspace) = inputs.workspace.filter(|w| !w.as_os_str().is_empty()) {
         for name in inputs.workspace_roots {
-            path.push(RuntimeEntry::root(workspace.join(name), Origin::Workspace));
+            let mut entry = RuntimeEntry::root(workspace.join(name), Origin::Workspace);
+            // `.crucible` is Crucible's own; `.agents`, `.claude` and the
+            // other harness directories rank just below it.
+            if name != ".crucible" {
+                entry.name = format!("workspace-{}", name.trim_start_matches('.'));
+                entry.priority -= 10;
+            }
+            path.push(entry);
         }
     }
 
-    for kiln in inputs.kilns {
-        path.push(RuntimeEntry::root(kiln.join(".crucible"), Origin::Kiln));
+    for (index, kiln) in inputs.kilns.iter().enumerate() {
+        let mut entry = RuntimeEntry::root(kiln.join(".crucible"), Origin::Kiln);
+        if index > 0 {
+            entry.name = format!("kiln-{}", index + 1);
+        }
+        path.push(entry);
     }
 
     for (index, root) in inputs.runtimepath.iter().enumerate() {
@@ -103,19 +113,21 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
     }
 
     for (name, root) in inputs.harnesses {
-        path.push(RuntimeEntry::root(root.clone(), Origin::Harness).with_harness(name.clone()));
+        let mut entry =
+            RuntimeEntry::root(root.clone(), Origin::Harness).with_harness(name.clone());
+        entry.name = name.clone();
+        path.push(entry);
     }
 
     // `agent_directories` BEFORE the config home, because that is the order
     // they already have: `card_directories` listed the global directory first
     // in a lowest-first list, so a configured directory shadowed it. Same
     // relative priority, now expressed highest-first like everything else.
-    for dir in inputs.agent_directories {
-        path.push(RuntimeEntry::leaf(
-            dir.clone(),
-            Origin::UserConfig,
-            RuntimeAsset::Cards,
-        ));
+    for (index, dir) in inputs.agent_directories.iter().enumerate() {
+        let mut entry = RuntimeEntry::leaf(dir.clone(), Origin::UserConfig, RuntimeAsset::Cards);
+        entry.name = format!("agent-dir-{}", index + 1);
+        entry.within = AGENT_DIRECTORIES_WITHIN;
+        path.push(entry);
     }
 
     if let Some(config_home) = inputs.config_home {
@@ -123,22 +135,37 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
     }
 
     for dir in inputs.plugin_dirs {
-        path.push(RuntimeEntry::root(dir.clone(), Origin::Plugin));
+        let mut entry = RuntimeEntry::root(dir.clone(), Origin::Plugin);
+        if let Some(name) = dir.file_name() {
+            entry.name = name.to_string_lossy().into_owned();
+        }
+        path.push(entry);
     }
 
     for (index, root) in inputs.runtime_roots.iter().enumerate() {
         // The first runtime root is the user's own `cru setup` copy when one
         // exists; the rest are shipped. `runtime_roots::for_current_exe`
         // already orders them, so preserve it and only distinguish the head.
-        let origin = if index == 0 {
-            Origin::UserRuntime
+        let mut entry = if index == 0 {
+            RuntimeEntry::root(root.clone(), Origin::UserRuntime)
         } else {
-            Origin::Bundled
+            RuntimeEntry::root(root.clone(), Origin::Bundled)
         };
-        path.push(RuntimeEntry::root(root.clone(), origin));
+        // The shipped roots are fallbacks in a fixed order, not rivals.
+        if index > 1 {
+            entry.name = format!("builtin-{index}");
+            entry.within = u8::try_from(index - 1).unwrap_or(u8::MAX);
+        }
+        path.push(entry);
     }
 
     path
+}
+
+/// The priority drop of the entry at `index` of a list, so a later entry
+/// ranks below the one before it.
+fn offset(index: usize) -> i32 {
+    i32::try_from(index).unwrap_or(i32::MAX)
 }
 
 #[cfg(test)]
@@ -300,6 +327,59 @@ mod tests {
                 PathBuf::from("/home/u/.config/crucible/plugins/helper/skills"),
             ],
             "a plugin's skills must never outrank the user's own"
+        );
+    }
+
+    /// Every entry gets a source name of its own, and the sources inside
+    /// level 900 are in a fixed order.
+    #[test]
+    fn every_entry_has_a_distinct_source_name() {
+        let env = vec![PathBuf::from("/e1"), PathBuf::from("/e2")];
+        let roots = vec![".crucible".to_string(), ".agents".to_string()];
+        let kilns = vec![PathBuf::from("/k1"), PathBuf::from("/k2")];
+        let rtp = vec![PathBuf::from("/r")];
+        let dirs = vec![PathBuf::from("/d1"), PathBuf::from("/d2")];
+        let config_home = PathBuf::from("/home/u/.config/crucible");
+        let plugins = vec![PathBuf::from("/p/helper")];
+        let runtime = vec![
+            PathBuf::from("/rt"),
+            PathBuf::from("/b1"),
+            PathBuf::from("/b2"),
+        ];
+        let built = build_path(&PathInputs {
+            env_plugin_dirs: &env,
+            workspace: Some(Path::new("/ws")),
+            workspace_roots: &roots,
+            kilns: &kilns,
+            runtimepath: &rtp,
+            config_home: Some(&config_home),
+            agent_directories: &dirs,
+            plugin_dirs: &plugins,
+            runtime_roots: &runtime,
+            ..inputs()
+        });
+        let named: Vec<(&str, i32, u8)> = built
+            .iter()
+            .map(|e| (e.name.as_str(), e.priority, e.within))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("env-1", 1000, 0),
+                ("env-2", 999, 0),
+                ("workspace", 800, 0),
+                ("workspace-agents", 790, 0),
+                ("kiln", 700, 0),
+                ("kiln-2", 700, 0),
+                ("config-1", 600, 0),
+                ("agent-dir-1", 900, 1),
+                ("agent-dir-2", 900, 1),
+                ("personal", 900, 2),
+                ("helper", 200, 0),
+                ("runtime", 300, 0),
+                ("builtin", 100, 0),
+                ("builtin-2", 100, 1),
+            ]
         );
     }
 }
