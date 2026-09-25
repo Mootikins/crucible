@@ -557,6 +557,13 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        /// The notifications of a session, from the daemon's one store.
+        Safe SessionListNotifications =>
+        session_list_notifications(session_id: &str)
+        -> Vec<crucible_core::types::Notification> = session_list_notifications(&session_id);
+    }
+
+    forward_rpc! {
         Safe SessionListAgentOptions =>
         session_list_agent_options(session_id: &str)
         -> serde_json::Value = session_list_agent_options(&session_id);

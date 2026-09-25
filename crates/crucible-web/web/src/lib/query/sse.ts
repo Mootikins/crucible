@@ -27,6 +27,7 @@
 import { createRoot, createSignal, onCleanup, type Accessor } from 'solid-js';
 import type { QueryClient } from '@tanstack/solid-query';
 import {
+  getSessionNotifications,
   subscribeToEvents,
   subscribeToFsEvents,
   subscribeToPluginEvents,
@@ -37,6 +38,8 @@ import {
 } from '@/lib/api';
 import type { ChatEvent, FsEvent, SequencedChatEvent } from '@/lib/types';
 import { getBus, type Bus } from '@/lib/bus';
+import { showDaemonNotification, type DaemonNotification } from '@/lib/daemon-notification';
+import { notificationActions } from '@/stores/notificationStore';
 import { getQueryClient } from './client';
 
 // =============================================================================
@@ -355,12 +358,30 @@ export function advanceSessionCursor(sessionId: string, seq: number): void {
 }
 
 /**
+ * Read the notifications of a session once, when the browser attaches, and
+ * show them oldest first. Later ones arrive on the event stream.
+ */
+function readSessionNotifications(sessionId: string): void {
+  getSessionNotifications(sessionId)
+    .then((list) => [...list].reverse().forEach((n) => showDaemonNotification(n as DaemonNotification)))
+    .catch((e: unknown) =>
+      notificationActions.addNotification(
+        'warning',
+        `The notifications of the session are not available: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+}
+
+/**
  * The chat events of one session (`GET /api/chat/events/{id}`).
  *
  * One source per session id: two panes on one session share it, and a pane on
  * another session opens its own.
  */
 export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> {
+  // The first attach to the session reads the notifications it already
+  // has; the stream then carries `notification_added`.
+  if (!sessionRoots.has(sessionId)) readSessionNotifications(sessionId);
   return rootFor(sessionRoots, sessionId, {
     name: `chat events ${sessionId}`,
     connect: (onEvent, onOpen) =>

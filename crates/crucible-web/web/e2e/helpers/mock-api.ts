@@ -110,6 +110,10 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
   await page.route('**/api/session/*/status', (route) =>
     route.fulfill({ json: overrides.sessionStatus ?? { status: [] } }),
   );
+  // The notifications a chat reads once when it attaches to a session.
+  await page.route('**/api/session/*/notifications', (route) =>
+    route.fulfill({ json: { notifications: [] } }),
+  );
 
   await page.route('**/api/session/*/history**', (route) =>
     route.fulfill({

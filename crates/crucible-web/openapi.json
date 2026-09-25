@@ -3624,6 +3624,38 @@
         }
       }
     },
+    "/api/session/{id}/notifications": {
+      "get": {
+        "summary": "The notifications of a session. A browser reads them once when it\nattaches, and then follows `notification_added` and\n`notification_dismissed` on the event stream.",
+        "operationId": "session_notifications",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose notifications to read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotificationsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the notifications"
+          }
+        }
+      }
+    },
     "/api/session/{id}/pause": {
       "post": {
         "operationId": "pause_session",
@@ -9242,6 +9274,22 @@
               "$ref": "#/components/schemas/ModeRow"
             },
             "description": "Every mode the session may switch to, in declaration order."
+          }
+        }
+      },
+      "SessionNotificationsResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/{id}/notifications` answers.",
+        "required": [
+          "notifications"
+        ],
+        "properties": {
+          "notifications": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The daemon's notifications of the session, newest first, each with\n`id`, `kind` and `message`, as `notification_added` carries them."
           }
         }
       },

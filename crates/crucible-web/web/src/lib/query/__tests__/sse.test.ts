@@ -16,6 +16,8 @@ import {
   sessionCursor,
 } from '../sse';
 import { getQueryClient, setQueryClientForTests } from '../client';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { notificationStore } from '@/stores/notificationStore';
 import { getBus } from '../../bus';
 import {
   FakeEventSource,
@@ -51,6 +53,36 @@ describe('sessionEvents', () => {
 
     expect(FakeEventSource.instances).toHaveLength(1);
     expect(onlySource().url).toBe('/api/chat/events/s1');
+  });
+
+  it('reads the notifications of the session once, when it attaches, oldest first', async () => {
+    const env: TestQueryEnv = createTestQueryEnv({
+      'GET /api/session/s1/notifications': () => ({
+        notifications: [
+          { id: 'n2', kind: 'toast', message: 'newer' },
+          { id: 'n1', kind: 'warning', message: 'older' },
+        ],
+      }),
+    });
+    try {
+      sessionEvents('s1').subscribe(vi.fn());
+      sessionEvents('s1').subscribe(vi.fn());
+
+      await vi.waitFor(() =>
+        // The store is one for the whole file, so only these two are read.
+        expect(
+          notificationStore.notifications
+            .filter((n) => n.message === 'older' || n.message === 'newer')
+            .map((n) => [n.type, n.message]),
+        ).toEqual([
+          ['warning', 'older'],
+          ['info', 'newer'],
+        ]),
+      );
+      expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(1);
+    } finally {
+      env.restore();
+    }
   });
 
   it('gives every message to every handler', () => {

@@ -1684,6 +1684,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The notifications of a session. A browser reads them once when it
+         *     attaches, and then follows `notification_added` and
+         *     `notification_dismissed` on the event stream.
+         */
+        get: operations["session_notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/pause": {
         parameters: {
             query?: never;
@@ -4356,6 +4377,14 @@ export interface components {
             /** @description Every mode the session may switch to, in declaration order. */
             modes: components["schemas"]["ModeRow"][];
         };
+        /** @description What `GET /api/session/{id}/notifications` answers. */
+        SessionNotificationsResponse: {
+            /**
+             * @description The daemon's notifications of the session, newest first, each with
+             *     `id`, `kind` and `message`, as `notification_added` carries them.
+             */
+            notifications: Record<string, never>[];
+        };
         /**
          * @description One session, as every session route answers it.
          *
@@ -5014,6 +5043,7 @@ export type SchemaSessionKnobsResponse = components['schemas']['SessionKnobsResp
 export type SchemaSessionLifecycleResponse = components['schemas']['SessionLifecycleResponse'];
 export type SchemaSessionListResponse = components['schemas']['SessionListResponse'];
 export type SchemaSessionModesResponse = components['schemas']['SessionModesResponse'];
+export type SchemaSessionNotificationsResponse = components['schemas']['SessionNotificationsResponse'];
 export type SchemaSessionRow = components['schemas']['SessionRow'];
 export type SchemaSessionScopeResponse = components['schemas']['SessionScopeResponse'];
 export type SchemaSessionSearchMatch = components['schemas']['SessionSearchMatch'];
@@ -8468,6 +8498,35 @@ export interface operations {
                 };
             };
             /** @description The daemon could not list the modes */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    session_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session whose notifications to read */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionNotificationsResponse"];
+                };
+            };
+            /** @description The daemon could not read the notifications */
             502: {
                 headers: {
                     [name: string]: unknown;

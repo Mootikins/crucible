@@ -1,5 +1,7 @@
 //! `/api/session/{id}/status` — the status list of a session: the items
-//! that plugins published and the engine's plugin-turn items. Split from `session.rs`; the status shape is a surface of its own,
+//! that plugins published and the engine's plugin-turn items. Also
+//! `/api/session/{id}/notifications`, the other per-session read a client
+//! makes on attach. Split from `session.rs`; the status shape is a surface of its own,
 //! apart from the session router.
 
 use crate::services::daemon::AppState;
@@ -56,6 +58,39 @@ pub(super) async fn session_status(
         status,
         "session.status",
     )?))
+}
+
+/// What `GET /api/session/{id}/notifications` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub(super) struct SessionNotificationsResponse {
+    /// The daemon's notifications of the session, newest first, each with
+    /// `id`, `kind` and `message`, as `notification_added` carries them.
+    #[schema(value_type = Vec<Object>)]
+    notifications: Vec<crucible_core::types::Notification>,
+}
+
+/// The notifications of a session. A browser reads them once when it
+/// attaches, and then follows `notification_added` and
+/// `notification_dismissed` on the event stream.
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/notifications",
+    params(("id" = String, Path, description = "The session whose notifications to read")),
+    responses(
+        (status = 200, body = SessionNotificationsResponse),
+        (status = 502, description = "The daemon could not read the notifications"),
+    )
+)]
+pub(super) async fn session_notifications(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<SessionNotificationsResponse>, WebError> {
+    let notifications = state
+        .daemon
+        .session_list_notifications(&id)
+        .await
+        .daemon_err()?;
+    Ok(Json(SessionNotificationsResponse { notifications }))
 }
 
 #[cfg(test)]

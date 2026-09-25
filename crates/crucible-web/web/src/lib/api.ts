@@ -931,6 +931,19 @@ export async function getSessionStatus(sessionId: string): Promise<StatusDisplay
   ).status;
 }
 
+/**
+ * The daemon's notifications of a session, newest first. A browser reads
+ * them once when it attaches to the session (see `lib/query/sse.ts`).
+ */
+export async function getSessionNotifications(
+  sessionId: string,
+): Promise<components['schemas']['SessionNotificationsResponse']['notifications']> {
+  return decode(
+    await client.GET('/api/session/{id}/notifications', { params: { path: { id: sessionId } } }),
+    'Failed to load the notifications of the session',
+  ).notifications;
+}
+
 /** List the modes a session may enter, and the one it is in. */
 /**
  * Which settings this session can change.

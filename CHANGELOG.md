@@ -115,6 +115,8 @@ is a Keep a Changelog category.
   discard the `notification_added` event. Now the TUI puts the notification
   in its notification area, and the web shows it as a toast. A plugin
   `cru.log.notify` call is therefore visible to the user for the first time.
+  When a client attaches to a session, it reads the notifications of that
+  session once through `session.list_notifications`.
 - **The render of each tool call.** The daemon renders each tool call through
   the `tool:render` stage: a `line`, a list of `fields` and, for a result, a
   `summary`. The TUI card, the web card, both permission prompts and `cru acp`

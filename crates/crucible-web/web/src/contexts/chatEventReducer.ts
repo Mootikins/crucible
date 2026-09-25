@@ -1,5 +1,5 @@
 import { statusBarActions } from '@/stores/statusBarStore';
-import { notificationActions } from '@/stores/notificationStore';
+import { showDaemonNotification } from '@/lib/daemon-notification';
 import {
   generateMessageId,
   originName,
@@ -626,9 +626,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // A daemon notification: a warning stays a warning; a toast or a
         // progress line is information.
         if (event.event === 'notification_added') {
-          const n = (event.data as { notification?: { kind?: unknown; message?: string } } | null)
-            ?.notification;
-          if (n?.message) notificationActions.addNotification(n.kind === 'warning' ? 'warning' : 'info', n.message);
+          showDaemonNotification((event.data as { notification?: { kind?: unknown; message?: string } } | null)?.notification);
           break;
         }
         if (event.event === 'stream_gap') {
