@@ -5276,6 +5276,13 @@
                   "$ref": "#/components/schemas/PrecognitionNote"
                 }
               },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the search failed. Absent when it ran."
+              },
               "type": {
                 "type": "string",
                 "enum": [

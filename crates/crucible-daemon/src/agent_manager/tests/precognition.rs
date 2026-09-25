@@ -185,6 +185,56 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
     crate::embedding::clear_embedding_provider_cache();
 }
 
+/// A failed embedding is not "no notes": the event says why, so each
+/// client can tell the user that the answer is not grounded.
+#[tokio::test]
+async fn a_failed_precognition_search_names_its_error() {
+    crate::embedding::clear_embedding_provider_cache();
+    let tmp = TempDir::new().unwrap();
+    let session_manager = temp_session_manager();
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(tmp.path().to_path_buf()),
+            None,
+        )
+        .await
+        .unwrap();
+    // Nothing listens on port 1, so the embedding fails at once.
+    let unreachable = crucible_core::config::EmbeddingProviderConfig::Ollama(
+        crucible_core::config::OllamaConfig {
+            base_url: "http://127.0.0.1:1".to_string(),
+            timeout_seconds: 1,
+            retry_attempts: 0,
+            ..serde_json::from_str("{}").unwrap()
+        },
+    );
+    let agent_manager = create_test_agent_manager_with_enrichment(session_manager, unreachable);
+    let mut agent = test_agent();
+    agent.precognition_enabled = true;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+    agent_manager.install_agent_for_test(
+        session.id.to_string(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("ok"), script::done()],
+        }))),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let event = next_event_or_skip(&mut event_rx, "precognition_complete").await;
+    assert!(event.data["error"].is_string(), "{}", event.data);
+    crate::embedding::clear_embedding_provider_cache();
+}
+
 #[tokio::test]
 async fn test_precognition_runs_only_on_first_user_message_of_session() {
     // Pi-style heuristic (project_context_injection_frequency memory):

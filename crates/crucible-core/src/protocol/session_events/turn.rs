@@ -219,6 +219,9 @@ pub enum TurnPayload {
         /// `[]` for that case, and the decode reads both.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         notes: Vec<PrecognitionNoteInfo>,
+        /// Why the search failed. Absent when it ran, with or without hits.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     /// The same payload goes to the subscribers and to the Lua
     /// `post_llm_call` handlers (`messaging/stream.rs`).

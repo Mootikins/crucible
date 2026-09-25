@@ -2394,6 +2394,8 @@ export interface components {
             /** @enum {string} */
             type: "delegation_failed";
         } | {
+            /** @description Why the search failed. Absent when it ran. */
+            error?: string | null;
             notes?: components["schemas"]["PrecognitionNote"][];
             notes_count: number;
             /** @enum {string} */

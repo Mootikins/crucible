@@ -150,12 +150,12 @@ expect_note = "Precognition"
 expect_text = ["Both seams name the kiln a note came from as `note.kiln`", "Precognition runs on the **first user message of a session**"]
 
 # TRANSITION Help/Concepts/Precognition.md
-#   "## Requirements" — "If embeddings aren't available, Precognition silently disables itself."
+#   "## Requirements" — "If no embedding provider is configured, Precognition does not run."
 #   "## Tips for Better Results" — "Precognition is only as good as your notes."
 [[queries]]
 question = "what happens when no embedding provider is set up, and how do I write notes the agent will find?"
 expect_note = "Precognition"
-expect_text = ["If embeddings aren't available, Precognition silently disables itself.", "Precognition is only as good as your notes."]
+expect_text = ["If no embedding provider is configured, Precognition does not run.", "Precognition is only as good as your notes."]
 
 # TRANSITION Help/Concepts/Session Compaction.md
 #   "## The threshold" — "Once the session is in `compacting` state, later triggers fail their state guard silently"

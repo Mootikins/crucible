@@ -397,6 +397,7 @@ impl AgentManager {
                     params.session_id,
                     params.original_content,
                     Vec::new(),
+                    Some(format!("search failed: {error}")),
                 );
                 None
             }
@@ -438,7 +439,8 @@ impl AgentManager {
             Ok(p) => p,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
-                emit_precognition_event(event_tx, session_id, original_content, Vec::new());
+                let error = Some(format!("no embedding provider: {error}"));
+                emit_precognition_event(event_tx, session_id, original_content, Vec::new(), error);
                 return None;
             }
         };
@@ -447,7 +449,8 @@ impl AgentManager {
             Ok(e) => e,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Precognition embedding failed");
-                emit_precognition_event(event_tx, session_id, original_content, Vec::new());
+                let error = Some(format!("embedding failed: {error}"));
+                emit_precognition_event(event_tx, session_id, original_content, Vec::new(), error);
                 return None;
             }
         };
@@ -456,7 +459,7 @@ impl AgentManager {
         let kilns_searched = sources.len();
         if sources.is_empty() {
             warn!(session_id = %session_id, "No kiln opened for precognition");
-            emit_precognition_event(event_tx, session_id, original_content, Vec::new());
+            emit_precognition_event(event_tx, session_id, original_content, Vec::new(), None);
             return None;
         }
 
@@ -528,7 +531,7 @@ impl AgentManager {
             .await
         };
         let note_info = extract_note_info(&results, label_kilns);
-        emit_precognition_event(event_tx, session_id, original_content, note_info);
+        emit_precognition_event(event_tx, session_id, original_content, note_info, None);
 
         // Empty context block (no results) → don't inject anything; the
         // empty message would just waste tokens.

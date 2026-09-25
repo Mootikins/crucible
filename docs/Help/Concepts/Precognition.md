@@ -122,7 +122,7 @@ For Precognition to work, you need:
 2. **An embedding provider**: Crucible needs a way to generate embeddings (Ollama, FastEmbed, or OpenAI)
 3. **Notes worth finding**: The more you write and link, the better Precognition gets
 
-If embeddings aren't available, Precognition silently disables itself. Your chat still works, just without the automatic context injection.
+If no embedding provider is configured, Precognition does not run. If the provider or the search fails, the TUI and the web show "Precognition failed" with the reason. In both cases, your chat still works without the automatic context injection.
 
 ## Tips for Better Results
 

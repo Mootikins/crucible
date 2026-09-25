@@ -241,11 +241,13 @@ fn emit_precognition_event(
     session_id: &str,
     query: &str,
     notes: Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
+    error: Option<String>,
 ) {
     let payload = TurnPayload::PrecognitionComplete {
         notes_count: notes.len(),
         query_summary: query.chars().take(100).collect(),
         notes,
+        error,
     };
     if !emit_event(event_tx, SessionEventMessage::typed(session_id, payload)) {
         warn!(

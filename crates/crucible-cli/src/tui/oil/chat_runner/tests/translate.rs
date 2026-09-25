@@ -350,6 +350,19 @@ fn translate_tool_result_shows_a_structured_result() {
     );
 }
 
+/// A failed precognition search warns the user. No notes is not a failure.
+#[test]
+fn translate_a_failed_precognition_warns() {
+    let data = serde_json::json!({ "notes_count": 0, "error": "embedding failed: refused" });
+    let msgs = session_event_to_chat_msgs("precognition_complete", &data);
+    assert!(
+        matches!(&msgs[..], [ChatAppMsg::Error(e)] if e.contains("embedding failed: refused")),
+        "{msgs:?}"
+    );
+    let quiet = session_event_to_chat_msgs("precognition_complete", &serde_json::json!({}));
+    assert!(quiet.is_empty(), "{quiet:?}");
+}
+
 #[test]
 fn translate_tool_call_update_with_nothing_in_it_drops_msg() {
     use serde_json::json;
