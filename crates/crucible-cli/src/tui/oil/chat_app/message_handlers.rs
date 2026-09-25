@@ -283,7 +283,14 @@ impl OilChatApp {
             ChatAppMsg::Error(err) => {
                 self.add_notification(crucible_core::types::Notification::warning(err));
             }
-            ChatAppMsg::Notification(notification) => self.add_notification(notification),
+            // The first read and the event stream can both carry one
+            // notification, so an id that is already here is skipped.
+            ChatAppMsg::Notification(notification) => {
+                let history = self.notification_area.history();
+                if !history.iter().any(|(n, _)| n.id == notification.id) {
+                    self.add_notification(notification);
+                }
+            }
             ChatAppMsg::DismissNotification(id) => {
                 self.notification_area.dismiss(&id);
             }

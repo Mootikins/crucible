@@ -191,6 +191,8 @@ fn a_daemon_notification_reaches_the_notification_area() {
     let mut app = app();
     let notification = crucible_core::types::Notification::warning("kiln docs failed");
     app.on_message(ChatAppMsg::Notification(notification.clone()));
+    // The first read and the event stream can both carry it.
+    app.on_message(ChatAppMsg::Notification(notification.clone()));
     let history = app.notification_area.history();
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].0, notification);

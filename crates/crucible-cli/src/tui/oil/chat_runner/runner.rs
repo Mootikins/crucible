@@ -251,6 +251,11 @@ impl OilChatRunner {
             &msg_tx,
             &mut background_tasks,
         );
+        Self::spawn_notification_fetch(
+            agent.session_id().map(str::to_string),
+            &msg_tx,
+            &mut background_tasks,
+        );
 
         self.apply_initial_sets(&mut app, &mut agent, bridge, &msg_tx, &mut background_tasks)
             .await?;

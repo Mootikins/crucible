@@ -540,6 +540,17 @@ impl DaemonClient {
         decode_status_items(self.session_status(session_id).await?)
     }
 
+    /// `session.list_notifications`: the notifications of one session.
+    pub async fn session_list_notifications(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crucible_core::types::Notification>> {
+        let reply = self
+            .session_id_call("session.list_notifications", session_id)
+            .await?;
+        Ok(serde_json::from_value(reply["notifications"].clone())?)
+    }
+
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {
         self.session_id_call("session.pause", session_id).await
     }

@@ -228,6 +228,49 @@ impl OilChatRunner {
         }));
     }
 
+    /// The messages of the first read of the session's notifications: one
+    /// per notification, oldest first, or a warning when the read fails.
+    pub(super) async fn notification_msgs(
+        client: &crucible_daemon::DaemonClient,
+        session_id: &str,
+    ) -> Vec<ChatAppMsg> {
+        match client.session_list_notifications(session_id).await {
+            // The hub lists the newest first.
+            Ok(list) => list
+                .into_iter()
+                .rev()
+                .map(ChatAppMsg::Notification)
+                .collect(),
+            Err(e) => vec![ChatAppMsg::Error(format!(
+                "The notifications of the session are not available: {e:#}"
+            ))],
+        }
+    }
+
+    /// Read the session's notifications once, after its events flow, so a
+    /// notification that arrives after the read comes as an event.
+    pub(super) fn spawn_notification_fetch(
+        session_id: Option<String>,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) {
+        let Some(session_id) = session_id else {
+            return;
+        };
+        let tx = msg_tx.clone();
+        background_tasks.push(tokio::spawn(async move {
+            let msgs = match crucible_daemon::DaemonClient::connect().await {
+                Ok(client) => Self::notification_msgs(&client, &session_id).await,
+                Err(e) => vec![ChatAppMsg::Error(format!(
+                    "The notifications of the session are not available: {e:#}"
+                ))],
+            };
+            for msg in msgs {
+                let _ = tx.send(msg);
+            }
+        }));
+    }
+
     /// Read the proposals in the Inbox for the count and the `:proposals`
     /// view.
     ///
