@@ -1845,7 +1845,7 @@ mod acp_permission_handler_tests {
                 context_config: None,
                 permission_config: None,
                 plugin_loader: None,
-                card_roots: crate::agent_cards::CardRoots {
+                source_roots: crate::runtime_path::SourceRoots {
                     config_home: Some(config_home.path().to_path_buf()),
                     agent_directories: Vec::new(),
                 },

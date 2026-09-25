@@ -4,9 +4,8 @@
 
 use anyhow::Result;
 use crucible_core::agent::{AgentCard, AgentCardLoader};
-use crucible_daemon::agent_cards::{
-    card_directories, discover_agent_cards_in, resolve_card, CardRoots,
-};
+use crucible_daemon::agent_cards::{card_directories, discover_agent_cards_in, resolve_card};
+use crucible_daemon::runtime_path::SourceRoots;
 use crucible_daemon::DaemonClient;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -44,7 +43,7 @@ pub async fn execute(config: CliConfig, command: Option<AgentsCommands>) -> Resu
 /// one — on a name collision. That is how `cru agents show` could return a
 /// card `session.create --agent` would never resolve.
 fn load_agent_cards(config: &CliConfig, workspace: &Path) -> HashMap<String, AgentCard> {
-    let roots = card_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
+    let roots = source_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
     discover_agent_cards_in(&roots, workspace, std::slice::from_ref(&config.kiln_path))
 }
 
@@ -62,13 +61,13 @@ fn load_agent_cards(config: &CliConfig, workspace: &Path) -> HashMap<String, Age
 /// only when no daemon answers; `show` and `validate` always read disk,
 /// because `validate` reports per-file errors the daemon does not expose.
 pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<PathBuf> {
-    let roots = card_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
+    let roots = source_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
     card_directories(&roots, workspace, std::slice::from_ref(&config.kiln_path))
 }
 
 /// The roots behind [`collect_agent_directories`] and [`load_agent_cards`],
 /// read the same way the daemon reads them:
-/// [`CardRoots::from_app_config`] over the config serialized to JSON. A
+/// [`SourceRoots::from_app_config`] over the config serialized to JSON. A
 /// second, struct-field reader here is how the CLI came to build its own
 /// `agent_directories` list instead of the daemon's.
 ///
@@ -76,9 +75,13 @@ pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<Pa
 /// inside this function; the callers above read them once, and a test passes
 /// its own, so it does not see the developer's real
 /// `~/.config/crucible/agents`.
-fn card_roots(config: &CliConfig, config_home: Option<PathBuf>, home: Option<&Path>) -> CardRoots {
+fn source_roots(
+    config: &CliConfig,
+    config_home: Option<PathBuf>,
+    home: Option<&Path>,
+) -> SourceRoots {
     let app_config = serde_json::to_value(config).ok();
-    CardRoots::from_app_config(config_home, app_config.as_ref(), home)
+    SourceRoots::from_app_config(config_home, app_config.as_ref(), home)
 }
 
 /// The workspace `cru agents` answers for: the current directory, which is
@@ -591,7 +594,7 @@ You are a test agent.
     /// The directories for `config` with a fixed config home and home, so
     /// the test never reads the developer's own.
     fn hermetic_dirs(config: &CliConfig) -> Vec<PathBuf> {
-        let roots = card_roots(
+        let roots = source_roots(
             config,
             Some(PathBuf::from("/cfg")),
             Some(Path::new("/home/test")),
@@ -620,10 +623,10 @@ You are a test agent.
     }
 
     #[test]
-    fn card_roots_expands_a_tilde_against_the_injected_home() {
+    fn source_roots_expands_a_tilde_against_the_injected_home() {
         let mut config = test_config(test_path("test-kiln"));
         config.agent_directories = vec![PathBuf::from("~/cards")];
-        let roots = card_roots(&config, None, Some(Path::new("/home/test")));
+        let roots = source_roots(&config, None, Some(Path::new("/home/test")));
         assert_eq!(
             roots.agent_directories,
             vec![PathBuf::from("/home/test/cards")]
@@ -783,7 +786,7 @@ You are a test agent.
 
         let mut config = test_config(kiln.path().to_path_buf());
         config.agent_directories = vec![shared.path().to_path_buf()];
-        let roots = card_roots(&config, Some(home.path().to_path_buf()), None);
+        let roots = source_roots(&config, Some(home.path().to_path_buf()), None);
         let cards = discover_agent_cards_in(
             &roots,
             &no_workspace(),

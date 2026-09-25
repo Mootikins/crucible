@@ -357,7 +357,7 @@ pub struct AgentManager {
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
-    card_roots: crate::agent_cards::CardRoots,
+    source_roots: crate::runtime_path::SourceRoots,
     llm_config: crate::llm_state::LiveLlmConfig,
     acp_config: Option<AcpConfig>,
     /// `[context]` from the daemon config — which project rules files get
@@ -457,8 +457,8 @@ pub struct AgentManagerParams {
     pub permission_config: Option<PermissionConfig>,
     pub plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     /// Where agent cards come from outside a session's kiln and workspace.
-    /// See [`crate::agent_cards::CardRoots`] for why it is a value.
-    pub card_roots: crate::agent_cards::CardRoots,
+    /// See [`crate::runtime_path::SourceRoots`] for why it is a value.
+    pub source_roots: crate::runtime_path::SourceRoots,
     /// Where the review ledgers snapshot a root that is not in a git
     /// repository. The daemon passes `<data home>/review-snapshots`.
     ///
@@ -506,7 +506,7 @@ impl AgentManager {
             context_config: params.context_config,
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
-            card_roots: params.card_roots,
+            source_roots: params.source_roots,
             plugin_handlers: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
             context_attach: std::sync::Arc::new(crucible_lua::ContextAttachRegistry::default()),
@@ -549,15 +549,15 @@ impl AgentManager {
         &self.activity
     }
 
-    /// The agent-card roots this daemon was bound with.
-    pub fn card_roots(&self) -> &crate::agent_cards::CardRoots {
-        &self.card_roots
+    /// The card and skill source roots this daemon was bound with.
+    pub fn source_roots(&self) -> &crate::runtime_path::SourceRoots {
+        &self.source_roots
     }
 
     /// The `whitelists.d` directory under the bound config home. The card
     /// roots carry that home, so the whitelist hangs off the same value.
     pub fn whitelists_dir(&self) -> Option<PathBuf> {
-        self.card_roots
+        self.source_roots
             .config_home
             .as_deref()
             .map(crucible_core::config::PatternStore::whitelists_dir_in)
@@ -1290,7 +1290,7 @@ impl AgentManager {
                     Some(&session.id),
                     Some(self.background_manager.clone()),
                     Some(self.delegation_service.clone()),
-                    &self.card_roots,
+                    &self.source_roots,
                 )
             });
             // Security posture for the session's tools: a default-deny

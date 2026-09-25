@@ -26,6 +26,7 @@
 //! The CLI (`cru agents`) reads cards off disk through [`card_directories`]
 //! too, so the two never disagree about where a card may come from.
 
+use crate::runtime_path::SourceRoots;
 use crucible_core::agent::{AgentCard, AgentCardLoader};
 use crucible_core::runtime_path::{
     build_path, search_sources, PathInputs, RuntimeAsset, SearchPath,
@@ -35,59 +36,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
 
-/// The session-independent roots of agent-card discovery: the global config
-/// directory and the directories the app config names.
-///
-/// Both are injected as values, never read from the environment at discovery
-/// time. Global cards are first in precedence, so a handler that read
-/// `dirs::config_dir()` would resolve a developer's own cards in every test —
-/// passing on CI, failing locally. `Default` is "no global cards, no
-/// configured directories".
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CardRoots {
-    /// The config home `<config_home>/crucible/agents` hangs off. `None`
-    /// means "no global cards".
-    pub config_home: Option<PathBuf>,
-    /// `agent_directories` from the app config, tilde already expanded.
-    ///
-    /// **Deprecated.** It names one leaf directory that serves cards only.
-    /// `runtimepath` names a root that serves every asset kind, so a user who
-    /// wants to share cards, skills and themes from one directory writes one
-    /// line instead of three knobs. Kept working; [`warn_if_deprecated`] says
-    /// so once.
-    pub agent_directories: Vec<PathBuf>,
-}
-
-impl CardRoots {
-    /// Read `agent_directories` out of the serialized app config. `home`
-    /// expands a leading `~`; `None` leaves the path as written.
-    pub fn from_app_config(
-        config_home: Option<PathBuf>,
-        app_config: Option<&serde_json::Value>,
-        home: Option<&Path>,
-    ) -> Self {
-        let agent_directories = app_config
-            .and_then(|v| v.get("agent_directories"))
-            .and_then(|v| v.as_array())
-            .map(|dirs| {
-                dirs.iter()
-                    .filter_map(|d| d.as_str())
-                    .map(|d| crucible_core::config::expand_tilde(d, home))
-                    .collect()
-            })
-            .unwrap_or_default();
-        Self {
-            config_home,
-            agent_directories,
-        }
-    }
-}
-
 /// Warn once that `agent_directories` is superseded by `runtimepath`.
 ///
 /// Once per process, not per session: card discovery runs per use, and a line
 /// per turn would be noise rather than guidance.
-pub fn warn_if_deprecated(roots: &CardRoots) {
+pub fn warn_if_deprecated(roots: &SourceRoots) {
     use std::sync::Once;
     static WARNED: Once = Once::new();
     if roots.agent_directories.is_empty() {
@@ -117,7 +70,7 @@ const DEPRECATION_ADVICE: &str = "`agent_directories` is deprecated. \
 /// repo — composes itself in rather than being scanned: its Lua adds the
 /// directory to the path at load. The component brings itself, the host does
 /// not go looking.
-pub fn card_directories(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) -> Vec<PathBuf> {
+pub fn card_directories(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Vec<PathBuf> {
     card_sources(roots, workspace, kilns)
         .list()
         .iter()
@@ -128,7 +81,7 @@ pub fn card_directories(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) 
 /// The card directories as sources, sorted by priority: the personal
 /// sources (`agent_directories`, then the config home), the workspace, then
 /// each kiln.
-fn card_sources(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) -> Sources<SearchPath> {
+fn card_sources(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Sources<SearchPath> {
     // `kiln == workspace` would otherwise offer `<kiln>/.crucible/agents`
     // twice. The kiln entry is the one kept, because a session with no
     // separate workspace is a kiln session.
@@ -140,7 +93,7 @@ fn card_sources(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) -> Sourc
             Some(workspace)
         };
 
-    // `CardRoots::config_home` is the raw config dir (`dirs::config_dir()`),
+    // `SourceRoots::config_home` is the raw config dir (`dirs::config_dir()`),
     // so the `crucible` segment is added here to make it a runtime root.
     let config_root = roots.config_home.as_ref().map(|home| home.join("crucible"));
 
@@ -166,9 +119,9 @@ fn card_sources(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) -> Sourc
 /// loader warns per file).
 ///
 /// `roots` is injected rather than read from the environment; see
-/// [`CardRoots`] for why.
+/// [`SourceRoots`] for why.
 pub fn discover_agent_cards_in(
-    roots: &CardRoots,
+    roots: &SourceRoots,
     workspace: &Path,
     kilns: &[PathBuf],
 ) -> HashMap<String, AgentCard> {
@@ -278,7 +231,7 @@ mod tests {
         );
 
         let cards = discover_agent_cards_in(
-            &CardRoots::default(),
+            &SourceRoots::default(),
             kiln.path(),
             &[kiln.path().to_path_buf()],
         );
@@ -310,7 +263,7 @@ mod tests {
         );
 
         let cards = discover_agent_cards_in(
-            &CardRoots::default(),
+            &SourceRoots::default(),
             kiln.path(),
             &[kiln.path().to_path_buf()],
         );
@@ -342,7 +295,7 @@ mod tests {
         );
 
         let cards = discover_agent_cards_in(
-            &CardRoots::default(),
+            &SourceRoots::default(),
             workspace.path(),
             &[kiln.path().to_path_buf()],
         );
@@ -373,7 +326,7 @@ mod tests {
             "---\nname: worker\ndescription: kiln\n---\nKiln prompt\n",
         );
         let cards = discover_agent_cards_in(
-            &CardRoots::default(),
+            &SourceRoots::default(),
             workspace.path(),
             &[kiln.path().to_path_buf()],
         );
@@ -418,7 +371,7 @@ mod tests {
         );
 
         let cards = discover_agent_cards_in(
-            &CardRoots::default(),
+            &SourceRoots::default(),
             kiln.path(),
             &[kiln.path().to_path_buf()],
         );
@@ -448,7 +401,7 @@ mod tests {
             "---\ndescription: fine\n---\n\nPrompt.\n",
         );
         let cards = discover_agent_cards_in(
-            &CardRoots::default(),
+            &SourceRoots::default(),
             kiln.path(),
             &[kiln.path().to_path_buf()],
         );
@@ -478,7 +431,7 @@ mod tests {
         );
 
         let cards = discover_agent_cards_in(
-            &CardRoots {
+            &SourceRoots {
                 config_home: Some(config.path().to_path_buf()),
                 agent_directories: Vec::new(),
             },
@@ -491,7 +444,7 @@ mod tests {
 
         // And nothing global leaks in when the caller injects None.
         let cards = discover_agent_cards_in(
-            &CardRoots::default(),
+            &SourceRoots::default(),
             kiln.path(),
             &[kiln.path().to_path_buf()],
         );
@@ -514,7 +467,7 @@ mod tests {
             "helper.md",
             "---\ndescription: kiln helper\n---\n\nKiln prompt.\n",
         );
-        let roots = CardRoots {
+        let roots = SourceRoots {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: Vec::new(),
         };
@@ -552,7 +505,7 @@ mod tests {
             "helper.md",
             "---\ndescription: shared\n---\n\nPrompt.\n",
         );
-        let roots = CardRoots {
+        let roots = SourceRoots {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: vec![shared.path().to_path_buf()],
         };
@@ -592,7 +545,7 @@ mod tests {
                 &format!("---\ndescription: {text}\n---\n\nPrompt.\n"),
             );
         }
-        let roots = CardRoots {
+        let roots = SourceRoots {
             config_home: None,
             agent_directories: vec![first.path().to_path_buf(), second.path().to_path_buf()],
         };
@@ -632,7 +585,7 @@ mod tests {
             "---\ndescription: kiln helper\n---\n\nKiln prompt.\n",
         );
 
-        let roots = CardRoots {
+        let roots = SourceRoots {
             config_home: None,
             agent_directories: vec![shared.path().to_path_buf()],
         };
@@ -642,28 +595,6 @@ mod tests {
             .iter()
             .any(|(key, card)| key != "kiln:helper" && card.description == "shared helper"));
         assert_eq!(cards["shared_only"].description, "shared only");
-    }
-
-    /// `agent_directories` comes off the serialized app config with `~`
-    /// expanded against the injected home, never the environment.
-    #[test]
-    fn card_roots_read_agent_directories_from_the_app_config() {
-        let home = Path::new("/home/tester");
-        let config = serde_json::json!({
-            "agent_directories": ["~/shared-agents", "/abs/agents"],
-            "kiln_path": "/unrelated",
-        });
-        let roots = CardRoots::from_app_config(None, Some(&config), Some(home));
-        assert_eq!(
-            roots.agent_directories,
-            vec![
-                PathBuf::from("/home/tester/shared-agents"),
-                PathBuf::from("/abs/agents")
-            ]
-        );
-
-        let roots = CardRoots::from_app_config(None, None, Some(home));
-        assert!(roots.agent_directories.is_empty());
     }
 
     /// A config naming only `agent_directories` still resolves its cards.
@@ -678,7 +609,7 @@ mod tests {
             "legacy.md",
             "---\ndescription: legacy card\n---\n\nPrompt.\n",
         );
-        let roots = CardRoots {
+        let roots = SourceRoots {
             config_home: None,
             agent_directories: vec![shared.path().to_path_buf()],
         };
@@ -698,7 +629,7 @@ mod tests {
     /// not move which card a user gets.
     #[test]
     fn card_directories_follow_the_documented_precedence() {
-        let roots = CardRoots {
+        let roots = SourceRoots {
             config_home: Some(PathBuf::from("/cfg")),
             agent_directories: vec![PathBuf::from("/shared")],
         };

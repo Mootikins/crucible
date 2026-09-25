@@ -68,7 +68,7 @@ fn build_test_agent_manager_with_llm_config(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }))
 }
@@ -183,13 +183,13 @@ impl crucible_core::traits::chat::AgentHandle for BashCallingAgent {
 async fn bash_calling_rig(
     event_tx: broadcast::Sender<SessionEventMessage>,
 ) -> (TempDir, DaemonSessionBridge, String) {
-    bash_calling_rig_with_card_roots(event_tx, Default::default()).await
+    bash_calling_rig_with_source_roots(event_tx, Default::default()).await
 }
 
 /// As [`bash_calling_rig`], with the config home the whitelist gate reads.
-async fn bash_calling_rig_with_card_roots(
+async fn bash_calling_rig_with_source_roots(
     event_tx: broadcast::Sender<SessionEventMessage>,
-    card_roots: crate::agent_cards::CardRoots,
+    source_roots: crate::runtime_path::SourceRoots,
 ) -> (TempDir, DaemonSessionBridge, String) {
     let tmp = TempDir::new().unwrap();
     let workspace = tmp.path().to_path_buf();
@@ -204,7 +204,7 @@ async fn bash_calling_rig_with_card_roots(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots,
+        source_roots,
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     agent_manager.set_agent_factory_override(Box::new(|_, _| {
@@ -286,12 +286,13 @@ async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
         "[bash_commands]\nallowed_prefixes = [\"echo gated\"]\n",
     )
     .unwrap();
-    let card_roots = crate::agent_cards::CardRoots {
+    let source_roots = crate::runtime_path::SourceRoots {
         config_home: Some(config_home.path().to_path_buf()),
         agent_directories: Vec::new(),
     };
     let (event_tx, _keep_open) = broadcast::channel(256);
-    let (_tmp, bridge, session_id) = bash_calling_rig_with_card_roots(event_tx, card_roots).await;
+    let (_tmp, bridge, session_id) =
+        bash_calling_rig_with_source_roots(event_tx, source_roots).await;
 
     let mut rx = bridge
         .send_and_collect(session_id, "go".to_string(), None, Some(5.0), None, false)

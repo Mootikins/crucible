@@ -308,7 +308,7 @@ impl RpcContext {
     ///
     /// `data_home` is a parameter rather than `crucible_home()` for the usual
     /// reason: a test that reads the developer's real `~/.crucible` passes on
-    /// CI and fails locally. The agent manager's card roots are empty for
+    /// CI and fails locally. The agent manager's source roots are empty for
     /// the same reason — no global agent cards unless a test asks for them.
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]

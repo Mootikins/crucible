@@ -134,7 +134,7 @@ impl Default for DelegationContext {
             enabled: true,
             result_max_bytes: 51200,
             timeout_secs: 300,
-            card_roots: Default::default(),
+            source_roots: Default::default(),
         }
     }
 }

@@ -87,7 +87,7 @@ fn test_context(data_home: &std::path::Path, kiln: &std::path::Path) -> Arc<RpcC
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
 

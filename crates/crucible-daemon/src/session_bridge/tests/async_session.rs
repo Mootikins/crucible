@@ -18,7 +18,7 @@ fn rig() -> (TempDir, Arc<DaemonSessionBridge>, mlua::Lua) {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            card_roots: Default::default(),
+            source_roots: Default::default(),
             review_snapshot_root: tmp.path().join("snapshots"),
         },
         crate::delegation::DelegationService::new(sm.clone(), tx.clone()),

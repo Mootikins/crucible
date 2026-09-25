@@ -63,7 +63,7 @@ async fn end_hook_rig(
         context_config: None,
         permission_config: None,
         plugin_loader: Some(plugin_loader.clone()),
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
@@ -249,7 +249,7 @@ async fn session_end_sweeps_the_handlers_that_session_activated() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(plugin_loader.clone()),
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
@@ -361,7 +361,7 @@ async fn session_end_forgets_the_sessions_statusline_values() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(plugin_loader.clone()),
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     }));
     let exprs = agent_manager.statusline_exprs();

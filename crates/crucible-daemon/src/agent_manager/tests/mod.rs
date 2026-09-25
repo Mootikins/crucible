@@ -820,7 +820,7 @@ fn create_test_agent_manager_with_permissions(
         context_config: None,
         permission_config,
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
     .into()
@@ -846,7 +846,7 @@ fn create_test_agent_manager_with_enrichment(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
     .into()
@@ -868,7 +868,7 @@ fn create_test_agent_manager_with_llm_config(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
     .into()

@@ -108,7 +108,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     });
 
@@ -175,7 +175,7 @@ async fn a_plugin_tool_runs_under_its_own_plugins_context() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     });
 

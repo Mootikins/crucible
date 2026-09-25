@@ -47,7 +47,7 @@ impl AgentManager {
             acp_config: _,       // daemon config
             context_config: _,   // daemon config
             permission_config: _, // daemon config
-            card_roots: _,       // daemon config
+            source_roots: _,     // daemon config
             plugin_loader: _,    // shared service
             plugin_handlers: _,  // startup-bound OnceLock
             isolation: _,        // startup-bound OnceLock

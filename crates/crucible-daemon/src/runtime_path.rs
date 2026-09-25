@@ -12,7 +12,7 @@
 //! end.
 
 use crucible_core::runtime_path::{build_path, PathInputs, RuntimeEntry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The runtime roots the daemon searches, highest priority first.
 ///
@@ -48,6 +48,54 @@ pub fn daemon_path(runtimepath: &[PathBuf]) -> Vec<RuntimeEntry> {
         runtime_roots: &roots,
         ..PathInputs::default()
     })
+}
+
+/// The session-independent roots of card and skill discovery: the global
+/// config directory and the directories the app config names.
+///
+/// Both are injected as values, never read from the environment at discovery
+/// time. Global cards are first in precedence, so a handler that read
+/// `dirs::config_dir()` would resolve a developer's own cards in every test —
+/// passing on CI, failing locally. `Default` is "no global cards, no
+/// configured directories".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SourceRoots {
+    /// The config home `<config_home>/crucible/agents` hangs off. `None`
+    /// means "no global cards".
+    pub config_home: Option<PathBuf>,
+    /// `agent_directories` from the app config, tilde already expanded.
+    ///
+    /// **Deprecated.** It names one leaf directory that serves cards only.
+    /// `runtimepath` names a root that serves every asset kind, so a user who
+    /// wants to share cards, skills and themes from one directory writes one
+    /// line instead of three knobs. Kept working;
+    /// [`crate::agent_cards::warn_if_deprecated`] says so once.
+    pub agent_directories: Vec<PathBuf>,
+}
+
+impl SourceRoots {
+    /// Read `agent_directories` out of the serialized app config. `home`
+    /// expands a leading `~`; `None` leaves the path as written.
+    pub fn from_app_config(
+        config_home: Option<PathBuf>,
+        app_config: Option<&serde_json::Value>,
+        home: Option<&Path>,
+    ) -> Self {
+        let agent_directories = app_config
+            .and_then(|v| v.get("agent_directories"))
+            .and_then(|v| v.as_array())
+            .map(|dirs| {
+                dirs.iter()
+                    .filter_map(|d| d.as_str())
+                    .map(|d| crucible_core::config::expand_tilde(d, home))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            config_home,
+            agent_directories,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -86,5 +134,27 @@ mod tests {
         // And the resolver agrees, whatever the path happens to hold.
         let dirs = search_paths(RuntimeAsset::Plugins, &built);
         assert!(dirs.iter().all(|d| d.path.ends_with("plugins")));
+    }
+
+    /// `agent_directories` comes off the serialized app config with `~`
+    /// expanded against the injected home, never the environment.
+    #[test]
+    fn source_roots_read_agent_directories_from_the_app_config() {
+        let home = Path::new("/home/tester");
+        let config = serde_json::json!({
+            "agent_directories": ["~/shared-agents", "/abs/agents"],
+            "kiln_path": "/unrelated",
+        });
+        let roots = SourceRoots::from_app_config(None, Some(&config), Some(home));
+        assert_eq!(
+            roots.agent_directories,
+            vec![
+                PathBuf::from("/home/tester/shared-agents"),
+                PathBuf::from("/abs/agents")
+            ]
+        );
+
+        let roots = SourceRoots::from_app_config(None, None, Some(home));
+        assert!(roots.agent_directories.is_empty());
     }
 }

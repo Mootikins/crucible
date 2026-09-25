@@ -43,7 +43,7 @@ impl Fixture {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            card_roots: Default::default(),
+            source_roots: Default::default(),
             review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         }));
 
@@ -252,7 +252,7 @@ async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
             ..Default::default()
         }),
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         // A subdirectory, so the comment store beside it is in this
         // fixture and not in the shared temporary directory.
         review_snapshot_root: snapshots.path().join("review-snapshots"),

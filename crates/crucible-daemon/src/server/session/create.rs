@@ -363,7 +363,7 @@ impl RpcContext {
     /// [`build_default_internal_agent`]), optionally layered with an agent card.
     ///
     /// A method rather than a free function so the managers, the LLM/MCP config
-    /// and the card roots come off `self` instead of seven positional arguments.
+    /// and the source roots come off `self` instead of seven positional arguments.
     fn resolve_create_agent(
         &self,
         params: &crate::rpc_client::SessionCreateRequest,
@@ -394,7 +394,7 @@ impl RpcContext {
                     name_list(profiles.keys().cloned()),
                     name_list(
                         crate::agent_cards::discover_agent_cards_in(
-                            self.agents.card_roots(),
+                            self.agents.source_roots(),
                             workspace,
                             kilns,
                         )
@@ -422,7 +422,7 @@ impl RpcContext {
                 return Ok(base);
             };
             let cards = crate::agent_cards::discover_agent_cards_in(
-                self.agents.card_roots(),
+                self.agents.source_roots(),
                 workspace,
                 kilns,
             );
@@ -607,7 +607,7 @@ mod tests {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            card_roots: Default::default(),
+            source_roots: Default::default(),
             review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         }));
         let mut ctx = crate::rpc::RpcContext::for_test(
@@ -701,7 +701,7 @@ mod tests {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            card_roots: Default::default(),
+            source_roots: Default::default(),
             review_snapshot_root: crate::test_support::scratch_snapshot_root(),
         }));
         let pm = Arc::new(

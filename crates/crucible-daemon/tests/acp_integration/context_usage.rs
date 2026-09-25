@@ -61,7 +61,7 @@ async fn delegated_turn_events(turn: Vec<Step>) -> Vec<SessionEventMessage> {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     }));
 

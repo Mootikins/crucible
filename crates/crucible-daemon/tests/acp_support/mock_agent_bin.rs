@@ -92,8 +92,8 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
 /// })
 /// ```
 /// No global cards, no configured card directories.
-static NO_CARD_ROOTS: crucible_daemon::agent_cards::CardRoots =
-    crucible_daemon::agent_cards::CardRoots {
+static NO_CARD_ROOTS: crucible_daemon::runtime_path::SourceRoots =
+    crucible_daemon::runtime_path::SourceRoots {
         config_home: None,
         agent_directories: Vec::new(),
     };
@@ -113,7 +113,7 @@ pub fn mock_handle_params<'a>(
         delegation_spawner: None,
         parent_session_id: None,
         delegation_config: None,
-        card_roots: &NO_CARD_ROOTS,
+        source_roots: &NO_CARD_ROOTS,
         acp_config: Some(mock_path_acp_config()),
         permission_handler: None,
         sandbox_exec: None,
@@ -201,7 +201,7 @@ pub fn acp_manager_params(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
     }
 }

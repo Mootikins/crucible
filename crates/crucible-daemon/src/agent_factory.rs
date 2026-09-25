@@ -70,7 +70,7 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
     /// Where agent cards come from, for the `delegate_session` tool text.
-    pub card_roots: &'a crate::agent_cards::CardRoots,
+    pub source_roots: &'a crate::runtime_path::SourceRoots,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     /// The permission gate of an ACP session: the answer to the agent's
     /// questions and the gate of the in-process MCP server.
@@ -123,7 +123,7 @@ pub(crate) fn build_internal_delegation_context(
     parent_session_id: Option<&str>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
-    card_roots: &crate::agent_cards::CardRoots,
+    source_roots: &crate::runtime_path::SourceRoots,
 ) -> Option<DelegationContext> {
     let session_id = parent_session_id?;
     let background_spawner = background_spawner?;
@@ -141,7 +141,7 @@ pub(crate) fn build_internal_delegation_context(
             .map(|c| c.result_max_bytes)
             .unwrap_or(51200),
         timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
-        card_roots: card_roots.clone(),
+        source_roots: source_roots.clone(),
     })
 }
 
@@ -678,7 +678,7 @@ pub async fn create_agent_from_session_config(
         parent_session_id,
         background_spawner,
         delegation_spawner,
-        card_roots,
+        source_roots,
         mcp_gateway,
         acp_permission_handler,
         acp_config,
@@ -703,7 +703,7 @@ pub async fn create_agent_from_session_config(
             delegation_spawner,
             parent_session_id,
             delegation_config: agent_config.delegation_config.as_ref(),
-            card_roots,
+            source_roots,
             acp_config,
             permission_handler: acp_permission_handler,
             sandbox_exec,
@@ -729,7 +729,7 @@ pub async fn create_agent_from_session_config(
         parent_session_id,
         background_spawner.clone(),
         delegation_spawner.clone(),
-        card_roots,
+        source_roots,
     );
     let (tool_defs, deferrable_tool_names, plugin_tool_names) =
         create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {

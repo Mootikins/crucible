@@ -448,7 +448,7 @@ async fn reading_plugin_state_does_not_queue_behind_the_loader_lock() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(loader.clone()),
-        card_roots: Default::default(),
+        source_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     });
 

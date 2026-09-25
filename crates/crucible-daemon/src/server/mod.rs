@@ -257,7 +257,7 @@ impl Server {
             .clone()
             .unwrap_or_else(crucible_core::config::crucible_home);
 
-        // Same treatment for the agent-card roots: the global card directory
+        // Same treatment for the source roots: the global config directory
         // and the config's `agent_directories`, resolved once here so
         // handlers read a value instead of the environment.
         // The config home the daemon was HANDED. Everything that WRITES under
@@ -272,7 +272,7 @@ impl Server {
             .clone()
             .or_else(|| params.data_home.is_none().then(dirs::config_dir).flatten());
 
-        let card_roots = crate::agent_cards::CardRoots::from_app_config(
+        let source_roots = crate::runtime_path::SourceRoots::from_app_config(
             config_home.clone(),
             params.app_config.as_ref(),
             dirs::home_dir().as_deref(),
@@ -478,7 +478,7 @@ impl Server {
                     context_config: params.context_config.clone(),
                     permission_config: params.permission_config.clone(),
                     plugin_loader: Some(plugin_loader.clone()),
-                    card_roots,
+                    source_roots,
                     review_snapshot_root,
                 },
                 delegation_service.clone(),

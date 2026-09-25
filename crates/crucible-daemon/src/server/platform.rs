@@ -320,7 +320,7 @@ pub(crate) async fn handle_agents_list_cards(
     let workspace = std::path::PathBuf::from(params.workspace);
     let kiln_path = params.kiln_path.map(std::path::PathBuf::from);
     let mut cards: Vec<_> = crate::agent_cards::discover_agent_cards_in(
-        agent_manager.card_roots(),
+        agent_manager.source_roots(),
         &workspace,
         kiln_path.as_slice(),
     )

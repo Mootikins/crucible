@@ -109,7 +109,7 @@ impl Rig {
                 context_config: None,
                 permission_config: None,
                 plugin_loader: Some(shared_loader.clone()),
-                card_roots: Default::default(),
+                source_roots: Default::default(),
                 review_snapshot_root: tmp.path().join("snapshots"),
             })
             .with_modes(Some(loader.mode_registry())),
