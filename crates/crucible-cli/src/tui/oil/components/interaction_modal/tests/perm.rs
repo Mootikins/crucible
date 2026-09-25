@@ -35,7 +35,7 @@ fn plugin_permission_prompt_names_its_source() {
     let modal = InteractionModal::new(
         "req-plugin".into(),
         InteractionRequest::Permission(PermRequest {
-            plugin: Some("alpha".into()),
+            origin: Some(crucible_core::turn::TurnOrigin::Plugin("alpha".into())),
             ..PermRequest::bash(["cargo", "test"])
         }),
         true,

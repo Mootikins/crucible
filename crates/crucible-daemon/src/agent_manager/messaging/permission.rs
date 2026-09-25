@@ -2093,7 +2093,10 @@ mod acp_permission_handler_tests {
         let id = prompt_id(&mut event_rx).await;
         let prompts = am.list_all_pending_permissions();
         assert_eq!(prompts.len(), 1);
-        assert_eq!(prompts[0].2.plugin.as_deref(), Some("alpha"));
+        assert_eq!(
+            prompts[0].2.origin,
+            Some(crucible_core::turn::TurnOrigin::Plugin("alpha".into()))
+        );
         am.respond_to_permission(&session_id, &id, PermResponse::allow())
             .unwrap();
         assert_eq!(

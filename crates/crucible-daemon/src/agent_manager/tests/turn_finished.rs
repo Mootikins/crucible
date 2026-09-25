@@ -398,7 +398,10 @@ async fn plugin_ask_overrides_an_internal_turns_allow_override() {
     .expect("plugin turn must ask even when session allows");
     let id = prompt.data["request_id"].as_str().unwrap();
     let pending = h.agent_manager.list_all_pending_permissions();
-    assert_eq!(pending[0].2.plugin.as_deref(), Some("alpha"));
+    assert_eq!(
+        pending[0].2.origin,
+        Some(crucible_core::turn::TurnOrigin::Plugin("alpha".into()))
+    );
     h.agent_manager
         .respond_to_permission(&h.session_id, id, PermResponse::deny())
         .unwrap();

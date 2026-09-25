@@ -496,7 +496,8 @@ type PermActionType = 'bash' | 'read' | 'write' | 'tool';
 
 interface PermRequest {
   kind: 'permission';
-  plugin?: string;
+  /** The origin of the turn that asks: `{ kind: 'plugin', name }` for a plugin turn. */
+  origin?: { kind: string; name?: string };
   action_type: PermActionType;
   tokens: string[];
   tool_name?: string;

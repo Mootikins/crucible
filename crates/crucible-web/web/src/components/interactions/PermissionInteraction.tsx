@@ -3,6 +3,7 @@ import type { InteractionOf, PermResponse, PermissionScope } from '@/lib/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { btnConsent, btnNeutral } from '@/lib/button-style';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
+import { originName } from '@/lib/turn';
 
 interface Props {
   request: InteractionOf<'permission'>;
@@ -57,6 +58,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const [showScopes, setShowScopes] = createSignal(false);
   const [showDiff, setShowDiff] = createSignal(true);
 
+  const plugin = () => originName(props.request.origin, 'plugin');
   const actionInfo = () => ACTION_LABELS[props.request.action_type] || ACTION_LABELS.tool;
 
   // A tool request used to render a generic "Tool" chip AND a "Tool: <name>"
@@ -122,7 +124,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
           {chipLabel()}
         </span>
         <span class="text-floor uppercase tracking-wider text-muted-dark font-semibold">
-          {props.request.plugin ? `${props.request.plugin} requests permission` : 'Permission Required'}
+          {plugin() ? `${plugin()} requests permission` : 'Permission Required'}
         </span>
       </div>
 

@@ -145,7 +145,9 @@ pub(crate) async fn decide_permission(
     };
     let request = PermRequest {
         layer: Some(layer),
-        plugin: ctx.plugin.map(str::to_owned),
+        origin: ctx
+            .plugin
+            .map(|p| crucible_core::turn::TurnOrigin::Plugin(p.to_owned())),
         ..PermRequest::from_call(call, args.clone())
     };
     let Some(response) = prompt_user(prompt.slot, ctx.session_id, prompt.event_tx, request).await

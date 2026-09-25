@@ -294,7 +294,8 @@ describe('PermissionInteraction', () => {
   // Decision 6: a prompt in a plugin turn names the plugin whose turn asks.
   it('names the plugin whose turn asks', () => {
     const request: InteractionOf<'permission'> = {
-      kind: 'permission', id: 'perm-plugin', action_type: 'bash', tokens: ['ls'], plugin: 'goal',
+      kind: 'permission', id: 'perm-plugin', action_type: 'bash', tokens: ['ls'],
+      origin: { kind: 'plugin', name: 'goal' },
     };
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
     expect(screen.getByText('goal requests permission')).toBeInTheDocument();

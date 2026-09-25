@@ -39,11 +39,12 @@ fn a_plugin_turn_and_its_prompt_name_the_plugin() {
         &mut story,
         &[(
             "user_message",
-            json!({"message_id": "m1", "content": "keep going", "origin": origin}),
+            json!({"message_id": "m1", "content": "keep going", "origin": origin.clone()}),
         )],
     );
-    let mut request = PermRequest::bash(["ls"]);
-    request.plugin = Some("goal".into());
+    let mut request = serde_json::to_value(PermRequest::bash(["ls"])).unwrap();
+    request["origin"] = origin;
+    let request: PermRequest = serde_json::from_value(request).unwrap();
     let _ = story
         .app()
         .open_interaction("r1".into(), InteractionRequest::Permission(request));

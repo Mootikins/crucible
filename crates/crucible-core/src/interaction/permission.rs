@@ -87,9 +87,9 @@ pub struct PermRequest {
     /// `permissions config` or `ask mode`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
-    /// Plugin whose turn requested this permission, if any.
+    /// The origin of the turn that asks, as the `user_message` names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plugin: Option<String>,
+    pub origin: Option<crate::turn::TurnOrigin>,
 }
 
 impl PermRequest {
@@ -106,7 +106,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
-            plugin: None,
+            origin: None,
         }
     }
 
@@ -123,7 +123,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
-            plugin: None,
+            origin: None,
         }
     }
 
@@ -140,7 +140,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
-            plugin: None,
+            origin: None,
         }
     }
 
@@ -154,7 +154,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
-            plugin: None,
+            origin: None,
         }
     }
 
@@ -175,7 +175,7 @@ impl PermRequest {
                 ..call.clone()
             })),
             layer: None,
-            plugin: None,
+            origin: None,
         }
     }
 

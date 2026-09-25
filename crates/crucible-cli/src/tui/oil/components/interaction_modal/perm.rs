@@ -3,6 +3,7 @@ use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crate::tui::oil::components::diff_view::{render_diff, DiffOptions};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse, PermissionScope};
+use crucible_core::turn::TurnOrigin;
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::Style;
 use unicode_width::UnicodeWidthStr;
@@ -227,7 +228,7 @@ impl InteractionModal {
 
         let mut lines: Vec<Node> = Vec::new();
 
-        if let Some(plugin) = &perm_request.plugin {
+        if let Some(plugin) = perm_request.origin.as_ref().and_then(TurnOrigin::plugin) {
             let text = format!("  {plugin} requests permission");
             lines.push(pad_line(&text, UnicodeWidthStr::width(text.as_str())));
         }
