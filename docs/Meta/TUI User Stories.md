@@ -232,6 +232,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** drawer lists all session notifications with severity; toggle preserves scroll; dismiss clears the badge.
 **Tests:** T2 drawer flow (`:messages` lists all, dismiss) in `user_story_tests/notification_tests.rs`.
 
+### US-703: Daemon notifications
+**As a user**, I see a notification that the daemon sends, for example a failed kiln search or a plugin `cru.log.notify`, in the notification area.
+**Acceptance:** a `notification_added` event adds its notification with its kind; a warning stays a warning; the web shows the same event as a toast.
+**Tests:** T1 `translate_a_daemon_notification_keeps_its_kind` in `chat_runner/tests/translate.rs`; T1/T2 `a_daemon_notification_reaches_the_notification_area` in `chat_app/command_handling_tests.rs`; the crossing `a_plugin_notification_reaches_the_tui_over_the_socket` in `chat_runner/tests/daemon_notification.rs` runs a real daemon. Web: `chatEventReducer.test.ts` and `tests/notification_daemon_e2e.rs`.
+
 ## 8. Scrollback & Layout
 
 ### US-801: Review history without losing my place

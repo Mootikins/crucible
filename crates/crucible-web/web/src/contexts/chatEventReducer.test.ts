@@ -18,6 +18,12 @@ vi.mock('@/stores/statusBarStore', () => ({
   },
 }));
 
+vi.mock('@/stores/notificationStore', () => ({
+  notificationActions: {
+    addNotification: vi.fn(),
+  },
+}));
+
 vi.mock('@/lib/turn', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/turn')>();
   // Unique per call: a segmented turn (text → tool → text → tool → text)
@@ -34,6 +40,7 @@ vi.mock('@/lib/turn', async (importOriginal) => {
 import { createChatEventReducer } from './chatEventReducer';
 import { statusBarActions } from '@/stores/statusBarStore';
 import { SSE_EVENT_TYPES } from '@/lib/api';
+import { notificationActions } from '@/stores/notificationStore';
 
 const mockedStatusBar = statusBarActions as unknown as {
   setChatMode: ReturnType<typeof vi.fn>;
@@ -897,6 +904,26 @@ describe('event matrix — covers every ChatEvent variant', () => {
     h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 12 } });
     expect(h.state.error).toContain('12');
     expect(h.state.error).toMatch(/incomplete/i);
+  });
+
+  it('session_event notification_added: shows the daemon notification with its kind', () => {
+    const h = createHarness();
+    const add = notificationActions.addNotification as unknown as ReturnType<typeof vi.fn>;
+    add.mockClear();
+    h.reducer({
+      type: 'session_event',
+      event: 'notification_added',
+      data: { notification_id: 'n1', notification: { id: 'n1', kind: 'warning', message: 'kiln docs failed' } },
+    });
+    h.reducer({
+      type: 'session_event',
+      event: 'notification_added',
+      data: { notification_id: 'n2', notification: { id: 'n2', kind: 'toast', message: 'saved' } },
+    });
+    expect(add.mock.calls).toEqual([
+      ['warning', 'kiln docs failed'],
+      ['info', 'saved'],
+    ]);
   });
 
   it('session_event stream_gap: still surfaces without a count', () => {

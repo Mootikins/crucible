@@ -1,5 +1,6 @@
 mod builders;
 mod comment_mention;
+mod daemon_notification;
 mod diff_fetch;
 mod initial_sets;
 mod knob_rpc;

@@ -185,6 +185,22 @@ fn an_app_config_read_answers_with_the_daemon_value() {
     );
 }
 
+/// A daemon notification goes into the notification area as it came.
+#[test]
+fn a_daemon_notification_reaches_the_notification_area() {
+    let mut app = app();
+    let notification = crucible_core::types::Notification::warning("kiln docs failed");
+    app.on_message(ChatAppMsg::Notification(notification.clone()));
+    let history = app.notification_area.history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].0, notification);
+    let screen = crate::tui::oil::tests::helpers::vt_render(&mut app);
+    assert!(
+        screen.contains("kiln docs failed"),
+        "the toast shows:\n{screen}"
+    );
+}
+
 /// A write the daemon refuses leaves no value behind, and says so. Swallowing
 /// it into a local value is what let the TUI report a setting the daemon
 /// never took.

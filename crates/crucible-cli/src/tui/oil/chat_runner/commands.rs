@@ -3,8 +3,8 @@ use crucible_core::error_utils::strip_tool_error_prefix;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;
 use crucible_core::protocol::session_events::{
-    EventDecodeError, JobPayload, SessionEventPayload, SettingsPayload, SetupPayload,
-    SystemPayload, ToolResultBody, TurnPayload,
+    EventDecodeError, JobPayload, NotificationPayload, SessionEventPayload, SettingsPayload,
+    SetupPayload, SystemPayload, ToolResultBody, TurnPayload,
 };
 use crucible_core::turn::{TurnOrigin, TurnStatus};
 
@@ -82,6 +82,10 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
         Ok(SessionEventPayload::Settings(settings)) => settings_msgs(settings),
         Ok(SessionEventPayload::Job(job)) => job_msgs(job),
         Ok(SessionEventPayload::System(system)) => system_msgs(system),
+        Ok(SessionEventPayload::Notification(NotificationPayload::NotificationAdded {
+            notification: Some(notification),
+            ..
+        })) => vec![ChatAppMsg::Notification(notification)],
         Ok(SessionEventPayload::Review(_))
         | Ok(SessionEventPayload::Notification(_))
         | Ok(SessionEventPayload::Workflow(_)) => vec![],

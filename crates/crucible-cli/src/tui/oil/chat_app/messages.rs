@@ -131,6 +131,8 @@ pub enum ChatAppMsg {
     Error(String),
     /// **Dual-duty**: Status message (from daemon or user action).
     Status(String),
+    /// **Event** (daemon → TUI): a daemon notification for the notification area.
+    Notification(crucible_core::types::Notification),
     /// **Event** (daemon → TUI): a line the transcript draws beside the reply.
     ///
     /// Distinct from `Status`, which writes the status bar and leaves no
@@ -471,6 +473,7 @@ impl ChatAppMsg {
 
             Self::Error(_)
             | Self::Status(_)
+            | Self::Notification(_)
             | Self::SystemNotice(_)
             | Self::ModeChanged(_)
             | Self::ModeSynced(_)

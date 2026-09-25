@@ -363,6 +363,19 @@ fn translate_a_failed_precognition_warns() {
     assert!(quiet.is_empty(), "{quiet:?}");
 }
 
+/// A daemon notification goes to the notification area with its kind.
+#[test]
+fn translate_a_daemon_notification_keeps_its_kind() {
+    let notification = crucible_core::types::Notification::warning("kiln docs failed");
+    let data =
+        serde_json::json!({ "notification_id": notification.id, "notification": notification });
+    let msgs = session_event_to_chat_msgs("notification_added", &data);
+    assert!(
+        matches!(&msgs[..], [ChatAppMsg::Notification(n)] if *n == notification),
+        "{msgs:?}"
+    );
+}
+
 #[test]
 fn translate_tool_call_update_with_nothing_in_it_drops_msg() {
     use serde_json::json;

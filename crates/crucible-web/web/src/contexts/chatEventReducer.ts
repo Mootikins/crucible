@@ -1,4 +1,5 @@
 import { statusBarActions } from '@/stores/statusBarStore';
+import { notificationActions } from '@/stores/notificationStore';
 import {
   generateMessageId,
   originName,
@@ -623,6 +624,14 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // Surfaced rather than logged: a transcript with an invisible hole is
         // permanently and silently wrong, and reloading the session is the only
         // way back — so the user has to be told, and told what to do.
+        // A daemon notification: a warning stays a warning; a toast or a
+        // progress line is information.
+        if (event.event === 'notification_added') {
+          const n = (event.data as { notification?: { kind?: unknown; message?: string } } | null)
+            ?.notification;
+          if (n?.message) notificationActions.addNotification(n.kind === 'warning' ? 'warning' : 'info', n.message);
+          break;
+        }
         if (event.event === 'stream_gap') {
           const dropped = (event.data as { dropped?: number } | null)?.dropped;
           deps.setError(
