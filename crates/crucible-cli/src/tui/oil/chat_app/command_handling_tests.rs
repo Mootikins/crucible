@@ -201,6 +201,21 @@ fn a_daemon_notification_reaches_the_notification_area() {
     );
 }
 
+/// A daemon notification that a client dismissed leaves the area.
+#[test]
+fn a_dismissed_daemon_notification_leaves_the_notification_area() {
+    let mut app = app();
+    let notification = crucible_core::types::Notification::warning("kiln docs failed");
+    app.on_message(ChatAppMsg::Notification(notification.clone()));
+    app.on_message(ChatAppMsg::DismissNotification(notification.id));
+    assert!(app.notification_area.history().is_empty());
+    let screen = crate::tui::oil::tests::helpers::vt_render(&mut app);
+    assert!(
+        !screen.contains("kiln docs failed"),
+        "the toast is gone:\n{screen}"
+    );
+}
+
 /// A write the daemon refuses leaves no value behind, and says so. Swallowing
 /// it into a local value is what let the TUI report a setting the daemon
 /// never took.

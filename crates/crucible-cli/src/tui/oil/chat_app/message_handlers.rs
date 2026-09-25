@@ -284,6 +284,9 @@ impl OilChatApp {
                 self.add_notification(crucible_core::types::Notification::warning(err));
             }
             ChatAppMsg::Notification(notification) => self.add_notification(notification),
+            ChatAppMsg::DismissNotification(id) => {
+                self.notification_area.dismiss(&id);
+            }
             ChatAppMsg::ClearHistory => {
                 self.reset_session();
             }

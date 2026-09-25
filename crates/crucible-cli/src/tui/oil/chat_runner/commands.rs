@@ -86,6 +86,9 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             notification: Some(notification),
             ..
         })) => vec![ChatAppMsg::Notification(notification)],
+        Ok(SessionEventPayload::Notification(NotificationPayload::NotificationDismissed {
+            notification_id,
+        })) => vec![ChatAppMsg::DismissNotification(notification_id)],
         Ok(SessionEventPayload::Review(_))
         | Ok(SessionEventPayload::Notification(_))
         | Ok(SessionEventPayload::Workflow(_)) => vec![],

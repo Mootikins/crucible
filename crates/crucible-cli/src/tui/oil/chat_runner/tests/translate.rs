@@ -363,6 +363,17 @@ fn translate_a_daemon_notification_keeps_its_kind() {
     );
 }
 
+/// A notification that another client dismissed leaves this one too.
+#[test]
+fn translate_a_dismissed_notification() {
+    let data = serde_json::json!({ "notification_id": "notif-1" });
+    let msgs = session_event_to_chat_msgs("notification_dismissed", &data);
+    assert!(
+        matches!(&msgs[..], [ChatAppMsg::DismissNotification(id)] if id == "notif-1"),
+        "{msgs:?}"
+    );
+}
+
 #[test]
 fn translate_tool_call_update_with_nothing_in_it_drops_msg() {
     use serde_json::json;
