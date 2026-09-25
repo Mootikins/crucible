@@ -14,12 +14,6 @@ is a Keep a Changelog category.
 
 ### Breaking
 
-- **The daemon has one notification store.** The session notification queue
-  and the RPC methods `session.list_notifications` and
-  `session.dismiss_notification` are removed. `session.add_notification` and
-  the engine store each notification in the notification hub, with a session
-  scope: only that session sees it. Use
-  `notification.list` and `notification.dismiss` to read and remove them.
 - **An ACP profile no longer inherits.** The `extends` key on
   `[acp.agents.<name>]` is removed. A profile named after a built-in lays its
   fields over that built-in; any other name must define `command`. A config
@@ -61,6 +55,15 @@ is a Keep a Changelog category.
   `/plugin:command` or `workspace:researcher`. A bare name works while it is
   unique. An ambiguous bare name returns an error that lists the full names;
   precedence no longer hides one of them.
+
+### Changed
+
+- **The daemon has one notification store.** The notification queue on each
+  session is gone. `session.add_notification`, `session.list_notifications`,
+  `session.dismiss_notification` and the engine now use the notification hub,
+  the store that `cru.log.notify` uses. A notification for a session has a
+  session scope: only that session sees it, lists it and dismisses it. A
+  notification that an older daemon kept on a session is not carried over.
 
 ### Fixed
 

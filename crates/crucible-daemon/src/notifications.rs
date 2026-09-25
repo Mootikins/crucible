@@ -190,6 +190,20 @@ impl NotificationHub {
             .collect()
     }
 
+    /// The notifications of the session `session_id`, newest first.
+    pub fn list_for_session(&self, session_id: &str) -> Vec<Notification> {
+        let mut items = self.list(None, &[], true);
+        items.retain(|n| n.scope.session.as_deref() == Some(session_id));
+        items
+    }
+
+    /// Drop one notification of the session `session_id`. False when the
+    /// session has no notification with that id.
+    pub fn dismiss_for_session(&self, session_id: &str, id: &str) -> bool {
+        let owned = self.list_for_session(session_id).iter().any(|n| n.id == id);
+        owned && self.dismiss(id)
+    }
+
     /// Drop one notification. True when it was there. Every client hears
     /// about it, because every client that showed it must take it down.
     pub fn dismiss(&self, id: &str) -> bool {

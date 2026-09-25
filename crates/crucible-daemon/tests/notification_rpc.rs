@@ -5,6 +5,8 @@
 //!
 //! Contract methods:
 //! - `session.add_notification` - Add a notification, scoped to the session
+//! - `session.list_notifications` - The notifications of one session
+//! - `session.dismiss_notification` - Remove one notification of that session
 //! - `notification.list` - The daemon's own ring, as a client may see it
 //! - `notification.dismiss` - Drop one entry of that ring
 
@@ -199,6 +201,81 @@ async fn test_session_not_found_error() {
             .contains("not found"),
         "Error should mention session not found"
     );
+
+    daemon.stop().await.expect("Failed to stop daemon");
+}
+
+async fn add_toast(conn: &mut RpcConn, session_id: &str, message: &str) -> String {
+    let notification = Notification::toast(message);
+    let response = conn
+        .call_method(
+            "session.add_notification",
+            json!({
+                "session_id": session_id,
+                "notification": {
+                    "id": notification.id,
+                    "kind": "toast",
+                    "message": message,
+                },
+            }),
+            2,
+        )
+        .await;
+    assert!(
+        response["result"]["success"].as_bool().unwrap(),
+        "{response}"
+    );
+    notification.id
+}
+
+async fn list_messages(conn: &mut RpcConn, session_id: &str) -> Vec<String> {
+    let response = conn
+        .call_method(
+            "session.list_notifications",
+            json!({ "session_id": session_id }),
+            3,
+        )
+        .await;
+    response["result"]["notifications"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a list: {response}"))
+        .iter()
+        .map(|n| n["message"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// One store, two sessions: each session lists and dismisses only its own
+/// notifications.
+#[tokio::test]
+async fn a_session_lists_and_dismisses_only_its_own_notifications() {
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let mine = create_test_session(&mut conn, &daemon).await;
+    let other = create_test_session(&mut conn, &daemon).await;
+
+    let id = add_toast(&mut conn, &mine, "mine").await;
+    let other_id = add_toast(&mut conn, &other, "other").await;
+
+    assert_eq!(list_messages(&mut conn, &mine).await, ["mine"]);
+
+    let refused = conn
+        .call_method(
+            "session.dismiss_notification",
+            json!({ "session_id": mine, "notification_id": other_id }),
+            4,
+        )
+        .await;
+    assert_eq!(refused["result"]["success"], false, "{refused}");
+    assert_eq!(list_messages(&mut conn, &other).await, ["other"]);
+
+    let dismissed = conn
+        .call_method(
+            "session.dismiss_notification",
+            json!({ "session_id": mine, "notification_id": id }),
+            5,
+        )
+        .await;
+    assert_eq!(dismissed["result"]["success"], true, "{dismissed}");
+    assert!(list_messages(&mut conn, &mine).await.is_empty());
 
     daemon.stop().await.expect("Failed to stop daemon");
 }

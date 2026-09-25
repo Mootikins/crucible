@@ -44,7 +44,10 @@ pub(crate) use modes::{
     handle_session_list_agent_options, handle_session_list_knobs, handle_session_list_modes,
     handle_session_set_agent_option,
 };
-pub(crate) use notifications::handle_session_add_notification;
+pub(crate) use notifications::{
+    handle_session_add_notification, handle_session_dismiss_notification,
+    handle_session_list_notifications,
+};
 pub(crate) use params::{
     handle_session_cache_stats, handle_session_can_undo, handle_session_get_context_strategy,
     handle_session_get_mode, handle_session_get_plugin_turn_limit, handle_session_get_precognition,

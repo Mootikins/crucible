@@ -169,6 +169,12 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             json!({"role": "user", "content": "c"}),
             not_found(),
         ),
+        ("session.list_notifications", json!({}), not_found()),
+        (
+            "session.dismiss_notification",
+            json!({"notification_id": "n"}),
+            not_found(),
+        ),
         ("session.undo", json!({}), not_found()),
         ("session.can_undo", json!({}), not_found()),
         ("session.undo_depth", json!({}), not_found()),

@@ -182,8 +182,8 @@ pub use proposals::{
 };
 pub use session::{
     decode_status_items, SessionAgentSpec, SessionCreateParams, SessionCreateRequest,
-    SessionEventsAfterRequest, SessionExportToFileRequest, SessionForkRequest,
-    SessionHistoryRequest, SessionIdRequest, SessionInjectContextRequest,
+    SessionDismissNotificationRequest, SessionEventsAfterRequest, SessionExportToFileRequest,
+    SessionForkRequest, SessionHistoryRequest, SessionIdRequest, SessionInjectContextRequest,
     SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
     SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionTestInteractionRequest,
 };
