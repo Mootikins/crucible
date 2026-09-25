@@ -106,9 +106,9 @@ async fn gate(mode: &str) -> Gate {
 }
 
 impl Gate {
-    /// Run one turn. Answer a prompt with a denial. Return true if the
+    /// Run one turn. Answer each prompt with `answer`. Return true if the
     /// daemon asked the user before the turn finished.
-    async fn turn(&mut self, is_interactive: bool) -> bool {
+    async fn turn(&mut self, is_interactive: bool, answer: PermResponse) -> bool {
         let (_id, done) = self
             .am
             .send_message_notified(
@@ -131,7 +131,7 @@ impl Gate {
                     asked = true;
                     let id = msg.data["request_id"].as_str().expect("request_id");
                     self.am
-                        .respond_to_permission(&self.session_id, id, PermResponse::deny())
+                        .respond_to_permission(&self.session_id, id, answer.clone())
                         .expect("the prompt is registered");
                 }
                 "turn_finished" => break,
@@ -161,7 +161,10 @@ impl Gate {
 #[tokio::test]
 async fn an_agent_mode_named_auto_does_not_take_the_crucible_auto_stance() {
     let mut gate = gate("auto").await;
-    assert!(gate.turn(true).await, "the user must be asked");
+    assert!(
+        gate.turn(true, PermResponse::deny()).await,
+        "the user must be asked"
+    );
     assert_eq!(gate.answers(), ["reject_once"]);
 }
 
@@ -171,9 +174,12 @@ async fn an_agent_mode_named_auto_does_not_take_the_crucible_auto_stance() {
 #[tokio::test]
 async fn each_turn_start_sets_the_gate_of_the_cached_handle() {
     let mut gate = gate("default").await;
-    assert!(gate.turn(true).await, "the interactive turn asks the user");
     assert!(
-        !gate.turn(false).await,
+        gate.turn(true, PermResponse::deny()).await,
+        "the interactive turn asks the user"
+    );
+    assert!(
+        !gate.turn(false, PermResponse::deny()).await,
         "the non-interactive turn asks nobody"
     );
     assert_eq!(gate.answers(), ["reject_once", "reject_once"]);
@@ -186,5 +192,19 @@ async fn each_turn_start_sets_the_gate_of_the_cached_handle() {
 #[tokio::test]
 async fn an_agent_mode_named_plan_does_not_take_the_crucible_plan_rule() {
     let mut gate = gate("plan").await;
-    assert!(gate.turn(true).await, "the user must be asked");
+    assert!(
+        gate.turn(true, PermResponse::deny()).await,
+        "the user must be asked"
+    );
+}
+
+/// The user allows the call once. The agent receives `allow_once`.
+#[tokio::test]
+async fn a_user_who_allows_once_sends_allow_once_to_the_agent() {
+    let mut gate = gate("default").await;
+    assert!(
+        gate.turn(true, PermResponse::allow()).await,
+        "the user must be asked"
+    );
+    assert_eq!(gate.answers(), ["allow_once"]);
 }
