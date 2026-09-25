@@ -621,12 +621,14 @@ impl DaemonClient {
     pub async fn skills_list(
         &self,
         kiln_path: &Path,
+        workspace: Option<&Path>,
         scope_filter: Option<&str>,
     ) -> Result<crate::SkillsReply> {
         self.typed_call(
             "skills.list",
             super::types::SkillsListRequest {
                 kiln_path: kiln_path.to_string_lossy().to_string(),
+                workspace: workspace.map(|p| p.to_string_lossy().to_string()),
                 scope_filter: scope_filter.map(|s| s.to_string()),
             },
         )
@@ -634,12 +636,18 @@ impl DaemonClient {
     }
 
     /// Get a single skill by name with full body.
-    pub async fn skills_get(&self, name: &str, kiln_path: &Path) -> Result<crate::SkillDetail> {
+    pub async fn skills_get(
+        &self,
+        name: &str,
+        kiln_path: &Path,
+        workspace: Option<&Path>,
+    ) -> Result<crate::SkillDetail> {
         self.typed_call(
             "skills.get",
             super::types::SkillsGetRequest {
                 name: name.to_string(),
                 kiln_path: kiln_path.to_string_lossy().to_string(),
+                workspace: workspace.map(|p| p.to_string_lossy().to_string()),
             },
         )
         .await
@@ -650,6 +658,7 @@ impl DaemonClient {
         &self,
         query: &str,
         kiln_path: &Path,
+        workspace: Option<&Path>,
         limit: Option<usize>,
     ) -> Result<crate::SkillsReply> {
         self.typed_call(
@@ -657,6 +666,7 @@ impl DaemonClient {
             super::types::SkillsSearchRequest {
                 query: query.to_string(),
                 kiln_path: kiln_path.to_string_lossy().to_string(),
+                workspace: workspace.map(|p| p.to_string_lossy().to_string()),
                 limit,
             },
         )

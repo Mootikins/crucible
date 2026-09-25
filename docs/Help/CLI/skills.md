@@ -87,6 +87,8 @@ name, both remain available under their source-qualified names.
 | `workspace` | `<workspace>/.claude/skills/`, `.codex/skills/`, `.opencode/skills/`, `.crucible/skills/` | |
 | `kiln` | `<kiln>/.crucible/skills/` | highest |
 
+`<workspace>` is the directory where you run `cru`, not the directory of the daemon.
+
 Runtime roots come from `$CRUCIBLE_RUNTIME` when set, otherwise from the layout next to the
 `cru` binary.
 

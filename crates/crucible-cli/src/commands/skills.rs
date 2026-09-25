@@ -38,7 +38,11 @@ async fn list(
 ) -> Result<()> {
     let client = daemon_client().await?;
     let skills = client
-        .skills_list(&config.kiln_path, scope_filter.as_deref())
+        .skills_list(
+            &config.kiln_path,
+            std::env::current_dir().ok().as_deref(),
+            scope_filter.as_deref(),
+        )
         .await?
         .skills;
 
@@ -107,7 +111,13 @@ async fn show(config: &CliConfig, name: String) -> Result<()> {
     let client = daemon_client().await?;
     // A missing skill surfaces as an RPC error from the daemon, so `?` above
     // is the not-found path — no fallback listing here.
-    let skill = client.skills_get(&name, &config.kiln_path).await?;
+    let skill = client
+        .skills_get(
+            &name,
+            &config.kiln_path,
+            std::env::current_dir().ok().as_deref(),
+        )
+        .await?;
 
     println!("Name: {}", skill.name);
     println!("Scope: {}", skill.scope);
@@ -131,7 +141,12 @@ async fn search(config: &CliConfig, query: String, limit: usize) -> Result<()> {
 
     let client = daemon_client().await?;
     let matches = client
-        .skills_search(&query, &config.kiln_path, Some(limit))
+        .skills_search(
+            &query,
+            &config.kiln_path,
+            std::env::current_dir().ok().as_deref(),
+            Some(limit),
+        )
         .await?
         .skills;
 

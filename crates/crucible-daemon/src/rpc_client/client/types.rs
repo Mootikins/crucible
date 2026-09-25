@@ -61,6 +61,10 @@ pub struct NameRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SkillsListRequest {
     pub kiln_path: String,
+    /// The workspace whose skill roots are searched. Absent means no
+    /// workspace, never the daemon's own working directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_filter: Option<String>,
 }
@@ -70,6 +74,10 @@ pub struct SkillsListRequest {
 pub struct SkillsGetRequest {
     pub name: String,
     pub kiln_path: String,
+    /// The workspace whose skill roots are searched. Absent means no
+    /// workspace, never the daemon's own working directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
 }
 
 /// Request for `skills.search`.
@@ -77,6 +85,10 @@ pub struct SkillsGetRequest {
 pub struct SkillsSearchRequest {
     pub query: String,
     pub kiln_path: String,
+    /// The workspace whose skill roots are searched. Absent means no
+    /// workspace, never the daemon's own working directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     /// Absent means the server's own default (20), not zero — so the server
     /// keeps the `unwrap_or` rather than serde defaulting the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -316,19 +316,19 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe SkillsList =>
         skills_list(kiln: &Path, scope_filter: Option<&str> => scope_filter.map(str::to_owned))
-        -> crucible_daemon::SkillsReply = skills_list(&kiln, scope_filter.as_deref());
+        -> crucible_daemon::SkillsReply = skills_list(&kiln, None, scope_filter.as_deref());
     }
 
     forward_rpc! {
         Safe SkillsGet =>
         skills_get(name: &str, kiln: &Path)
-        -> crucible_daemon::SkillDetail = skills_get(&name, &kiln);
+        -> crucible_daemon::SkillDetail = skills_get(&name, &kiln, None);
     }
 
     forward_rpc! {
         Safe SkillsSearch =>
         skills_search(query: &str, kiln: &Path, limit: Option<usize>)
-        -> crucible_daemon::SkillsReply = skills_search(&query, &kiln, limit);
+        -> crucible_daemon::SkillsReply = skills_search(&query, &kiln, None, limit);
     }
 
     forward_rpc! {

@@ -144,18 +144,20 @@ pub(crate) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManag
     reply(req.id, mcp_mgr.status().await)
 }
 
-/// Discover the skills visible from `kiln_path`, off the async runtime.
+/// Discover the skills visible from `kiln_path` and the caller's
+/// `workspace`, off the async runtime.
 async fn discover_skills(
     kiln_path: String,
+    workspace: Option<String>,
 ) -> Result<
     crate::skills::SkillResult<std::collections::HashMap<String, crate::skills::ResolvedSkill>>,
     tokio::task::JoinError,
 > {
     tokio::task::spawn_blocking(move || {
-        let cwd = std::env::current_dir().unwrap_or_default();
+        let workspace = workspace.map(PathBuf::from);
         let kiln = PathBuf::from(&kiln_path);
         let paths = default_discovery_paths(
-            Some(&cwd),
+            workspace.as_deref(),
             std::slice::from_ref(&kiln),
             dirs::home_dir().as_deref(),
         );
@@ -172,7 +174,7 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
     let kiln_path = params.kiln_path;
     let scope_filter = params.scope_filter;
 
-    let result = discover_skills(kiln_path).await;
+    let result = discover_skills(kiln_path, params.workspace).await;
 
     match result {
         Ok(Ok(skills)) => {
@@ -208,7 +210,7 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
     let name = params.name;
     let kiln_path = params.kiln_path;
 
-    let result = discover_skills(kiln_path).await;
+    let result = discover_skills(kiln_path, params.workspace).await;
 
     match result {
         Ok(Ok(skills)) => match crate::skills::discovery::resolve_skill(&skills, &name) {
@@ -246,7 +248,7 @@ pub(crate) async fn handle_skills_search(req: Request) -> Response {
     let kiln_path = params.kiln_path;
     let limit = params.limit.unwrap_or(20);
 
-    let result = discover_skills(kiln_path).await;
+    let result = discover_skills(kiln_path, params.workspace).await;
 
     match result {
         Ok(Ok(skills)) => {
@@ -409,6 +411,37 @@ mod tests {
             error.message.contains("kiln_path"),
             "the message must name the field: {}",
             error.message
+        );
+    }
+
+    /// `skills.list` reads the workspace the request names, not the
+    /// daemon's own working directory.
+    #[tokio::test]
+    async fn skills_list_reads_the_request_workspace() {
+        let workspace = tempfile::TempDir::new().unwrap();
+        let kiln = tempfile::TempDir::new().unwrap();
+        let skill = workspace.path().join(".crucible/skills/ws-only");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: ws-only\ndescription: d\n---\n\nBody.",
+        )
+        .unwrap();
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(crate::protocol::RequestId::Number(1)),
+            method: "skills.list".to_string(),
+            params: serde_json::json!({
+                "kiln_path": kiln.path(),
+                "workspace": workspace.path(),
+            }),
+        };
+
+        let result = handle_skills_list(req).await.result.expect("a reply");
+
+        assert!(
+            result.to_string().contains("\"ws-only\""),
+            "the workspace skill must be listed: {result}"
         );
     }
 
