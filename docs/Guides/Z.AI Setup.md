@@ -159,7 +159,9 @@ Check:
 
 ### "401 Unauthorized"
 
-Ensure `GLM_AUTH_TOKEN` is set in the environment where `cru` runs, not just where you configured it. The Crucible daemon inherits the environment from the shell that started it. If you set the variable after the daemon launched, restart the daemon:
+The error of the turn shows the status and the body that the provider sent,
+for example `HTTP 401 Unauthorized from model 'zai_coding::glm-5.3':
+{"error":{"code":"401","message":"token expired or incorrect"}}`. Ensure `GLM_AUTH_TOKEN` is set in the environment where `cru` runs, not just where you configured it. The Crucible daemon inherits the environment from the shell that started it. If you set the variable after the daemon launched, restart the daemon:
 
 ```bash
 cru daemon stop

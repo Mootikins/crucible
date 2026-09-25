@@ -1,4 +1,5 @@
-//! Which API key a session's provider sends, proven at the HTTP boundary.
+//! Which API key a session's provider sends, and what the user reads when
+//! there is none or the provider refuses it, proven at the HTTP boundary.
 //!
 //! The provider is a wiremock server that answers only a request with the
 //! right bearer token. A session on the provider key `openrouter-work`
@@ -201,5 +202,67 @@ async fn a_turn_without_a_key_is_refused_before_it_reaches_the_provider() {
     assert!(
         rig.provider.received_requests().await.unwrap().is_empty(),
         "a refused turn must not reach the provider"
+    );
+}
+
+/// The error of a turn whose key the provider refuses.
+async fn turn_error(am: &Arc<AgentManager>, id: &str) -> String {
+    use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+    let (tx, mut rx) = tokio::sync::broadcast::channel(256);
+    am.send_message(id, "hello".to_string(), &tx, true, None)
+        .await
+        .expect("a turn with a key starts");
+    timeout(Duration::from_secs(10), async {
+        loop {
+            let event = rx.recv().await.expect("the event channel stays open");
+            if let Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished { error, .. })) =
+                event.payload()
+            {
+                return error.expect("a refused turn carries its error");
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for turn_finished")
+}
+
+/// A client shows a turn error as one line. genai put the status and the
+/// provider's body on the lines after "Web stream error for model …", so the
+/// user saw no reason. The line now holds both.
+#[tokio::test]
+async fn a_refused_key_shows_the_status_and_the_body_on_one_line() {
+    let rig = Rig::new().await;
+    rig.accept_only("the-right-key").await;
+    let (am, id) = rig.session(Some("a-wrong-key")).await;
+
+    let error = turn_error(&am, &id).await;
+
+    assert!(!error.contains('\n'), "one line: {error}");
+    assert!(
+        error.contains("HTTP 401 Unauthorized")
+            && error.contains(r#"{"error":{"code":"401","message":"token expired or incorrect"}}"#),
+        "the status and the body of the provider: {error}"
+    );
+}
+
+/// The one-shot path (titles, `cru.session.complete`) says the same.
+#[tokio::test]
+async fn a_refused_key_in_a_completion_shows_the_status_and_the_body() {
+    let rig = Rig::new().await;
+    rig.accept_only("the-right-key").await;
+    let (am, id) = rig.session(Some("a-wrong-key")).await;
+
+    let error = am
+        .complete_once(&id, prompt())
+        .await
+        .expect_err("the provider refuses the key")
+        .to_string();
+
+    assert!(!error.contains('\n'), "one line: {error}");
+    assert!(
+        error.contains("HTTP 401 Unauthorized from model '")
+            && error.contains("glm-5.3")
+            && error.contains("token expired or incorrect"),
+        "the status and the body of the provider: {error}"
     );
 }

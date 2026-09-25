@@ -62,7 +62,12 @@ pub(crate) async fn complete(
     let call = client.exec_chat(&model_name, ChatRequest::new(messages), Some(&options));
 
     let resp = bounded(timeout, async {
-        call.await.map_err(|e| format!("completion failed: {e}"))
+        call.await.map_err(|e| {
+            format!(
+                "completion failed: {}",
+                crate::provider::genai_handle::provider_error_text(&e)
+            )
+        })
     })
     .await?;
     Ok(resp.content.texts().join(""))

@@ -667,6 +667,53 @@ fn drained_transcript(drained: &[ChatMessage]) -> String {
         .join("\n")
 }
 
+/// A failed provider call as one line that starts with what the provider said.
+///
+/// genai keeps the HTTP status and the body of a failed call. Its message puts
+/// them on the lines after "Web stream error for model …", and a client shows
+/// a turn error as one line. So the user saw that first line and not the
+/// reason, for example `401 Unauthorized: token expired or incorrect`.
+pub(crate) fn provider_error_text(err: &genai::Error) -> String {
+    use genai::webc::Error as WebError;
+    let http = match err {
+        genai::Error::HttpError { status, body, .. } => Some((None, status.to_string(), body)),
+        genai::Error::WebStream {
+            model_iden, error, ..
+        } => match error.downcast_ref::<genai::Error>() {
+            Some(genai::Error::HttpError { status, body, .. }) => {
+                Some((Some(model_iden), status.to_string(), body))
+            }
+            _ => None,
+        },
+        genai::Error::WebModelCall {
+            model_iden,
+            webc_error: WebError::ResponseFailedStatus { status, body, .. },
+        } => Some((Some(model_iden), status.to_string(), body)),
+        _ => None,
+    };
+    match http {
+        Some((Some(model), status, body)) => format!(
+            "HTTP {status} from model '{}': {}",
+            model.model_name,
+            one_line(body)
+        ),
+        Some((None, status, body)) => format!("HTTP {status}: {}", one_line(body)),
+        None => one_line(&err.to_string()),
+    }
+}
+
+/// `text` on one line, with at most [`MAX_ERROR_CHARS`] characters.
+fn one_line(text: &str) -> String {
+    /// A provider's error body is usually short JSON. The cap keeps an HTML
+    /// error page from filling the screen.
+    const MAX_ERROR_CHARS: usize = 600;
+    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    match joined.char_indices().nth(MAX_ERROR_CHARS) {
+        Some((cut, _)) => format!("{}…", &joined[..cut]),
+        None => joined,
+    }
+}
+
 /// Ask the same backend the agent uses to summarize `drained` into a
 /// single recap string. The genai client is shared (cheap clone). On
 /// any error this returns `Err`; the caller falls back to keeping the
@@ -1130,7 +1177,8 @@ impl GenaiAgentHandle {
                 Ok(res) => res.stream,
                 Err(err) => {
                     yield TurnEvent::Error(TurnError::Communication(format!(
-                        "genai stream start failed: {err}"
+                        "genai stream start failed: {}",
+                        provider_error_text(&err)
                     )));
                     return;
                 }
@@ -1145,7 +1193,8 @@ impl GenaiAgentHandle {
                     Ok(event) => event,
                     Err(err) => {
                         yield TurnEvent::Error(TurnError::Communication(format!(
-                            "genai stream error: {err}"
+                            "genai stream error: {}",
+                            provider_error_text(&err)
                         )));
                         return;
                     }
