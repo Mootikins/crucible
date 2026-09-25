@@ -29,8 +29,8 @@ use tracing::{info, warn};
 ///
 /// Paths are ordered by priority (highest first) — same-named plugins at
 /// higher-priority paths shadow lower-priority ones. A `runtimepath` entry
-/// therefore shadows a same-named bundled plugin, which is how you override
-/// one.
+/// (600) therefore shadows a same-named bundled plugin (100), which is how
+/// you override one, and `~/.config/crucible/plugins/` (900) shadows both.
 pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, PluginSource)> {
     daemon_plugin_paths_from(&crate::runtime_path::daemon_path(runtimepath))
 }
@@ -46,10 +46,7 @@ pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, 
 pub fn daemon_plugin_paths_from(
     path: &[crucible_core::runtime_path::RuntimeEntry],
 ) -> Vec<(PathBuf, PluginSource)> {
-    let candidates = crucible_core::runtime_path::search_paths(
-        crucible_core::runtime_path::RuntimeAsset::Plugins,
-        path,
-    );
+    use crucible_core::runtime_path::{search_paths, search_sources, RuntimeAsset};
 
     // Record BEFORE filtering for existence. Protection is judged on the name,
     // because the directory an agent creates is by definition the one that did
@@ -59,13 +56,27 @@ pub fn daemon_plugin_paths_from(
     // Recording here rather than asking `protected` to rebuild the same list is
     // what keeps the two from drifting: a tree that reaches this function is
     // protected by the act of reaching it.
-    crate::execution_roots::record(candidates.iter().map(|c| c.path.clone()));
+    crate::execution_roots::record(
+        search_paths(RuntimeAsset::Plugins, path)
+            .into_iter()
+            .map(|c| c.path),
+    );
 
-    candidates
-        .into_iter()
+    // Highest priority first: discovery keeps the first plugin of a name.
+    let sources = match search_sources(RuntimeAsset::Plugins, path) {
+        Ok(sources) => sources,
+        Err(error) => {
+            warn!(%error, "Plugin directories are invalid; no plugins are discovered");
+            return Vec::new();
+        }
+    };
+    sources
+        .list()
+        .iter()
+        .map(|source| &source.value)
         .filter(|c| c.path.exists())
         .inspect(|c| tracing::debug!("Adding plugin path: {:?} ({:?})", c.path, c.origin))
-        .map(|c| (c.path, plugin_source_for(c.origin)))
+        .map(|c| (c.path.clone(), plugin_source_for(c.origin)))
         .collect()
 }
 

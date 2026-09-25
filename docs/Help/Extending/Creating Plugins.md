@@ -28,9 +28,11 @@ Plugins are discovered from these directories (highest priority first):
 |----------|--------|----------|
 | `CRUCIBLE_PLUGIN_PATH` dirs | EnvPath | Development, CI |
 | `$CRUCIBLE_RUNTIME/plugins/` | Runtime | Development, CI |
-| `<entry>/plugins/` for each `runtimepath` entry | Runtime | Opt-in extra trees |
 | `~/.config/crucible/plugins/` | User | Personal plugins |
+| `<entry>/plugins/` for each `runtimepath` entry | Runtime | Opt-in extra trees |
 | `~/.config/crucible/runtime/plugins/`, then exe-relative | Runtime | Bundled with Crucible |
+
+The order is the priority of each source (see [[Help/Configuration#sources — the order of cards, skills and themes]]).
 
 Same-name plugins at higher priority shadow lower ones.
 

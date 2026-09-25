@@ -103,7 +103,7 @@ shape; the examples are Lua.
 | `session_kiln` | path | *(unset)* | Kiln where `cru chat` stores sessions, if not the default kiln |
 | `data_home` | path | `$CRUCIBLE_HOME`, else `~/.crucible` | Daemon data root — project registry, default session storage, home kiln |
 | `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. Move the cards to `~/.config/crucible/agents/`, or to the `agents/` directory of a `runtimepath` entry. Still honoured, warns once. |
-| `runtimepath` | list | `[]` | Extra roots. Each entry's `agents/`, `skills/`, `themes/`, `plugins/` and `defaults/` subdirectories are searched. The shipped runtime is always searched too. For cards, skills and themes, the first entry has priority 600 and each later entry is one lower: below your personal, workspace and kiln sources, above the shipped runtime. For plugins, an entry outranks `~/.config/crucible/plugins/`. |
+| `runtimepath` | list | `[]` | Extra roots. Each entry's `agents/`, `skills/`, `themes/`, `plugins/` and `defaults/` subdirectories are searched. The shipped runtime is always searched too. The first entry has priority 600 and each later entry is one lower: below your personal, workspace and kiln sources (and below `~/.config/crucible/plugins/` for plugins), above the shipped runtime. |
 
 | `sources.priority` | table | `{}` | A new priority for each source level it names, such as `{ workspace = 950 }`. See [[#sources — the order of cards, skills and themes]]. |
 

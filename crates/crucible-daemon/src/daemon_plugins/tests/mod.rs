@@ -701,6 +701,33 @@ fn a_configured_runtimepath_adds_to_the_shipped_runtime_rather_than_replacing_it
     );
 }
 
+/// `~/.config/crucible/plugins` is personal (900), so it outranks a
+/// `runtimepath` entry (600): your own plugin shadows one of the same name
+/// in a tree you put on the path. The order is priority, not position.
+#[test]
+fn a_personal_plugin_outranks_a_runtimepath_plugin() {
+    let config_home = tempfile::TempDir::new().unwrap();
+    let extra = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(config_home.path().join("plugins")).unwrap();
+    std::fs::create_dir(extra.path().join("plugins")).unwrap();
+    let rtp = [extra.path().to_path_buf()];
+    let paths = daemon_plugin_paths_from(&crucible_core::runtime_path::build_path(
+        &crucible_core::runtime_path::PathInputs {
+            runtimepath: &rtp,
+            config_home: Some(config_home.path()),
+            ..Default::default()
+        },
+    ));
+    let dirs: Vec<&std::path::PathBuf> = paths.iter().map(|(p, _)| p).collect();
+    assert_eq!(
+        dirs,
+        [
+            &config_home.path().join("plugins"),
+            &extra.path().join("plugins")
+        ]
+    );
+}
+
 /// With no `runtimepath` configured, the shipped runtime is still found — the
 /// path everyone who never edits config takes.
 #[test]
