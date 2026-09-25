@@ -48,10 +48,9 @@ has it, in `cru session create --agent`, in delegation and in
 cards of one name in the same layer are ambiguous: the bare name returns an
 error that lists the full names. The `agent_directories` entries are one layer.
 
-To add a directory, put it on `runtimepath` rather than in
-`agent_directories`: one entry there supplies `agents/`, `skills/`, `plugins/`
-and `themes/` together, where `agent_directories` supplies cards alone. The old
-knob still works and warns once.
+`agent_directories` is deprecated. It still works and warns once. A
+`runtimepath` entry does not supply cards, so to keep a card, move it to
+`~/.config/crucible/agents/` or to `PROJECT/.crucible/agents/`.
 
 Only `.crucible/` directories. A kiln's visible tree is **not** searched:
 `KILN/agents/` and `KILN/Agents/` used to be, which meant any kiln you cloned,

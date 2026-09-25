@@ -91,14 +91,15 @@ pub fn warn_if_deprecated(roots: &CardRoots) {
         return;
     }
     WARNED.call_once(|| {
-        tracing::warn!(
-            directories = ?roots.agent_directories,
-            "`agent_directories` is deprecated: it serves cards only. \
-             Put the directory on `runtimepath` instead and its agents/, \
-             skills/ and themes/ are all found."
-        );
+        tracing::warn!(directories = ?roots.agent_directories, "{DEPRECATION_ADVICE}");
     });
 }
+
+/// The advice [`warn_if_deprecated`] gives. It names only a directory that
+/// card discovery reads today.
+const DEPRECATION_ADVICE: &str = "`agent_directories` is deprecated. \
+     To keep a card, move it to ~/.config/crucible/agents/ \
+     or to <project>/.crucible/agents/.";
 
 /// Candidate card directories for a session context, highest priority first.
 ///
@@ -288,6 +289,13 @@ pub fn resolve_card<'a>(
 
 #[cfg(test)]
 mod tests {
+    /// `runtimepath` does not reach cards, so the advice must not name it.
+    #[test]
+    fn the_deprecation_advice_names_a_card_directory_that_is_read() {
+        assert!(!super::DEPRECATION_ADVICE.contains("runtimepath"));
+        assert!(super::DEPRECATION_ADVICE.contains("~/.config/crucible/agents/"));
+    }
+
     use super::*;
     use tempfile::TempDir;
 

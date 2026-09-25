@@ -102,7 +102,7 @@ shape; the examples are Lua.
 | `default_kiln` | string | first alphabetically, else the bundled `crucible-docs` | Name of the default kiln (session storage, tool scoping). A pointer to a name in `kilns`; it never names a kiln of its own |
 | `session_kiln` | path | *(unset)* | Kiln where `cru chat` stores sessions, if not the default kiln |
 | `data_home` | path | `$CRUCIBLE_HOME`, else `~/.crucible` | Daemon data root — project registry, default session storage, home kiln |
-| `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. Use `runtimepath` instead: one entry there supplies `agents/`, `skills/`, `plugins/` and `themes/` alike. Still honoured, warns once. |
+| `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. `runtimepath` does not supply cards; move them to `~/.config/crucible/agents/` instead. Still honoured, warns once. |
 | `runtimepath` | list | `[]` | Extra roots. Each entry's `agents/`, `skills/`, `plugins/` and `themes/` subdirectories are searched, ahead of the shipped runtime. |
 | `runtimepath` | list | `[]` | *Extra* runtime roots for plugins and themes, searched after the well-known ones (`~/.config/crucible/runtime`, `$CRUCIBLE_RUNTIME`, next to the binary). Skills discovery does not read it yet |
 
