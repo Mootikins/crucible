@@ -89,15 +89,7 @@ async fn plugin_approval_round_trips_over_socket_and_on_attach() {
     server.shutdown().await;
 }
 
-/// The attach read (`session.status`) over the socket holds the engine's
-/// plugin-turn item for a plugin that the knob set to `stop`, and loses it
-/// when the knob returns to `inherit`.
-#[tokio::test]
-async fn the_status_read_over_the_socket_holds_the_plugin_turn_item() {
-    use crucible_core::session::PluginApproval;
-
-    let server = TestServer::start().await.unwrap();
-    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+async fn chat_session(client: &DaemonClient) -> String {
     let created = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".into(),
@@ -110,27 +102,79 @@ async fn the_status_read_over_the_socket_holds_the_plugin_turn_item() {
         })
         .await
         .unwrap();
-    let id = created["session_id"].as_str().unwrap();
+    created["session_id"].as_str().unwrap().to_owned()
+}
+
+/// The attach read (`session.status`) over the socket, decoded as the TUI
+/// decodes it (`session_status_items`), holds the engine's plugin-turn item
+/// for a plugin that the knob set to `stop`, and loses it at `inherit`.
+#[tokio::test]
+async fn the_status_read_over_the_socket_decodes_into_the_items() {
+    use crucible_core::session::PluginApproval;
+    use crucible_core::status_color::StatusColorGroup;
+    use crucible_core::types::{StatusItemKind, PLUGIN_APPROVAL_ACTION};
+
+    let server = TestServer::start().await.unwrap();
+    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    let id = chat_session(&client).await;
 
     client
-        .session_set_plugin_approval(id, "beta", PluginApproval::Stop)
+        .session_set_plugin_approval(&id, "beta", PluginApproval::Stop)
         .await
         .unwrap();
-    let status = client.session_status(id).await.unwrap();
-    let item = &status["status"][0];
-    assert_eq!(item["id"], "plugin_turns:beta", "{status}");
-    assert_eq!(item["text"], "beta · stop");
-    assert_eq!(item["color_group"], "danger");
-    assert_eq!(item["pinned"], true);
-    assert_eq!(item["action"], "plugin_approval");
-    assert_eq!(item["kind"], "plugin_turns");
+    let items = client.session_status_items(&id).await.unwrap();
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0].id, "plugin_turns:beta");
+    assert_eq!(items[0].text, "beta · stop");
+    assert_eq!(items[0].color_group, StatusColorGroup::Danger);
+    assert!(items[0].pinned);
+    assert_eq!(items[0].action.as_deref(), Some(PLUGIN_APPROVAL_ACTION));
+    assert_eq!(items[0].kind, StatusItemKind::PluginTurns);
+    assert_eq!(items[0].progress, None);
 
     client
-        .session_set_plugin_approval(id, "beta", PluginApproval::Inherit)
+        .session_set_plugin_approval(&id, "beta", PluginApproval::Inherit)
         .await
         .unwrap();
-    let status = client.session_status(id).await.unwrap();
-    assert_eq!(status["status"], serde_json::json!([]), "{status}");
+    assert!(client.session_status_items(&id).await.unwrap().is_empty());
+    server.shutdown().await;
+}
+
+/// A subscribed client gets `status_items_changed` when another client
+/// sets the knob, and the event decodes into the same items as the read.
+#[tokio::test]
+async fn a_knob_change_reaches_a_subscriber_as_decoded_status_items() {
+    use crucible_core::session::PluginApproval;
+    use crucible_core::types::StatusDisplayItem;
+
+    let server = TestServer::start().await.unwrap();
+    let (client, mut events) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .unwrap();
+    let id = chat_session(&client).await;
+    client.session_subscribe(&[id.as_str()]).await.unwrap();
+
+    let other = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    other
+        .session_set_plugin_approval(&id, "alpha", PluginApproval::Ask)
+        .await
+        .unwrap();
+
+    let changed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let event = events.recv().await.expect("the event stream is open");
+            if event.event == "status_items_changed" && event.session_id == id {
+                return event;
+            }
+        }
+    })
+    .await
+    .expect("a knob change sends status_items_changed");
+    let items: Vec<StatusDisplayItem> =
+        serde_json::from_value(changed.data["status"].clone()).expect("the event decodes");
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0].text, "alpha · ask");
+    assert_eq!(items, client.session_status_items(&id).await.unwrap());
     server.shutdown().await;
 }
 
