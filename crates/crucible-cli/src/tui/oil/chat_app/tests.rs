@@ -832,6 +832,7 @@ fn status_event_replaces_the_rendered_list_in_the_app() {
             action: Some("plugin_approval".into()),
             pinned: true,
             plugin: "goal".into(),
+            kind: Default::default(),
         },
     ]));
     assert!(status_line(&app).contains("goal asks"));
@@ -850,6 +851,7 @@ fn status_command_opens_every_item_in_a_keyboard_picker() {
         action: None,
         pinned: false,
         plugin: "weather".into(),
+        kind: Default::default(),
     }]);
     app.handle_repl_command(":status");
     assert!(app.popup.show);

@@ -186,7 +186,7 @@ impl OilChatApp {
         self.popup.filter.clear();
     }
 
-    pub(super) fn get_popup_items(&self) -> Vec<PopupItemNode> {
+    pub(crate) fn get_popup_items(&self) -> Vec<PopupItemNode> {
         let filter = self.popup.filter.to_lowercase();
 
         match self.popup.kind {
@@ -254,6 +254,24 @@ impl OilChatApp {
             AutocompleteKind::Pick { ref source } => self.get_pick_items(source, &filter),
             AutocompleteKind::None => vec![],
         }
+    }
+
+    /// Each row of the `:plugin-mode` menu: its label, the plugin, the value
+    /// that the row sets, and whether the session holds that value now.
+    pub(super) fn plugin_approval_rows(
+        &self,
+    ) -> impl Iterator<Item = (String, String, crucible_core::session::PluginApproval, bool)> + '_
+    {
+        self.plugin_approvals.iter().flat_map(|(plugin, now)| {
+            crucible_core::session::PluginApproval::all().map(move |value| {
+                (
+                    format!("{plugin} · {}", value.as_str()),
+                    plugin.clone(),
+                    value,
+                    value == *now,
+                )
+            })
+        })
     }
 
     pub(super) fn filter_to_popup_items(
@@ -450,6 +468,17 @@ impl OilChatApp {
                     kind: Some("status".into()),
                 })
                 .collect(),
+            PickSource::PluginApproval => self
+                .plugin_approval_rows()
+                .filter(|(label, ..)| {
+                    filter.is_empty() || label.to_lowercase().contains(&filter.to_lowercase())
+                })
+                .map(|(label, _, _, current)| PopupItemNode {
+                    label,
+                    description: current.then(|| "current".to_string()),
+                    kind: Some("approval".into()),
+                })
+                .collect(),
             PickSource::Notes => Self::filter_to_popup_items(&self.kiln_notes, filter, "note", 50),
             PickSource::Files => {
                 Self::filter_to_popup_items(&self.workspace_files, filter, "file", 50)
@@ -547,7 +576,7 @@ impl OilChatApp {
                     PickSource::Commands => {
                         self.set_input(label);
                     }
-                    PickSource::Status => {
+                    PickSource::Status | PickSource::PluginApproval => {
                         self.set_input("");
                     }
                 }

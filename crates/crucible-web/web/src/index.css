@@ -639,6 +639,11 @@
 .status-menu-item:hover, .status-menu-item:focus-visible { background: #ffffff0d; }
 .status-menu-item small { margin-left: auto; opacity: .65; }
 .status-dialog { padding: 12px; }
+.status-approval-row { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+.status-approval-plugin { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-approval-value { padding: 3px 8px; border: 1px solid var(--cru-color-hairline-strong); border-radius: 5px; background: transparent; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.status-approval-value[aria-checked='true'] { border-color: var(--cru-color-attention); background: #ffffff14; }
+.status-approval-value:focus-visible { outline: 2px solid var(--cru-color-attention); outline-offset: 2px; }
 @media (max-width: 650px) {
   [data-chip-key='project'] > span > span, [data-chip-key='kiln'] button > span { display: none; }
   [data-chip-key='kiln'] button > svg:last-child { display: none; }

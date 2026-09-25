@@ -47,6 +47,9 @@ pub(super) struct SessionStatusSlot {
     /// An engine method this item opens, if any.
     action: Option<String>,
     pinned: bool,
+    /// Who made the item: a plugin (`published`), or the engine from the
+    /// plugin approval knob and the running plugin turn (`plugin_turns`).
+    kind: crucible_core::types::StatusItemKind,
 }
 
 /// What `GET /api/session/{id}/status` answers.
@@ -103,13 +106,17 @@ mod tests {
 
         let slots: SessionStatusResponse =
             serde_json::from_value(json.clone()).expect("the reply reads back as its own struct");
-        assert_eq!(slots.status[0].key, "oci");
-        assert_eq!(slots.status[0].id, "oci");
-        assert_eq!(slots.status[1].plugin, "weather");
-        assert_eq!(json["status"][0]["color_group"], "hue-4");
-        assert_eq!(json["status"][0]["priority"], 30);
+        // The engine's plugin-turn item comes first, as the daemon sends it.
+        assert_eq!(slots.status[0].id, "plugin_turns:goal");
+        assert_eq!(json["status"][0]["kind"], "plugin_turns");
         assert_eq!(json["status"][0]["action"], "plugin_approval");
         assert_eq!(json["status"][0]["pinned"], true);
+        assert_eq!(slots.status[1].key, "oci");
+        assert_eq!(slots.status[1].id, "oci");
+        assert_eq!(slots.status[2].plugin, "weather");
+        assert_eq!(json["status"][1]["color_group"], "hue-4");
+        assert_eq!(json["status"][1]["priority"], 30);
+        assert_eq!(json["status"][1]["kind"], "published");
     }
 
     /// The daemon's `progress` — a fraction, `"indeterminate"`, or `null` for
@@ -125,17 +132,17 @@ mod tests {
         let slots: SessionStatusResponse =
             serde_json::from_value(json.clone()).expect("the reply reads back as its own struct");
         assert_eq!(
-            slots.status[0].key, "oci",
+            slots.status[1].key, "oci",
             "a state slot still carries the key, with no progress"
         );
         assert_eq!(
-            json["status"][0]["progress"],
+            json["status"][1]["progress"],
             serde_json::Value::Null,
             "a state slot's progress is null, not absent"
         );
-        assert_eq!(slots.status[1].key, "weather");
+        assert_eq!(slots.status[2].key, "weather");
         assert_eq!(
-            json["status"][1]["progress"],
+            json["status"][2]["progress"],
             serde_json::json!(0.6),
             "a slot mid-work carries its fraction"
         );

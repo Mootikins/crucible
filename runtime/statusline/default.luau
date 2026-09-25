@@ -42,8 +42,11 @@ local layout: { [string]: any } = {
       sl.tasks,
       -- The proposals that wait for a decision. This renders nothing at 0.
       sl.proposals,
-      -- Structured session status, including pinned plugin controls.
+      -- The status items that plugins published. Extra items fold into `+N`.
       sl.items,
+      -- The plugin-turn item of each plugin that runs a turn or whose
+      -- approval is ask or stop. It is always shown.
+      sl.plugin_turns,
       -- A notification takes the right-hand slot while it is showing, and
       -- context usage takes it back afterwards.
       sl.any(sl.notification, sl.context),

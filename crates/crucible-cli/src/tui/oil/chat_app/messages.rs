@@ -187,6 +187,12 @@ pub enum ChatAppMsg {
         plugin: String,
         set: Option<crucible_core::session::PluginApproval>,
     },
+    /// **Command** (TUI → daemon): read each plugin that starts turns with
+    /// its approval, for the `:plugin-mode` menu.
+    FetchPluginApprovals,
+    /// **Event** (daemon → TUI): the plugins and their approvals arrived.
+    /// The menu opens with them.
+    PluginApprovalsLoaded(Vec<(String, crucible_core::session::PluginApproval)>),
     /// **Command** (TUI → daemon): Set precognition search results count.
     /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
     /// `None` clears the override; `Some(0.0)` disables auto-compaction.
@@ -477,6 +483,8 @@ impl ChatAppMsg {
             | Self::ProposalChanged(_)
             | Self::FetchProposals { .. }
             | Self::ProposalsLoaded { .. }
+            | Self::FetchPluginApprovals
+            | Self::PluginApprovalsLoaded(_)
             | Self::OpenDiff(_)
             | Self::DiffLoaded(_)
             | Self::FetchDiffFile(_)

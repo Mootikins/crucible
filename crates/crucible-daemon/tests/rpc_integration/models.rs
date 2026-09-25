@@ -89,6 +89,51 @@ async fn plugin_approval_round_trips_over_socket_and_on_attach() {
     server.shutdown().await;
 }
 
+/// The attach read (`session.status`) over the socket holds the engine's
+/// plugin-turn item for a plugin that the knob set to `stop`, and loses it
+/// when the knob returns to `inherit`.
+#[tokio::test]
+async fn the_status_read_over_the_socket_holds_the_plugin_turn_item() {
+    use crucible_core::session::PluginApproval;
+
+    let server = TestServer::start().await.unwrap();
+    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    let created = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".into(),
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
+            workspace: None,
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+            isolation: None,
+        })
+        .await
+        .unwrap();
+    let id = created["session_id"].as_str().unwrap();
+
+    client
+        .session_set_plugin_approval(id, "beta", PluginApproval::Stop)
+        .await
+        .unwrap();
+    let status = client.session_status(id).await.unwrap();
+    let item = &status["status"][0];
+    assert_eq!(item["id"], "plugin_turns:beta", "{status}");
+    assert_eq!(item["text"], "beta · stop");
+    assert_eq!(item["color_group"], "danger");
+    assert_eq!(item["pinned"], true);
+    assert_eq!(item["action"], "plugin_approval");
+    assert_eq!(item["kind"], "plugin_turns");
+
+    client
+        .session_set_plugin_approval(id, "beta", PluginApproval::Inherit)
+        .await
+        .unwrap();
+    let status = client.session_status(id).await.unwrap();
+    assert_eq!(status["status"], serde_json::json!([]), "{status}");
+    server.shutdown().await;
+}
+
 #[tokio::test]
 async fn test_session_switch_model() {
     use crucible_core::session::SessionAgent;

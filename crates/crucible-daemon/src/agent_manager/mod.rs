@@ -402,6 +402,10 @@ pub struct AgentManager {
     /// hooks, and looking up who titles a session must not queue behind
     /// another session's container build.
     publications: std::sync::OnceLock<crucible_lua::PublicationRegistry>,
+    /// The status items that plugins published (`cru.statusline.publish`),
+    /// bound at daemon startup. The engine adds its plugin-turn items to them
+    /// when a client reads the list; see [`status_items`].
+    status: std::sync::OnceLock<crucible_lua::StatusRegistry>,
     /// Explicit per-session tool sets written by `cru.tools.set_active`.
     ///
     /// Owned here rather than by the tools bridge because three places read
@@ -515,6 +519,7 @@ impl AgentManager {
             statusline_exprs: std::sync::Arc::new(crucible_lua::StatuslineExprRegistry::new()),
             plugin_tool_registry: std::sync::OnceLock::new(),
             publications: std::sync::OnceLock::new(),
+            status: std::sync::OnceLock::new(),
             active_tools: crate::tools::active_tools::ActiveToolSets::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
@@ -1736,6 +1741,7 @@ pub(crate) mod scope;
 pub(crate) mod session_config;
 mod session_permissions;
 mod slot;
+pub(crate) mod status_items;
 pub(crate) mod stream_config;
 pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;

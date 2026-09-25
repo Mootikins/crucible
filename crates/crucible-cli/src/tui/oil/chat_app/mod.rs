@@ -76,6 +76,9 @@ pub struct OilChatApp {
     mcp_servers: Vec<McpServerDisplay>,
     plugin_status: Vec<PluginStatusEntry>,
     status_items: Vec<crucible_core::types::StatusDisplayItem>,
+    /// The rows of the `:plugin-mode` menu, as the daemon sent them when
+    /// the menu opened.
+    plugin_approvals: Vec<(String, crucible_core::session::PluginApproval)>,
     /// Available models fetched from the provider
     available_models: Vec<String>,
     /// Fetch-state of the model list

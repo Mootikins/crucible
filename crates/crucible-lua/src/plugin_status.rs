@@ -66,6 +66,7 @@ impl StatusEntry {
             action: self.action.clone(),
             pinned: self.pinned,
             plugin: self.plugin.clone(),
+            kind: crucible_core::types::StatusItemKind::Published,
         }
     }
 }
@@ -312,8 +313,11 @@ pub fn register_status_module(
                     .unwrap_or_else(|_| plugin_hue(&plugin));
                 let priority = item.get::<i64>("priority").unwrap_or(128).clamp(0, 255) as u8;
                 let action: Option<String> = item.get("action").ok();
-                let pinned = item.get::<bool>("pinned").unwrap_or(false)
-                    || matches!(action.as_deref(), Some("plugin_approval" | "plugin_turn"));
+                // Lua decides `pinned` for its own items. The engine pins the
+                // plugin-turn items (`ask`, `stop`, a running turn) itself,
+                // from the approval knob; an action name here says nothing
+                // about that state.
+                let pinned = item.get::<bool>("pinned").unwrap_or(false);
                 published.push((
                     id,
                     StatusEntry {
@@ -362,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn lua_publishes_one_ordered_status_list_and_forces_control_pins() {
+    fn lua_publishes_one_ordered_status_list_and_keeps_its_own_pins() {
         let reg = StatusRegistry::new();
         let lua = lua_with_status(reg.clone());
         lua.load(
@@ -372,6 +376,7 @@ mod tests {
               sl.item{ id="later", text="later", priority=40, plugin="weather" },
               sl.item{ id="approval", text="goal · ask", priority=20,
                        color="warn", action="plugin_approval", pinned=false },
+              sl.item{ id="pin", text="pinned", priority=30, pinned=true },
               sl.item{ id="first", text="first", priority=10, color="hue-3" },
             })
         "#,
@@ -381,11 +386,15 @@ mod tests {
         let items = reg.get("s1");
         assert_eq!(
             items.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
-            ["first", "approval", "later"]
+            ["first", "approval", "pin", "later"]
         );
         assert_eq!(items[0].1.priority, 10);
         assert_eq!(items[0].1.color_group, StatusColorGroup::Hue3);
-        assert!(items[1].1.pinned);
+        assert!(
+            !items[1].1.pinned,
+            "an action name does not pin: the engine owns the approval state"
+        );
+        assert!(items[2].1.pinned);
         assert_eq!(items[1].1.action.as_deref(), Some("plugin_approval"));
         lua.load(
             r#"cru.statusline.publish("s1", { cru.statusline.item{ id="new", text="new" } })"#,

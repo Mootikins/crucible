@@ -36,6 +36,8 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:pick [source]` | Open a fuzzy picker (notes, files, commands) |
 | `:mcp` | Show MCP server status |
 | `:plugins` | Show loaded plugins |
+| `:status` | Open every status item, including the items that fold into `+N` |
+| `:plugin-mode` | Open the menu of the plugins that start turns, with their `inherit`, `ask` and `stop` values. The choice sets the session's approval through the daemon |
 | `:reload [name]` | Reload a plugin (no name = all) |
 | `:config` | Show current configuration |
 | `:lua <expr>` | Evaluate Lua daemon-side (shorthand: `:= <expr>`) |

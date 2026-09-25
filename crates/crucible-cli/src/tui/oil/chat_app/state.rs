@@ -126,6 +126,8 @@ pub enum PickSource {
     Commands,
     Files,
     Status,
+    /// The rows of the `:plugin-mode` menu: each plugin with each value.
+    PluginApproval,
 }
 
 /// Message queue state — message counter and Ctrl-C tracking

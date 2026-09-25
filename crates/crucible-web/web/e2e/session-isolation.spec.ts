@@ -194,7 +194,8 @@ test("plugin status dots expand and expose the whole ordered list", async ({ pag
     sessionStatus: {
       status: [
         { key: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', level: 'info', color_group: 'warn', priority: 10 },
-        { key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
+        // The engine's plugin-turn item, as `session.status` sends it.
+        { id: 'plugin_turns:goal', key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval', kind: 'plugin_turns' },
       ],
     },
   });

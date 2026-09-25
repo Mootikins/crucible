@@ -243,12 +243,8 @@ impl OilChatApp {
             // The daemon holds the proposals, so the fetch is the runner's.
             ReplCommand::Proposals => Action::Send(ChatAppMsg::FetchProposals { open: true }),
             ReplCommand::Status => self.open_picker(Some("status")),
-            ReplCommand::PluginMode => {
-                // TODO(plugin-turns): replace this with the daemon's approval
-                // mode list once that branch lands on this one.
-                self.add_system_message("Plugin approval controls will appear here when the session plugin-mode API is available.".into());
-                Action::Continue
-            }
+            // The daemon holds the list: the menu opens when it arrives.
+            ReplCommand::PluginMode => Action::Send(ChatAppMsg::FetchPluginApprovals),
             ReplCommand::Plugins => {
                 self.handle_plugins_command();
                 Action::Continue
@@ -926,7 +922,7 @@ impl OilChatApp {
     }
 
     pub(super) fn open_picker(&mut self, source: Option<&str>) -> Action<ChatAppMsg> {
-        use super::state::{AutocompleteKind, PickSource};
+        use super::state::PickSource;
 
         let pick_source = match source {
             None | Some("all") => PickSource::All,
@@ -942,15 +938,33 @@ impl OilChatApp {
                 return Action::Continue;
             }
         };
+        self.show_picker(pick_source);
+        Action::Continue
+    }
 
+    fn show_picker(&mut self, source: super::state::PickSource) {
         self.popup.show = true;
-        self.popup.kind = AutocompleteKind::Pick {
-            source: pick_source,
-        };
+        self.popup.kind = super::state::AutocompleteKind::Pick { source };
         self.popup.filter.clear();
         self.popup.selected = 0;
         // Clear input so the picker starts fresh
         self.set_input("");
+    }
+
+    /// Open the menu of each plugin that starts turns, with its three
+    /// approval values (decision 10). The rows come from the daemon, so the
+    /// menu shows what the session holds, not a copy in this client.
+    pub(super) fn open_plugin_approval_menu(
+        &mut self,
+        approvals: Vec<(String, crucible_core::session::PluginApproval)>,
+    ) -> Action<ChatAppMsg> {
+        if approvals.is_empty() {
+            self.add_system_message("No plugin starts turns in this session".to_string());
+            return Action::Continue;
+        }
+        self.plugin_approvals = approvals;
+        // Not a `:pick` source: the rows exist only after the daemon answers.
+        self.show_picker(super::state::PickSource::PluginApproval);
         Action::Continue
     }
 

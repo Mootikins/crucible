@@ -266,6 +266,21 @@ impl OilChatApp {
                 }
                 Action::Continue
             }
+            AutocompleteKind::Pick {
+                source: super::state::PickSource::PluginApproval,
+            } => {
+                self.input.handle(InputAction::Clear);
+                self.close_popup();
+                // The runner sets the knob through the daemon and shows the
+                // value that the handle then reads.
+                match self.plugin_approval_rows().find(|(row, ..)| *row == label) {
+                    Some((_, plugin, approval, _)) => Action::Send(ChatAppMsg::PluginApproval {
+                        plugin,
+                        set: Some(approval),
+                    }),
+                    None => Action::Continue,
+                }
+            }
             _ => Action::Continue,
         }
     }

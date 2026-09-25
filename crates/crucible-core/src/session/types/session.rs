@@ -11,7 +11,10 @@ use super::id::SessionId;
 use crate::config::KilnName;
 
 /// A permission floor a plugin can add to its turns.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `EnumIter` gives the menus of both clients every value, so a new value
+/// reaches them without a second list.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, strum::EnumIter)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PluginApproval {
@@ -22,6 +25,11 @@ pub enum PluginApproval {
 }
 
 impl PluginApproval {
+    /// Every value, in the order that a menu shows them.
+    pub fn all() -> impl Iterator<Item = Self> {
+        <Self as strum::IntoEnumIterator>::iter()
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Inherit => "inherit",

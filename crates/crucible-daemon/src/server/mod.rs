@@ -1283,14 +1283,15 @@ impl Server {
                 }
             }
             {
+                // The event carries the whole list: the engine's plugin-turn
+                // items and what plugins published.
                 let event_tx = self.rpc_context.event_tx.clone();
                 let status = loader.status();
-                let read = status.clone();
-                if !status.set_change_notifier(std::sync::Arc::new(move |session_id: &str| {
-                    crate::server::ui_broadcast::broadcast_status_items_changed(
-                        &event_tx, &read, session_id,
-                    );
-                })) {
+                self.agent_manager.set_status_registry(status.clone());
+                if !status.set_change_notifier(crate::agent_manager::status_items::change_notifier(
+                    Arc::downgrade(&self.agent_manager),
+                    event_tx,
+                )) {
                     tracing::warn!("status item change notifier was already installed");
                 }
             }

@@ -802,8 +802,9 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 json!({"status": []})
             } else {
                 json!({"status": [
-                    {"id": "oci", "key": "oci", "plugin": "oci", "text": "sandboxed: alpine:latest", "level": "info", "progress": null, "color_group": "hue-4", "priority": 30, "action": "plugin_approval", "pinned": true},
-                    {"id": "weather", "key": "weather", "plugin": "weather", "text": "storm warning", "level": "warn", "progress": 0.6, "color_group": "warn", "priority": 80, "action": null, "pinned": false},
+                    {"id": "plugin_turns:goal", "key": "plugin_turns:goal", "plugin": "goal", "text": "goal · ask", "level": "warn", "progress": null, "color_group": "warn", "priority": 0, "action": "plugin_approval", "pinned": true, "kind": "plugin_turns"},
+                    {"id": "oci", "key": "oci", "plugin": "oci", "text": "sandboxed: alpine:latest", "level": "info", "progress": null, "color_group": "hue-4", "priority": 30, "action": null, "pinned": false, "kind": "published"},
+                    {"id": "weather", "key": "weather", "plugin": "weather", "text": "storm warning", "level": "warn", "progress": 0.6, "color_group": "warn", "priority": 80, "action": null, "pinned": false, "kind": "published"},
                 ]})
             }
         }

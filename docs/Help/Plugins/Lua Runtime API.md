@@ -1283,18 +1283,27 @@ local sl = cru.statusline
 sl.publish(session.id, {
   sl.item{ id = "forecast", text = "Rain soon", priority = 40,
            plugin = "weather", color = "hue-4" },
-  sl.item{ id = "goal-approval", text = "goal · ask", priority = 10,
-           plugin = "goal", color = "warn", action = "plugin_approval" },
+  sl.item{ id = "sync", text = "sync idle", priority = 10,
+           plugin = "sync", color = "ok", pinned = true },
 })
 ```
 
 Each `id` must be nonempty and unique within the list. Lower priorities appear
 first (0–255; default 128). Text is cleaned to one line and capped at 50
-characters. `pinned = true` keeps an item visible when space runs out; the
-engine also pins `plugin_approval` and `plugin_turn` actions. An omitted color
-uses the plugin's stable hue. The clients use the action name to open an engine
-control, not a plugin supplied command string. The TUI's `:status` picker shows
-every item, including those behind its `+N` overflow.
+characters. `pinned = true` keeps an item visible when space runs out. An
+omitted color uses the plugin's stable hue. The clients use the action name to
+open an engine control, not a plugin supplied command string. The TUI's
+`:status` picker shows every item, including those behind its `+N` overflow.
+
+The engine adds one item of its own for each plugin whose turn runs now, or
+whose approval in the session is `ask` or `stop`. The item reads `goal · ask`,
+`goal · stop` or `↻ goal`, with the `warn`, `danger` or `info` color. It is
+always pinned, and its action opens the menu of the plugins that start turns,
+with their `inherit`, `ask` and `stop` values. The menu sets the session's
+approval knob through the daemon: the same value that
+`:set plugin_approval.<plugin>=…` sets. The item is not in the published list,
+so a `publish` does not remove it, and a plugin cannot show a permission state
+that the session does not hold. The TUI places it with `sl.plugin_turns`.
 
 On the web composer, the same items appear at the right of the chip row as
 colored dots. Hover or keyboard focus reveals their text. Informational items
@@ -1303,8 +1312,8 @@ a quiet divider. A neutral ring distinguishes pinned dots from informational
 dots with the same color. Click a dot to open the full status menu, including
 items outside the visible strip. On touch, the first tap previews names for
 three seconds and the next tap opens that item's detail or engine control.
-Numeric `priority` only orders items; `pinned` controls visibility. Lua owns
-the text, including the example label `goal · ask`.
+Numeric `priority` only orders items; `pinned` controls visibility. The web
+draws each item's text as it arrives and does not rewrite a label.
 
 ## Publications
 

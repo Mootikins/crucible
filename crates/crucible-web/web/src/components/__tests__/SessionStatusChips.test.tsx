@@ -80,15 +80,54 @@ afterEach(() => {
 });
 
 describe('SessionStatusChips', () => {
-  it('opens the plugin approval control from the shared command route', async () => {
+  // The engine's item for a plugin set to `ask`, as `session.status` sends it.
+  const engineItem = {
+    id: 'plugin_turns:goal', key: 'plugin_turns:goal', plugin: 'goal', text: 'goal · ask',
+    level: 'warn', color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval',
+    progress: null, kind: 'plugin_turns',
+  };
+  const APPROVALS = 'GET /api/session/s1/config/plugin-approvals';
+
+  it('opens the approval menu from the command route with the daemon list', async () => {
     setCurrentSession(baseSession());
-    serve({ [STATUS]: () => ({ status: [{ id: 'ask', key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' }] }) });
+    serve({
+      [STATUS]: () => ({ status: [engineItem] }),
+      [APPROVALS]: () => ({ approvals: { goal: 'ask', sync: 'inherit' } }),
+    });
     render(() => <SessionStatusChips />);
-    await waitFor(() => expect(screen.getByTestId('session-status-ask')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('session-status-plugin_turns:goal')).toBeInTheDocument());
     getBus().emit('openPluginApproval', {});
-    expect(screen.getByRole('dialog', { name: 'Plugin approval' })).toBeInTheDocument();
-    expect(screen.getByText('goal')).toBeInTheDocument();
+    const dialog = await waitFor(() => screen.getByRole('dialog', { name: 'Plugin approval' }));
+    // Every plugin that the daemon lists, with its three values; the value
+    // that the session holds is the checked one.
+    await waitFor(() => expect(dialog.querySelectorAll('[role="radiogroup"]')).toHaveLength(2));
+    const goal = screen.getByRole('radiogroup', { name: 'goal' });
+    expect([...goal.querySelectorAll('[role="radio"]')].map((r) => r.textContent)).toEqual(['inherit', 'ask', 'stop']);
+    expect(screen.getByRole('radio', { name: 'goal: ask' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'sync: inherit' })).toHaveAttribute('aria-checked', 'true');
   });
+
+  it('sets the knob through the daemon when a value is chosen from the item', async () => {
+    setCurrentSession(baseSession());
+    const put = 'PUT /api/session/s1/config/plugins/goal/approval';
+    const env = serve({
+      [STATUS]: () => ({ status: [engineItem] }),
+      [APPROVALS]: () => ({ approvals: { goal: 'ask' } }),
+      [put]: () => ({ plugin: 'goal', approval: 'stop' }),
+    });
+    render(() => <SessionStatusChips />);
+    const dot = await waitFor(() => screen.getByTestId('session-status-plugin_turns:goal'));
+    dot.click();
+    screen.getByRole('menuitem', { name: /goal · ask/ }).click();
+    const stop = await waitFor(() => screen.getByRole('radio', { name: 'goal: stop' }));
+    stop.click();
+    await waitFor(() => expect(env.fetch.calls(put)).toBe(1));
+    const sent = await env.fetch.sent(
+      env.fetch.mock.calls.findIndex(([input]) => String(input instanceof Request ? input.url : input).includes('/plugins/goal/approval')),
+    );
+    expect(sent.body).toEqual({ approval: 'stop' });
+  });
+
   it('renders a slot from a plugin it has never heard of', async () => {
     // The anti-regression test for the generic-rendering rule: nothing in the
     // frontend knows what these keys mean. If a new plugin ever needs a code

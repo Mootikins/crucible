@@ -607,6 +607,9 @@ impl AgentManager {
                     serde_json::json!({"plugin": plugin, "approval": approval.as_str()}),
                 ),
             );
+            // The plugin-turn status item reads the knob, so it changes
+            // with it.
+            self.emit_status_items(session_id, tx).await;
         }
         Ok(())
     }

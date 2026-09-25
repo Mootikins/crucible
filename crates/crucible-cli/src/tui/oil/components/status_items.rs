@@ -6,6 +6,7 @@
 //! comes from the daemon, and it is read from a cache that a push updates rather
 //! than pulled per frame.
 
+use crucible_core::types::{StatusDisplayItem, StatusItemKind};
 use crucible_lua::statusline_items::{StatusCond, StatusItem};
 use crucible_oil::node::{row, spacer, styled, Node};
 use crucible_oil::style::Style;
@@ -123,6 +124,15 @@ pub fn render_bar(items: &[StatusItem], ctx: &ItemContext<'_>) -> Node {
     row(children)
 }
 
+/// A pinned status item, as a badge in its named color.
+fn pinned_badge(entry: &StatusDisplayItem) -> Fragment {
+    let group = crucible_core::status_color::StatusColorGroup::from_name(&entry.color_group);
+    Fragment::badge(
+        format!("{} ", entry.text),
+        Style::new().fg(theme::status_color::color(group, theme::active())),
+    )
+}
+
 /// Evaluate one item into zero or more fragments.
 ///
 /// An empty list means "renders nothing", which is what makes
@@ -201,7 +211,14 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
         StatusItem::Status => text_frag(ctx.data.status.clone()),
 
         StatusItem::List => {
-            let entries = &ctx.data.status_items;
+            // The engine's plugin-turn items belong to `sl.plugin_turns`, so
+            // a layout that places both draws each item once.
+            let entries: Vec<_> = ctx
+                .data
+                .status_items
+                .iter()
+                .filter(|entry| entry.kind == StatusItemKind::Published)
+                .collect();
             let info: Vec<_> = entries.iter().filter(|entry| !entry.pinned).collect();
             let pinned: Vec<_> = entries.iter().filter(|entry| entry.pinned).collect();
             let pinned_width: usize = pinned
@@ -243,16 +260,18 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
                         .fg(theme::active().resolve_color(theme::active().colors.text_muted)),
                 ));
             }
-            for entry in pinned {
-                let group =
-                    crucible_core::status_color::StatusColorGroup::from_name(&entry.color_group);
-                fragments.push(Fragment::badge(
-                    format!("{} ", entry.text),
-                    Style::new().fg(theme::status_color::color(group, theme::active())),
-                ));
-            }
+            fragments.extend(pinned.into_iter().map(|entry| pinned_badge(entry)));
             fragments
         }
+
+        // Always whole: `ask`, `stop` and a running plugin turn never fold.
+        StatusItem::PluginTurns => ctx
+            .data
+            .status_items
+            .iter()
+            .filter(|entry| entry.kind == StatusItemKind::PluginTurns)
+            .map(pinned_badge)
+            .collect(),
 
         // Renders as message plus a reversed severity badge, or — with no
         // active toast — one badge per pending count. Both shapes are carried
@@ -437,6 +456,7 @@ mod tests {
             action: None,
             pinned,
             plugin: "test".into(),
+            kind: Default::default(),
         })
         .collect();
         let rendered = render(&[StatusItem::List], &data, false);
@@ -448,6 +468,44 @@ mod tests {
             rendered.contains("+2"),
             "hidden information needs an overflow count: {rendered}"
         );
+    }
+
+    /// `sl.items` draws what plugins published, and `sl.plugin_turns`
+    /// draws the engine's items. A layout with both draws each item once,
+    /// and the plugin-turn item never folds into `+N`.
+    #[test]
+    fn plugin_turn_items_draw_only_through_their_own_item() {
+        let mut data = data();
+        data.status_width = 4;
+        data.status_items = vec![
+            crucible_core::types::StatusDisplayItem {
+                id: "plugin_turns:goal".into(),
+                text: "goal · ask".into(),
+                priority: 0,
+                color_group: "warn".into(),
+                action: Some("plugin_approval".into()),
+                pinned: true,
+                plugin: "goal".into(),
+                kind: StatusItemKind::PluginTurns,
+            },
+            crucible_core::types::StatusDisplayItem {
+                id: "sync".into(),
+                text: "sync idle".into(),
+                priority: 10,
+                color_group: "ok".into(),
+                action: None,
+                pinned: false,
+                plugin: "sync".into(),
+                kind: StatusItemKind::Published,
+            },
+        ];
+        let items = render(&[StatusItem::List], &data, false);
+        assert!(!items.contains("goal"), "{items}");
+        assert!(items.contains("+1"), "{items}");
+        let turns = render(&[StatusItem::PluginTurns], &data, false);
+        assert_eq!(turns.trim(), "goal · ask");
+        let both = render(&[StatusItem::List, StatusItem::PluginTurns], &data, false);
+        assert_eq!(both.matches("goal · ask").count(), 1, "{both}");
     }
 
     #[test]

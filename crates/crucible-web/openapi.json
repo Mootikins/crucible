@@ -7639,7 +7639,7 @@
       },
       "PluginApproval": {
         "type": "string",
-        "description": "A permission floor a plugin can add to its turns.",
+        "description": "A permission floor a plugin can add to its turns.\n\n`EnumIter` gives the menus of both clients every value, so a new value\nreaches them without a second list.",
         "enum": [
           "inherit",
           "ask",
@@ -9466,7 +9466,8 @@
           "progress",
           "color_group",
           "priority",
-          "pinned"
+          "pinned",
+          "kind"
         ],
         "properties": {
           "id": {
@@ -9511,6 +9512,10 @@
           },
           "pinned": {
             "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StatusItemKind",
+            "description": "Who made the item: a plugin (`published`), or the engine from the\nplugin approval knob and the running plugin turn (`plugin_turns`)."
           }
         }
       },
@@ -9875,6 +9880,14 @@
             "minimum": 0
           }
         }
+      },
+      "StatusItemKind": {
+        "type": "string",
+        "description": "The source of a status item.",
+        "enum": [
+          "published",
+          "plugin_turns"
+        ]
       },
       "SurfaceChangedEvent": {
         "type": "object",

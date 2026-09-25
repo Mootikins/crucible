@@ -319,7 +319,10 @@ impl OilChatApp {
                 return Action::Send(ChatAppMsg::FetchProposals { open: false });
             }
             // The fetch is the runner's work.
-            ChatAppMsg::FetchProposals { .. } => {}
+            ChatAppMsg::FetchProposals { .. } | ChatAppMsg::FetchPluginApprovals => {}
+            ChatAppMsg::PluginApprovalsLoaded(approvals) => {
+                return self.open_plugin_approval_menu(approvals);
+            }
             ChatAppMsg::ProposalsLoaded { proposals, open } => {
                 self.proposals_loaded(proposals, open);
             }

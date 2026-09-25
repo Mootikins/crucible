@@ -463,9 +463,11 @@ impl SessionSlot {
     }
 
     /// The turn is over. A permission request now belongs to no turn.
-    pub(crate) fn clear_turn_gate(&self) {
-        *self.lock_turn_gate() = None;
+    /// Returns the gate of the turn that ended.
+    pub(crate) fn clear_turn_gate(&self) -> Option<TurnGate> {
+        let ended = self.lock_turn_gate().take();
         self.lock_denials().clear();
+        ended
     }
 
     /// Keep why the gate refused the ACP call `call_id`.

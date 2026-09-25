@@ -127,20 +127,38 @@ fn spec_rows(loader: &DaemonPluginLoader) -> Vec<crate::rpc_client::PluginSpecRo
 pub(crate) async fn handle_session_status(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+    agents: &Arc<crate::agent_manager::AgentManager>,
 ) -> Response {
     let params = match typed_params::<crate::rpc_client::SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = &params.session_id;
+    // The engine's plugin-turn items first. They come from the approval knob
+    // and the running turn, not from the registry, and are work of no size.
+    let engine = agents.plugin_turn_status_items(session_id).await;
     let loader_guard = plugin_loader.lock().await;
     let slots = loader_guard
         .as_ref()
         .map(|l| l.status().get(session_id))
         .unwrap_or_default();
-    let status: Vec<_> = slots
-        .into_iter()
-        .map(|(key, e)| {
+    let engine = engine.into_iter().map(|item| {
+        serde_json::json!({
+            "id": item.id,
+            "key": item.id,
+            "plugin": item.plugin,
+            "text": item.text,
+            "level": item.color_group,
+            "color_group": item.color_group,
+            "priority": item.priority,
+            "action": item.action,
+            "pinned": item.pinned,
+            "progress": serde_json::Value::Null,
+            "kind": item.kind,
+        })
+    });
+    let status: Vec<_> = engine
+        .chain(slots.into_iter().map(|(key, e)| {
             // Progress goes out as a fraction or the string "indeterminate",
             // and is absent when the slot describes a state rather than work.
             // Absent must stay distinguishable from 0.0: a bar pinned at zero
@@ -163,8 +181,9 @@ pub(crate) async fn handle_session_status(
                 "action": e.action,
                 "pinned": e.pinned,
                 "progress": progress,
+                "kind": crucible_core::types::StatusItemKind::Published,
             })
-        })
+        }))
         .collect();
     Response::success(req.id, serde_json::json!({ "status": status }))
 }

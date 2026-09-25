@@ -117,6 +117,7 @@ mod status_bar_tests {
             action: None,
             pinned,
             plugin: "test".into(),
+            kind: Default::default(),
         })
         .collect();
         let plain = render_configured_bar(&bar, 40);

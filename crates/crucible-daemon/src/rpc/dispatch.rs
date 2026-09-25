@@ -1042,7 +1042,11 @@ impl RpcDispatcher {
             ),
             RpcMethod::SessionStatus => forward!(
                 id,
-                crate::server::plugins::handle_session_status(req.clone(), &self.ctx.plugin_loader)
+                crate::server::plugins::handle_session_status(
+                    req.clone(),
+                    &self.ctx.plugin_loader,
+                    &self.ctx.agents
+                )
             ),
             RpcMethod::PluginRunCommand => forward!(
                 id,

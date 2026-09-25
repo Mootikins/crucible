@@ -3,7 +3,12 @@ import { Portal } from 'solid-js/web';
 import { getBus } from '@/lib/bus';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useSessionModes } from '@/lib/query/modes';
-import { useSessionStatus } from '@/lib/query/session-config';
+import {
+  usePluginApprovals,
+  useSessionStatus,
+  useSetPluginApproval,
+  type PluginApproval,
+} from '@/lib/query/session-config';
 import type { ModeDescriptor } from '@/lib/types';
 
 /**
@@ -38,6 +43,16 @@ function progressSuffix(progress: unknown): string | null {
   return null;
 }
 
+/**
+ * The three values of the approval knob, in menu order. The type check below
+ * fails the build when the daemon's `PluginApproval` gains a value that this
+ * list does not name.
+ */
+const APPROVALS = ['inherit', 'ask', 'stop'] as const satisfies readonly PluginApproval[];
+type Unlisted = Exclude<PluginApproval, (typeof APPROVALS)[number]>;
+const approvalsComplete: [Unlisted] extends [never] ? true : never = true;
+void approvalsComplete;
+
 const legacyGroup = (level: string): string => {
   if (level === 'warn' || level === 'warning') return 'warn';
   if (level === 'error' || level === 'danger') return 'danger';
@@ -56,9 +71,24 @@ export const SessionStatusChips: Component = () => {
     const listed = modes.data;
     return listed?.modes.find((mode) => mode.id === listed.current_mode_id)?.writes ?? null;
   };
-  const controls = () => [...new Set(slots().filter((s) => s.action === 'plugin_approval').map((s) => s.plugin))];
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [approvalOpen, setApprovalOpen] = createSignal(false);
+  // The engine control of decision 10: each plugin that starts turns, with
+  // the value that the session holds. Read from the daemon when the menu
+  // opens; `plugin_approval_changed` refreshes it while it is open.
+  const approvals = usePluginApprovals(() => (approvalOpen() ? sessionId() ?? null : null));
+  const setApproval = useSetPluginApproval();
+  const [approvalError, setApprovalError] = createSignal<string | null>(null);
+  const chooseApproval = async (plugin: string, approval: PluginApproval) => {
+    const id = sessionId();
+    if (!id) return;
+    setApprovalError(null);
+    try {
+      await setApproval.mutateAsync({ id, plugin, approval });
+    } catch (err) {
+      setApprovalError(err instanceof Error ? err.message : 'Failed to set plugin approval');
+    }
+  };
   const [detail, setDetail] = createSignal<string | null>(null);
   const [preview, setPreview] = createSignal(false);
   const [maxWidth, setMaxWidth] = createSignal(420);
@@ -187,9 +217,22 @@ export const SessionStatusChips: Component = () => {
     <Show when={approvalOpen()}><Portal><div role="dialog" aria-label="Plugin approval" class="status-menu status-dialog"
       style={{ right: `${position().right}px`, bottom: `${position().bottom}px` }}>
       <div class="flex items-center justify-between gap-4"><strong>Plugin approval</strong><button type="button" aria-label="Close plugin approval" onClick={() => setApprovalOpen(false)}>×</button></div>
-      {/* TODO(plugin-turns): bind choices to the session knob when that branch lands. */}
-      <For each={controls()}>{(plugin) => <div class="mt-2"><div>{plugin}</div><div class="text-floor-muted">inherit · ask · stop</div></div>}</For>
-      <Show when={!controls().length}><p class="text-floor-muted">No plugin approval controls are active.</p></Show>
+      <For each={Object.entries(approvals.data ?? {})}>{([plugin, current]) =>
+        <div role="radiogroup" aria-label={plugin} class="status-approval-row">
+          <span class="status-approval-plugin">{plugin}</span>
+          <For each={APPROVALS}>{(value) =>
+            <button type="button" role="radio" aria-label={`${plugin}: ${value}`}
+              aria-checked={current === value} class="status-approval-value"
+              onClick={() => void chooseApproval(plugin, value)}>{value}</button>
+          }</For>
+        </div>
+      }</For>
+      <Show when={approvals.isSuccess && Object.keys(approvals.data ?? {}).length === 0}>
+        <p class="text-floor-muted">No plugin starts turns in this session.</p>
+      </Show>
+      <Show when={approvalError() ?? (approvals.error?.message ?? null)}>{(message) =>
+        <p role="alert" class="text-error">{message()}</p>
+      }</Show>
     </div></Portal></Show>
     <Show when={detail()}><Portal><div role="dialog" aria-label="Status detail" class="status-menu status-dialog"
       style={{ right: `${position().right}px`, bottom: `${position().bottom}px` }}>

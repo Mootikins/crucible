@@ -3543,6 +3543,9 @@ export interface components {
         };
         /**
          * @description A permission floor a plugin can add to its turns.
+         *
+         *     `EnumIter` gives the menus of both clients every value, so a new value
+         *     reaches them without a second list.
          * @enum {string}
          */
         PluginApproval: "inherit" | "ask" | "stop";
@@ -4475,11 +4478,21 @@ export interface components {
             id: string;
             /** @description What the slot is about. The plugin chooses it. */
             key: string;
+            /**
+             * @description Who made the item: a plugin (`published`), or the engine from the
+             *     plugin approval knob and the running plugin turn (`plugin_turns`).
+             */
+            kind: components["schemas"]["StatusItemKind"];
             /** @description How loud the line is, such as `info` or `warn`. */
             level: string;
             pinned: boolean;
             /** @description Which plugin published the slot. */
             plugin: string;
+            /**
+             * Format: int32
+             * @description Smaller priorities appear first; pinned items remain visible in overflow.
+             */
+            priority: number;
             /**
              * @description Progress of the slot's work: a fraction (`0.0..=1.0`), the literal
              *     string `"indeterminate"`, or `null` when the slot describes a state
@@ -4493,11 +4506,6 @@ export interface components {
              *     rather than optional.
              */
             progress: unknown;
-            /**
-             * Format: int32
-             * @description Smaller priorities appear first; pinned items remain visible in overflow.
-             */
-            priority: number;
             /** @description The line to draw. */
             text: string;
         };
@@ -4632,6 +4640,11 @@ export interface components {
             /** @description The one-word source name, as [`ConfigSource::short`] gives it. */
             source: string;
         };
+        /**
+         * @description The source of a status item.
+         * @enum {string}
+         */
+        StatusItemKind: "published" | "plugin_turns";
         /**
          * @description A surface changed, delivered to the browser.
          *
@@ -5006,6 +5019,7 @@ export type SchemaSkippedRef = components['schemas']['SkippedRef'];
 export type SchemaSkipReason = components['schemas']['SkipReason'];
 export type SchemaSlashCommand = components['schemas']['SlashCommand'];
 export type SchemaSourceOrigin = components['schemas']['SourceOrigin'];
+export type SchemaStatusItemKind = components['schemas']['StatusItemKind'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
 export type SchemaSurfaceLineRow = components['schemas']['SurfaceLineRow'];
 export type SchemaSurfaceListResponse = components['schemas']['SurfaceListResponse'];

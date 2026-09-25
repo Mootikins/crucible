@@ -814,6 +814,11 @@ impl AgentManager {
                 permission_override,
                 origin: origin.clone(),
             });
+        // A running plugin turn pins its status item (decision 10). The
+        // slot holds the origin now, so the list shows it.
+        if origin.plugin().is_some() {
+            self.emit_status_items(session_id, event_tx).await;
+        }
         // The turn proposal ends with the turn, on every exit path below.
         let proposals = self.proposals.clone();
         let proposal_session = session.id.clone();
@@ -903,7 +908,13 @@ impl AgentManager {
             // proposal before an awaiter sees the outcome and sends again.
             proposals.end_turn(&proposal_session);
             // The same for the permission state of the turn.
-            slot.clear_turn_gate();
+            let ended = slot.clear_turn_gate();
+            // The item of a plugin turn goes with the turn.
+            if ended.is_some_and(|gate| gate.origin.plugin().is_some()) {
+                manager
+                    .emit_status_items(&session_id_owned, &event_tx_clone)
+                    .await;
+            }
 
             // A caller that awaits the turn (a workflow step, a delegation)
             // owns the next turn of the session, so a `turn:complete` handler

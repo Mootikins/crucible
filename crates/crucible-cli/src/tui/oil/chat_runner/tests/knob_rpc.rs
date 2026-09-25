@@ -194,6 +194,84 @@ async fn plugin_approval_is_set_and_read_through_the_handle() {
     assert!(screen.contains("plugin_approval.goal=ask"), "{screen}");
 }
 
+/// `:plugin-mode` is the engine command of decision 10. It asks the runner
+/// for the daemon's list, opens a menu of each plugin with its three
+/// values, and the chosen row sets the knob through the handle.
+#[tokio::test]
+async fn the_plugin_menu_sets_the_approval_through_the_handle() {
+    let mut app = OilChatApp::default();
+    let fetch = type_and_submit(&mut app, ":plugin-mode");
+    assert!(
+        matches!(fetch, Action::Send(ChatAppMsg::FetchPluginApprovals)),
+        "the menu reads the daemon's list, got {fetch:?}"
+    );
+    app.on_message(ChatAppMsg::PluginApprovalsLoaded(vec![
+        ("goal".into(), PluginApproval::Ask),
+        ("sync".into(), PluginApproval::Inherit),
+    ]));
+    let rows: Vec<_> = app
+        .get_popup_items()
+        .iter()
+        .map(|item| (item.label.clone(), item.description.clone()))
+        .collect();
+    let current = |label: &str, now: bool| (label.to_string(), now.then(|| "current".to_string()));
+    assert_eq!(
+        rows,
+        [
+            current("goal · inherit", false),
+            current("goal · ask", true),
+            current("goal · stop", false),
+            current("sync · inherit", true),
+            current("sync · ask", false),
+            current("sync · stop", false),
+        ]
+    );
+    for _ in 0..2 {
+        app.update(Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
+    }
+    let choose = app.update(Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    )));
+    let mut agent = KnobRecordingAgent::default();
+    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+    runner
+        .process_action_for_test(choose, &mut app, &mut agent, &bridge)
+        .await
+        .unwrap();
+    assert_eq!(agent.calls, ["set_plugin_approval"]);
+    assert_eq!(agent.approvals["goal"], PluginApproval::Stop);
+    assert!(!app.panel_popup_is_open(), "the menu closes after a choice");
+}
+
+/// The status picker opens the same menu for the plugin-turn item.
+#[test]
+fn the_plugin_turn_item_opens_the_menu_from_the_status_picker() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::StatusItemsLoaded(vec![
+        crucible_core::types::StatusDisplayItem {
+            id: "plugin_turns:goal".into(),
+            text: "goal · ask".into(),
+            priority: 0,
+            color_group: "warn".into(),
+            action: Some("plugin_approval".into()),
+            pinned: true,
+            plugin: "goal".into(),
+            kind: crucible_core::types::StatusItemKind::PluginTurns,
+        },
+    ]));
+    type_and_submit(&mut app, ":status");
+    let open = app.update(Event::Key(KeyEvent::new(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+    )));
+    assert!(
+        matches!(open, Action::Send(ChatAppMsg::FetchPluginApprovals)),
+        "got {open:?}"
+    );
+}
+
 /// A value outside the three is refused before any call.
 #[test]
 fn an_unknown_plugin_approval_is_refused() {

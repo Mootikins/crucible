@@ -783,6 +783,31 @@ impl OilChatRunner {
                             let _ = tx.send(msg);
                         }));
                     }
+                    // The `:plugin-mode` menu reads the daemon's list: each
+                    // plugin that starts turns, with the value that the
+                    // session holds. The menu opens when it arrives.
+                    ChatAppMsg::FetchPluginApprovals if !self.is_replay => {
+                        let session_id = params.agent.session_id().map(str::to_string);
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let fetched = match session_id {
+                                Some(id) => match crucible_daemon::DaemonClient::connect().await {
+                                    Ok(client) => client.session_list_plugin_approvals(&id).await,
+                                    Err(e) => Err(e),
+                                },
+                                None => Err(anyhow::anyhow!("no session")),
+                            };
+                            let msg = match fetched {
+                                Ok(approvals) => ChatAppMsg::PluginApprovalsLoaded(
+                                    approvals.into_iter().collect(),
+                                ),
+                                Err(e) => {
+                                    ChatAppMsg::Error(format!("Plugin approvals failed: {e:#}"))
+                                }
+                            };
+                            let _ = tx.send(msg);
+                        }));
+                    }
                     // `:proposals`. Same replay gate: a replay must reach no daemon.
                     ChatAppMsg::FetchProposals { open } if !self.is_replay => {
                         Self::spawn_proposal_fetch(*open, params.msg_tx, params.background_tasks);
@@ -1012,6 +1037,7 @@ impl OilChatRunner {
                     | ChatAppMsg::OpenDiff(_)
                     | ChatAppMsg::FetchDiffFile(_)
                     | ChatAppMsg::FetchProposals { .. }
+                    | ChatAppMsg::FetchPluginApprovals
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ConfigQuery { .. }
