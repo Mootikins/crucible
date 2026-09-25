@@ -277,6 +277,12 @@ impl Server {
             params.app_config.as_ref(),
             dirs::home_dir().as_deref(),
         );
+        for level in source_roots.levels_plugins_ignore() {
+            warn!(
+                "sources.priority.{} does not order plugin directories; they keep the default order",
+                level.name()
+            );
+        }
 
         // The kiln registry, built from the config the daemon was HANDED —
         // never re-read from disk, or the daemon and the client that spawned

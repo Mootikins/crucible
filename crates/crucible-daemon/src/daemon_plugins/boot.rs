@@ -890,6 +890,56 @@ mod tests {
         .expect("boot must not error for a Lua-level failure")
     }
 
+    /// `sources.priority` in `init.lua` does not move the plugin roots. Here
+    /// it puts `builtin` above `runtimepath`, and a `runtimepath` entry is
+    /// still searched before the shipped plugins.
+    #[tokio::test]
+    async fn sources_priority_leaves_the_plugin_root_order_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let extra = tmp.path().join("extra");
+        write_fixture_plugin(&extra, "rtp_probe", r#"return { name = "rtp_probe" }"#);
+        let config_root = tmp.path().join("config");
+        std::fs::create_dir_all(&config_root).unwrap();
+        std::fs::write(
+            config_root.join("settings.json"),
+            serde_json::json!({ "runtimepath": [extra.display().to_string()] }).to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            config_root.join("init.lua"),
+            "cru.config.set({ sources = { priority = { builtin = 1000 } } })",
+        )
+        .unwrap();
+        let boot = evaluate_boot_config_with_paths(
+            Some(config_root.join("config.toml")),
+            None,
+            None,
+            Arc::new(|rtp: &[PathBuf]| daemon_plugin_paths(rtp)),
+            crate::test_support::repo_runtime_roots(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            boot.config.sources.priority[&crucible_core::runtime_path::PriorityLevel::Builtin],
+            1000
+        );
+
+        let roots = boot.loader.executor().modules().plugin_roots();
+        let position = |dir: PathBuf| {
+            let dir = std::fs::canonicalize(dir).unwrap();
+            roots.iter().position(|root| *root == dir).unwrap()
+        };
+        let shipped = crucible_core::runtime_roots::shipped()
+            .into_iter()
+            .map(|root| root.join("plugins"))
+            .find(|dir| dir.is_dir())
+            .expect("a shipped plugins directory");
+        assert!(
+            position(extra.join("plugins")) < position(shipped),
+            "{roots:?}"
+        );
+    }
+
     /// `kilns.<name>.priority` and `sources.priority`, written in `init.lua`,
     /// reach the roots every skill reader uses. A kiln made personal takes a
     /// bare skill name from another kiln; the full name still reaches both.

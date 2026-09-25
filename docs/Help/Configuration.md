@@ -188,6 +188,12 @@ An unknown level name is a config error. A kiln and a plugin take their own
 names as source names. When one takes a name that another source has, the
 lower source is skipped, and `cru doctor` reports it.
 
+`sources.priority` does not order plugin directories. The daemon sets the
+`require` roots before `init.lua` runs, and plugin discovery uses the same
+order. Plugin directories always keep the default priorities in the table.
+When `sources.priority` names a level that holds a plugin directory, such as
+`personal` or `builtin`, the daemon logs a warning that names the key.
+
 ### projects — project registry
 
 Register projects (code repositories, workspaces) and bind them to kilns.

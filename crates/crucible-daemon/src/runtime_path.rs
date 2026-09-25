@@ -14,7 +14,7 @@
 use crucible_core::config::{find_kiln_entry, KilnEntry, SourcesConfig};
 use crucible_core::runtime_path::{
     build_path, level_priority, KilnRoot, LevelPriorities, PathInputs, Priority, PriorityLevel,
-    RuntimeEntry,
+    RuntimeAsset, RuntimeEntry,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -221,6 +221,22 @@ impl SourceRoots {
         roots
     }
 
+    /// The levels in `sources.priority` that hold a plugin directory. The
+    /// daemon ignores them for plugins: `require` fixes the plugin
+    /// directories before `init.lua` runs, and discovery uses that order.
+    pub fn levels_plugins_ignore(&self) -> Vec<PriorityLevel> {
+        let path = daemon_path(&self.runtimepath);
+        self.levels
+            .keys()
+            .copied()
+            .filter(|level| {
+                path.iter().any(|entry| {
+                    RuntimeAsset::Plugins.reaches(entry.origin) && entry.origin.level() == *level
+                })
+            })
+            .collect()
+    }
+
     /// The attached kilns as sources: each takes its registered name. A kiln
     /// the registry does not know takes `kiln`, then `kiln-2`, ... by attach
     /// order.
@@ -339,6 +355,17 @@ mod tests {
             .map(|k| k.name)
             .collect();
         assert_eq!(named, ["notes", "kiln-2"]);
+    }
+
+    /// `builtin` holds plugin directories, so the daemon names it as
+    /// ignored for plugins. `workspace` holds none.
+    #[test]
+    fn sources_priority_names_the_levels_plugins_ignore() {
+        let config = serde_json::json!({
+            "sources": { "priority": { "builtin": 1000, "workspace": 950 } },
+        });
+        let roots = SourceRoots::from_app_config(None, Some(&config), None);
+        assert_eq!(roots.levels_plugins_ignore(), [PriorityLevel::Builtin]);
     }
 
     /// A kiln's priority is its config entry's `priority`: a level name, or a
