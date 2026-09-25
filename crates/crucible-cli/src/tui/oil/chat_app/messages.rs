@@ -353,6 +353,9 @@ pub enum ChatAppMsg {
     /// `plugin.run_command`. Distinct from `ExecuteSlashCommand`, which
     /// forwards unknown slashes to the agent as chat text.
     RunPluginCommand { name: String, args: String },
+    /// **Command** (TUI → daemon): `/clear`, the user's clear of the model
+    /// context through `session.clear`. The transcript stays.
+    ClearContext,
     /// **Command** (TUI → daemon): Export session to markdown file.
     ExportSession(PathBuf),
     /// **Event** (daemon → TUI): Precognition result (auto-injected context notes).
@@ -461,6 +464,7 @@ impl ChatAppMsg {
             | Self::PrecognitionResult { .. }
             | Self::ExecuteSlashCommand(_)
             | Self::RunPluginCommand { .. }
+            | Self::ClearContext
             | Self::ExportSession(_)
             | Self::ReloadPlugin(_)
             | Self::OpenSurface(_)

@@ -710,6 +710,17 @@ impl DaemonClient {
         .await
     }
 
+    /// Clear the model context of the session, as the user. The transcript
+    /// stays; the daemon sends `context_cleared`.
+    pub async fn session_clear(&self, session_id: &str) -> Result<()> {
+        self.call(
+            "session.clear",
+            serde_json::json!({ "session_id": session_id }),
+        )
+        .await
+        .map(drop)
+    }
+
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
         let resp: SessionCancelResponse = self
             .typed_call(

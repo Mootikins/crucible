@@ -436,6 +436,12 @@ impl ReconnectingDaemon {
         -> bool = session_cancel(&session_id);
     }
 
+    forward_rpc! {
+        Once SessionClear =>
+        session_clear(session_id: &str)
+        -> () = session_clear(&session_id);
+    }
+
     pub async fn session_subscribe(
         &self,
         session_ids: &[&str],

@@ -513,11 +513,11 @@ fn lua_evaled_error_surfaces_notification() {
 }
 
 #[test]
-fn repl_clear_dispatches_lua_command() {
+fn repl_clear_is_the_users_clear() {
     let mut app = app();
     assert!(matches!(
         app.handle_repl_command(":clear"),
-        Action::Send(ChatAppMsg::RunPluginCommand { name, args }) if name == "clear" && args.is_empty()
+        Action::Send(ChatAppMsg::ClearContext)
     ));
 }
 

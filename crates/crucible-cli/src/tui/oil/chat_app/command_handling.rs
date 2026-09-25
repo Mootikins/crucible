@@ -247,10 +247,7 @@ impl OilChatApp {
                 Action::Continue
             }
             ReplCommand::Model => self.handle_model_repl(arg),
-            ReplCommand::Clear => Action::Send(ChatAppMsg::RunPluginCommand {
-                name: "clear".into(),
-                args: String::new(),
-            }),
+            ReplCommand::Clear => Action::Send(ChatAppMsg::ClearContext),
             ReplCommand::Undo => {
                 let count = arg
                     .and_then(|n| n.parse::<usize>().ok())

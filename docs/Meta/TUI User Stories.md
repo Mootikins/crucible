@@ -50,7 +50,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-103: Slash commands
 **As a user**, I type `/` commands and they execute locally or route onward.
-**Acceptance:** the built-ins are `/mode` (cycle), `/default`, `/undo [N]`, and `/help`; `/clear` is a shipped Lua command that calls `cru.session.clear`; every declared mode is its own command (`/plan`, `/auto`, `/normal`, a Lua-declared `/review`); plugin-registered commands run via `plugin.run_command`; other unknown `/` input is forwarded to the agent as a plain chat message, with no local effect and no suggestion (levenshtein typo suggestions exist for `:` commands only); `/help` lists the REPL commands plus registered slash commands.
+**Acceptance:** the built-ins are `/mode` (cycle), `/default`, `/undo [N]`, and `/help`; `/clear` is the user's clear through the `session.clear` RPC (the web `/clear` and the palette "Clear Chat" send the same RPC), and its divider names no plugin; every declared mode is its own command (`/plan`, `/auto`, `/normal`, a Lua-declared `/review`); plugin-registered commands run via `plugin.run_command`; other unknown `/` input is forwarded to the agent as a plain chat message, with no local effect and no suggestion (levenshtein typo suggestions exist for `:` commands only); `/help` lists the REPL commands plus registered slash commands.
 **Tests:** T1 dispatch matrix in `chat_app/command_handling.rs` (quit/clear/messages/model/config/export/undo, unknown-command suggestion), T2 (help render).
 
 ### US-104: REPL `:set` runtime config

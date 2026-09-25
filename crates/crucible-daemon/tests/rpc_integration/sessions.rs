@@ -394,3 +394,42 @@ async fn test_session_cancel() {
 
     server.shutdown().await;
 }
+
+/// `/clear` in the TUI and in the web is `session.clear`, the user's clear.
+/// Its `context_cleared` names no plugin, so no client shows a plugin label.
+#[tokio::test]
+async fn session_clear_is_the_users_clear() {
+    let server = TestServer::start().await.unwrap();
+    let (client, mut events) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .unwrap();
+    let created = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".into(),
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
+            workspace: None,
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+            isolation: None,
+        })
+        .await
+        .unwrap();
+    let id = created["session_id"].as_str().unwrap();
+    client.session_subscribe(&[id]).await.unwrap();
+
+    client.session_clear(id).await.unwrap();
+
+    let cleared = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let event = events.recv().await.expect("the event stream is open");
+            if event.event == "context_cleared" {
+                return event;
+            }
+        }
+    })
+    .await
+    .expect("session.clear sends context_cleared");
+    assert!(cleared.data["plugin"].is_null(), "{:?}", cleared.data);
+    server.shutdown().await;
+}

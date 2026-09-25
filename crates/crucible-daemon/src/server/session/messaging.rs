@@ -264,6 +264,29 @@ pub(crate) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) 
     )
 }
 
+/// `session.clear`: the user's clear of the model context. The transcript
+/// stays; `context_cleared` names no plugin.
+pub(crate) async fn handle_session_clear(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    match am
+        .clear_session(&params.session_id, None, None, event_tx)
+        .await
+    {
+        Ok(_) => Response::success(
+            req.id,
+            serde_json::json!({ "session_id": params.session_id }),
+        ),
+        Err(e) => agent_error_to_response(req.id, e),
+    }
+}
+
 /// Every pending interaction across every session — the aggregate the web
 /// Inbox polls so sessions without an open browser tab still surface.
 pub(crate) async fn handle_session_pending_interactions(

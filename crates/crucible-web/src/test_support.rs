@@ -851,6 +851,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "kilns": ["test-kiln"]
         }),
         "session.cancel" => json!({"cancelled": true}),
+        "session.clear" => json!({"session_id": "test-session-001"}),
         "session.delete" => json!({"deleted": true}),
         "session.archive" => json!({"archived": true}),
         "session.unarchive" => json!({"archived": false}),

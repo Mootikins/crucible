@@ -254,19 +254,12 @@ pub(super) async fn execute_command(
                 response_type: "success".to_string(),
             }))
         }
-        // The same daemon command as the TUI's `/clear`. The transcript keeps
+        // `session.clear`, the same user clear as the TUI's `/clear`. The transcript keeps
         // the history, and the daemon's `context_cleared` draws the divider.
         "clear" => {
-            let args = serde_json::json!({ "session_id": id });
-            let reply = state
-                .daemon
-                .plugin_run_command("clear", args)
-                .await
-                .daemon_err()?;
+            state.daemon.session_clear(&id).await.daemon_err()?;
             Ok(Json(CommandResponse {
-                result: reply["result"]
-                    .as_str()
-                    .map_or_else(|| reply["result"].to_string(), str::to_string),
+                result: "Context cleared".to_string(),
                 response_type: "success".to_string(),
             }))
         }

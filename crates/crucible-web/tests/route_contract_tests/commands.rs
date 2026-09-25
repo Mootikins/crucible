@@ -460,8 +460,7 @@ async fn command_clear_runs_the_daemon_clear_of_the_session() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let params = mock
-        .received_params("plugin.run_command")
+        .received_params("session.clear")
         .expect("the clear reaches the daemon");
-    assert_eq!(params["name"], "clear");
-    assert_eq!(params["args"]["session_id"], "test-session-001");
+    assert_eq!(params["session_id"], "test-session-001");
 }

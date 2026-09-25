@@ -122,6 +122,7 @@ rpc_methods! {
     SessionConfigureAgent = "session.configure_agent",
     SessionSendMessage = "session.send_message",
     SessionCancel = "session.cancel",
+    SessionClear = "session.clear",
     SessionSwitchModel = "session.switch_model",
     SessionConnectKiln = "session.connect_kiln",
     SessionDisconnectKiln = "session.disconnect_kiln",
@@ -677,6 +678,14 @@ impl RpcDispatcher {
             RpcMethod::SessionCancel => forward!(
                 id,
                 crate::server::session::handle_session_cancel(req.clone(), &self.ctx.agents)
+            ),
+            RpcMethod::SessionClear => forward!(
+                id,
+                crate::server::session::handle_session_clear(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
             ),
             RpcMethod::SessionInteractionRespond => {
                 forward!(

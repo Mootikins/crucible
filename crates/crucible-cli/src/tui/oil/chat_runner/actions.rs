@@ -890,12 +890,27 @@ impl OilChatRunner {
                     // Gated on `!self.is_replay`: runs the command in the
                     // daemon's plugin registry. The result renders as a
                     // system message — an invocation, not a chat turn.
+                    // The daemon's context_cleared draws the divider.
+                    ChatAppMsg::ClearContext if !self.is_replay => {
+                        let session_id = params.agent.session_id().map(str::to_string);
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let result = match session_id {
+                                Some(id) => match crucible_daemon::DaemonClient::connect().await {
+                                    Ok(client) => client.session_clear(&id).await,
+                                    Err(e) => Err(e),
+                                },
+                                None => Err(anyhow::anyhow!("no session")),
+                            };
+                            if let Err(e) = result {
+                                let _ = tx.send(ChatAppMsg::Error(format!("/clear failed: {e}")));
+                            }
+                        }));
+                    }
                     ChatAppMsg::RunPluginCommand { ref name, ref args } if !self.is_replay => {
                         tracing::info!(command = %name, "Running plugin command");
                         let name = name.clone();
-                        let args = if name == "clear" {
-                            serde_json::json!({ "session_id": params.agent.session_id() })
-                        } else if args.is_empty() {
+                        let args = if args.is_empty() {
                             serde_json::Value::Null
                         } else {
                             serde_json::json!({ "input": args })
@@ -1003,6 +1018,7 @@ impl OilChatRunner {
                     | ChatAppMsg::ConfigDrop { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
                     | ChatAppMsg::RunPluginCommand { .. }
+                    | ChatAppMsg::ClearContext
                     | ChatAppMsg::ExportSession(_)
                     | ChatAppMsg::FetchModels
                         if self.is_replay =>
