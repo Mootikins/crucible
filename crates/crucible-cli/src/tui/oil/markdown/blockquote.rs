@@ -1,5 +1,5 @@
 use super::context::RenderContext;
-use super::render::extract_all_text;
+use super::render::{extract_all_text, margin_node};
 use super::table::wrap_text;
 use crate::tui::oil::theme;
 use crucible_oil::node::*;
@@ -10,7 +10,6 @@ pub(super) fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContex
     ctx.ensure_block_spacing();
 
     let margins = ctx.margins;
-    let margin_indent = " ".repeat(margins.left);
     let prefix = "│ ";
     let prefix_width = 2;
     let content_width = ctx
@@ -25,7 +24,8 @@ pub(super) fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContex
                 styled(prefix, {
                     let t = theme::active();
                     Style::new().fg(t.resolve_color(t.colors.blockquote_prefix))
-                }),
+                })
+                .gutter(),
                 styled(line, {
                     let t = theme::active();
                     Style::new()
@@ -34,7 +34,7 @@ pub(super) fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContex
                 }),
             ]);
             if margins.left > 0 {
-                ctx.push_block(row([text(&margin_indent), quote_row]));
+                ctx.push_block(row([margin_node(margins.left), quote_row]));
             } else {
                 ctx.push_block(quote_row);
             }

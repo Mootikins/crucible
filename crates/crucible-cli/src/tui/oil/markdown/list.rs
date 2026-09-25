@@ -1,5 +1,5 @@
 use super::context::RenderContext;
-use super::render::{render_node, text_node};
+use super::render::{margin_node, render_node, text_node};
 use super::table::wrap_text_with_gaps;
 use super::BR_TAG_REGEX;
 use crate::tui::oil::theme;
@@ -10,7 +10,6 @@ use markdown_it::plugins::cmark::inline::newline::{Hardbreak, Softbreak};
 
 pub(super) fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
     let margins = ctx.margins;
-    let margin_indent = " ".repeat(margins.left);
     let list_indent = "  ".repeat(ctx.list_depth.saturating_sub(1));
 
     let (bullet, bullet_width) = if let Some(counter) = ctx.list_counter.as_mut() {
@@ -36,7 +35,7 @@ pub(super) fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext
         if i == 0 {
             if margins.left > 0 {
                 ctx.blocks.push(row([
-                    text(&margin_indent),
+                    margin_node(margins.left),
                     text(&list_indent),
                     text(&bullet),
                     text_node(line),
@@ -53,7 +52,7 @@ pub(super) fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext
             };
             if margins.left > 0 {
                 ctx.blocks.push(row([
-                    text(&margin_indent),
+                    margin_node(margins.left),
                     text(&list_indent),
                     text(&continuation_indent),
                     body,

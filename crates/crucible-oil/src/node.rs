@@ -111,9 +111,34 @@ pub struct TextNode {
     /// ellipsized instead. For short decorations like statusline badges.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub no_shrink: bool,
-    /// This text is the rest of the line above it; see [`WrapJoin`].
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    pub continues: Option<WrapJoin>,
+    /// What this text is to a full-screen selection; see [`TextRole`].
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
+    pub role: TextRole,
+}
+
+/// What a text is to a full-screen selection and copy.
+///
+/// A renderer draws a gutter beside the source text: a margin, a bullet, a
+/// prefix. Only the renderer knows which cells are which, so it marks them
+/// here, and the renderer records the result for each row in
+/// [`crate::cell_grid::RowText`]. The selection covers only the source text,
+/// and a copy reads only the source text.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextRole {
+    /// Source text that starts a line. The first `indent` columns of each
+    /// of its rows are a gutter.
+    Source { indent: u16 },
+    /// Source text that continues the line of the row above it.
+    Continues(WrapJoin),
+    /// Not source text: every cell of this text is a gutter.
+    Gutter,
+}
+
+impl Default for TextRole {
+    fn default() -> Self {
+        Self::Source { indent: 0 }
+    }
 }
 
 /// Marks a text as the rest of the logical line above it, put on its own
@@ -126,7 +151,7 @@ pub struct TextNode {
 pub struct WrapJoin {
     /// The source text the wrap dropped between the rows, usually `" "`.
     pub gap: String,
-    /// Columns at the start of this text that are decoration, not source.
+    /// Columns at the start of this text that are a gutter, not source.
     pub indent: u16,
 }
 
@@ -261,7 +286,7 @@ pub fn text(content: impl Into<String>) -> Node {
         content: content.into(),
         style: Style::default(),
         no_shrink: false,
-        continues: None,
+        role: TextRole::Source { indent: 0 },
     })
 }
 
@@ -270,7 +295,7 @@ pub fn styled(content: impl Into<String>, style: Style) -> Node {
         content: content.into(),
         style,
         no_shrink: false,
-        continues: None,
+        role: TextRole::Source { indent: 0 },
     })
 }
 
@@ -456,12 +481,28 @@ impl Node {
     /// Mark a text node as the rest of the line above it (see [`WrapJoin`]).
     /// No effect on other node kinds.
     pub fn continues_line(self, gap: impl Into<String>, indent: u16) -> Self {
+        self.with_role(TextRole::Continues(WrapJoin {
+            gap: gap.into(),
+            indent,
+        }))
+    }
+
+    /// Mark a text node as a gutter, not source text (see [`TextRole`]).
+    /// No effect on other node kinds.
+    pub fn gutter(self) -> Self {
+        self.with_role(TextRole::Gutter)
+    }
+
+    /// Mark the first `indent` columns of each row of a text node as a
+    /// gutter (see [`TextRole`]). No effect on other node kinds.
+    pub fn gutter_cols(self, indent: u16) -> Self {
+        self.with_role(TextRole::Source { indent })
+    }
+
+    fn with_role(self, role: TextRole) -> Self {
         match self {
             Node::Text(mut t) => {
-                t.continues = Some(WrapJoin {
-                    gap: gap.into(),
-                    indent,
-                });
+                t.role = role;
                 Node::Text(t)
             }
             other => other,

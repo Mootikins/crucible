@@ -464,3 +464,82 @@ fn a_reflow_through_the_last_page_keeps_the_reader() {
     assert!(!view.scroll().follows());
     assert_eq!(top_text(&view), held);
 }
+
+/// The columns of screen row `y` that the highlight inverts.
+fn inverted_cols(frame: &Frame, y: usize) -> Vec<usize> {
+    frame
+        .grid
+        .row(y)
+        .iter()
+        .enumerate()
+        .filter(|(_, cell)| cell.style.contains("\x1b[7m"))
+        .map(|(x, _)| x)
+        .collect()
+}
+
+/// Found in the demo: a drag over paragraphs inverted a box of whole rows,
+/// the margin gutter and the padding after the text included. The
+/// highlight must cover only the text, as the copy does.
+#[test]
+fn the_highlight_covers_only_the_text_not_the_gutter() {
+    let first = "First paragraph that is long enough to wrap over two rows at forty.";
+    let second = "Second paragraph, short.";
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::TextDelta(format!("{first}\n\n{second}")));
+    app.on_message(ChatAppMsg::StreamComplete);
+    let mut view = FullscreenView::new();
+    let frame = frame_at(&mut view, &app, 40, 30);
+    let (start_col, start_row) = find_on_screen(&frame, "First");
+    let (_, second_row) = find_on_screen(&frame, "Second");
+    let (end_col, _) = find_on_screen(&frame, "short.");
+    let copied = drag_copy(
+        &mut view,
+        &app,
+        (start_col, start_row),
+        (end_col + 6, second_row),
+    );
+    assert_eq!(copied, format!("{first}\n\n{second}"));
+
+    let frame = frame_at(&mut view, &app, 40, 30);
+    let rows = screen_text(&frame);
+    let selected = start_row as usize..=second_row as usize;
+    for (y, text) in rows
+        .iter()
+        .enumerate()
+        .filter(|(y, _)| selected.contains(y))
+    {
+        // The gutter is the margin and the bullet of the first row.
+        let body = text.trim_start_matches([' ', '\u{25CF}']);
+        let lead = text.chars().count() - body.chars().count();
+        let expected: Vec<usize> = (lead..text.chars().count()).collect();
+        assert_eq!(
+            inverted_cols(&frame, y),
+            expected,
+            "row {y} {text:?}: only its text is inverted"
+        );
+    }
+}
+
+/// A press in the gutter starts the selection at the text of that row,
+/// and a release in the gutter ends it after the text of the row above.
+#[test]
+fn a_drag_from_and_to_the_gutter_snaps_to_the_text() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::TextDelta(
+        "alpha row\n\nbeta row\n\ngamma row".into(),
+    ));
+    app.on_message(ChatAppMsg::StreamComplete);
+    let mut view = FullscreenView::new();
+    let frame = frame_at(&mut view, &app, 40, 30);
+    let (_, alpha) = find_on_screen(&frame, "alpha");
+    let (_, gamma) = find_on_screen(&frame, "gamma");
+    let copied = drag_copy(&mut view, &app, (0, alpha), (1, gamma));
+    assert_eq!(copied, "alpha row\n\nbeta row");
+
+    let frame = frame_at(&mut view, &app, 40, 30);
+    assert_eq!(inverted_cols(&frame, gamma as usize), Vec::<usize>::new());
+    assert_eq!(
+        inverted_cols(&frame, alpha as usize),
+        (3..12).collect::<Vec<_>>()
+    );
+}

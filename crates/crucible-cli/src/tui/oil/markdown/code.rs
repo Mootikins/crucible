@@ -50,8 +50,10 @@ pub(super) fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContex
     full_block.push_str(&fence_close_ansi);
 
     ctx.flush_line();
-    // Push as a pre-formatted text node — the renderer handles \n within text
-    ctx.blocks.push(text_node(&full_block));
+    // Push as a pre-formatted text node — the renderer handles \n within text.
+    // Each line starts with the margin, a gutter for a full-screen selection.
+    ctx.blocks
+        .push(text_node(&full_block).gutter_cols(margins.left as u16));
     ctx.mark_block_end();
 }
 

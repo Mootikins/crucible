@@ -156,14 +156,18 @@ impl ChatNode {
         let content_width = width.saturating_sub(prefix.len() + 1);
         let lines = wrap_words_with_gaps(content, content_width);
 
+        // The edges and the prompt marks are a gutter: a full-screen
+        // selection covers only the message text.
         let top_edge = styled(
             t.decorations.half_block_bottom.to_string().repeat(width),
             Style::new().fg(bg),
-        );
+        )
+        .gutter();
         let bottom_edge = styled(
             t.decorations.half_block_top.to_string().repeat(width),
             Style::new().fg(bg),
-        );
+        )
+        .gutter();
 
         let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
         rows.push(top_edge);
@@ -176,9 +180,10 @@ impl ChatNode {
                 format!("{}{}{}", line_prefix, line, line_padding),
                 Style::new().bg(bg),
             );
+            let gutter = line_prefix.len() as u16;
             rows.push(match gap {
-                Some(gap) => row.continues_line(gap.as_str(), line_prefix.len() as u16),
-                None => row,
+                Some(gap) => row.continues_line(gap.as_str(), gutter),
+                None => row.gutter_cols(gutter),
             });
         }
 

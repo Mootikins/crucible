@@ -1,5 +1,5 @@
 use super::context::RenderContext;
-use super::render::extract_all_text;
+use super::render::{extract_all_text, margin_node};
 use crucible_oil::ansi::visible_width;
 use crucible_oil::node::*;
 use crucible_oil::style::Style;
@@ -240,10 +240,9 @@ fn render_table_border(
 
     let margins = ctx.margins;
     if margins.left > 0 || margins.right > 0 {
-        let left_pad = " ".repeat(margins.left);
         let right_pad = " ".repeat(margins.right);
         ctx.push_block(row([
-            text(&left_pad),
+            margin_node(margins.left),
             styled(line, style),
             text(&right_pad),
         ]));
@@ -277,7 +276,7 @@ fn render_table_data_row(
         let mut nodes: Vec<Node> = Vec::new();
 
         if margins.left > 0 {
-            nodes.push(text(" ".repeat(margins.left)));
+            nodes.push(margin_node(margins.left));
         }
 
         nodes.push(styled(box_chars::VERTICAL.to_string(), border_style));

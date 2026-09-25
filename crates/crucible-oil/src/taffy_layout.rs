@@ -356,7 +356,7 @@ impl LayoutEngine {
                         style: text.style,
                     },
                 );
-                layout_box.join = text.continues.clone();
+                layout_box.role = text.role.clone();
                 layout_box
             }
 
@@ -383,7 +383,7 @@ impl LayoutEngine {
                     children,
                     style: boxnode.style,
                     key: None,
-                    join: None,
+                    role: crate::node::TextRole::default(),
                 }
             }
 
@@ -443,7 +443,7 @@ impl LayoutEngine {
                     children: child_boxes,
                     style: OilStyle::default(),
                     key: None,
-                    join: None,
+                    role: crate::node::TextRole::default(),
                 }
             }
 

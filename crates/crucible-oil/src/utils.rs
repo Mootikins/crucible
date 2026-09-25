@@ -155,7 +155,7 @@ fn visible_width_simple(s: &str) -> usize {
 }
 
 /// The source text between consecutive wrapped lines, for
-/// [`crate::node::WrapJoin`] and [`crate::cell_grid::RowJoin`].
+/// [`crate::node::WrapJoin`] and [`crate::cell_grid::RowText`].
 ///
 /// `textwrap` returns borrowed slices of `content` when it adds no indent
 /// and no hyphen, so a line's offset in the source is its pointer minus the

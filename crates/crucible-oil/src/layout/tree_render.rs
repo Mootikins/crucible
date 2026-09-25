@@ -10,7 +10,8 @@
 //! at computed coordinates, then converts the buffer to an ANSI string.
 
 use crate::ansi::apply_style;
-use crate::cell_grid::{CellGrid, RowJoin};
+use crate::cell_grid::CellGrid;
+use crate::node::TextRole;
 use crate::utils::{truncate_to_chars, visible_width};
 
 use crate::render::CursorInfo;
@@ -104,15 +105,23 @@ fn render_box(
         }
 
         LayoutContent::Text { content, style } => {
-            render_text(content, style, x, y, width, height, grid);
-            if let Some(join) = &layout_box.join {
-                grid.set_join(
-                    y,
-                    RowJoin {
-                        gap: join.gap.clone(),
-                        content_col: x + join.indent as usize,
-                    },
-                );
+            let rows = render_text(content, style, x, y, width, height, grid);
+            match &layout_box.role {
+                TextRole::Source { indent } => {
+                    if *indent > 0 {
+                        for row in y..y + rows {
+                            grid.mark_gutter(row, x + *indent as usize);
+                        }
+                    }
+                }
+                TextRole::Continues(join) => {
+                    grid.set_join(y, join.gap.clone(), x + join.indent as usize);
+                }
+                TextRole::Gutter => {
+                    for row in y..y + rows {
+                        grid.mark_gutter(row, x + width);
+                    }
+                }
             }
         }
 
@@ -206,7 +215,8 @@ fn render_box(
     }
 }
 
-/// Render styled text at the given position, wrapping within width bounds.
+/// Render styled text at the given position, wrapping within width bounds,
+/// and return the number of rows it drew.
 ///
 /// Rendering is clamped to the laid-out `height`: when a row sibling shrank
 /// this text below its natural width, the extra wrapped rows would otherwise
@@ -221,9 +231,9 @@ fn render_text(
     width: usize,
     height: usize,
     grid: &mut CellGrid,
-) {
+) -> usize {
     if content.is_empty() || width == 0 {
-        return;
+        return 0;
     }
 
     let max_rows = if height == 0 { usize::MAX } else { height };
@@ -234,16 +244,11 @@ fn render_text(
         if target_y < grid.height() {
             grid.blit_line(line, x, target_y);
             if let Some(Some(gap)) = wrapped.gaps.get(row_idx) {
-                grid.set_join(
-                    target_y,
-                    RowJoin {
-                        gap: gap.clone(),
-                        content_col: x,
-                    },
-                );
+                grid.set_join(target_y, gap.clone(), x);
             }
         }
     }
+    wrapped.lines.len()
 }
 
 /// Render an input field at the given position.

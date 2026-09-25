@@ -29,7 +29,7 @@ use crucible_oil::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
 use crucible_oil::render::{render_tree_to_grid, NATURAL_HEIGHT};
 use crucible_oil::style::Gap;
 use scroll::Scroll;
-use selection::{selected_text, Point, Selection, Unit};
+use selection::{highlight_cols, selected_text, text_span, Point, Selection, Unit};
 use std::time::{Duration, Instant};
 use transcript::Transcript;
 
@@ -210,16 +210,19 @@ impl FullscreenView {
 
     fn draw_transcript(&self, grid: &mut CellGrid) {
         let top = self.scroll.top();
-        let width = grid.width();
+        let transcript = &self.transcript;
+        let width = transcript.width() as usize;
+        let rows = |r: usize| transcript.row(r).map(|row| row.as_ref());
+        // The copy reads the same text span, so the highlight shows what a
+        // copy takes.
+        let span = self
+            .selection
+            .and_then(|s| text_span(s.bounds(), width, rows));
         for y in 0..self.area.height {
-            if let Some(row) = self.transcript.row(top + y) {
+            if let Some(row) = transcript.row(top + y) {
                 grid.blit_line(&row.ansi, 0, self.area.top + y);
             }
-            if let Some(cols) = self
-                .selection
-                .as_ref()
-                .and_then(|s| s.cols_on(top + y, width))
-            {
+            if let Some(cols) = span.and_then(|span| highlight_cols(span, top + y, width, rows)) {
                 grid.invert(self.area.top + y, cols);
             }
         }

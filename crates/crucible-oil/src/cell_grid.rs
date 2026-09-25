@@ -56,19 +56,21 @@ impl StyledCell {
     }
 }
 
-/// How a row continues the logical line of the row above it.
+/// Where the source text of a row is, as the renderer drew it.
 ///
-/// A wrap splits one source line over rows and drops the text at the break,
-/// usually one space. A copy that crosses the break puts that text back
-/// instead of a line break. A row without a join starts a new line.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RowJoin {
-    /// The source text between the row above and this row: `" "` for a
-    /// break at a space, `""` for a break inside a long word.
-    pub gap: String,
-    /// The first column of this row's own text. The cells before it are an
-    /// indent or a prefix that the wrap added, so a copy skips them.
-    pub content_col: usize,
+/// A full-screen selection covers only the source text, and a copy reads
+/// only the source text. The renderer records both parts here from the
+/// [`crate::node::TextRole`] of each text.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RowText {
+    /// The first column of the row's source text. The cells before it are a
+    /// gutter: a margin, a bullet or a prefix.
+    pub start: usize,
+    /// Set when a wrap split one source line over the row above and this
+    /// row. It holds the source text that the wrap dropped between them:
+    /// `" "` for a break at a space, `""` for a break inside a long word. A
+    /// copy that crosses the break puts it back instead of a line break.
+    pub join: Option<String>,
 }
 
 /// One row of the grid.
@@ -83,8 +85,8 @@ struct Row {
     /// A finished row that [`CellGrid::put_row`] placed, as `rows[index]`.
     /// It is the row's output as long as nothing draws over it.
     verbatim: Option<(Arc<[String]>, usize)>,
-    /// How the row continues the row above. See [`RowJoin`].
-    join: Option<RowJoin>,
+    /// Where the source text of the row is. See [`RowText`].
+    text: RowText,
 }
 
 #[derive(Debug, Clone)]
@@ -157,16 +159,35 @@ impl CellGrid {
         }
     }
 
-    /// How row `y` continues the row above, if a wrap split them.
-    pub fn join(&self, y: usize) -> Option<&RowJoin> {
-        self.rows.get(y).and_then(|row| row.join.as_ref())
+    /// Where the source text of row `y` is. `None` outside the grid.
+    pub fn row_text(&self, y: usize) -> Option<&RowText> {
+        self.rows.get(y).map(|row| &row.text)
     }
 
-    /// Mark row `y` as the continuation of the row above.
-    pub fn set_join(&mut self, y: usize, join: RowJoin) {
-        if let Some(row) = self.rows.get_mut(y) {
-            row.join = Some(join);
+    /// Mark row `y` as the continuation of the row above: `gap` is the
+    /// source text between them, and the row's source text starts at `start`.
+    pub fn set_join(&mut self, y: usize, gap: String, start: usize) {
+        if let Some(Row { text, .. }) = self.rows.get_mut(y) {
+            text.join = Some(gap);
+            text.start = text.start.max(start);
         }
+    }
+
+    /// Mark the cells of row `y` before column `end` as a gutter.
+    pub fn mark_gutter(&mut self, y: usize, end: usize) {
+        let width = self.width;
+        if let Some(Row { text, .. }) = self.rows.get_mut(y) {
+            text.start = text.start.max(end.min(width));
+        }
+    }
+
+    /// The column after the last visible grapheme of row `y`. The spaces
+    /// after it are padding, not text, even when a background styles them.
+    pub fn text_end(&self, y: usize) -> usize {
+        self.row(y)
+            .iter()
+            .rposition(|c| c.ch != ' ' && !c.is_continuation())
+            .map_or(0, |lead| self.grapheme_span(y, lead).end)
     }
 
     /// Invert the cells of row `y` in `cols`, as a selection highlight. A

@@ -69,9 +69,9 @@ pub struct LayoutBox {
     /// Optional key for Static nodes (used for graduation tracking).
     pub key: Option<String>,
 
-    /// For a text box: the line above continues into it. See
-    /// [`crate::node::WrapJoin`].
-    pub join: Option<crate::node::WrapJoin>,
+    /// For a text box: what it is to a selection. See
+    /// [`crate::node::TextRole`].
+    pub role: crate::node::TextRole,
 }
 
 impl LayoutBox {
@@ -83,7 +83,7 @@ impl LayoutBox {
             children: Vec::new(),
             style: Style::default(),
             key: None,
-            join: None,
+            role: crate::node::TextRole::default(),
         }
     }
 
@@ -96,7 +96,7 @@ impl LayoutBox {
             children: Vec::new(),
             style: Style::default(),
             key: None,
-            join: None,
+            role: crate::node::TextRole::default(),
         }
     }
 

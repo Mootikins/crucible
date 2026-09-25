@@ -5,16 +5,32 @@
 //! screen coordinates, so a selection stays on its text while the view
 //! scrolls. The rows come from a closure, so the transcript and a plugin
 //! buffer share this code.
+//!
+//! A selection covers only source text. Each row says where its text
+//! starts ([`RowText`]); the cells before that are a gutter, and the spaces
+//! after the last visible grapheme are padding. The highlight and the copy
+//! both read the text through [`text_span`], so they cannot disagree.
 
-use crucible_oil::cell_grid::{CellGrid, RowJoin};
+use crucible_oil::cell_grid::{CellGrid, RowText};
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
-/// A row as a selection reads it: the styled text and its wrap join.
+/// A row as a selection reads it: the styled text and where its source
+/// text is.
 #[derive(Debug, Clone, Copy)]
 pub struct RowRef<'a> {
     pub ansi: &'a str,
-    pub join: Option<&'a RowJoin>,
+    /// `None` for a row that a renderer did not describe: its text starts
+    /// in the first column, and it starts a new line.
+    pub text: Option<&'a RowText>,
+}
+
+impl<'a> RowRef<'a> {
+    /// The source text between the row above and this row, when a wrap
+    /// split one line over both.
+    fn join(self) -> Option<&'a str> {
+        self.text.and_then(|t| t.join.as_deref())
+    }
 }
 
 /// A cell of the buffer. Ordered by row, then column.
@@ -89,24 +105,86 @@ impl Selection {
         self.unit
     }
 
-    /// The selected span, in buffer order.
+    /// The span between the press and the pointer, in buffer order. It can
+    /// start or end in a gutter; [`text_span`] gives the text in it.
     pub fn bounds(&self) -> Span {
         Span {
             start: self.anchor.start.min(self.head.start),
             end: self.anchor.end.max(self.head.end),
         }
     }
+}
 
-    /// The selected columns of `row`, for the highlight.
-    pub fn cols_on(&self, row: usize, width: usize) -> Option<Range<usize>> {
-        let Span { start, end } = self.bounds();
-        if row < start.row || row > end.row {
-            return None;
-        }
-        let from = if row == start.row { start.col } else { 0 };
-        let to = if row == end.row { end.col } else { width };
-        (from < to).then_some(from..to)
+/// Row `row` parsed into cells, and the columns of its source text.
+fn text_row(row: Option<RowRef<'_>>, width: usize) -> (CellGrid, Range<usize>) {
+    let grid = row_grid(row, width);
+    let start = row.and_then(|r| r.text).map_or(0, |t| t.start).min(width);
+    let end = grid.text_end(0).max(start);
+    (grid, start..end)
+}
+
+/// The source text in `span`: an end in a gutter, in padding or on a row
+/// without text moves to the nearest text inside the span. The start moves
+/// forward and the end moves back. `None` when the span holds no text.
+pub fn text_span<'a>(
+    span: Span,
+    width: usize,
+    rows: impl Fn(usize) -> Option<RowRef<'a>>,
+) -> Option<Span> {
+    let start = (span.start.row..=span.end.row).find_map(|r| {
+        let (_, text) = text_row(rows(r), width);
+        let from = if r == span.start.row {
+            span.start.col.max(text.start)
+        } else {
+            text.start
+        };
+        let to = if r == span.end.row {
+            span.end.col.min(text.end)
+        } else {
+            text.end
+        };
+        (from < to).then_some(Point { row: r, col: from })
+    })?;
+    let end = (start.row..=span.end.row).rev().find_map(|r| {
+        let (_, text) = text_row(rows(r), width);
+        let from = if r == start.row {
+            start.col
+        } else {
+            text.start
+        };
+        let to = if r == span.end.row {
+            span.end.col.min(text.end)
+        } else {
+            text.end
+        };
+        (from < to).then_some(Point { row: r, col: to })
+    })?;
+    Some(Span { start, end })
+}
+
+/// The columns of `row` that the highlight inverts: the source text of the
+/// row inside `span`, which must come from [`text_span`].
+pub fn highlight_cols<'a>(
+    span: Span,
+    row: usize,
+    width: usize,
+    rows: impl Fn(usize) -> Option<RowRef<'a>>,
+) -> Option<Range<usize>> {
+    if row < span.start.row || row > span.end.row {
+        return None;
     }
+    let (_, text) = text_row(rows(row), width);
+    let from = if row == span.start.row {
+        span.start.col
+    } else {
+        text.start
+    };
+    let to = if row == span.end.row {
+        span.end.col
+    } else {
+        text.end
+    };
+    (from < to).then_some(from..to)
 }
 
 /// The span of `unit` at `point`.
@@ -183,7 +261,7 @@ fn word_cols(grid: &CellGrid, col: usize) -> Range<usize> {
 /// The rows of the logical line that holds `row`: up while a row continues
 /// the one above it, down while the next row continues this one.
 fn line_span<'a>(row: usize, width: usize, rows: &impl Fn(usize) -> Option<RowRef<'a>>) -> Span {
-    let continues = |r: usize| rows(r).and_then(|row| row.join).is_some();
+    let continues = |r: usize| rows(r).and_then(|row| row.join()).is_some();
     let mut first = row;
     while first > 0 && continues(first) {
         first -= 1;
@@ -201,43 +279,32 @@ fn line_span<'a>(row: usize, width: usize, rows: &impl Fn(usize) -> Option<RowRe
     }
 }
 
-/// The text of `span`, as the source had it.
+/// The source text in `span` (see [`text_span`]), as the source had it.
 ///
 /// A row that a wrap split from the row above joins it with the text the
-/// wrap dropped, and without the indent the wrap added. Every other row
-/// starts a new line. Padding at the end of a row is not text.
+/// wrap dropped. Every other row starts a new line. A gutter and the
+/// padding at the end of a row are not text.
 pub fn selected_text<'a>(
     span: Span,
     width: usize,
     rows: impl Fn(usize) -> Option<RowRef<'a>>,
 ) -> String {
     let mut out = String::new();
+    let Some(span) = text_span(span, width, &rows) else {
+        return out;
+    };
     for r in span.start.row..=span.end.row {
         let row = rows(r);
-        let grid = row_grid(row, width);
-        let mut from = if r == span.start.row {
-            span.start.col
-        } else {
-            0
-        };
-        let to = if r == span.end.row {
-            span.end.col
-        } else {
-            width
-        };
         if r > span.start.row {
-            out.truncate(out.trim_end_matches(' ').len());
-            match row.and_then(|row| row.join) {
-                Some(join) => {
-                    out.push_str(&join.gap);
-                    from = from.max(join.content_col);
-                }
+            match row.and_then(|row| row.join()) {
+                Some(gap) => out.push_str(gap),
                 None => out.push('\n'),
             }
         }
-        out.push_str(&grid.text(0, from..to));
+        if let Some(cols) = highlight_cols(span, r, width, &rows) {
+            out.push_str(&row_grid(row, width).text(0, cols));
+        }
     }
-    out.truncate(out.trim_end_matches(' ').len());
     out
 }
 
@@ -245,10 +312,10 @@ pub fn selected_text<'a>(
 mod tests {
     use super::*;
 
-    /// A buffer of rows. A row that starts with `+` continues the row above
-    /// with a one-space gap; `indent` cells before its text are decoration.
+    /// A buffer of rows. A row with `Some((gap, start))` continues the row
+    /// above with `gap`, and its text starts at column `start`.
     struct Rows {
-        rows: Vec<(String, Option<RowJoin>)>,
+        rows: Vec<(String, RowText)>,
     }
 
     impl Rows {
@@ -259,9 +326,9 @@ mod tests {
                     .map(|(text, join)| {
                         (
                             text.to_string(),
-                            join.map(|(gap, col)| RowJoin {
-                                gap: gap.to_string(),
-                                content_col: col,
+                            join.map_or_else(RowText::default, |(gap, start)| RowText {
+                                start,
+                                join: Some(gap.to_string()),
                             }),
                         )
                     })
@@ -270,9 +337,9 @@ mod tests {
         }
 
         fn get(&self, r: usize) -> Option<RowRef<'_>> {
-            self.rows.get(r).map(|(ansi, join)| RowRef {
+            self.rows.get(r).map(|(ansi, text)| RowRef {
                 ansi,
-                join: join.as_ref(),
+                text: Some(text),
             })
         }
     }
@@ -386,13 +453,35 @@ mod tests {
     }
 
     #[test]
-    fn the_highlight_covers_the_selected_cells_of_each_row() {
+    fn the_highlight_covers_only_the_selected_text_of_each_row() {
         let rows = Rows::new(&[("abc", None), ("def", None), ("ghi", None)]);
         let mut sel = Selection::start(Point { row: 0, col: 1 }, Unit::Cell, 10, |r| rows.get(r));
         sel.extend(Point { row: 2, col: 1 }, 10, |r| rows.get(r));
-        assert_eq!(sel.cols_on(0, 10), Some(1..10));
-        assert_eq!(sel.cols_on(1, 10), Some(0..10));
-        assert_eq!(sel.cols_on(2, 10), Some(0..2));
-        assert_eq!(sel.cols_on(3, 10), None);
+        let span = text_span(sel.bounds(), 10, |r| rows.get(r)).unwrap();
+        let cols = |r| highlight_cols(span, r, 10, |r| rows.get(r));
+        assert_eq!(cols(0), Some(1..3));
+        assert_eq!(cols(1), Some(0..3));
+        assert_eq!(cols(2), Some(0..2));
+        assert_eq!(cols(3), None);
+    }
+
+    #[test]
+    fn ends_in_a_gutter_snap_to_the_nearest_text() {
+        let gutter = |start| RowText { start, join: None };
+        let texts = [gutter(3), RowText::default(), gutter(3)];
+        let ansi = [" * alpha", "", "   gamma"];
+        let rows = |r: usize| {
+            texts.get(r).map(|text| RowRef {
+                ansi: ansi[r],
+                text: Some(text),
+            })
+        };
+        // From the bullet of row 0 to the gutter of row 2.
+        let span = span(0, 1, 2, 2);
+        assert_eq!(text_span(span, 10, rows), Some(self::span(0, 3, 0, 8)));
+        assert_eq!(selected_text(span, 10, rows), "alpha");
+        // A span in a gutter or on a blank row holds no text.
+        assert_eq!(text_span(self::span(0, 0, 0, 3), 10, rows), None);
+        assert_eq!(text_span(self::span(1, 0, 2, 3), 10, rows), None);
     }
 }

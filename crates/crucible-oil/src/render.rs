@@ -207,17 +207,10 @@ mod tests {
     fn a_text_that_wraps_records_the_gap_on_each_continued_row() {
         let rendered = render_tree_to_grid(&text("alpha beta  gamma\ndelta"), 11, NATURAL_HEIGHT);
         let grid = &rendered.grid;
-        assert_eq!(grid.join(0), None);
-        assert_eq!(
-            grid.join(1).map(|j| j.gap.as_str()),
-            Some("  "),
-            "the two spaces the wrap dropped"
-        );
-        assert_eq!(
-            grid.join(2),
-            None,
-            "a line break in the source is not a wrap"
-        );
+        let join = |y: usize| grid.row_text(y).and_then(|t| t.join.as_deref());
+        assert_eq!(join(0), None);
+        assert_eq!(join(1), Some("  "), "the two spaces the wrap dropped");
+        assert_eq!(join(2), None, "a line break in the source is not a wrap");
     }
 
     #[test]
@@ -227,11 +220,23 @@ mod tests {
             row([text("  "), text("second").continues_line(" ", 0)]),
         ]);
         let rendered = render_tree_to_grid(&tree, 20, NATURAL_HEIGHT);
-        let join = rendered
-            .grid
-            .join(1)
-            .expect("the second row continues the first");
-        assert_eq!((join.gap.as_str(), join.content_col), (" ", 2));
+        let text = rendered.grid.row_text(1).expect("the second row exists");
+        assert_eq!((text.join.as_deref(), text.start), (Some(" "), 2));
+    }
+
+    #[test]
+    fn a_gutter_moves_the_text_start_of_its_rows() {
+        let tree = col([
+            row([text(" * ").gutter(), text("first")]),
+            text("   second\n   third").gutter_cols(3),
+            text("\u{2584}".repeat(10)).gutter(),
+            text("plain"),
+        ]);
+        let rendered = render_tree_to_grid(&tree, 10, NATURAL_HEIGHT);
+        let starts: Vec<usize> = (0..5)
+            .map(|y| rendered.grid.row_text(y).map_or(99, |t| t.start))
+            .collect();
+        assert_eq!(starts, vec![3, 3, 3, 10, 0]);
     }
 
     #[test]

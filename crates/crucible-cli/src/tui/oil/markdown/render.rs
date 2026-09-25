@@ -45,7 +45,7 @@ pub(super) fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
             let prefix = if show_bullet {
                 bullet_node()
             } else {
-                text(" ".repeat(margins.left))
+                margin_node(margins.left)
             };
             ctx.blocks.push(row([prefix, styled(&heading_text, style)]));
             ctx.is_first_paragraph = false;
@@ -168,13 +168,21 @@ pub(super) fn render_children(node: &markdown_it::Node, ctx: &mut RenderContext)
     }
 }
 
-/// The ` ● ` that marks the first line of an assistant message.
+/// The ` ● ` that marks the first line of an assistant message. It is a
+/// gutter: a full-screen selection does not cover it.
 fn bullet_node() -> Node {
     let t = theme::active();
     styled(
         ASSISTANT_BULLET,
         Style::new().fg(t.resolve_color(t.colors.bullet_prefix)),
     )
+    .gutter()
+}
+
+/// The left margin of a message, `width` columns. It is a gutter: a
+/// full-screen selection does not cover it.
+pub(super) fn margin_node(width: usize) -> Node {
+    text(" ".repeat(width)).gutter()
 }
 
 /// Render `source` verbatim, one node per line, inside the message margins.
@@ -195,7 +203,7 @@ pub(super) fn render_source_lines(source: &str, ctx: &mut RenderContext) {
         ctx.blocks.push(if bullet {
             row([bullet_node(), text_node(line)])
         } else if margins.left > 0 {
-            row([text(" ".repeat(margins.left)), text_node(line)])
+            row([margin_node(margins.left), text_node(line)])
         } else {
             text_node(line)
         });
@@ -220,13 +228,11 @@ pub(super) fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext
     let wrapped = wrap_text_with_gaps(&para_text, ctx.width);
 
     let show_bullet = margins.show_bullet && ctx.is_first_paragraph;
-    let indent = " ".repeat(margins.left);
-
     for (i, (line, gap)) in wrapped.iter().enumerate() {
         let prefix = if i == 0 && show_bullet {
             bullet_node()
         } else {
-            text(&indent)
+            margin_node(margins.left)
         };
         let body = match gap {
             Some(gap) => text_node(line).continues_line(gap.as_str(), 0),

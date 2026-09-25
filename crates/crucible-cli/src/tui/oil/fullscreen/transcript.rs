@@ -7,18 +7,18 @@
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::containers::ChatNode;
-use crucible_oil::cell_grid::{CellGrid, RowJoin};
+use crucible_oil::cell_grid::{CellGrid, RowText};
 use crucible_oil::render::{render_tree_to_grid, NATURAL_HEIGHT};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-/// A row of a laid-out node: its cells, and how it continues the row above.
+/// A row of a laid-out node: its cells, and where its source text is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TranscriptRow {
     /// The row as styled text, trailing padding dropped.
     pub ansi: String,
-    /// How the row continues the row above, when a wrap split them.
-    pub join: Option<RowJoin>,
+    /// Where the source text is, and how the row continues the row above.
+    pub text: RowText,
 }
 
 impl TranscriptRow {
@@ -31,14 +31,14 @@ impl TranscriptRow {
         }
         Self {
             ansi,
-            join: grid.join(y).cloned(),
+            text: grid.row_text(y).cloned().unwrap_or_default(),
         }
     }
 
     pub fn as_ref(&self) -> super::selection::RowRef<'_> {
         super::selection::RowRef {
             ansi: &self.ansi,
-            join: self.join.as_ref(),
+            text: Some(&self.text),
         }
     }
 }
