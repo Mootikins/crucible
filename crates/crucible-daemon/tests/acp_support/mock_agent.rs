@@ -119,6 +119,9 @@ pub enum Step {
     /// The next steps run while the question is open. The turn waits for
     /// every answer before it ends.
     Permission(Value),
+    /// Wait for the answer to the last `Permission`. Run the step only when
+    /// the user chose an option of an `allow_*` kind.
+    IfAllowed(Box<Step>),
     /// Call a tool on the HTTP MCP server that `session/new` offered.
     McpCall { tool: String, args: Value },
     /// Hold the turn until `session/cancel`, then end it with `cancelled`.
@@ -523,11 +526,12 @@ struct Turn {
 impl Turn {
     /// Run the steps. `None` means the turn never answers.
     async fn run(self) -> Option<StopReason> {
-        let steps = lock(&self.shared).script.turn.clone();
+        let mut steps: std::collections::VecDeque<Step> =
+            lock(&self.shared).script.turn.clone().into();
         let cancels_at_start = *self.cancels.borrow();
         let mut stop = StopReason::EndTurn;
         let mut questions = Vec::new();
-        for step in steps {
+        while let Some(step) = steps.pop_front() {
             match step {
                 Step::Text(text) => self.update(SessionUpdate::AgentMessageChunk(
                     ContentChunk::new(ContentBlock::from(text)),
@@ -543,6 +547,7 @@ impl Turn {
                 Step::Update(update) => send_update(&self.cx, &self.session_id.to_string(), update),
                 Step::Permission(mut params) => {
                     params["sessionId"] = json!(self.session_id);
+                    let options = params["options"].clone();
                     let request: RequestPermissionRequest =
                         serde_json::from_value(params).expect("valid permission params");
                     let answer = self.cx.send_request(request).block_task();
@@ -552,8 +557,22 @@ impl Turn {
                             Ok(response) => json!({"result": response}),
                             Err(error) => json!({"error": error}),
                         };
-                        log(&shared, "permission/answer", result);
+                        log(&shared, "permission/answer", result.clone());
+                        let chosen = &result["result"]["outcome"]["optionId"];
+                        options.as_array().is_some_and(|options| {
+                            options.iter().any(|o| {
+                                &o["optionId"] == chosen
+                                    && o["kind"].as_str().is_some_and(|k| k.starts_with("allow"))
+                            })
+                        })
                     }));
+                }
+                Step::IfAllowed(step) => {
+                    if let Some(question) = questions.pop() {
+                        if question.await.unwrap_or(false) {
+                            steps.push_front(*step);
+                        }
+                    }
                 }
                 Step::McpCall { tool, args } => {
                     let url = lock(&self.shared).mcp_url.clone();

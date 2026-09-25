@@ -39,6 +39,8 @@ struct Gate {
     session_id: SessionId,
     event_tx: broadcast::Sender<SessionEventMessage>,
     events: broadcast::Receiver<SessionEventMessage>,
+    /// The text that the agent streamed, over every turn.
+    text: String,
 }
 
 /// The agent reports `mode` as its own current mode.
@@ -61,6 +63,7 @@ async fn gate(mode: &str) -> Gate {
                     { "optionId": "reject_once", "name": "Reject", "kind": "reject_once" },
                 ],
             })),
+            Step::IfAllowed(Box::new(Step::Text("edited a.rs".to_string()))),
             Step::Text("done".to_string()),
         ],
         log: Some(log.clone()),
@@ -102,6 +105,7 @@ async fn gate(mode: &str) -> Gate {
         session_id: session.id,
         event_tx,
         events,
+        text: String::new(),
     }
 }
 
@@ -134,6 +138,7 @@ impl Gate {
                         .respond_to_permission(&self.session_id, id, answer.clone())
                         .expect("the prompt is registered");
                 }
+                "text_delta" => self.text += msg.data["content"].as_str().unwrap_or(""),
                 "turn_finished" => break,
                 _ => {}
             }
@@ -198,7 +203,8 @@ async fn an_agent_mode_named_plan_does_not_take_the_crucible_plan_rule() {
     );
 }
 
-/// The user allows the call once. The agent receives `allow_once`.
+/// The user allows the call once. The agent receives `allow_once` and
+/// runs the call.
 #[tokio::test]
 async fn a_user_who_allows_once_sends_allow_once_to_the_agent() {
     let mut gate = gate("default").await;
@@ -207,4 +213,19 @@ async fn a_user_who_allows_once_sends_allow_once_to_the_agent() {
         "the user must be asked"
     );
     assert_eq!(gate.answers(), ["allow_once"]);
+    assert!(gate.text.contains("edited a.rs"), "{:?}", gate.text);
+}
+
+/// The user rejects the call. The agent receives `reject_once` and does
+/// not run the call.
+#[tokio::test]
+async fn a_user_who_rejects_stops_the_call_of_the_agent() {
+    let mut gate = gate("default").await;
+    assert!(
+        gate.turn(true, PermResponse::deny()).await,
+        "the user must be asked"
+    );
+    assert_eq!(gate.answers(), ["reject_once"]);
+    assert!(gate.text.contains("done"), "{:?}", gate.text);
+    assert!(!gate.text.contains("edited a.rs"), "{:?}", gate.text);
 }
