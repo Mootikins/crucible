@@ -10,11 +10,15 @@ use super::{Frame, FullscreenView, ViewAction};
 use crate::tui::oil::app::{Action, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
-use crossterm::event::{KeyCode, MouseEventKind};
+use crossterm::event::{KeyCode, MouseEvent, MouseEventKind};
 use crucible_oil::cell_grid::CellGrid;
 
 /// Moves to the next pane.
 pub const SWITCH_KEY: KeyCode = KeyCode::F(4);
+
+/// The rows above a pane: the tab row. A pane draws below them, so a mouse
+/// row moves up by this much before the pane reads it.
+const PANE_TOP: u16 = 1;
 
 /// A scrolling buffer of lines that a plugin owns.
 ///
@@ -173,6 +177,15 @@ impl FullscreenShell {
                 return ShellAction::None;
             }
         }
+        let event = match event {
+            // The pane reads its own rows, not the screen's.
+            Event::Mouse(mouse) => match mouse.row.checked_sub(PANE_TOP) {
+                Some(row) => Event::Mouse(MouseEvent { row, ..*mouse }),
+                None => return ShellAction::None,
+            },
+            other => other.clone(),
+        };
+        let event = &event;
         match self.active {
             Pane::Buffer => match self.buffer.as_mut().map(|b| b.handle_event(event)) {
                 Some(ViewAction::Ignored) | None => ShellAction::None,
@@ -222,7 +235,7 @@ impl FullscreenShell {
         let (width, height) = ctx.terminal_size;
         let mut grid = CellGrid::new(width as usize, height as usize);
         let inner = ViewContext {
-            terminal_size: (width, height.saturating_sub(1)),
+            terminal_size: (width, height.saturating_sub(PANE_TOP)),
             ..*ctx
         };
         let mut cursor = None;
@@ -230,14 +243,19 @@ impl FullscreenShell {
             Pane::Chat(i) => {
                 let pane = &mut self.chats[i];
                 let frame = pane.view.frame(&pane.app, &inner);
+                let top = PANE_TOP as usize;
                 for y in 0..frame.grid.height() {
-                    grid.copy_row_from(y + 1, &frame.grid, y);
+                    grid.copy_row_from(y + top, &frame.grid, y);
                 }
-                cursor = frame.cursor.map(|(x, y)| (x, y + 1));
+                cursor = frame.cursor.map(|(x, y)| (x, y + PANE_TOP));
             }
             Pane::Buffer => {
                 if let Some(buffer) = self.buffer.as_mut() {
-                    buffer.draw(&mut grid, 1, height.saturating_sub(1) as usize);
+                    buffer.draw(
+                        &mut grid,
+                        PANE_TOP as usize,
+                        height.saturating_sub(PANE_TOP) as usize,
+                    );
                 }
             }
         }
@@ -368,6 +386,65 @@ mod tests {
                 pane: 1,
                 message: "hi".into()
             }
+        );
+    }
+
+    /// Found in the demo over Zellij: the highlight was one row below the
+    /// pointer. The shell draws a pane under its tab row, so a pointer row
+    /// must move up by the same row before the pane reads it.
+    #[test]
+    fn a_drag_in_a_pane_selects_the_text_under_the_pointer() {
+        use crossterm::event::MouseButton;
+        let mut app = crate::tui::oil::OilChatApp::default();
+        app.add_system_message("above the target".into());
+        app.add_system_message("target words here".into());
+        app.add_system_message("below the target".into());
+        let mut shell = FullscreenShell::new(
+            vec![ChatPane {
+                name: "one".into(),
+                app,
+                view: FullscreenView::new(),
+            }],
+            None,
+        );
+        let rows = frame(&mut shell);
+        let row = rows
+            .iter()
+            .position(|r| r.contains("target words"))
+            .expect("the target is on screen") as u16;
+        let col = rows[row as usize].find("target words").unwrap() as u16;
+        let at = |kind, column| {
+            Event::Mouse(MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        shell.handle_event(&at(MouseEventKind::Down(MouseButton::Left), col));
+        shell.handle_event(&at(MouseEventKind::Drag(MouseButton::Left), col + 5));
+        let copied = shell.handle_event(&at(MouseEventKind::Up(MouseButton::Left), col + 5));
+        assert_eq!(
+            copied,
+            ShellAction::View(ViewAction::Copy("target".into())),
+            "the copy reads the row under the pointer"
+        );
+
+        let screen = frame_at_ctx(100, 30, |ctx| shell.frame(ctx));
+        let inverted: Vec<usize> = (0..screen.grid.height())
+            .filter(|&y| {
+                y > 0
+                    && screen
+                        .grid
+                        .row(y)
+                        .iter()
+                        .any(|cell| cell.style.contains("\x1b[7m"))
+            })
+            .collect();
+        assert_eq!(
+            inverted,
+            vec![row as usize],
+            "the highlight is on the row under the pointer"
         );
     }
 
