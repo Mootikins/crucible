@@ -364,14 +364,9 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             _ => vec![ChatAppMsg::StreamComplete],
         },
         TurnPayload::PrecognitionComplete {
-            notes_count,
-            notes,
-            error,
-            ..
+            notes_count, notes, ..
         } => {
-            if let Some(error) = error {
-                vec![ChatAppMsg::Error(format!("Precognition failed: {error}"))]
-            } else if notes_count > 0 {
+            if notes_count > 0 {
                 vec![ChatAppMsg::PrecognitionResult { notes_count, notes }]
             } else {
                 vec![]

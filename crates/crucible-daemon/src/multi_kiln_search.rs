@@ -60,7 +60,7 @@ pub async fn search_across_kilns(
     top_k: usize,
     provider_trust: Option<TrustLevel>,
     workspace: Option<&Path>,
-) -> Result<Vec<SearchResult>> {
+) -> Result<(Vec<SearchResult>, Vec<String>)> {
     search_across_kilns_with_stage(
         sources,
         query_embedding,
@@ -72,6 +72,9 @@ pub async fn search_across_kilns(
     .await
 }
 
+/// Search every source and merge the hits. The second list names each kiln
+/// whose search failed, as `<kiln>: <error>`: the caller must tell the user,
+/// because the hits alone look the same as a kiln with no match.
 pub async fn search_across_kilns_with_stage(
     sources: &[KilnSearchSource],
     query_embedding: Vec<f32>,
@@ -79,7 +82,8 @@ pub async fn search_across_kilns_with_stage(
     provider_trust: Option<TrustLevel>,
     workspace: Option<&Path>,
     rerank: Option<&RerankStage>,
-) -> Result<Vec<SearchResult>> {
+) -> Result<(Vec<SearchResult>, Vec<String>)> {
+    let mut failures = Vec::new();
     let mut best: HashMap<(PathBuf, String, Option<usize>), SearchResult> = HashMap::new();
 
     // Over-fetch only when a handler will look at the extra rows.
@@ -146,6 +150,11 @@ pub async fn search_across_kilns_with_stage(
                         source.kiln_path.display(),
                         e
                     );
+                    let kiln = source.kiln_name.as_ref().map_or_else(
+                        || source.kiln_path.display().to_string(),
+                        |name| name.as_str().to_string(),
+                    );
+                    failures.push(format!("{kiln}: {e}"));
                     continue;
                 }
             }
@@ -217,7 +226,7 @@ pub async fn search_across_kilns_with_stage(
     }
     merged.truncate(top_k);
 
-    Ok(merged)
+    Ok((merged, failures))
 }
 
 /// The source a handler names by kiln. The first of that name, as the
@@ -556,7 +565,7 @@ mod tests {
     async fn search_empty_sources_returns_empty() {
         let tmp = TempDir::new().unwrap();
 
-        let results = search_across_kilns(&[], vec![0.1, 0.2], 10, None, Some(tmp.path()))
+        let (results, _) = search_across_kilns(&[], vec![0.1, 0.2], 10, None, Some(tmp.path()))
             .await
             .unwrap();
 
@@ -575,9 +584,10 @@ mod tests {
             false,
         )];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
-            .await
-            .unwrap();
+        let (results, _) =
+            search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r.kiln == name_of(&kiln)));
@@ -604,9 +614,10 @@ mod tests {
             ),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
-            .await
-            .unwrap();
+        let (results, _) =
+            search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 4);
         assert_eq!(results[0].document_id.0, "a-2");
@@ -627,9 +638,10 @@ mod tests {
             false,
         )];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
-            .await
-            .unwrap();
+        let (results, _) =
+            search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].document_id.0, "doc1");
@@ -649,13 +661,16 @@ mod tests {
             mock_source(good.clone(), vec![mock_result("good-doc", 0.7)], false),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
-            .await
-            .unwrap();
+        let (results, failures) =
+            search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].document_id.0, "good-doc");
         assert_eq!(results[0].kiln, name_of(&good));
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert!(failures[0].starts_with("bad: "), "{failures:?}");
     }
 
     /// The whole point of the retype: a source with no registry name yields
@@ -675,9 +690,10 @@ mod tests {
             false,
         )];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
-            .await
-            .unwrap();
+        let (results, _) =
+            search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(
@@ -704,9 +720,10 @@ mod tests {
             mock_source(kiln_b.clone(), vec![mock_result("doc-b", 0.5)], false),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
-            .await
-            .unwrap();
+        let (results, _) =
+            search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results
@@ -747,7 +764,7 @@ mod tests {
             ),
         ];
 
-        let results = search_across_kilns(
+        let (results, _) = search_across_kilns(
             &sources,
             vec![0.1, 0.2],
             10,
@@ -777,7 +794,7 @@ mod tests {
             false,
         )];
 
-        let results = search_across_kilns(
+        let (results, _) = search_across_kilns(
             &sources,
             vec![0.1, 0.2],
             10,
@@ -818,9 +835,10 @@ mod tests {
             ),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(&workspace))
-            .await
-            .unwrap();
+        let (results, _) =
+            search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(&workspace))
+                .await
+                .unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results.iter().any(|r| r.document_id.0 == "primary-doc"));
@@ -849,7 +867,7 @@ mod tests {
             ),
         ];
 
-        let results = search_across_kilns(
+        let (results, _) = search_across_kilns(
             &sources,
             vec![0.1, 0.2],
             10,
@@ -892,7 +910,7 @@ mod tests {
             knowledge_repo: Arc::new(repo),
         }];
 
-        let results = search_across_kilns(&sources, vec![1.0], 10, None, None)
+        let (results, _) = search_across_kilns(&sources, vec![1.0], 10, None, None)
             .await
             .unwrap();
 
@@ -914,7 +932,7 @@ mod tests {
             knowledge_repo: Arc::new(repo),
         }];
 
-        let results = search_across_kilns(&sources, vec![1.0], 10, None, None)
+        let (results, _) = search_across_kilns(&sources, vec![1.0], 10, None, None)
             .await
             .unwrap();
 
@@ -936,7 +954,7 @@ mod tests {
             knowledge_repo: Arc::new(repo),
         }];
 
-        let results = search_across_kilns(&sources, vec![1.0], 10, None, None)
+        let (results, _) = search_across_kilns(&sources, vec![1.0], 10, None, None)
             .await
             .unwrap();
 
@@ -994,6 +1012,7 @@ mod rerank_tests {
         search_across_kilns_with_stage(sources, vec![1.0, 0.0], top_k, None, None, Some(stage))
             .await
             .unwrap()
+            .0
     }
 
     #[tokio::test]

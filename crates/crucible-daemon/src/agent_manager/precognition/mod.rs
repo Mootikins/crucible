@@ -329,8 +329,9 @@ impl AgentManager {
 
     /// Collect one search source per kiln the session reaches.
     ///
-    /// A kiln that will not open is dropped with a warning rather than failing
-    /// the fan-out: one unreadable corpus must not cost the session the rest.
+    /// A kiln that will not open is dropped rather than failing the fan-out:
+    /// one unreadable corpus must not cost the session the rest. One warning
+    /// notification names every kiln that did not open.
     /// Callers check `enrichment_config()` before calling — all kilns share the
     /// one config, so there is no per-kiln embedding model to reconcile.
     pub(super) async fn collect_kiln_search_sources(
@@ -345,6 +346,7 @@ impl AgentManager {
         // contributes no search source, so retrieval cannot reach something the
         // registration floor never cleared. `paths_for` logs each drop.
         let registry = self.session_manager.kiln_registry();
+        let mut failures = Vec::new();
         for kiln in &session.kilns {
             let Some(kiln_path) = registry.resolve(kiln).path() else {
                 continue;
@@ -358,21 +360,31 @@ impl AgentManager {
                     kiln_name: Some(kiln.clone()),
                     knowledge_repo: handle.as_knowledge_repository(),
                 }),
-                Err(error) => warn!(
-                    session_id = %session_id,
-                    kiln = %kiln,
-                    error = %error,
-                    "Failed to open kiln for precognition"
-                ),
+                Err(error) => {
+                    warn!(
+                        session_id = %session_id,
+                        kiln = %kiln,
+                        error = %error,
+                        "Failed to open kiln for search"
+                    );
+                    failures.push(format!("{kiln}: {error}"));
+                }
             }
+        }
+        if !failures.is_empty() {
+            let message = format!("Could not open for search: {}", failures.join("; "));
+            self.notify(
+                session_id,
+                crucible_core::types::Notification::warning(message),
+            );
         }
 
         sources
     }
 
-    /// Execute a vector search across the given kiln sources.
-    /// Returns the results and the number of kilns searched, or `None` on failure
-    /// (after emitting a precognition event).
+    /// Execute a vector search across the given kiln sources. A kiln that
+    /// failed, or the whole search, is reported in one warning notification.
+    /// `None` when the whole search failed (after the precognition event).
     async fn execute_multi_kiln_search(
         &self,
         params: ExecuteMultiKilnSearchParams<'_>,
@@ -389,15 +401,28 @@ impl AgentManager {
         )
         .await
         {
-            Ok(r) => Some(r),
+            Ok((hits, failures)) => {
+                if !failures.is_empty() {
+                    let message = format!("Precognition could not search: {}", failures.join("; "));
+                    self.notify(
+                        params.session_id,
+                        crucible_core::types::Notification::warning(message),
+                    );
+                }
+                Some(hits)
+            }
             Err(error) => {
                 warn!(session_id = %params.session_id, error = %error, "Precognition search across kilns failed");
+                let message = format!("Precognition search failed: {error}");
+                self.notify(
+                    params.session_id,
+                    crucible_core::types::Notification::warning(message),
+                );
                 emit_precognition_event(
                     params.event_tx,
                     params.session_id,
                     params.original_content,
                     Vec::new(),
-                    Some(format!("search failed: {error}")),
                 );
                 None
             }
@@ -439,8 +464,12 @@ impl AgentManager {
             Ok(p) => p,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
-                let error = Some(format!("no embedding provider: {error}"));
-                emit_precognition_event(event_tx, session_id, original_content, Vec::new(), error);
+                let message = format!("Precognition has no embedding provider: {error}");
+                self.notify(
+                    session_id,
+                    crucible_core::types::Notification::warning(message),
+                );
+                emit_precognition_event(event_tx, session_id, original_content, Vec::new());
                 return None;
             }
         };
@@ -449,8 +478,12 @@ impl AgentManager {
             Ok(e) => e,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Precognition embedding failed");
-                let error = Some(format!("embedding failed: {error}"));
-                emit_precognition_event(event_tx, session_id, original_content, Vec::new(), error);
+                let message = format!("Precognition embedding failed: {error}");
+                self.notify(
+                    session_id,
+                    crucible_core::types::Notification::warning(message),
+                );
+                emit_precognition_event(event_tx, session_id, original_content, Vec::new());
                 return None;
             }
         };
@@ -459,7 +492,7 @@ impl AgentManager {
         let kilns_searched = sources.len();
         if sources.is_empty() {
             warn!(session_id = %session_id, "No kiln opened for precognition");
-            emit_precognition_event(event_tx, session_id, original_content, Vec::new(), None);
+            emit_precognition_event(event_tx, session_id, original_content, Vec::new());
             return None;
         }
 
@@ -531,7 +564,7 @@ impl AgentManager {
             .await
         };
         let note_info = extract_note_info(&results, label_kilns);
-        emit_precognition_event(event_tx, session_id, original_content, note_info, None);
+        emit_precognition_event(event_tx, session_id, original_content, note_info);
 
         // Empty context block (no results) → don't inject anything; the
         // empty message would just waste tokens.

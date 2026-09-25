@@ -63,6 +63,14 @@ is a Keep a Changelog category.
 
 ### Fixed
 
+- **A kiln search that fails warns the user.** A kiln whose search failed, or
+  that did not open, gave no hits and no message, so its silence looked like
+  a kiln with no match. Precognition and `semantic_search` now send one
+  warning notification per search that names each failed kiln, and the
+  `semantic_search` result lists them in `failed_kilns`. A failed embedding
+  provider or embedding also sends a warning notification. `search_vectors`
+  answers an error when its kiln fails. The `error` field on
+  `precognition_complete` is removed: the notification carries the reason.
 - **Undo is refused on a session an external agent runs.** The daemon rewound
   its own conversation tree while the ACP agent kept its history, so the next
   turn answered from turns the transcript no longer showed — and every entry

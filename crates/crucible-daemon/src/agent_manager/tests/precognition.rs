@@ -185,10 +185,10 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
     crate::embedding::clear_embedding_provider_cache();
 }
 
-/// A failed embedding is not "no notes": the event says why, so each
-/// client can tell the user that the answer is not grounded.
+/// A failed embedding is not "no notes": a warning notification says why,
+/// so the user knows that the answer is not grounded.
 #[tokio::test]
-async fn a_failed_precognition_search_names_its_error() {
+async fn a_failed_precognition_search_warns_the_user() {
     crate::embedding::clear_embedding_provider_cache();
     let tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
@@ -210,7 +210,10 @@ async fn a_failed_precognition_search_names_its_error() {
             ..serde_json::from_str("{}").unwrap()
         },
     );
-    let agent_manager = create_test_agent_manager_with_enrichment(session_manager, unreachable);
+    let agent_manager =
+        create_test_agent_manager_with_enrichment(session_manager.clone(), unreachable);
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
     let mut agent = test_agent();
     agent.precognition_enabled = true;
     agent_manager
@@ -224,14 +227,71 @@ async fn a_failed_precognition_search_names_its_error() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
         .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
         .await
         .unwrap();
 
+    let event = next_event_or_skip(&mut event_rx, "notification_added").await;
+    let notification = &event.data["notification"];
+    assert_eq!(notification["kind"], "warning", "{}", event.data);
+    let message = notification["message"].as_str().unwrap();
+    assert!(message.contains("embedding failed"), "{message}");
     let event = next_event_or_skip(&mut event_rx, "precognition_complete").await;
-    assert!(event.data["error"].is_string(), "{}", event.data);
+    assert!(event.data.get("error").is_none(), "{}", event.data);
+    crate::embedding::clear_embedding_provider_cache();
+}
+
+/// A kiln that does not open is named in one warning notification.
+#[tokio::test]
+async fn a_kiln_that_does_not_open_warns_the_user() {
+    crate::embedding::clear_embedding_provider_cache();
+    let tmp = TempDir::new().unwrap();
+    // A file is not a kiln directory, so the kiln cannot open.
+    let not_a_dir = tmp.path().join("not-a-dir");
+    std::fs::write(&not_a_dir, "").unwrap();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", not_a_dir.as_path())]);
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(tmp.path().to_path_buf()),
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = create_test_agent_manager_with_enrichment(
+        session_manager.clone(),
+        crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
+    );
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
+    let mut agent = test_agent();
+    agent.precognition_enabled = true;
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+    agent_manager.install_agent_for_test(
+        session.id.to_string(),
+        Arc::new(Mutex::new(Box::new(StreamingMockAgent {
+            events: vec![script::text("ok"), script::done()],
+        }))),
+    );
+
+    agent_manager
+        .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
+        .await
+        .unwrap();
+
+    let event = next_event_or_skip(&mut event_rx, "notification_added").await;
+    let notification = &event.data["notification"];
+    assert_eq!(notification["kind"], "warning", "{}", event.data);
+    let message = notification["message"].as_str().unwrap();
+    assert!(
+        message.contains("Could not open for search: kiln: "),
+        "{message}"
+    );
     crate::embedding::clear_embedding_provider_cache();
 }
 

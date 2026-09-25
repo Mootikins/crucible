@@ -143,6 +143,20 @@ impl NotificationHub {
         Ok(stored)
     }
 
+    /// [`Self::add`] with the scope of the session `session_id`.
+    pub fn add_for_session(
+        &self,
+        session_id: &str,
+        notification: Notification,
+    ) -> Result<Notification> {
+        self.add(NotifyRequest {
+            notification,
+            session_id: Some(session_id.to_string()),
+            workspace: None,
+            kiln: None,
+        })
+    }
+
     /// The ring, newest first. Without `all`, only what a client with
     /// `workspace` and `kilns` may see; the workspace also brings the kilns
     /// of the project it sits in.

@@ -567,7 +567,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'precognition_result': {
-        if (event.error) deps.setError(`Precognition failed: ${event.error}`);
         // Attach metadata to the most recent user message so PrecognitionBadge
         // can render on it. Daemon currently only fires precognition on the
         // first turn, so this is typically the first user message; finding

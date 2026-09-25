@@ -529,9 +529,10 @@ mod tests {
             knowledge_repo: Arc::new(SqliteKnowledgeRepository::new(store)),
         }];
 
-        let results = search_across_kilns(&sources, vec![0.0, 1.0, 0.0], 5, None, Some(&kiln_path))
-            .await
-            .expect("search");
+        let (results, _) =
+            search_across_kilns(&sources, vec![0.0, 1.0, 0.0], 5, None, Some(&kiln_path))
+                .await
+                .expect("search");
 
         assert!(
             !results.is_empty(),

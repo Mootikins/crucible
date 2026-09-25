@@ -880,12 +880,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.messages).toHaveLength(0);
   });
 
-  it('precognition_result: a failed search shows its reason', () => {
-    const h = createHarness();
-    h.reducer({ type: 'precognition_result', notes_count: 0, notes: [], error: 'embedding failed: refused' });
-    expect(h.state.error).toContain('embedding failed: refused');
-  });
-
   it('mode_changed: updates local mode AND statusBar', () => {
     const h = createHarness();
     h.reducer({ type: 'mode_changed', mode: 'plan' });

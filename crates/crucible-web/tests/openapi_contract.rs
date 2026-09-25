@@ -284,7 +284,6 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
         ChatEvent::PrecognitionResult {
             notes_count: 0,
             notes: Vec::new(),
-            error: None,
         },
         ChatEvent::ModeChanged {
             mode: String::new(),

@@ -166,6 +166,61 @@ async fn semantic_search_returns_the_registry_name_when_there_is_one() {
     );
 }
 
+/// A kiln that fails is named in the result for the model, and in one
+/// warning notification for the user.
+#[tokio::test]
+async fn semantic_search_names_a_failed_kiln_to_the_model_and_the_user() {
+    let temp_dir = TempDir::new().unwrap();
+    let kiln_path = temp_dir.path().to_path_buf();
+    let (event_tx, _events) = tokio::sync::broadcast::channel(16);
+    let hub = Arc::new(crate::notifications::NotificationHub::new(
+        temp_dir.path(),
+        crate::test_support::temp_session_manager(),
+        Arc::new(crate::project_manager::ProjectManager::new(
+            temp_dir.path().join("projects.json"),
+        )),
+        event_tx,
+    ));
+    let mut tools = SearchTools::new(
+        kiln_path.to_string_lossy().to_string(),
+        Arc::new(MockKnowledgeRepository::new()),
+        Arc::new(MockEmbeddingProvider::new()),
+    )
+    .with_search_sources(vec![
+        KilnSearchSource {
+            kiln_path: kiln_path.clone(),
+            kiln_name: Some(crate::test_support::kiln_name("work-notes")),
+            knowledge_repo: Arc::new(OneHitRepository),
+        },
+        KilnSearchSource {
+            kiln_path: kiln_path.join("broken"),
+            kiln_name: Some(crate::test_support::kiln_name("broken")),
+            knowledge_repo: Arc::new(MockKnowledgeRepository::failing()),
+        },
+    ]);
+    tools.notify = Some((hub.clone(), "session-1".to_string()));
+
+    let result = tools
+        .semantic_search(Parameters(SemanticSearchParams {
+            query: "rust".to_string(),
+            limit: 10,
+        }))
+        .await
+        .expect("semantic_search succeeds");
+
+    let parsed = parse_tool_json(&result);
+    assert_eq!(parsed["results"][0]["kiln"], "work-notes");
+    let failed = parsed["failed_kilns"][0].as_str().unwrap_or_default();
+    assert!(failed.starts_with("broken: "), "{parsed}");
+    let notices = hub.list(None, &[], true);
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(
+        notices[0].kind,
+        crucible_core::types::NotificationKind::Warning
+    );
+    assert!(notices[0].message.contains("broken: "), "{notices:?}");
+}
+
 // ===== grep_notes tests =====
 
 #[tokio::test]

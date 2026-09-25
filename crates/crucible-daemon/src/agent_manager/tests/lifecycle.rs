@@ -24,15 +24,7 @@ async fn a_session_notification_goes_through_the_hub() {
     let (tmp, session_manager, session) = setup_session_manager().await;
     let agent_manager = create_test_agent_manager(session_manager.clone());
     let (event_tx, mut events) = broadcast::channel(16);
-    let hub = Arc::new(crate::notifications::NotificationHub::new(
-        tmp.path(),
-        session_manager,
-        Arc::new(crate::project_manager::ProjectManager::new(
-            tmp.path().join("projects.json"),
-        )),
-        event_tx,
-    ));
-    agent_manager.set_notification_hub(hub.clone());
+    let hub = bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
 
     let notification = crucible_core::types::Notification::toast("saved");
     agent_manager.notify(&session.id, notification.clone());

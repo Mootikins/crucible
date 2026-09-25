@@ -244,6 +244,16 @@ impl CrucibleMcpServer {
         self
     }
 
+    /// Let `semantic_search` warn the session about a kiln it could not search.
+    pub fn with_notifications(
+        mut self,
+        hub: Option<Arc<crate::notifications::NotificationHub>>,
+        session_id: &str,
+    ) -> Self {
+        self.search_tools.notify = hub.map(|hub| (hub, session_id.to_string()));
+        self
+    }
+
     /// Let `semantic_search` fire `search:rerank` through the plugin VM.
     #[must_use]
     pub fn with_rerank_stage(

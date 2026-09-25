@@ -475,14 +475,12 @@ impl ReactorTestHarness {
             .await
             .unwrap();
         let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
-        agent_manager.set_notification_hub(Arc::new(crate::notifications::NotificationHub::new(
+        bind_test_hub(
+            &agent_manager,
             tmp.path(),
             session_manager.clone(),
-            Arc::new(crate::project_manager::ProjectManager::new(
-                tmp.path().join("projects.json"),
-            )),
-            event_tx.clone(),
-        )));
+            &event_tx,
+        );
         Self {
             agent_manager,
             session_id: session.id.to_string(),
@@ -832,6 +830,24 @@ fn create_test_agent_manager_with_permissions(
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
     .into()
+}
+
+/// Bind a notification hub under `dir` that sends on `event_tx`.
+pub(in crate::agent_manager) fn bind_test_hub(
+    agent_manager: &AgentManager,
+    dir: &std::path::Path,
+    sessions: Arc<SessionManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Arc<crate::notifications::NotificationHub> {
+    let projects = crate::project_manager::ProjectManager::new(dir.join("projects.json"));
+    let hub = Arc::new(crate::notifications::NotificationHub::new(
+        dir,
+        sessions,
+        Arc::new(projects),
+        event_tx.clone(),
+    ));
+    agent_manager.set_notification_hub(hub.clone());
+    hub
 }
 
 fn create_test_agent_manager_with_enrichment(

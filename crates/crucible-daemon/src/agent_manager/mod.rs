@@ -241,13 +241,11 @@ fn emit_precognition_event(
     session_id: &str,
     query: &str,
     notes: Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
-    error: Option<String>,
 ) {
     let payload = TurnPayload::PrecognitionComplete {
         notes_count: notes.len(),
         query_summary: query.chars().take(100).collect(),
         notes,
-        error,
     };
     if !emit_event(event_tx, SessionEventMessage::typed(session_id, payload)) {
         warn!(
@@ -607,13 +605,7 @@ impl AgentManager {
             warn!(session_id, message = %notification.message, "no notification hub is bound");
             return;
         };
-        let request = crucible_lua::NotifyRequest {
-            notification,
-            session_id: Some(session_id.to_string()),
-            workspace: None,
-            kiln: None,
-        };
-        if let Err(error) = hub.add(request) {
+        if let Err(error) = hub.add_for_session(session_id, notification) {
             warn!(session_id, %error, "failed to send a notification");
         }
     }
@@ -1364,6 +1356,7 @@ impl AgentManager {
                     containment.clone(),
                 )
                 .with_search_sources(search_sources)
+                .with_notifications(self.notifications.get().cloned(), &session.id)
                 .with_kilns(self.session_manager.kiln_paths(&session.kilns))
                 .with_source_roots(self.source_roots.clone())
                 .with_rerank_stage(self.plugin_handlers().map(|(registry, lua)| {

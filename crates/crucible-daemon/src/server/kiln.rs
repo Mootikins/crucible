@@ -595,7 +595,11 @@ pub(crate) async fn handle_search_vectors(
     )
     .await
     {
-        Ok(results) => {
+        // One kiln: a failure is the whole answer, not an empty list.
+        Ok((_, failures)) if !failures.is_empty() => {
+            internal_error(req.id, anyhow::anyhow!(failures.join("; ")))
+        }
+        Ok((results, _)) => {
             let hits: Vec<crate::rpc_client::VectorHit> = results
                 .into_iter()
                 .map(|hit| crate::rpc_client::VectorHit {

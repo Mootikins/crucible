@@ -177,9 +177,6 @@ pub enum ChatEvent {
         notes_count: usize,
         #[serde(default)]
         notes: Vec<PrecognitionNote>,
-        /// Why the search failed. Absent when it ran.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        error: Option<String>,
     },
 
     ModeChanged {
@@ -405,10 +402,8 @@ impl ChatEvent {
                 TurnPayload::PrecognitionComplete {
                     notes_count,
                     ref notes,
-                    ref error,
                     ..
                 } => ChatEvent::PrecognitionResult {
-                    error: error.clone(),
                     notes_count,
                     notes: notes
                         .iter()
@@ -880,19 +875,13 @@ mod tests {
                     { "title": "Note A", "kiln": "docs", "score": 0.9 },
                     { "title": "Note B", "kiln": "docs", "score": 0.7 },
                 ],
-                "error": "search failed",
             }),
         );
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         assert_eq!(chat_event.event_name(), "precognition_result");
         match chat_event {
-            ChatEvent::PrecognitionResult {
-                notes_count,
-                notes,
-                error,
-            } => {
-                assert_eq!(error.as_deref(), Some("search failed"));
+            ChatEvent::PrecognitionResult { notes_count, notes } => {
                 assert_eq!(notes_count, 2);
                 assert_eq!(notes.len(), 2);
                 assert_eq!(notes[0].name, "Note A");

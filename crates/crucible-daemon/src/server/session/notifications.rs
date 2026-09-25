@@ -20,13 +20,7 @@ pub(crate) async fn handle_session_add_notification(
     if am.get_session(session_id).is_err() {
         return session_not_found(req.id, session_id);
     }
-    let request = crucible_lua::NotifyRequest {
-        notification,
-        session_id: Some(session_id.to_string()),
-        workspace: None,
-        kiln: None,
-    };
-    match hub.add(request) {
+    match hub.add_for_session(session_id, notification) {
         Ok(_) => Response::success(
             req.id,
             serde_json::json!({

@@ -46,6 +46,9 @@ pub struct SearchTools {
     /// The `search:rerank` stage, over the plugin VM. A tool call has no
     /// handler VM of its own here; `None` for a server opened by path.
     rerank: Option<RerankStage>,
+    /// Where a failed kiln is reported, and for which session. `None` for a
+    /// server opened by path: the tool result still names the kiln.
+    pub(crate) notify: Option<(Arc<crate::notifications::NotificationHub>, String)>,
 }
 
 /// Parameters for semantic search
@@ -105,6 +108,7 @@ impl SearchTools {
             embedding_provider,
             search_sources,
             rerank: None,
+            notify: None,
         }
     }
 
@@ -154,16 +158,17 @@ impl SearchTools {
         // precognition uses (dedup + merge-sort + kiln labeling). Trust
         // filtering is None here: every kiln passes the trust gate at attach
         // time.
-        let note_results = crate::multi_kiln_search::search_across_kilns_with_stage(
-            &self.search_sources,
-            embedding,
-            limit,
-            None,
-            Some(self.scope.anchor()),
-            self.rerank.as_ref(),
-        )
-        .await
-        .mcp_err_ctx("Note search failed")?;
+        let (note_results, failed_kilns) =
+            crate::multi_kiln_search::search_across_kilns_with_stage(
+                &self.search_sources,
+                embedding,
+                limit,
+                None,
+                Some(self.scope.anchor()),
+                self.rerank.as_ref(),
+            )
+            .await
+            .mcp_err_ctx("Note search failed")?;
 
         // The kiln is named, never located: this object is a tool result, i.e.
         // a message the model reads. `"kiln_path": <absolute directory>` used to
@@ -186,8 +191,20 @@ impl SearchTools {
             })
             .collect();
 
+        if let (false, Some((hub, session_id))) = (failed_kilns.is_empty(), &self.notify) {
+            let message = format!(
+                "semantic_search could not search: {}",
+                failed_kilns.join("; ")
+            );
+            let notice = crucible_core::types::Notification::warning(message);
+            if let Err(error) = hub.add_for_session(session_id, notice) {
+                tracing::warn!(%error, "failed to send a notification");
+            }
+        }
+
         json_success(serde_json::json!({
             "results": all_results,
+            "failed_kilns": failed_kilns,
             "query": query,
             "limit": limit
         }))
