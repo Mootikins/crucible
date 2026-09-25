@@ -171,6 +171,10 @@ fn prepare_command(
 
     let mut command = Command::new(cmd);
     command.args(args);
+    // An inherited `GIT_DIR` sends git to the repository of the daemon's parent.
+    for var in crucible_core::git::REPOSITORY_ENV_VARS {
+        command.env_remove(var);
+    }
     if let Some(dir) = cwd {
         command.current_dir(dir);
     } else if let Some(default) = &policy.default_cwd {
@@ -685,6 +689,53 @@ mod tests {
                 "timeout = {bad} was not refused: {err}"
             );
         }
+    }
+
+    /// The variable that makes the child half below run.
+    const GIT_ENV_CHILD: &str = "CRUCIBLE_TEST_SHELL_GIT_ENV_CHILD";
+
+    /// A daemon that starts inside `git rebase --exec` or a git hook inherits
+    /// `GIT_DIR`. A plugin command must not obey the repository of the
+    /// parent. The variables go to a child process only, so this process keeps
+    /// its own environment.
+    #[test]
+    fn a_plugin_command_ignores_an_inherited_repository() {
+        let child = module_path!()
+            .split_once("::")
+            .map(|(_, rest)| format!("{rest}::the_child_half_of_the_shell_git_env_test"))
+            .unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &child, "--nocapture"])
+            .env("GIT_DIR", "/inherited/.git")
+            .env("GIT_INDEX_FILE", "/inherited/index")
+            .env(GIT_ENV_CHILD, "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("1 passed"),
+            "the child half failed:\n{stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// The child half of the test above. Without [`GIT_ENV_CHILD`] it does
+    /// nothing.
+    #[tokio::test]
+    async fn the_child_half_of_the_shell_git_env_test() {
+        if std::env::var_os(GIT_ENV_CHILD).is_none() {
+            return;
+        }
+        let lua = Lua::new();
+        register_shell_module(&lua, PluginShellPolicy::permissive()).expect("register");
+        let seen: String = lua
+            .load(
+                r#"return cru.shell.exec("sh", { "-c", "echo ${GIT_DIR-unset} ${GIT_INDEX_FILE-unset}" }).stdout"#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(seen.trim(), "unset unset");
     }
 
     /// The policy caps what a call may ask for, and never lengthens it.
