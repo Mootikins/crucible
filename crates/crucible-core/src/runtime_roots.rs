@@ -88,7 +88,19 @@ pub fn user_runtime() -> Option<PathBuf> {
 /// the same defect this module exists to prevent. It is a root now, so `cru
 /// setup` needs no follow-up.
 pub fn for_current_exe() -> Vec<PathBuf> {
-    let mut roots = on_disk_roots();
+    user_runtime().into_iter().chain(shipped()).collect()
+}
+
+/// The roots Crucible ships, highest priority first: the exe-relative
+/// layouts, then the tree extracted from the binary. [`for_current_exe`]
+/// without the user's `cru setup` copy, for a caller that labels the two
+/// apart.
+pub fn shipped() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(exe_relative))
+        .map(Vec::from)
+        .unwrap_or_default();
     // Named unconditionally and last: callers already filter for existence, so
     // an unextracted path costs a `stat`, whereas resolving the list is far too
     // common a thing to have write 144K as a side effect. Materialising is

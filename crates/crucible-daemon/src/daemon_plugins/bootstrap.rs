@@ -87,6 +87,7 @@ fn plugin_source_for(origin: crucible_core::runtime_path::Origin) -> PluginSourc
         Origin::Env => PluginSource::EnvPath,
         Origin::UserConfig => PluginSource::User,
         Origin::Config(_)
+        | Origin::EnvRuntime
         | Origin::UserRuntime
         | Origin::Bundled
         | Origin::Workspace

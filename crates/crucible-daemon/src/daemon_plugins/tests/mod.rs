@@ -670,16 +670,32 @@ fn a_configured_runtimepath_adds_to_the_shipped_runtime_rather_than_replacing_it
          it does not replace: {paths:?}"
     );
 
-    // Order matters: the configured entry is the one that can override a
-    // bundled plugin by name, so it has to come first.
-    let index = |root: &std::path::Path| {
+    // `$CRUCIBLE_RUNTIME` is the level `env`, the highest: a developer's
+    // override outranks the configured entry.
+    let index = |paths: &[(std::path::PathBuf, PluginSource)], root: &std::path::Path| {
         paths
             .iter()
             .position(|(p, _)| p.starts_with(root))
             .unwrap_or_else(|| panic!("{} absent from {paths:?}", root.display()))
     };
     assert!(
-        index(extra.path()) < index(shipped.path()),
+        index(&paths, shipped.path()) < index(&paths, extra.path()),
+        "$CRUCIBLE_RUNTIME must outrank a runtimepath entry: {paths:?}"
+    );
+
+    // Order matters: the configured entry is the one that can override a
+    // bundled plugin by name, so it has to come before a shipped root.
+    let rtp = [extra.path().to_path_buf()];
+    let bundled = [shipped.path().to_path_buf()];
+    let paths = daemon_plugin_paths_from(&crucible_core::runtime_path::build_path(
+        &crucible_core::runtime_path::PathInputs {
+            runtimepath: &rtp,
+            runtime_roots: &bundled,
+            ..Default::default()
+        },
+    ));
+    assert!(
+        index(&paths, extra.path()) < index(&paths, shipped.path()),
         "a runtimepath entry must outrank the shipped runtime so it can shadow \
          a bundled plugin: {paths:?}"
     );

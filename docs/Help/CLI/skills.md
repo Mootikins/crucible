@@ -23,12 +23,13 @@ cru skills search <query> [-n <limit>]
 
 ## `cru skills list`
 
-Lists every discovered skill, sorted by name, with its scope and description. A unique
-name is shown bare; when sources share a name, each is shown as `source:name`.
+Lists every discovered skill, sorted by name, with its scope and description. The skill
+of the highest source is shown by its bare name; every skill it shadows is shown as
+`source:name`. The count of shadowed skills shows in the table.
 
 Scope is a *label* for where a skill came from, not the precedence mechanism.
-Precedence is position on the runtimepath, and `cru doctor` prints that list
-per asset kind — start there when a skill you expect is not listed.
+Precedence is the priority of each source (see the table below), and `cru doctor` prints
+the search paths per asset kind — start there when a skill you expect is not listed.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -57,8 +58,8 @@ license) followed by its full markdown body — the instructions an agent would 
 cru skills show commit
 ```
 
-The full `source:name` also works when the short name is unique. If a short name
-is ambiguous, the error lists the full names. If the name doesn't resolve, the daemon returns an RPC error and the command fails —
+The full `source:name` always works. A short name goes to the source with the highest
+priority. If two sources at that priority hold the name, the error lists the full names. If the name doesn't resolve, the daemon returns an RPC error and the command fails —
 use `cru skills list` to see the available names.
 
 ## `cru skills search`
@@ -78,18 +79,24 @@ cru skills search review -n 25
 ## Discovery and precedence
 
 Discovery collects `<dir>/*/SKILL.md` from each search path below. When two skills share a
-name, both remain available under their source-qualified names.
+name, the higher priority takes the short name, and both stay available under their
+source-qualified names.
 
-| Scope | Searched | Precedence |
-|-------|----------|------------|
-| `builtin` | `<runtime root>/*/skills/` — the skills Crucible ships | lowest |
-| `personal` | `~/.config/crucible/skills/` | |
-| `workspace` | `<workspace>/.claude/skills/`, `.codex/skills/`, `.opencode/skills/`, `.crucible/skills/` | |
-| `kiln` | `<kiln>/.crucible/skills/` | highest |
+| Scope | Searched | Source name | Priority |
+|-------|----------|-------------|----------|
+| `builtin` | `$CRUCIBLE_RUNTIME/skills/` | `env-runtime` | 1000 |
+| `personal` | `~/.config/crucible/skills/` | `personal` | 900 |
+| `workspace` | `<workspace>/.crucible/skills/` | `workspace` | 800 |
+| `workspace` | `<workspace>/.agents/skills/`, `.claude/skills/`, `.codex/skills/`, `.opencode/skills/` | `workspace-agents`, ... | 790 |
+| `kiln` | `<kiln>/.crucible/skills/` for each attached kiln | the kiln name | 700 |
+| `personal` | `<entry>/skills/` for each `runtimepath` entry | `config-1`, ... | 600, 599, ... |
+| `builtin` | `~/.config/crucible/runtime/skills/` | `runtime` | 300 |
+| `builtin` | `<plugin>/skills/` for each active plugin | the plugin name | 200 |
+| `builtin` | the skills Crucible ships | `builtin` | 100 |
 
 `<workspace>` is the directory where you run `cru`, not the directory of the daemon.
 
-Runtime roots come from `$CRUCIBLE_RUNTIME` when set, otherwise from the layout next to the
+The shipped roots come from `$CRUCIBLE_RUNTIME` when set, otherwise from the layout next to the
 `cru` binary.
 
 ### Cross-harness skills are opt-in

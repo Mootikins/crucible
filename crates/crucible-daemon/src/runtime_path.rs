@@ -15,16 +15,32 @@ use crucible_core::runtime_path::{build_path, KilnRoot, PathInputs, RuntimeEntry
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The runtime roots the daemon searches, highest priority first.
-///
-/// `$CRUCIBLE_RUNTIME` replaces the auto-detected roots when set; otherwise
-/// `runtime_roots::for_current_exe` supplies them, which is the user's
-/// `cru setup` copy, then the installed layout, then the dev tree, then the
-/// copy extracted from the binary.
-fn runtime_roots() -> Vec<PathBuf> {
-    match std::env::var("CRUCIBLE_RUNTIME") {
-        Ok(base) => vec![PathBuf::from(base)],
-        Err(_) => crucible_core::runtime_roots::for_current_exe(),
+/// Where the runtime tree is on this machine, labelled by what each root
+/// is rather than by its position.
+#[derive(Debug, Clone, Default)]
+pub struct MachineRuntime {
+    /// `$CRUCIBLE_RUNTIME`: the level `env`.
+    pub env: Option<PathBuf>,
+    /// `<config home>/runtime`, the `cru setup` copy: the level `runtime`.
+    pub user: Option<PathBuf>,
+    /// The installed layout, the dev tree, then the copy extracted from the
+    /// binary: the level `builtin`.
+    pub shipped: Vec<PathBuf>,
+}
+
+/// The runtime roots of this machine. `$CRUCIBLE_RUNTIME` replaces the
+/// others when set. `config_home` is the `crucible` config directory.
+pub fn machine_runtime(config_home: Option<&Path>) -> MachineRuntime {
+    match std::env::var_os("CRUCIBLE_RUNTIME") {
+        Some(base) => MachineRuntime {
+            env: Some(PathBuf::from(base)),
+            ..MachineRuntime::default()
+        },
+        None => MachineRuntime {
+            env: None,
+            user: config_home.map(|home| home.join("runtime")),
+            shipped: crucible_core::runtime_roots::shipped(),
+        },
     }
 }
 
@@ -40,13 +56,15 @@ pub fn daemon_path(runtimepath: &[PathBuf]) -> Vec<RuntimeEntry> {
         .collect();
     let env_plugin_dirs = crucible_core::paths::env_plugin_paths();
     let config_home = dirs::config_dir().map(|d| d.join("crucible"));
-    let roots = runtime_roots();
+    let runtime = machine_runtime(config_home.as_deref());
 
     build_path(&PathInputs {
         env_plugin_dirs: &env_plugin_dirs,
         runtimepath: &expanded,
         config_home: config_home.as_deref(),
-        runtime_roots: &roots,
+        env_runtime: runtime.env.as_deref(),
+        user_runtime: runtime.user.as_deref(),
+        runtime_roots: &runtime.shipped,
         ..PathInputs::default()
     })
 }

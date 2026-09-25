@@ -14,8 +14,10 @@ use std::path::PathBuf;
 /// user-named root so a plugin can never shadow what the user wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Origin {
-    /// `$CRUCIBLE_PLUGIN_PATH`, `$CRUCIBLE_RUNTIME`. Highest, for dev and CI.
+    /// `$CRUCIBLE_PLUGIN_PATH`: plugin directories. Highest, for dev and CI.
     Env,
+    /// `$CRUCIBLE_RUNTIME`: a whole runtime root, at the level `env`.
+    EnvRuntime,
     /// `<workspace>/<workspace_root>` — a project directory.
     Workspace,
     /// `<kiln>/.crucible`.
@@ -106,7 +108,7 @@ impl Origin {
     /// The level of a root of this origin.
     pub fn level(self) -> PriorityLevel {
         match self {
-            Origin::Env => PriorityLevel::Env,
+            Origin::Env | Origin::EnvRuntime => PriorityLevel::Env,
             Origin::Workspace => PriorityLevel::Workspace,
             Origin::Kiln => PriorityLevel::Kiln,
             Origin::Config(_) => PriorityLevel::Runtimepath,
@@ -123,6 +125,7 @@ impl Origin {
     pub fn default_source_name(self) -> String {
         match self {
             Origin::Config(index) => format!("config-{}", index + 1),
+            Origin::EnvRuntime => "env-runtime".to_string(),
             Origin::Env
             | Origin::Workspace
             | Origin::Kiln
@@ -142,6 +145,7 @@ pub fn default_priority(origin: Origin) -> i32 {
     match origin {
         Origin::Config(index) => base.saturating_sub(i32::try_from(index).unwrap_or(i32::MAX)),
         Origin::Env
+        | Origin::EnvRuntime
         | Origin::Workspace
         | Origin::Kiln
         | Origin::Harness
@@ -220,6 +224,7 @@ impl RuntimeEntry {
             within: match origin {
                 Origin::UserConfig => CONFIG_HOME_WITHIN,
                 Origin::Env
+                | Origin::EnvRuntime
                 | Origin::Workspace
                 | Origin::Kiln
                 | Origin::Config(_)

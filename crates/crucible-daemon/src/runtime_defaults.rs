@@ -55,9 +55,7 @@ impl std::fmt::Display for DefaultsSource {
 pub fn defaults_candidates(runtimepath: &[PathBuf], env_runtime: Option<&str>) -> Vec<PathBuf> {
     // Installed layout first, then the dev tree; see `runtime_roots`.
     let mut roots: Vec<RuntimeEntry> = env_runtime.map(env_root).into_iter().collect();
-    roots.extend(shipped_roots(
-        &crucible_core::runtime_roots::for_current_exe(),
-    ));
+    roots.extend(user_and_shipped_roots());
     defaults_sources(runtimepath, &roots)
         .list()
         .iter()
@@ -126,7 +124,16 @@ fn defaults_sources(runtimepath: &[PathBuf], roots: &[RuntimeEntry]) -> Sources<
 
 /// `$CRUCIBLE_RUNTIME` as a root of level `env`.
 fn env_root(base: &str) -> RuntimeEntry {
-    RuntimeEntry::root(PathBuf::from(base), Origin::Env)
+    RuntimeEntry::root(PathBuf::from(base), Origin::EnvRuntime)
+}
+
+/// The `cru setup` copy at the level `runtime`, then the shipped roots.
+fn user_and_shipped_roots() -> Vec<RuntimeEntry> {
+    crucible_core::runtime_roots::user_runtime()
+        .map(|root| RuntimeEntry::root(root, Origin::UserRuntime))
+        .into_iter()
+        .chain(shipped_roots(&crucible_core::runtime_roots::shipped()))
+        .collect()
 }
 
 /// The exe-relative and bundled roots, as fallbacks in a fixed order.
@@ -145,17 +152,16 @@ pub fn shipped_roots(roots: &[PathBuf]) -> Vec<RuntimeEntry> {
         .collect()
 }
 
-/// The runtime roots of this machine: `$CRUCIBLE_RUNTIME` at level `env`,
-/// then the exe-relative and bundled roots at level `builtin`.
+/// The runtime roots of this machine: `$CRUCIBLE_RUNTIME` at the level
+/// `env`, the `cru setup` copy at `runtime`, then the exe-relative and
+/// bundled roots at `builtin`.
 ///
 /// The boot takes these as a value. A test gives its own roots, so an
 /// installed tree cannot answer it.
 pub fn machine_runtime_roots() -> Vec<RuntimeEntry> {
     let env = std::env::var("CRUCIBLE_RUNTIME").ok();
     let mut roots: Vec<RuntimeEntry> = env.as_deref().map(env_root).into_iter().collect();
-    roots.extend(shipped_roots(
-        &crucible_core::runtime_roots::for_current_exe(),
-    ));
+    roots.extend(user_and_shipped_roots());
     roots
 }
 
@@ -359,7 +365,7 @@ mod tests {
             "/env-runtime".to_string(),
         );
         let roots = machine_runtime_roots();
-        assert_eq!(roots[0].origin, Origin::Env);
+        assert_eq!(roots[0].origin, Origin::EnvRuntime);
         assert_eq!(roots[0].path(), std::path::Path::new("/env-runtime"));
     }
 }

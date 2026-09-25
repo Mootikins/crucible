@@ -27,9 +27,10 @@ Plugins are discovered from these directories (highest priority first):
 | Location | Source | Use Case |
 |----------|--------|----------|
 | `CRUCIBLE_PLUGIN_PATH` dirs | EnvPath | Development, CI |
-| `~/.config/crucible/plugins/` | User | Personal plugins |
+| `$CRUCIBLE_RUNTIME/plugins/` | Runtime | Development, CI |
 | `<entry>/plugins/` for each `runtimepath` entry | Runtime | Opt-in extra trees |
-| `$CRUCIBLE_RUNTIME/plugins/`, else exe-relative | Runtime | Bundled with Crucible |
+| `~/.config/crucible/plugins/` | User | Personal plugins |
+| `~/.config/crucible/runtime/plugins/`, then exe-relative | Runtime | Bundled with Crucible |
 
 Same-name plugins at higher priority shadow lower ones.
 

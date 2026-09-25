@@ -69,8 +69,14 @@ pub struct PathInputs<'a> {
     pub harnesses: &'a BTreeMap<String, PathBuf>,
     /// `~/.config/crucible`. Distinct from the runtime root below it.
     pub config_home: Option<&'a Path>,
-    /// The runtime roots, highest first, from `runtime_roots::for_current_exe`.
-    /// Passed in so tests do not materialise the bundled tree.
+    /// `$CRUCIBLE_RUNTIME`: a root at the level `env`.
+    pub env_runtime: Option<&'a Path>,
+    /// `~/.config/crucible/runtime`, the `cru setup` copy: the level
+    /// `runtime`.
+    pub user_runtime: Option<&'a Path>,
+    /// The shipped roots, highest first, from `runtime_roots::shipped`: the
+    /// level `builtin`. Passed in so tests do not materialise the bundled
+    /// tree.
     pub runtime_roots: &'a [PathBuf],
     /// Deprecated `agent_directories`: card directories, not roots.
     pub agent_directories: &'a [PathBuf],
@@ -92,6 +98,8 @@ impl Default for PathInputs<'_> {
             runtimepath: &[],
             harnesses: &NO_HARNESSES,
             config_home: None,
+            env_runtime: None,
+            user_runtime: None,
             runtime_roots: &[],
             agent_directories: &[],
             plugin_dirs: &[],
@@ -111,6 +119,12 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
         let mut entry = RuntimeEntry::leaf(dir.clone(), Origin::Env, RuntimeAsset::Plugins);
         entry.name = format!("env-{}", index + 1);
         entry.priority -= offset(index);
+        path.push(entry);
+    }
+
+    if let Some(env_runtime) = inputs.env_runtime {
+        let mut entry = RuntimeEntry::root(env_runtime, Origin::EnvRuntime);
+        entry.priority -= offset(inputs.env_plugin_dirs.len());
         path.push(entry);
     }
 
@@ -169,19 +183,16 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
         path.push(entry);
     }
 
+    if let Some(user_runtime) = inputs.user_runtime {
+        path.push(RuntimeEntry::root(user_runtime, Origin::UserRuntime));
+    }
+
     for (index, root) in inputs.runtime_roots.iter().enumerate() {
-        // The first runtime root is the user's own `cru setup` copy when one
-        // exists; the rest are shipped. `runtime_roots::for_current_exe`
-        // already orders them, so preserve it and only distinguish the head.
-        let mut entry = if index == 0 {
-            RuntimeEntry::root(root.clone(), Origin::UserRuntime)
-        } else {
-            RuntimeEntry::root(root.clone(), Origin::Bundled)
-        };
+        let mut entry = RuntimeEntry::root(root.clone(), Origin::Bundled);
         // The shipped roots are fallbacks in a fixed order, not rivals.
-        if index > 1 {
-            entry.name = format!("builtin-{index}");
-            entry.within = u8::try_from(index - 1).unwrap_or(u8::MAX);
+        if index > 0 {
+            entry.name = format!("builtin-{}", index + 1);
+            entry.within = u8::try_from(index).unwrap_or(u8::MAX);
         }
         path.push(entry);
     }
@@ -211,10 +222,10 @@ mod tests {
     #[test]
     fn both_user_roots_are_present_config_home_first() {
         let config_home = PathBuf::from("/home/u/.config/crucible");
-        let runtime = vec![config_home.join("runtime")];
+        let runtime = config_home.join("runtime");
         let built = build_path(&PathInputs {
             config_home: Some(&config_home),
-            runtime_roots: &runtime,
+            user_runtime: Some(&runtime),
             ..inputs()
         });
 
@@ -368,11 +379,9 @@ mod tests {
         let dirs = vec![PathBuf::from("/d1"), PathBuf::from("/d2")];
         let config_home = PathBuf::from("/home/u/.config/crucible");
         let plugins = vec![PathBuf::from("/p/helper")];
-        let runtime = vec![
-            PathBuf::from("/rt"),
-            PathBuf::from("/b1"),
-            PathBuf::from("/b2"),
-        ];
+        let user_runtime = PathBuf::from("/rt");
+        let env_runtime = PathBuf::from("/er");
+        let runtime = vec![PathBuf::from("/b1"), PathBuf::from("/b2")];
         let built = build_path(&PathInputs {
             env_plugin_dirs: &env,
             workspace: Some(Path::new("/ws")),
@@ -382,6 +391,8 @@ mod tests {
             config_home: Some(&config_home),
             agent_directories: &dirs,
             plugin_dirs: &plugins,
+            env_runtime: Some(&env_runtime),
+            user_runtime: Some(&user_runtime),
             runtime_roots: &runtime,
             ..inputs()
         });
@@ -394,6 +405,7 @@ mod tests {
             [
                 ("env-1", 1000, 0),
                 ("env-2", 999, 0),
+                ("env-runtime", 998, 0),
                 ("workspace", 800, 0),
                 ("workspace-agents", 790, 0),
                 ("notes", 700, 0),
@@ -408,5 +420,19 @@ mod tests {
                 ("builtin-2", 100, 1),
             ]
         );
+    }
+
+    /// A shipped root is `builtin`, whatever its position. The first root
+    /// used to be labelled as the user's `cru setup` copy without a check,
+    /// so `$CRUCIBLE_RUNTIME` or an installed tree took the level `runtime`.
+    #[test]
+    fn a_shipped_root_is_builtin_whatever_its_position() {
+        let shipped = vec![PathBuf::from("/usr/share/crucible/runtime")];
+        let built = build_path(&PathInputs {
+            runtime_roots: &shipped,
+            ..inputs()
+        });
+        assert_eq!(built[0].origin, Origin::Bundled);
+        assert_eq!(built[0].name, "builtin");
     }
 }

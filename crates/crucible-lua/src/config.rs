@@ -755,11 +755,13 @@ pub fn theme_roots(
 ) -> Result<Sources<SearchPath>, SourcesError> {
     use crucible_core::runtime_path::{build_path, search_sources, PathInputs, RuntimeAsset};
 
-    let runtime = crucible_core::runtime_roots::for_current_exe();
+    let shipped = crucible_core::runtime_roots::shipped();
+    let user_runtime = config_dir.join("runtime");
     let path = build_path(&PathInputs {
         config_home: Some(config_dir),
         runtimepath,
-        runtime_roots: &runtime,
+        user_runtime: Some(&user_runtime),
+        runtime_roots: &shipped,
         plugin_dirs,
         ..PathInputs::default()
     });
@@ -1658,10 +1660,9 @@ mod tests {
     /// way the daemon builds them.
     fn theme_sources(config_dir: &Path, runtime_dir: &Path) -> Sources<SearchPath> {
         use crucible_core::runtime_path::{build_path, search_sources, PathInputs, RuntimeAsset};
-        let runtime = [runtime_dir.to_path_buf()];
         let path = build_path(&PathInputs {
             config_home: Some(config_dir),
-            runtime_roots: &runtime,
+            user_runtime: Some(runtime_dir),
             ..PathInputs::default()
         });
         search_sources(RuntimeAsset::Themes, &path).unwrap()
