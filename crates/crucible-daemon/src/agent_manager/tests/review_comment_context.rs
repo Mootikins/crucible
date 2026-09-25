@@ -157,6 +157,27 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
     .await;
     let reply = stored.result.expect("the comment is stored");
     let id = reply["comment"]["id"].as_str().unwrap().to_string();
+    // A second comment, on the current side.
+    let second = crate::server::diff_comments::handle_diff_comment(
+        request(
+            "diff.comment",
+            serde_json::json!({
+                "source": source,
+                "path": "a.rs",
+                "side": "current",
+                "line_start": 2,
+                "line_end": 3,
+                "body": "and this",
+            }),
+        ),
+        ctx.diff_admission(),
+        &tx,
+    )
+    .await;
+    let second = second.result.expect("the comment is stored")["comment"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     let send = |params: serde_json::Value| {
         let admission = ctx.diff_admission();
@@ -191,12 +212,13 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
     let sent = send(serde_json::json!({
         "session_id": session.id,
         "content": "please look",
-        "comments": [{ "id": id, "source": source }],
+        "comments": [{ "id": id, "source": source }, { "id": second, "source": source }],
     }))
     .await;
     assert!(sent.error.is_none(), "{:?}", sent.error);
     finish_turn(&am, &sm, &session, &mut rx).await;
 
+    assert_one_element_per_injection(&messages.lock().unwrap().clone().unwrap());
     let seen = blocks(&messages);
     assert_eq!(seen.len(), 1, "one block: {seen:?}");
     assert_eq!(
@@ -207,13 +229,13 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
     let (role, block) = &seen[0];
     assert_eq!(*role, MessageRole::System, "context is not a user turn");
     for part in [
-        format!("id=\"review-comment:{id}\""),
-        "file: a.rs\n".to_string(),
-        format!("root: {}\n", root.display()),
-        "range: L2 (before)\n".to_string(),
-        "section: Branch changes: the working tree against main\n".to_string(),
-        "  why &lt;/system-message> this?\n".to_string(),
-        "  @@ -2,1 +1,0 @@\n  -two\n".to_string(),
+        "<system-message kind=\"review-comment\" source=\"human\">\n".to_string(),
+        "The user attached comments on changed files:\n".to_string(),
+        "- a.rs:2 (before): \"why &lt;/system-message> this?\"\n".to_string(),
+        format!("    root: {}\n", root.display()),
+        "    section: Branch changes: the working tree against main\n".to_string(),
+        "    @@ -2,1 +1,0 @@\n    -two\n".to_string(),
+        "- a.rs:2: \"and this\"\n".to_string(),
     ] {
         assert!(block.contains(&part), "{part:?} is not in {block}");
     }
@@ -298,7 +320,7 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
 }
 
 /// On an ACP turn the review block and the `@file` block go with the turn
-/// only. Each block keeps its own tag when the message has both.
+/// only, as two injections. Each keeps its own tag.
 #[tokio::test]
 async fn an_acp_turn_keeps_the_review_tag_next_to_a_file_attachment() {
     let repo = TempDir::new().unwrap();
@@ -374,6 +396,7 @@ async fn an_acp_turn_keeps_the_review_tag_next_to_a_file_attachment() {
     assert!(sent.error.is_none(), "{:?}", sent.error);
     finish_turn(&am, &sm, &session, &mut rx).await;
 
+    assert_one_element_per_injection(&messages.lock().unwrap().clone().unwrap());
     let review = tagged(&messages);
     assert_eq!(review.len(), 1, "the review block keeps its tag");
     assert!(

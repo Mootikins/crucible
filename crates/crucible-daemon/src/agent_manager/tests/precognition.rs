@@ -451,6 +451,7 @@ async fn test_precognition_enriched_content_reaches_agent() {
         "kiln-injected note should be a system message, got role={:?}",
         kiln_msg.role
     );
+    assert_one_element_per_injection(&messages);
 
     crate::embedding::clear_embedding_provider_cache();
 }
@@ -758,10 +759,7 @@ async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
         "mutated content should reach the agent, got: {}",
         precog_msgs[0].content
     );
-    assert_eq!(
-        precog_msgs[0].content.matches("<system-message ").count(),
-        1
-    );
+    assert_one_element_per_injection(&messages);
 
     crate::embedding::clear_embedding_provider_cache();
 }

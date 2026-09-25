@@ -201,6 +201,24 @@ impl AgentHandle for MultiTurnScriptedAgent {
 type CapturedPrompt = Arc<std::sync::Mutex<Option<String>>>;
 type CapturedMessages = Arc<std::sync::Mutex<Option<Vec<crucible_core::traits::ContextMessage>>>>;
 
+/// The gate: one injection is exactly one `<system-message>` element, for
+/// every kind and every source. The entries of an injection (comments,
+/// notes, files) are lines in it, never elements of their own. A message
+/// that is not an injection holds no element.
+pub(super) fn assert_one_element_per_injection(messages: &[crucible_core::traits::ContextMessage]) {
+    for message in messages {
+        let open = message.content.matches("<system-message").count();
+        let close = message.content.matches("</system-message>").count();
+        let expected = usize::from(message.metadata.kind.is_some());
+        assert!(
+            open == expected && close == expected,
+            "{open} element(s) in {:?}: {}",
+            message.metadata.kind,
+            message.content
+        );
+    }
+}
+
 struct PromptCapturingAgent {
     received_prompt: CapturedPrompt,
     received_messages: CapturedMessages,

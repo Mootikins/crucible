@@ -27,7 +27,7 @@ pub(crate) struct TurnRequest<'a> {
     pub clear_before: bool,
     /// The review comments that the message attaches, as the daemon rendered
     /// them. `server::diff_context::review_context` builds this text.
-    pub review_context: Option<String>,
+    pub review_context: Option<crate::diff::context::ReviewContext>,
     pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
     pub is_interactive: bool,
     pub permission_override: Option<PermissionMode>,
@@ -266,7 +266,7 @@ impl AgentManager {
         self: &Arc<Self>,
         session_id: &str,
         content: String,
-        review_context: Option<String>,
+        review_context: Option<crate::diff::context::ReviewContext>,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
@@ -535,17 +535,29 @@ impl AgentManager {
         // handler then finds the block by its tag on either route, instead of
         // matching a substring of the text the daemon rendered.
         let mut acp_review_context = None;
-        if let Some(text) = review_context {
+        if let Some(review) = review_context {
             if agent_config.agent_type == "acp" {
-                acp_review_context = Some(text);
+                acp_review_context = Some(
+                    crucible_core::traits::ContextMessage::injection(
+                        crate::diff::context::KIND,
+                        review.source,
+                        &review.body,
+                    )
+                    .with_tag(crate::diff::context::KIND),
+                );
             } else if let Err(e) = input
                 .accept(
                     self.session_manager.storage().as_ref(),
                     &session,
-                    crate::observe::LogEvent::system_tagged(
-                        text,
-                        vec![crate::diff::context::KIND.to_string()],
-                    ),
+                    crate::observe::LogEvent::System {
+                        ts: chrono::Utc::now(),
+                        content: review.body,
+                        tags: vec![crate::diff::context::KIND.to_string()],
+                        injection: Some((
+                            crate::diff::context::KIND.to_string(),
+                            review.source.to_string(),
+                        )),
+                    },
                 )
                 .await
             {
@@ -725,18 +737,12 @@ impl AgentManager {
         if attachment_message.is_some() {
             debug!(session_id = %session_id, "Attached @-mentioned file contents to the turn");
         }
-        let attachment_message = match (acp_review_context, attachment_message) {
-            (None, files) => files,
-            (Some(review), None) => Some(
-                crucible_core::traits::ContextMessage::system(review)
-                    .with_tag(crate::diff::context::KIND),
-            ),
-            // One block holds both injections, so it keeps the tag of each.
-            (Some(review), Some(mut files)) => {
-                files.content = format!("{review}\n\n{}", files.content);
-                Some(files.with_tag(crate::diff::context::KIND))
-            }
-        };
+        // One injection is one element, so the review and the files go as
+        // two messages.
+        let attachment_messages: Vec<_> = acp_review_context
+            .into_iter()
+            .chain(attachment_message)
+            .collect();
 
         // Pass the user's content through to the stream loop unchanged;
         // the Precognition system block (if any) is staged on
@@ -856,7 +862,7 @@ impl AgentManager {
             conversation_tree,
             session_manager: self.session_manager.clone(),
             precognition_message,
-            attachment_message,
+            attachment_messages,
             session_mode,
             origin,
             is_interactive,

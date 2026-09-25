@@ -60,27 +60,27 @@ shows one chip for each attached comment, and the message carries the
 references only. In the TUI, name a comment with `@comment:<id>` in the message;
 `cru diff comments <diffset> -f json` lists the ids.
 
-The daemon builds the context of each comment and injects it before the user
-turn, so replay and fork keep it:
+The daemon builds one injection for the comments of a message and puts it
+before the user turn, so replay and fork keep it. One injection is one
+`<system-message>` element, and each comment is a list item in it:
 
 ```text
-<system-message kind="review-comment" source="human" id="review-comment:<id>">
-file: src/lib.rs
-range: L12 to L13 (before)
-section: Session changes
-comment:
-  why was this removed?
-diff:
-  @@ -12,2 +11,0 @@
-  -old line a
-  -old line b
+<system-message kind="review-comment" source="human">
+The user attached comments on changed files:
+- src/lib.rs:12-13 (before): "why was this removed?"
+    section: Session changes
+    @@ -12,2 +11,0 @@
+    -old line a
+    -old line b
 </system-message>
 ```
 
 The range counts on the side of the comment: a base-side range keeps the old
 line numbers and says "(before)". A root that is not the workspace of the
-session gets a `root:` line. A message that names an unknown or a resolved
-comment is refused, and no turn starts.
+session gets a `root:` line. `source` names the author of the comments; when a
+message holds comments of a person and of an agent, `source` is `mixed` and
+each item says `by human` or `by agent`. A message that names an unknown or a
+resolved comment is refused, and no turn starts.
 
 A diffset owns each comment, not a session. `diff.comment`, `diff.resolve_comment` and `diff.delete_comment` name the diffset by its source, and the session record is one source. `diff.comments` lists the comments of a diffset. It moves the range of a comment when its quoted text moves, and marks the comment `outdated` when the text is gone. The web routes are `POST /api/diff/comment`, `POST /api/diff/comment/resolve`, `POST /api/diff/comment/delete` and `GET /api/diff/comments`.
 

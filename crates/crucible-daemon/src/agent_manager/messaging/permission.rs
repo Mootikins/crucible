@@ -587,11 +587,10 @@ impl AgentManager {
         // `@file` attachments go in first so the Precognition block lands
         // above them: kiln context frames the conversation, an attached file
         // is about this message.
-        if let Some(ref attachment) = stream_ctx.attachment_message {
-            let mut with_attachment = Vec::with_capacity(current.len() + 1);
-            with_attachment.push(attachment.clone());
-            with_attachment.extend(current);
-            current = with_attachment;
+        if !stream_ctx.attachment_messages.is_empty() {
+            current = (stream_ctx.attachment_messages.iter().cloned())
+                .chain(current)
+                .collect();
         }
 
         if let Some(ref precog_msg) = stream_ctx.precognition_message {

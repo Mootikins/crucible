@@ -298,10 +298,10 @@ struct StreamContext {
     /// Precognition is gated off (disabled, /search command, no kiln,
     /// or not the first user message of the session).
     precognition_message: Option<crucible_core::traits::ContextMessage>,
-    /// System block carrying the contents of the `@file` mentions in this
-    /// turn's user message, prepended alongside the Precognition block.
-    /// `None` when the message mentioned no resolvable file.
-    attachment_message: Option<crucible_core::traits::ContextMessage>,
+    /// The injections of this turn's user message, prepended alongside the
+    /// Precognition block: on an ACP turn the review comments, and the
+    /// contents of the `@file` mentions. Each is one message.
+    attachment_messages: Vec<crucible_core::traits::ContextMessage>,
     /// The agent's mode ("auto"/"plan") captured at request start. Used to
     /// enforce plan-mode restrictions on the inner tool when an `invoke_tool`
     /// bridge call is unwrapped — the agent handle that owns the canonical

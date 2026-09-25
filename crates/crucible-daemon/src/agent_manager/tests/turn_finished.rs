@@ -238,6 +238,7 @@ async fn a_plugin_turn_reaches_the_agent_as_tagged_system_context() {
     assert!(plugin
         .content
         .starts_with("<system-message kind=\"plugin\" source=\"alpha\">"));
+    assert_one_element_per_injection(&messages);
 }
 
 /// A user cancel clears a follow-up a handler already stored, so the cancel

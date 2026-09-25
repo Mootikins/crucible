@@ -1042,13 +1042,15 @@ async fn attached_context_reaches_the_agent_within_the_same_turn() {
     let _ = h.wait_for("message_complete").await;
 
     let events = recorded.lock().unwrap().clone();
-    let attached: Vec<String> = events
+    let attached: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
-            TurnEvent::ContextAttach { message } => Some(message.content.clone()),
+            TurnEvent::ContextAttach { message } => Some(message.clone()),
             _ => None,
         })
         .collect();
+    assert_one_element_per_injection(&attached);
+    let attached: Vec<String> = attached.into_iter().map(|m| m.content).collect();
 
     assert_eq!(
         attached,

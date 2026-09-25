@@ -193,19 +193,6 @@ impl LogEvent {
         }
     }
 
-    /// Create a system event that names the kind of block it carries.
-    ///
-    /// The tag reaches the agent on the `ContextMessage`, and the session log
-    /// keeps it, so replay and fork give the block back with its kind.
-    pub fn system_tagged(content: impl Into<String>, tags: Vec<String>) -> Self {
-        LogEvent::System {
-            ts: Utc::now(),
-            content: content.into(),
-            tags,
-            injection: None,
-        }
-    }
-
     /// Create a user message event
     pub fn user(content: impl Into<String>) -> Self {
         LogEvent::User {

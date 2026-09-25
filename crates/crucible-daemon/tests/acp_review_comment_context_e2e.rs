@@ -344,16 +344,12 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
     let prompt = last_prompt(&capture).expect("the agent process must log the prompt it received");
 
     for part in [
-        format!(
-            "<system-message kind=\"review-comment\" source=\"human\" id=\"review-comment:{}\">",
-            reference.id
-        ),
-        "file: a.rs\n".to_string(),
-        "range: L1 to L2\n".to_string(),
-        "section: Branch changes: the working tree against main\n".to_string(),
-        format!("  {COMMENT_BODY}\n"),
-        "  -two\n".to_string(),
-        "  +TWO\n".to_string(),
+        "<system-message kind=\"review-comment\" source=\"human\">\n".to_string(),
+        "The user attached comments on changed files:\n".to_string(),
+        format!("- a.rs:1-2: \"{COMMENT_BODY}\"\n"),
+        "    section: Branch changes: the working tree against main\n".to_string(),
+        "    -two\n".to_string(),
+        "    +TWO\n".to_string(),
         "</system-message>".to_string(),
         USER_MESSAGE.to_string(),
     ] {
@@ -362,6 +358,8 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
             "{part:?} must reach the ACP prompt; the agent received: {prompt:?}"
         );
     }
+    // One injection is one element.
+    assert_eq!(prompt.matches("<system-message").count(), 1, "{prompt:?}");
     // The block frames the message, so it precedes it.
     assert!(
         prompt.find("<system-message").unwrap() < prompt.find(USER_MESSAGE).unwrap(),
@@ -481,8 +479,15 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
         .as_str()
         .expect("the stored block is text");
     assert!(
-        stored.contains("<system-message kind=\"review-comment\"") && stored.contains(COMMENT_BODY),
+        stored.contains(COMMENT_BODY),
         "the stored block is the review comment: {stored:?}"
+    );
+    // The log keeps the kind; the turn adds the one element, live and on
+    // replay.
+    assert_eq!(
+        line["message"]["injection"],
+        serde_json::json!(["review-comment", "human"]),
+        "{line}"
     );
 
     // Both agents saw the same block; only their histories differ.

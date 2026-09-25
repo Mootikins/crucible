@@ -17,7 +17,7 @@ use crucible_core::diff::{
 use crucible_core::session::Comment;
 
 use crate::diff::branch;
-use crate::diff::context::{message, render, CommentBlock};
+use crate::diff::context::{message, CommentBlock, ReviewContext};
 use crate::proposals::ProposalError;
 use crate::review::ReviewError;
 use crate::server::diff::{
@@ -36,7 +36,7 @@ pub(crate) async fn review_context(
     workspace: Option<&Path>,
     refs: &[CommentRef],
     content: &str,
-) -> Result<Option<String>, Refusal> {
+) -> Result<Option<ReviewContext>, Refusal> {
     let mut wanted: Vec<(String, Option<DiffsetSource>)> = Vec::new();
     for reference in refs {
         if !wanted.iter().any(|(id, _)| *id == reference.id) {
@@ -52,7 +52,7 @@ pub(crate) async fn review_context(
         return Ok(None);
     }
 
-    let mut blocks = Vec::with_capacity(wanted.len());
+    let mut found = Vec::with_capacity(wanted.len());
     for (id, source) in wanted {
         let (comment, source) = find(admission, &id, source).await?;
         if comment.resolved {
@@ -71,15 +71,19 @@ pub(crate) async fn review_context(
             None => (comment.line_range, true),
         };
         let section = section(&served.source(&source), session);
-        blocks.push(render(&CommentBlock {
-            comment: &comment,
-            range,
-            outdated,
-            texts: &texts,
-            section: &section,
-            workspace,
-        }));
+        found.push((comment, range, outdated, texts, section));
     }
+    let blocks: Vec<_> = found
+        .iter()
+        .map(|(comment, range, outdated, texts, section)| CommentBlock {
+            comment,
+            range: *range,
+            outdated: *outdated,
+            texts,
+            section,
+            workspace,
+        })
+        .collect();
     Ok(Some(message(&blocks)))
 }
 
