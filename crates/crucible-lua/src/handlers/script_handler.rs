@@ -46,7 +46,9 @@ pub enum ScriptHandlerResult {
 /// - table with `inject={content="..."}` → Inject
 /// - table with `cancel=true` → Cancel
 /// - table without `cancel` or `inject` → Transform
-/// - other → Transform (treat as modified value)
+/// - string → Transform: a stage that reads text asks for one, for example
+///   `precognition_format`, which returns the context block
+/// - other → Transform (treat as modified value), with a warning
 pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult> {
     match result {
         Value::Nil => Ok(ScriptHandlerResult::PassThrough),
@@ -86,11 +88,27 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
             Ok(ScriptHandlerResult::Transform(json))
         }
         _ => {
-            // Other values treated as transform - convert to JSON
-            warn!("Handler returned unexpected type, treating as transform");
+            if let Some(kind) = unexpected_return(result) {
+                warn!(
+                    "Handler returned a {kind}, which no stage expects; treating it as a transform"
+                );
+            }
             let json = serde_json::to_value(result).map_err(mlua::Error::external)?;
             Ok(ScriptHandlerResult::Transform(json))
         }
+    }
+}
+
+/// The Lua type of a handler return that no stage expects, or `None`.
+///
+/// A string is expected: the shipped `precognition_format` handler returns its
+/// context block as a string, as its contract says. The warning fired on each
+/// turn that had precognition results, and it told the operator of a defect
+/// that did not exist.
+fn unexpected_return(result: &Value) -> Option<&'static str> {
+    match result {
+        Value::Nil | Value::Table(_) | Value::String(_) => None,
+        other => Some(other.type_name()),
     }
 }
 
@@ -147,6 +165,30 @@ impl ScriptHandlerResult {
                 EventOutcome::Observed
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod unexpected_return_tests {
+    use super::*;
+
+    /// The shipped precognition formatter returns a string. That is its
+    /// contract, so it is no warning.
+    #[test]
+    fn a_string_is_an_expected_return() {
+        let lua = mlua::Lua::new();
+        let text = Value::String(lua.create_string("## Relevant Notes").unwrap());
+        assert_eq!(unexpected_return(&text), None);
+        assert!(matches!(
+            interpret_handler_result(&text).unwrap(),
+            ScriptHandlerResult::Transform(serde_json::Value::String(s)) if s == "## Relevant Notes"
+        ));
+    }
+
+    #[test]
+    fn a_boolean_or_a_number_is_unexpected() {
+        assert_eq!(unexpected_return(&Value::Boolean(true)), Some("boolean"));
+        assert_eq!(unexpected_return(&Value::Integer(1)), Some("integer"));
     }
 }
 
