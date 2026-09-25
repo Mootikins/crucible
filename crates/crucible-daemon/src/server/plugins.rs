@@ -940,6 +940,54 @@ mod plugin_command_rpc_tests {
 
         assert!(resp.error.is_some(), "expected an error response");
     }
+
+    /// A loader that activated one plugin, `probe`, from `init`.
+    async fn loader_with_probe(
+        init: &str,
+    ) -> (tempfile::TempDir, Arc<Mutex<Option<DaemonPluginLoader>>>) {
+        let root = tempfile::TempDir::new().expect("tempdir");
+        let dir = root.path().join("probe");
+        std::fs::create_dir(&dir).expect("plugin dir");
+        std::fs::write(
+            dir.join("spec.luau"),
+            "return { name = 'probe', version = '0.1.0' }",
+        )
+        .expect("spec");
+        std::fs::write(dir.join("init.luau"), init).expect("init");
+        let mut loader =
+            DaemonPluginLoader::new(std::collections::HashMap::new()).expect("plugin loader");
+        loader
+            .activate_discovered(&[(
+                root.path().to_path_buf(),
+                crucible_lua::PluginSource::Runtime,
+            )])
+            .await
+            .expect("activate probe");
+        (root, Arc::new(Mutex::new(Some(loader))))
+    }
+
+    /// The TUI sends no `args` for a bare `/name`. The command must get a
+    /// table, as the docs say: a JSON null crosses into Lua as a light
+    /// userdata, which is truthy, so `args or {}` kept it and `args.user`
+    /// raised "attempt to index userdata".
+    #[tokio::test]
+    async fn a_command_run_without_arguments_gets_an_empty_table() {
+        let (_root, loader) = loader_with_probe(
+            "return { commands = { probe = { desc = 'probe', \
+             fn = function(args) return type(args) .. ':' .. tostring(args.input) end } } }",
+        )
+        .await;
+
+        let resp =
+            handle_plugin_run_command(request(serde_json::json!({ "name": "probe" })), &loader)
+                .await;
+
+        assert!(resp.error.is_none(), "the command failed: {:?}", resp.error);
+        assert_eq!(
+            resp.result.expect("a result")["result"],
+            serde_json::json!("table:nil")
+        );
+    }
 }
 
 #[cfg(test)]

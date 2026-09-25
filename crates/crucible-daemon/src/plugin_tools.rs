@@ -375,11 +375,20 @@ impl PluginRegistry {
 }
 
 /// Call a plugin `fn` with JSON args and convert its return value back to JSON.
+///
+/// Absent args become an empty table. The docs promise `fn` a table, and a
+/// JSON null would cross as mlua's null light userdata, which is truthy: the
+/// idiom `args or {}` keeps it, and the first `args.x` raises.
 async fn call_plugin_fn(
     lua: &mlua::Lua,
     func: &mlua::Function,
     args: serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {
+    let args = if args.is_null() {
+        serde_json::Value::Object(serde_json::Map::new())
+    } else {
+        args
+    };
     let lua_args =
         json_to_lua(lua, args).map_err(|e| anyhow::anyhow!("argument conversion: {e}"))?;
     let ret: mlua::Value = func
