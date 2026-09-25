@@ -409,7 +409,7 @@ impl DelegationSpawner for DelegationService {
                         .workspace
                         .as_deref()
                         .unwrap_or(std::path::Path::new("")),
-                    parent_kilns.first().map(std::path::PathBuf::as_path),
+                    &parent_kilns,
                 );
                 if let Some(card) =
                     crate::agent_cards::resolve_card(&cards, name).map_err(JobError::SpawnFailed)?

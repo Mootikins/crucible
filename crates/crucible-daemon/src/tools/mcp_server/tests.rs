@@ -193,6 +193,35 @@ async fn skill_view_appends_allowed_tools_advisory() {
     );
 }
 
+/// Each attached kiln is a skill source, not only the anchor kiln.
+#[tokio::test]
+async fn skill_view_finds_a_skill_in_the_second_attached_kiln() {
+    let first = TempDir::new().unwrap();
+    let second = TempDir::new().unwrap();
+    let skill = second.path().join(".crucible/skills/second-skill");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: second-skill\ndescription: d\n---\n\nSECOND-BODY.",
+    )
+    .unwrap();
+
+    let server = CrucibleMcpServer::new(
+        first.path().to_str().unwrap().to_string(),
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
+    )
+    .with_kilns(vec![first.path().into(), second.path().into()]);
+    let found = server
+        .skill_view(Parameters(SkillViewParams {
+            name: "second-skill".to_string(),
+        }))
+        .await
+        .unwrap();
+    let json = serde_json::to_string(&found).unwrap();
+    assert!(json.contains("SECOND-BODY"), "got: {json}");
+}
+
 #[tokio::test]
 async fn skill_view_finds_workspace_and_kiln_skills() {
     // workspace != kiln: skill_view must discover under both roots, the same

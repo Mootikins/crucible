@@ -31,6 +31,9 @@ use tracing::{debug, info, warn};
 pub struct CreateInternalMcpToolDefsParams<'a> {
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
+    /// Every attached kiln's directory, in attach order: the sources of
+    /// skills and agent cards.
+    pub kilns: &'a [std::path::PathBuf],
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub server_names: &'a [String],
     pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
@@ -57,6 +60,9 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub lua: Option<&'a Lua>,
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
+    /// Every attached kiln's directory, in attach order: the sources of
+    /// skills and agent cards.
+    pub kilns: &'a [std::path::PathBuf],
     /// Every kiln the session reaches, by registry name. Flat: the prompt
     /// lists them all alike.
     pub session_kilns: &'a [crucible_core::config::KilnName],
@@ -154,6 +160,7 @@ async fn create_internal_mcp_tool_defs(
         modes,
         workspace,
         kiln_path,
+        kilns,
         mcp_gateway,
         server_names,
         knowledge_repo,
@@ -181,7 +188,8 @@ async fn create_internal_mcp_tool_defs(
             knowledge_repo,
             embedding_provider,
             delegation_context,
-        );
+        )
+        .with_kilns(kilns.to_vec());
         for tool in server.list_tools() {
             let tool_name = tool.name.to_string();
             if !mode_exposes_tool(modes, mode, &tool_name) {
@@ -353,11 +361,13 @@ async fn create_internal_mcp_tool_names_for_tests(
     mode: &str,
     gateway_all_tools_override: Option<&[McpToolInfo]>,
 ) -> Vec<String> {
+    let kilns: Vec<std::path::PathBuf> = kiln_path.map(Path::to_path_buf).into_iter().collect();
     let (tools, _deferrable, _plugin_names) =
         create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {
             modes: None,
             workspace,
             kiln_path,
+            kilns: &kilns,
             mcp_gateway,
             server_names,
             knowledge_repo,
@@ -388,8 +398,8 @@ pub enum AgentFactoryError {
 /// (name + description per skill) for the system prompt. The agent loads full
 /// instructions on demand via the `skill_view` tool. Best-effort: discovery
 /// failures yield an empty catalog rather than blocking agent creation.
-fn discover_skills_catalog(workspace: &Path, kiln_path: Option<&Path>) -> String {
-    let discovery = crate::skills::FolderDiscovery::with_default_paths(workspace, kiln_path);
+fn discover_skills_catalog(workspace: &Path, kilns: &[std::path::PathBuf]) -> String {
+    let discovery = crate::skills::FolderDiscovery::with_default_paths(workspace, kilns);
     match discovery.discover() {
         Ok(skills) => crate::skills::format_skills_for_context(&skills),
         Err(e) => {
@@ -663,6 +673,7 @@ pub async fn create_agent_from_session_config(
         lua,
         workspace,
         kiln_path,
+        kilns,
         session_kilns,
         parent_session_id,
         background_spawner,
@@ -725,6 +736,7 @@ pub async fn create_agent_from_session_config(
             modes: modes.as_ref(),
             workspace,
             kiln_path,
+            kilns,
             mcp_gateway: mcp_gateway.clone(),
             server_names: &agent_config.mcp_servers,
             knowledge_repo,
@@ -752,7 +764,7 @@ pub async fn create_agent_from_session_config(
     // but a kiln-less session has no `skill_view` to load them — so we skip the
     // catalog entirely rather than advertise skills the agent can't open.
     let skills_catalog = if kiln_path.is_some() {
-        discover_skills_catalog(workspace, kiln_path)
+        discover_skills_catalog(workspace, kilns)
     } else {
         String::new()
     };

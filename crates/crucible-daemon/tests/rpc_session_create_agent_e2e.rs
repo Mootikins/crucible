@@ -49,9 +49,14 @@ impl TestServer {
 
         let kiln = data_home.join("kiln");
         std::fs::create_dir_all(&kiln)?;
-        let server =
-            Server::bind_with_data_home_and_kilns(&socket_path, data_home, &[("kiln", &kiln)])
-                .await?;
+        let second = data_home.join("second");
+        std::fs::create_dir_all(&second)?;
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            data_home,
+            &[("kiln", &kiln), ("second", &second)],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -190,6 +195,32 @@ async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
         agent["agent_name"]
     );
     assert_eq!(agent["system_prompt"], "You are a researcher.");
+
+    server.shutdown().await;
+}
+
+/// A session attaches a flat set of kilns, so each attached kiln is a card
+/// source, not only the first one.
+#[tokio::test]
+async fn agent_card_resolves_a_card_from_the_second_attached_kiln() {
+    let server = TestServer::start().await.expect("start server");
+    let second = server._temp_dir.path().join("second");
+    write_card(&second, "researcher.md", RESEARCHER_CARD);
+    let client = server.connect().await;
+
+    let created = client
+        .call(
+            "session.create",
+            serde_json::json!({
+                "type": "chat",
+                "kilns": [server.card_kiln_name(), "second"],
+                "configure_agent": true,
+                "agent_card": "researcher",
+            }),
+        )
+        .await
+        .expect("a card in the second attached kiln must resolve");
+    assert_eq!(created["agent_model"].as_str(), Some("llama3.2"));
 
     server.shutdown().await;
 }

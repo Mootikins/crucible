@@ -51,6 +51,9 @@ pub struct CrucibleMcpServer {
     kiln_tools: KilnTools,
     workspace_path: PathBuf,
     kiln_path: PathBuf,
+    /// Every kiln the session attaches, in attach order. Each is a source of
+    /// skills and agent cards.
+    kilns: Vec<PathBuf>,
     delegation_context: Option<DelegationContext>,
     tool_router: ToolRouter<Self>,
     /// The permission gate of the session that the calls run for. `None`:
@@ -198,6 +201,7 @@ impl CrucibleMcpServer {
                 .with_containment(containment.clone()),
             kiln_tools: KilnTools::new(kiln_path).with_containment(containment),
             workspace_path,
+            kilns: vec![kiln_path_buf.clone()],
             kiln_path: kiln_path_buf,
             delegation_context,
             tool_router: Self::tool_router(),
@@ -209,6 +213,14 @@ impl CrucibleMcpServer {
     #[must_use]
     pub fn with_call_gate(mut self, gate: Option<McpCallGate>) -> Self {
         self.call_gate = gate;
+        self
+    }
+
+    /// Make every kiln the session attaches a source of skills and cards,
+    /// not only the anchor kiln.
+    #[must_use]
+    pub fn with_kilns(mut self, kilns: Vec<PathBuf>) -> Self {
+        self.kilns = kilns;
         self
     }
 
@@ -309,7 +321,7 @@ impl CrucibleMcpServer {
                     targets = crate::agent_cards::discover_agent_cards_in(
                         &delegation_context.card_roots,
                         &self.workspace_path,
-                        Some(self.kiln_path.as_path()),
+                        &self.kilns,
                     )
                     .keys()
                     .cloned()
@@ -469,10 +481,8 @@ impl CrucibleMcpServer {
         params: Parameters<SkillViewParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let name = params.0.name;
-        let discovery = crate::skills::FolderDiscovery::with_default_paths(
-            &self.workspace_path,
-            Some(self.kiln_path.as_path()),
-        );
+        let discovery =
+            crate::skills::FolderDiscovery::with_default_paths(&self.workspace_path, &self.kilns);
         let body = match discovery.discover() {
             Ok(skills) => match crate::skills::discovery::resolve_skill(&skills, &name) {
                 Ok(Some(resolved)) => {

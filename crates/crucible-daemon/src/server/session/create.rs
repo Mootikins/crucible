@@ -148,9 +148,9 @@ impl RpcContext {
         // precognition, no semantic search — see `CrucibleMcpServer::list_tools`)
         // and must never degrade containment.
         //
-        // Agent-card discovery and the ACP resolver still want exactly one
-        // kiln, and now have to cope with there being none; see
-        // `Session::default_kiln`.
+        // The workspace fallback below still wants exactly one kiln, and has
+        // to cope with there being none; see `Session::default_kiln`.
+        // Agent-card discovery reads every kiln in `kiln_paths`.
         let default_kiln = kiln_paths.first().cloned();
 
         // Forwarded untouched: `false`, a profile name and an environment
@@ -193,7 +193,7 @@ impl RpcContext {
                         .as_deref()
                         .or(default_kiln.as_deref())
                         .unwrap_or(Path::new("")),
-                    default_kiln.as_deref(),
+                    &kiln_paths,
                 )
                 .map_err(SessionCreateError::Invalid)?;
             // Last word, over the card's own `tools:`. A card is a global file
@@ -369,7 +369,7 @@ impl RpcContext {
         params: &crate::rpc_client::SessionCreateRequest,
         agent_type: &str,
         workspace: &std::path::Path,
-        kiln: Option<&std::path::Path>,
+        kilns: &[PathBuf],
     ) -> Result<crucible_core::session::SessionAgent, String> {
         if agent_type == "acp" {
             let name = params.agent_name.as_deref().unwrap_or("");
@@ -396,7 +396,7 @@ impl RpcContext {
                         crate::agent_cards::discover_agent_cards_in(
                             self.agents.card_roots(),
                             workspace,
-                            kiln,
+                            kilns,
                         )
                         .into_keys()
                     ),
@@ -424,7 +424,7 @@ impl RpcContext {
             let cards = crate::agent_cards::discover_agent_cards_in(
                 self.agents.card_roots(),
                 workspace,
-                kiln,
+                kilns,
             );
             match crate::agent_cards::resolve_card(&cards, name)? {
                 Some(card) => {

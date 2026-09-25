@@ -80,12 +80,12 @@ impl FolderDiscovery {
     /// Searches:
     /// - `~/.config/crucible/skills/` (personal)
     /// - `<workspace>/.<agent>/skills/` for each known agent (workspace)
-    /// - `<kiln>/.crucible/skills/` if kiln path provided (kiln)
+    /// - `<kiln>/.crucible/skills/` for each attached kiln (kiln)
     ///
     /// Every workspace- and kiln-relative entry is under a dot-directory, the
     /// same rule plugins and agent cards follow.
-    pub fn with_default_paths(workspace: &Path, kiln: Option<&Path>) -> Self {
-        let paths = default_discovery_paths(Some(workspace), kiln, dirs::home_dir().as_deref());
+    pub fn with_default_paths(workspace: &Path, kilns: &[PathBuf]) -> Self {
+        let paths = default_discovery_paths(Some(workspace), kilns, dirs::home_dir().as_deref());
         Self::new(paths)
     }
 
@@ -259,14 +259,14 @@ pub fn resolve_skill<'a>(
 /// `~/.claude/skills` / `~/.codex/skills` contents.
 pub fn default_discovery_paths(
     workspace: Option<&Path>,
-    kiln: Option<&Path>,
+    kilns: &[PathBuf],
     home: Option<&Path>,
 ) -> Vec<SearchPath> {
     let runtime_roots = match std::env::var("CRUCIBLE_RUNTIME") {
         Ok(base) => vec![PathBuf::from(base)],
         Err(_) => crucible_core::runtime_roots::for_current_exe(),
     };
-    default_discovery_paths_from(workspace, kiln, home, &runtime_roots, &[])
+    default_discovery_paths_from(workspace, kilns, home, &runtime_roots, &[])
 }
 
 /// The harness home directories to read skills from, by name.
@@ -304,7 +304,7 @@ pub fn harness_roots(home: &Path, harnesses: &BTreeMap<String, PathBuf>) -> Vec<
 /// run — which is every developer's.
 pub fn default_discovery_paths_from(
     workspace: Option<&Path>,
-    kiln: Option<&Path>,
+    kilns: &[PathBuf],
     home: Option<&Path>,
     runtime_roots: &[PathBuf],
     plugin_dirs: &[PathBuf],
@@ -316,7 +316,7 @@ pub fn default_discovery_paths_from(
     let path = build_path(&PathInputs {
         workspace,
         workspace_roots: &workspace_roots,
-        kiln,
+        kilns,
         harnesses: &harnesses,
         config_home: config_home.as_deref(),
         runtime_roots,
@@ -405,7 +405,7 @@ mod tests {
     /// needed `.rev()` to undo the scope sort. Bundled skills now live at
     /// `<root>/skills` like every other kind, and position is precedence.
     fn bundled_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
-        default_discovery_paths_from(None, None, None, roots, &[])
+        default_discovery_paths_from(None, &[], None, roots, &[])
             .into_iter()
             .filter(|p| {
                 p.path
@@ -888,8 +888,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // Inject an empty home dir so the test isn't affected by the
         // host's real ~/.claude / ~/.codex / ~/.pi skill libraries.
-        let paths =
-            default_discovery_paths_from(Some(tmp.path()), None, Some(tmp.path()), &[], &[]);
+        let paths = default_discovery_paths_from(Some(tmp.path()), &[], Some(tmp.path()), &[], &[]);
         let discovery = FolderDiscovery::new(paths);
 
         // Should not panic, and discover should work on nonexistent paths
@@ -917,8 +916,13 @@ mod tests {
         std::fs::create_dir_all(kiln.join("skills")).unwrap();
         std::fs::create_dir_all(kiln.join(".crucible").join("skills")).unwrap();
 
-        let paths =
-            default_discovery_paths_from(Some(&ws), Some(&kiln), Some(tmp.path()), &[], &[]);
+        let paths = default_discovery_paths_from(
+            Some(&ws),
+            std::slice::from_ref(&kiln),
+            Some(tmp.path()),
+            &[],
+            &[],
+        );
 
         assert!(
             paths
@@ -1063,7 +1067,7 @@ mod tests {
         let _guard =
             crucible_core::test_support::EnvVarGuard::remove("CRUCIBLE_CROSS_HARNESS_SKILLS");
 
-        let paths = default_discovery_paths(None, None, Some(home));
+        let paths = default_discovery_paths(None, &[], Some(home));
         // None of the discovered paths should reference `.claude/skills`.
         for p in &paths {
             // The cross-harness path is `.claude/skills`, not any path that
@@ -1092,7 +1096,7 @@ mod tests {
             "1".to_string(),
         );
 
-        let paths = default_discovery_paths(None, None, Some(home));
+        let paths = default_discovery_paths(None, &[], Some(home));
         let has_claude = paths
             .iter()
             .any(|p| p.path.to_string_lossy().contains(".claude"));

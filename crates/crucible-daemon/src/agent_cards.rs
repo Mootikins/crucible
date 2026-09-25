@@ -113,8 +113,8 @@ pub fn warn_if_deprecated(roots: &CardRoots) {
 /// repo — composes itself in rather than being scanned: its Lua adds the
 /// directory to the path at load. The component brings itself, the host does
 /// not go looking.
-pub fn card_directories(roots: &CardRoots, workspace: &Path, kiln: Option<&Path>) -> Vec<PathBuf> {
-    card_sources(roots, workspace, kiln)
+pub fn card_directories(roots: &CardRoots, workspace: &Path, kilns: &[PathBuf]) -> Vec<PathBuf> {
+    card_sources(roots, workspace, kilns)
         .into_iter()
         .map(|(path, _, _)| path)
         .collect()
@@ -129,17 +129,18 @@ type Layer = (Origin, bool);
 fn card_sources(
     roots: &CardRoots,
     workspace: &Path,
-    kiln: Option<&Path>,
+    kilns: &[PathBuf],
 ) -> Vec<(PathBuf, Layer, String)> {
     // `kiln == workspace` would otherwise offer `<kiln>/.crucible/agents`
     // twice. The kiln entry is the one kept, because a session with no
     // separate workspace is a kiln session.
     let workspace_roots = [".crucible".to_string()];
-    let distinct_workspace = if workspace.as_os_str().is_empty() || kiln == Some(workspace) {
-        None
-    } else {
-        Some(workspace)
-    };
+    let distinct_workspace =
+        if workspace.as_os_str().is_empty() || kilns.iter().any(|k| k == workspace) {
+            None
+        } else {
+            Some(workspace)
+        };
 
     // `CardRoots::config_home` is the raw config dir (`dirs::config_dir()`),
     // so the `crucible` segment is added here to make it a runtime root.
@@ -148,7 +149,7 @@ fn card_sources(
     let path = build_path(&PathInputs {
         workspace: distinct_workspace,
         workspace_roots: &workspace_roots,
-        kiln,
+        kilns,
         config_home: config_root.as_deref(),
         agent_directories: &roots.agent_directories,
         ..PathInputs::default()
@@ -194,12 +195,12 @@ fn card_sources(
 pub fn discover_agent_cards_in(
     roots: &CardRoots,
     workspace: &Path,
-    kiln: Option<&Path>,
+    kilns: &[PathBuf],
 ) -> HashMap<String, AgentCard> {
     warn_if_deprecated(roots);
     let mut discovered = Vec::new();
     let mut loader = AgentCardLoader::new();
-    for (dir, layer, namespace) in card_sources(roots, workspace, kiln) {
+    for (dir, layer, namespace) in card_sources(roots, workspace, kilns) {
         if !dir.is_dir() {
             continue;
         }
@@ -306,7 +307,11 @@ mod tests {
             "---\ndescription: Explores and synthesizes knowledge\nspecialty: reasoning\ntools:\n  semantic_search: true\n  read_note: true\n  create_note: ask\nmcps:\n  - context7\n---\n\nYou are a research assistant.\n",
         );
 
-        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots::default(),
+            kiln.path(),
+            &[kiln.path().to_path_buf()],
+        );
         let card = cards.get("Researcher").expect("card named from file stem");
         assert_eq!(
             resolve_card(&cards, "kiln:Researcher")
@@ -334,7 +339,11 @@ mod tests {
             "---\nname: worker\nversion: 1.2.3\ndescription: base\nmodel: llama3.2\nprovider: ollama\nmode: plan\ntools:\n  bash: deny\n---\n\nBase prompt.\n",
         );
 
-        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots::default(),
+            kiln.path(),
+            &[kiln.path().to_path_buf()],
+        );
         let card = cards.get("worker").unwrap();
         assert_eq!(card.description, "base");
         assert_eq!(card.version, "1.2.3");
@@ -362,8 +371,11 @@ mod tests {
             "---\ndescription: project helper\n---\n\nProject prompt.\n",
         );
 
-        let cards =
-            discover_agent_cards_in(&CardRoots::default(), workspace.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots::default(),
+            workspace.path(),
+            &[kiln.path().to_path_buf()],
+        );
         let description = |name| {
             resolve_card(&cards, name)
                 .unwrap()
@@ -390,8 +402,11 @@ mod tests {
             "worker.md",
             "---\nname: worker\ndescription: kiln\n---\nKiln prompt\n",
         );
-        let cards =
-            discover_agent_cards_in(&CardRoots::default(), workspace.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots::default(),
+            workspace.path(),
+            &[kiln.path().to_path_buf()],
+        );
         assert_eq!(cards.len(), 2);
         assert_eq!(cards["worker"].description, "workspace");
         assert_eq!(cards["kiln:worker"].description, "kiln");
@@ -432,7 +447,11 @@ mod tests {
             "---\ndescription: loads\n---\n\nPrompt.\n",
         );
 
-        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots::default(),
+            kiln.path(),
+            &[kiln.path().to_path_buf()],
+        );
         assert!(
             !cards.contains_key("ambient"),
             "a card in the kiln's visible tree must not load: {:?}",
@@ -458,7 +477,11 @@ mod tests {
             "good.md",
             "---\ndescription: fine\n---\n\nPrompt.\n",
         );
-        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots::default(),
+            kiln.path(),
+            &[kiln.path().to_path_buf()],
+        );
         assert!(!cards.contains_key("bad"));
         assert!(cards.contains_key("good"));
     }
@@ -490,14 +513,18 @@ mod tests {
                 agent_directories: Vec::new(),
             },
             kiln.path(),
-            Some(kiln.path()),
+            &[kiln.path().to_path_buf()],
         );
         assert_eq!(cards["kiln:helper"].description, "kiln helper");
         assert_eq!(cards["helper"].description, "global helper");
         assert_eq!(cards["global_only"].description, "global only");
 
         // And nothing global leaks in when the caller injects None.
-        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots::default(),
+            kiln.path(),
+            &[kiln.path().to_path_buf()],
+        );
         assert!(!cards.contains_key("global_only"));
     }
     /// Layers override, and the personal layer is on top: a user develops a
@@ -521,7 +548,7 @@ mod tests {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: Vec::new(),
         };
-        let cards = discover_agent_cards_in(&roots, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let description = |name| {
             resolve_card(&cards, name)
                 .unwrap()
@@ -533,7 +560,7 @@ mod tests {
         assert_eq!(description("personal:helper"), "personal helper");
         assert_eq!(description("kiln:helper"), "kiln helper");
         assert_eq!(
-            card_directories(&roots, kiln.path(), Some(kiln.path()))[0],
+            card_directories(&roots, kiln.path(), &[kiln.path().to_path_buf()])[0],
             config.path().join("crucible").join("agents")
         );
     }
@@ -559,7 +586,7 @@ mod tests {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: vec![shared.path().to_path_buf()],
         };
-        let cards = discover_agent_cards_in(&roots, Path::new(""), None);
+        let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
         let description = |name| {
             resolve_card(&cards, name)
                 .unwrap()
@@ -593,7 +620,7 @@ mod tests {
             config_home: None,
             agent_directories: vec![first.path().to_path_buf(), second.path().to_path_buf()],
         };
-        let cards = discover_agent_cards_in(&roots, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let error = resolve_card(&cards, "helper").unwrap_err();
         assert!(
             error.contains("personal:helper") && error.contains("personal-2:helper"),
@@ -633,7 +660,7 @@ mod tests {
             config_home: None,
             agent_directories: vec![shared.path().to_path_buf()],
         };
-        let cards = discover_agent_cards_in(&roots, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         assert_eq!(cards["kiln:helper"].description, "kiln helper");
         assert!(cards
             .iter()
@@ -680,7 +707,7 @@ mod tests {
             agent_directories: vec![shared.path().to_path_buf()],
         };
 
-        let cards = discover_agent_cards_in(&roots, Path::new(""), None);
+        let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
         assert_eq!(
             cards["legacy"].description, "legacy card",
             "a deprecated knob must keep working"
@@ -699,7 +726,7 @@ mod tests {
             config_home: Some(PathBuf::from("/cfg")),
             agent_directories: vec![PathBuf::from("/shared")],
         };
-        let dirs = card_directories(&roots, Path::new("/ws"), Some(Path::new("/kiln")));
+        let dirs = card_directories(&roots, Path::new("/ws"), &[PathBuf::from("/kiln")]);
         assert_eq!(
             dirs,
             vec![

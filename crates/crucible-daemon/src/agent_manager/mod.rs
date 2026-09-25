@@ -1327,6 +1327,7 @@ impl AgentManager {
                     containment.clone(),
                 )
                 .with_search_sources(search_sources)
+                .with_kilns(self.session_manager.kiln_paths(&session.kilns))
                 .with_rerank_stage(self.plugin_handlers().map(|(registry, lua)| {
                     crate::multi_kiln_search::RerankStage::new(
                         None,

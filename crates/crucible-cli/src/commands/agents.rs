@@ -45,7 +45,7 @@ pub async fn execute(config: CliConfig, command: Option<AgentsCommands>) -> Resu
 /// card `session.create --agent` would never resolve.
 fn load_agent_cards(config: &CliConfig, workspace: &Path) -> HashMap<String, AgentCard> {
     let roots = card_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
-    discover_agent_cards_in(&roots, workspace, Some(&config.kiln_path))
+    discover_agent_cards_in(&roots, workspace, std::slice::from_ref(&config.kiln_path))
 }
 
 /// The agent card directories a session started from `workspace` would
@@ -63,7 +63,7 @@ fn load_agent_cards(config: &CliConfig, workspace: &Path) -> HashMap<String, Age
 /// because `validate` reports per-file errors the daemon does not expose.
 pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<PathBuf> {
     let roots = card_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
-    card_directories(&roots, workspace, Some(&config.kiln_path))
+    card_directories(&roots, workspace, std::slice::from_ref(&config.kiln_path))
 }
 
 /// The roots behind [`collect_agent_directories`] and [`load_agent_cards`],
@@ -596,7 +596,11 @@ You are a test agent.
             Some(PathBuf::from("/cfg")),
             Some(Path::new("/home/test")),
         );
-        card_directories(&roots, Path::new("/ws"), Some(&config.kiln_path))
+        card_directories(
+            &roots,
+            Path::new("/ws"),
+            std::slice::from_ref(&config.kiln_path),
+        )
     }
 
     #[test]
@@ -780,7 +784,11 @@ You are a test agent.
         let mut config = test_config(kiln.path().to_path_buf());
         config.agent_directories = vec![shared.path().to_path_buf()];
         let roots = card_roots(&config, Some(home.path().to_path_buf()), None);
-        let cards = discover_agent_cards_in(&roots, &no_workspace(), Some(&config.kiln_path));
+        let cards = discover_agent_cards_in(
+            &roots,
+            &no_workspace(),
+            std::slice::from_ref(&config.kiln_path),
+        );
 
         let card = resolve_card(&cards, "shared").unwrap().unwrap();
         assert_eq!(card.description, "configured version");

@@ -84,7 +84,7 @@ fn test_runtime_skill_discovered() {
     );
 
     // When: default_discovery_paths() builds search paths
-    let paths = default_discovery_paths(None, None, None);
+    let paths = default_discovery_paths(None, &[], None);
 
     // `crucible-help` ships its skills as a PLUGIN, beside its own manifest,
     // so the runtime root has no top-level `skills/`. A plugin's directory is

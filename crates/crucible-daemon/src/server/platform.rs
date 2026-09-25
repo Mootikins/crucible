@@ -154,7 +154,11 @@ async fn discover_skills(
     tokio::task::spawn_blocking(move || {
         let cwd = std::env::current_dir().unwrap_or_default();
         let kiln = PathBuf::from(&kiln_path);
-        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
+        let paths = default_discovery_paths(
+            Some(&cwd),
+            std::slice::from_ref(&kiln),
+            dirs::home_dir().as_deref(),
+        );
         FolderDiscovery::new(paths).discover()
     })
     .await
@@ -316,7 +320,7 @@ pub(crate) async fn handle_agents_list_cards(
     let mut cards: Vec<_> = crate::agent_cards::discover_agent_cards_in(
         agent_manager.card_roots(),
         &workspace,
-        kiln_path.as_deref(),
+        kiln_path.as_slice(),
     )
     .into_iter()
     .map(|(name, mut card)| {

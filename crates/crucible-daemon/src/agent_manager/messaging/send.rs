@@ -1387,6 +1387,7 @@ impl AgentManager {
             .and_then(|s| s.default_kiln())
             .and_then(|name| self.session_manager.kiln_registry().resolve(name).path());
         let kiln_path = kiln_path.as_deref();
+        let kilns = self.session_manager.kiln_paths(&session_kilns);
         let mut knowledge_repo = None;
         let mut embedding_provider = None;
 
@@ -1423,6 +1424,7 @@ impl AgentManager {
             lua: lua_handle.as_ref(),
             workspace,
             kiln_path,
+            kilns: &kilns,
             session_kilns: &session_kilns,
             parent_session_id: Some(session_id),
             background_spawner: Some(self.background_manager.clone()),

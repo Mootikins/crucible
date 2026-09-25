@@ -34,9 +34,9 @@ pub struct PathInputs<'a> {
     /// `<workspace>`, and the relative roots to look for inside it.
     pub workspace: Option<&'a Path>,
     pub workspace_roots: &'a [String],
-    /// The attached kiln. Only `<kiln>/.crucible` is ever a root; a kiln's
-    /// visible top level belongs to notes.
-    pub kiln: Option<&'a Path>,
+    /// The attached kilns, in attach order. Only `<kiln>/.crucible` is ever a
+    /// root; a kiln's visible top level belongs to notes.
+    pub kilns: &'a [PathBuf],
     /// `runtimepath` from the config, in the order the user wrote it.
     pub runtimepath: &'a [PathBuf],
     /// `[harnesses]`: name to home root. A row IS the opt-in — an absent row
@@ -64,7 +64,7 @@ impl Default for PathInputs<'_> {
             env_plugin_dirs: &[],
             workspace: None,
             workspace_roots: &[],
-            kiln: None,
+            kilns: &[],
             runtimepath: &[],
             harnesses: &NO_HARNESSES,
             config_home: None,
@@ -100,7 +100,7 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
         }
     }
 
-    if let Some(kiln) = inputs.kiln {
+    for kiln in inputs.kilns {
         path.push(RuntimeEntry::root(kiln.join(".crucible"), Origin::Kiln));
     }
 
@@ -186,7 +186,7 @@ mod tests {
     fn an_attached_kiln_contributes_no_plugin_or_defaults_directory() {
         let kiln = PathBuf::from("/k");
         let built = build_path(&PathInputs {
-            kiln: Some(&kiln),
+            kilns: std::slice::from_ref(&kiln),
             ..inputs()
         });
 
