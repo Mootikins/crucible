@@ -413,3 +413,35 @@ async fn activation_follows_discovery_order_rank_then_file_name() {
     assert_eq!(loader.plugin_state("zeta"), Some(PluginState::Active));
     assert_eq!(loader.plugin_state("alpha"), Some(PluginState::Active));
 }
+
+/// An active plugin's directory is a source of skills, cards and themes.
+/// Disable removes it, and a plugin that fails to activate never keeps it.
+#[tokio::test]
+async fn only_an_active_plugin_directory_is_a_source() {
+    let (mut loader, dir) = loader_with_plugin("shipper", "return {}").await;
+    loader
+        .eval_user_init(r#"cru.plugin.setup({ "shipper" })"#)
+        .await
+        .unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
+    let sources = loader.plugin_registry().plugin_dirs();
+    assert_eq!(sources.dirs(), [dir.path().join("shipper")]);
+
+    loader.disable_plugin("shipper");
+    assert!(sources.dirs().is_empty(), "a disabled plugin is no source");
+
+    let (mut loader, _dir) = loader_with_plugin(
+        "broken",
+        r#"return { setup = function() error("boom") end }"#,
+    )
+    .await;
+    loader
+        .eval_user_init(r#"cru.plugin.setup({ "broken" })"#)
+        .await
+        .unwrap();
+    loader.load_plugins_from_spec().await.unwrap();
+    assert!(
+        loader.plugin_registry().plugin_dirs().dirs().is_empty(),
+        "a plugin whose setup fails is no source"
+    );
+}

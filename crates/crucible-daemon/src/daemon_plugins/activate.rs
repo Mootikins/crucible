@@ -217,6 +217,11 @@ async fn activate_inner(loader: &mut DaemonPluginLoader, name: &str) -> anyhow::
         exports.tools,
         exports.commands,
     );
+    // Its `skills/`, `agents/` and `themes/` are sources from here on. A
+    // failure below makes the plugin inert, which removes the directory again.
+    loader
+        .plugin_registry
+        .set_plugin_dir(name, plugin_dir.clone());
 
     // 8. The table, the module cache and the lifecycle hooks it carries. A
     // boot-required instance is already in the cache, under the searcher's

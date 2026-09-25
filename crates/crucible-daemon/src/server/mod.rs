@@ -272,7 +272,7 @@ impl Server {
             .clone()
             .or_else(|| params.data_home.is_none().then(dirs::config_dir).flatten());
 
-        let source_roots = crate::runtime_path::SourceRoots::from_app_config(
+        let mut source_roots = crate::runtime_path::SourceRoots::from_app_config(
             config_home.clone(),
             params.app_config.as_ref(),
             dirs::home_dir().as_deref(),
@@ -397,6 +397,10 @@ impl Server {
         // not to a conversation.
         if let Ok(guard) = plugin_loader.try_lock() {
             if let Some(loader) = guard.as_ref() {
+                // The active plugins' directories are sources of skills,
+                // cards and themes. The registry owns the list; the roots
+                // hold a handle, so activation and unload reach every reader.
+                source_roots.plugin_dirs = loader.plugin_registry().plugin_dirs();
                 let hook_tx = event_tx.clone();
                 if !loader.publications().set_change_hook(std::sync::Arc::new(
                     move |plugin: &str, key: &str| {

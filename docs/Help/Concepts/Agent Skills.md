@@ -161,8 +161,11 @@ code.
 
 A plugin's own directory is a runtime root, so `myplugin/skills/` is found
 without any registration. That is how Crucible's own `crucible-help` ships the
-documentation you are reading. A plugin's skills rank below every root you
-named yourself, so they never shadow your own.
+documentation you are reading. Only an active plugin is a source. Each active
+plugin is one source at priority 200, named by the plugin: a skill `guide` in
+`myplugin` has the full name `myplugin:guide`. A plugin's skills rank below
+every root you named yourself, so they never shadow your own. Two plugins that
+ship one skill name are ambiguous; use the full name.
 
 ### Priority and Shadowing
 

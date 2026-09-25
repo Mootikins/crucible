@@ -12,6 +12,7 @@
 //! end.
 
 use crucible_core::runtime_path::{build_path, PathInputs, RuntimeEntry};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The runtime roots the daemon searches, highest priority first.
@@ -58,7 +59,7 @@ pub fn daemon_path(runtimepath: &[PathBuf]) -> Vec<RuntimeEntry> {
 /// `dirs::config_dir()` would resolve a developer's own cards in every test —
 /// passing on CI, failing locally. `Default` is "no global cards, no
 /// configured directories".
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct SourceRoots {
     /// The config home `<config_home>/crucible/agents` hangs off. `None`
     /// means "no global cards".
@@ -75,6 +76,47 @@ pub struct SourceRoots {
     /// is a root: its `agents/`, `skills/` and `themes/` are sources, at
     /// priority 600 minus the index.
     pub runtimepath: Vec<PathBuf>,
+    /// The directory of each active plugin. Each is a source of skills,
+    /// cards and themes at priority 200. [`crate::plugin_tools::PluginRegistry`]
+    /// owns the list; this is a handle to it.
+    pub plugin_dirs: ActivePluginDirs,
+}
+
+/// The directories of the active plugins, by plugin name.
+///
+/// One holder. Activation adds a plugin (`daemon_plugins/activate.rs`), and
+/// the same path that runs `clear_source` for an inert plugin removes it, so a
+/// disabled or broken plugin puts no text into a prompt. A clone shares the
+/// list.
+#[derive(Debug, Clone, Default)]
+pub struct ActivePluginDirs(std::sync::Arc<std::sync::RwLock<BTreeMap<String, PathBuf>>>);
+
+impl ActivePluginDirs {
+    /// Record that `plugin` is active, with its directory.
+    pub fn insert(&self, plugin: &str, dir: PathBuf) {
+        self.write().insert(plugin.to_string(), dir);
+    }
+
+    /// Forget `plugin`.
+    pub fn remove(&self, plugin: &str) {
+        self.write().remove(plugin);
+    }
+
+    /// The directories, in plugin-name order.
+    pub fn dirs(&self) -> Vec<PathBuf> {
+        self.0
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    fn write(&self) -> std::sync::RwLockWriteGuard<'_, BTreeMap<String, PathBuf>> {
+        self.0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 impl SourceRoots {
@@ -111,6 +153,7 @@ impl SourceRoots {
             config_home,
             agent_directories: paths("agent_directories"),
             runtimepath: paths("runtimepath"),
+            plugin_dirs: ActivePluginDirs::default(),
         }
     }
 }

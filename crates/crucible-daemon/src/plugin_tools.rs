@@ -86,6 +86,9 @@ fn command_sources(
 pub struct PluginRegistry {
     tools: RwLock<HashMap<String, PluginCallable>>,
     commands: RwLock<HashMap<String, PluginCallable>>,
+    /// The directory of each active plugin: a source of skills, cards and
+    /// themes. `SourceRoots` holds a handle to the same list.
+    dirs: crate::runtime_path::ActivePluginDirs,
 }
 
 /// Names a plugin may not claim.
@@ -118,12 +121,24 @@ impl PluginRegistry {
         Self::default()
     }
 
+    /// Make `dir` a source of skills, cards and themes while `plugin` is
+    /// active. [`Self::remove_plugin`] ends it.
+    pub fn set_plugin_dir(&self, plugin: &str, dir: std::path::PathBuf) {
+        self.dirs.insert(plugin, dir);
+    }
+
+    /// A handle to the directories of the active plugins.
+    pub fn plugin_dirs(&self) -> crate::runtime_path::ActivePluginDirs {
+        self.dirs.clone()
+    }
+
     /// Remove every tool and command a plugin registered.
     ///
     /// The failed-reload path: `register_plugin` only replaces entries on a
     /// successful load, so a plugin that broke on reload otherwise kept its
     /// previous version's tools registered while `plugin.list` said Error.
     pub fn remove_plugin(&self, plugin: &str) {
+        self.dirs.remove(plugin);
         self.tools
             .write()
             .expect("plugin tools lock poisoned")

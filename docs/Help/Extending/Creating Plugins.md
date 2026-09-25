@@ -73,8 +73,12 @@ out. This is a stated constraint with a named precondition, not a deferral.
 A plugin's own directory is also a runtime root, so a plugin may ship its own
 `skills/`, `agents/` and `themes/` beside its `init.luau` — they are found with no
 registration. Crucible's own `crucible-help` plugin ships the documentation
-this way. A plugin's contributions rank below every root you named yourself, so
-they never shadow your own.
+this way. Only an active plugin is a source: a disabled plugin, or a plugin
+that failed to load, supplies nothing. Each active plugin is one source at
+priority 200, named by the plugin, so a skill `guide` in the plugin `helper`
+has the full name `helper:guide`. A plugin's contributions rank below every
+root you named yourself, so they never shadow your own. Two plugins that ship
+one name are ambiguous; use the full name.
 
 `runtimepath` is the opt-in. It is your own config naming the tree, so consent
 is explicit and needs no prompt in a headless daemon:

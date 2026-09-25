@@ -423,3 +423,40 @@ async fn a_plugin_that_fails_in_setup_is_marked_failed_and_the_daemon_lives() {
         assert_eq!(alive, 2, "{name}");
     }
 }
+
+/// An active plugin's `skills/` reaches `skills.list` of the booted daemon,
+/// under the plugin's name. The server hands the plugin registry's list of
+/// active directories to the roots every skill reader uses.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_active_plugin_ships_skills_to_the_daemon() {
+    let tmp = TempDir::new().unwrap();
+    let server = server_with_installed_plugin(&tmp, "skill-shipper").await;
+    let skill = tmp
+        .path()
+        .join("rp/plugins/skill-shipper/skills/shipped-skill");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: shipped-skill\ndescription: from a plugin\n---\n\nBody.",
+    )
+    .unwrap();
+
+    server.boot_plugins().await;
+
+    let kiln = TempDir::new().unwrap();
+    let req = crate::protocol::Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(crate::protocol::RequestId::Number(1)),
+        method: "skills.get".to_string(),
+        params: serde_json::json!({
+            "kiln_path": kiln.path(),
+            "name": "skill-shipper:shipped-skill",
+        }),
+    };
+    let reply =
+        crate::server::platform::handle_skills_get(req, server.agent_manager.source_roots())
+            .await
+            .result
+            .expect("the plugin's skill must resolve by its full name");
+    assert_eq!(reply["description"], "from a plugin");
+}

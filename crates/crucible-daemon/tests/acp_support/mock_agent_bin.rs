@@ -92,12 +92,8 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
 /// })
 /// ```
 /// No global cards, no configured card directories.
-static NO_CARD_ROOTS: crucible_daemon::runtime_path::SourceRoots =
-    crucible_daemon::runtime_path::SourceRoots {
-        config_home: None,
-        agent_directories: Vec::new(),
-        runtimepath: Vec::new(),
-    };
+static NO_CARD_ROOTS: std::sync::LazyLock<crucible_daemon::runtime_path::SourceRoots> =
+    std::sync::LazyLock::new(crucible_daemon::runtime_path::SourceRoots::default);
 
 #[allow(dead_code)]
 pub fn mock_handle_params<'a>(

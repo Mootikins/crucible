@@ -736,8 +736,8 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
 /// The `themes/` directories to search, as sources sorted by priority.
 ///
 /// The config directory is `personal`, so a user's own theme wins. Each
-/// `runtimepath` entry follows, then every runtime root — `cru setup` copies
-/// the shipped tree into
+/// `runtimepath` entry follows, then the runtime roots and each active
+/// plugin's own directory. `cru setup` copies the shipped tree into
 /// `~/.config/crucible/runtime`, which is a runtime root and is NOT the config
 /// directory. Reading only the config directory is why a shipped theme was
 /// never listed.
@@ -751,6 +751,7 @@ pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> 
 pub fn theme_roots(
     config_dir: &Path,
     runtimepath: &[PathBuf],
+    plugin_dirs: &[PathBuf],
 ) -> Result<Sources<SearchPath>, SourcesError> {
     use crucible_core::runtime_path::{build_path, search_sources, PathInputs, RuntimeAsset};
 
@@ -759,6 +760,7 @@ pub fn theme_roots(
         config_home: Some(config_dir),
         runtimepath,
         runtime_roots: &runtime,
+        plugin_dirs,
         ..PathInputs::default()
     });
     search_sources(RuntimeAsset::Themes, &path)
@@ -1672,7 +1674,8 @@ mod tests {
         let kit = tmp.path().join("kit");
         std::fs::create_dir_all(kit.join("themes")).unwrap();
         std::fs::write(kit.join("themes").join("kit-only.luau"), "return {}").unwrap();
-        let roots = theme_roots(&tmp.path().join("config"), std::slice::from_ref(&kit)).unwrap();
+        let roots =
+            theme_roots(&tmp.path().join("config"), std::slice::from_ref(&kit), &[]).unwrap();
         assert!(list_available_themes(&roots).contains(&"kit-only".to_string()));
         assert_eq!(
             resolve_theme_file(&roots, "config-1:kit-only"),

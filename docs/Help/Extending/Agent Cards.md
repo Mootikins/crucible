@@ -44,6 +44,8 @@ before you share it in a kiln. The order is, highest first:
 4. `KILN/.crucible/agents/` — kiln-scoped cards, with the full name `kiln:`
 5. `ENTRY/agents/` for each `runtimepath` entry, with the full name
    `config-1:`, `config-2:` and so on
+6. `PLUGIN/agents/` for each active plugin, with the plugin name as the full
+   name prefix
 
 A bare name resolves to the card of the highest source that has it, in
 `cru session create --agent`, in delegation and in `cru agents show`. Every

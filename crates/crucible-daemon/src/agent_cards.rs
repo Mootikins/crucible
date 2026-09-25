@@ -105,6 +105,7 @@ fn card_sources(roots: &SourceRoots, workspace: &Path, kilns: &[PathBuf]) -> Sou
         config_home: config_root.as_deref(),
         agent_directories: &roots.agent_directories,
         runtimepath: &roots.runtimepath,
+        plugin_dirs: &roots.plugin_dirs.dirs(),
         ..PathInputs::default()
     });
     search_sources(RuntimeAsset::Cards, &path).unwrap_or_else(|error| {
@@ -438,6 +439,7 @@ mod tests {
                 config_home: Some(config.path().to_path_buf()),
                 agent_directories: Vec::new(),
                 runtimepath: Vec::new(),
+                plugin_dirs: Default::default(),
             },
             kiln.path(),
             &[kiln.path().to_path_buf()],
@@ -475,6 +477,7 @@ mod tests {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: Vec::new(),
             runtimepath: Vec::new(),
+            plugin_dirs: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let description = |name| {
@@ -514,6 +517,7 @@ mod tests {
             config_home: Some(config.path().to_path_buf()),
             agent_directories: vec![shared.path().to_path_buf()],
             runtimepath: Vec::new(),
+            plugin_dirs: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
         let description = |name| {
@@ -555,6 +559,7 @@ mod tests {
             config_home: None,
             agent_directories: vec![first.path().to_path_buf(), second.path().to_path_buf()],
             runtimepath: Vec::new(),
+            plugin_dirs: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         let error = resolve_card(&cards, "helper").unwrap_err();
@@ -596,6 +601,7 @@ mod tests {
             config_home: None,
             agent_directories: vec![shared.path().to_path_buf()],
             runtimepath: Vec::new(),
+            plugin_dirs: Default::default(),
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), &[kiln.path().to_path_buf()]);
         assert_eq!(cards["kiln:helper"].description, "kiln helper");
@@ -621,6 +627,7 @@ mod tests {
             config_home: None,
             agent_directories: vec![shared.path().to_path_buf()],
             runtimepath: Vec::new(),
+            plugin_dirs: Default::default(),
         };
 
         let cards = discover_agent_cards_in(&roots, Path::new(""), &[]);
@@ -642,6 +649,7 @@ mod tests {
             config_home: Some(PathBuf::from("/cfg")),
             agent_directories: vec![PathBuf::from("/shared")],
             runtimepath: Vec::new(),
+            plugin_dirs: Default::default(),
         };
         let dirs = card_directories(&roots, Path::new("/ws"), &[PathBuf::from("/kiln")]);
         assert_eq!(

@@ -307,7 +307,7 @@ pub fn default_discovery_paths(
         Ok(base) => vec![PathBuf::from(base)],
         Err(_) => crucible_core::runtime_roots::for_current_exe(),
     };
-    default_discovery_paths_from(roots, workspace, kilns, home, &runtime_roots, &[])
+    default_discovery_paths_from(roots, workspace, kilns, home, &runtime_roots)
 }
 
 /// The harness home directories to read skills from, by name.
@@ -349,7 +349,6 @@ pub fn default_discovery_paths_from(
     kilns: &[PathBuf],
     home: Option<&Path>,
     runtime_roots: &[PathBuf],
-    plugin_dirs: &[PathBuf],
 ) -> Vec<SearchPath> {
     // `SourceRoots::config_home` is the raw config dir, as for cards.
     let config_home = roots.config_home.as_ref().map(|d| d.join("crucible"));
@@ -364,7 +363,7 @@ pub fn default_discovery_paths_from(
         config_home: config_home.as_deref(),
         runtimepath: &roots.runtimepath,
         runtime_roots,
-        plugin_dirs,
+        plugin_dirs: &roots.plugin_dirs.dirs(),
         ..PathInputs::default()
     });
 
@@ -452,7 +451,7 @@ mod tests {
     /// needed `.rev()` to undo the scope sort. Bundled skills now live at
     /// `<root>/skills` like every other kind, and position is precedence.
     fn bundled_skill_paths(roots: &[PathBuf]) -> Vec<SearchPath> {
-        default_discovery_paths_from(&SourceRoots::default(), None, &[], None, roots, &[])
+        default_discovery_paths_from(&SourceRoots::default(), None, &[], None, roots)
             .into_iter()
             .filter(|p| {
                 p.path
@@ -680,9 +679,37 @@ mod tests {
             runtimepath: vec![kit.path().to_path_buf()],
             ..SourceRoots::default()
         };
-        let paths = default_discovery_paths_from(&roots, None, &[], None, &[], &[]);
+        let paths = default_discovery_paths_from(&roots, None, &[], None, &[]);
         let found = FolderDiscovery::new(paths).discover().unwrap();
         assert_eq!(found["kit-only"].skill.source.namespace, "config-1");
+    }
+
+    /// Each active plugin is one source at priority 200. Two plugins that
+    /// ship one skill name are ambiguous; each full name still works.
+    #[test]
+    fn two_plugins_that_ship_one_skill_are_ambiguous() {
+        let tmp = TempDir::new().unwrap();
+        let roots = SourceRoots::default();
+        for plugin in ["alpha", "beta"] {
+            let dir = tmp.path().join(plugin);
+            write_skill(&dir.join("skills"), "guide", plugin);
+            roots.plugin_dirs.insert(plugin, dir);
+        }
+        let paths = default_discovery_paths_from(&roots, None, &[], None, &[]);
+        let found = FolderDiscovery::new(paths).discover().unwrap();
+        let error = resolve_skill(&found, "guide").unwrap_err();
+        assert!(
+            error.contains("alpha:guide") && error.contains("beta:guide"),
+            "{error}"
+        );
+        assert_eq!(
+            resolve_skill(&found, "beta:guide")
+                .unwrap()
+                .unwrap()
+                .skill
+                .description,
+            "beta"
+        );
     }
 
     #[test]
@@ -996,7 +1023,6 @@ mod tests {
             &[],
             Some(tmp.path()),
             &[],
-            &[],
         );
         let discovery = FolderDiscovery::new(paths);
 
@@ -1030,7 +1056,6 @@ mod tests {
             Some(&ws),
             std::slice::from_ref(&kiln),
             Some(tmp.path()),
-            &[],
             &[],
         );
 

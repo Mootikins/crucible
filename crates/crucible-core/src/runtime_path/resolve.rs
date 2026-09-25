@@ -83,23 +83,42 @@ pub fn search_sources(
             },
         })
         .collect::<Vec<Source<SearchPath>>>();
-    sources_new(drop_repeated_directories(list))
+    sources_new(drop_repeated_sources(list))
 }
 
-/// Keep one source per directory: the higher one.
+/// Keep one source per directory and one per name: the higher one.
 ///
 /// A kiln that is also the workspace, or `~/.config/crucible` on
-/// `runtimepath`, would otherwise offer each entry twice. The paths are
-/// compared as written; nothing here reads the filesystem.
-fn drop_repeated_directories(list: Vec<Source<SearchPath>>) -> Vec<Source<SearchPath>> {
+/// `runtimepath`, would otherwise offer each entry twice. A plugin or a kiln
+/// takes its own name as its source name, so it can clash with another
+/// source; the lower source is skipped with a warning, and `cru doctor`
+/// reports it. The paths are compared as written; nothing here reads the
+/// filesystem.
+fn drop_repeated_sources(list: Vec<Source<SearchPath>>) -> Vec<Source<SearchPath>> {
     let rank = |i: usize, s: &Source<SearchPath>| (std::cmp::Reverse(s.priority), s.within, i);
     let keep: Vec<bool> = list
         .iter()
         .enumerate()
         .map(|(i, source)| {
-            !list.iter().enumerate().any(|(j, other)| {
-                other.value.path == source.value.path && rank(j, other) < rank(i, source)
-            })
+            let higher = list
+                .iter()
+                .enumerate()
+                .filter(|(j, other)| rank(*j, other) < rank(i, source));
+            for (_, other) in higher {
+                if other.value.path == source.value.path {
+                    return false;
+                }
+                if other.name == source.name {
+                    tracing::warn!(
+                        source = %source.name,
+                        skipped = %source.value.path.display(),
+                        kept = %other.value.path.display(),
+                        "two sources have one name; the lower one is skipped"
+                    );
+                    return false;
+                }
+            }
+            true
         })
         .collect();
     list.into_iter()
@@ -256,5 +275,17 @@ mod tests {
         let skills = search_sources(RuntimeAsset::Skills, &path).unwrap();
         let names: Vec<&str> = skills.list().iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["workspace"]);
+    }
+
+    /// A plugin named like another source is skipped, not an error: the
+    /// other sources still resolve.
+    #[test]
+    fn a_lower_source_with_a_taken_name_is_skipped() {
+        let mut plugin = RuntimeEntry::root("/p/personal", Origin::Plugin);
+        plugin.name = "personal".to_string();
+        let path = vec![RuntimeEntry::root("/user", Origin::UserConfig), plugin];
+        let skills = search_sources(RuntimeAsset::Skills, &path).unwrap();
+        let dirs: Vec<PathBuf> = skills.list().iter().map(|s| s.value.path.clone()).collect();
+        assert_eq!(dirs, [PathBuf::from("/user/skills")]);
     }
 }
