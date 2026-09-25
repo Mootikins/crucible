@@ -49,6 +49,9 @@ to draw. Styling decides how the chrome looks; a plugin surface is content. See
 
 A colorscheme is a palette. Define one inline, or drop a file in
 `~/.config/crucible/themes/` and switch with `ui.set_theme`.
+Your theme of a name shadows a shipped theme of the same name. To use the
+shipped theme, give its full name, for example `runtime:default` or
+`builtin:default`.
 
 ```lua
 cru.colorscheme.setup{
