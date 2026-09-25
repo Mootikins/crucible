@@ -14,7 +14,7 @@ use std::path::PathBuf;
 /// user-named root so a plugin can never shadow what the user wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Origin {
-    /// `$CRUCIBLE_RTP`, `$CRUCIBLE_PLUGIN_PATH`. Highest, for dev and CI.
+    /// `$CRUCIBLE_PLUGIN_PATH`, `$CRUCIBLE_RUNTIME`. Highest, for dev and CI.
     Env,
     /// `<workspace>/<workspace_root>` — a project directory.
     Workspace,

@@ -26,8 +26,6 @@ static NO_HARNESSES: BTreeMap<String, PathBuf> = BTreeMap::new();
 /// cloning; `Default` is "nothing configured", which yields an empty path.
 #[derive(Debug)]
 pub struct PathInputs<'a> {
-    /// `$CRUCIBLE_RTP`, already split on the platform separator.
-    pub env_roots: &'a [PathBuf],
     /// `$CRUCIBLE_PLUGIN_PATH`, already split. These are plugin *directories*,
     /// not roots above them.
     pub env_plugin_dirs: &'a [PathBuf],
@@ -60,7 +58,6 @@ pub struct PathInputs<'a> {
 impl Default for PathInputs<'_> {
     fn default() -> Self {
         Self {
-            env_roots: &[],
             env_plugin_dirs: &[],
             workspace: None,
             workspace_roots: &[],
@@ -83,9 +80,6 @@ impl Default for PathInputs<'_> {
 pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
     let mut path = Vec::new();
 
-    for dir in inputs.env_roots {
-        path.push(RuntimeEntry::root(dir.clone(), Origin::Env));
-    }
     for dir in inputs.env_plugin_dirs {
         path.push(RuntimeEntry::leaf(
             dir.clone(),
