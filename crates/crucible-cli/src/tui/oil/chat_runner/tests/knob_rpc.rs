@@ -245,6 +245,17 @@ async fn the_plugin_menu_sets_the_approval_through_the_handle() {
     assert!(!app.panel_popup_is_open(), "the menu closes after a choice");
 }
 
+/// A daemon with no plugin loaded answers an empty list. The menu says so
+/// instead of opening empty.
+#[test]
+fn an_empty_plugin_list_says_that_no_plugin_is_loaded() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::PluginApprovalsLoaded(Vec::new()));
+    assert!(!app.panel_popup_is_open());
+    let screen = crate::tui::oil::tests::helpers::vt_render(&mut app);
+    assert!(screen.contains("No plugins loaded"), "{screen}");
+}
+
 /// The status picker opens the same menu for the plugin-turn item.
 #[test]
 fn the_plugin_turn_item_opens_the_menu_from_the_status_picker() {

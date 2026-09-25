@@ -259,7 +259,8 @@ impl OilChatApp {
                     .iter()
                     .find(|entry| format!("{} [{}]", entry.text, entry.id) == label)
                 {
-                    if entry.action.as_deref() == Some("plugin_approval") {
+                    if entry.action.as_deref() == Some(crucible_core::types::PLUGIN_APPROVAL_ACTION)
+                    {
                         return self.handle_repl_command(":plugin-mode");
                     }
                     self.add_system_message(format!("{}: {}", entry.plugin, entry.text));

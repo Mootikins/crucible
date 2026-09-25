@@ -352,7 +352,7 @@ knows what a container is:
 |---|---|
 | `GET /api/config` → `profiles` | The named profiles this server offers, as opaque strings |
 | `POST /api/session` → `isolation` | The value above, forwarded to the daemon untouched |
-| `GET /api/session/{id}/status` | Every plugin's keyed status slots, verbatim |
+| `GET /api/session/{id}/status` | The session's status list: every plugin's items and the engine's plugin-turn items |
 
 The new-session composer's run-on chip lists this plugin's targets — the
 unnamed default row plus every named profile — whenever the plugin publishes

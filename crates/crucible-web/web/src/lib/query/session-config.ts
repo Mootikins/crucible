@@ -26,6 +26,7 @@ import { getQueryClient } from './client';
 import { keys } from './keys';
 
 export type { PluginApproval } from '@/lib/api';
+export { PLUGIN_APPROVAL_ACTION } from '@/lib/api';
 
 /**
  * What one session may be configured to do, and the writes that configure it.
@@ -235,7 +236,8 @@ export function useSetPluginApproval(): UseMutationResult<
 }
 
 /**
- * The status slots plugins published for one session.
+ * The status list of one session: what plugins published and the engine's
+ * plugin-turn items.
  *
  * A refused read is no chips and never a notification: it fails on every
  * daemon reconnect, and a session with nothing to say is the normal case. The

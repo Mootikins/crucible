@@ -97,6 +97,13 @@ export type PluginOptions = Record<string, PluginOptionNode>;
  */
 export type StatusDisplayItem = Schemas['StatusDisplayItem'];
 
+/**
+ * The engine method that opens the menu of plugin approvals: the daemon's
+ * `crucible_core::types::PLUGIN_APPROVAL_ACTION`. Only the engine's
+ * plugin-turn items carry it.
+ */
+export const PLUGIN_APPROVAL_ACTION = 'plugin_approval';
+
 // =============================================================================
 // API auth (browser: HttpOnly session cookie; programmatic: Bearer header)
 // =============================================================================
@@ -911,10 +918,11 @@ export async function listModels(sessionId: string): Promise<string[]> {
 }
 
 /**
- * The status slots plugins published for a session.
+ * The status list of a session: the items that plugins published and the
+ * engine's plugin-turn items, ordered by priority.
  *
- * There is no SSE event for plugin status, so callers fetch on session change
- * rather than subscribing.
+ * The `status_items_changed` event invalidates this read (see
+ * `lib/query/routes/session.ts`), so a caller reads it again on a change.
  */
 export async function getSessionStatus(sessionId: string): Promise<StatusDisplayItem[]> {
   return decode(

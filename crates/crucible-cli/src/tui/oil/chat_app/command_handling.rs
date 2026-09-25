@@ -959,7 +959,7 @@ impl OilChatApp {
         approvals: Vec<(String, crucible_core::session::PluginApproval)>,
     ) -> Action<ChatAppMsg> {
         if approvals.is_empty() {
-            self.add_system_message("No plugin starts turns in this session".to_string());
+            self.add_system_message("No plugins loaded".to_string());
             return Action::Continue;
         }
         self.plugin_approvals = approvals;

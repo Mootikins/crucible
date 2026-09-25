@@ -4,6 +4,7 @@ import { getBus } from '@/lib/bus';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useSessionModes } from '@/lib/query/modes';
 import {
+  PLUGIN_APPROVAL_ACTION,
   usePluginApprovals,
   useSessionStatus,
   useSetPluginApproval,
@@ -12,10 +13,10 @@ import {
 import type { ModeDescriptor } from '@/lib/types';
 
 /**
- * Read-only status strip for the current session: whatever keyed slots the
- * daemon's plugins published, rendered as chips, plus the one thing about a
- * session that is not any plugin's to say: what a note write in the current
- * mode does.
+ * Status strip for the current session: the daemon's status list, drawn as
+ * dots, plus the one thing about a session that is not any plugin's to say:
+ * what a note write in the current mode does. A dot opens the menu of every
+ * item; the engine's plugin-turn item opens the menu of plugin approvals.
  *
  * The plugin half deliberately knows nothing about any particular plugin. A
  * slot arrives with a named color group; this renders `text`, attributes it
@@ -117,7 +118,7 @@ export const SessionStatusChips: Component = () => {
   };
   const choose = (slot: Slot) => {
     setMenuOpen(false);
-    if (slot.action === 'plugin_approval') setApprovalOpen(true);
+    if (slot.action === PLUGIN_APPROVAL_ACTION) setApprovalOpen(true);
     else setDetail(`${slot.text} — ${slot.plugin}`);
   };
   const dot = (slot: Slot) => (
@@ -218,7 +219,7 @@ export const SessionStatusChips: Component = () => {
         </div>
       }</For>
       <Show when={approvals.isSuccess && Object.keys(approvals.data ?? {}).length === 0}>
-        <p class="text-floor-muted">No plugin starts turns in this session.</p>
+        <p class="text-floor-muted">No plugins loaded</p>
       </Show>
       <Show when={approvalError() ?? (approvals.error?.message ?? null)}>{(message) =>
         <p role="alert" class="text-error">{message()}</p>

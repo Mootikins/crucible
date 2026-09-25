@@ -112,6 +112,15 @@ describe('SessionStatusChips', () => {
     expect(screen.getByRole('radio', { name: 'sync: inherit' })).toHaveAttribute('aria-checked', 'true');
   });
 
+  it('says that no plugin is loaded when the daemon lists none', async () => {
+    setCurrentSession(baseSession());
+    serve({ [STATUS]: () => ({ status: [engineItem] }), [APPROVALS]: () => ({ approvals: {} }) });
+    render(() => <SessionStatusChips />);
+    await waitFor(() => expect(screen.getByTestId('session-status-plugin_turns:goal')).toBeInTheDocument());
+    getBus().emit('openPluginApproval', {});
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Plugin approval' })).toHaveTextContent('No plugins loaded'));
+  });
+
   it('sets the knob through the daemon when a value is chosen from the item', async () => {
     setCurrentSession(baseSession());
     const put = 'PUT /api/session/s1/config/plugins/goal/approval';
