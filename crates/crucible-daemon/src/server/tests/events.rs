@@ -266,3 +266,23 @@ fn test_agent_error_to_response_dispatches_correctly() {
     assert_eq!(error.code, INVALID_PARAMS);
     assert!(error.message.contains("sess-3"));
 }
+
+/// A turn refused for a missing key answers with the refusal only: the
+/// client shows it, and "Internal error: Agent factory error:" in front of it
+/// says the daemon failed, which it did not.
+#[test]
+fn a_missing_key_answers_with_the_refusal_only() {
+    let err = AgentError::Factory(crate::agent_factory::AgentFactoryError::MissingApiKey {
+        provider: "zai-coding".to_string(),
+        fix: "Run `cru auth login --provider zai-coding`.".to_string(),
+    });
+
+    let error = agent_error_to_response(Some(RequestId::Number(1)), err)
+        .error
+        .expect("an error");
+
+    assert_eq!(
+        error.message,
+        "No API key for provider 'zai-coding'. Run `cru auth login --provider zai-coding`."
+    );
+}

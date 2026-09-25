@@ -19,7 +19,14 @@ impl AgentHandle for DaemonAgentHandle {
         self.client
             .session_send_message(&self.session_id, &message, true)
             .await
-            .map_err(|e| ChatError::Communication(format!("Failed to send message: {}", e)))?;
+            // The daemon's message, not the `RPC error: {json}` envelope: a
+            // refused turn names its reason there, and the TUI shows it.
+            .map_err(|e| {
+                ChatError::Communication(format!(
+                    "Failed to send message: {}",
+                    crate::rpc_client::rpc_error_message(&e)
+                ))
+            })?;
         Ok(())
     }
 

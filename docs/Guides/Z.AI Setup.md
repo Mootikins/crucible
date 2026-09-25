@@ -123,15 +123,14 @@ Use model names that match your configured endpoint type.
 
 ## Troubleshooting
 
-### "Missing API key"
+### "No API key for provider 'zai-coding'"
 
-Ensure `GLM_AUTH_TOKEN` is set in your environment:
+The daemon refuses a turn when it finds no key for the provider, and the
+message names the provider. To give it a key, do one of these:
 
-```bash
-echo $GLM_AUTH_TOKEN
-```
-
-If empty, set it and restart your terminal.
+- Store the key: `cru auth login --provider zai-coding`.
+- Set `GLM_AUTH_TOKEN` in the shell that starts the daemon. The daemon reads
+  its environment when it starts, so stop it first with `cru daemon stop`.
 
 ### "Unknown Model"
 

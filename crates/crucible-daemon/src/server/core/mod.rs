@@ -57,6 +57,11 @@ pub(super) fn agent_error_to_response(req_id: Option<RequestId>, err: AgentError
         // refused start, not an "Internal error": the refusal is a decision,
         // and its text says what the caller can change.
         e @ AgentError::SessionRefused(_) => Response::error(req_id, INTERNAL_ERROR, e.to_string()),
+        // A refusal too: the daemon did not fail, the provider has no key,
+        // and the text names the provider and the command that stores one.
+        AgentError::Factory(e @ crate::agent_factory::AgentFactoryError::MissingApiKey { .. }) => {
+            Response::error(req_id, INTERNAL_ERROR, e.to_string())
+        }
         e => internal_error(req_id, e),
     }
 }

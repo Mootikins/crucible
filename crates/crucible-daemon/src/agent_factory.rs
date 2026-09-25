@@ -395,6 +395,50 @@ pub enum AgentFactoryError {
 
     #[error("Unsupported agent type: {0}")]
     UnsupportedAgentType(String),
+
+    /// The provider needs a key and no source has one. Refused before the
+    /// turn starts: without a key the provider answers 401, and the turn then
+    /// fails as a stream error that does not name the cause.
+    #[error("No API key for provider '{provider}'. {fix}")]
+    MissingApiKey {
+        /// The provider key in the config, e.g. `zai-coding`.
+        provider: String,
+        /// What the user can do, as a sentence.
+        fix: String,
+    },
+}
+
+impl AgentFactoryError {
+    fn missing_api_key(provider_key: &str, backend: BackendType) -> Self {
+        let login = format!("`cru auth login --provider {provider_key}`");
+        let fix = match backend.api_key_env_var() {
+            Some(var) => format!("Set {var} where the daemon starts, or run {login}."),
+            None => format!("Run {login}."),
+        };
+        Self::MissingApiKey {
+            provider: provider_key.to_string(),
+            fix,
+        }
+    }
+}
+
+/// Whether a turn on `backend` with no API key is refused before it starts.
+///
+/// A backend that needs a key answers each request without one with a 401,
+/// so the turn fails anyway, later, as a stream error that does not name the
+/// cause. The exception is an `openai` provider with an endpoint of its own:
+/// that is how a local or self-hosted OpenAI-compatible server is configured,
+/// and such a server can take no key.
+fn missing_key_refuses(backend: BackendType, endpoint: Option<&str>) -> bool {
+    if !backend.requires_api_key() {
+        return false;
+    }
+    let own_endpoint = endpoint.is_some_and(|endpoint| {
+        backend
+            .default_endpoint()
+            .is_none_or(|default| endpoint.trim_end_matches('/') != default.trim_end_matches('/'))
+    });
+    !(backend == BackendType::OpenAI && own_endpoint)
 }
 
 /// Discover skills for the agent's workspace/kiln and render the tier-1 catalog
@@ -556,18 +600,9 @@ pub(crate) fn build_chat_client_for_agent(
             debug!("Resolved API key for {provider_key} from {source:?}");
             llm_config.api_key = Some(key);
         }
-        None => {
-            // Only a problem for providers that actually need a key —
-            // Ollama and the local backends legitimately have none, so
-            // do not cry wolf at them.
-            if provider_type.api_key_env_var().is_some() {
-                warn!(
-                    "No API key for {provider_key}: the environment variable is unset, \
-                     the credential store has no entry and the config sets none — \
-                     try `cru auth login --provider {provider_key}`"
-                );
-            }
-        }
+        // A Lua auth hook or the Copilot exchange below can still supply one;
+        // the refusal after them decides.
+        None => debug!("No stored or configured API key for {provider_key}"),
     }
 
     if let Some(lua) = lua {
@@ -631,6 +666,15 @@ pub(crate) fn build_chat_client_for_agent(
         {
             llm_config.api_key = Some(oauth_token);
         }
+    }
+
+    if llm_config.api_key.is_none()
+        && missing_key_refuses(provider_type, agent_config.endpoint.as_deref())
+    {
+        return Err(AgentFactoryError::missing_api_key(
+            provider_key,
+            provider_type,
+        ));
     }
 
     let chat_client = ChatClient::new(&llm_config);

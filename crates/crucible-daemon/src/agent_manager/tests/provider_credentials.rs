@@ -174,3 +174,32 @@ async fn a_configured_api_key_reaches_the_provider() {
 
     assert_eq!(answer.expect("the configured key must be sent"), "answered");
 }
+
+/// Rule 7: a turn on a provider that needs a key, with no key anywhere, is
+/// refused at once, and the refusal names the provider and the command that
+/// stores a key. The turn used to start, send no key, and fail later as
+/// "genai stream error: Web stream error for model …".
+#[tokio::test]
+async fn a_turn_without_a_key_is_refused_before_it_reaches_the_provider() {
+    let rig = Rig::new().await;
+    rig.accept_only("never-sent").await;
+    let (am, id) = rig.session(None).await;
+    let (tx, _rx) = tokio::sync::broadcast::channel(64);
+
+    let refused = am
+        .send_message(&id, "hello".to_string(), &tx, true, None)
+        .await
+        .expect_err("a turn with no key must not start");
+
+    let message = refused.to_string();
+    assert!(
+        message.contains("No API key for provider 'openrouter-work'")
+            && message.contains("OPENROUTER_API_KEY")
+            && message.contains("cru auth login --provider openrouter-work"),
+        "the refusal must name the provider and the fix: {message}"
+    );
+    assert!(
+        rig.provider.received_requests().await.unwrap().is_empty(),
+        "a refused turn must not reach the provider"
+    );
+}

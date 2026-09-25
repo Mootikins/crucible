@@ -648,7 +648,37 @@ async fn acp_agent_type_dispatches_to_acp_branch() {
         Err(AgentFactoryError::ClientCreation(_)) => {
             panic!("Should not reach ClientCreation for ACP agent type");
         }
+        Err(AgentFactoryError::MissingApiKey { .. }) => {
+            panic!("An ACP agent brings its own credentials; no key is looked up");
+        }
     }
+}
+
+/// The refusal rule, per backend: a backend that needs a key is refused
+/// without one, except an `openai` provider on an endpoint of its own, which
+/// is how a keyless OpenAI-compatible server is configured.
+#[test]
+fn a_missing_key_refuses_only_a_backend_that_needs_one() {
+    use crucible_core::config::BackendType::*;
+    let openai_default = OpenAI.default_endpoint();
+    assert!(missing_key_refuses(
+        ZAI,
+        Some("https://api.z.ai/api/coding/paas/v4")
+    ));
+    assert!(missing_key_refuses(OpenRouter, Some("http://127.0.0.1:9/")));
+    assert!(missing_key_refuses(Anthropic, None));
+    assert!(missing_key_refuses(OpenAI, None));
+    assert!(missing_key_refuses(OpenAI, openai_default));
+    assert!(!missing_key_refuses(
+        OpenAI,
+        Some("https://llama.example.org/v1")
+    ));
+    assert!(!missing_key_refuses(Ollama, None));
+    assert!(!missing_key_refuses(
+        Custom,
+        Some("https://proxy.example.org/v1")
+    ));
+    assert!(!missing_key_refuses(GitHubCopilot, None));
 }
 
 #[test]
