@@ -55,6 +55,14 @@ fn report(label: &str, samples: &[Sample]) {
     );
 }
 
+/// Lay out every node that has only an estimate, as the runner does
+/// between frames. Returns the time that it took.
+fn settle(app: &mut OilChatApp, view: &mut FullscreenView) -> Duration {
+    let start = Instant::now();
+    while view.lay_out_idle(app, super::IDLE_BUDGET) {}
+    start.elapsed()
+}
+
 /// Stream one more answer into `app` and time each frame: build plus the row
 /// diff into a byte buffer.
 fn stream_frames(app: &mut OilChatApp, view: &mut FullscreenView) -> Vec<Sample> {
@@ -65,6 +73,8 @@ fn stream_frames(app: &mut OilChatApp, view: &mut FullscreenView) -> Vec<Sample>
     // The first frame lays out the whole transcript; the samples are the
     // steady state after it.
     app.set_frame_time(Instant::now());
+    view.frame(app, &ctx);
+    settle(app, view);
     let first = view.frame(app, &ctx);
     diff.present(&mut out, &first.grid, first.cursor).unwrap();
 
@@ -100,7 +110,9 @@ fn fullscreen_streaming_frames_5k_rows() {
     report("stream 200x60", &samples);
 }
 
-/// A full relayout: the first frame, and every frame after a width change.
+/// The first frame, and every frame after a width change. Between two
+/// width changes, the rest of the transcript is laid out as idle time does,
+/// so each width change starts from a transcript laid out at the old width.
 #[test]
 #[ignore = "requires: manual inspection — a timing measurement; run it with an optimized build, see the module doc"]
 fn fullscreen_relayout_frames_5k_rows() {
@@ -108,19 +120,26 @@ fn fullscreen_relayout_frames_5k_rows() {
     let focus = FocusContext::new();
     let mut view = FullscreenView::new();
     let mut samples = Vec::new();
+    let mut idle = Vec::new();
     for (i, width) in [200u16, 199, 160, 120, 200]
         .into_iter()
         .cycle()
-        .take(20)
+        .take(21)
         .enumerate()
     {
         let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (width, HEIGHT));
         let start = Instant::now();
         let frame = view.frame(&mut app, &ctx);
         let time = start.elapsed();
+        let idle_time = settle(&mut app, &mut view);
         if i == 0 {
-            println!("transcript rows at {width}: {}", view.transcript().len());
+            println!(
+                "first frame {time:?}, then idle layout {idle_time:?}; transcript rows at {width}: {}",
+                view.transcript().len()
+            );
+            continue;
         }
+        idle.push(idle_time);
         samples.push(Sample {
             time,
             bytes: 0,
@@ -128,6 +147,11 @@ fn fullscreen_relayout_frames_5k_rows() {
         });
     }
     report("relayout on width change", &samples);
+    println!(
+        "idle layout of the rest after a width change: median={:?} max={:?}",
+        percentile(&idle, 0.5),
+        percentile(&idle, 1.0)
+    );
 
     // Where a relayout goes: building the node trees (markdown included),
     // then taffy layout plus the cell grid.
@@ -154,7 +178,7 @@ fn fullscreen_relayout_frames_5k_rows() {
 
     // The exit dump of the whole transcript.
     let start = Instant::now();
-    let rows = view.take_dump(true);
+    let rows = view.take_dump(&mut app, true);
     let bytes: usize = rows.iter().map(|r| r.len() + 6).sum();
     println!(
         "exit dump: {} rows, {bytes} bytes, {:?}",

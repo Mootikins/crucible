@@ -22,6 +22,11 @@ impl Default for Scroll {
 }
 
 impl Scroll {
+    /// The position with `top` as the first row on screen.
+    pub fn at(top: usize, follow: bool) -> Self {
+        Self { top, follow }
+    }
+
     pub fn top(&self) -> usize {
         self.top
     }
@@ -44,14 +49,6 @@ impl Scroll {
         let bottom = total.saturating_sub(height);
         self.top = self.top.saturating_add_signed(delta).min(bottom);
         self.follow = self.top >= bottom;
-    }
-
-    /// Put `row` at the top of the view, as a reflow does to keep the reader
-    /// at the same text. Follow stays off, even when the row is in the last
-    /// page, so the next reflow still knows the reader's place.
-    pub fn set_top(&mut self, row: usize, total: usize, height: usize) {
-        self.top = row.min(total.saturating_sub(height));
-        self.follow = false;
     }
 
     /// Go to the bottom and follow new rows.

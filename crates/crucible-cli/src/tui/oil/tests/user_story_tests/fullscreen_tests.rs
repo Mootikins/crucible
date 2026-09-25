@@ -157,7 +157,7 @@ fn page_up_holds_the_reader_while_an_answer_streams() {
     );
 
     let page_up = Event::Key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
-    assert_eq!(view.handle_event(&page_up, &app), ViewAction::Handled);
+    assert_eq!(view.handle_event(&page_up, &mut app), ViewAction::Handled);
     vt.present_fullscreen(&view.frame(&mut app, &ctx_for(&focus)));
     let held = screen_rows(&vt)[0].clone();
     assert!(vt.screen_contents().contains("rows below"));

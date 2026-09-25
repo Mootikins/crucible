@@ -192,14 +192,26 @@ impl OilChatApp {
         tree
     }
 
-    /// The rows of each transcript node for a full-screen frame, from the
-    /// same kept rows as [`OilChatApp::frame_view`]. `ctx` comes from
+    /// Each transcript node for a full-screen frame, from the same kept
+    /// rows as [`OilChatApp::frame_view`]: its rows, or an estimate when
+    /// it has none at this width. `ctx` comes from
     /// [`OilChatApp::frame_context`], at the width of the frame.
-    pub(crate) fn transcript_frame_rows(
+    pub(crate) fn transcript_frame_slots(
         &mut self,
         ctx: &ViewContext<'_>,
-    ) -> Vec<crate::tui::oil::transcript_rows::FrameRows> {
-        self.transcript_rows.frame_rows(&self.container_list, ctx)
+    ) -> Vec<crate::tui::oil::transcript_rows::Slot> {
+        self.transcript_rows.frame_slots(&self.container_list, ctx)
+    }
+
+    /// The rows of transcript node `index`, laid out now unless they are
+    /// kept. `ctx` is as for [`OilChatApp::transcript_frame_slots`].
+    pub(crate) fn transcript_node_rows(
+        &mut self,
+        index: usize,
+        ctx: &ViewContext<'_>,
+    ) -> Option<crate::tui::oil::transcript_rows::FrameRows> {
+        self.transcript_rows
+            .node_rows(&self.container_list, index, ctx)
     }
 
     /// How many transcript node layouts the kept rows did, for

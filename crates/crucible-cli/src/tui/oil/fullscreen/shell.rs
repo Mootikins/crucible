@@ -163,6 +163,23 @@ impl FullscreenShell {
             .collect()
     }
 
+    /// Whether the chat pane on screen has nodes with only an estimate.
+    pub fn has_idle_work(&self) -> bool {
+        match self.active {
+            Pane::Chat(i) => self.chats.get(i).is_some_and(|p| p.view.has_idle_work()),
+            Pane::Buffer => false,
+        }
+    }
+
+    /// Lay out one batch of those nodes; see
+    /// [`FullscreenView::lay_out_idle`]. A pane off screen waits: its next
+    /// frame lays out what it shows.
+    pub fn lay_out_idle(&mut self, budget: std::time::Duration) {
+        if let Some(pane) = self.active_chat_mut() {
+            pane.view.lay_out_idle(&mut pane.app, budget);
+        }
+    }
+
     /// Go to the next pane. Each pane keeps its own scroll and selection.
     pub fn switch(&mut self) {
         let panes = self.panes();
@@ -193,7 +210,7 @@ impl FullscreenShell {
             },
             Pane::Chat(i) => {
                 let pane = &mut self.chats[i];
-                match pane.view.handle_event(event, &pane.app) {
+                match pane.view.handle_event(event, &mut pane.app) {
                     ViewAction::Ignored => {}
                     action => return ShellAction::View(action),
                 }

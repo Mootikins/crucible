@@ -18,7 +18,7 @@ use crucible_cli::tui::oil::fullscreen::clipboard::{Copier, CopyEnv};
 use crucible_cli::tui::oil::fullscreen::shell::{
     ChatPane, FullscreenShell, PluginBuffer, ShellAction,
 };
-use crucible_cli::tui::oil::fullscreen::{FullscreenView, ViewAction};
+use crucible_cli::tui::oil::fullscreen::{FullscreenView, ViewAction, IDLE_BUDGET};
 use crucible_cli::tui::oil::{theme, ChatAppMsg, Event, FocusContext, ViewContext};
 use crucible_oil::terminal::{ScreenMode, Terminal};
 use std::collections::VecDeque;
@@ -104,7 +104,10 @@ fn run(terminal: &mut Terminal) -> std::io::Result<(Vec<String>, String)> {
             bytes.push(stats.bytes);
         }
 
-        if !event::poll(Duration::from_millis(16))? {
+        // With layouts left, wait for no input: lay out a batch and draw.
+        let wait = if shell.has_idle_work() { 0 } else { 16 };
+        if !event::poll(Duration::from_millis(wait))? {
+            shell.lay_out_idle(IDLE_BUDGET);
             continue;
         }
         let event = match event::read()? {
@@ -150,7 +153,7 @@ fn run(terminal: &mut Terminal) -> std::io::Result<(Vec<String>, String)> {
 
     let rows = shell
         .active_chat_mut()
-        .map(|pane| pane.view.take_dump(true))
+        .map(|pane| pane.view.take_dump(&mut pane.app, true))
         .unwrap_or_default();
     Ok((rows, summary(&mut times, &mut bytes)))
 }

@@ -105,6 +105,19 @@ impl Selection {
         self.unit
     }
 
+    /// Move each end to the row that `f` gives, as when a layout changed
+    /// the height of rows above it.
+    pub fn map_rows(&mut self, mut f: impl FnMut(usize) -> usize) {
+        for point in [
+            &mut self.anchor.start,
+            &mut self.anchor.end,
+            &mut self.head.start,
+            &mut self.head.end,
+        ] {
+            point.row = f(point.row);
+        }
+    }
+
     /// The span between the press and the pointer, in buffer order. It can
     /// start or end in a gutter; [`text_span`] gives the text in it.
     pub fn bounds(&self) -> Span {

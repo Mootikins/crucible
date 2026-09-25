@@ -202,7 +202,7 @@ impl OilChatRunner {
             Self::abort_background_tasks(&mut background_tasks);
 
             // Always restore terminal before propagating errors
-            self.exit_terminal();
+            self.exit_terminal(&mut app);
             event_loop_result?;
             return Ok(());
         }
@@ -285,7 +285,7 @@ impl OilChatRunner {
         let session_id = agent.session_id().map(|s| s.to_string());
 
         // Always restore terminal before propagating errors
-        self.exit_terminal();
+        self.exit_terminal(&mut app);
         event_loop_result?;
 
         // Print resume hint after terminal is restored to main screen
@@ -404,6 +404,18 @@ impl OilChatRunner {
                     ) => {
                     tracing::info!("Replay auto-exit triggered");
                     EventLoopSelectOutcome::Quit
+                }
+
+                // Last, so input, ticks and prompts go first: this branch
+                // runs only when nothing else is ready. The full-screen view
+                // lays out one batch of the nodes that still have only an
+                // estimate, then the loop draws a frame and waits again.
+                _ = std::future::ready(()),
+                    if self.fullscreen.as_ref().is_some_and(|view| view.has_idle_work()) => {
+                    if let Some(view) = self.fullscreen.as_mut() {
+                        view.lay_out_idle(params.app, crate::tui::oil::fullscreen::IDLE_BUDGET);
+                    }
+                    EventLoopSelectOutcome::Continue
                 }
             };
 
@@ -551,11 +563,11 @@ impl OilChatRunner {
     /// Restore the terminal. The full-screen mode then prints the transcript
     /// that it has not printed yet to the main screen, so the session stays
     /// in the terminal's scrollback after the exit.
-    fn exit_terminal(&mut self) {
+    fn exit_terminal(&mut self, app: &mut OilChatApp) {
         let rows = self
             .fullscreen
             .as_mut()
-            .map(|view| view.take_dump(true))
+            .map(|view| view.take_dump(app, true))
             .unwrap_or_default();
         let _ = self.terminal.exit();
         if !rows.is_empty() {

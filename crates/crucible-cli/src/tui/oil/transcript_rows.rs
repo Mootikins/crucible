@@ -10,8 +10,11 @@
 //!
 //! Both modes read this one cache. The native view puts the kept rows back
 //! in its frame tree ([`TranscriptRows::frame_nodes`]). The full-screen view
-//! places the rows itself, and it also needs where the text of each row is
-//! ([`TranscriptRows::frame_rows`]).
+//! places the rows itself, and it also needs where the text of each row is.
+//! It shows only one screen, so it does not lay out every node on a width
+//! change: [`TranscriptRows::frame_slots`] gives an estimate for a node
+//! without rows at the new key, and the view lays out a node with
+//! [`TranscriptRows::node_rows`] when the node comes on screen.
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::containers::ContainerList;
@@ -41,6 +44,18 @@ struct RowsKey {
     show_diffs: bool,
 }
 
+impl RowsKey {
+    fn new(revision: u64, style_generation: u64, ctx: &ViewContext<'_>) -> Self {
+        Self {
+            revision,
+            width: ctx.terminal_size.0,
+            style_generation,
+            show_thinking: ctx.show_thinking,
+            show_diffs: ctx.show_diffs,
+        }
+    }
+}
+
 /// The rows of one transcript node at one width.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct NodeRows {
@@ -58,6 +73,16 @@ pub(crate) struct FrameRows {
     /// Whether the node is finished. A node that can still change has no
     /// final rows yet.
     pub(crate) finished: bool,
+}
+
+/// One transcript node in a full-screen frame.
+#[derive(Debug, Clone)]
+pub(crate) enum Slot {
+    /// The rows at the frame's key.
+    Rows(FrameRows),
+    /// A finished node without rows at the frame's key: a guess of its
+    /// height, from [`estimate`].
+    Estimate(usize),
 }
 
 #[derive(Debug, Default)]
@@ -87,29 +112,80 @@ impl TranscriptRows {
         )
     }
 
-    /// The rows of each transcript node for a full-screen frame at `ctx`.
+    /// Each transcript node for a full-screen frame at `ctx`, without a
+    /// layout of a finished node.
     ///
-    /// These are the rows of [`TranscriptRows::frame_nodes`]: a finished
-    /// node gives its kept rows, and a node that can still change is laid
-    /// out to rows that are not kept.
-    pub(crate) fn frame_rows(
+    /// A finished node gives its kept rows when its key is the same, and an
+    /// estimate of its height when not. A node that can still change is laid
+    /// out now and is not kept: it is at the bottom, where the reader is.
+    /// The full-screen view lays out the nodes it needs with
+    /// [`TranscriptRows::node_rows`].
+    pub(crate) fn frame_slots(&mut self, list: &ContainerList, ctx: &ViewContext<'_>) -> Vec<Slot> {
+        let nodes = list.nodes();
+        self.kept.resize(nodes.len(), None);
+        let width = ctx.terminal_size.0;
+        let style_generation = theme::slot::generation();
+        nodes
+            .iter()
+            .zip(list.revisions())
+            .zip(self.kept.iter_mut())
+            .enumerate()
+            .map(|(i, ((node, &revision), kept))| {
+                if !node.is_complete() {
+                    *kept = None;
+                    let prev = i.checked_sub(1).map(|p| &nodes[p]);
+                    return Slot::Rows(FrameRows {
+                        rows: lay_out(&node.render(prev, ctx), width).unwrap_or_default(),
+                        finished: false,
+                    });
+                }
+                let key = RowsKey::new(revision, style_generation, ctx);
+                match kept {
+                    Some((kept_key, rows)) if *kept_key == key => Slot::Rows(FrameRows {
+                        rows: rows.clone().unwrap_or_default(),
+                        finished: true,
+                    }),
+                    other => Slot::Estimate(estimate(other.as_ref(), width)),
+                }
+            })
+            .collect()
+    }
+
+    /// The rows of node `index` at `ctx`, laid out now unless they are
+    /// kept. A finished node keeps them. `None` when there is no such node.
+    pub(crate) fn node_rows(
         &mut self,
         list: &ContainerList,
+        index: usize,
         ctx: &ViewContext<'_>,
-    ) -> Vec<FrameRows> {
+    ) -> Option<FrameRows> {
+        let nodes = list.nodes();
+        let node = nodes.get(index)?;
+        self.kept.resize(nodes.len(), None);
         let width = ctx.terminal_size.0;
-        self.frame(
-            list,
-            ctx,
-            |kept| FrameRows {
-                rows: kept.cloned().unwrap_or_default(),
-                finished: true,
-            },
-            |tree| FrameRows {
-                rows: lay_out(&tree, width).unwrap_or_default(),
+        let prev = index.checked_sub(1).map(|p| &nodes[p]);
+        let kept = &mut self.kept[index];
+        if !node.is_complete() {
+            *kept = None;
+            return Some(FrameRows {
+                rows: lay_out(&node.render(prev, ctx), width).unwrap_or_default(),
                 finished: false,
-            },
-        )
+            });
+        }
+        let key = RowsKey::new(list.revisions()[index], theme::slot::generation(), ctx);
+        let rows = match kept {
+            Some((kept_key, rows)) if *kept_key == key => rows.clone(),
+            _ => {
+                self.layouts += 1;
+                let rows = lay_out(&node.render(prev, ctx), width);
+                *kept = Some((key, rows.clone()));
+                rows
+            }
+        };
+        Some(FrameRows {
+            rows: rows.unwrap_or_default(),
+            finished: true,
+        })
     }
 
     /// One `T` for each node: `from_kept` for a finished node, from its
@@ -137,13 +213,7 @@ impl TranscriptRows {
                     *kept = None;
                     return live(node.render(prev, ctx));
                 }
-                let key = RowsKey {
-                    revision,
-                    width: ctx.terminal_size.0,
-                    style_generation,
-                    show_thinking: ctx.show_thinking,
-                    show_diffs: ctx.show_diffs,
-                };
+                let key = RowsKey::new(revision, style_generation, ctx);
                 if let Some((kept_key, rows)) = kept {
                     if *kept_key == key {
                         return from_kept(rows.as_ref());
@@ -183,5 +253,60 @@ fn lay_out(tree: &Node, width: u16) -> Option<NodeRows> {
                 text: text.into(),
             })
         }
+    }
+}
+
+/// A guess of the height of a node at `width`, from the rows that it kept
+/// at another key.
+///
+/// Text wraps to about the same area, so the old rows scale by the old
+/// width over the new width, rounded, and at least one row. A node that
+/// rendered nothing stays at none. A node never laid out gets one row; its
+/// layout corrects the guess.
+fn estimate(kept: Option<&(RowsKey, Option<NodeRows>)>, width: u16) -> usize {
+    match kept {
+        None => 1,
+        Some((_, None)) => 0,
+        Some((key, Some(rows))) => {
+            let (old, new) = (usize::from(key.width), usize::from(width.max(1)));
+            ((rows.rows.len() * old + new / 2) / new).max(1)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kept(rows: Option<usize>, width: u16) -> (RowsKey, Option<NodeRows>) {
+        let key = RowsKey {
+            revision: 1,
+            width,
+            style_generation: 0,
+            show_thinking: false,
+            show_diffs: true,
+        };
+        let rows = rows.map(|n| NodeRows {
+            rows: vec![String::new(); n].into(),
+            text: Vec::new().into(),
+        });
+        (key, rows)
+    }
+
+    #[test]
+    fn an_estimate_scales_the_old_rows_by_the_old_width_over_the_new_width() {
+        let ten_at_100 = kept(Some(10), 100);
+        assert_eq!(estimate(Some(&ten_at_100), 50), 20);
+        assert_eq!(estimate(Some(&ten_at_100), 200), 5);
+        assert_eq!(estimate(Some(&ten_at_100), 300), 3, "rounded down");
+        assert_eq!(estimate(Some(&ten_at_100), 60), 17, "rounded up");
+        assert_eq!(estimate(Some(&ten_at_100), 100), 10, "a stale revision");
+        assert_eq!(estimate(Some(&ten_at_100), 5_000), 1, "at least one row");
+        assert_eq!(
+            estimate(Some(&kept(None, 100)), 50),
+            0,
+            "a node that rendered nothing"
+        );
+        assert_eq!(estimate(None, 80), 1, "a node never laid out");
     }
 }
