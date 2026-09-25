@@ -155,6 +155,26 @@ Run with an in-process daemon instead of connecting to the background server. Us
 cru chat --standalone
 ```
 
+### Display
+
+#### `--fullscreen`
+
+Draw the chat on the alternate screen. This mode is a prototype. The default mode prints the chat into the main screen, and the terminal scrolls it. In this mode, the TUI scrolls, selects and copies. On exit, the TUI prints the transcript to the main screen, so the session stays in the terminal scrollback.
+
+```bash
+cru chat --fullscreen
+```
+
+| Key | Action |
+|-----|--------|
+| `PageUp` / `PageDown`, mouse wheel | Scroll the transcript. A scroll to the bottom follows new text again. |
+| Drag, double click, triple click | Select text, a word or a line. The button release copies the selection. |
+| `Esc` | Clear the selection. |
+| `F2` | Turn mouse capture off and on. With capture off, the terminal selects text. |
+| `F3` | Print the finished transcript into the terminal scrollback. |
+
+The copy goes through OSC 52 first. Outside SSH, it also goes to the native clipboard. Inside tmux, it also goes to the tmux buffer.
+
 ## Chat Modes
 
 Crucible has three chat modes. Cycle between them with `Shift+Tab` during a session.

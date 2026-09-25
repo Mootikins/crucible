@@ -2,7 +2,7 @@
 title: TUI User Stories
 description: Complete user stories for every implemented TUI feature, with acceptance criteria and test-tier mapping
 tags: [meta, ux, tui, user-stories, testing]
-updated: 2026-09-01
+updated: 2026-09-24
 ---
 
 # TUI User Stories
@@ -231,13 +231,27 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-801: Review history without losing my place
 **As a user**, I review graduated history through the terminal's own scrollback, and in-app scroll regions (the shell modal) hold position while new content arrives.
-**Acceptance:** in scroll regions, manual scroll disables auto-follow and jump-to-bottom resumes following. **GAP:** the main chat viewport binds no scroll keys and captures no mouse — PageUp/PageDn and wheel scrolling there are the terminal's, not the app's; an in-app "new content" indicator does not exist.
+**Acceptance:** in scroll regions, manual scroll disables auto-follow and jump-to-bottom resumes following. **GAP:** the main chat viewport binds no scroll keys and captures no mouse — PageUp/PageDn and wheel scrolling there are the terminal's, not the app's; an in-app "new content" indicator does not exist. The opt-in full-screen mode (US-804) owns the scroll and has such an indicator.
 **Tests:** T1 scroll state via the shell modal's scroll region (auto-follow off on manual scroll, jump-to-top/bottom) in `user_story_tests/scroll_tests.rs` + `components/shell_modal.rs`. The **main chat viewport graduates to the terminal's own scrollback (no app-held scroll state)**, so its scroll/auto-follow is T4-only. T4 (real terminal scroll region).
 
 ### US-803: The session opens saying what it is attached to
 **As a user**, the first thing in the transcript names the kilns this session draws knowledge from, so a wrong or empty attachment is visible before I spend a turn on it.
 **Acceptance:** the banner names every attached kiln and its path, with the names aligned; one kiln reads "1 kiln attached"; no kiln says so in as many words rather than printing an empty list; the daemon owns the set (`kiln.list`) and a listing failure drops the banner instead of failing the session; a replay gets no banner, because it attaches nothing.
 **Tests:** T1 banner text (plural, singular, empty) in `chat_app/tests.rs`; T2 the banner in a rendered frame in `user_story_tests/completion_frame_tests.rs`.
+
+### US-804: Read, select and copy in the full-screen mode (prototype)
+**As a user**, I start `cru chat --fullscreen` to get the chat on the alternate screen. Then the TUI scrolls, selects and copies, and I can select text over SSH and inside Zellij or tmux.
+**Acceptance:**
+- The native mode stays the default. Without the flag, nothing changes.
+- PageUp, PageDown and the mouse wheel scroll the transcript. A scroll up stops the follow, and a label tells how many rows are below. A scroll to the bottom starts the follow again. Streamed rows do not move a reader who scrolled up. A resize keeps the reader at the same text.
+- A drag selects text, a double click selects a word, and a triple click selects a logical line. The highlight is on the rows under the pointer, also in the demo's shell under its tab row.
+- The highlight covers only the text. It does not cover a margin, a bullet, a prompt mark or the padding after the text. A press or a release in such a gutter moves to the nearest text.
+- The button release copies the text as the source has it. A wrap becomes the text that the wrap removed, not a line break. The copy goes through OSC 52, then the native clipboard (not over SSH), then tmux.
+- F2 turns mouse capture off and on. F3 prints the finished transcript into the terminal scrollback. The exit prints the rest, and nothing prints twice.
+- The mode reads the same kept rows as the native view, so the two modes draw the same transcript.
+- The web has no full-screen mode. This mode is a choice of terminal presentation, and a browser owns its own scroll, selection and copy.
+
+**Tests:** T1 selection, copy, gutter and snap in `fullscreen/selection.rs` and `fullscreen/tests.rs`; scroll, follow, reflow and dump in `fullscreen/tests.rs`; the pane mouse rows in `fullscreen/shell.rs`; the kept rows in `fullscreen/transcript.rs`. T2 `user_story_tests/fullscreen_tests.rs` writes each frame through the row diff into vt100, then reads the text, the inverse cells of the highlight and the held top row. **GAP:** a person must check the copy in a real terminal, flicker in Zellij and the width of a ZWJ sequence (manual steps in the prototype report). No T4 test starts the real binary with `--fullscreen`.
 
 ### US-802: Stable rendering across widths
 **As a user**, the TUI renders correctly at narrow (50), normal (80), and wide (120) widths without flicker or duplication.

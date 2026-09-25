@@ -378,6 +378,8 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
   - **Gets you:** tokens appear in the terminal as they stream, and a cancelled stream graduates cleanly with its partial text. The cancel *keys* are the unproven part.
 - [x] **Streaming Graduation** `P0` — drain-based: completed containers render through Taffy and write to stdout (terminal scrollback); the viewport shows only live content · `crucible-cli`
   - **Gets you:** finished turns leave the viewport and land in real terminal scrollback, collapsed (thinking becomes `◇ Thought (~N tokens)`), spinner-free, and byte-identical to what the viewport rendered.
+- [-] **Full-Screen Mode** `P2` — a prototype, opt-in with `cru chat --fullscreen`: the chat on the alternate screen, with scroll, follow, selection, copy (OSC 52, native clipboard, tmux) and a transcript print on exit · [[Help/CLI/chat]] · `crucible-cli`, `crucible-oil`
+  - **Gets you:** headless frames prove the scroll, the follow, the reflow, a highlight on the text only and the exact copy text (US-804). A copy in a real terminal, flicker in Zellij and the width of a ZWJ sequence are not proven.
 - [x] **Thinking Display** `P0` — streaming thinking blocks with a token estimate · `crucible-cli`
   - **Gets you:** thinking streams live as `Thinking…` and graduates to a collapsed `◇ Thought (~N tokens)`. The count is a ~4-chars/token **estimate** over the accumulated text — no provider reports per-thinking-block usage, so the `~` is the honesty.
 - [-] **Thinking Toggle** `P0` — Ctrl+T and `:set thinking` show/hide thinking blocks · `crucible-cli`

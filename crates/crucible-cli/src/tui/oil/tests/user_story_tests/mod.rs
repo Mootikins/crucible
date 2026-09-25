@@ -21,6 +21,7 @@ mod agent_card_tests; // US-909 (card-backed chat initialization)
 mod clear_tests; // US-902 clear marker
 mod completion_frame_tests; // US-505
 mod diff_tests; // US-910
+mod fullscreen_tests; // US-804
 mod notification_tests; // US-701 / US-702
 mod paste_tests; // US-106
 mod permission_tests; // US-401

@@ -8,7 +8,9 @@
 
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::render_frame;
+use crate::tui::oil::fullscreen::Frame;
 use crucible_oil::focus::FocusContext;
+use crucible_oil::screen::ScreenDiff;
 use crucible_oil::TestRuntime;
 use std::cell::OnceCell;
 
@@ -31,6 +33,10 @@ pub struct Vt100TestRuntime {
     last_frame_bytes: Vec<u8>,
     history_text: OnceCell<String>,
     screen_text: OnceCell<String>,
+    /// The row diff of the full-screen mode, as `Terminal::present` has it.
+    screen_diff: ScreenDiff,
+    /// Whether a full-screen frame switched to the alternate screen.
+    alternate_screen: bool,
 }
 
 impl Vt100TestRuntime {
@@ -44,7 +50,34 @@ impl Vt100TestRuntime {
             last_frame_bytes: Vec::new(),
             history_text: OnceCell::new(),
             screen_text: OnceCell::new(),
+            screen_diff: ScreenDiff::new(),
+            alternate_screen: false,
         }
+    }
+
+    /// Write a full-screen frame as `Terminal::present` does: a row diff
+    /// against the last frame, on the alternate screen. Then feed the bytes
+    /// to vt100.
+    ///
+    /// [`Self::render_frame`] takes the native path. The full-screen mode
+    /// builds its frame outside the app (`FullscreenView::frame` or
+    /// `FullscreenShell::frame`), so the test gives the frame here.
+    pub fn present_fullscreen(&mut self, frame: &Frame) {
+        let mut bytes = Vec::new();
+        if !self.alternate_screen {
+            bytes.extend_from_slice(b"\x1b[?1049h");
+            self.alternate_screen = true;
+        }
+        self.screen_diff
+            .present(&mut bytes, &frame.grid, frame.cursor)
+            .expect("a Vec takes every byte");
+        self.last_frame_bytes = bytes.clone();
+        self.feed_bytes_respecting_sync(&bytes);
+    }
+
+    /// The vt100 screen, to read cell attributes such as inverse video.
+    pub fn vt_screen(&self) -> &vt100::Screen {
+        self.vt.screen()
     }
 
     /// Render a frame through the real terminal path, then feed bytes to vt100.
