@@ -14,69 +14,41 @@
 /// topic the first injection already covered.
 ///
 /// Other gates: `/search` is a manual search command that shouldn't
-/// trigger auto-RAG; the session must reach at least one kiln. The handler hook seam
+/// trigger auto-RAG. A session with no kiln still runs, so that the search
+/// can warn the user that nothing grounds the answer. The handler hook seam
 /// (`transform_context`) is a separate, per-turn surface — Lua plugins
 /// can implement richer per-turn heuristics there.
 pub(super) fn should_run_precognition(
     precognition_enabled: bool,
     original_content: &str,
-    session_kilns: &[crucible_core::config::KilnName],
     is_first_user_message: bool,
 ) -> bool {
-    precognition_enabled
-        && !original_content.starts_with("/search")
-        && !session_kilns.is_empty()
-        && is_first_user_message
+    precognition_enabled && !original_content.starts_with("/search") && is_first_user_message
 }
 
 #[cfg(test)]
 mod should_run_precognition_tests {
     use super::*;
-    use crucible_core::config::KilnName;
-
-    fn one_kiln() -> Vec<KilnName> {
-        vec![KilnName::parse("some-kiln").unwrap()]
-    }
 
     #[test]
     fn runs_on_first_user_message_with_precognition_enabled() {
-        assert!(should_run_precognition(
-            true,
-            "tell me about widgets",
-            &one_kiln(),
-            true,
-        ));
+        assert!(should_run_precognition(true, "tell me about widgets", true,));
     }
 
     #[test]
     fn skipped_on_subsequent_user_messages_even_when_enabled() {
         // Pi-style: don't re-inject every turn — bloats context, hurts
         // cache, redundant for same-topic follow-ups.
-        assert!(!should_run_precognition(
-            true,
-            "follow-up question",
-            &one_kiln(),
-            false,
-        ));
+        assert!(!should_run_precognition(true, "follow-up question", false,));
     }
 
     #[test]
     fn skipped_when_disabled_in_agent_config() {
-        assert!(!should_run_precognition(false, "x", &one_kiln(), true,));
+        assert!(!should_run_precognition(false, "x", true));
     }
 
     #[test]
     fn skipped_for_explicit_search_command() {
-        assert!(!should_run_precognition(
-            true,
-            "/search widgets",
-            &one_kiln(),
-            true,
-        ));
-    }
-
-    #[test]
-    fn skipped_when_session_reaches_no_kiln() {
-        assert!(!should_run_precognition(true, "x", &[], true));
+        assert!(!should_run_precognition(true, "/search widgets", true,));
     }
 }

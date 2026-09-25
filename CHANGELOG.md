@@ -71,6 +71,9 @@ is a Keep a Changelog category.
   provider or embedding also sends a warning notification. `search_vectors`
   answers an error when its kiln fails. The `error` field on
   `precognition_complete` is removed: the notification carries the reason.
+- **Precognition warns when the session has no kiln.** Precognition is on by
+  default, and a session with no kiln skipped it without a word. Now the first
+  message sends one warning notification that says no kiln is there to search.
 - **Undo is refused on a session an external agent runs.** The daemon rewound
   its own conversation tree while the ACP agent kept its history, so the next
   turn answered from turns the transcript no longer showed — and every entry

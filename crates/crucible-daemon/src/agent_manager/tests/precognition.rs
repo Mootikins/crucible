@@ -89,8 +89,11 @@ async fn test_precognition_skipped_for_search_command() {
     assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
 }
 
+/// Precognition is on, but the session has no kiln: one warning tells the
+/// user that nothing grounds the answer. No search runs.
 #[tokio::test]
-async fn test_precognition_skipped_when_no_kiln() {
+async fn precognition_with_no_kiln_warns_the_user() {
+    let tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
 
     let session = session_manager
@@ -99,6 +102,8 @@ async fn test_precognition_skipped_when_no_kiln() {
         .unwrap();
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
     let mut agent = test_agent();
     agent.precognition_enabled = true;
     agent_manager
@@ -113,13 +118,16 @@ async fn test_precognition_skipped_when_no_kiln() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
     agent_manager
         .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
         .await
         .unwrap();
 
-    let _ = next_event_or_skip(&mut event_rx, "user_message").await;
+    let event = next_event_or_skip(&mut event_rx, "notification_added").await;
+    let notification = &event.data["notification"];
+    assert_eq!(notification["kind"], "warning", "{}", event.data);
+    let message = notification["message"].as_str().unwrap();
+    assert!(message.contains("no kiln"), "{message}");
     assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
 }
 

@@ -458,6 +458,17 @@ impl AgentManager {
         // configured is the default state, not a failure. Emitting here would
         // report a grounding failure on the first message of every session that
         // has never configured embeddings.
+        //
+        // No kiln is checked first: the user turned Precognition on, and no
+        // embedding setup can ground an answer in a session with no kiln.
+        if session.kilns.is_empty() {
+            let message = "Precognition is on, but this session has no kiln to search";
+            self.notify(
+                session_id,
+                crucible_core::types::Notification::warning(message),
+            );
+            return None;
+        }
         self.kiln_manager.enrichment_config()?;
 
         let embedding_provider = match self.kiln_manager.embedding_provider().await {

@@ -697,7 +697,6 @@ impl AgentManager {
             if crate::agent_manager::precognition_gate::should_run_precognition(
                 agent_config.precognition_enabled,
                 &original_content,
-                &session.kilns,
                 is_first_user_message,
             ) {
                 self.compute_precognition_message(
