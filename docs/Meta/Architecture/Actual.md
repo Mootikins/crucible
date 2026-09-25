@@ -1005,7 +1005,7 @@ commands only as a count and has no renderer for `cru.plugin.set_status` slots.
 | `InputComponent`, `InputMode` | `crucible-cli/src/tui/oil/components/{input_component.rs:11; input_area.rs:6}` | Bordered multi-line input |
 | `StatusBar`, `StatusBarData`, `StatusComponent` | `components/{status_bar.rs:36; status_items.rs:19; status_component.rs:11}` | Three field-identical status snapshots |
 | `InteractionModal`, `InteractionModalOutput` | `components/interaction_modal/mod.rs:62,40` | All seven request kinds |
-| `ShellModal` | `components/shell_modal.rs:57` | Runs `sh -c`, streams, writes `<session_dir>/shell/*.output` |
+| `ShellModal` | `components/shell_modal.rs:57` | Runs `sh -c`, streams, writes `<data_home>/shell/*.output`, beside the daemon's session store |
 | `NotificationArea`, `NotificationComponent`, `ThinkingComponent`, `TurnIndicator`, `CommandPanel` | `components/` | |
 | `RenderStyle`, `Margins` | `crucible-cli/src/tui/oil/markdown/mod.rs:66,41` | Markdown-it AST to `Node` |
 | Theme stores | `crucible-cli/src/tui/oil/theme/{global,groups,geometry,bars,exprs}.rs` | Five process-wide `RwLock` stores, leak-on-install |

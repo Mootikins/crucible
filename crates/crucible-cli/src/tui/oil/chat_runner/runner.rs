@@ -51,8 +51,8 @@ impl OilChatRunner {
         if !self.kiln_notes.is_empty() {
             app.set_kiln_notes(std::mem::take(&mut self.kiln_notes));
         }
-        if let Some(session_dir) = self.session_dir.take() {
-            app.set_session_dir(session_dir);
+        if let Some(dir) = self.shell_output_dir.take() {
+            app.set_shell_output_dir(dir);
         }
         if !self.mcp_servers.is_empty() {
             app.set_mcp_servers(std::mem::take(&mut self.mcp_servers));

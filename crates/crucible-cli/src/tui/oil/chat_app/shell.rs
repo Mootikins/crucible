@@ -211,9 +211,9 @@ impl OilChatApp {
     }
 
     pub(super) fn save_shell_output(&mut self) -> Option<PathBuf> {
-        let session_dir = self.session_dir.clone()?;
+        let dir = self.shell_output_dir.clone()?;
         let modal = self.shell_modal.as_mut()?;
-        modal.save_output(&session_dir)
+        modal.save_output(&dir)
     }
 
     pub(super) fn notify_toast(&mut self, msg: impl Into<String>) {

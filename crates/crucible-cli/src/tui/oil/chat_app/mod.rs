@@ -137,8 +137,9 @@ pub struct OilChatApp {
     // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────
     // Callbacks, filesystem state, and registries that ideally move
     // behind a trait or into a dedicated struct later.
-    /// Filesystem path for saving session transcripts
-    session_dir: Option<PathBuf>,
+    /// The folder where the shell modal saves the output of a command. The
+    /// client owns it; it is not in the daemon's session store.
+    shell_output_dir: Option<PathBuf>,
     /// Runtime configuration (`:set` overrides)
     runtime_config: RuntimeConfig,
     /// Workspace file paths (for @-file autocomplete)
@@ -437,12 +438,8 @@ impl OilChatApp {
         }
     }
 
-    pub(crate) fn set_session_dir(&mut self, path: PathBuf) {
-        self.session_dir = Some(path);
-    }
-
-    pub(crate) fn session_dir(&self) -> Option<&std::path::Path> {
-        self.session_dir.as_deref()
+    pub(crate) fn set_shell_output_dir(&mut self, path: PathBuf) {
+        self.shell_output_dir = Some(path);
     }
 
     pub(crate) fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {

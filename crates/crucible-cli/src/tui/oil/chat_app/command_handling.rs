@@ -383,13 +383,6 @@ impl OilChatApp {
             }
         }
 
-        if self.session_dir.is_none() {
-            self.add_notification(crucible_core::types::Notification::warning(
-                "No active session — nothing to export".to_string(),
-            ));
-            return Action::Continue;
-        }
-
         Action::Send(ChatAppMsg::ExportSession(export_path))
     }
 

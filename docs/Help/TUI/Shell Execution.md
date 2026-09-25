@@ -68,11 +68,15 @@ command, exit code, and the tail of its output.
 
 ## Output Persistence
 
-Closing the modal saves the output to your session directory:
+Closing the modal saves the output to a folder that the TUI owns:
 
 ```
-~/.crucible/sessions/<session-id>/shell/<timestamp>-<command>.output
+~/.crucible/shell/<timestamp>-<command>.output
 ```
+
+The folder is beside the daemon's session store, not in it. The daemon owns
+`~/.crucible/sessions/`, and a folder that the TUI wrote there is a session the
+daemon cannot load. When you set `data_home`, the folder moves with it.
 
 File format:
 ```

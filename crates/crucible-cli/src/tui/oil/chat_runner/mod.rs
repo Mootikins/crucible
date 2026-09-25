@@ -82,7 +82,7 @@ pub struct OilChatRunner {
     pub(super) focus: FocusContext,
     pub(super) workspace_files: Vec<String>,
     pub(super) kiln_notes: Vec<String>,
-    pub(super) session_dir: Option<PathBuf>,
+    pub(super) shell_output_dir: Option<PathBuf>,
     pub(super) resume_session_id: Option<String>,
     pub(super) resume_history: Option<Vec<serde_json::Value>>,
     pub(super) mcp_servers: Vec<McpServerDisplay>,
@@ -142,7 +142,7 @@ impl OilChatRunner {
             focus: FocusContext::new(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
-            session_dir: None,
+            shell_output_dir: None,
             resume_session_id: None,
             resume_history: None,
             mcp_servers: Vec::new(),
@@ -202,8 +202,9 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_session_dir(mut self, path: PathBuf) -> Self {
-        self.session_dir = Some(path);
+    /// The folder where the shell modal saves the output of a command.
+    pub fn with_shell_output_dir(mut self, path: PathBuf) -> Self {
+        self.shell_output_dir = Some(path);
         self
     }
 

@@ -546,12 +546,16 @@ fn repl_config_show_is_continue() {
     ));
 }
 
+/// The daemon holds the session and writes the export, so the app asks the
+/// runner for it. The app keeps no session folder that could say "no session".
 #[test]
-fn repl_export_without_session_warns() {
+fn repl_export_asks_the_runner_for_the_export() {
     let mut app = app();
     let action = app.handle_repl_command(":export out.md");
-    assert!(matches!(action, Action::Continue));
-    assert!(app.has_notifications());
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::ExportSession(ref p)) if p == std::path::Path::new("out.md")),
+        "{action:?}"
+    );
 }
 
 #[test]

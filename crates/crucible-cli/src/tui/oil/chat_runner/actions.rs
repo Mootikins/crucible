@@ -1014,52 +1014,27 @@ impl OilChatRunner {
                             tracing::warn!(error = %e, "send_message_fire_and_forget failed for slash command");
                         }
                     }
-                    // Gated on `!self.is_replay`: export reads the recording
-                    // from the session directory via `crucible_daemon::load_events`.
-                    // During replay there is no live session to export.
+                    // Gated on `!self.is_replay`: the daemon holds the
+                    // recording of the session, so the daemon writes the
+                    // export. During replay there is no live session to export.
                     ChatAppMsg::ExportSession(ref export_path) if !self.is_replay => {
-                        let session_dir = match params.app.session_dir() {
-                            Some(dir) => dir.to_path_buf(),
-                            None => {
-                                params.app.on_message(ChatAppMsg::Error(
-                                    "Export failed: no active session".to_string(),
-                                ));
-                                return Ok(false);
-                            }
+                        let Some(session_id) = params.agent.session_id().map(str::to_string) else {
+                            params.app.on_message(ChatAppMsg::Error(
+                                "Export failed: no active session".to_string(),
+                            ));
+                            return Ok(false);
                         };
-
-                        match crucible_daemon::load_events(&session_dir).await {
-                            Ok(events) if events.is_empty() => {
-                                params.app.on_message(ChatAppMsg::Error(
-                                    "Nothing to export — session has no recorded events"
-                                        .to_string(),
-                                ));
-                            }
-                            Ok(events) => {
-                                let options = crucible_daemon::RenderOptions::default();
-                                let md = crucible_daemon::render_to_markdown(&events, &options);
-                                match tokio::fs::write(&export_path, &md).await {
-                                    Ok(_) => {
-                                        params.app.add_system_message(format!(
-                                            "Session exported to {}",
-                                            export_path.display()
-                                        ));
-                                    }
-                                    Err(e) => {
-                                        params.app.on_message(ChatAppMsg::Error(format!(
-                                            "Export failed: {}",
-                                            e
-                                        )));
-                                    }
+                        let export_path = export_path.clone();
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match export_session(&session_id, &export_path).await {
+                                Ok(written) => {
+                                    ChatAppMsg::Status(format!("Session exported to {written}"))
                                 }
-                            }
-                            Err(e) => {
-                                params.app.on_message(ChatAppMsg::Error(format!(
-                                    "Failed to load session events: {}",
-                                    e
-                                )));
-                            }
-                        }
+                                Err(e) => ChatAppMsg::Error(format!("Export failed: {e:#}")),
+                            };
+                            let _ = tx.send(msg);
+                        }));
                     }
                     // Swallow daemon-bound messages during replay. The match
                     // guards on the live arms above (`if !self.is_replay`)
@@ -1150,6 +1125,15 @@ pub(super) fn refresh_outcome(
         Ok(None) => Some(ChatAppMsg::SurfaceWithdrawn(name.to_string())),
         Err(_) => None,
     }
+}
+
+/// Ask the daemon to write the markdown of `session_id` to `path`, and
+/// return the path it wrote.
+async fn export_session(session_id: &str, path: &std::path::Path) -> anyhow::Result<String> {
+    let client = crucible_daemon::DaemonClient::connect().await?;
+    client
+        .session_export_to_file(session_id, Some(path), None)
+        .await
 }
 
 /// Compute the branch diff of the workspace against `base`.

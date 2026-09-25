@@ -317,9 +317,9 @@ impl ShellModal {
         content
     }
 
-    pub fn save_output(&mut self, session_dir: &Path) -> Option<PathBuf> {
-        let shell_dir = session_dir.join("shell");
-        if std::fs::create_dir_all(&shell_dir).is_err() {
+    /// Write the output to a new file in `shell_dir`, and remember its path.
+    pub fn save_output(&mut self, shell_dir: &Path) -> Option<PathBuf> {
+        if std::fs::create_dir_all(shell_dir).is_err() {
             return None;
         }
 

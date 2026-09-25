@@ -304,6 +304,12 @@ impl TuiTestSession {
         })
     }
 
+    /// The hermetic HOME of the child. The child's daemon keeps its socket
+    /// (`crucible.sock`) and its data root (`.crucible/`) under it.
+    pub fn home(&self) -> &Path {
+        self._home.path()
+    }
+
     /// Spawn with default config for `cru chat`
     pub fn spawn_chat() -> Result<Self, expectrl::Error> {
         Self::spawn(TuiTestConfig::default())

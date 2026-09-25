@@ -554,30 +554,34 @@ async fn run_interactive_chat(
     // Daemon owns setup (indexing, plugin discovery, MCP config read,
     // provider detection, context-length fetch). Results arrive as session
     // events from the setup task the daemon spawns on session.create. We
-    // still need a daemon client here for two CLI-local concerns:
+    // still need a daemon client here for CLI-local concerns:
     //   1. Open project-registered kilns before session.create runs.
-    //   2. Initialize the Lua session (RPC the TUI uses for slash commands).
+    //   2. Read the theme and the plugin commands before the first frame.
+    //
+    // The daemon alone names the session. The client used to make up an id
+    // (`chat-%Y%m%d-%H%M%S`) here, open the Lua session under it and make a
+    // folder under it in the daemon's session store. The daemon could not
+    // load that folder, so each start added an unreadable session to the
+    // listing. The Lua session now opens in the factory, after
+    // `session.create`, under the id that the daemon returned.
     let kiln_root = config.kiln_path.clone();
-    let lua_session_id = resume_session_id
-        .clone()
-        .unwrap_or_else(|| format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
 
-    let lua_client = match crate::common::daemon_client().await {
+    let setup_client = match crate::common::daemon_client().await {
         Ok(client) => Some(client),
         Err(e) => {
-            warn!("Failed to connect to daemon for Lua init: {}", e);
+            warn!("Failed to connect to daemon for chat setup: {}", e);
             None
         }
     };
 
-    if let Some(client) = lua_client.as_ref() {
+    if let Some(client) = setup_client.as_ref() {
         if let Err(e) = open_project_kilns_if_matched(Some(client)).await {
             debug!("Project kiln auto-open skipped: {}", e);
         }
     }
 
     // After the project kilns open, so the banner names them too.
-    if let Some(client) = lua_client.as_ref() {
+    if let Some(client) = setup_client.as_ref() {
         runner = runner.with_connected_kilns(attached_kilns(client).await);
     }
 
@@ -585,8 +589,14 @@ async fn run_interactive_chat(
     // the TUI already holds a complete compiled-in default, so a missing daemon,
     // an RPC error, or an older daemon that does not know `ui.config` all leave a
     // correct screen. Never make this a precondition for rendering.
-    if let Some(client) = lua_client.as_ref() {
-        let ui_params = serde_json::json!({ "session_id": lua_session_id });
+    //
+    // The session-scoped values ride along only for a session that exists: a
+    // resumed one. A new session has no id yet.
+    if let Some(client) = setup_client.as_ref() {
+        let ui_params = match resume_session_id.as_deref() {
+            Some(id) => serde_json::json!({ "session_id": id }),
+            None => serde_json::json!({}),
+        };
         match client.call("ui.config", ui_params).await {
             Ok(payload) => {
                 crate::tui::oil::theme::apply_ui_config(&payload);
@@ -595,63 +605,37 @@ async fn run_interactive_chat(
         }
     }
 
-    let lua_initialized = if let Some(client) = lua_client.as_ref() {
-        let init_params = LuaInitSessionRequest {
-            session_id: lua_session_id.clone(),
-            kiln_path: Some(kiln_root.to_string_lossy().to_string()),
-        };
-        match client.lua_init_session(init_params).await {
-            Ok(response) => {
-                debug!(
-                    session_id = %response.session_id,
-                    commands = response.commands.len(),
-                    "Initialized Lua session via daemon RPC"
-                );
-                // Plugin-declared slash commands: `/name` dispatches to the
-                // daemon's `plugin.run_command` and autocompletes alongside
-                // the built-ins. This response is where every client is meant
-                // to learn the set — until here, nothing consumed it.
-                let plugin_commands: Vec<(String, String)> = response
-                    .commands
-                    .iter()
-                    .filter_map(|c| {
-                        let name = c.get("name")?.as_str()?.to_string();
-                        let description = c
-                            .get("description")
-                            .and_then(|d| d.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        Some((name, description))
-                    })
-                    .collect();
+    // Plugin-declared slash commands: `/name` dispatches to the daemon's
+    // `plugin.run_command` and autocompletes alongside the built-ins. The
+    // daemon's plugin loader holds the set, so it needs no session.
+    if let Some(client) = setup_client.as_ref() {
+        match client.plugin_commands().await {
+            Ok(commands) => {
+                let plugin_commands = plugin_command_entries(&commands);
                 if !plugin_commands.is_empty() {
                     runner = runner.with_plugin_commands(plugin_commands);
                 }
-                true
             }
-            Err(e) => {
-                warn!("Failed to initialize Lua session via daemon RPC: {}", e);
-                false
-            }
+            Err(e) => warn!("Failed to read the plugin commands: {}", e),
         }
-    } else {
-        false
-    };
+    }
 
     runner = runner.with_slash_commands(known_slash_commands());
 
-    // Scratch home for TUI-side artifacts (saved shell output). Under the
-    // daemon's sessions root, not inside a kiln: a kiln holds knowledge, and
+    // Saved shell output is TUI state, so it goes in a folder that the client
+    // owns. Not in the daemon's session store: a folder there is a session
+    // the daemon cannot load. Not in a kiln: a kiln holds knowledge, and
     // shipping a kiln should not ship somebody's captured shell output.
-    let session_id = format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
-    let session_dir = crate::commands::session::io::sessions_dir(&config).join(&session_id);
-    std::fs::create_dir_all(&session_dir).ok();
-    runner = runner.with_session_dir(session_dir);
+    runner = runner.with_shell_output_dir(shell_output_dir(&config));
+
+    // The ids of the Lua sessions the factory opened, for the shutdown below.
+    let lua_sessions: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
 
     let config_for_factory = config;
     let resume_id_for_factory = resume_session_id;
     let recording_mode_for_factory = recording_mode.clone();
     let recording_path_for_factory = recording_path.clone();
+    let lua_sessions_for_factory = lua_sessions.clone();
     let factory = move |selection: AgentSelection| {
         let config = config_for_factory.clone();
         let default_agent = default_agent.clone();
@@ -662,6 +646,8 @@ async fn run_interactive_chat(
         let resume_session_id = resume_id_for_factory.clone();
         let recording_mode = recording_mode_for_factory.clone();
         let recording_path = recording_path_for_factory.clone();
+        let kiln_root = kiln_root.clone();
+        let lua_sessions = lua_sessions_for_factory.clone();
 
         async move {
             // Build common params once
@@ -685,8 +671,14 @@ async fn run_interactive_chat(
                 params = params.with_working_dir(wd);
             }
 
-            let (handle, _session_id, event_rx) =
+            let (handle, session_id, event_rx) =
                 factories::create_daemon_agent_with_events(&config, &params).await?;
+            if init_lua_session(&session_id, &kiln_root).await {
+                lua_sessions
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(session_id);
+            }
             Ok((handle, Some(event_rx)))
         }
     };
@@ -697,11 +689,14 @@ async fn run_interactive_chat(
 
     let run_result = runner.run_with_factory(&bridge, factory).await;
 
-    if lua_initialized {
-        if let Some(client) = lua_client.as_ref() {
-            let shutdown_params = LuaShutdownSessionRequest {
-                session_id: lua_session_id,
-            };
+    let opened = std::mem::take(
+        &mut *lua_sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    if let Some(client) = setup_client.as_ref() {
+        for session_id in opened {
+            let shutdown_params = LuaShutdownSessionRequest { session_id };
             if let Err(e) = client.lua_shutdown_session(shutdown_params).await {
                 warn!("Failed to shutdown Lua session via daemon RPC: {}", e);
             }
@@ -930,6 +925,61 @@ async fn apply_rpc_action(
             .await
             .map_err(|e| e.to_string()),
     }
+}
+
+/// Open the Lua session of the chat under the daemon's session id.
+///
+/// Returns whether it opened, so the caller shuts down only what exists.
+async fn init_lua_session(session_id: &str, kiln_root: &std::path::Path) -> bool {
+    let client = match crate::common::daemon_client().await {
+        Ok(client) => client,
+        Err(e) => {
+            warn!("Failed to connect to daemon for Lua init: {}", e);
+            return false;
+        }
+    };
+    let init_params = LuaInitSessionRequest {
+        session_id: session_id.to_string(),
+        kiln_path: Some(kiln_root.to_string_lossy().to_string()),
+    };
+    match client.lua_init_session(init_params).await {
+        Ok(response) => {
+            debug!(session_id = %response.session_id, "Initialized Lua session via daemon RPC");
+            true
+        }
+        Err(e) => {
+            warn!("Failed to initialize Lua session via daemon RPC: {}", e);
+            false
+        }
+    }
+}
+
+/// The (name, description) pairs of the plugin commands that the daemon lists.
+fn plugin_command_entries(commands: &[serde_json::Value]) -> Vec<(String, String)> {
+    commands
+        .iter()
+        .filter_map(|c| {
+            let name = c.get("name")?.as_str()?.to_string();
+            let description = c
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some((name, description))
+        })
+        .collect()
+}
+
+/// Where the TUI saves the output of a shell command: `<data home>/shell`.
+///
+/// The folder is beside the daemon's session store, never in it. The data
+/// home is the one `sessions_dir` reads, so a relocated root moves both.
+fn shell_output_dir(config: &CliConfig) -> PathBuf {
+    config
+        .data_home
+        .clone()
+        .unwrap_or_else(crucible_core::config::crucible_home)
+        .join("shell")
 }
 
 async fn fetch_resume_history(session_id: &str) -> Result<Vec<serde_json::Value>> {
