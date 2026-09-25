@@ -126,11 +126,96 @@ pub fn render_bar(items: &[StatusItem], ctx: &ItemContext<'_>) -> Node {
 
 /// A pinned status item, as a badge in its named color.
 fn pinned_badge(entry: &StatusDisplayItem) -> Fragment {
-    let group = entry.color_group;
+    colored_badge(entry, entry.text.clone())
+}
+
+fn colored_badge(entry: &StatusDisplayItem, text: String) -> Fragment {
     Fragment::badge(
-        format!("{} ", entry.text),
-        Style::new().fg(theme::status_color::color(group, theme::active())),
+        format!("{text} "),
+        Style::new().fg(theme::status_color::color(
+            entry.color_group,
+            theme::active(),
+        )),
     )
+}
+
+/// The shortest a plugin name gets: one cell and the ellipsis.
+const MIN_NAME_CELLS: usize = 2;
+
+/// The engine's plugin-turn items of the bar, with the text that fits
+/// `budget` cells, one trailing space each.
+///
+/// Only a plugin name gets shorter. The running mark and the state word
+/// (`ask`, `stop`) around it stay whole, because they are what the item
+/// says; `resea… · stop` still says `stop`. The room for names is shared
+/// fairly: a short name keeps its length, and the long names split what
+/// is left. When even the shortest names do not fit, the items take the
+/// room they need, because a cut state word would hide an approval.
+fn fitted_plugin_turns(data: &StatusBar) -> Vec<(&StatusDisplayItem, String)> {
+    use unicode_width::UnicodeWidthStr;
+    let items: Vec<_> = data
+        .status_items
+        .iter()
+        .filter(|entry| entry.kind == StatusItemKind::PluginTurns)
+        .collect();
+    // Each item as the text before the name, the name, and the text after.
+    // An item whose text does not hold its plugin name has no part to cut.
+    let parts: Vec<(&str, &str, &str)> = items
+        .iter()
+        .map(|entry| match entry.text.find(entry.plugin.as_str()) {
+            Some(start) if !entry.plugin.is_empty() => {
+                let end = start + entry.plugin.len();
+                (
+                    &entry.text[..start],
+                    &entry.text[start..end],
+                    &entry.text[end..],
+                )
+            }
+            _ => (entry.text.as_str(), "", ""),
+        })
+        .collect();
+    let fixed: usize = parts
+        .iter()
+        .map(|(before, _, after)| before.width() + after.width() + 1)
+        .sum();
+    let mut room = data.status_width.saturating_sub(fixed);
+    // Shortest names first, so each long name gets an equal share of what
+    // the short ones leave.
+    let mut order: Vec<usize> = (0..parts.len()).collect();
+    order.sort_by_key(|&i| parts[i].1.width());
+    let mut cells = vec![0; parts.len()];
+    for (done, &i) in order.iter().enumerate() {
+        let name = parts[i].1.width();
+        let share = room / (order.len() - done);
+        cells[i] = name.min(share.max(MIN_NAME_CELLS));
+        room = room.saturating_sub(cells[i]);
+    }
+    items
+        .into_iter()
+        .zip(parts)
+        .zip(cells)
+        .map(|((entry, (before, name, after)), cells)| {
+            let name = if name.width() <= cells {
+                name.to_string()
+            } else {
+                format!("{}…", truncate_to_width(name, cells - 1))
+            };
+            (entry, format!("{before}{name}{after}"))
+        })
+        .collect()
+}
+
+/// The longest start of `text` that is at most `cells` wide.
+fn truncate_to_width(text: &str, cells: usize) -> &str {
+    use unicode_width::UnicodeWidthChar;
+    let mut used = 0;
+    for (index, c) in text.char_indices() {
+        used += c.width().unwrap_or(0);
+        if used > cells {
+            return &text[..index];
+        }
+    }
+    text
 }
 
 /// Evaluate one item into zero or more fragments.
@@ -225,7 +310,17 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
                 .iter()
                 .map(|entry| entry.text.chars().count() + 1)
                 .sum();
-            let budget = ctx.data.status_width.max(1).saturating_sub(pinned_width);
+            // The engine's items come first: what they need is not room for
+            // these.
+            let engine_width: usize = fitted_plugin_turns(ctx.data)
+                .iter()
+                .map(|(_, text)| unicode_width::UnicodeWidthStr::width(text.as_str()) + 1)
+                .sum();
+            let budget = ctx
+                .data
+                .status_width
+                .max(1)
+                .saturating_sub(pinned_width + engine_width);
             let mut used = 0;
             let mut visible = 0;
             for entry in &info {
@@ -264,12 +359,9 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
         }
 
         // Always whole: `ask`, `stop` and a running plugin turn never fold.
-        StatusItem::PluginTurns => ctx
-            .data
-            .status_items
-            .iter()
-            .filter(|entry| entry.kind == StatusItemKind::PluginTurns)
-            .map(pinned_badge)
+        StatusItem::PluginTurns => fitted_plugin_turns(ctx.data)
+            .into_iter()
+            .map(|(entry, text)| colored_badge(entry, text))
             .collect(),
 
         // Renders as message plus a reversed severity badge, or — with no
@@ -478,7 +570,7 @@ mod tests {
     #[test]
     fn plugin_turn_items_draw_only_through_their_own_item() {
         let mut data = data();
-        data.status_width = 4;
+        data.status_width = 20;
         data.status_items = vec![
             crucible_core::types::StatusDisplayItem {
                 id: "plugin_turns:goal".into(),

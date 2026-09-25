@@ -331,7 +331,9 @@ are evaluated by the TUI every frame and cost no RPC. `sl.items` places the
 session's published status list; the daemon pushes replacements when it changes.
 Pinned items stay visible, while extra informational items fold into `+N`.
 `sl.plugin_turns` places the engine's plugin-turn items: one for each plugin
-whose turn runs now or whose approval is `ask` or `stop`. They never fold.
+whose turn runs now or whose approval is `ask` or `stop`. They never fold,
+and they take their width before `sl.items` does. When they do not fit, a
+plugin name gets shorter (`resea… · stop`); the state word stays whole.
 The `:status` picker lists every item, including those folded away, and
 `:plugin-mode` opens the menu of plugin approvals. Bare strings are literal
 text. `sl.align` splits the bar; one gives left/right, two give left/centre/right.

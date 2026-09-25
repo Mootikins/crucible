@@ -63,7 +63,7 @@ fn status_row(vt: &Vt100TestRuntime, width: u16, needle: &str) -> Vec<(String, v
 /// the published items that fit, and the `+N` of those that do not.
 #[test]
 fn the_full_screen_mode_draws_the_status_items_as_the_inline_mode_does() {
-    const WIDTH: u16 = 40;
+    const WIDTH: u16 = 50;
     const HEIGHT: u16 = 20;
 
     let mut inline_app = OilChatApp::default();
@@ -106,5 +106,48 @@ fn the_full_screen_mode_draws_the_status_items_as_the_inline_mode_does() {
         full_row[column].1,
         vt100::Color::Default,
         "the pinned item has its color"
+    );
+}
+
+/// Three engine items at 40 columns. Each state word stays whole on the
+/// status row, and a long plugin name is what gets shorter.
+#[test]
+fn three_plugin_turn_items_keep_their_state_words_at_40_columns() {
+    let engine = |plugin: &str, text: &str, group: &str| {
+        serde_json::json!({
+            "id": format!("plugin_turns:{plugin}"), "text": text, "priority": 0,
+            "color_group": group, "action": "plugin_approval", "pinned": true,
+            "plugin": plugin, "kind": "plugin_turns", "progress": null,
+        })
+    };
+    let list = serde_json::json!({"status": [
+        engine("researcher", "↻ researcher · stop", "danger"),
+        engine("indexer", "indexer · ask", "warn"),
+        engine("goal", "goal · stop", "danger"),
+        {"id":"sync/state","text":"sync idle","priority":10,"color_group":"ok",
+         "action":null,"pinned":false,"plugin":"sync","kind":"published","progress":null},
+    ]});
+    let mut app = OilChatApp::default();
+    relay(&mut app, &list);
+    let mut vt = Vt100TestRuntime::new(40, 20);
+    vt.render_frame(&mut app);
+
+    let screen = vt.vt_screen();
+    let (_, height) = screen.size();
+    let row = (0..height)
+        .map(|y| screen.contents_between(y, 0, y, 40))
+        .find(|row| row.contains("· ask"))
+        .unwrap_or_else(|| panic!("no status row:\n{}", vt.screen_contents()));
+    assert_eq!(row.matches("· stop").count(), 2, "{row}");
+    assert_eq!(row.matches("· ask").count(), 1, "{row}");
+    assert!(row.contains('↻'), "the running mark stays: {row}");
+    assert!(row.contains('…'), "a name gets shorter: {row}");
+    assert!(
+        !row.contains("researcher"),
+        "the long name gets shorter, not the state: {row}"
+    );
+    assert!(
+        !row.contains("sync idle"),
+        "the published item yields its room: {row}"
     );
 }
