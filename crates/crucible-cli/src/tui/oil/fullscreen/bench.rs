@@ -92,7 +92,7 @@ fn stream_frames(app: &mut OilChatApp, view: &mut FullscreenView) -> Vec<Sample>
 
 #[test]
 #[ignore = "requires: manual inspection — a timing measurement; run it with an optimized build, see the module doc"]
-fn frame_time_while_streaming_5k_rows() {
+fn fullscreen_streaming_frames_5k_rows() {
     let mut app = fixtures::app_with_exchanges(EXCHANGES);
     let mut view = FullscreenView::new();
     let samples = stream_frames(&mut app, &mut view);
@@ -103,7 +103,7 @@ fn frame_time_while_streaming_5k_rows() {
 /// A full relayout: the first frame, and every frame after a width change.
 #[test]
 #[ignore = "requires: manual inspection — a timing measurement; run it with an optimized build, see the module doc"]
-fn frame_time_of_a_full_relayout_5k_rows() {
+fn fullscreen_relayout_frames_5k_rows() {
     let mut app = fixtures::app_with_exchanges(EXCHANGES);
     let focus = FocusContext::new();
     let mut view = FullscreenView::new();
@@ -166,7 +166,7 @@ fn frame_time_of_a_full_relayout_5k_rows() {
 /// The plugin buffer: a frame over a 10,000-line source.
 #[test]
 #[ignore = "requires: manual inspection — a timing measurement; run it with an optimized build, see the module doc"]
-fn frame_time_of_a_10k_line_plugin_buffer() {
+fn fullscreen_plugin_buffer_frames_10k_lines() {
     use super::shell::{FullscreenShell, PluginBuffer};
     let buffer = PluginBuffer::new("log", || 10_000, |i| format!("{i:05} a plugin buffer line"));
     let mut shell = FullscreenShell::new(vec![], Some(buffer));
