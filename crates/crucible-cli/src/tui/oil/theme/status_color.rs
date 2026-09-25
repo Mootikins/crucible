@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn default_status_groups_are_colored_and_unknown_falls_back_to_info() {
         let theme = crate::tui::oil::theme::ThemeConfig::default_dark();
-        for group in StatusColorGroup::ALL {
+        for group in StatusColorGroup::all() {
             assert_ne!(color(group, &theme), Color::Reset);
         }
         assert_eq!(
@@ -64,8 +64,7 @@ mod tests {
         ))
         .expect("bundled ANSI16 theme loads");
         assert_eq!(theme.name, "ansi16");
-        let colors: std::collections::HashSet<_> = StatusColorGroup::ALL
-            .into_iter()
+        let colors: std::collections::HashSet<_> = StatusColorGroup::all()
             .map(|group| color(group, &theme).palette_index().unwrap())
             .collect();
         assert!(colors.iter().all(|slot| *slot < 16));

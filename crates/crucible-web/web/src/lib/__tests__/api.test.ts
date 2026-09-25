@@ -670,22 +670,21 @@ describe('getProviderTargets', () => {
 
 describe('getSessionStatus', () => {
   it('unwraps the status array and keeps every slot verbatim', async () => {
+    const shared = { priority: 128, pinned: false, action: null, kind: 'published', progress: null };
+    const oci = { ...shared, id: 'oci', plugin: 'oci', text: 'sandboxed: alpine:latest', color_group: 'hue-4' };
+    const weather = { ...shared, id: 'weather', plugin: 'weather', text: 'storm warning', color_group: 'warn' };
     global.fetch = createMockFetch({
       'GET /api/session/ses-1/status': {
         body: {
           status: [
-            { key: 'oci', plugin: 'oci', text: 'sandboxed: alpine:latest', level: 'info' },
-            // A plugin this client has never heard of, at a level it does not
-            // enumerate — both survive untouched.
-            { key: 'weather', plugin: 'weather', text: 'storm warning', level: 'nautical' },
+            oci,
+            // A plugin this client has never heard of survives untouched.
+            weather,
           ],
         },
       },
     });
-    expect(await getSessionStatus('ses-1')).toEqual([
-      { key: 'oci', plugin: 'oci', text: 'sandboxed: alpine:latest', level: 'info' },
-      { key: 'weather', plugin: 'weather', text: 'storm warning', level: 'nautical' },
-    ]);
+    expect(await getSessionStatus('ses-1')).toEqual([oci, weather]);
   });
 
   it('encodes the session id and throws on non-ok', async () => {

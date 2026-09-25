@@ -26,11 +26,12 @@ fn plugin_item(plugin: &str, text: &str, color_group: &str) -> StatusDisplayItem
         id: format!("plugin_turns:{plugin}"),
         text: text.into(),
         priority: 0,
-        color_group: color_group.into(),
+        color_group: crucible_core::status_color::StatusColorGroup::from_name(color_group),
         action: Some("plugin_approval".into()),
         pinned: true,
         plugin: plugin.into(),
         kind: StatusItemKind::PluginTurns,
+        progress: None,
     }
 }
 
@@ -189,4 +190,33 @@ async fn a_lua_publish_keeps_the_engine_item_in_the_event() {
     assert_eq!(items[1].text, "sync idle");
     assert_eq!(items[1].kind, StatusItemKind::Published);
     assert_eq!(items.len(), 2);
+}
+
+/// The event and the attach read carry one shape. A slot's progress, its
+/// id and its color group reach both, so a client decodes each the same way.
+#[tokio::test]
+async fn the_event_and_the_attach_read_carry_the_same_item() {
+    let mut h = ReactorTestHarness::new().await;
+    let (am, sid) = (h.agent_manager.clone(), h.session_id.clone());
+    let registry = crucible_lua::StatusRegistry::new();
+    am.set_status_registry(registry.clone());
+    assert!(
+        registry.set_change_notifier(crate::agent_manager::status_items::change_notifier(
+            Arc::downgrade(&am),
+            h.event_tx.clone(),
+        ))
+    );
+    let lua = mlua::Lua::new();
+    crucible_lua::register_status_module(&lua, registry).unwrap();
+    lua.globals().set("sid", sid.clone()).unwrap();
+    lua.load(
+        r#"cru.plugin.set_status{ session = sid, key = "pull", text = "pulling", progress = 0.5 }"#,
+    )
+    .exec()
+    .unwrap();
+
+    let event = h.wait_for_first_of(&["status_items_changed"]).await;
+    assert_eq!(event.data["status"][0]["progress"], serde_json::json!(0.5));
+    let read = serde_json::to_value(am.status_items(&sid).await).unwrap();
+    assert_eq!(event.data["status"], read, "one wire shape for both");
 }

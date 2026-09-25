@@ -828,11 +828,12 @@ fn status_event_replaces_the_rendered_list_in_the_app() {
             id: "goal".into(),
             text: "goal asks".into(),
             priority: 10,
-            color_group: "warn".into(),
+            color_group: crucible_core::status_color::StatusColorGroup::from_name("warn"),
             action: Some("plugin_approval".into()),
             pinned: true,
             plugin: "goal".into(),
             kind: Default::default(),
+            progress: None,
         },
     ]));
     assert!(status_line(&app).contains("goal asks"));
@@ -847,11 +848,12 @@ fn status_command_opens_every_item_in_a_keyboard_picker() {
         id: "older".into(),
         text: "older hidden status".into(),
         priority: 40,
-        color_group: "info".into(),
+        color_group: crucible_core::status_color::StatusColorGroup::from_name("info"),
         action: None,
         pinned: false,
         plugin: "weather".into(),
         kind: Default::default(),
+        progress: None,
     }]);
     app.handle_repl_command(":status");
     assert!(app.popup.show);

@@ -1725,10 +1725,10 @@ export interface paths {
         };
         /**
          * Proxy `session.status` verbatim.
-         * @description The daemon answers `{"status": [{key, plugin, text, level, color_group}, …]}`, sorted by
-         *     key. Nothing here reads a key: slots are keyed precisely so the chrome
-         *     owner renders any plugin's state generically, and a match on a known key
-         *     would be this crate learning what one particular plugin does. Every future
+         * @description The daemon answers `{"status": [StatusDisplayItem, …]}`, ordered by
+         *     priority. Nothing here reads an id: items are generic precisely so the
+         *     chrome owner renders any plugin's state, and a match on a known id would
+         *     be this crate learning what one particular plugin does. Every future
          *     plugin gets the channel for free, so long as this stays a passthrough.
          *
          *     A session that published nothing — the overwhelmingly common case, and any
@@ -3148,6 +3148,11 @@ export interface components {
             hits: components["schemas"]["GrepHit"][];
             truncated: boolean;
         };
+        /**
+         * @description The one word of [`StatusProgress::Unknown`].
+         * @enum {string}
+         */
+        IndeterminateProgress: "indeterminate";
         InstallRequest: {
             branch?: string | null;
             pin?: string | null;
@@ -4453,61 +4458,23 @@ export interface components {
             /** @description How many matches the reply carries. */
             total: number;
         };
-        /** @description What `GET /api/session/{id}/status` answers. */
+        /**
+         * @description What `GET /api/session/{id}/status` answers.
+         *
+         *     Each item is the daemon's [`StatusDisplayItem`], the same type that the
+         *     `status_items_changed` event carries, so the browser and the TUI read one
+         *     shape. `id`, `plugin` and `text` stay plain strings: the moment a client
+         *     enumerates them, a new plugin needs a client change to be visible at all,
+         *     which is the thing this channel exists to avoid.
+         *
+         *     [`StatusDisplayItem`]: crucible_core::types::StatusDisplayItem
+         */
         SessionStatusResponse: {
             /**
-             * @description Every slot the session has, sorted by key. A session that published
-             *     nothing answers an empty list.
+             * @description Every item the session has, ordered by priority. A session with no
+             *     item answers an empty list.
              */
-            status: components["schemas"]["SessionStatusSlot"][];
-        };
-        /**
-         * @description One keyed status slot a plugin published for a session.
-         *
-         *     `key`, `plugin` and `level` stay plain strings rather than unions on
-         *     purpose. The moment a client enumerates them, a new plugin needs a client
-         *     change to be visible at all, which is the thing this channel exists to
-         *     avoid.
-         */
-        SessionStatusSlot: {
-            /** @description An engine method this item opens, if any. */
-            action?: string | null;
-            /** @description Named status group; the browser maps it through its own CSS theme. */
-            color_group: string;
-            /** @description Stable item id. `key` remains as an alias for older clients. */
-            id: string;
-            /** @description What the slot is about. The plugin chooses it. */
-            key: string;
-            /**
-             * @description Who made the item: a plugin (`published`), or the engine from the
-             *     plugin approval knob and the running plugin turn (`plugin_turns`).
-             */
-            kind: components["schemas"]["StatusItemKind"];
-            /** @description How loud the line is, such as `info` or `warn`. */
-            level: string;
-            pinned: boolean;
-            /** @description Which plugin published the slot. */
-            plugin: string;
-            /**
-             * Format: int32
-             * @description Smaller priorities appear first; pinned items remain visible in overflow.
-             */
-            priority: number;
-            /**
-             * @description Progress of the slot's work: a fraction (`0.0..=1.0`), the literal
-             *     string `"indeterminate"`, or `null` when the slot describes a state
-             *     rather than work (`crates/crucible-daemon/src/server/plugins.rs`).
-             *
-             *     `null` must stay distinguishable from `0.0`: a bar pinned at zero
-             *     reads as stalled, which a state slot such as "sandboxed: alpine" is
-             *     not. Opaque `serde_json::Value` rather than a typed union, the same
-             *     choice `PluginOptionValueResponse::value` makes for a plugin's opaque
-             *     option value — the daemon always writes this key, so it is required
-             *     rather than optional.
-             */
-            progress: unknown;
-            /** @description The line to draw. */
-            text: string;
+            status: components["schemas"]["StatusDisplayItem"][];
         };
         SetAgentOptionRequest: {
             option_id: string;
@@ -4641,10 +4608,62 @@ export interface components {
             source: string;
         };
         /**
+         * @description Names shared by status producers and both renderers. Unknown names render
+         *     as info.
+         *
+         *     One table: serde, strum and the OpenAPI schema all read the names below,
+         *     and `EnumIter` gives every consumer the complete set.
+         * @enum {string}
+         */
+        StatusColorGroup: "ok" | "warn" | "danger" | "info" | "hue-0" | "hue-1" | "hue-2" | "hue-3" | "hue-4" | "hue-5" | "hue-6" | "hue-7";
+        /**
+         * @description The client-facing status item.
+         *
+         *     The one wire shape of a status item: the `session.status` reply and the
+         *     `status_items_changed` event both carry a list of it, and the web route
+         *     declares it in the OpenAPI document. The daemon keeps the authored list;
+         *     clients only decide where and how it fits.
+         */
+        StatusDisplayItem: {
+            /** @description The engine method that the item opens, if it opens one. */
+            action?: string | null;
+            /** @description Named color, which each client resolves through its own theme. */
+            color_group: components["schemas"]["StatusColorGroup"];
+            /** @description Stable within the session's list. */
+            id: string;
+            /**
+             * @description Who made the item. The TUI places each kind with its own statusline
+             *     item; the web draws every kind in one slot.
+             */
+            kind?: components["schemas"]["StatusItemKind"];
+            /** @description A pinned item stays visible when the other items overflow. */
+            pinned: boolean;
+            /** @description The plugin that the item is about. */
+            plugin: string;
+            /**
+             * Format: int32
+             * @description Smaller values appear first. Pinning is separate from the order.
+             */
+            priority: number;
+            progress?: null | components["schemas"]["StatusProgress"];
+            /** @description The text to draw. The producer writes it; no client rewrites it. */
+            text: string;
+        };
+        /**
          * @description The source of a status item.
          * @enum {string}
          */
         StatusItemKind: "published" | "plugin_turns";
+        /**
+         * @description How far along a status item's work is, when it is work rather than a
+         *     state.
+         *
+         *     Modelled on LSP `$/progress`: the producer reports and the client decides
+         *     how to draw it. An image pull knows its fraction; an image build does
+         *     not, and a fake fraction for the second is worse than saying so. On the
+         *     wire it is a number or the string `"indeterminate"`.
+         */
+        StatusProgress: number | components["schemas"]["IndeterminateProgress"];
         /**
          * @description A surface changed, delivered to the browser.
          *
@@ -4905,6 +4924,7 @@ export type SchemaGraphNoteRow = components['schemas']['GraphNoteRow'];
 export type SchemaGrepHit = components['schemas']['GrepHit'];
 export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
 export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
+export type SchemaIndeterminateProgress = components['schemas']['IndeterminateProgress'];
 export type SchemaInstallRequest = components['schemas']['InstallRequest'];
 export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
 export type SchemaInteractionResponseRequest = components['schemas']['InteractionResponseRequest'];
@@ -5001,7 +5021,6 @@ export type SchemaSessionScopeResponse = components['schemas']['SessionScopeResp
 export type SchemaSessionSearchMatch = components['schemas']['SessionSearchMatch'];
 export type SchemaSessionSearchResponse = components['schemas']['SessionSearchResponse'];
 export type SchemaSessionStatusResponse = components['schemas']['SessionStatusResponse'];
-export type SchemaSessionStatusSlot = components['schemas']['SessionStatusSlot'];
 export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionRequest'];
 export type SchemaSetContextStrategyRequest = components['schemas']['SetContextStrategyRequest'];
 export type SchemaSetModeRequest = components['schemas']['SetModeRequest'];
@@ -5019,7 +5038,10 @@ export type SchemaSkippedRef = components['schemas']['SkippedRef'];
 export type SchemaSkipReason = components['schemas']['SkipReason'];
 export type SchemaSlashCommand = components['schemas']['SlashCommand'];
 export type SchemaSourceOrigin = components['schemas']['SourceOrigin'];
+export type SchemaStatusColorGroup = components['schemas']['StatusColorGroup'];
+export type SchemaStatusDisplayItem = components['schemas']['StatusDisplayItem'];
 export type SchemaStatusItemKind = components['schemas']['StatusItemKind'];
+export type SchemaStatusProgress = components['schemas']['StatusProgress'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
 export type SchemaSurfaceLineRow = components['schemas']['SurfaceLineRow'];
 export type SchemaSurfaceListResponse = components['schemas']['SurfaceListResponse'];

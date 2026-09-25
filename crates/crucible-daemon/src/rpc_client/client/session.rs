@@ -524,12 +524,10 @@ impl DaemonClient {
         self.session_id_call("session.get", session_id).await
     }
 
-    /// `session.status` — the status slots plugins published for a session.
+    /// `session.status` — the status list of a session.
     ///
-    /// Returned as raw JSON (`{"status": [{key, plugin, text, level}, …]}`):
-    /// the slots are keyed so any client renders any plugin's state without
-    /// knowing which plugins exist, and typing them here would be the first
-    /// step toward this client interpreting them.
+    /// Returned as raw JSON (`{"status": [StatusDisplayItem, …]}`) for the
+    /// web route, which forwards it verbatim.
     pub async fn session_status(&self, session_id: &str) -> Result<serde_json::Value> {
         self.session_id_call("session.status", session_id).await
     }

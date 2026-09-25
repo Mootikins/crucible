@@ -25,7 +25,7 @@ export interface MockOverrides {
   kilns?: object;
   projects?: object[];
   sessionHistory?: object;
-  /** `{ status: [{key, plugin, text, level}, …] }` — the per-session plugin status route. */
+  /** `{ status: [StatusDisplayItem, …] }` — the per-session status route. */
   sessionStatus?: object;
   sseEvents?: Array<{ type: string; data: object }>;
   sessionCreate?: object;

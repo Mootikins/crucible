@@ -74,7 +74,9 @@ pub use crate::types::provider_info::ProviderInfo;
 
 // Re-export plugin status entry (used by session-setup events)
 pub use crate::types::plugin_status::PluginStatusEntry;
-pub use crate::types::status_item::{StatusDisplayItem, StatusItemKind};
+pub use crate::types::status_item::{
+    IndeterminateProgress, StatusDisplayItem, StatusItemKind, StatusProgress,
+};
 
 // NOTE: `mcp_status::McpServerInfo` is intentionally NOT re-exported at
 // `types::` top-level to avoid collision with `traits::mcp::McpServerInfo`

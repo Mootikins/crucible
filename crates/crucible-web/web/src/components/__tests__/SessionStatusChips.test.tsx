@@ -24,6 +24,11 @@ vi.mock('@/contexts/SessionContext', () => ({
 const STATUS = 'GET /api/session/s1/status';
 const MODES = 'GET /api/session/s1/modes';
 
+/** One status item as the daemon sends it, with the fields a case does not name. */
+function item(fields: { id: string; plugin: string; text: string } & Record<string, unknown>) {
+  return { color_group: 'info', priority: 128, pinned: false, action: null, kind: 'published', progress: null, ...fields };
+}
+
 let env: TestQueryEnv;
 
 /** Installs a fresh cache and a fetch answering what the chips ask for. */
@@ -82,8 +87,8 @@ afterEach(() => {
 describe('SessionStatusChips', () => {
   // The engine's item for a plugin set to `ask`, as `session.status` sends it.
   const engineItem = {
-    id: 'plugin_turns:goal', key: 'plugin_turns:goal', plugin: 'goal', text: 'goal · ask',
-    level: 'warn', color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval',
+    id: 'plugin_turns:goal', plugin: 'goal', text: 'goal · ask',
+    color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval',
     progress: null, kind: 'plugin_turns',
   };
   const APPROVALS = 'GET /api/session/s1/config/plugin-approvals';
@@ -136,7 +141,7 @@ describe('SessionStatusChips', () => {
     serve({
       [STATUS]: () => ({
         status: [
-          { key: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', level: 'info' },
+          item({ id: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged' }),
         ],
       }),
     });
@@ -157,8 +162,8 @@ describe('SessionStatusChips', () => {
     serve({
       [STATUS]: () => ({
         status: [
-          { key: 'pull', plugin: 'oci', text: 'pulling image', level: 'info', progress: 0.42 },
-          { key: 'oci', plugin: 'oci', text: 'sandboxed: alpine', level: 'info', progress: null },
+          item({ id: 'pull', plugin: 'oci', text: 'pulling image', progress: 0.42 }),
+          item({ id: 'oci', plugin: 'oci', text: 'sandboxed: alpine', progress: null }),
         ],
       }),
     });
@@ -172,36 +177,11 @@ describe('SessionStatusChips', () => {
     expect(withoutProgress.textContent).not.toContain('%');
   });
 
-  it('styles by level and falls back for a level it does not enumerate', async () => {
-    setCurrentSession(baseSession());
-    serve({
-      [STATUS]: () => ({
-        status: [
-          { key: 'a', plugin: 'p', text: 'fine', level: 'info' },
-          { key: 'b', plugin: 'p', text: 'careful', level: 'warn' },
-          { key: 'c', plugin: 'p', text: 'broken', level: 'error' },
-          { key: 'd', plugin: 'p', text: 'nautical', level: 'chartreuse' },
-        ],
-      }),
-    });
-
-    render(() => <SessionStatusChips />);
-    await waitFor(() => expect(screen.getByTestId('session-status-d')).toBeInTheDocument());
-
-    const group = (key: string) => screen.getByTestId(`session-status-${key}`).getAttribute('data-status-color');
-    expect(group('a')).toBe('info');
-    expect(group('b')).toBe('warn');
-    expect(group('c')).toBe('danger');
-    expect(group('d')).toBe('info');
-    // An unknown level renders — quietly, like info — rather than vanishing.
-    expect(screen.getByTestId('session-status-d').textContent).toContain('nautical');
-  });
-
   it('uses the named status color group supplied by the daemon', async () => {
     setCurrentSession(baseSession());
     serve({
       [STATUS]: () => ({
-        status: [{ key: 'colored', plugin: 'p', text: 'working', level: 'info', color_group: 'hue-4' }],
+        status: [item({ id: 'colored', plugin: 'p', text: 'working', color_group: 'hue-4' })],
       }),
     });
     render(() => <SessionStatusChips />);
@@ -213,8 +193,8 @@ describe('SessionStatusChips', () => {
     setCurrentSession(baseSession());
     serve({
       [STATUS]: () => ({ status: [
-        { id: 'later', key: 'later', plugin: 'weather', text: 'forecast', level: 'info', color_group: 'hue-2', priority: 80, pinned: false, action: null },
-        { id: 'ask', key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' },
+        item({ id: 'later', plugin: 'weather', text: 'forecast', color_group: 'hue-2', priority: 80, pinned: false, action: null }),
+        item({ id: 'ask', plugin: 'goal', text: 'goal · ask', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' }),
       ] }),
     });
     render(() => <SessionStatusChips />);
@@ -230,9 +210,9 @@ describe('SessionStatusChips', () => {
   it('keeps pinned controls outside the scroll strip and offers every item in the menu', async () => {
     setCurrentSession(baseSession());
     serve({ [STATUS]: () => ({ status: [
-      { key: 'early', plugin: 'sync', text: 'sync idle', level: 'info', priority: 10 },
-      { key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
-      { key: 'late', plugin: 'index', text: 'index ready', level: 'ok', priority: 30 },
+      item({ id: 'early', plugin: 'sync', text: 'sync idle', priority: 10 }),
+      item({ id: 'ask', plugin: 'goal', text: 'goal · ask', priority: 20, pinned: true, action: 'plugin_approval' }),
+      item({ id: 'late', plugin: 'index', text: 'index ready', priority: 30 }),
     ] }) });
     render(() => <SessionStatusChips />);
     const strip = await waitFor(() => screen.getByTestId('session-status-strip'));
@@ -247,7 +227,7 @@ describe('SessionStatusChips', () => {
 
   it('uses a first touch tap for preview and a second tap for that item', async () => {
     setCurrentSession(baseSession());
-    serve({ [STATUS]: () => ({ status: [{ key: 'sync', plugin: 'sync', text: 'sync idle', level: 'info' }] }) });
+    serve({ [STATUS]: () => ({ status: [item({ id: 'sync', plugin: 'sync', text: 'sync idle' })] }) });
     render(() => <SessionStatusChips />);
     const chip = await waitFor(() => screen.getByTestId('session-status-sync'));
     fireEvent.pointerDown(chip, { pointerType: 'touch' });
@@ -309,10 +289,10 @@ describe('SessionStatusChips', () => {
       releaseSecond = resolve;
     });
     serve({
-      [STATUS]: () => ({ status: [{ key: 'a', plugin: 'p', text: 'first', level: 'info' }] }),
+      [STATUS]: () => ({ status: [item({ id: 'a', plugin: 'p', text: 'first' })] }),
       'GET /api/session/s2/status': async () => {
         await secondAnswered;
-        return { status: [{ key: 'b', plugin: 'p', text: 'second', level: 'info' }] };
+        return { status: [item({ id: 'b', plugin: 'p', text: 'second' })] };
       },
     });
 

@@ -113,11 +113,16 @@ mod status_bar_tests {
             id: id.into(),
             text: id.into(),
             priority: 10,
-            color_group: if pinned { "warn" } else { "hue-4" }.into(),
+            color_group: crucible_core::status_color::StatusColorGroup::from_name(if pinned {
+                "warn"
+            } else {
+                "hue-4"
+            }),
             action: None,
             pinned,
             plugin: "test".into(),
             kind: Default::default(),
+            progress: None,
         })
         .collect();
         let plain = render_configured_bar(&bar, 40);

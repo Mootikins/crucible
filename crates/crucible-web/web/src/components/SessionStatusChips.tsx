@@ -19,13 +19,10 @@ import type { ModeDescriptor } from '@/lib/types';
  *
  * The plugin half deliberately knows nothing about any particular plugin. A
  * slot arrives with a named color group; this renders `text`, attributes it
- * to `plugin`, and lets CSS resolve the group. There is no branch on `key`
+ * to `plugin`, and lets CSS resolve the group. There is no branch on `id`
  * and no list of known plugins — a plugin shipped tomorrow gets a chip here
  * for free, which is the whole point of the channel. Adding an
- * `if (key === …)` would quietly revoke that.
- *
- * A pre-color-group daemon has only `level`; keep its semantic fallback until
- * the daemon and web bundle have both been updated.
+ * `if (id === …)` would quietly revoke that.
  *
  * A slot's `progress` is a fraction, the literal string `"indeterminate"`, or
  * `null` when the slot describes a state rather than work — `null` must stay
@@ -53,19 +50,12 @@ type Unlisted = Exclude<PluginApproval, (typeof APPROVALS)[number]>;
 const approvalsComplete: [Unlisted] extends [never] ? true : never = true;
 void approvalsComplete;
 
-const legacyGroup = (level: string): string => {
-  if (level === 'warn' || level === 'warning') return 'warn';
-  if (level === 'error' || level === 'danger') return 'danger';
-  if (level === 'ok' || level === 'success') return 'ok';
-  return 'info';
-};
-
 export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
   const sessionId = () => currentSession()?.session_id;
   const modes = useSessionModes(() => sessionId() ?? null);
   const status = useSessionStatus(() => sessionId() ?? null);
-  const slots = () => [...(status.data ?? [])].sort((a, b) => (a.priority ?? 128) - (b.priority ?? 128));
+  const slots = () => [...(status.data ?? [])].sort((a, b) => a.priority - b.priority);
   type Slot = ReturnType<typeof slots>[number];
   const writes = (): ModeDescriptor['writes'] | null => {
     const listed = modes.data;
@@ -132,9 +122,9 @@ export const SessionStatusChips: Component = () => {
   };
   const dot = (slot: Slot) => (
     <button type="button" class="session-status-color status-dot-button"
-      data-status-color={slot.color_group ?? legacyGroup(slot.level)}
-      data-pinned={slot.pinned ?? false} data-action={slot.action ?? undefined}
-      data-testid={`session-status-${slot.key}`}
+      data-status-color={slot.color_group}
+      data-pinned={slot.pinned} data-action={slot.action ?? undefined}
+      data-testid={`session-status-${slot.id}`}
       title={`${slot.text} — ${slot.plugin}`}
       aria-label={`${slot.text} — ${slot.plugin}; open session status`}
       aria-haspopup="menu" aria-expanded={menuOpen()}
@@ -209,7 +199,7 @@ export const SessionStatusChips: Component = () => {
         }}>
         <div class="status-menu-title">Session status</div>
         <For each={slots()}>{(slot) => <button type="button" role="menuitem" class="status-menu-item" onClick={() => choose(slot)}>
-          <span class="session-status-color status-dot" data-status-color={slot.color_group ?? legacyGroup(slot.level)} aria-hidden="true" />
+          <span class="session-status-color status-dot" data-status-color={slot.color_group} aria-hidden="true" />
           <span>{slot.text}</span><small>{slot.plugin}</small>
         </button>}</For>
       </div>

@@ -126,7 +126,7 @@ pub fn render_bar(items: &[StatusItem], ctx: &ItemContext<'_>) -> Node {
 
 /// A pinned status item, as a badge in its named color.
 fn pinned_badge(entry: &StatusDisplayItem) -> Fragment {
-    let group = crucible_core::status_color::StatusColorGroup::from_name(&entry.color_group);
+    let group = entry.color_group;
     Fragment::badge(
         format!("{} ", entry.text),
         Style::new().fg(theme::status_color::color(group, theme::active())),
@@ -245,8 +245,7 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
             }
             let mut fragments = Vec::new();
             for entry in info.iter().take(visible) {
-                let group =
-                    crucible_core::status_color::StatusColorGroup::from_name(&entry.color_group);
+                let group = entry.color_group;
                 fragments.push(Fragment::new(
                     format!("{} ", entry.text),
                     Style::new().fg(theme::status_color::color(group, theme::active())),
@@ -348,9 +347,7 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
             // fragment without a field-by-field rebuild that could drop one.
             // A named status group with no `cru.hl` definition falls back to
             // the status palette, so the TUI and the web agree on its color.
-            let fallback = crucible_core::status_color::StatusColorGroup::ALL
-                .iter()
-                .copied()
+            let fallback = crucible_core::status_color::StatusColorGroup::all()
                 .find(|named| named.name() == group.as_str())
                 .map_or(inherited, |named| {
                     Style::new().fg(theme::status_color::color(named, theme::active()))
@@ -452,11 +449,16 @@ mod tests {
             id: id.into(),
             text: id.into(),
             priority: 10,
-            color_group: if pinned { "warn" } else { "info" }.into(),
+            color_group: crucible_core::status_color::StatusColorGroup::from_name(if pinned {
+                "warn"
+            } else {
+                "info"
+            }),
             action: None,
             pinned,
             plugin: "test".into(),
             kind: Default::default(),
+            progress: None,
         })
         .collect();
         let rendered = render(&[StatusItem::List], &data, false);
@@ -482,21 +484,23 @@ mod tests {
                 id: "plugin_turns:goal".into(),
                 text: "goal · ask".into(),
                 priority: 0,
-                color_group: "warn".into(),
+                color_group: crucible_core::status_color::StatusColorGroup::from_name("warn"),
                 action: Some("plugin_approval".into()),
                 pinned: true,
                 plugin: "goal".into(),
                 kind: StatusItemKind::PluginTurns,
+                progress: None,
             },
             crucible_core::types::StatusDisplayItem {
                 id: "sync".into(),
                 text: "sync idle".into(),
                 priority: 10,
-                color_group: "ok".into(),
+                color_group: crucible_core::status_color::StatusColorGroup::from_name("ok"),
                 action: None,
                 pinned: false,
                 plugin: "sync".into(),
                 kind: StatusItemKind::Published,
+                progress: None,
             },
         ];
         let items = render(&[StatusItem::List], &data, false);

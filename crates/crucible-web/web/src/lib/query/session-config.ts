@@ -19,7 +19,7 @@ import {
   setPluginApproval,
   setPluginTurnLimit,
   type PluginApproval,
-  type SessionStatusSlot,
+  type StatusDisplayItem,
 } from '@/lib/api';
 import type { AgentConfigOptions, SessionKnobSupport } from '@/lib/types';
 import { getQueryClient } from './client';
@@ -244,7 +244,7 @@ export function useSetPluginApproval(): UseMutationResult<
  */
 export function useSessionStatus(
   id: Accessor<string | null>,
-): UseQueryResult<SessionStatusSlot[], Error> {
+): UseQueryResult<StatusDisplayItem[], Error> {
   return sessionQuery(id, keys.sessionStatus, (sessionId) =>
     getSessionStatus(sessionId).catch(() => []),
   );

@@ -60,11 +60,12 @@ pub(crate) fn plugin_turn_items(
                 id: format!("plugin_turns:{plugin}"),
                 text,
                 priority: 0,
-                color_group: group.name().to_owned(),
+                color_group: group,
                 action: Some(PLUGIN_APPROVAL_ACTION.to_owned()),
                 pinned: true,
                 plugin: plugin.to_owned(),
                 kind: StatusItemKind::PluginTurns,
+                progress: None,
             }
         })
         .collect()
@@ -198,7 +199,7 @@ mod tests {
         let items = plugin_turn_items(&stored, Some("stop"));
         let seen: Vec<_> = items
             .iter()
-            .map(|item| (item.text.as_str(), item.color_group.as_str(), item.pinned))
+            .map(|item| (item.text.as_str(), item.color_group.name(), item.pinned))
             .collect();
         assert_eq!(
             seen,
@@ -209,7 +210,7 @@ mod tests {
         );
         let running = plugin_turn_items(&BTreeMap::new(), Some("goal"));
         assert_eq!(running[0].text, "↻ goal");
-        assert_eq!(running[0].color_group, "info");
+        assert_eq!(running[0].color_group, StatusColorGroup::Info);
         assert!(running[0].pinned);
     }
 }

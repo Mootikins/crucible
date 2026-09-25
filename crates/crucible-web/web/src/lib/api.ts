@@ -87,14 +87,15 @@ export type ConfigSaveResult = Schemas['ConfigSaveReply'];
 export type PluginOptions = Record<string, PluginOptionNode>;
 
 /**
- * One keyed status slot a plugin published for a session.
+ * One item of a session's status list: the daemon's `StatusDisplayItem`, the
+ * same type that the `status_items_changed` event carries.
  *
- * Rendered generically — `key`, `plugin` and `level` stay plain strings rather
+ * Rendered generically — `id`, `plugin` and `text` stay plain strings rather
  * than unions on purpose. The moment the frontend enumerates them, a new
  * plugin needs a frontend change to be visible at all, which is the thing this
  * channel exists to avoid.
  */
-export type SessionStatusSlot = Schemas['SessionStatusSlot'];
+export type StatusDisplayItem = Schemas['StatusDisplayItem'];
 
 // =============================================================================
 // API auth (browser: HttpOnly session cookie; programmatic: Bearer header)
@@ -915,7 +916,7 @@ export async function listModels(sessionId: string): Promise<string[]> {
  * There is no SSE event for plugin status, so callers fetch on session change
  * rather than subscribing.
  */
-export async function getSessionStatus(sessionId: string): Promise<SessionStatusSlot[]> {
+export async function getSessionStatus(sessionId: string): Promise<StatusDisplayItem[]> {
   return decode(
     await client.GET('/api/session/{id}/status', { params: { path: { id: sessionId } } }),
     'Failed to load session status',

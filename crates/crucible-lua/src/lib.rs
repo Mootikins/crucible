@@ -271,7 +271,7 @@ pub use isolation::{
     register_isolation_module, IsolationClaim, IsolationRegistry, SandboxEnv, SandboxExec,
 };
 pub use options::{register_options_module, OptionsRegistry};
-pub use plugin_status::{register_status_module, Progress, StatusEntry, StatusRegistry};
+pub use plugin_status::{register_status_module, StatusEntry, StatusRegistry};
 pub use publications::{register_publish_module, PublicationChangeHook, PublicationRegistry};
 pub use surfaces::{
     register_surface_module, Mark, Shape, Surface, SurfaceChange, SurfaceEmitter, SurfaceRegistry,

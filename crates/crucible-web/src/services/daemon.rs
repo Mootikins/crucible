@@ -549,8 +549,8 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        /// Plugin status slots for a session, forwarded as the daemon shaped them
-        /// (`{"status": [{key, plugin, text, level}, …]}`).
+        /// The status list of a session, forwarded as the daemon shaped it
+        /// (`{"status": [StatusDisplayItem, …]}`).
         Safe SessionStatus =>
         session_status(session_id: &str)
         -> serde_json::Value = session_status(&session_id);

@@ -254,11 +254,12 @@ fn the_plugin_turn_item_opens_the_menu_from_the_status_picker() {
             id: "plugin_turns:goal".into(),
             text: "goal · ask".into(),
             priority: 0,
-            color_group: "warn".into(),
+            color_group: crucible_core::status_color::StatusColorGroup::from_name("warn"),
             action: Some("plugin_approval".into()),
             pinned: true,
             plugin: "goal".into(),
             kind: crucible_core::types::StatusItemKind::PluginTurns,
+            progress: None,
         },
     ]));
     type_and_submit(&mut app, ":status");

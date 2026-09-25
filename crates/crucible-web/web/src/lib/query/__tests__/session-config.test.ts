@@ -227,7 +227,7 @@ describe('session config mutations invalidate scoped cache', () => {
 describe('useSessionStatus', () => {
   it('answers the slots the daemon published for one session', async () => {
     env = createTestQueryEnv({
-      [STATUS]: () => ({ status: [{ key: 'branch', plugin: 'scm', text: 'master', level: 'info' }] }),
+      [STATUS]: () => ({ status: [{ id: 'branch', plugin: 'scm', text: 'master', color_group: 'info', priority: 128, pinned: false, action: null, kind: 'published', progress: null }] }),
     });
 
     const query = inRoot(() => useSessionStatus(() => 's-1'));
@@ -253,7 +253,7 @@ describe('useSessionStatus', () => {
     let release: () => void = () => {};
     const answered = new Promise<void>((resolve) => (release = resolve));
     env = createTestQueryEnv({
-      [STATUS]: () => ({ status: [{ key: 'branch', plugin: 'scm', text: 'master', level: 'info' }] }),
+      [STATUS]: () => ({ status: [{ id: 'branch', plugin: 'scm', text: 'master', color_group: 'info', priority: 128, pinned: false, action: null, kind: 'published', progress: null }] }),
       'GET /api/session/s-2/status': async () => {
         await answered;
         return { status: [] };

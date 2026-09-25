@@ -193,9 +193,9 @@ test("plugin status dots expand and expose the whole ordered list", async ({ pag
   await setupBasicMocks(page, {
     sessionStatus: {
       status: [
-        { key: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', level: 'info', color_group: 'warn', priority: 10 },
+        { id: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', color_group: 'warn', priority: 10, pinned: false, action: null, kind: 'published', progress: null },
         // The engine's plugin-turn item, as `session.status` sends it.
-        { id: 'plugin_turns:goal', key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval', kind: 'plugin_turns' },
+        { id: 'plugin_turns:goal', plugin: 'goal', text: 'goal · ask', color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval', kind: 'plugin_turns', progress: null },
       ],
     },
   });
@@ -204,7 +204,7 @@ test("plugin status dots expand and expose the whole ordered list", async ({ pag
   await openSession(page, 'test-session-001');
 
   const dot = page.getByTestId('session-status-zarquon');
-  const pinned = page.getByTestId('session-status-ask');
+  const pinned = page.getByTestId('session-status-plugin_turns:goal');
   await expect(dot).toBeVisible({ timeout: 15000 });
   await expect(pinned).toContainText('goal · ask');
   await expect(page.locator('.session-status-pinned')).toHaveCSS('border-left-width', '1px');

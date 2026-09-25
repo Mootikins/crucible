@@ -646,23 +646,23 @@ async fn status_route_forwards_every_plugin_slot_verbatim() {
 
     // The engine's plugin-turn item rides first, with its kind, so the
     // browser can place it without a rule of its own.
-    assert_eq!(slots[0]["key"], "plugin_turns:goal");
+    assert_eq!(slots[0]["id"], "plugin_turns:goal");
     assert_eq!(slots[0]["kind"], "plugin_turns");
     assert_eq!(slots[0]["pinned"], true);
 
-    // The four keys ARE the contract: a rename on either side would surface
+    // These keys ARE the contract: a rename on either side would surface
     // downstream as blank chips rather than as a failure here.
-    assert_eq!(slots[1]["key"], "oci");
+    assert_eq!(slots[1]["id"], "oci");
     assert_eq!(slots[1]["plugin"], "oci");
     assert_eq!(slots[1]["text"], "sandboxed: alpine:latest");
-    assert_eq!(slots[1]["level"], "info");
+    assert_eq!(slots[1]["color_group"], "hue-4");
 
     // A slot from a plugin this crate has never heard of rides through with
     // the same shape — the route interprets no key.
-    assert_eq!(slots[2]["key"], "weather");
+    assert_eq!(slots[2]["id"], "weather");
     assert_eq!(slots[2]["plugin"], "weather");
     assert_eq!(slots[2]["text"], "storm warning");
-    assert_eq!(slots[2]["level"], "warn");
+    assert_eq!(slots[2]["color_group"], "warn");
 }
 
 #[tokio::test]
