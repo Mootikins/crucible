@@ -1322,6 +1322,14 @@ three seconds and the next tap opens that item's detail or engine control.
 Numeric `priority` only orders items; `pinned` controls visibility. The web
 draws each item's text as it arrives and does not rewrite a label.
 
+> **Known accessibility gap.** At rest, before hover, focus or a tap reveals
+> the labels, the web shows the engine's `ask`, `stop` and running items as
+> pinned dots that differ only by color (`warn`, `danger`, `info`). A user who
+> cannot tell those colors apart cannot tell the states apart without opening
+> the strip. Each dot's accessible name holds its full text, so a screen reader
+> reads the state. A shape or a glyph for each state is deferred; the TUI is
+> not affected, because it always draws the text.
+
 ## Publications
 
 ### cru.plugin.publish(key, value)
