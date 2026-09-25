@@ -18,11 +18,20 @@ use crucible_cli::tui::oil::fullscreen::clipboard::{Copier, CopyEnv};
 use crucible_cli::tui::oil::fullscreen::shell::{
     ChatPane, FullscreenShell, PluginBuffer, ShellAction,
 };
-use crucible_cli::tui::oil::fullscreen::{fixtures, FullscreenView, ViewAction};
+use crucible_cli::tui::oil::fullscreen::{FullscreenView, ViewAction};
 use crucible_cli::tui::oil::{theme, ChatAppMsg, Event, FocusContext, ViewContext};
 use crucible_oil::terminal::{ScreenMode, Terminal};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+
+// The fake transcripts are test data, so the `cru` binary does not carry
+// them. The demo includes the file that the library tests use. This module
+// gives that file the `crate::tui` path that it has in the library.
+mod tui {
+    pub use crucible_cli::tui::oil;
+}
+#[path = "../src/tui/oil/fullscreen/fixtures.rs"]
+mod fixtures;
 
 fn main() -> std::io::Result<()> {
     let mut terminal = Terminal::new()?.with_mode(ScreenMode::Fullscreen {

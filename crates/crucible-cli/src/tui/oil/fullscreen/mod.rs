@@ -14,7 +14,8 @@
 //! rows on screen.
 
 pub mod clipboard;
-pub mod fixtures;
+#[cfg(test)]
+pub(crate) mod fixtures;
 pub mod scroll;
 pub mod selection;
 pub mod shell;

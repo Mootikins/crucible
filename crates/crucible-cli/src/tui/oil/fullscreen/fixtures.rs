@@ -1,6 +1,9 @@
-//! Fake transcripts for the full-screen prototype: the frame-time
-//! measurement, the tests and `cru chat --fullscreen-demo` use them. They
-//! need no daemon.
+//! Fake transcripts for the full-screen prototype. They need no daemon.
+//!
+//! The tests, the frame-time measurement and the `fullscreen_demo` example
+//! use them. They are test data, so the library has them only in a test
+//! build, and the `cru` binary does not carry them. The example includes
+//! this file with `#[path]`, and it gives the file the `crate::tui` path.
 
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 
