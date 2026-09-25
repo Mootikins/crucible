@@ -9,8 +9,9 @@
 //! A frame has three parts: the chrome above the transcript (status regions),
 //! the transcript area, and the chrome below it (the prompt and the status
 //! regions). The chrome is laid out every frame; it is small. The transcript
-//! comes from [`transcript::Transcript`], which keeps the rows of every
-//! finished node, and [`scroll::Scroll`] picks the rows on screen.
+//! rows come from the app's kept rows, the cache that the native view uses:
+//! [`transcript::Transcript`] numbers them, and [`scroll::Scroll`] picks the
+//! rows on screen.
 
 pub mod clipboard;
 pub mod fixtures;
@@ -117,12 +118,6 @@ impl FullscreenView {
         Self::default()
     }
 
-    /// Lay every cached node out again at the next frame, as after a theme
-    /// change.
-    pub fn invalidate(&mut self) {
-        self.transcript.invalidate();
-    }
-
     pub fn transcript(&self) -> &Transcript {
         &self.transcript
     }
@@ -136,7 +131,7 @@ impl FullscreenView {
     }
 
     /// Build the frame for `app` at the terminal size in `ctx`.
-    pub fn frame(&mut self, app: &OilChatApp, ctx: &ViewContext<'_>) -> Frame {
+    pub fn frame(&mut self, app: &mut OilChatApp, ctx: &ViewContext<'_>) -> Frame {
         let (width, height) = ctx.terminal_size;
         if let Some(modal) = app.modal_view(ctx) {
             return compose(&modal, width, height);
@@ -185,7 +180,7 @@ impl FullscreenView {
 
     /// Bring the transcript up to date. A width change reflows it and puts
     /// the reader back at the same text.
-    fn sync_transcript(&mut self, app: &OilChatApp, ctx: &ViewContext<'_>) {
+    fn sync_transcript(&mut self, app: &mut OilChatApp, ctx: &ViewContext<'_>) {
         let reflow = self.transcript.width() != ctx.terminal_size.0;
         let anchor = if reflow && (self.anchor.is_some() || !self.scroll.follows()) {
             self.anchor
@@ -199,7 +194,7 @@ impl FullscreenView {
             self.selection = None;
             self.dragging = false;
         }
-        self.transcript.sync(app.container_list().nodes(), ctx);
+        self.transcript.sync(app, ctx);
         let total = self.transcript.len();
         if let Some(anchor) = anchor {
             self.scroll
@@ -212,7 +207,7 @@ impl FullscreenView {
         let top = self.scroll.top();
         let transcript = &self.transcript;
         let width = transcript.width() as usize;
-        let rows = |r: usize| transcript.row(r).map(|row| row.as_ref());
+        let rows = |r: usize| transcript.row(r);
         // The copy reads the same text span, so the highlight shows what a
         // copy takes.
         let span = self
@@ -220,7 +215,7 @@ impl FullscreenView {
             .and_then(|s| text_span(s.bounds(), width, rows));
         for y in 0..self.area.height {
             if let Some(row) = transcript.row(top + y) {
-                grid.blit_line(&row.ansi, 0, self.area.top + y);
+                grid.blit_line(row.ansi, 0, self.area.top + y);
             }
             if let Some(cols) = span.and_then(|span| highlight_cols(span, top + y, width, rows)) {
                 grid.invert(self.area.top + y, cols);
@@ -319,7 +314,7 @@ impl FullscreenView {
             point,
             Unit::from_clicks(clicks),
             transcript.width() as usize,
-            |r| transcript.row(r).map(|row| row.as_ref()),
+            |r| transcript.row(r),
         ));
         self.dragging = true;
         self.moved = false;
@@ -342,9 +337,7 @@ impl FullscreenView {
         };
         let transcript = &self.transcript;
         if let Some(selection) = self.selection.as_mut() {
-            selection.extend(point, transcript.width() as usize, |r| {
-                transcript.row(r).map(|row| row.as_ref())
-            });
+            selection.extend(point, transcript.width() as usize, |r| transcript.row(r));
         }
         self.moved = true;
     }
@@ -373,7 +366,7 @@ impl FullscreenView {
         Some(selected_text(
             selection.bounds(),
             transcript.width() as usize,
-            |r| transcript.row(r).map(|row| row.as_ref()),
+            |r| transcript.row(r),
         ))
     }
 

@@ -66,8 +66,9 @@ pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, Graduation, RenderedOverlay};
 pub use popup_node::popup_item;
 pub use render::{
-    render_to_plain_text, render_to_rows, render_to_string, render_tree, render_tree_to_grid,
-    render_with_cursor, CursorInfo, GridRender, RenderResult, NATURAL_HEIGHT,
+    render_to_plain_text, render_to_rows, render_to_string, render_to_text_rows, render_tree,
+    render_tree_to_grid, render_with_cursor, CursorInfo, GridRender, RenderResult, TextRows,
+    NATURAL_HEIGHT,
 };
 pub use runtime::FrameRenderer;
 #[cfg(any(test, feature = "test-utils"))]

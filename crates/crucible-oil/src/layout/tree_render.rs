@@ -10,7 +10,7 @@
 //! at computed coordinates, then converts the buffer to an ANSI string.
 
 use crate::ansi::apply_style;
-use crate::cell_grid::CellGrid;
+use crate::cell_grid::{CellGrid, RowText};
 use crate::node::TextRole;
 use crate::utils::{truncate_to_chars, visible_width};
 
@@ -60,16 +60,20 @@ pub fn render_layout_tree_to_grid(tree: &LayoutTree) -> (CellGrid, Option<(u16, 
     (grid, cursor_position)
 }
 
-/// Render a LayoutTree to its rows, each as [`render_layout_tree`] emits it.
-pub fn render_layout_tree_rows(tree: &LayoutTree) -> Vec<String> {
+/// Render a LayoutTree to its rows, each as [`render_layout_tree`] emits it,
+/// and where the source text of each row is.
+pub fn render_layout_tree_rows(tree: &LayoutTree) -> (Vec<String>, Vec<RowText>) {
     let width = tree.root.rect.width as usize;
     let height = (tree.root.rect.y + tree.root.rect.height) as usize;
     if width == 0 || height == 0 {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     let mut grid = CellGrid::new(width, height);
     render_box(&tree.root, &mut grid, &mut None);
-    grid.rows_compact()
+    let text = (0..height)
+        .map(|y| grid.row_text(y).cloned().unwrap_or_default())
+        .collect();
+    (grid.rows_compact(), text)
 }
 
 fn cursor_info_from_position(

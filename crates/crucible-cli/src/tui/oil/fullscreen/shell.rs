@@ -242,7 +242,7 @@ impl FullscreenShell {
         match self.active {
             Pane::Chat(i) => {
                 let pane = &mut self.chats[i];
-                let frame = pane.view.frame(&pane.app, &inner);
+                let frame = pane.view.frame(&mut pane.app, &inner);
                 let top = PANE_TOP as usize;
                 for y in 0..frame.grid.height() {
                     grid.copy_row_from(y + top, &frame.grid, y);

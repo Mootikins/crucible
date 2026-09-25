@@ -9,7 +9,7 @@
 //! test rendering — they are byte-identical for the same tree+dims.
 
 use crate::ansi::strip_ansi;
-use crate::cell_grid::CellGrid;
+use crate::cell_grid::{CellGrid, RowText};
 use crate::layout::{render_layout_tree, render_layout_tree_rows, render_layout_tree_to_grid};
 use crate::node::Node;
 use crate::taffy_layout::{build_layout_tree_with_engine, LayoutEngine};
@@ -102,13 +102,29 @@ pub(crate) fn render_tree_with_engine(
 /// in the column, but a rows node takes one even with no rows, and the
 /// column puts its gap around it.
 pub fn render_to_rows(node: &Node, width: u16) -> Vec<String> {
+    render_to_text_rows(node, width).rows
+}
+
+/// Rows from [`render_to_text_rows`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TextRows {
+    /// Each row as [`render_to_rows`] gives it.
+    pub rows: Vec<String>,
+    /// Where the source text of each row is, for a full-screen selection.
+    pub text: Vec<RowText>,
+}
+
+/// [`render_to_rows`], and where the source text of each row is. The
+/// full-screen mode keeps both: it draws the rows and selects in the text.
+pub fn render_to_text_rows(node: &Node, width: u16) -> TextRows {
     if width == 0 {
-        return Vec::new();
+        return TextRows::default();
     }
     let column = crate::node::col([node.clone()]);
     let tree =
         build_layout_tree_with_engine(&mut LayoutEngine::new(), &column, width, NATURAL_HEIGHT_CAP);
-    render_layout_tree_rows(&tree)
+    let (rows, text) = render_layout_tree_rows(&tree);
+    TextRows { rows, text }
 }
 
 /// A node tree rendered into cells, for the full-screen mode.
@@ -668,6 +684,22 @@ mod tests {
                 "{node:?}"
             );
         }
+    }
+
+    #[test]
+    fn text_rows_keep_the_gutter_and_the_join_of_each_row() {
+        let node = col([
+            row([text(" * ").gutter(), text("first")]),
+            row([text("   ").gutter(), text("second").continues_line(" ", 0)]),
+        ]);
+        let text_rows = render_to_text_rows(&node, 20);
+        assert_eq!(text_rows.rows, render_to_rows(&node, 20));
+        let starts: Vec<(usize, Option<&str>)> = text_rows
+            .text
+            .iter()
+            .map(|t| (t.start, t.join.as_deref()))
+            .collect();
+        assert_eq!(starts, vec![(3, None), (3, Some(" "))]);
     }
 
     #[test]

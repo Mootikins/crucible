@@ -7,12 +7,19 @@
 //! finished node gives the same rows until an input of its render changes.
 //! So this cache keeps those rows, and a frame lays out only the nodes that
 //! can still change.
+//!
+//! Both modes read this one cache. The native view puts the kept rows back
+//! in its frame tree ([`TranscriptRows::frame_nodes`]). The full-screen view
+//! places the rows itself, and it also needs where the text of each row is
+//! ([`TranscriptRows::frame_rows`]).
 
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::containers::ContainerList;
 use crate::tui::oil::theme;
+use crucible_oil::cell_grid::RowText;
 use crucible_oil::node::{rows, Node};
-use crucible_oil::render::render_to_rows;
+use crucible_oil::render::{render_to_text_rows, TextRows};
+use std::sync::Arc;
 
 /// Everything that the rows of a finished node depend on.
 ///
@@ -34,11 +41,30 @@ struct RowsKey {
     show_diffs: bool,
 }
 
+/// The rows of one transcript node at one width.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NodeRows {
+    /// Each row as `render_to_rows` gives it.
+    pub(crate) rows: Arc<[String]>,
+    /// Where the source text of each row is, for a full-screen selection.
+    pub(crate) text: Arc<[RowText]>,
+}
+
+/// The rows of one transcript node in a full-screen frame.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FrameRows {
+    /// No rows for a node that renders nothing.
+    pub(crate) rows: NodeRows,
+    /// Whether the node is finished. A node that can still change has no
+    /// final rows yet.
+    pub(crate) finished: bool,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct TranscriptRows {
-    /// The kept rows of each node, by position: a rows node, or
-    /// `Node::Empty` for a node that renders nothing.
-    kept: Vec<Option<(RowsKey, Node)>>,
+    /// The kept rows of each node, by position. `None` rows for a node that
+    /// renders nothing.
+    kept: Vec<Option<(RowsKey, Option<NodeRows>)>>,
     /// How many node layouts the cache did, over its whole life.
     layouts: u64,
 }
@@ -51,6 +77,50 @@ impl TranscriptRows {
     /// source and is not kept. `ctx.terminal_size.0` must be the width that
     /// the frame is laid out at, because the kept rows have that width.
     pub(crate) fn frame_nodes(&mut self, list: &ContainerList, ctx: &ViewContext<'_>) -> Vec<Node> {
+        self.frame(
+            list,
+            ctx,
+            // An empty node takes no place in the column; kept rows would
+            // take one, with a gap around it.
+            |kept| kept.map_or(Node::Empty, |kept| rows(Arc::clone(&kept.rows))),
+            |tree| tree,
+        )
+    }
+
+    /// The rows of each transcript node for a full-screen frame at `ctx`.
+    ///
+    /// These are the rows of [`TranscriptRows::frame_nodes`]: a finished
+    /// node gives its kept rows, and a node that can still change is laid
+    /// out to rows that are not kept.
+    pub(crate) fn frame_rows(
+        &mut self,
+        list: &ContainerList,
+        ctx: &ViewContext<'_>,
+    ) -> Vec<FrameRows> {
+        let width = ctx.terminal_size.0;
+        self.frame(
+            list,
+            ctx,
+            |kept| FrameRows {
+                rows: kept.cloned().unwrap_or_default(),
+                finished: true,
+            },
+            |tree| FrameRows {
+                rows: lay_out(&tree, width).unwrap_or_default(),
+                finished: false,
+            },
+        )
+    }
+
+    /// One `T` for each node: `from_kept` for a finished node, from its
+    /// kept rows, and `live` for a node that can still change, from its tree.
+    fn frame<T>(
+        &mut self,
+        list: &ContainerList,
+        ctx: &ViewContext<'_>,
+        from_kept: impl Fn(Option<&NodeRows>) -> T,
+        live: impl Fn(Node) -> T,
+    ) -> Vec<T> {
         let nodes = list.nodes();
         self.kept.resize(nodes.len(), None);
         let style_generation = theme::slot::generation();
@@ -65,7 +135,7 @@ impl TranscriptRows {
                 let prev = i.checked_sub(1).map(|p| &nodes[p]);
                 if !node.is_complete() {
                     *kept = None;
-                    return node.render(prev, ctx);
+                    return live(node.render(prev, ctx));
                 }
                 let key = RowsKey {
                     revision,
@@ -76,18 +146,14 @@ impl TranscriptRows {
                 };
                 if let Some((kept_key, rows)) = kept {
                     if *kept_key == key {
-                        return rows.clone();
+                        return from_kept(rows.as_ref());
                     }
                 }
                 self.layouts += 1;
-                // An empty node takes no place in the column; kept rows
-                // would take one, with a gap around it.
-                let laid_out = match node.render(prev, ctx) {
-                    Node::Empty => Node::Empty,
-                    tree => rows(render_to_rows(&tree, ctx.terminal_size.0)),
-                };
-                *kept = Some((key, laid_out.clone()));
-                laid_out
+                let laid_out = lay_out(&node.render(prev, ctx), ctx.terminal_size.0);
+                let out = from_kept(laid_out.as_ref());
+                *kept = Some((key, laid_out));
+                out
             })
             .collect();
 
@@ -103,5 +169,19 @@ impl TranscriptRows {
     #[cfg(test)]
     pub(crate) fn layouts(&self) -> u64 {
         self.layouts
+    }
+}
+
+/// The rows of `tree` at `width`, or `None` for a node that renders nothing.
+fn lay_out(tree: &Node, width: u16) -> Option<NodeRows> {
+    match tree {
+        Node::Empty => None,
+        tree => {
+            let TextRows { rows, text } = render_to_text_rows(tree, width);
+            Some(NodeRows {
+                rows: rows.into(),
+                text: text.into(),
+            })
+        }
     }
 }

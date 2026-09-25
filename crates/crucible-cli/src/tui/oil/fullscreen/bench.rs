@@ -104,7 +104,7 @@ fn frame_time_while_streaming_5k_rows() {
 #[test]
 #[ignore = "requires: manual inspection — a timing measurement; run it with an optimized build, see the module doc"]
 fn frame_time_of_a_full_relayout_5k_rows() {
-    let app = fixtures::app_with_exchanges(EXCHANGES);
+    let mut app = fixtures::app_with_exchanges(EXCHANGES);
     let focus = FocusContext::new();
     let mut view = FullscreenView::new();
     let mut samples = Vec::new();
@@ -116,7 +116,7 @@ fn frame_time_of_a_full_relayout_5k_rows() {
     {
         let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (width, HEIGHT));
         let start = Instant::now();
-        let frame = view.frame(&app, &ctx);
+        let frame = view.frame(&mut app, &ctx);
         let time = start.elapsed();
         if i == 0 {
             println!("transcript rows at {width}: {}", view.transcript().len());
