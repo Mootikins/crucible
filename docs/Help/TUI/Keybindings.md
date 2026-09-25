@@ -43,12 +43,26 @@ preserved and restored when you cycle past the newest entry.
 
 ## Scrolling the Conversation
 
-Completed conversation content graduates to the terminal's own scrollback —
-the live viewport stays small. To review history, use your terminal's native
-scrolling (mouse wheel, `Shift+PageUp`, tmux copy mode, etc.). The TUI does
-not capture the mouse, so terminal-native text selection and copying work as
-usual. `PageUp`/`PageDown` are not bound in the chat view (the shell modal
-and pager modals bind them — see [[Help/TUI/Shell Execution]]).
+The chat draws full screen by default, and the TUI owns the scroll:
+
+| Key | Action |
+|-----|--------|
+| `PageUp` / `PageDown`, mouse wheel | Scroll the transcript. A scroll to the bottom follows new text again. |
+| Drag, double click, triple click | Select text, a word or a line. The button release copies the selection. |
+| `Esc` | Clear the selection. |
+| `F2` | Turn mouse capture off and on. With capture off, the terminal selects text. |
+| `F3` | Print the finished transcript into the terminal scrollback. |
+
+On exit, the TUI prints the transcript to the main screen. See
+[[Help/CLI/chat#Display]] for the copy paths.
+
+With `cru chat --inline` (or `cli.screen = "inline"`), completed content
+graduates to the terminal's own scrollback, and the live viewport stays small.
+To review history, use the native scroll of the terminal (mouse wheel,
+`Shift+PageUp`, tmux copy mode). The TUI does not capture the mouse, so the
+terminal selects and copies text. `PageUp`/`PageDown` are not bound in the
+inline chat view (the shell modal and pager modals bind them — see
+[[Help/TUI/Shell Execution]]).
 
 ## Mode Switching
 

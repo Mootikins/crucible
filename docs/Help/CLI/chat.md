@@ -157,13 +157,7 @@ cru chat --standalone
 
 ### Display
 
-#### `--fullscreen`
-
-Draw the chat on the alternate screen. This mode is a prototype. The default mode prints the chat into the main screen, and the terminal scrolls it. In this mode, the TUI scrolls, selects and copies. On exit, the TUI prints the transcript to the main screen, so the session stays in the terminal scrollback.
-
-```bash
-cru chat --fullscreen
-```
+The chat draws full screen, on the alternate screen. The TUI scrolls, selects and copies. On exit, the TUI prints the transcript to the main screen, so the session stays in the terminal scrollback.
 
 | Key | Action |
 |-----|--------|
@@ -174,6 +168,24 @@ cru chat --fullscreen
 | `F3` | Print the finished transcript into the terminal scrollback. |
 
 The copy goes through OSC 52 first. Outside SSH, it also goes to the native clipboard. Inside tmux, it also goes to the tmux buffer.
+
+The full-screen mode has no search yet. To search, press `F3` and use the search of the terminal, or use `--inline`. With a long transcript, a change of the terminal width can take a short time to draw.
+
+#### `--inline`
+
+Draw the chat on the main screen for this run. The chat then prints into the terminal, and the terminal owns the scroll, the selection and the scrollback. The TUI does not capture the mouse.
+
+```bash
+cru chat --inline
+```
+
+To make the inline mode the default, set `cli.screen` in the config (see [[Help/Configuration]]):
+
+```lua
+cru.config.set({ cli = { screen = "inline" } })
+```
+
+The chat also uses the inline mode when stdout is not a terminal. The setup prompts (the first-run wizard, the kiln prompt and `cru init`) always print on the main screen, before the chat starts.
 
 ## Chat Modes
 

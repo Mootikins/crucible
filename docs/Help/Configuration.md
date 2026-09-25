@@ -279,16 +279,18 @@ cru.config.set({
 
 The removed fields `show_progress`, `confirm_destructive` and `verbose`
 still load without an error; the values are ignored. Verbosity comes from
-the `-v` CLI flag. The one `cli` feature is syntax highlighting:
+the `-v` CLI flag. These keys are display settings of the terminal client.
+Only the terminal client uses them; they are not session state:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `highlighting.enabled` | bool | `true` | Enable syntax highlighting |
 | `highlighting.theme` | string | `"base16-ocean.dark"` | Syntect theme name |
+| `screen` | string | `"fullscreen"` | Where the chat TUI draws: `"fullscreen"` (the alternate screen) or `"inline"` (the main screen and the terminal scrollback). `cru chat --inline` selects `"inline"` for one run. See [[Help/CLI/chat#Display]] |
 
 ```lua
 cru.config.set({
-  cli = { highlighting = { theme = "base16-ocean.dark" } },
+  cli = { highlighting = { theme = "base16-ocean.dark" }, screen = "inline" },
 })
 ```
 

@@ -208,6 +208,9 @@ cru.config.set({
             enabled = true,
             theme = "base16-ocean.dark",
         },
+        -- Where the chat TUI draws: "fullscreen" (the alternate screen) or
+        -- "inline" (the main screen). `cru chat --inline` overrides it.
+        screen = "fullscreen",
     },
 
     -- =========================================================================

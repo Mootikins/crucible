@@ -91,7 +91,7 @@ First run prompts for a kiln path and detects available LLM providers. A backgro
 
 ### Agent Chat
 
-Interactive conversations with full session persistence. The TUI supports streaming markdown, tool calls, and multi-turn context. Sessions save under the daemon data root (`~/.crucible/sessions/`) and carry a flat set of attached kilns as their knowledge scope.
+Interactive conversations with full session persistence. The TUI supports streaming markdown, tool calls, and multi-turn context. It draws full screen, with mouse selection and copy; `cru chat --inline` keeps the chat in the terminal scrollback. Sessions save under the daemon data root (`~/.crucible/sessions/`) and carry a flat set of attached kilns as their knowledge scope.
 
 ### Knowledge Graph
 
