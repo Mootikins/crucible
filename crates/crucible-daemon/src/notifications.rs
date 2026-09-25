@@ -130,7 +130,24 @@ impl NotificationHub {
     /// live session. Returns the notification as stored.
     pub fn add(&self, request: NotifyRequest) -> Result<Notification> {
         let scope = self.resolve_scope(&request);
-        let notification = request.notification.with_scope(scope).with_created_now();
+        self.insert(request.notification.with_scope(scope))
+    }
+
+    /// Store `notification` for the session `session_id` alone, and tell
+    /// only that session.
+    pub fn add_for_session(
+        &self,
+        session_id: &str,
+        notification: Notification,
+    ) -> Result<Notification> {
+        self.insert(notification.with_scope(NotificationScope {
+            session: Some(session_id.to_string()),
+            ..NotificationScope::default()
+        }))
+    }
+
+    fn insert(&self, notification: Notification) -> Result<Notification> {
+        let notification = notification.with_created_now();
         let stored = notification.clone();
         self.store
             .update(move |file| {
@@ -141,20 +158,6 @@ impl NotificationHub {
             .context("failed to store the notification")?;
         self.fan_out(&stored);
         Ok(stored)
-    }
-
-    /// [`Self::add`] with the scope of the session `session_id`.
-    pub fn add_for_session(
-        &self,
-        session_id: &str,
-        notification: Notification,
-    ) -> Result<Notification> {
-        self.add(NotifyRequest {
-            notification,
-            session_id: Some(session_id.to_string()),
-            workspace: None,
-            kiln: None,
-        })
     }
 
     /// The ring, newest first. Without `all`, only what a client with
@@ -224,7 +227,7 @@ impl NotificationHub {
     fn resolve_scope(&self, request: &NotifyRequest) -> NotificationScope {
         let mut scope = NotificationScope {
             workspace: request.workspace.as_deref().map(canonical),
-            kilns: Vec::new(),
+            ..NotificationScope::default()
         };
         if let Some(kiln) = &request.kiln {
             match KilnName::parse(kiln) {
@@ -247,6 +250,7 @@ impl NotificationHub {
         NotificationScope {
             workspace: session.workspace.as_deref().map(canonical),
             kilns: session.kilns,
+            session: None,
         }
     }
 
@@ -257,6 +261,13 @@ impl NotificationHub {
             "notification_id": notification.id,
             "notification": notification,
         });
+        if let Some(session_id) = &notification.scope.session {
+            emit_event(
+                &self.event_tx,
+                SessionEventMessage::new(session_id.as_str(), "notification_added", data),
+            );
+            return;
+        }
         if notification.scope.is_global() {
             emit_event(
                 &self.event_tx,
@@ -483,6 +494,27 @@ mod tests {
             stored.scope.workspace.as_deref(),
             Some(f.workspace_a.as_path())
         );
+    }
+
+    /// A session notification stays in its session, even when the session
+    /// has no workspace and no kiln that could scope it.
+    #[tokio::test]
+    async fn a_session_notification_reaches_only_its_session() {
+        let mut f = fixture();
+        let c = Session::new(SessionType::Chat, vec![]);
+        let d = Session::new(SessionType::Chat, vec![]);
+        let session_c = c.id.to_string();
+        f.sessions.register_transient(c);
+        f.sessions.register_transient(d);
+
+        f.hub
+            .add_for_session(&session_c, Notification::warning("p"))
+            .unwrap();
+
+        let events = drain(&mut f.events);
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0].session_id, session_c);
+        assert_eq!(events[0].event, "notification_added");
     }
 
     #[tokio::test]

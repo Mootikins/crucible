@@ -24,7 +24,8 @@ pub struct Notification {
     pub created_at: Option<DateTime<Utc>>,
 }
 
-/// Who may see a notification. Empty means everyone.
+/// Who may see a notification. Empty means everyone. A session scope
+/// wins over the other two: only that session sees the notification.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NotificationScope {
     /// The canonical workspace path, when the notification belongs to one.
@@ -33,17 +34,26 @@ pub struct NotificationScope {
     /// The kilns it belongs to, when any.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kilns: Vec<crate::config::KilnName>,
+    /// The one session it belongs to, when the engine reported it for that
+    /// session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
 
 impl NotificationScope {
     /// True when no workspace and no kiln limit who sees the notification.
     pub fn is_global(&self) -> bool {
-        self.workspace.is_none() && self.kilns.is_empty()
+        self.workspace.is_none() && self.kilns.is_empty() && self.session.is_none()
     }
 
     /// True when a session with `workspace` and `kilns` may see it. The
     /// daemon canonicalizes both sides before it stores or compares a path.
+    /// A session notification matches no workspace or kiln: only its own
+    /// session sees it.
     pub fn matches(&self, workspace: Option<&Path>, kilns: &[crate::config::KilnName]) -> bool {
+        if self.session.is_some() {
+            return false;
+        }
         if self.is_global() {
             return true;
         }
@@ -260,6 +270,7 @@ mod tests {
         let scope = NotificationScope {
             workspace: Some(std::path::PathBuf::from("/w/a")),
             kilns: vec!["notes".parse().unwrap()],
+            session: None,
         };
         let n = Notification::toast("hi").with_scope(scope.clone());
         let back: Notification = serde_json::from_str(&serde_json::to_string(&n).unwrap()).unwrap();
