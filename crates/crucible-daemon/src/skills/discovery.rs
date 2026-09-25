@@ -4,8 +4,9 @@ use crate::skills::error::{SkillError, SkillResult};
 use crate::skills::parser::SkillParser;
 use crate::skills::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 use crucible_core::runtime_path::{
-    build_path, search_paths, Origin, PathInputs, RuntimeAsset, RuntimeEntry,
+    build_path, search_sources, Origin, PathInputs, PriorityLevel, RuntimeAsset, RuntimeEntry,
 };
+use crucible_core::sources::{listing, sources_new, Entry, Source};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -19,22 +20,36 @@ use tracing::{debug, warn};
 /// reasonable human-authored skill and still bounded.
 const SKILL_MAX_BYTES: u64 = 256 * 1024;
 
-/// A search path with its scope/priority
+/// A skill directory: one source of skills (see `crucible_core::sources`).
 #[derive(Debug, Clone)]
 pub struct SearchPath {
     pub path: PathBuf,
     pub scope: SkillScope,
     pub agent: Option<String>,
+    /// The source name: the prefix of each full name.
     pub namespace: String,
+    /// A higher priority wins a bare name.
+    pub priority: i32,
+    /// The position inside one priority.
+    pub within: u8,
 }
 
 impl SearchPath {
+    /// A directory at the default priority of `scope`'s level.
     pub fn new(path: PathBuf, scope: SkillScope) -> Self {
+        let level = match scope {
+            SkillScope::Builtin => PriorityLevel::Builtin,
+            SkillScope::Personal => PriorityLevel::Personal,
+            SkillScope::Workspace => PriorityLevel::Workspace,
+            SkillScope::Kiln => PriorityLevel::Kiln,
+        };
         Self {
             path,
             scope,
             agent: None,
             namespace: scope.to_string(),
+            priority: level.default_priority(),
+            within: 0,
         }
     }
 
@@ -62,12 +77,8 @@ pub struct FolderDiscovery {
 }
 
 impl FolderDiscovery {
-    /// `search_paths` is taken in the order given, **highest priority first**.
-    ///
-    /// It used to be sorted by `SkillScope` here, which made vector position
-    /// meaningless and forced `runtime_skill_paths` to walk its roots in
-    /// reverse to compensate. Position is precedence now, as it is for
-    /// plugins, cards, themes and defaults.
+    /// Each search path is a source. Its priority, not its position, decides
+    /// which skill takes a bare name.
     pub fn new(search_paths: Vec<SearchPath>) -> Self {
         Self {
             search_paths,
@@ -89,41 +100,67 @@ impl FolderDiscovery {
         Self::new(paths)
     }
 
+    /// Every skill, keyed by the name it is listed under.
+    ///
+    /// The skill of the highest source takes the bare name, and its
+    /// `shadowed` names the other skills of that name. Every other skill
+    /// takes its full name `source:name`. Two skills of one name at one
+    /// priority both take full names, so the bare name is ambiguous.
     pub fn discover(&self) -> SkillResult<HashMap<String, ResolvedSkill>> {
-        let mut discovered = Vec::new();
+        let sources = sources_new(
+            self.search_paths
+                .iter()
+                .map(|path| Source {
+                    name: path.namespace.clone(),
+                    priority: path.priority,
+                    within: path.within,
+                    value: path,
+                })
+                .collect(),
+        )
+        .map_err(|e| SkillError::DiscoveryError(e.to_string()))?;
 
-        for search_path in &self.search_paths {
-            if !search_path.path.exists() {
-                debug!("Skipping non-existent path: {:?}", search_path.path);
+        let mut entries: Vec<Entry<Skill>> = Vec::new();
+        for (index, source) in sources.list().iter().enumerate() {
+            if !source.value.path.exists() {
+                debug!("Skipping non-existent path: {:?}", source.value.path);
                 continue;
             }
+            for skill in self.discover_in_path(source.value)? {
+                // One name twice in one directory is the directory's defect,
+                // not a tie between sources.
+                if entries
+                    .iter()
+                    .any(|e| e.source == index && e.name == skill.name)
+                {
+                    warn!(path = %skill.source.path.display(), "Second skill of one name skipped");
+                    continue;
+                }
+                entries.push(Entry {
+                    source: index,
+                    name: skill.name.clone(),
+                    value: skill,
+                });
+            }
+        }
 
-            for skill in self.discover_in_path(search_path)? {
-                discovered.push(skill);
-            }
-        }
-        let mut counts = HashMap::new();
-        for skill in &discovered {
-            *counts.entry(skill.name.clone()).or_insert(0usize) += 1;
-        }
         let mut resolved = HashMap::new();
-        for skill in discovered {
-            let key = if counts[&skill.name] == 1 {
-                skill.name.clone()
+        for (key, index) in listing(&sources, &entries) {
+            let entry = &entries[index];
+            let shadowed = if key == entry.name {
+                entries
+                    .iter()
+                    .filter(|other| other.name == entry.name && !std::ptr::eq(*other, entry))
+                    .map(|other| other.value.source.path.clone())
+                    .collect()
             } else {
-                format!("{}:{}", skill.source.namespace, skill.name)
+                Vec::new()
             };
-            let mut key = key;
-            let mut suffix = 2;
-            while resolved.contains_key(&key) {
-                key = format!("{}-{}:{}", skill.source.namespace, suffix, skill.name);
-                suffix += 1;
-            }
             resolved.insert(
                 key,
                 ResolvedSkill {
-                    skill,
-                    shadowed: vec![],
+                    skill: entry.value.clone(),
+                    shadowed,
                 },
             );
         }
@@ -324,21 +361,23 @@ pub fn default_discovery_paths_from(
         ..PathInputs::default()
     });
 
-    search_paths(RuntimeAsset::Skills, &path)
-        .into_iter()
-        .map(|c| {
-            let namespace = match c.origin {
-                Origin::Plugin => c
-                    .path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "plugin".into()),
-                _ => scope_for(c.origin).to_string(),
-            };
-            SearchPath::new(c.path, scope_for(c.origin))
-                .with_agent_opt(c.harness)
-                .with_namespace(namespace)
+    let sources = match search_sources(RuntimeAsset::Skills, &path) {
+        Ok(sources) => sources,
+        Err(error) => {
+            warn!(%error, "Skill directories are invalid; no skills load");
+            return Vec::new();
+        }
+    };
+    sources
+        .list()
+        .iter()
+        .map(|source| SearchPath {
+            path: source.value.path.clone(),
+            scope: scope_for(source.value.origin),
+            agent: source.value.harness.clone(),
+            namespace: source.name.clone(),
+            priority: source.priority,
+            within: source.within,
         })
         .collect()
 }
@@ -398,6 +437,7 @@ fn scope_for(origin: Origin) -> SkillScope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::runtime_path::search_paths;
 
     /// The skill directories of `roots` alone, through the real resolver.
     ///
@@ -593,6 +633,37 @@ mod tests {
         );
     }
 
+    /// A bare skill name goes to the highest source, and that skill names
+    /// the skills it shadows. Each full name still reaches its own skill.
+    #[test]
+    fn the_bare_skill_name_goes_to_the_highest_source() {
+        let tmp = TempDir::new().unwrap();
+        let personal = tmp.path().join("personal");
+        let workspace = tmp.path().join("workspace");
+        write_skill(&personal, "commit", "Personal style");
+        write_skill(&workspace, "commit", "Workspace style");
+        let found = FolderDiscovery::new(vec![
+            SearchPath::new(workspace.clone(), SkillScope::Workspace),
+            SearchPath::new(personal, SkillScope::Personal),
+        ])
+        .discover()
+        .unwrap();
+        let bare = resolve_skill(&found, "commit").unwrap().unwrap();
+        assert_eq!(bare.skill.description, "Personal style");
+        assert_eq!(
+            bare.shadowed,
+            vec![workspace.join("commit").join("SKILL.md")]
+        );
+        assert_eq!(
+            resolve_skill(&found, "workspace:commit")
+                .unwrap()
+                .unwrap()
+                .skill
+                .description,
+            "Workspace style"
+        );
+    }
+
     #[test]
     fn discover_single_skill() {
         let tmp = TempDir::new().unwrap();
@@ -660,12 +731,9 @@ mod tests {
         let commit = &resolved["workspace:commit"];
         assert_eq!(commit.skill.description, "Workspace commit style");
         assert_eq!(
-            resolved["personal:commit"].skill.description,
-            "Personal commit style"
+            resolved["commit"].skill.description, "Personal commit style",
+            "personal is above workspace, so it takes the bare name"
         );
-        assert!(resolve_skill(&resolved, "commit")
-            .unwrap_err()
-            .contains("workspace:commit"));
         assert_eq!(
             resolve_skill(&resolved, "workspace:commit")
                 .unwrap()
@@ -696,10 +764,15 @@ mod tests {
             found["workspace:commit"].skill.description,
             "Workspace style"
         );
-        assert_eq!(found["personal:commit"].skill.description, "Personal style");
-        assert!(resolve_skill(&found, "commit")
-            .unwrap_err()
-            .contains("personal:commit"));
+        assert_eq!(found["commit"].skill.description, "Personal style");
+        assert_eq!(
+            resolve_skill(&found, "personal:commit")
+                .unwrap()
+                .unwrap()
+                .skill
+                .description,
+            "Personal style"
+        );
     }
 
     #[test]
@@ -759,8 +832,16 @@ mod tests {
         let resolved = discovery.discover().unwrap();
 
         assert_eq!(
-            resolved["kiln:review"].skill.description, "Kiln review",
-            "the kiln's own skill remains available"
+            resolved["review"].skill.description, "Kiln review",
+            "the kiln's own skill takes the bare name"
+        );
+        assert_eq!(
+            resolve_skill(&resolved, "kiln:review")
+                .unwrap()
+                .unwrap()
+                .skill
+                .description,
+            "Kiln review"
         );
         assert_eq!(
             resolved["builtin:review"].skill.description,

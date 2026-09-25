@@ -102,27 +102,22 @@ This is the core design principle. Skills avoid dumping everything into the agen
 
 ## Discovery
 
-Crucible resolves skills over **one ordered root list** — the runtimepath —
-and takes the first match. Every asset kind (skills, agent cards, plugins,
-themes) uses the same list, so adding a directory once makes all of them
-visible.
+Crucible resolves skills over the same roots as every other asset kind
+(skills, agent cards, plugins, themes). Each root is a **source** with a name
+and a priority. A higher priority wins.
 
-| Root | Reported scope |
-|------|----------------|
-| `<workspace>/.crucible/`, `.agents/`, `.claude/`, `.codex/`, `.opencode/` | Workspace |
-| `<kiln>/.crucible/` | Kiln |
-| each `runtimepath` entry, in the order you wrote it | Personal |
-| each `[harnesses]` row you enabled | Personal |
-| `~/.config/crucible/` | Personal |
-| `~/.config/crucible/runtime/` (what `cru setup` writes) | Builtin |
-| a loaded plugin's own directory | Builtin |
-| the tree shipped inside the binary | Builtin |
+| Root | Source name | Priority | Reported scope |
+|------|-------------|----------|----------------|
+| `~/.config/crucible/` | `personal` | 900 | Personal |
+| `<workspace>/.crucible/` | `workspace` | 800 | Workspace |
+| `<workspace>/.agents/`, `.claude/`, `.codex/`, `.opencode/` | `workspace-agents`, ... | 790 | Workspace |
+| `<kiln>/.crucible/` | `kiln` | 700 | Kiln |
+| each `[harnesses]` row you enabled | the row name | 500 | Personal |
+| `~/.config/crucible/runtime/` (what `cru setup` writes) | `runtime` | 300 | Builtin |
+| a loaded plugin's own directory | the plugin name | 200 | Builtin |
+| the tree shipped inside the binary | `builtin` | 100 | Builtin |
 
 Each root's `skills/` subdirectory is searched for `*/SKILL.md`.
-
-A kiln outranks a workspace **for skills** — a kiln is where knowledge lives,
-so its skills are the most specific. Agent cards run the other way. That
-difference is deliberate and recorded in `RuntimeAsset::kiln_outranks_workspace`.
 
 Every auto-detected directory is a dot-directory. A kiln you cloned or synced
 must not be able to put text into an agent's system prompt just by containing
@@ -169,9 +164,16 @@ named yourself, so they never shadow your own.
 
 ### Priority and Shadowing
 
-When the same skill name appears in multiple scopes, the higher-priority scope wins. A workspace skill named `commit` shadows a personal skill with the same name. A kiln-scoped skill shadows both.
+When the same skill name appears in more than one source, the bare name goes
+to the source with the highest priority. A personal skill named `commit`
+shadows a workspace skill with the same name, and a workspace skill shadows a
+kiln skill.
 
-Shadowed skills are tracked but not loaded. You can see what's shadowed with `cru skills list`.
+Every skill also keeps its full name `source:name`, such as
+`workspace:commit`, and a full name always works. Two skills of one name in
+two sources at the same priority are ambiguous: the bare name returns an
+error that lists the full names. `cru skills list` shows the full name of each
+shadowed skill, and the count of skills that each winner shadows.
 
 ### Content Hashing
 

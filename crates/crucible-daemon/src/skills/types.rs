@@ -79,7 +79,8 @@ pub struct Skill {
 pub struct ResolvedSkill {
     /// The discovered skill
     pub skill: Skill,
-    /// Legacy field retained for wire compatibility; name collisions no longer shadow.
+    /// The `SKILL.md` of each lower skill of the same name. Filled only for
+    /// the skill that takes the bare name.
     pub shadowed: Vec<PathBuf>,
 }
 

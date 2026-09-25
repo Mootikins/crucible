@@ -50,8 +50,8 @@ fn test_same_name_keeps_both_scopes() {
     create_test_skill(personal_dir.path(), "shared-skill");
     create_test_skill(kiln_dir.path(), "shared-skill");
 
-    // Highest priority first: the paths are taken in the order given now,
-    // and the first match wins.
+    // Priority decides, not the order given: personal (900) is above kiln
+    // (700), so the personal skill takes the bare name.
     let discovery = FolderDiscovery::new(vec![
         SearchPath::new(kiln_dir.path().to_path_buf(), SkillScope::Kiln),
         SearchPath::new(personal_dir.path().to_path_buf(), SkillScope::Personal),
@@ -67,7 +67,11 @@ fn test_same_name_keeps_both_scopes() {
         SkillScope::Kiln,
         "Kiln skill should remain available"
     );
-    assert!(discovered.contains_key("personal:shared-skill"));
+    assert_eq!(
+        discovered["shared-skill"].skill.source.scope,
+        SkillScope::Personal,
+        "the personal skill takes the bare name"
+    );
 }
 
 #[test]

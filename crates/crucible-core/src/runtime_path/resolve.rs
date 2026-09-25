@@ -1,7 +1,7 @@
 //! Joining the asset table to the path: `search_paths`.
 
 use super::asset::RuntimeAsset;
-use super::entry::{EntryKind, Origin, RuntimeEntry, SearchPath};
+use super::entry::{EntryKind, RuntimeEntry, SearchPath};
 use crate::sources::{sources_new, Source, Sources, SourcesError};
 
 /// Every candidate directory for `asset`, highest priority first.
@@ -28,20 +28,7 @@ use crate::sources::{sources_new, Source, Sources, SourcesError};
 /// leaf belonging to a different asset. Both are containment, not tidiness:
 /// the origin check is what keeps a cloned kiln from becoming a plugin root.
 pub fn search_paths(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<SearchPath> {
-    // Skills rank a kiln above a workspace; cards rank a workspace above a
-    // kiln. See `RuntimeAsset::kiln_outranks_workspace` for why that is
-    // preserved rather than unified.
-    let mut ordered: Vec<&RuntimeEntry> = path.iter().collect();
-    if asset.kiln_outranks_workspace() {
-        ordered.sort_by_key(|e| match e.origin {
-            Origin::Workspace => Origin::Kiln,
-            Origin::Kiln => Origin::Workspace,
-            other => other,
-        });
-    }
-
-    ordered
-        .into_iter()
+    path.iter()
         .filter(|entry| asset.reaches(entry.origin))
         .filter_map(|entry| {
             let dir = match &entry.kind {
@@ -95,8 +82,30 @@ pub fn search_sources(
                 rank,
             },
         })
+        .collect::<Vec<Source<SearchPath>>>();
+    sources_new(drop_repeated_directories(list))
+}
+
+/// Keep one source per directory: the higher one.
+///
+/// A kiln that is also the workspace, or `~/.config/crucible` on
+/// `runtimepath`, would otherwise offer each entry twice. The paths are
+/// compared as written; nothing here reads the filesystem.
+fn drop_repeated_directories(list: Vec<Source<SearchPath>>) -> Vec<Source<SearchPath>> {
+    let rank = |i: usize, s: &Source<SearchPath>| (std::cmp::Reverse(s.priority), s.within, i);
+    let keep: Vec<bool> = list
+        .iter()
+        .enumerate()
+        .map(|(i, source)| {
+            !list.iter().enumerate().any(|(j, other)| {
+                other.value.path == source.value.path && rank(j, other) < rank(i, source)
+            })
+        })
         .collect();
-    sources_new(list)
+    list.into_iter()
+        .zip(keep)
+        .filter_map(|(source, keep)| keep.then_some(source))
+        .collect()
 }
 
 #[cfg(test)]
@@ -235,5 +244,17 @@ mod tests {
         let names: Vec<&str> = themes.list().iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["personal", "builtin"]);
         assert_eq!(themes.list()[0].value.path, PathBuf::from("/user/themes"));
+    }
+
+    /// A directory on the path twice is one source, the higher one.
+    #[test]
+    fn a_directory_on_the_path_twice_is_one_source() {
+        let path = vec![
+            RuntimeEntry::root("/k/.crucible", Origin::Kiln),
+            RuntimeEntry::root("/k/.crucible", Origin::Workspace),
+        ];
+        let skills = search_sources(RuntimeAsset::Skills, &path).unwrap();
+        let names: Vec<&str> = skills.list().iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["workspace"]);
     }
 }
