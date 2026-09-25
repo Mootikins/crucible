@@ -111,7 +111,7 @@ and a priority. A higher priority wins.
 | `~/.config/crucible/` | `personal` | 900 | Personal |
 | `<workspace>/.crucible/` | `workspace` | 800 | Workspace |
 | `<workspace>/.agents/`, `.claude/`, `.codex/`, `.opencode/` | `workspace-agents`, ... | 790 | Workspace |
-| `<kiln>/.crucible/` | `kiln` | 700 | Kiln |
+| `<kiln>/.crucible/` for each attached kiln | the kiln name | 700 | Kiln |
 | each `runtimepath` entry, in the order you wrote it | `config-1`, `config-2`, ... | 600, 599, ... | Personal |
 | each `[harnesses]` row you enabled | the row name | 500 | Personal |
 | `~/.config/crucible/runtime/` (what `cru setup` writes) | `runtime` | 300 | Builtin |

@@ -41,7 +41,8 @@ before you share it in a kiln. The order is, highest first:
 2. `~/.config/crucible/agents/`, with the full name `personal:`
 3. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo),
    with the full name `workspace:`
-4. `KILN/.crucible/agents/` — kiln-scoped cards, with the full name `kiln:`
+4. `KILN/.crucible/agents/` — kiln-scoped cards, with the kiln's name as
+   the full name prefix, such as `notes:`
 5. `ENTRY/agents/` for each `runtimepath` entry, with the full name
    `config-1:`, `config-2:` and so on
 6. `PLUGIN/agents/` for each active plugin, with the plugin name as the full
@@ -50,7 +51,7 @@ before you share it in a kiln. The order is, highest first:
 A bare name resolves to the card of the highest source that has it, in
 `cru session create --agent`, in delegation and in `cru agents show`. Every
 card also keeps its full name `source:name`, such as `personal:researcher` or
-`kiln:researcher`, and a full name always works. Two cards of one name in two
+`notes:researcher`, and a full name always works. Two cards of one name in two
 sources at the same priority are ambiguous: the bare name returns an error
 that lists the full names. Two `agent_directories` entries have the same
 priority. The personal sources have a fixed order, so a card in an

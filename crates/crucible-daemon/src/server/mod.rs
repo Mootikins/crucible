@@ -288,6 +288,9 @@ impl Server {
             crate::kiln_registry::KilnRegistryContext::for_daemon(data_home.clone()),
             params.app_config.as_ref(),
         )?);
+        // Each attached kiln is a source of cards and skills under its
+        // registered name.
+        source_roots.kiln_registry = Some(kiln_registry.clone());
 
         // The state layer, under the config layer. `kilns.json` holds what the
         // daemon was TOLD; the config holds what the user AUTHORED, and the

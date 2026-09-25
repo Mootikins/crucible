@@ -11,7 +11,7 @@
 //! `runtime_skill_paths` and `defaults_candidates_from` were each split out to
 //! end.
 
-use crucible_core::runtime_path::{build_path, PathInputs, RuntimeEntry};
+use crucible_core::runtime_path::{build_path, KilnRoot, PathInputs, RuntimeEntry};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -80,6 +80,10 @@ pub struct SourceRoots {
     /// cards and themes at priority 200. [`crate::plugin_tools::PluginRegistry`]
     /// owns the list; this is a handle to it.
     pub plugin_dirs: ActivePluginDirs,
+    /// The kiln registry, which names each attached kiln. `None` (tests, a
+    /// caller with no registry) names the kilns `kiln`, `kiln-2`, ... by
+    /// attach order.
+    pub kiln_registry: Option<std::sync::Arc<crate::kiln_registry::KilnRegistry>>,
 }
 
 /// The directories of the active plugins, by plugin name.
@@ -154,7 +158,30 @@ impl SourceRoots {
             agent_directories: paths("agent_directories"),
             runtimepath: paths("runtimepath"),
             plugin_dirs: ActivePluginDirs::default(),
+            kiln_registry: None,
         }
+    }
+
+    /// The attached kilns as sources: each takes its registered name. A kiln
+    /// the registry does not know takes `kiln`, then `kiln-2`, ... by attach
+    /// order.
+    pub fn kiln_roots(&self, kilns: &[PathBuf]) -> Vec<KilnRoot> {
+        kilns
+            .iter()
+            .enumerate()
+            .map(|(index, path)| {
+                let registered = self
+                    .kiln_registry
+                    .as_ref()
+                    .and_then(|registry| registry.name_for(path));
+                let name = match registered {
+                    Some(name) => name.to_string(),
+                    None if index == 0 => "kiln".to_string(),
+                    None => format!("kiln-{}", index + 1),
+                };
+                KilnRoot::new(name, path.clone())
+            })
+            .collect()
     }
 }
 
@@ -220,5 +247,28 @@ mod tests {
 
         let roots = SourceRoots::from_app_config(None, None, Some(home));
         assert!(roots.agent_directories.is_empty());
+    }
+
+    /// A registered kiln is a source under its registered name. A kiln the
+    /// registry does not know takes a name by attach order.
+    #[test]
+    fn a_registered_kiln_takes_its_registered_name() {
+        let data = tempfile::TempDir::new().unwrap();
+        let config = serde_json::json!({ "kilns": { "notes": "/k/notes" } });
+        let registry = crate::kiln_registry::KilnRegistry::from_app_config(
+            crate::kiln_registry::KilnRegistryContext::for_daemon(data.path().to_path_buf()),
+            Some(&config),
+        )
+        .unwrap();
+        let roots = SourceRoots {
+            kiln_registry: Some(std::sync::Arc::new(registry)),
+            ..SourceRoots::default()
+        };
+        let named: Vec<String> = roots
+            .kiln_roots(&[PathBuf::from("/k/notes"), PathBuf::from("/k/other")])
+            .into_iter()
+            .map(|k| k.name)
+            .collect();
+        assert_eq!(named, ["notes", "kiln-2"]);
     }
 }

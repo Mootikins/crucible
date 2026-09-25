@@ -1850,6 +1850,7 @@ mod acp_permission_handler_tests {
                     agent_directories: Vec::new(),
                     runtimepath: Vec::new(),
                     plugin_dirs: Default::default(),
+                    kiln_registry: None,
                 },
                 review_snapshot_root: crate::test_support::scratch_snapshot_root(),
             },

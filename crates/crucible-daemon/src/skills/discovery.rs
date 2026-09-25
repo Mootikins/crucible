@@ -355,10 +355,11 @@ pub fn default_discovery_paths_from(
     let workspace_roots = workspace_root_names();
     let harnesses = home.map(enabled_harnesses).unwrap_or_default();
 
+    let kiln_roots = roots.kiln_roots(kilns);
     let path = build_path(&PathInputs {
         workspace,
         workspace_roots: &workspace_roots,
-        kilns,
+        kilns: &kiln_roots,
         harnesses: &harnesses,
         config_home: config_home.as_deref(),
         runtimepath: &roots.runtimepath,

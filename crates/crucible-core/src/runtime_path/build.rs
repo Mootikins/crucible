@@ -20,6 +20,33 @@ use std::path::{Path, PathBuf};
 /// default: a row IS the opt-in.
 static NO_HARNESSES: BTreeMap<String, PathBuf> = BTreeMap::new();
 
+/// An attached kiln as a source: its name, its directory and its priority.
+///
+/// The name is the kiln's registered name. The priority comes only from the
+/// user's config (`kilns.<name>.priority`); every other kiln has the level
+/// `kiln`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KilnRoot {
+    pub name: String,
+    pub path: PathBuf,
+    pub priority: i32,
+    /// The position inside one priority. A personal kiln is 0: first in
+    /// level 900.
+    pub within: u8,
+}
+
+impl KilnRoot {
+    /// A kiln at the default priority of the level `kiln`.
+    pub fn new(name: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+        Self {
+            name: name.into(),
+            path: path.into(),
+            priority: super::entry::PriorityLevel::Kiln.default_priority(),
+            within: 0,
+        }
+    }
+}
+
 /// Everything the path is built from.
 ///
 /// Borrowed rather than owned so a caller assembles it from config without
@@ -34,7 +61,7 @@ pub struct PathInputs<'a> {
     pub workspace_roots: &'a [String],
     /// The attached kilns, in attach order. Only `<kiln>/.crucible` is ever a
     /// root; a kiln's visible top level belongs to notes.
-    pub kilns: &'a [PathBuf],
+    pub kilns: &'a [KilnRoot],
     /// `runtimepath` from the config, in the order the user wrote it.
     pub runtimepath: &'a [PathBuf],
     /// `[harnesses]`: name to home root. A row IS the opt-in — an absent row
@@ -100,11 +127,11 @@ pub fn build_path(inputs: &PathInputs<'_>) -> Vec<RuntimeEntry> {
         }
     }
 
-    for (index, kiln) in inputs.kilns.iter().enumerate() {
-        let mut entry = RuntimeEntry::root(kiln.join(".crucible"), Origin::Kiln);
-        if index > 0 {
-            entry.name = format!("kiln-{}", index + 1);
-        }
+    for kiln in inputs.kilns {
+        let mut entry = RuntimeEntry::root(kiln.path.join(".crucible"), Origin::Kiln);
+        entry.name = kiln.name.clone();
+        entry.priority = kiln.priority;
+        entry.within = kiln.within;
         path.push(entry);
     }
 
@@ -205,7 +232,7 @@ mod tests {
     /// layer rather than the table layer.
     #[test]
     fn an_attached_kiln_contributes_no_plugin_or_defaults_directory() {
-        let kiln = PathBuf::from("/k");
+        let kiln = KilnRoot::new("k", "/k");
         let built = build_path(&PathInputs {
             kilns: std::slice::from_ref(&kiln),
             ..inputs()
@@ -336,7 +363,7 @@ mod tests {
     fn every_entry_has_a_distinct_source_name() {
         let env = vec![PathBuf::from("/e1"), PathBuf::from("/e2")];
         let roots = vec![".crucible".to_string(), ".agents".to_string()];
-        let kilns = vec![PathBuf::from("/k1"), PathBuf::from("/k2")];
+        let kilns = vec![KilnRoot::new("notes", "/k1"), KilnRoot::new("team", "/k2")];
         let rtp = vec![PathBuf::from("/r")];
         let dirs = vec![PathBuf::from("/d1"), PathBuf::from("/d2")];
         let config_home = PathBuf::from("/home/u/.config/crucible");
@@ -369,8 +396,8 @@ mod tests {
                 ("env-2", 999, 0),
                 ("workspace", 800, 0),
                 ("workspace-agents", 790, 0),
-                ("kiln", 700, 0),
-                ("kiln-2", 700, 0),
+                ("notes", 700, 0),
+                ("team", 700, 0),
                 ("config-1", 600, 0),
                 ("agent-dir-1", 900, 1),
                 ("agent-dir-2", 900, 1),

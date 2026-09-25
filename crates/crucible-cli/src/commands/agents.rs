@@ -81,7 +81,18 @@ fn source_roots(
     home: Option<&Path>,
 ) -> SourceRoots {
     let app_config = serde_json::to_value(config).ok();
-    SourceRoots::from_app_config(config_home, app_config.as_ref(), home)
+    let mut roots = SourceRoots::from_app_config(config_home, app_config.as_ref(), home);
+    // The daemon names each kiln source by its registered name. The same
+    // registry builder, over the same config, gives the CLI the same names.
+    roots.kiln_registry = crucible_daemon::kiln_registry::KilnRegistry::from_app_config(
+        crucible_daemon::kiln_registry::KilnRegistryContext::for_daemon(
+            crucible_core::config::crucible_home(),
+        ),
+        app_config.as_ref(),
+    )
+    .ok()
+    .map(std::sync::Arc::new);
+    roots
 }
 
 /// The workspace `cru agents` answers for: the current directory, which is
@@ -749,6 +760,10 @@ You are a test agent.
 
         let mut config = test_config(kiln.path().to_path_buf());
         config.agent_directories = vec![shared.path().to_path_buf()];
+        config.kilns.insert(
+            "notes".to_string(),
+            crucible_core::config::KilnEntry::Path(kiln.path().to_path_buf()),
+        );
 
         let cards = load_agent_cards(&config, &no_workspace());
         let description = |name| {
@@ -760,7 +775,11 @@ You are a test agent.
         };
         assert_eq!(description("shared"), "configured version");
         assert_eq!(description("agent-dir-1:shared"), "configured version");
-        assert_eq!(description("kiln:shared"), "kiln version");
+        assert_eq!(
+            description("notes:shared"),
+            "kiln version",
+            "a kiln card's full name uses the registered kiln name"
+        );
     }
 
     /// A card of one name in an `agent_directories` entry and in

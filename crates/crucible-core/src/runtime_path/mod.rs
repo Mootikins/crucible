@@ -21,6 +21,6 @@ pub mod entry;
 pub mod resolve;
 
 pub use asset::{EntryShape, RuntimeAsset};
-pub use build::{build_path, PathInputs};
+pub use build::{build_path, KilnRoot, PathInputs};
 pub use entry::{default_priority, EntryKind, Origin, PriorityLevel, RuntimeEntry, SearchPath};
 pub use resolve::{search_paths, search_sources};
