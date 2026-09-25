@@ -1,6 +1,8 @@
 //! The note tools in a turn whose write mode is `propose`.
 
-use super::super::{CreateNoteParams, NoteWrites, TurnWriteMode, UpdateNoteParams};
+use super::super::{
+    CreateNoteParams, DeleteNoteParams, NoteWrites, TurnWriteMode, UpdateNoteParams,
+};
 use crate::proposals::{proposals_root, ProposalStore};
 use crucible_core::file_write::ExpectedBase;
 use crucible_core::note_edit::disk_hash;
@@ -277,4 +279,25 @@ async fn an_update_after_a_proposed_create_builds_on_the_proposed_note() {
     );
     assert!(write.new_text.contains("# Newer"), "{:?}", write.new_text);
     assert_eq!(write.base, ExpectedBase::Absent);
+}
+
+#[tokio::test]
+async fn delete_note_in_propose_mode_refuses_and_keeps_the_file() {
+    let session = Session::new(SessionType::Chat, vec![]);
+    let f = fixture(&session);
+    std::fs::write(f.kiln.path().join("note.md"), "# Keep").unwrap();
+
+    let error = f
+        .tools
+        .delete_note(Parameters(DeleteNoteParams {
+            path: "note.md".to_string(),
+        }))
+        .await
+        .unwrap_err();
+
+    assert!(
+        error.message.contains("not available in propose mode"),
+        "{error:?}"
+    );
+    assert!(f.kiln.path().join("note.md").exists());
 }

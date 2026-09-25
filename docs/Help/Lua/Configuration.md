@@ -221,8 +221,9 @@ cru.modes.review = {
 
 The `writes` field sets the write mode of a note write. `"apply"`, the
 default, writes the file. `"propose"` adds the write to a proposal, and the
-file does not change until a person accepts it. An ACP agent writes with its
-own tools, so its session always applies.
+file does not change until a person accepts it. In `"propose"` mode,
+`delete_note` refuses and tells the model to ask the user. An ACP agent writes
+with its own tools, so its session always applies.
 
 Declared modes appear in the TUI's `Shift+Tab` cycle and the web mode picker,
 and each gets its own slash command (`/review`). Use a declaration for a static

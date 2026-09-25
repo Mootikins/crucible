@@ -411,6 +411,14 @@ impl NoteTools {
         &self,
         params: Parameters<DeleteNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // A proposal holds new text, not a removal, so a delete cannot wait
+        // for review.
+        if self.proposing().is_some() {
+            return Err(rmcp::ErrorData::invalid_request(
+                "delete_note is not available in propose mode; ask the user to delete the note",
+                None,
+            ));
+        }
         let params = params.0;
         let path = ensure_md_suffix(params.path);
 
