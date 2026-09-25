@@ -33,6 +33,16 @@ The process is invisible. Here's what happens on the first message of a session 
 
 All of this happens in the background. You see a brief notification showing how many notes were found, then the response arrives as usual.
 
+The TUI shows the notes as a block, one note on each line, with the match score rounded to two digits:
+
+```
+precognition pulled 2 notes
+     0.83  Kilns (docs)
+     0.72  Wikilinks
+```
+
+The web shows the same list when you open the "Enriched with" badge on your message.
+
 The retrieved text is marked as an injected message with a `precognition` kind and a `daemon` source. Crucible sends the same tagged text to every agent; providers that accept system messages within a conversation receive it in that role, while Anthropic and ACP agents receive it as user-role prompt text.
 
 If Precognition finds nothing relevant, it stays quiet and your message goes through unchanged.

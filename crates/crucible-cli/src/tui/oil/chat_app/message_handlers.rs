@@ -362,18 +362,7 @@ impl OilChatApp {
             // render as a dim system line above the response (title + score).
             ChatAppMsg::PrecognitionResult { notes_count, notes } => {
                 if notes_count > 0 {
-                    let listing = notes
-                        .iter()
-                        .map(|n| match n.kiln.as_ref() {
-                            Some(kiln) => format!("{} ({}, {})", n.title, kiln, n.score),
-                            None => format!("{} ({})", n.title, n.score),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" · ");
-                    self.add_system_message(format!(
-                        "precognition pulled {notes_count} note{}: {listing}",
-                        if notes_count == 1 { "" } else { "s" }
-                    ));
+                    self.add_system_message(precognition_notice(notes_count, &notes));
                 }
             }
             ChatAppMsg::UndoComplete {
@@ -513,6 +502,29 @@ impl OilChatApp {
         }
         Action::Continue
     }
+}
+
+/// The display text of a precognition result: a count line, then one note
+/// per line.
+///
+/// The score leads each line, so the scores form one column whatever the
+/// title lengths are. The daemon sends the full `f64`, and only this display
+/// rounds it to two digits. The indent matches the kiln banner.
+fn precognition_notice(
+    notes_count: usize,
+    notes: &[crucible_core::traits::chat::PrecognitionNoteInfo],
+) -> String {
+    let mut text = format!(
+        "precognition pulled {notes_count} note{}",
+        if notes_count == 1 { "" } else { "s" }
+    );
+    for note in notes {
+        text.push_str(&format!("\n     {:.2}  {}", note.score, note.title));
+        if let Some(kiln) = note.kiln.as_ref() {
+            text.push_str(&format!(" ({kiln})"));
+        }
+    }
+    text
 }
 
 #[cfg(test)]

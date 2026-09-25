@@ -327,7 +327,7 @@ fn inserting_shell_output_fills_the_composer_and_the_transcript() {
 }
 
 #[test]
-fn precognition_result_renders_as_a_system_line_listing_notes() {
+fn precognition_result_lists_one_note_per_line_with_a_two_digit_score() {
     use crucible_core::traits::chat::PrecognitionNoteInfo;
 
     let mut app = OilChatApp::default();
@@ -337,32 +337,33 @@ fn precognition_result_renders_as_a_system_line_listing_notes() {
             PrecognitionNoteInfo {
                 title: "Kilns".into(),
                 kiln: Some("docs".parse().unwrap()),
-                score: 0.91,
+                score: 0.912_345_678_9,
             },
             PrecognitionNoteInfo {
                 title: "Wikilinks".into(),
                 kiln: None,
-                score: 0.72,
+                score: 0.715_000_1,
             },
         ],
     });
 
-    let nodes = app.container_list().nodes();
-    let last = nodes.last().expect("a node was added");
-    let focus = crucible_oil::focus::FocusContext::default();
-    let ctx = crate::tui::oil::ViewContext::new(&focus);
-    let rendered = crucible_oil::render::render_to_plain_text(&last.render(None, &ctx), 120);
+    let rendered = last_node_text(&app, 120);
+    let lines: Vec<&str> = rendered.lines().map(str::trim_end).collect();
     assert!(
-        rendered.contains("precognition pulled 2 notes"),
-        "count line missing: {rendered}"
+        lines[0].ends_with("precognition pulled 2 notes"),
+        "the count line must stand alone: {rendered}"
     );
     assert!(
-        rendered.contains("Kilns (docs, 0.91)"),
-        "kiln-labelled entry missing: {rendered}"
+        lines.iter().any(|l| l.ends_with("0.91  Kilns (docs)")),
+        "the kiln note needs its own line and a two-digit score: {rendered}"
     );
     assert!(
-        rendered.contains("Wikilinks (0.72)"),
-        "unlabelled entry missing: {rendered}"
+        lines.iter().any(|l| l.ends_with("0.72  Wikilinks")),
+        "the second note needs its own line and a two-digit score: {rendered}"
+    );
+    assert!(
+        !rendered.contains("0.9123") && !rendered.contains("0.7150"),
+        "the display must not print the raw float: {rendered}"
     );
 }
 

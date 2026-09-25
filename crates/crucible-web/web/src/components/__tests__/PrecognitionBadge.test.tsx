@@ -41,4 +41,18 @@ describe('PrecognitionBadge', () => {
     fireEvent.click(screen.getByTestId('precognition-badge-toggle'));
     expect(screen.queryByTestId('precognition-badge-notes')).not.toBeInTheDocument();
   });
+
+  it('lists one note per line with the score rounded to two digits', () => {
+    const notes = [
+      { name: 'Kilns', relevance: 0.8345671234 },
+      { name: 'Wikilinks', relevance: 0.7150001 },
+    ];
+    render(() => <PrecognitionBadge notesCount={2} notes={notes} />);
+    fireEvent.click(screen.getByTestId('precognition-badge-toggle'));
+
+    const rows = screen.getByTestId('precognition-badge-notes').querySelectorAll('li');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toBe('Kilns0.83');
+    expect(rows[1].textContent).toBe('Wikilinks0.72');
+  });
 });

@@ -1,0 +1,16 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/user_story_tests/precognition_tests.rs
+expression: screen
+---
+
+
+
+ * precognition pulled 3 notes                                                  
+     0.83  Kilns (docs)                                                         
+     0.72  Wikilinks                                                            
+     0.50  Help/Concepts/Link Resolution (docs)                                 
+
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ >                                                                              
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ ASK  ...                                                                 — ctx

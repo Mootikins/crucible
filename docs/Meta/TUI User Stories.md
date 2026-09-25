@@ -2,7 +2,7 @@
 title: TUI User Stories
 description: Complete user stories for every implemented TUI feature, with acceptance criteria and test-tier mapping
 tags: [meta, ux, tui, user-stories, testing]
-updated: 2026-09-24
+updated: 2026-09-25
 ---
 
 # TUI User Stories
@@ -120,6 +120,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **As a user**, I set a plugin's turns to `inherit`, `ask` or `stop` in this session from the TUI, as the web settings do, and I read the value that the daemon holds.
 **Acceptance:** `:set plugin_approval.<plugin>=inherit|ask|stop` calls the session's `set_plugin_approval` on the daemon handle; `:set plugin_approval.<plugin>?` shows the value that the handle reads, which a resume loads from the daemon; the TUI keeps no copy of the value; another value warns and calls nothing. The web settings select reads the value again on `plugin_approval_changed`.
 **Tests:** T1 `chat_runner/tests/knob_rpc.rs::{interactive_set_knob_reaches_matching_rpc::plugin_approval, plugin_approval_is_set_and_read_through_the_handle, an_unknown_plugin_approval_is_refused}`. T2 `user_story_tests/clear_tests.rs::an_unknown_plugin_approval_warns`. Web: `routes/__tests__/session.test.ts` "invalidates the plugin approvals when the daemon changes one". Daemon: `rpc_integration/models.rs::plugin_approval_round_trips_over_socket_and_on_attach`. Web: `chatEventReducer.test.ts` "turn_finished: a failed turn shows its error" and "a turn that a handler cancelled shows its reason". Daemon: `agent_manager/tests/turn_finished.rs`.
+
+### US-209: The precognition notice lists the notes it pulled
+**As a user**, when precognition adds notes to my first message, I read which notes it took and how well each one matched, one note per line.
+**Acceptance:** the notice starts with a count line (`precognition pulled 3 notes`); each note follows on its own line as the score with two digits, the title, and the kiln name in brackets when the daemon sends one; the scores form one column; the raw `f64` never shows. The daemon sends the full score, and only the display rounds it. The text for the model is separate and does not change: the Lua default in `runtime/defaults/init.luau` gives a whole percentage, and the Rust fallback already rounds to two digits. The web badge lists the same notes, one per row, with the same rounding.
+**Tests:** T1 `chat_app/tests.rs::precognition_result_lists_one_note_per_line_with_a_two_digit_score`; T2 `user_story_tests/precognition_tests.rs`, which drives the wire event through `session_event_to_chat_msgs` and snapshots the frame. Web: `PrecognitionBadge.test.tsx` "lists one note per line with the score rounded to two digits".
 
 ## 3. Tools, Subagents & MCP
 
