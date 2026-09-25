@@ -78,10 +78,12 @@ fn the_tui_chooses_the_glyph_for_a_declared_mark() {
 /// them.
 ///
 /// Note what this cannot check. `Vt100TestRuntime::render_frame` calls the inline
-/// render path, while production switches to `Terminal::render_fullscreen` via
-/// `has_fullscreen_modal`. So the fullscreen *switch* is a T1 assertion
+/// render path, while the inline runner switches to `Terminal::render_fullscreen`
+/// via `has_fullscreen_modal`. So that switch is a T1 assertion
 /// (`a_loaded_surface_opens_full_screen`), not something any T2 frame here can
-/// see — the shell modal has the same blind spot.
+/// see — the shell modal has the same blind spot. The default full-screen mode
+/// draws the surface through `FullscreenView::frame`; its T2 frame is
+/// `fullscreen_tests::a_surface_is_the_whole_full_screen_frame`.
 #[test]
 fn the_surface_tree_is_the_whole_frame() {
     let mut story = StoryRuntime::new(80, 24);

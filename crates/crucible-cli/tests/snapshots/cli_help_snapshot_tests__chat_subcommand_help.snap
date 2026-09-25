@@ -70,8 +70,8 @@ Options:
       --replay-auto-exit [<DELAY_MS>]
           Auto-exit after replay completes. Optional value is delay in milliseconds (default: 2000)
 
-      --fullscreen
-          Draw the TUI on the alternate screen (prototype). The TUI then owns scrolling, selection and copy, and prints the transcript on exit
+      --inline
+          Draw the TUI on the main screen, into the terminal scrollback, instead of full screen. Overrides `cli.screen` in the config
 
   -h, --help
           Print help (see a summary with '-h')

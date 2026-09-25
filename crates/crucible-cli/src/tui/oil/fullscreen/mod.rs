@@ -1,10 +1,10 @@
-//! The full-screen mode of the chat TUI (prototype, opt-in with
-//! `cru chat --fullscreen`).
+//! The full-screen mode of the chat TUI, the default of `cru chat`.
 //!
-//! The native mode prints the transcript into the main screen and lets the
-//! terminal own the scroll. This mode draws on the alternate screen, so the
-//! app owns the scroll, selection, copy and the exit history. Both modes draw
-//! the same `ChatNode`s with the same oil primitives.
+//! The native (inline) mode, `cru chat --inline`, prints the transcript
+//! into the main screen and lets the terminal own the scroll. This mode
+//! draws on the alternate screen, so the app owns the scroll, selection,
+//! copy and the exit history. Both modes draw the same `ChatNode`s with the
+//! same oil primitives.
 //!
 //! A frame has three parts: the chrome above the transcript (status regions),
 //! the transcript area, and the chrome below it (the prompt and the status

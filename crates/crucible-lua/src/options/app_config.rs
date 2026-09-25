@@ -365,6 +365,28 @@ pub const APP_CONTROLS: &[AppControl] = &[
          depends on this box, so the name is typed rather than picked.",
         2,
     ),
+    AppControl::new(
+        "cli.screen",
+        Control::Select,
+        "Chat screen",
+        "Where `cru chat` draws. `cru chat --inline` picks the main screen \
+         for one run. A change applies to the next chat.",
+        2,
+    )
+    .with_choices(&[
+        Choice {
+            value: "fullscreen",
+            label: "Full screen",
+            desc: "Draw on the alternate screen. The chat scrolls, selects and \
+                   copies, and prints the transcript on exit.",
+        },
+        Choice {
+            value: "inline",
+            label: "Inline",
+            desc: "Draw on the main screen. The terminal scrolls, selects and \
+                   keeps the transcript in its scrollback.",
+        },
+    ]),
     // ---- acp ----
     AppControl::group(
         "acp",

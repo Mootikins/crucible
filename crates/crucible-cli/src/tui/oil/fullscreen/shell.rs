@@ -3,7 +3,7 @@
 //!
 //! This proves the view model, not the wiring. A chat pane here is fed by
 //! its owner (a test, or the demo's fake agent); no daemon connects to it.
-//! The runner of `cru chat --fullscreen` still drives one session.
+//! The runner of `cru chat` still drives one session.
 
 use super::scroll::Scroll;
 use super::{Frame, FullscreenView, ViewAction};

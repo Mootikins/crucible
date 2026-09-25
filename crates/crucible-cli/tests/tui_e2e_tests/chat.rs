@@ -106,17 +106,24 @@ fn chat_input_backspace() {
     session.send_control('c').expect("Failed to send Ctrl+C");
 }
 
-/// Regression test: backspace should not delete terminal scrollback
+/// Regression test: backspace should not delete terminal scrollback.
+///
+/// Only the inline mode writes into the terminal scrollback, so the test
+/// selects it; the full-screen mode prints the transcript only on exit.
 #[test]
 #[ignore = "requires: cru binary"]
 fn chat_backspace_preserves_scrollback() {
     let mut session = TuiTestBuilder::new()
-        .command("chat")
+        .command("chat --inline")
         .timeout(10)
         .spawn()
         .expect("Failed to spawn chat");
 
     session.wait_for_ready().expect("TUI ready");
+    assert!(
+        !session.screen().alternate_screen(),
+        "the test needs the inline mode, whose rows reach the scrollback"
+    );
 
     session.send("Hello").expect("Failed to send text");
     session.settle();

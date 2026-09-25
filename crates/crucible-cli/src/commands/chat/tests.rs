@@ -258,3 +258,63 @@ fn oneshot_applies_plan_mode_only_when_the_flag_is_given() {
     assert_eq!(oneshot_mode_override(true), Some("plan"));
     assert_eq!(oneshot_mode_override(false), None);
 }
+
+// ---- the screen the chat TUI draws on (US-804) ----
+
+use crucible_core::config::ChatScreen;
+
+/// The `inline` flag that the `cru chat` command line gives.
+fn inline_flag(args: &[&str]) -> bool {
+    use clap::Parser;
+    let cli = crate::cli::Cli::try_parse_from(args).expect("parse");
+    match cli.command {
+        Some(crate::cli::Commands::Chat { inline, .. }) => inline,
+        _ => panic!("not a chat command: {args:?}"),
+    }
+}
+
+#[test]
+fn a_plain_cru_chat_draws_full_screen() {
+    let config = crate::config::CliConfig::default();
+    assert_eq!(
+        chat_screen(inline_flag(&["cru", "chat"]), config.cli.screen, true),
+        ChatScreen::Fullscreen
+    );
+    // `cru` and `cru session resume` start from the same params.
+    let params = ChatParams::new(config);
+    assert_eq!(
+        chat_screen(params.inline, params.config.cli.screen, true),
+        ChatScreen::Fullscreen
+    );
+}
+
+#[test]
+fn the_inline_flag_wins_over_the_config() {
+    let flag = inline_flag(&["cru", "chat", "--inline"]);
+    assert_eq!(
+        chat_screen(flag, ChatScreen::Fullscreen, true),
+        ChatScreen::Inline
+    );
+}
+
+#[test]
+fn the_config_selects_the_inline_mode() {
+    assert_eq!(
+        chat_screen(false, ChatScreen::Inline, true),
+        ChatScreen::Inline
+    );
+}
+
+#[test]
+fn a_stdout_that_is_not_a_terminal_keeps_the_inline_mode() {
+    assert_eq!(
+        chat_screen(false, ChatScreen::Fullscreen, false),
+        ChatScreen::Inline
+    );
+}
+
+#[test]
+fn the_fullscreen_flag_is_gone() {
+    use clap::Parser;
+    assert!(crate::cli::Cli::try_parse_from(["cru", "chat", "--fullscreen"]).is_err());
+}

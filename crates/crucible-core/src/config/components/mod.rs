@@ -16,7 +16,7 @@ pub mod trust;
 
 pub use acp::{AcpConfig, AgentProfile, DelegationConfig};
 pub use chat::{AgentPreference, ChatConfig};
-pub use cli::{CliConfig, HighlightingConfig};
+pub use cli::{ChatScreen, CliConfig, HighlightingConfig};
 pub use context::ContextConfig;
 pub use defaults::{
     ANTHROPIC_MODELS, DEFAULT_ANTHROPIC_ENDPOINT, DEFAULT_ANTHROPIC_MODEL, DEFAULT_BATCH_SIZE,

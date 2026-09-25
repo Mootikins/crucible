@@ -1,4 +1,4 @@
-//! US-804: Read, select and copy in the full-screen mode (prototype).
+//! US-804: Read, select and copy in the full-screen mode (the default).
 //!
 //! The full-screen mode builds each frame outside the app, so these tests
 //! build it with `FullscreenView` or `FullscreenShell`, then write it with
@@ -252,4 +252,43 @@ fn a_tool_card_draws_the_render_table_in_the_full_screen_mode() {
         );
         assert!(screen.contains("provider: ddg"), "{frame}:\n{screen}");
     }
+}
+
+/// US-908 in the default mode: an open plugin surface is the whole
+/// full-screen frame. The transcript and the prompt are not drawn behind
+/// it. The inline mode reaches the same modal through
+/// `Terminal::render_fullscreen`; this mode draws it through
+/// `FullscreenView::frame`, so it needs its own proof.
+#[test]
+fn a_surface_is_the_whole_full_screen_frame() {
+    use crate::tui::oil::components::SurfaceModalRow;
+
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("mid-sentence".into()));
+    let mut view = FullscreenView::new();
+    let focus = FocusContext::new();
+    let mut vt = Vt100TestRuntime::new(WIDTH, HEIGHT);
+    vt.present_fullscreen(&view.frame(&mut app, &ctx_for(&focus)));
+    assert!(vt.screen_contents().contains("mid-sentence"));
+
+    app.on_message(ChatAppMsg::SurfaceLoaded {
+        name: "sessions".into(),
+        title: "Sessions".into(),
+        rows: vec![SurfaceModalRow {
+            id: "s1".into(),
+            text: "crucible".into(),
+            detail: None,
+            mark: Some("busy".into()),
+        }],
+        version: 1,
+        open_if_closed: true,
+    });
+    vt.present_fullscreen(&view.frame(&mut app, &ctx_for(&focus)));
+    let screen = vt.screen_contents();
+    assert!(screen.contains("Sessions"), "the surface drew:\n{screen}");
+    assert!(screen.contains("crucible"), "its row drew:\n{screen}");
+    assert!(
+        !screen.contains("mid-sentence") && !screen.contains('❯'),
+        "no transcript or prompt behind the surface:\n{screen}"
+    );
 }

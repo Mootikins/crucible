@@ -429,7 +429,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             replay,
             replay_speed,
             replay_auto_exit,
-            fullscreen,
+            inline,
         }) => {
             let mode = commands::chat::ChatMode::from_flags(
                 query,
@@ -450,7 +450,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 resume_session_id: resume,
                 set_overrides,
                 mode,
-                fullscreen,
+                inline,
             })
             .await?
         }

@@ -63,8 +63,8 @@ pub use components::defaults::{
 pub use components::mcp;
 pub use components::{
     ollama_endpoint_from_env, AcpConfig, AgentPreference, AgentProfile, BackendType, ChatConfig,
-    CliConfig, CompiledPermissions, ContextConfig, DataClassification, DelegationConfig,
-    HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, OllamaModelTag,
+    ChatScreen, CliConfig, CompiledPermissions, ContextConfig, DataClassification,
+    DelegationConfig, HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, OllamaModelTag,
     OllamaTagsResponse, PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
     TransportType, TrustLevel, UpstreamServerConfig,
 };

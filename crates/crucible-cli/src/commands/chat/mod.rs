@@ -16,6 +16,7 @@ use crate::factories;
 use crate::output;
 use crate::status_line::StatusLine;
 use crate::tui::AgentSelection;
+use crucible_core::config::ChatScreen;
 
 /// The flags that every chat run shares, plus the mode that selects the run.
 pub struct ChatParams {
@@ -36,8 +37,9 @@ pub struct ChatParams {
     pub resume_session_id: Option<String>,
     pub set_overrides: Vec<String>,
     pub mode: ChatMode,
-    /// Draw the TUI on the alternate screen (prototype, `--fullscreen`).
-    pub fullscreen: bool,
+    /// `--inline`: draw on the main screen for this run, whatever the
+    /// config says.
+    pub inline: bool,
 }
 
 impl ChatParams {
@@ -56,7 +58,7 @@ impl ChatParams {
             resume_session_id: None,
             set_overrides: vec![],
             mode: ChatMode::Interactive { record: None },
-            fullscreen: false,
+            inline: false,
         }
     }
 }
@@ -117,6 +119,11 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
     // Seed the render-time highlighting state (theme + enabled) from config
     // before any frame renders; `:set theme` updates it later.
     crate::formatting::syntax::seed_from_config(&params.config.cli.highlighting);
+    let screen = chat_screen(
+        params.inline,
+        params.config.cli.screen,
+        std::io::IsTerminal::is_terminal(&std::io::stdout()),
+    );
 
     if let ChatMode::Replay {
         path,
@@ -133,14 +140,7 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
         if params.agent_name.is_some() || params.agent_card.is_some() {
             anyhow::bail!("--replay cannot be combined with --agent");
         }
-        return run_replay(
-            path.clone(),
-            *speed,
-            *auto_exit,
-            &params.config,
-            params.fullscreen,
-        )
-        .await;
+        return run_replay(path.clone(), *speed, *auto_exit, &params.config, screen).await;
     }
 
     info!("Starting chat command");
@@ -182,7 +182,7 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
     }
 
     match std::mem::replace(&mut params.mode, ChatMode::Interactive { record: None }) {
-        ChatMode::Interactive { record } => run_interactive_chat(params, record).await,
+        ChatMode::Interactive { record } => run_interactive_chat(params, record, screen).await,
         ChatMode::Oneshot { query } => run_oneshot_chat(params, query).await,
         ChatMode::Replay { .. } => unreachable!("replay returns above"),
     }
@@ -211,6 +211,20 @@ fn apply_piped_query(
     }
 }
 
+/// The screen the chat TUI draws on.
+///
+/// `--inline` wins over the config. A stdout that is not a terminal keeps
+/// the inline mode it had before full screen became the default: an
+/// alternate screen and mouse reports written into a file or a pipe are
+/// noise, and nobody is there to scroll them.
+fn chat_screen(inline_flag: bool, configured: ChatScreen, stdout_is_terminal: bool) -> ChatScreen {
+    if inline_flag || !stdout_is_terminal {
+        ChatScreen::Inline
+    } else {
+        configured
+    }
+}
+
 /// The mode name `--plan` selects. The daemon owns what the name means.
 fn initial_mode(read_only: bool) -> &'static str {
     if read_only {
@@ -233,7 +247,7 @@ async fn run_replay(
     speed: f64,
     auto_exit: Option<u64>,
     config: &CliConfig,
-    fullscreen: bool,
+    screen: ChatScreen,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::tui::oil::OilChatRunner;
@@ -255,7 +269,7 @@ async fn run_replay(
         .with_replay_path(Some(path))
         .with_replay_speed(speed)
         .with_replay_auto_exit(auto_exit)
-        .with_fullscreen(fullscreen);
+        .with_screen(screen);
 
     let factory = |_selection: crate::tui::AgentSelection| async move {
         // Unreachable: replay short-circuits before the factory is called.
@@ -433,7 +447,11 @@ async fn open_project_kilns_if_matched(existing_client: Option<&DaemonClient>) -
     Ok(())
 }
 
-async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Result<()> {
+async fn run_interactive_chat(
+    params: ChatParams,
+    record: Option<PathBuf>,
+    screen: ChatScreen,
+) -> Result<()> {
     let ChatParams {
         config,
         agent_name,
@@ -448,7 +466,8 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         resume_session_id,
         set_overrides,
         mode: _,
-        fullscreen,
+        // Resolved into `screen` by `execute`.
+        inline: _,
     } = params;
     let initial_mode = initial_mode(read_only);
     info!("Initial mode: {}", initial_mode);
@@ -501,7 +520,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         .with_show_diffs(config.chat.show_diffs)
         .with_agent_name(agent_name)
         .with_initial_sets(parsed_set_overrides)
-        .with_fullscreen(fullscreen);
+        .with_screen(screen);
 
     info!(
         "Starting oil chat with model: {} (display: {})",
@@ -738,7 +757,7 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
         set_overrides,
         mode: _,
         // A oneshot run draws no TUI.
-        fullscreen: _,
+        inline: _,
     } = params;
     let parsed_env = parse_env_overrides(&env_overrides);
     let working_dir = std::env::current_dir().ok();

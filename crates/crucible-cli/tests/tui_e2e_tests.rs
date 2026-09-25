@@ -64,6 +64,8 @@ mod model;
 mod oil;
 #[path = "tui_e2e_tests/popup.rs"]
 mod popup;
+#[path = "tui_e2e_tests/screen.rs"]
+mod screen;
 #[path = "tui_e2e_tests/smoke.rs"]
 mod smoke;
 #[path = "tui_e2e_tests/terminal.rs"]

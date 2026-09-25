@@ -176,10 +176,10 @@ pub enum Commands {
         #[arg(long, value_name = "DELAY_MS", num_args = 0..=1, default_missing_value = "2000")]
         replay_auto_exit: Option<u64>,
 
-        /// Draw the TUI on the alternate screen (prototype). The TUI then owns
-        /// scrolling, selection and copy, and prints the transcript on exit.
+        /// Draw the TUI on the main screen, into the terminal scrollback,
+        /// instead of full screen. Overrides `cli.screen` in the config
         #[arg(long)]
-        fullscreen: bool,
+        inline: bool,
     },
 
     /// Start MCP server exposing Crucible tools for external AI agents

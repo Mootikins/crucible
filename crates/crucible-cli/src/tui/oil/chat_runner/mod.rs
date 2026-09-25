@@ -99,7 +99,7 @@ pub struct OilChatRunner {
     pub(super) replay_auto_exit: Option<u64>,
     pub(super) replay_remaining_completes: usize,
     pub(super) is_replay: bool,
-    /// The full-screen view, when `--fullscreen` chose that mode.
+    /// The full-screen view. `None` is the inline mode (`--inline`).
     pub(super) fullscreen: Option<crate::tui::oil::fullscreen::FullscreenView>,
     /// Whether the shell modal was open at the last frame. The modal leaves
     /// the alternate screen when it closes, so the full-screen mode enters
@@ -165,14 +165,24 @@ impl OilChatRunner {
         }
     }
 
-    /// Draw on the alternate screen instead of the main screen.
-    pub fn with_fullscreen(mut self, on: bool) -> Self {
-        if on {
-            self.terminal
-                .set_mode(crucible_oil::terminal::ScreenMode::Fullscreen {
+    /// Draw on the alternate screen or on the main screen.
+    ///
+    /// Without this call the runner draws inline, as a headless test
+    /// runner does; the chat command always names the screen.
+    pub fn with_screen(mut self, screen: crucible_core::config::ChatScreen) -> Self {
+        use crucible_core::config::ChatScreen;
+        use crucible_oil::terminal::ScreenMode;
+        match screen {
+            ChatScreen::Fullscreen => {
+                self.terminal.set_mode(ScreenMode::Fullscreen {
                     mouse_capture: true,
                 });
-            self.fullscreen = Some(crate::tui::oil::fullscreen::FullscreenView::new());
+                self.fullscreen = Some(crate::tui::oil::fullscreen::FullscreenView::new());
+            }
+            ChatScreen::Inline => {
+                self.terminal.set_mode(ScreenMode::Inline);
+                self.fullscreen = None;
+            }
         }
         self
     }
