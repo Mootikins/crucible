@@ -173,3 +173,83 @@ fn page_up_holds_the_reader_while_an_answer_streams() {
         );
     }
 }
+
+/// Relay one daemon session event into `app`, as the runner does.
+fn relay(app: &mut OilChatApp, event: &str, data: serde_json::Value) {
+    for msg in crate::tui::oil::chat_runner::session_event_to_chat_msgs(event, &data) {
+        app.on_message(msg);
+    }
+}
+
+/// US-306 in the full-screen mode: a tool card draws the render that the
+/// daemon sent (its line, its fields and the summary of the result). A
+/// result without a render keeps the render of the call. A frame from the
+/// kept rows draws the same cards.
+#[test]
+fn a_tool_card_draws_the_render_table_in_the_full_screen_mode() {
+    use serde_json::json;
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::UserMessage("fix it and search".into()));
+    relay(
+        &mut app,
+        "tool_call",
+        json!({
+            "call_id": "c1", "tool": "spawn_agent",
+            "args": { "prompt": "from the arguments" },
+            "display": {
+                "kind": "delegate", "tool": "Task",
+                "render": { "line": "fix the parser bug" },
+            },
+        }),
+    );
+    relay(
+        &mut app,
+        "tool_result",
+        json!({ "call_id": "c1", "tool": "spawn_agent", "result": { "result": "done" } }),
+    );
+    relay(
+        &mut app,
+        "tool_call",
+        json!({
+            "call_id": "c2", "tool": "web_search", "args": { "query": "rust" },
+            "display": {
+                "kind": "search", "tool": "web_search",
+                "render": { "line": "rust", "fields": [{ "label": "provider", "value": "ddg" }] },
+            },
+        }),
+    );
+    relay(
+        &mut app,
+        "tool_result",
+        json!({
+            "call_id": "c2", "tool": "web_search",
+            "result": {
+                "result": "one\ntwo\nthree",
+                "render": {
+                    "line": "rust",
+                    "fields": [{ "label": "provider", "value": "ddg" }],
+                    "summary": "ddg · 3 results",
+                },
+            },
+        }),
+    );
+    app.on_message(ChatAppMsg::StreamComplete);
+
+    let mut view = FullscreenView::new();
+    let focus = FocusContext::new();
+    let mut vt = Vt100TestRuntime::new(WIDTH, HEIGHT);
+    for frame in ["first frame", "frame from the kept rows"] {
+        vt.present_fullscreen(&view.frame(&mut app, &ctx_for(&focus)));
+        let screen = vt.screen_contents();
+        assert!(
+            screen.contains("Task fix the parser bug"),
+            "{frame}:\n{screen}"
+        );
+        assert!(!screen.contains("from the arguments"), "{frame}:\n{screen}");
+        assert!(
+            screen.contains("rust → ddg · 3 results"),
+            "{frame}:\n{screen}"
+        );
+        assert!(screen.contains("provider: ddg"), "{frame}:\n{screen}");
+    }
+}

@@ -248,10 +248,10 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 - The highlight covers only the text. It does not cover a margin, a bullet, a prompt mark or the padding after the text. A press or a release in such a gutter moves to the nearest text.
 - The button release copies the text as the source has it. A wrap becomes the text that the wrap removed, not a line break. The copy goes through OSC 52, then the native clipboard (not over SSH), then tmux.
 - F2 turns mouse capture off and on. F3 prints the finished transcript into the terminal scrollback. The exit prints the rest, and nothing prints twice.
-- The mode reads the same kept rows as the native view, so the two modes draw the same transcript.
+- The mode reads the same kept rows as the native view, so the two modes draw the same transcript. A tool card draws the render that the daemon sent (US-306).
 - The web has no full-screen mode. This mode is a choice of terminal presentation, and a browser owns its own scroll, selection and copy.
 
-**Tests:** T1 selection, copy, gutter and snap in `fullscreen/selection.rs` and `fullscreen/tests.rs`; scroll, follow, reflow and dump in `fullscreen/tests.rs`; the pane mouse rows in `fullscreen/shell.rs`; the kept rows in `fullscreen/transcript.rs`. T2 `user_story_tests/fullscreen_tests.rs` writes each frame through the row diff into vt100, then reads the text, the inverse cells of the highlight and the held top row. **GAP:** a person must check the copy in a real terminal, flicker in Zellij and the width of a ZWJ sequence (manual steps in the prototype report). No T4 test starts the real binary with `--fullscreen`.
+**Tests:** T1 selection, copy, gutter and snap in `fullscreen/selection.rs` and `fullscreen/tests.rs`; scroll, follow, reflow and dump in `fullscreen/tests.rs`; the pane mouse rows in `fullscreen/shell.rs`; the kept rows in `fullscreen/transcript.rs`. T2 `user_story_tests/fullscreen_tests.rs` writes each frame through the row diff into vt100, then reads the text, the inverse cells of the highlight, the held top row and the tool card that draws the render table (US-306). **GAP:** a person must check the copy in a real terminal, flicker in Zellij and the width of a ZWJ sequence (manual steps in the prototype report). No T4 test starts the real binary with `--fullscreen`.
 
 ### US-802: Stable rendering across widths
 **As a user**, the TUI renders correctly at narrow (50), normal (80), and wide (120) widths without flicker or duplication.
