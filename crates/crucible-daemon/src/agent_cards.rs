@@ -7,11 +7,11 @@
 //! `session.create` agent resolution.
 //!
 //! Discovery sources, highest priority first:
-//! 1. the personal layer: `agent_directories` from the app config, in config
-//!    order, then `~/.config/crucible/agents/`. A user develops a card
-//!    personally before sharing it, so this layer is on top.
-//! 2. `WORKSPACE/.crucible/agents/` — project-scoped cards (repos)
-//! 3. `KILN/.crucible/agents/` — kiln config
+//! 1. `agent_directories` from the app config, in config order
+//! 2. `~/.config/crucible/agents/`. A user develops a card personally before
+//!    sharing it, so these two personal layers are on top.
+//! 3. `WORKSPACE/.crucible/agents/` — project-scoped cards (repos)
+//! 4. `KILN/.crucible/agents/` — kiln config
 //!
 //! Layers override: a bare name resolves to the card of the highest layer
 //! that has it. Every card also keeps its full name (`kiln:helper`). Two
@@ -120,11 +120,17 @@ pub fn card_directories(roots: &CardRoots, workspace: &Path, kiln: Option<&Path>
         .collect()
 }
 
+/// A card layer: the origin of a directory, and whether an
+/// `agent_directories` entry named it. `agent_directories` and the config
+/// home share `Origin::UserConfig`, but the user ranks `agent_directories`
+/// above the config home, so they are two layers.
+type Layer = (Origin, bool);
+
 fn card_sources(
     roots: &CardRoots,
     workspace: &Path,
     kiln: Option<&Path>,
-) -> Vec<(PathBuf, Origin, String)> {
+) -> Vec<(PathBuf, Layer, String)> {
     // `kiln == workspace` would otherwise offer `<kiln>/.crucible/agents`
     // twice. The kiln entry is the one kept, because a session with no
     // separate workspace is a kiln session.
@@ -171,7 +177,8 @@ fn card_sources(
                 Origin::UserRuntime => "runtime".to_string(),
                 Origin::Bundled => "builtin".to_string(),
             };
-            (c.path, c.origin, namespace)
+            let named = roots.agent_directories.contains(&c.path);
+            (c.path, (c.origin, named), namespace)
         })
         .collect()
 }
@@ -192,7 +199,7 @@ pub fn discover_agent_cards_in(
     warn_if_deprecated(roots);
     let mut discovered = Vec::new();
     let mut loader = AgentCardLoader::new();
-    for (dir, origin, namespace) in card_sources(roots, workspace, kiln) {
+    for (dir, layer, namespace) in card_sources(roots, workspace, kiln) {
         if !dir.is_dir() {
             continue;
         }
@@ -203,7 +210,7 @@ pub fn discover_agent_cards_in(
             Ok(loaded) => {
                 for mut card in loaded {
                     card.namespace = Some(namespace.clone());
-                    discovered.push((origin, card));
+                    discovered.push((layer, card));
                 }
             }
             Err(e) => debug!(dir = %dir.display(), error = %e, "Agent card directory skipped"),
@@ -211,15 +218,15 @@ pub fn discover_agent_cards_in(
     }
     // The layer of the highest card of each name, and how many cards of that
     // name it holds. One card there takes the bare name.
-    let mut top: HashMap<String, (Origin, usize)> = HashMap::new();
-    for (origin, card) in &discovered {
-        let entry = top.entry(card.name.clone()).or_insert((*origin, 0));
-        if entry.0 == *origin {
+    let mut top: HashMap<String, (Layer, usize)> = HashMap::new();
+    for (layer, card) in &discovered {
+        let entry = top.entry(card.name.clone()).or_insert((*layer, 0));
+        if entry.0 == *layer {
             entry.1 += 1;
         }
     }
     let mut cards = HashMap::new();
-    for (origin, card) in discovered {
+    for (layer, card) in discovered {
         let full = |suffix: String| {
             format!(
                 "{}{suffix}:{}",
@@ -228,7 +235,7 @@ pub fn discover_agent_cards_in(
             )
         };
         let mut key = match top.get(&card.name) {
-            Some((layer, 1)) if *layer == origin && !cards.contains_key(&card.name) => {
+            Some((top_layer, 1)) if *top_layer == layer && !cards.contains_key(&card.name) => {
                 card.name.clone()
             }
             _ => full(String::new()),
@@ -531,16 +538,49 @@ mod tests {
         );
     }
 
+    /// An `agent_directories` entry outranks `~/.config/crucible/agents/`.
+    /// A name in both is not ambiguous: the bare name resolves to the
+    /// `agent_directories` card, and the full name reaches the other card.
+    #[test]
+    fn an_agent_directories_card_outranks_a_config_home_card() {
+        let config = TempDir::new().unwrap();
+        let shared = TempDir::new().unwrap();
+        write_card(
+            &config.path().join("crucible").join("agents"),
+            "helper.md",
+            "---\ndescription: home\n---\n\nPrompt.\n",
+        );
+        write_card(
+            shared.path(),
+            "helper.md",
+            "---\ndescription: shared\n---\n\nPrompt.\n",
+        );
+        let roots = CardRoots {
+            config_home: Some(config.path().to_path_buf()),
+            agent_directories: vec![shared.path().to_path_buf()],
+        };
+        let cards = discover_agent_cards_in(&roots, Path::new(""), None);
+        let description = |name| {
+            resolve_card(&cards, name)
+                .unwrap()
+                .unwrap()
+                .description
+                .clone()
+        };
+        assert_eq!(description("helper"), "shared");
+        assert_eq!(description("personal:helper"), "home");
+    }
+
     /// Two cards of one name in ONE layer are ambiguous: the bare name is
     /// refused, and the error lists the full names.
     #[test]
     fn two_cards_of_one_name_in_one_layer_are_ambiguous() {
-        let config = TempDir::new().unwrap();
-        let shared = TempDir::new().unwrap();
+        let first = TempDir::new().unwrap();
+        let second = TempDir::new().unwrap();
         let kiln = TempDir::new().unwrap();
         for (dir, text) in [
-            (config.path().join("crucible").join("agents"), "home"),
-            (shared.path().to_path_buf(), "shared"),
+            (first.path().to_path_buf(), "first"),
+            (second.path().to_path_buf(), "second"),
             (kiln.path().join(".crucible").join("agents"), "kiln"),
         ] {
             write_card(
@@ -550,8 +590,8 @@ mod tests {
             );
         }
         let roots = CardRoots {
-            config_home: Some(config.path().to_path_buf()),
-            agent_directories: vec![shared.path().to_path_buf()],
+            config_home: None,
+            agent_directories: vec![first.path().to_path_buf(), second.path().to_path_buf()],
         };
         let cards = discover_agent_cards_in(&roots, kiln.path(), Some(kiln.path()));
         let error = resolve_card(&cards, "helper").unwrap_err();

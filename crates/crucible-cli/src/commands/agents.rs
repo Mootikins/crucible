@@ -756,6 +756,36 @@ You are a test agent.
         assert_eq!(description("kiln:shared"), "kiln version");
     }
 
+    /// A card of one name in an `agent_directories` entry and in
+    /// `~/.config/crucible/agents/`: `cru agents show` resolves the bare name
+    /// to the `agent_directories` card, as the daemon does.
+    #[test]
+    fn test_show_resolves_a_bare_name_to_the_agent_directories_card() {
+        let kiln = TempDir::new().unwrap();
+        let home = TempDir::new().unwrap();
+        let shared = TempDir::new().unwrap();
+        let home_agents = home.path().join("crucible").join("agents");
+        fs::create_dir_all(&home_agents).unwrap();
+        fs::write(
+            home_agents.join("shared.md"),
+            "---\nname: \"shared\"\ndescription: \"home version\"\n---\n\nHome prompt.\n",
+        )
+        .unwrap();
+        fs::write(
+            shared.path().join("shared.md"),
+            "---\nname: \"shared\"\ndescription: \"configured version\"\n---\n\nConfigured prompt.\n",
+        )
+        .unwrap();
+
+        let mut config = test_config(kiln.path().to_path_buf());
+        config.agent_directories = vec![shared.path().to_path_buf()];
+        let roots = card_roots(&config, Some(home.path().to_path_buf()), None);
+        let cards = discover_agent_cards_in(&roots, &no_workspace(), Some(&config.kiln_path));
+
+        let card = resolve_card(&cards, "shared").unwrap().unwrap();
+        assert_eq!(card.description, "configured version");
+    }
+
     #[test]
     fn test_load_agent_cards_empty_when_no_dirs() {
         // Create temp dir without agents directory
