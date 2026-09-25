@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STATE_FILE, type LiveState } from './_state';
 import { startFakeOllama, type FakeOllama } from './fake-ollama';
+import { findStaleCargoInput } from './freshness';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = path.resolve(HERE, '..', '..');
@@ -98,10 +99,6 @@ function firstNewerThan(target: string, roots: string[], names: string[]): strin
     '-name', 'node_modules', '-prune', '-o',
     '-name', 'dist', '-prune', '-o',
     '-name', 'target', '-prune', '-o',
-    // A crate's integration tests (`crates/*/tests/`) are not compiled into
-    // the binary, so cargo does not relink for them and a newer one is not
-    // staleness. Unit tests under `src/` are part of the crate and do relink.
-    '-path', '*/crates/*/tests', '-prune', '-o',
     '-type', 'f',
     '(', ...nameClause, ')',
     '-newer', target,
@@ -115,15 +112,32 @@ function firstNewerThan(target: string, roots: string[], names: string[]): strin
 }
 
 /**
- * Fail unless the binary is newer than every Rust source in the tree.
+ * Fail unless the binary is newer than every input cargo linked into it.
  *
- * Cargo relinks whenever a source is newer than the product, so after the
+ * This reads `<cru>.d`, the dep-info cargo writes next to the binary, rather
+ * than walking `crates/` by hand: a hand-rolled `*.rs` scan cannot tell a real
+ * build input from a `#[cfg(test)]`-only module or an integration test under
+ * a crate's `tests` dir, both of which cargo does not link into this binary and so
+ * never relinks it for. Counting them as inputs anyway produced a false
+ * "cru is older than ..." failure against a binary that was, in fact, fresh.
+ * `cru.d` is exactly cargo's own answer to "what did this binary come from",
+ * so it stays correct as the crate's sources evolve.
+ *
+ * Cargo relinks whenever a real input is newer than the product, so after the
  * recipe's `cargo build` this holds by construction. It stops holding in
  * exactly the case the lane exists to catch: a binary built from a different
  * revision than the sources the assertions were written against.
  */
 function assertBinaryFresh(cru: string): void {
-  const stale = firstNewerThan(cru, [path.join(REPO_ROOT, 'crates')], ['*.rs', 'Cargo.toml']);
+  const depFile = `${cru}.d`;
+  if (!existsSync(depFile)) {
+    throw new Error(
+      `live setup: no dep-info at ${depFile}. The live tier decides staleness from cargo's own ` +
+        'build record, not a guess, so it refuses to run without one. Run ' +
+        '`cargo build -p crucible-cli --bin cru` (or `just web-test live`, which does) and try again.',
+    );
+  }
+  const stale = findStaleCargoInput(cru, depFile, [DIST_DIR]);
   if (stale) {
     throw new Error(
       `live setup: ${cru} is older than ${stale}. The live tier runs only a binary built ` +

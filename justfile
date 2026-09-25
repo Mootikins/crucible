@@ -353,6 +353,10 @@ web-test tier="ui" *args:
             cd "$web" && bunx playwright test --project=stories --reporter=line "$@"
             ;;
         live)
+            # The staleness check's own gate: a pure-function unit test with
+            # no cargo build behind it, so a broken freshness check fails
+            # fast instead of hiding behind a slow end-to-end run.
+            (cd "$web" && bun test e2e/live/freshness.test.ts)
             # BOTH, in this order, EVERY time. The live setup refuses a binary
             # older than the sources and a dist older than the frontend, so a
             # skipped build here is a failed run rather than a stale pass.
