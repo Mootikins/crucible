@@ -831,7 +831,7 @@ impl RpcDispatcher {
                     id,
                     crate::server::session::handle_session_add_notification(
                         req.clone(),
-                        &self.ctx.agents,
+                        &self.ctx.sessions,
                         &self.ctx.notifications
                     )
                 )
@@ -840,7 +840,7 @@ impl RpcDispatcher {
                 id,
                 crate::server::session::handle_session_list_notifications(
                     req.clone(),
-                    &self.ctx.agents,
+                    &self.ctx.sessions,
                     &self.ctx.notifications
                 )
             ),
@@ -848,7 +848,7 @@ impl RpcDispatcher {
                 id,
                 crate::server::session::handle_session_dismiss_notification(
                     req.clone(),
-                    &self.ctx.agents,
+                    &self.ctx.sessions,
                     &self.ctx.notifications
                 )
             ),
@@ -4081,6 +4081,52 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             config_default_kiln: None,
             notifications,
         }))
+    }
+
+    /// A session in storage only (after a restart) has notifications too: a
+    /// client that attaches to it reads them, and a notification can be
+    /// added. Nothing revives the session to answer.
+    #[tokio::test]
+    async fn the_notification_rpcs_answer_a_stored_session() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ctx = scm_test_context(tmp.path());
+        let session = ctx
+            .sessions
+            .create_session(
+                crucible_core::session::SessionType::Chat,
+                vec![],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        ctx.sessions.end_session(&session.id).await.unwrap();
+        ctx.sessions.remove_session(&session.id).unwrap();
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let notification = crucible_core::types::Notification::warning("stored");
+        let added = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "session.add_notification",
+                    serde_json::json!({ "session_id": session.id, "notification": notification }),
+                ),
+            )
+            .await;
+        assert!(added.error.is_none(), "{:?}", added.error);
+        let listed = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "session.list_notifications",
+                    serde_json::json!({ "session_id": session.id }),
+                ),
+            )
+            .await;
+        assert!(listed.error.is_none(), "{:?}", listed.error);
+        let result = listed.result.unwrap();
+        assert_eq!(result["notifications"][0]["message"], "stored", "{result}");
     }
 
     /// `scm.clone` rejects non-remote / hostile URLs at the RPC layer before
