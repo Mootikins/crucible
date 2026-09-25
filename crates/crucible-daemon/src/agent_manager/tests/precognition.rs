@@ -89,10 +89,10 @@ async fn test_precognition_skipped_for_search_command() {
     assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;
 }
 
-/// Precognition is on, but the session has no kiln: one warning tells the
-/// user that nothing grounds the answer. No search runs.
+/// Precognition is on, but the session has no kiln: one info notice tells
+/// the user that nothing grounds the answer. No search runs.
 #[tokio::test]
-async fn precognition_with_no_kiln_warns_the_user() {
+async fn precognition_with_no_kiln_tells_the_user() {
     let tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
 
@@ -125,7 +125,7 @@ async fn precognition_with_no_kiln_warns_the_user() {
 
     let event = next_event_or_skip(&mut event_rx, "notification_added").await;
     let notification = &event.data["notification"];
-    assert_eq!(notification["kind"], "warning", "{}", event.data);
+    assert_eq!(notification["kind"], "toast", "{}", event.data);
     let message = notification["message"].as_str().unwrap();
     assert!(message.contains("no kiln"), "{message}");
     assert_no_event_until_message_complete(&mut event_rx, "precognition_complete").await;

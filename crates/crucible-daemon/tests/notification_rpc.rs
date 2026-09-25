@@ -310,3 +310,96 @@ async fn test_daemon_notification_list_and_dismiss_contract() {
 
     daemon.stop().await.expect("Failed to stop daemon");
 }
+
+/// Send the first message of two kiln-less sessions in one workspace, with
+/// Precognition on. Returns the no-kiln notices in the ring.
+async fn no_kiln_notices(daemon: &TestDaemon) -> Vec<serde_json::Value> {
+    use crucible_daemon::rpc_client::{DaemonClient, SessionCreateParams};
+    let client = DaemonClient::connect_to(&daemon.socket_path).await.unwrap();
+    let workspace = daemon.home().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let agent = crucible_core::session::SessionAgent {
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some("ollama".to_string()),
+        provider: crucible_core::config::BackendType::Ollama,
+        model: "test-model".to_string(),
+        system_prompt: String::new(),
+        max_context_tokens: None,
+        endpoint: None,
+        env_overrides: Default::default(),
+        mcp_servers: Vec::new(),
+        agent_card_name: None,
+        agent_description: None,
+        delegation_config: None,
+        precognition_enabled: true,
+        context_budget: None,
+        context_strategy: Default::default(),
+        mode: None,
+        tool_policy: None,
+    };
+    for _ in 0..2 {
+        let created = client
+            .session_create(SessionCreateParams {
+                session_type: "chat".to_string(),
+                kilns: Vec::new(),
+                workspace: Some(workspace.clone()),
+                recording_mode: None,
+                recording_path: None,
+                agent_type: None,
+                isolation: None,
+            })
+            .await
+            .unwrap();
+        let session_id = created["session_id"].as_str().unwrap();
+        client
+            .session_configure_agent(session_id, &agent)
+            .await
+            .unwrap();
+        // The provider does not answer. Precognition runs before it.
+        let _ = client.session_send_message(session_id, "hello", true).await;
+    }
+    let mut conn = RpcConn::connect(&daemon.socket_path).await.unwrap();
+    let response = conn
+        .call_method("notification.list", json!({ "all": true }), 1)
+        .await;
+    response["result"]["notifications"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a list: {response}"))
+        .iter()
+        .filter(|n| n["message"].as_str().unwrap().contains("no kiln"))
+        .cloned()
+        .collect()
+}
+
+/// Two kiln-less sessions in one workspace see one info notice, and the
+/// notice names the setting that turns it off.
+#[tokio::test]
+async fn the_no_kiln_notice_is_info_and_once_per_workspace() {
+    let mut daemon = TestDaemon::start().await.unwrap();
+
+    let notices = no_kiln_notices(&daemon).await;
+
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(notices[0]["kind"], "toast", "{}", notices[0]);
+    let message = notices[0]["message"].as_str().unwrap();
+    assert!(message.contains("precognition_notify_no_kiln"), "{message}");
+    daemon.stop().await.unwrap();
+}
+
+/// `chat.precognition_notify_no_kiln = false` turns the notice off.
+#[tokio::test]
+async fn the_setting_turns_the_no_kiln_notice_off() {
+    let mut daemon = TestDaemon::start_with_home_setup(|home| {
+        let init = home.join(".config/crucible/init.lua");
+        let mut text = std::fs::read_to_string(&init)?;
+        text.push_str("cru.config.set({ chat = { precognition_notify_no_kiln = false } })\n");
+        std::fs::write(init, text)?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+
+    assert!(no_kiln_notices(&daemon).await.is_empty());
+    daemon.stop().await.unwrap();
+}

@@ -337,6 +337,14 @@ pub const APP_CONTROLS: &[AppControl] = &[
          prompt wins, and an on_session_start hook can extend this one.",
         10,
     ),
+    AppControl::new(
+        "chat.precognition_notify_no_kiln",
+        Control::Toggle,
+        "Notify when no kiln",
+        "Tell the user once per workspace when Precognition is on and a \
+         session has no kiln to search.",
+        11,
+    ),
     // ---- cli ----
     AppControl::group(
         "cli",

@@ -231,6 +231,7 @@ Controls the chat interface and LLM settings for internal agents.
 | `endpoint` | string | provider default | Custom API endpoint URL |
 | `show_thinking` | bool | `false` | Show extended thinking/reasoning blocks in chat output |
 | `show_diffs` | bool | `true` | Render diff bodies under edit/write tool calls |
+| `precognition_notify_no_kiln` | bool | `true` | Show an info notice, once per workspace per daemon run, when Precognition is on and a session has no kiln |
 
 There is no `provider` key here — a config containing `chat.provider` is
 rejected at load. The provider is selected by `llm.default`.

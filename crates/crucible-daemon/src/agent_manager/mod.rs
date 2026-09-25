@@ -406,6 +406,9 @@ pub struct AgentManager {
     status: std::sync::OnceLock<crucible_lua::StatusRegistry>,
     /// The daemon's one notification store, bound with the RPC context.
     notifications: std::sync::OnceLock<Arc<crate::notifications::NotificationHub>>,
+    /// The workspaces that got the no-kiln Precognition notice in this
+    /// daemon run. `None` is the one entry for all sessions with no workspace.
+    no_kiln_noticed: std::sync::Mutex<std::collections::HashSet<Option<std::path::PathBuf>>>,
     /// Explicit per-session tool sets written by `cru.tools.set_active`.
     ///
     /// Owned here rather than by the tools bridge because three places read
@@ -521,6 +524,7 @@ impl AgentManager {
             publications: std::sync::OnceLock::new(),
             status: std::sync::OnceLock::new(),
             notifications: std::sync::OnceLock::new(),
+            no_kiln_noticed: Default::default(),
             active_tools: crate::tools::active_tools::ActiveToolSets::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),

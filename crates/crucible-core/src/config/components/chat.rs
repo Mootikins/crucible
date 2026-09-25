@@ -111,6 +111,10 @@ pub struct ChatConfig {
     /// gates the search to that turn.
     #[serde(default = "default_precognition_results")]
     pub precognition_results: usize,
+    /// Tell the user when Precognition is on and a session has no kiln to
+    /// search. The daemon tells each workspace once per run.
+    #[serde(default = "default_true")]
+    pub precognition_notify_no_kiln: bool,
     /// The fraction of `context_budget` that triggers an auto-compaction.
     ///
     /// `0.0` disables it. A tuning constant, not a per-session decision, which
@@ -144,6 +148,7 @@ impl Default for ChatConfig {
             show_diffs: true,
             context_budget: None,
             precognition_results: default_precognition_results(),
+            precognition_notify_no_kiln: true,
             autocompact_threshold: default_autocompact_threshold(),
             response_tail_chars: default_response_tail_chars(),
             system_prompt: default_system_prompt(),

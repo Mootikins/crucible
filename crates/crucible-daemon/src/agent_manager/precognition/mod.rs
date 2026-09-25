@@ -461,12 +461,22 @@ impl AgentManager {
         //
         // No kiln is checked first: the user turned Precognition on, and no
         // embedding setup can ground an answer in a session with no kiln.
+        // The notice is advice, not a fault: once per workspace per daemon run.
         if session.kilns.is_empty() {
-            let message = "Precognition is on, but this session has no kiln to search";
-            self.notify(
-                session_id,
-                crucible_core::types::Notification::warning(message),
-            );
+            if crate::agent_manager::configured::precognition_notify_no_kiln()
+                && self
+                    .no_kiln_noticed
+                    .lock()
+                    .expect("no_kiln_noticed: poisoned")
+                    .insert(session.workspace.clone())
+            {
+                let message = "Precognition is on, but this session has no kiln to search. \
+                               Set chat.precognition_notify_no_kiln = false to hide this notice.";
+                self.notify(
+                    session_id,
+                    crucible_core::types::Notification::toast(message),
+                );
+            }
             return None;
         }
         self.kiln_manager.enrichment_config()?;

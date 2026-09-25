@@ -65,6 +65,15 @@ pub(crate) fn precognition_results() -> usize {
         .unwrap_or_else(|| ChatConfig::default().precognition_results)
 }
 
+/// `chat.precognition_notify_no_kiln` — whether Precognition tells the user
+/// that a session has no kiln to search.
+pub(crate) fn precognition_notify_no_kiln() -> bool {
+    leaf("chat.precognition_notify_no_kiln")
+        .as_ref()
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or_else(|| ChatConfig::default().precognition_notify_no_kiln)
+}
+
 /// `chat.autocompact_threshold` — the fraction of the context budget that
 /// triggers a compaction. `0.0` disables it.
 pub(crate) fn autocompact_threshold() -> f32 {
