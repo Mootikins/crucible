@@ -1643,26 +1643,8 @@ impl RpcDispatcher {
         // this RPC and `lua.shutdown_session` know. Its end hooks run here,
         // before the stop, as they did before the stop had one owner.
         if !session_id.is_empty() {
-            if let Some(state) = self.ctx.lua_sessions.get(session_id) {
-                let state = state.value().clone();
-                let mut state = state.lock().await;
-                // Daemon-side idempotency: `lua.shutdown_session` also fires
-                // these hooks. Whichever path reaches us first sets the flag;
-                // the second is a no-op.
-                if state.end_hooks_fired {
-                    tracing::debug!(
-                        session_id = %session_id,
-                        "on_session_end hooks already fired; skipping"
-                    );
-                } else {
-                    if let Some(session) = state.executor.current_session().get_current() {
-                        if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
-                            tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
-                        }
-                    }
-                    state.end_hooks_fired = true;
-                }
-            }
+            crate::server::lua::fire_session_end_hooks_once(&self.ctx.lua_sessions, session_id)
+                .await;
         }
 
         // Everything else, the plugin end hooks and the `session:ended` event
@@ -3971,6 +3953,87 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             "on_session_end fired {count} times; expected exactly 1 \
              (session.end and lua.shutdown_session must not both fire)"
         );
+    }
+
+    /// Regression: `cru chat` did not exit after `:quit` in approximately
+    /// 1 of 70 runs.
+    ///
+    /// When the chat exits, the CLI sends `session.end` and
+    /// `lua.shutdown_session` for the same session at the same time. Each
+    /// handler kept the `lua_sessions` map guard while it waited for the Lua
+    /// session lock. The guard is a read lock on the shard of the map.
+    /// `lua.shutdown_session` then removed the entry with a write lock, and
+    /// that lock blocked its worker thread. If tokio queued the other handler
+    /// on that worker, the other handler never released its guard. The
+    /// daemon did not reply to either call, and the chat did not exit.
+    ///
+    /// The gate: while an end RPC waits for the Lua session lock, a writer
+    /// can still lock the map entry.
+    async fn assert_the_lua_session_map_stays_writable_while(method: &str) {
+        use crate::server::LuaSessionState;
+        use crucible_core::session::SessionType;
+        use crucible_lua::LuaExecutor;
+        use dashmap::try_result::TryResult;
+        use std::time::Duration;
+        use tempfile::TempDir;
+
+        let tempdir = TempDir::new().unwrap();
+        let (ctx, _data_home) = test_context();
+        let session = ctx
+            .sessions
+            .create_session(
+                SessionType::Chat,
+                vec![crate::test_support::kiln_name("kiln")],
+                Some(tempdir.path().to_path_buf()),
+                None,
+            )
+            .await
+            .expect("create session");
+        let session_id = session.id.to_string();
+
+        let state = Arc::new(tokio::sync::Mutex::new(LuaSessionState {
+            executor: LuaExecutor::new().expect("lua executor"),
+            end_hooks_fired: false,
+        }));
+        ctx.lua_sessions
+            .insert(session_id.clone(), Arc::clone(&state));
+        let lua_sessions = Arc::clone(&ctx.lua_sessions);
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        // The test holds the Lua session, so the RPC stops at its lock.
+        let held = state.lock().await;
+        let call = dispatcher.dispatch(
+            ClientId::new(),
+            make_request(method, serde_json::json!({ "session_id": session_id })),
+        );
+        tokio::pin!(call);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut call)
+                .await
+                .is_err(),
+            "{method} must wait for the Lua session that the test holds"
+        );
+
+        assert!(
+            !matches!(lua_sessions.try_get_mut(&session_id), TryResult::Locked),
+            "{method} keeps the lua_sessions shard locked while it waits for the \
+             Lua session; a concurrent `lua.shutdown_session` then blocks its \
+             worker thread in `remove`, and the daemon stops replying"
+        );
+
+        drop(held);
+        let resp = call.await;
+        assert!(resp.error.is_none(), "{method} failed: {:?}", resp.error);
+    }
+
+    #[tokio::test]
+    async fn lua_shutdown_session_leaves_the_lua_session_map_writable_while_it_waits() {
+        assert_the_lua_session_map_stays_writable_while("lua.shutdown_session").await;
+    }
+
+    #[tokio::test]
+    async fn session_end_leaves_the_lua_session_map_writable_while_it_waits() {
+        assert_the_lua_session_map_stays_writable_while("session.end").await;
     }
 
     /// The `shutdown` RPC confirms first and stops the daemon second.

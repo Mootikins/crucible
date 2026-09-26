@@ -98,6 +98,51 @@ pub(crate) async fn handle_lua_init_session(
     )
 }
 
+/// Get the state of one Lua session out of the `lua_sessions` map.
+///
+/// The map guard is a read lock on one shard of the map. Do not keep it
+/// across an `.await`. `lua.shutdown_session` removes the entry with a write
+/// lock, and that lock blocks the thread of its worker. The CLI sends
+/// `session.end` and `lua.shutdown_session` together when a chat exits. If
+/// one handler waits with the guard while the other removes the entry, the
+/// daemon replies to neither.
+pub(crate) fn lua_session_state(
+    lua_sessions: &DashMap<String, Arc<Mutex<LuaSessionState>>>,
+    session_id: &str,
+) -> Option<Arc<Mutex<LuaSessionState>>> {
+    lua_sessions
+        .get(session_id)
+        .map(|entry| Arc::clone(entry.value()))
+}
+
+/// Fire the `on_session_end` hooks of a Lua session one time only.
+///
+/// `session.end` and `lua.shutdown_session` both call this function. The
+/// first call fires the hooks and sets `end_hooks_fired`. The second call
+/// does nothing, so the hooks of a plugin do not need to be idempotent.
+pub(crate) async fn fire_session_end_hooks_once(
+    lua_sessions: &DashMap<String, Arc<Mutex<LuaSessionState>>>,
+    session_id: &str,
+) {
+    let Some(state) = lua_session_state(lua_sessions, session_id) else {
+        return;
+    };
+    let mut state = state.lock().await;
+    if state.end_hooks_fired {
+        tracing::debug!(
+            session_id = %session_id,
+            "on_session_end hooks already fired; skipping"
+        );
+        return;
+    }
+    if let Some(session) = state.executor.current_session().get_current() {
+        if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
+            warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
+        }
+    }
+    state.end_hooks_fired = true;
+}
+
 pub(crate) async fn handle_lua_shutdown_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
@@ -121,23 +166,7 @@ pub(crate) async fn handle_lua_shutdown_session(
     // `session.end` (reason=User) or `lua.shutdown_session` (reason=Shutdown)
     // arrives first sets `end_hooks_fired`; the second is a no-op. Plugins
     // do NOT need to be idempotent.
-    if let Some(state) = lua_sessions.get(session_id) {
-        let state = state.value().clone();
-        let mut state = state.lock().await;
-        if state.end_hooks_fired {
-            tracing::debug!(
-                session_id = %session_id,
-                "on_session_end hooks already fired; skipping"
-            );
-        } else {
-            if let Some(session) = state.executor.current_session().get_current() {
-                if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
-                    warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
-                }
-            }
-            state.end_hooks_fired = true;
-        }
-    }
+    fire_session_end_hooks_once(lua_sessions, session_id).await;
 
     let removed = lua_sessions.remove(session_id).is_some();
     Response::success(
@@ -417,11 +446,9 @@ pub(crate) async fn handle_lua_register_commands(
     let session_id = params.session_id.as_str();
     let commands = &params.commands;
 
-    let Some(state) = lua_sessions.get(session_id) else {
+    let Some(state) = lua_session_state(lua_sessions, session_id) else {
         return session_not_found(req.id, session_id);
     };
-
-    let state = state.value().clone();
     let state = state.lock().await;
     let mut registered: usize = 0;
 
