@@ -40,6 +40,7 @@ fn proposal_show_takes_an_id_and_an_optional_conflict_path() {
             id,
             conflict,
             format,
+            ..
         } => {
             assert_eq!(id.to_string(), ID);
             assert_eq!(conflict, None);
@@ -83,7 +84,7 @@ fn proposal_decisions_parse() {
 #[test]
 fn proposal_resolve_needs_a_path_and_a_file() {
     match proposal(&["resolve", ID, "notes/a.md", "--from", "a.md"]) {
-        ProposalCommands::Resolve { id, path, from } => {
+        ProposalCommands::Resolve { id, path, from, .. } => {
             assert_eq!(id.to_string(), ID);
             assert_eq!(path, "notes/a.md");
             assert_eq!(from, PathBuf::from("a.md"));
@@ -103,5 +104,20 @@ fn a_proposal_id_that_is_not_a_uuid_is_refused() {
             Cli::try_parse_from(["cru", "proposal", sub, "not-a-uuid"]).is_err(),
             "{sub}"
         );
+    }
+}
+
+#[test]
+fn proposal_conflicts_accept_an_explicit_kiln_root() {
+    match proposal(&["resolve", ID, "a.md", "--root", "/second", "--from", "-"]) {
+        ProposalCommands::Resolve { root, path, .. } => {
+            assert_eq!(root, Some(PathBuf::from("/second")));
+            assert_eq!(path, "a.md");
+        }
+        _ => panic!("expected resolve"),
+    }
+    match proposal(&["show", ID, "--conflict", "a.md", "--root", "/second"]) {
+        ProposalCommands::Show { root, .. } => assert_eq!(root, Some(PathBuf::from("/second"))),
+        _ => panic!("expected show"),
     }
 }

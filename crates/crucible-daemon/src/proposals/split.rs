@@ -6,9 +6,11 @@
 
 use std::path::PathBuf;
 
-use crucible_core::proposal::{FileConflict, Proposal, ProposalId, ProposalState};
+use crucible_core::proposal::{FileConflict, Proposal, ProposalFile, ProposalId, ProposalState};
 
-use super::{extend, state_name, ProposalError, ProposalResult, ProposalStore};
+use super::{
+    ensure_available, extend, state_name, ProposalError, ProposalResult, ProposalStore, Reservation,
+};
 
 impl ProposalStore {
     /// Write the files `paths` of the proposal `id`. The other files stay in
@@ -22,8 +24,7 @@ impl ProposalStore {
         paths: &[String],
         kilns: &[PathBuf],
     ) -> ProposalResult<Proposal> {
-        let id = self.split_off(id, paths)?;
-        self.accept(&id, kilns).await
+        self.accept_files(id, paths, &[], kilns).await
     }
 
     /// Reject the files `paths` of the proposal `id`. The other files stay
@@ -35,42 +36,63 @@ impl ProposalStore {
         paths: &[String],
         reason: Option<String>,
     ) -> ProposalResult<Proposal> {
-        let id = self.split_off(id, paths)?;
-        self.reject(&id, reason)
+        self.reject_files(id, paths, &[], reason)
     }
 
-    /// Move the writes of `paths` out of the proposal `id` into a new
-    /// proposal. Returns the id of the proposal that holds exactly those
-    /// writes: `id` itself when `paths` is empty or names every write.
-    ///
-    /// Each conflict of a moved file moves with it. A proposal with no
-    /// conflict left becomes `Open`; the stale check then compares it with
-    /// the disk again.
-    pub(crate) fn split_off(
+    /// Accept an explicit selection, reserving both halves before file I/O.
+    pub async fn accept_files(
         &self,
         id: &ProposalId,
         paths: &[String],
-    ) -> ProposalResult<ProposalId> {
-        let _write = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        files: &[ProposalFile],
+        kilns: &[PathBuf],
+    ) -> ProposalResult<Proposal> {
+        let (_reservation, proposal) = {
+            let mut reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
+            ensure_available(&reserved, id)?;
+            let selected = select_files(&self.get(id)?, paths, files)?;
+            let split = self.split_locked(id, &selected)?;
+            let proposal = self.get(&split)?;
+            let ids = if split == *id {
+                vec![*id]
+            } else {
+                vec![*id, split]
+            };
+            reserved.extend(ids.iter().copied());
+            (Reservation { store: self, ids }, proposal)
+        };
+        self.write_all(proposal, kilns).await
+    }
+
+    /// Reject a selection atomically with respect to other proposal mutations.
+    pub fn reject_files(
+        &self,
+        id: &ProposalId,
+        paths: &[String],
+        files: &[ProposalFile],
+        reason: Option<String>,
+    ) -> ProposalResult<Proposal> {
+        let reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        ensure_available(&reserved, id)?;
+        let selected = select_files(&self.get(id)?, paths, files)?;
+        let split = self.split_locked(id, &selected)?;
+        self.settle_locked(&split, ProposalState::Rejected { reason })
+    }
+
+    fn split_locked(&self, id: &ProposalId, files: &[ProposalFile]) -> ProposalResult<ProposalId> {
         let original = self.get(id)?;
         if !original.state.is_pending() {
             return Err(ProposalError::Settled(*id, state_name(&original.state)));
-        }
-        if let Some(missing) = paths
-            .iter()
-            .find(|path| !original.writes.iter().any(|w| &w.path == *path))
-        {
-            return Err(ProposalError::NoWrite(*id, missing.clone()));
         }
         let (taken, kept): (Vec<_>, Vec<_>) = original
             .writes
             .iter()
             .cloned()
-            .partition(|w| paths.contains(&w.path));
-        if paths.is_empty() || kept.is_empty() {
+            .partition(|w| files.iter().any(|f| f.root == w.root && f.path == w.path));
+        if files.is_empty() || kept.is_empty() {
             return Ok(*id);
         }
-        let (moved, stays) = conflicts_of(&original.state, paths);
+        let (moved, stays) = conflicts_of(&original.state, files);
 
         let mut split = Proposal {
             id: ProposalId::generate(),
@@ -98,14 +120,62 @@ impl ProposalStore {
     }
 }
 
+/// Resolve legacy names against the stored proposal before any mutation.
+pub(super) fn select_files(
+    proposal: &Proposal,
+    paths: &[String],
+    files: &[ProposalFile],
+) -> ProposalResult<Vec<ProposalFile>> {
+    if !paths.is_empty() && !files.is_empty() {
+        return Err(ProposalError::MixedSelection);
+    }
+    for file in files {
+        if !proposal.writes_path(&file.root, &file.path) {
+            return Err(ProposalError::NoWrite(
+                proposal.id,
+                format!("{}:{}", file.root.as_path().display(), file.path),
+            ));
+        }
+    }
+    let mut selected = files.to_vec();
+    for path in paths {
+        let matches: Vec<_> = proposal.writes.iter().filter(|w| &w.path == path).collect();
+        match matches.as_slice() {
+            [] => return Err(ProposalError::NoWrite(proposal.id, path.clone())),
+            [write] => selected.push(ProposalFile {
+                root: write.root.clone(),
+                path: path.clone(),
+            }),
+            _ => {
+                return Err(ProposalError::Ambiguous(
+                    path.clone(),
+                    matches
+                        .iter()
+                        .map(|w| w.root.as_path().display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ))
+            }
+        }
+    }
+    Ok(selected)
+}
+
 /// The states of the two parts of a split: the part that holds `paths`, and
 /// the part that keeps the other files.
-fn conflicts_of(state: &ProposalState, paths: &[String]) -> (ProposalState, ProposalState) {
+fn conflicts_of(
+    state: &ProposalState,
+    selected: &[ProposalFile],
+) -> (ProposalState, ProposalState) {
     let ProposalState::Conflicted { files } = state else {
         return (state.clone(), state.clone());
     };
     let (moved, stays): (Vec<FileConflict>, Vec<FileConflict>) =
-        files.iter().cloned().partition(|c| paths.contains(&c.path));
+        files.iter().cloned().partition(|c| {
+            selected
+                .iter()
+                .any(|f| f.root == c.root && f.path == c.path)
+        });
     let state = |files: Vec<FileConflict>| {
         if files.is_empty() {
             ProposalState::Open
@@ -223,7 +293,13 @@ mod tests {
         let state = ProposalState::Conflicted {
             files: vec![conflict("a.md")],
         };
-        let (moved, stays) = conflicts_of(&state, &["a.md".into()]);
+        let (moved, stays) = conflicts_of(
+            &state,
+            &[ProposalFile {
+                root: PhysicalRoot::from_top_level("/kiln"),
+                path: "a.md".into(),
+            }],
+        );
         assert_eq!(moved, state);
         assert_eq!(stays, ProposalState::Open);
     }

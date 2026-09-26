@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crucible_core::file_write::ExpectedBase;
 use crucible_core::note_edit::disk_hash;
-use crucible_core::proposal::{Proposal, ProposalAuthor, ProposalState};
+use crucible_core::proposal::{Proposal, ProposalAuthor, ProposalFile, ProposalState};
 use crucible_core::session::{PhysicalRoot, SessionId};
 use crucible_daemon::proposals::{proposals_root, ProposalStore};
 use crucible_daemon::{DaemonClient, Server};
@@ -266,4 +266,198 @@ async fn resolve_waits_for_every_settled_text() {
     assert_eq!(daemon.read("a.md"), "uno eins\ntwo\nthree\n");
     assert_eq!(daemon.read("b.md"), "uno zwei\ntwo\nthree\n");
     daemon.stop().await;
+}
+
+enum FileDecision {
+    Accept,
+    Reject,
+    Resolve,
+}
+
+/// Legacy path-only decisions must fail when the path names two files.
+/// The real socket must carry the refusal without changing either kiln.
+async fn file_decision_in_two_kilns(decision: FileDecision, qualified: bool) {
+    let daemon = Daemon::start(true).await;
+    let other = daemon._dir.path().join("other-kiln");
+    std::fs::create_dir(&other).unwrap();
+    daemon
+        .client
+        .kiln_register("other", &other, false, false)
+        .await
+        .unwrap();
+    write(&daemon.file("a.md"), BASE);
+    write(&other.join("a.md"), BASE);
+
+    let store = ProposalStore::new(proposals_root(&daemon.data));
+    let session = SessionId::parse("aux-two-kilns").unwrap();
+    let mut proposal = None;
+    for root in [&daemon.kiln, &other] {
+        proposal = Some(
+            store
+                .record_write(
+                    ProposalAuthor::Plugin {
+                        name: "reflection".into(),
+                    },
+                    &session,
+                    PhysicalRoot::from_top_level(root),
+                    "a.md",
+                    text_base(BASE),
+                    "proposed\n".into(),
+                )
+                .unwrap(),
+        );
+    }
+    let proposal = proposal.unwrap();
+    if matches!(decision, FileDecision::Resolve) {
+        write(&daemon.file("a.md"), "outside\n");
+        write(&other.join("a.md"), "outside\n");
+        let conflicted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+        let ProposalState::Conflicted { files } = conflicted.state else {
+            panic!("both files must conflict before testing resolution");
+        };
+        assert_eq!(files.len(), 2);
+    }
+    let before = daemon.client.proposal_get(&proposal.id).await.unwrap();
+    let first_before = daemon.read("a.md");
+    let second_before = std::fs::read_to_string(other.join("a.md")).unwrap();
+    let selected = vec!["a.md".to_string()];
+    let files = vec![ProposalFile {
+        root: PhysicalRoot::from_top_level(&other),
+        path: "a.md".into(),
+    }];
+    // Invalid explicit selection and mixed formats must fail before splitting.
+    let unknown = vec![ProposalFile {
+        root: PhysicalRoot::from_top_level("/unregistered"),
+        path: "a.md".into(),
+    }];
+    assert!(daemon
+        .client
+        .proposal_accept_files(&proposal.id, &[], &unknown)
+        .await
+        .is_err());
+    assert!(daemon
+        .client
+        .proposal_reject_files(&proposal.id, &selected, &files, None)
+        .await
+        .is_err());
+    assert_eq!(
+        daemon.client.proposal_get(&proposal.id).await.unwrap(),
+        before
+    );
+    let result = match decision {
+        FileDecision::Accept if qualified => {
+            daemon
+                .client
+                .proposal_accept_files(&proposal.id, &[], &files)
+                .await
+        }
+        FileDecision::Reject if qualified => {
+            daemon
+                .client
+                .proposal_reject_files(&proposal.id, &[], &files, None)
+                .await
+        }
+        FileDecision::Resolve if qualified => {
+            daemon
+                .client
+                .proposal_resolve_file(&proposal.id, "a.md", Some(&files[0].root), "resolved\n")
+                .await
+        }
+        FileDecision::Accept => {
+            daemon
+                .client
+                .proposal_accept_paths(&proposal.id, &selected)
+                .await
+        }
+        FileDecision::Reject => {
+            daemon
+                .client
+                .proposal_reject_paths(&proposal.id, &selected, None)
+                .await
+        }
+        FileDecision::Resolve => {
+            daemon
+                .client
+                .proposal_resolve(&proposal.id, "a.md", "resolved\n")
+                .await
+        }
+    };
+    let stored = daemon.client.proposal_get(&proposal.id).await.unwrap();
+    let first_text = daemon.read("a.md");
+    let second_text = std::fs::read_to_string(other.join("a.md")).unwrap();
+    let first_root = PhysicalRoot::from_top_level(&daemon.kiln);
+    daemon.stop().await;
+
+    if qualified {
+        let decided = result.unwrap();
+        assert_eq!(first_text, first_before);
+        match decision {
+            FileDecision::Accept | FileDecision::Reject => {
+                assert_eq!(decided.writes.len(), 1);
+                assert_eq!(decided.writes[0].root, files[0].root);
+                assert_eq!(stored.writes.len(), 1);
+                assert_eq!(stored.writes[0].root, first_root);
+                if matches!(decision, FileDecision::Accept) {
+                    assert_eq!(second_text, "proposed\n");
+                    assert_eq!(decided.state, ProposalState::Accepted);
+                } else {
+                    assert_eq!(second_text, second_before);
+                    assert!(matches!(decided.state, ProposalState::Rejected { .. }));
+                }
+            }
+            FileDecision::Resolve => {
+                assert_eq!(second_text, second_before);
+                let ProposalState::Conflicted { files: remaining } = decided.state else {
+                    panic!("first kiln must still conflict")
+                };
+                assert_eq!(remaining.len(), 1);
+                assert_eq!(remaining[0].root, first_root);
+                assert_eq!(decided.writes[1].new_text, "resolved\n");
+                assert_eq!(decided.writes[0].new_text, "proposed\n");
+            }
+        }
+        return;
+    }
+
+    let error = result.expect_err("a path-only decision must not select files in two kilns");
+    assert!(
+        error.to_string().to_lowercase().contains("ambiguous"),
+        "{error:#}"
+    );
+    assert_eq!(
+        stored, before,
+        "an ambiguous decision must leave the proposal unchanged"
+    );
+    assert_eq!(first_text, first_before);
+    assert_eq!(second_text, second_before);
+}
+
+#[tokio::test]
+async fn accepting_an_ambiguous_path_over_rpc_changes_neither_kiln() {
+    file_decision_in_two_kilns(FileDecision::Accept, false).await;
+}
+
+#[tokio::test]
+async fn rejecting_an_ambiguous_path_over_rpc_changes_neither_kiln() {
+    file_decision_in_two_kilns(FileDecision::Reject, false).await;
+}
+
+#[tokio::test]
+async fn resolving_an_ambiguous_path_over_rpc_preserves_both_conflicts() {
+    file_decision_in_two_kilns(FileDecision::Resolve, false).await;
+}
+
+#[tokio::test]
+async fn accepting_a_qualified_file_over_rpc_changes_only_its_kiln() {
+    file_decision_in_two_kilns(FileDecision::Accept, true).await;
+}
+
+#[tokio::test]
+async fn rejecting_a_qualified_file_over_rpc_keeps_the_other_kiln_open() {
+    file_decision_in_two_kilns(FileDecision::Reject, true).await;
+}
+
+#[tokio::test]
+async fn resolving_the_second_kiln_over_rpc_preserves_the_first_conflict() {
+    file_decision_in_two_kilns(FileDecision::Resolve, true).await;
 }

@@ -1,10 +1,5 @@
 import { statusBarActions } from '@/stores/statusBarStore';
 import {
-  dropDaemonNotification,
-  showDaemonNotification,
-  type DaemonNotification,
-} from '@/lib/query/daemon-notification';
-import {
   generateMessageId,
   originName,
   turnResponseId,
@@ -629,24 +624,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // Surfaced rather than logged: a transcript with an invisible hole is
         // permanently and silently wrong, and reloading the session is the only
         // way back — so the user has to be told, and told what to do.
-        // A daemon notification: a warning stays a warning; a toast or a
-        // progress line is information.
-        if (event.event === 'notification_added') {
-          showDaemonNotification(
-            (event.data as { notification?: DaemonNotification } | null)?.notification,
-            deps.sessionId,
-          );
-          break;
-        }
-        // A client of this session closed a daemon notification, or the
-        // daemon dropped it for everyone.
-        if (event.event === 'notification_dismissed') {
-          dropDaemonNotification(
-            (event.data as { notification_id?: unknown } | null)?.notification_id,
-            deps.sessionId,
-          );
-          break;
-        }
         if (event.event === 'stream_gap') {
           const dropped = (event.data as { dropped?: number } | null)?.dropped;
           deps.setError(

@@ -1,4 +1,5 @@
-import { dismissSessionNotification } from '@/lib/api';
+import type { ChatEvent } from '@/lib/types';
+import { dismissSessionNotification, getSessionNotifications } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 
 /** A daemon notification as the wire carries it. */
@@ -66,4 +67,63 @@ function closeInDaemon(id: string): void {
 /** Forget every notification. Tests share one module, so each starts empty. */
 export function resetDaemonNotificationsForTests(): void {
   shownIn.clear();
+}
+
+/** One shared stream owns the snapshot and live overlay for its session. */
+export function sessionNotifications(sessionId: string) {
+  let generation = 0;
+  let pending: Map<string, DaemonNotification> | undefined;
+
+  function refresh(): void {
+    const current = ++generation;
+    const changes = new Map<string, DaemonNotification>();
+    pending = changes;
+    void getSessionNotifications(sessionId).then((list) => {
+      if (current !== generation) return;
+      const snapshot = new Map<string, DaemonNotification>();
+      for (const n of [...list].reverse() as DaemonNotification[]) {
+        if (n?.id) snapshot.set(n.id, n);
+      }
+      for (const [id, n] of changes) {
+        if (n) snapshot.set(id, n);
+        else snapshot.delete(id);
+      }
+      // A reconnect can have missed a dismissal entirely.
+      for (const [id, sessions] of shownIn) {
+        if (sessions.has(sessionId) && !snapshot.has(id)) dropDaemonNotification(id, sessionId);
+      }
+      for (const n of snapshot.values()) showDaemonNotification(n, sessionId);
+    }).catch((e: unknown) => {
+      if (current !== generation) return;
+      notificationActions.addNotification('warning',
+        `The notifications of the session are not available: ${e instanceof Error ? e.message : String(e)}`);
+    }).finally(() => {
+      if (current === generation) pending = undefined;
+    });
+  }
+
+  return {
+    refresh,
+    event(event: ChatEvent): void {
+      if (event.type !== 'session_event') return;
+      if (event.event === 'stream_gap') {
+        refresh();
+      } else if (event.event === 'notification_added') {
+        const n = (event.data as { notification?: DaemonNotification } | null)?.notification;
+        if (n?.id) pending?.set(n.id, n);
+        showDaemonNotification(n, sessionId);
+      } else if (event.event === 'notification_dismissed') {
+        const id = (event.data as { notification_id?: unknown } | null)?.notification_id;
+        if (typeof id === 'string') pending?.set(id, null);
+        dropDaemonNotification(id, sessionId);
+      }
+    },
+    dispose(): void {
+      ++generation;
+      pending = undefined;
+      for (const [id, sessions] of shownIn) {
+        if (sessions.has(sessionId)) dropDaemonNotification(id, sessionId);
+      }
+    },
+  };
 }

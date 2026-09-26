@@ -126,3 +126,74 @@ fn proposal_accept_writes_the_note() {
         stdout_of(&listed)
     );
 }
+
+#[test]
+fn proposal_resolve_selects_the_second_kiln_over_the_cli() {
+    let daemon = TestDaemon::start();
+    let workspace = tempfile::tempdir().unwrap();
+    let roots: Vec<_> = ["first", "second"]
+        .iter()
+        .map(|name| {
+            let root = workspace.path().join(name);
+            std::fs::create_dir(&root).unwrap();
+            let registered = daemon
+                .command()
+                .args(["kiln", "register", name])
+                .arg(&root)
+                .output()
+                .unwrap();
+            assert!(registered.status.success(), "{}", stderr_of(&registered));
+            std::fs::write(root.join("links.md"), "outside\n").unwrap();
+            root
+        })
+        .collect();
+    let id = store_proposal(&daemon, &roots[0], "base\n", "proposed\n");
+    let file = daemon
+        .data_root()
+        .join("proposals")
+        .join(format!("{id}.json"));
+    let mut proposal: Proposal = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    let mut second = proposal.writes[0].clone();
+    second.root = PhysicalRoot::from_top_level(&roots[1]);
+    proposal.writes.push(second);
+    std::fs::write(&file, serde_json::to_vec(&proposal).unwrap()).unwrap();
+    let accepted = daemon
+        .command()
+        .args(["proposal", "accept", &id.to_string()])
+        .output()
+        .unwrap();
+    assert!(!accepted.status.success());
+    assert!(stderr_of(&accepted).contains("2 files conflict"));
+    let settled = workspace.path().join("settled.md");
+    std::fs::write(&settled, "resolved\n").unwrap();
+    let ambiguous = daemon
+        .command()
+        .args(["proposal", "resolve", &id.to_string(), "links.md", "--from"])
+        .arg(&settled)
+        .output()
+        .unwrap();
+    assert!(!ambiguous.status.success());
+    assert!(stderr_of(&ambiguous).contains("ambiguous"));
+    let resolved = daemon
+        .command()
+        .args(["proposal", "resolve", &id.to_string(), "links.md", "--root"])
+        .arg(&roots[1])
+        .arg("--from")
+        .arg(&settled)
+        .output()
+        .unwrap();
+    assert!(resolved.status.success(), "{}", stderr_of(&resolved));
+    let stored: Proposal = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    let ProposalState::Conflicted { files } = stored.state else {
+        panic!("first kiln still conflicts")
+    };
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].root.as_path(), roots[0]);
+    assert_eq!(stored.writes[1].new_text, "resolved\n");
+    for root in &roots {
+        assert_eq!(
+            std::fs::read_to_string(root.join("links.md")).unwrap(),
+            "outside\n"
+        );
+    }
+}

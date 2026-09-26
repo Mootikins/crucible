@@ -321,8 +321,8 @@ async fn accept_and_resolve_emit_proposal_changed() {
 
     assert!(matches!(conflicted.state, ProposalState::Conflicted { .. }));
     let changed: Vec<_> = drain(&mut events).iter().map(changed_id).collect();
-    // The stale check at accept marks the proposal stale first.
-    assert_eq!(changed, vec![made.id.to_string(); 2]);
+    // Settlement owns the proposal and announces its checked result directly.
+    assert_eq!(changed, vec![made.id.to_string()]);
 
     let resolved = fx
         .store
@@ -371,4 +371,196 @@ async fn a_file_event_on_a_proposed_path_makes_the_proposal_stale() {
     };
     assert_eq!(changed_id(&announced), made.id.to_string());
     assert_eq!(fx.store.get(&made.id).unwrap().state, ProposalState::Stale);
+}
+
+/// Pause acceptance at a participating writer's lock, after it read the
+/// proposal. Polling the future makes the interleaving deterministic.
+fn pending_acceptance() -> (Fixture, PathBuf, Proposal) {
+    let fx = Fixture::new();
+    let kiln = fx.dir.path().join("kiln");
+    std::fs::create_dir(&kiln).unwrap();
+    let proposal = fx
+        .store
+        .record_write(
+            plugin("reflection"),
+            &session("aux-1"),
+            PhysicalRoot::from_top_level(&kiln),
+            "a.md",
+            ExpectedBase::Absent,
+            "first\n".into(),
+        )
+        .unwrap();
+    (fx, kiln, proposal)
+}
+
+#[tokio::test]
+async fn accepting_a_proposal_preserves_a_successful_concurrent_write() {
+    let (fx, kiln, proposal) = pending_acceptance();
+    let guard = crate::file_write::lock(&kiln.join("a.md")).await;
+    let roots = vec![kiln.clone()];
+    let accepting = fx.store.accept(&proposal.id, &roots);
+    tokio::pin!(accepting);
+    assert!(futures::poll!(&mut accepting).is_pending());
+
+    let recorded = fx.store.record_write(
+        plugin("reflection"),
+        &session("aux-1"),
+        PhysicalRoot::from_top_level(&kiln),
+        "b.md",
+        ExpectedBase::Absent,
+        "second\n".into(),
+    );
+    drop(guard);
+    let accepted = accepting.await;
+
+    // Refusing the competing operation is valid. A successful operation,
+    // however, must survive the other writer's completion and a reopen.
+    assert!(
+        accepted.is_ok() || recorded.is_ok(),
+        "neither operation succeeded"
+    );
+    if let Ok(recorded) = recorded {
+        let stored = fx.reopened().get(&recorded.id).unwrap();
+        assert!(
+            stored
+                .writes
+                .iter()
+                .any(|w| w.path == "b.md" && w.new_text == "second\n"),
+            "a successful concurrent write vanished: {stored:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn accepting_and_rejecting_one_proposal_cannot_both_succeed() {
+    let (fx, kiln, proposal) = pending_acceptance();
+    let guard = crate::file_write::lock(&kiln.join("a.md")).await;
+    let roots = vec![kiln.clone()];
+    let accepting = fx.store.accept(&proposal.id, &roots);
+    tokio::pin!(accepting);
+    assert!(futures::poll!(&mut accepting).is_pending());
+
+    let rejected = fx
+        .store
+        .reject(&proposal.id, Some("keep the file absent".into()));
+    drop(guard);
+    let accepted = accepting.await;
+    let stored = fx.reopened().get(&proposal.id).unwrap();
+
+    assert!(
+        accepted.is_ok() ^ rejected.is_ok(),
+        "exactly one decision must succeed: accept={accepted:?}, reject={rejected:?}, stored={stored:?}"
+    );
+    if rejected.is_ok() {
+        assert!(matches!(stored.state, ProposalState::Rejected { .. }));
+        assert!(
+            !kiln.join("a.md").exists(),
+            "a rejected proposal wrote its file"
+        );
+    } else {
+        assert_eq!(stored.state, ProposalState::Accepted);
+        assert_eq!(
+            std::fs::read_to_string(kiln.join("a.md")).unwrap(),
+            "first\n"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cancelling_accept_releases_its_reservation() {
+    let (fx, kiln, proposal) = pending_acceptance();
+    let guard = crate::file_write::lock(&kiln.join("a.md")).await;
+    let roots = vec![kiln.clone()];
+    {
+        let accepting = fx.store.accept(&proposal.id, &roots);
+        tokio::pin!(accepting);
+        assert!(futures::poll!(&mut accepting).is_pending());
+        assert!(matches!(
+            fx.store.dismiss(&proposal.id),
+            Err(ProposalError::Busy(_))
+        ));
+    }
+    fx.store.reject(&proposal.id, None).unwrap();
+    drop(guard);
+    assert!(!kiln.join("a.md").exists());
+}
+
+#[tokio::test]
+async fn partial_accept_reserves_both_halves_and_supersede_preflights() {
+    let (fx, kiln, proposal) = pending_acceptance();
+    fx.store
+        .record_write(
+            plugin("reflection"),
+            &session("aux-1"),
+            PhysicalRoot::from_top_level(&kiln),
+            "b.md",
+            ExpectedBase::Absent,
+            "b\n".into(),
+        )
+        .unwrap();
+    let guard = crate::file_write::lock(&kiln.join("a.md")).await;
+    let roots = vec![kiln.clone()];
+    let paths = vec!["a.md".to_string()];
+    {
+        let accepting = fx.store.accept_paths(&proposal.id, &paths, &roots);
+        tokio::pin!(accepting);
+        assert!(futures::poll!(&mut accepting).is_pending());
+        let before = fx.store.list(true).unwrap();
+        assert_eq!(before.len(), 2);
+        for p in &before {
+            assert!(matches!(
+                fx.store.reject(&p.id, None),
+                Err(ProposalError::Busy(_))
+            ));
+            assert!(matches!(
+                fx.store.reject_paths(&p.id, &[], None),
+                Err(ProposalError::Busy(_))
+            ));
+        }
+        // A new turn would supersede the reserved split; no new proposal may
+        // be persisted before discovering that conflict.
+        fx.store.end_turn(&session("aux-1"));
+        let result = fx.store.record_write(
+            plugin("reflection"),
+            &session("aux-2"),
+            PhysicalRoot::from_top_level(&kiln),
+            "a.md",
+            ExpectedBase::Absent,
+            "newer\n".into(),
+        );
+        assert!(matches!(result, Err(ProposalError::Busy(_))));
+        assert_eq!(fx.store.list(true).unwrap(), before);
+    }
+    for p in fx.store.list(true).unwrap() {
+        fx.store.dismiss(&p.id).unwrap();
+    }
+    drop(guard);
+    assert!(!kiln.join("a.md").exists());
+}
+
+#[tokio::test]
+async fn resolve_reserves_its_proposal_and_write_errors_release_it() {
+    let (fx, kiln, proposal) = pending_acceptance();
+    std::fs::write(kiln.join("a.md"), "outside\n").unwrap();
+    let roots = vec![kiln.clone()];
+    let conflict = fx.store.accept(&proposal.id, &roots).await.unwrap();
+    assert!(matches!(conflict.state, ProposalState::Conflicted { .. }));
+    let guard = crate::file_write::lock(&kiln.join("a.md")).await;
+    let resolving = fx.store.resolve(&proposal.id, "a.md", "settled\n", &roots);
+    tokio::pin!(resolving);
+    assert!(futures::poll!(&mut resolving).is_pending());
+    assert!(matches!(
+        fx.store.reject(&proposal.id, None),
+        Err(ProposalError::Busy(_))
+    ));
+    assert!(fx.store.check_stale().unwrap().is_empty());
+    drop(guard);
+    assert_eq!(resolving.await.unwrap().state, ProposalState::Accepted);
+
+    let (other, _, p) = pending_acceptance();
+    assert!(matches!(
+        other.store.accept(&p.id, &[]).await,
+        Err(ProposalError::WriteFailed(_))
+    ));
+    other.store.reject(&p.id, None).unwrap();
 }

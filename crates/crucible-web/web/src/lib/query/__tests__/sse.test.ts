@@ -67,6 +67,7 @@ describe('sessionEvents', () => {
     try {
       sessionEvents('s1').subscribe(vi.fn());
       sessionEvents('s1').subscribe(vi.fn());
+      onlySource().open();
 
       await vi.waitFor(() =>
         // The store is one for the whole file, so only these two are read.
@@ -94,6 +95,7 @@ describe('sessionEvents', () => {
     });
     try {
       sessionEvents('s1').subscribe(vi.fn());
+      onlySource().open();
       const entry = await vi.waitFor(() => {
         const found = notificationStore.notifications.find(
           (n) => !n.dismissed && n.message === 'read on attach',

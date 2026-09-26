@@ -34,6 +34,8 @@ import {
 export interface ConflictViewProps {
   /** The note whose conflict this settles. */
   path: string;
+  /** Disambiguates files with the same name in different roots. */
+  label?: string;
   /** Our text merged with theirs, as far as the merge got. The document. */
   mergedContent: string;
   /** Every span the two writers changed differently. */
@@ -78,7 +80,7 @@ export const ConflictView: Component<ConflictViewProps> = (props) => {
    * text with no question asked.
    */
   const settled = () => seeded() && open().length === 0 && props.baseHash === builtFor;
-  const name = () => props.path.split('/').pop() ?? props.path;
+  const name = () => props.label ?? props.path.split('/').pop() ?? props.path;
 
   // The document is the MERGED text: this writer's text, with the other
   // writer's folded in everywhere the two did not collide.

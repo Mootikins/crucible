@@ -13,7 +13,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use crucible_core::proposal::{Proposal, ProposalId};
+use crucible_core::proposal::{Proposal, ProposalFile, ProposalId};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -89,6 +89,9 @@ pub struct AcceptProposalBody {
     /// file.
     #[serde(default)]
     pub paths: Vec<String>,
+    /// Root-qualified files. Use this instead of paths for per-file decisions.
+    #[serde(default)]
+    pub files: Vec<ProposalFile>,
 }
 
 /// `POST /api/proposals/{id}/accept` — write every file of the proposal, or
@@ -114,7 +117,7 @@ async fn accept_proposal(
     let id = proposal_id(&id)?;
     let proposal = state
         .daemon
-        .proposal_accept_paths(&id, &body.paths)
+        .proposal_accept_files(&id, &body.paths, &body.files)
         .await
         .daemon_err()?;
     Ok(Json(proposal))
@@ -131,6 +134,9 @@ pub struct RejectProposalBody {
     /// every file.
     #[serde(default)]
     pub paths: Vec<String>,
+    /// Root-qualified files. Use this instead of paths for per-file decisions.
+    #[serde(default)]
+    pub files: Vec<ProposalFile>,
 }
 
 /// `POST /api/proposals/{id}/reject` — reject the proposal, or the files that
@@ -156,7 +162,7 @@ async fn reject_proposal(
     let id = proposal_id(&id)?;
     let proposal = state
         .daemon
-        .proposal_reject_paths(&id, &body.paths, body.reason.as_deref())
+        .proposal_reject_files(&id, &body.paths, &body.files, body.reason.as_deref())
         .await
         .daemon_err()?;
     Ok(Json(proposal))
@@ -188,6 +194,10 @@ async fn dismiss_proposal(
 pub struct ResolveProposalBody {
     /// The path relative to the kiln root, as the proposal names it.
     pub path: String,
+    /// The stored kiln root. Omit only when the path is unique in the proposal.
+    #[serde(default)]
+    #[schema(value_type = Option<String>)]
+    pub root: Option<crucible_core::session::PhysicalRoot>,
     /// The whole text to write.
     pub text: String,
 }
@@ -213,7 +223,7 @@ async fn resolve_proposal(
     let id = proposal_id(&id)?;
     let proposal = state
         .daemon
-        .proposal_resolve(&id, &body.path, &body.text)
+        .proposal_resolve_file(&id, &body.path, body.root.as_ref(), &body.text)
         .await
         .daemon_err()?;
     Ok(Json(proposal))

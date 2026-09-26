@@ -27,7 +27,6 @@
 import { createRoot, createSignal, onCleanup, type Accessor } from 'solid-js';
 import type { QueryClient } from '@tanstack/solid-query';
 import {
-  getSessionNotifications,
   subscribeToEvents,
   subscribeToFsEvents,
   subscribeToPluginEvents,
@@ -38,8 +37,7 @@ import {
 } from '@/lib/api';
 import type { ChatEvent, FsEvent, SequencedChatEvent } from '@/lib/types';
 import { getBus, type Bus } from '@/lib/bus';
-import { showDaemonNotification, type DaemonNotification } from '@/lib/query/daemon-notification';
-import { notificationActions } from '@/stores/notificationStore';
+import { sessionNotifications } from '@/lib/query/daemon-notification';
 import { getQueryClient } from './client';
 
 // =============================================================================
@@ -358,36 +356,28 @@ export function advanceSessionCursor(sessionId: string, seq: number): void {
 }
 
 /**
- * Read the notifications of a session once, when the browser attaches, and
- * show them oldest first. Later ones arrive on the event stream.
- */
-function readSessionNotifications(sessionId: string): void {
-  getSessionNotifications(sessionId)
-    .then((list) =>
-      [...list].reverse().forEach((n) => showDaemonNotification(n as DaemonNotification, sessionId)),
-    )
-    .catch((e: unknown) =>
-      notificationActions.addNotification(
-        'warning',
-        `The notifications of the session are not available: ${e instanceof Error ? e.message : String(e)}`,
-      ),
-    );
-}
-
-/**
  * The chat events of one session (`GET /api/chat/events/{id}`).
  *
  * One source per session id: two panes on one session share it, and a pane on
  * another session opens its own.
  */
 export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> {
-  // The first attach to the session reads the notifications it already
-  // has; the stream then carries `notification_added`.
-  if (!sessionRoots.has(sessionId)) readSessionNotifications(sessionId);
   return rootFor(sessionRoots, sessionId, {
     name: `chat events ${sessionId}`,
-    connect: (onEvent, onOpen) =>
-      subscribeToEvents(sessionId, onEvent, onOpen, () => sessionCursor(sessionId)),
+    connect: (onEvent, onOpen) => {
+      const notifications = sessionNotifications(sessionId);
+      // Fetch only after subscription opens; otherwise a dismissal can fall
+      // between the snapshot and the stream. Reopens also reconcile gaps.
+      const close = subscribeToEvents(sessionId, (event) => {
+        if (event.type === 'connection' && event.status === 'connected') notifications.refresh();
+        notifications.event(event);
+        onEvent(event);
+      }, onOpen, () => sessionCursor(sessionId));
+      return () => {
+        close();
+        notifications.dispose();
+      };
+    },
     route: (event) =>
       runRoute(`chat events ${sessionId}`, sessionRoute, event, {
         ...routeContext(),

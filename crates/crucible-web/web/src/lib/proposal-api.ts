@@ -10,6 +10,7 @@ import type { components } from './api-schema';
 
 type Schemas = components['schemas'];
 
+export type ProposalFile = Schemas['ProposalFile'];
 export type Proposal = Schemas['Proposal'];
 export type ProposalState = Schemas['ProposalState'];
 export type FileConflict = Schemas['FileConflict'];
@@ -101,11 +102,11 @@ export async function getProposal(id: string): Promise<Proposal> {
  * Write the files of a proposal. With `paths`, only those files: the daemon
  * moves them into a new proposal, and the reply is that proposal.
  */
-export async function acceptProposal(id: string, paths: string[] = []): Promise<Proposal> {
+export async function acceptProposal(id: string, paths: string[] = [], files: ProposalFile[] = []): Promise<Proposal> {
   return decode(
     await client.POST('/api/proposals/{id}/accept', {
       params: { path: { id } },
-      body: paths.length > 0 ? { paths } : {},
+      body: { ...(paths.length > 0 ? { paths } : {}), ...(files.length > 0 ? { files } : {}) },
     }),
     'Failed to accept the proposal',
   );
@@ -117,13 +118,13 @@ export async function acceptProposal(id: string, paths: string[] = []): Promise<
  */
 export async function rejectProposal(
   id: string,
-  options: { paths?: string[]; reason?: string } = {},
+  options: { paths?: string[]; files?: ProposalFile[]; reason?: string } = {},
 ): Promise<Proposal> {
-  const { paths = [], reason } = options;
+  const { paths = [], files = [], reason } = options;
   return decode(
     await client.POST('/api/proposals/{id}/reject', {
       params: { path: { id } },
-      body: { ...(paths.length > 0 ? { paths } : {}), ...(reason ? { reason } : {}) },
+      body: { ...(paths.length > 0 ? { paths } : {}), ...(files.length > 0 ? { files } : {}), ...(reason ? { reason } : {}) },
     }),
     'Failed to reject the proposal',
   );
@@ -133,11 +134,11 @@ export async function rejectProposal(
  * Give the settled text of one conflicted file. The daemon writes the whole
  * proposal when no other file conflicts.
  */
-export async function resolveProposal(id: string, path: string, text: string): Promise<Proposal> {
+export async function resolveProposal(id: string, path: string, text: string, root?: string): Promise<Proposal> {
   return decode(
     await client.POST('/api/proposals/{id}/resolve', {
       params: { path: { id } },
-      body: { path, text },
+      body: { path, text, ...(root ? { root } : {}) },
     }),
     'Failed to accept the resolution',
   );

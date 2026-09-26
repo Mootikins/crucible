@@ -76,6 +76,15 @@ pub enum ProposalAuthor {
     },
 }
 
+/// The identity of a file within a proposal. A selector grants no write authority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProposalFile {
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub root: PhysicalRoot,
+    pub path: String,
+}
+
 /// One file that a proposal creates or replaces.
 ///
 /// A proposal does not delete or rename a file.

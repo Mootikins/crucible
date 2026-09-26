@@ -17,11 +17,11 @@ makes a proposal. The file on disk changes only when you accept it. See
 
 ```
 cru proposal list [--all] [-f text|json]
-cru proposal show <id> [--conflict PATH] [-f text|json]
+cru proposal show <id> [--conflict PATH [--root ROOT]] [-f text|json]
 cru proposal accept <id>
 cru proposal reject <id> [--reason TEXT]
 cru proposal dismiss <id>
-cru proposal resolve <id> <path> --from FILE
+cru proposal resolve <id> <path> [--root ROOT] --from FILE
 ```
 
 ## list
@@ -60,6 +60,8 @@ cru proposal show <id> --conflict notes/a.md > a.md
 
 - `--conflict PATH` prints only the marked text of that conflicted file, and
   nothing else.
+- `--root ROOT` selects the kiln when `--conflict PATH` occurs in several kilns.
+  Use the root printed with the conflict or in the JSON record.
 - `-f json` prints the proposal record.
 
 ## accept
@@ -114,11 +116,18 @@ cru proposal resolve <id> notes/a.md --from - < a.md
 
 - `<path>` is the path of the file, relative to its kiln root, as the
   proposal names it.
+- `--root ROOT` selects the kiln for this file. A path shared by two kilns is
+  refused unless its root is supplied; no conflict is consumed by that refusal.
 - `--from FILE` names the file that holds the settled text; `-` reads stdin.
 
 The daemon writes the files of the proposal only once every conflicted file
 has a settled text. The command refuses a text that still holds a
 `<<<<<<< proposal` or `>>>>>>> disk` marker line.
+
+A decision in progress reserves its proposal. A competing write, decision or
+superseding proposal is refused as busy and can be retried after it finishes.
+A successful competing operation is never silently overwritten. Decisions are
+sent once; the client does not retry them automatically.
 
 ## See also
 

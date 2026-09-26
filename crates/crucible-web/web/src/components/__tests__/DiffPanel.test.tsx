@@ -847,16 +847,14 @@ describe('DiffPanel', () => {
     function serveProposal(
       state: ProposalState,
       reply: Proposal = proposal({ kind: 'accepted' }),
+      files = [entry('a.md', { root: '/kiln', status: { kind: 'added' } }), entry('b.md', { root: '/kiln' })],
     ): void {
       env = createTestQueryEnv({
         'GET /api/diff': {
           body: {
             id: `proposal-${ID}`,
             source: proposalSource,
-            files: [
-              entry('a.md', { root: '/kiln', status: { kind: 'added' } }),
-              entry('b.md', { root: '/kiln' }),
-            ],
+            files,
           },
         },
         'GET /api/diff/file': { body: { base_text: null, current_text: 'a\n' } },
@@ -924,7 +922,7 @@ describe('DiffPanel', () => {
       await waitFor(() => expect(env.fetch.calls(`GET /api/proposals/${ID}`)).toBe(2));
     });
 
-    it('accept on a file sends its path', async () => {
+    it('accept on a file sends its root and path', async () => {
       serveProposal({ kind: 'open' }, proposal({ kind: 'accepted' }, { id: 'other' }));
       render(() => <DiffPanel source={proposalSource} />);
       const accept = await waitFor(() =>
@@ -934,27 +932,40 @@ describe('DiffPanel', () => {
 
       await waitFor(() => expect(env.fetch.calls(`POST ${ACCEPT}`)).toBe(1));
       const [sent] = await sentTo('POST', ACCEPT);
-      expect(sent.body).toEqual({ paths: ['b.md'] });
+      expect(sent.body).toEqual({ files: [{ root: '/kiln', path: 'b.md' }] });
+    });
+
+    it.each(['accept', 'reject'] as const)('a %s on a duplicate path selects the second kiln', async (kind) => {
+      serveProposal({ kind: 'open' }, proposal({ kind: 'accepted' }), [
+        entry('a.md', { root: '/first' }), entry('a.md', { root: '/second' }),
+      ]);
+      render(() => <DiffPanel source={proposalSource} />);
+      const button = await waitFor(() => within(section('a.md', '/second')).getByTestId(`proposal-${kind}-file`));
+      fireEvent.click(button);
+      const url = `/api/proposals/${ID}/${kind}`;
+      await waitFor(() => expect(env.fetch.calls(`POST ${url}`)).toBe(1));
+      const [sent] = await sentTo('POST', url);
+      expect(sent.body).toEqual({ files: [{ root: '/second', path: 'a.md' }] });
     });
 
     it('a conflicted proposal shows its regions', async () => {
       serveProposal({
         kind: 'conflicted',
-        files: [
-          {
-            root: '/kiln',
+        files: ['/kiln', '/second'].map((root) => ({
+            root,
             path: 'a.md',
             disk_text: 'one\nDISK\n',
             merged_text: 'one\nMINE\n',
             regions: [
               { start_line: 2, end_line: 3, base: 'two\n', ours: 'MINE\n', theirs: 'DISK\n' },
             ],
-          },
-        ],
+          })),
       });
       render(() => <DiffPanel source={proposalSource} />);
 
-      const conflict = await screen.findByTestId('proposal-conflict-/kiln:a.md');
+      const conflict = await screen.findByTestId('proposal-conflict-/second:a.md');
+      expect(conflict.textContent).toContain('/second');
+      expect(screen.getByTestId('proposal-conflict-/kiln:a.md').textContent).toContain('/kiln');
       await waitFor(() =>
         expect(within(conflict).getByTestId('conflict-region-0')).toBeInTheDocument(),
       );
@@ -970,7 +981,7 @@ describe('DiffPanel', () => {
 
       await waitFor(() => expect(env.fetch.calls(`POST /api/proposals/${ID}/resolve`)).toBe(1));
       const [sent] = await sentTo('POST', `/api/proposals/${ID}/resolve`);
-      expect(sent.body).toEqual({ path: 'a.md', text: 'one\nDISK\n' });
+      expect(sent.body).toEqual({ root: '/second', path: 'a.md', text: 'one\nDISK\n' });
     });
   });
 });

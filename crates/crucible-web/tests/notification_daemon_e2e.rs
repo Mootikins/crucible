@@ -189,6 +189,29 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
         serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
     };
 
+    // Two independent web clients have live streams before one closes the
+    // notice. Hold the older snapshot to reproduce the browser's ordering.
+    let snapshot = json_of(
+        app.clone()
+            .oneshot(request(
+                "GET",
+                format!("/api/session/{}/notifications", sessions[0]),
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(snapshot["notifications"].as_array().unwrap().len(), 1);
+    let mut streams = Vec::new();
+    let mut connections = Vec::new();
+    for _ in 0..2 {
+        let (client, events) = DaemonClient::connect_to_with_events(&socket).await.unwrap();
+        client.session_subscribe(&[&sessions[0]]).await.unwrap();
+        let broker = Arc::new(EventBroker::new());
+        connections.push(ReconnectingDaemon::new(client, events, broker.clone()));
+        streams.push(broker.subscribe(&sessions[0]).await);
+    }
+
     let closed = json_of(
         app.clone()
             .oneshot(request(
@@ -203,6 +226,23 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     )
     .await;
     assert_eq!(closed["success"], true, "{closed}");
+
+    for stream in &mut streams {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let event = stream.recv().await.unwrap();
+                if let ChatEvent::SessionEvent { event, data } =
+                    ChatEvent::from_daemon_event(&event)
+                {
+                    if event == "notification_dismissed" && data["notification_id"] == shared_id {
+                        break;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("both web clients receive the dismissal");
+    }
 
     for (session, expected) in [(&sessions[0], 0), (&sessions[1], 1)] {
         let listed = json_of(

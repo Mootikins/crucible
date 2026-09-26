@@ -35,6 +35,10 @@ pub enum ProposalCommands {
         #[arg(long, value_name = "PATH")]
         conflict: Option<String>,
 
+        /// Kiln root for a path that occurs in several kilns
+        #[arg(long, requires = "conflict")]
+        root: Option<PathBuf>,
+
         /// Output format
         #[arg(short = 'f', long, default_value_t)]
         format: TextFormat,
@@ -75,6 +79,10 @@ pub enum ProposalCommands {
 
         /// The path of the file, relative to its kiln root, as the proposal names it
         path: String,
+
+        /// Kiln root for a path that occurs in several kilns
+        #[arg(long)]
+        root: Option<PathBuf>,
 
         /// The file that holds the settled text. `-` reads stdin
         #[arg(long, value_name = "FILE")]

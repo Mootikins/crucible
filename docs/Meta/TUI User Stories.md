@@ -235,7 +235,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### US-703: Daemon notifications
 **As a user**, I see a notification that the daemon sends, for example a failed kiln search or a plugin `cru.log.notify`, in the notification area.
 **Acceptance:** a `notification_added` event adds its notification with its kind; a warning stays a warning; a `notification_dismissed` event removes it, so a notification dismissed in another client leaves the TUI; on attach the TUI reads the notifications of its session once through `session.list_notifications`, and it shows each id once; the web shows `notification_added` as a toast, and a user close of that toast calls `session.dismiss_notification` for each session that showed it.
-**Tests:** T1 `translate_a_daemon_notification_keeps_its_kind` and `translate_a_dismissed_notification` in `chat_runner/tests/translate.rs`; T1/T2 `a_dismissed_daemon_notification_leaves_the_notification_area` in `chat_app/command_handling_tests.rs`; T1/T2 `a_daemon_notification_reaches_the_notification_area` in `chat_app/command_handling_tests.rs`; the crossings `a_plugin_notification_reaches_the_tui_over_the_socket` and `an_attaching_tui_reads_the_notifications_of_its_session` in `chat_runner/tests/daemon_notification.rs` run a real daemon. Web: `chatEventReducer.test.ts`, `daemon-notification.test.ts`, `NotificationToast.test.tsx`, `sse.test.ts` and `tests/notification_daemon_e2e.rs`.
+**Tests:** T1 `translate_a_daemon_notification_keeps_its_kind` and `translate_a_dismissed_notification` in `chat_runner/tests/translate.rs`; T1/T2 `a_dismissed_daemon_notification_leaves_the_notification_area` in `chat_app/command_handling_tests.rs`; T1/T2 `a_daemon_notification_reaches_the_notification_area` in `chat_app/command_handling_tests.rs`; the crossings `a_plugin_notification_reaches_the_tui_over_the_socket` and `an_attaching_tui_reads_the_notifications_of_its_session` in `chat_runner/tests/daemon_notification.rs` run a real daemon. Web: `ChatContext.notifications.test.tsx`, `session-notifications.test.ts`, `daemon-notification.test.ts`, `NotificationToast.test.tsx`, `sse.test.ts` and `tests/notification_daemon_e2e.rs`.
 
 ### US-704: Close notifications
 **As a user**, I close the notifications that I read, so a notification that I closed does not come back when I attach to the session again.
@@ -371,3 +371,16 @@ When a story ships or a gap closes, update the tier annotations here — this fi
 - [[Web User Stories]] — browser chat + kiln editing stories
 - [[Help/TUI/E2E Testing]] — PTY harness reference
 - [[Meta/Product]] — feature inventory these stories mirror
+
+## Proposal conflict identity
+
+The `:proposals` view remains a read-only projection and directs decisions to
+`cru proposal`. A displayed conflict names its kiln root. CLI `show --conflict`
+and `resolve` accept `--root` to select between duplicate relative paths;
+omitting it on an ambiguous path refuses the operation. This uses the daemon's
+file identity and write admission, with no client write pipeline.
+
+Proof: T1 `a_duplicate_conflict_path_needs_a_root` renders the shared proposal
+view and checks the selected conflict; CLI `proposal_conflicts_accept_an_explicit_kiln_root`
+checks the arguments. Existing T2 proposal modal coverage exercises the shared
+projection. [[Help/CLI/proposal]] documents the decision commands.

@@ -511,6 +511,8 @@ The rail's `…` button is the LAYOUT control. It offers **Re-add pane**, a subm
 
 **As a user**, a plugin pass or a session in `propose` mode writes no note on disk. I see its proposal where I wait for work, and one click opens its diff pane.
 **Acceptance:** the Inbox has a PROPOSALS section with one row for each open, stale, conflicted or superseded proposal: the author, the title, the file count and `+N −M`, and a state word. A click opens the diff pane of the proposal. A superseded row links to the newer proposal and offers Dismiss. A proposal leaves the Inbox only on accept, reject or dismiss. The header count includes the proposals. A note that a pending proposal writes shows a thin bar, "<author> proposes a change · Review". The Changes panel lists the stale and conflicted proposals beside the outbox conflicts. The list, each proposal and its diffset refetch on `proposal_changed` from `GET /api/events/system` (`lib/query/routes/system.ts`).
+**File identity (2026-09-26):** a per-file accept, reject or conflict resolution carries both the kiln root and relative path. Two kilns containing `a.md` remain independent. A busy decision surfaces the daemon's refusal without an automatic retry. Proof: `DiffPanel.test.tsx` duplicate-path decisions; `proposal_daemon_e2e.rs` HTTP/socket decisions; daemon `tests/proposals.rs` qualified selection and ambiguous-path refusal.
+
 **TUI parity:** `cru proposal list` and the `:proposals` view, with the count in the status line.
 **Tests:** W1 (`InboxPanel.test.tsx` — `lists an open proposal`, `marks a stale proposal`, `counts proposals in the header`, `links a superseded proposal to the newer one and dismisses it`; `FileViewerPanel.test.tsx` — `shows the proposal bar on a note that a proposal writes`, `draws no bar for a superseded proposal`; `ChangesPanel.test.tsx` — `lists stale and conflicted proposals`; `lib/query/routes/__tests__/system.test.ts`), W2 (`proposal-inbox.story.spec.ts` — `opens a proposal from the Inbox`).
 
@@ -538,3 +540,17 @@ The rail's `…` button is the LAYOUT control. It offers **Re-add pane**, a subm
 ## See Also
 - [[TUI User Stories]] — terminal counterpart
 - [[Meta/Product]] — Web & Desktop feature inventory
+
+## Notification attachment consistency
+
+An attached session owns one notification stream and snapshot, shared by its
+panes. The stream opens before the snapshot is read. Live additions and
+dismissals received while the snapshot is pending win over its older entries.
+Reconnection and stream gaps reconcile again; an old response after detach or a
+newer read has no effect. Closing a shared notice in one session leaves it
+visible for another session that still holds it.
+
+Proof: `ChatContext.notifications.test.tsx`, `session-notifications.test.ts`, and
+`notification_daemon_e2e.rs` (two web connections receive the same dismissal
+through real daemon sockets). TUI notification behavior is unchanged; this
+corrects the browser's asynchronous attachment path.

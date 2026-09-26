@@ -108,3 +108,19 @@ Resolve and delete are two operations. **Resolve** says that the remark is settl
 - Writes no bracket saw — your editor, background processes — are attributed to nobody; they appear as external hunks.
 - A root that becomes a git repository after its ledger opened keeps the plain store. A root whose repository goes away keeps the git backend the same way. The snapshot id is the record, and it does not follow the disk.
 - `cru diff` and the TUI `:diff` view open only a branch diff, which has no degraded root. They cannot open a session record yet, so their warning rows do not show.
+
+## Concurrent proposal decisions
+
+Accepting or resolving a proposal reserves it until its checked writes and
+stored decision finish. Recording another write, rejecting, dismissing or
+superseding that proposal during settlement returns a busy refusal. Cancellation
+releases the reservation. A partial decision reserves both the remaining
+proposal and its split while the selected files settle.
+
+Per-file decisions identify the file by its stored kiln root and relative path.
+The web diff pane sends both. The RPC/HTTP accept and reject bodies accept
+`files: [{root, path}]`; an empty selection means the whole proposal. Legacy
+`paths` remains available for unique paths, but an ambiguous path or a request
+mixing `paths` and `files` is refused before any change. Resolve carries `root`,
+`path` and `text`; omitting the root requires a unique path. A selector never
+admits a new write root. See [[Help/CLI/proposal]] for `--root` on CLI conflicts.

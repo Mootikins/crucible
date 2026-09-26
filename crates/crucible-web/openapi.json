@@ -4279,6 +4279,13 @@
               "type": "string"
             },
             "description": "The files to write, as the proposal names them. The daemon moves them\ninto a new proposal and accepts that one. Absent or empty means every\nfile."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalFile"
+            },
+            "description": "Root-qualified files. Use this instead of paths for per-file decisions."
           }
         }
       },
@@ -8401,6 +8408,22 @@
           }
         }
       },
+      "ProposalFile": {
+        "type": "object",
+        "description": "The identity of a file within a proposal. A selector grants no write authority.",
+        "required": [
+          "root",
+          "path"
+        ],
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
       "ProposalId": {
         "type": "string",
         "description": "The identity of one proposal.\n\nThe daemon stores each proposal as a file under `<data_root>/proposals/`\nand uses the id as the file name. A UUID has no path separator and no\nleading dot, so an id can never name a path outside that directory."
@@ -8789,6 +8812,13 @@
               "type": "string"
             },
             "description": "The files to reject, as the proposal names them. The daemon moves\nthem into a new proposal and rejects that one. Absent or empty means\nevery file."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalFile"
+            },
+            "description": "Root-qualified files. Use this instead of paths for per-file decisions."
           }
         }
       },
@@ -8871,6 +8901,13 @@
           "path": {
             "type": "string",
             "description": "The path relative to the kiln root, as the proposal names it."
+          },
+          "root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The stored kiln root. Omit only when the path is unique in the proposal."
           },
           "text": {
             "type": "string",

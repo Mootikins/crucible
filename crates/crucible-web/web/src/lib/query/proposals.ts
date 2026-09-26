@@ -14,6 +14,7 @@ import {
   rejectProposal,
   resolveProposal,
   type Proposal,
+  type ProposalFile,
 } from '@/lib/proposal-api';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -62,9 +63,9 @@ export function useProposal(id: Accessor<string>): UseQueryResult<Proposal, Erro
 
 /** One decision of the diff pane. No paths means every file. */
 export type ProposalDecision =
-  | { kind: 'accept'; paths?: string[] }
-  | { kind: 'reject'; paths?: string[] }
-  | { kind: 'resolve'; path: string; text: string };
+  | { kind: 'accept'; paths?: string[]; files?: ProposalFile[] }
+  | { kind: 'reject'; paths?: string[]; files?: ProposalFile[] }
+  | { kind: 'resolve'; path: string; root?: string; text: string };
 
 /**
  * Makes the proposal `id`, its diffset and the Inbox list wrong. A decision
@@ -92,11 +93,11 @@ export function useProposalDecision(
         const value = id();
         switch (decision.kind) {
           case 'accept':
-            return acceptProposal(value, decision.paths);
+            return acceptProposal(value, decision.paths, decision.files);
           case 'reject':
-            return rejectProposal(value, { paths: decision.paths });
+            return rejectProposal(value, { paths: decision.paths, files: decision.files });
           case 'resolve':
-            return resolveProposal(value, decision.path, decision.text);
+            return resolveProposal(value, decision.path, decision.text, decision.root);
         }
       },
       onSettled: (reply) => {

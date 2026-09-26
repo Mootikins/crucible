@@ -153,8 +153,12 @@ pub(crate) fn proposal_refusal(error: ProposalError) -> Refusal {
         ProposalError::NotFound(_)
         | ProposalError::Settled(..)
         | ProposalError::NoWrite(..)
-        | ProposalError::NoConflict(..) => params_error(error.to_string()),
-        ProposalError::WriteFailed(_) | ProposalError::Store(_) => internal_error(error),
+        | ProposalError::NoConflict(..)
+        | ProposalError::Ambiguous(..)
+        | ProposalError::MixedSelection => params_error(error.to_string()),
+        ProposalError::Busy(_) | ProposalError::WriteFailed(_) | ProposalError::Store(_) => {
+            internal_error(error)
+        }
     }
 }
 

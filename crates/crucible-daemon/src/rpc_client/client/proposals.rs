@@ -4,7 +4,7 @@
 //! can repeat a decision that the daemon already made.
 
 use anyhow::Result;
-use crucible_core::proposal::{Proposal, ProposalId};
+use crucible_core::proposal::{Proposal, ProposalFile, ProposalId};
 
 use super::DaemonClient;
 
@@ -30,6 +30,9 @@ pub struct ProposalAcceptRequest {
     /// into a new proposal and accepts that one. Empty means every file.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
+    /// Root-qualified file identities. Cannot be combined with paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<ProposalFile>,
 }
 
 /// Request for `proposal.reject`.
@@ -42,6 +45,9 @@ pub struct ProposalRejectRequest {
     /// them into a new proposal and rejects that one. Empty means every file.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
+    /// Root-qualified file identities. Cannot be combined with paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<ProposalFile>,
 }
 
 /// Request for `proposal.resolve`: the text that the user settled for one
@@ -51,6 +57,8 @@ pub struct ProposalResolveRequest {
     pub id: ProposalId,
     /// The path relative to the kiln root, as the proposal names it.
     pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<crucible_core::session::PhysicalRoot>,
     pub text: String,
 }
 
@@ -80,11 +88,22 @@ impl DaemonClient {
         id: &ProposalId,
         paths: &[String],
     ) -> Result<Proposal> {
+        self.proposal_accept_files(id, paths, &[]).await
+    }
+
+    /// Accept qualified files, or unique legacy paths.
+    pub async fn proposal_accept_files(
+        &self,
+        id: &ProposalId,
+        paths: &[String],
+        files: &[ProposalFile],
+    ) -> Result<Proposal> {
         self.typed_call(
             "proposal.accept",
             ProposalAcceptRequest {
                 id: *id,
                 paths: paths.to_vec(),
+                files: files.to_vec(),
             },
         )
         .await
@@ -103,12 +122,24 @@ impl DaemonClient {
         paths: &[String],
         reason: Option<&str>,
     ) -> Result<Proposal> {
+        self.proposal_reject_files(id, paths, &[], reason).await
+    }
+
+    /// Reject qualified files, or unique legacy paths.
+    pub async fn proposal_reject_files(
+        &self,
+        id: &ProposalId,
+        paths: &[String],
+        files: &[ProposalFile],
+        reason: Option<&str>,
+    ) -> Result<Proposal> {
         self.typed_call(
             "proposal.reject",
             ProposalRejectRequest {
                 id: *id,
                 reason: reason.map(str::to_string),
                 paths: paths.to_vec(),
+                files: files.to_vec(),
             },
         )
         .await
@@ -128,11 +159,23 @@ impl DaemonClient {
         path: &str,
         text: &str,
     ) -> Result<Proposal> {
+        self.proposal_resolve_file(id, path, None, text).await
+    }
+
+    /// Resolve exactly one file of a proposal.
+    pub async fn proposal_resolve_file(
+        &self,
+        id: &ProposalId,
+        path: &str,
+        root: Option<&crucible_core::session::PhysicalRoot>,
+        text: &str,
+    ) -> Result<Proposal> {
         self.typed_call(
             "proposal.resolve",
             ProposalResolveRequest {
                 id: *id,
                 path: path.to_string(),
+                root: root.cloned(),
                 text: text.to_string(),
             },
         )

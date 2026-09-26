@@ -10,7 +10,9 @@ use std::path::PathBuf;
 use crucible_core::file_write::ExpectedBase;
 use crucible_core::note_edit::disk_hash;
 use crucible_core::note_merge::merge3;
-use crucible_core::proposal::{FileConflict, Proposal, ProposalId, ProposalState, ProposedWrite};
+use crucible_core::proposal::{
+    FileConflict, Proposal, ProposalFile, ProposalId, ProposalState, ProposedWrite,
+};
 use serde_json::Value;
 
 use super::stale::{base_holds, read_disk, target, Disk};
@@ -24,8 +26,7 @@ impl ProposalStore {
     /// disk moved since its base merges. If a file conflicts, the daemon
     /// writes nothing, and the proposal becomes `Conflicted`.
     pub async fn accept(&self, id: &ProposalId, kilns: &[PathBuf]) -> ProposalResult<Proposal> {
-        let _settle = self.settle.lock().await;
-        self.check_stale_of(id)?;
+        let _reservation = self.reserve(id)?;
         let proposal = self.get(id)?;
         if !proposal.state.is_pending() {
             return Err(ProposalError::Settled(*id, state_name(&proposal.state)));
@@ -46,12 +47,39 @@ impl ProposalStore {
         text: &str,
         kilns: &[PathBuf],
     ) -> ProposalResult<Proposal> {
-        let _settle = self.settle.lock().await;
+        self.resolve_file(id, path, None, text, kilns).await
+    }
+
+    /// Resolve a root-qualified file, or a unique legacy path.
+    pub async fn resolve_file(
+        &self,
+        id: &ProposalId,
+        path: &str,
+        root: Option<&crucible_core::session::PhysicalRoot>,
+        text: &str,
+        kilns: &[PathBuf],
+    ) -> ProposalResult<Proposal> {
+        let _reservation = self.reserve(id)?;
         let mut proposal = self.get(id)?;
+        let selected = match root {
+            Some(root) => super::split::select_files(
+                &proposal,
+                &[],
+                &[ProposalFile {
+                    root: root.clone(),
+                    path: path.to_string(),
+                }],
+            )?,
+            None => super::split::select_files(&proposal, &[path.to_string()], &[])?,
+        };
+        let selected = &selected[0];
         let ProposalState::Conflicted { files } = &mut proposal.state else {
             return Err(ProposalError::NoConflict(*id, path.to_string()));
         };
-        let Some(index) = files.iter().position(|c| c.path == path) else {
+        let Some(index) = files
+            .iter()
+            .position(|c| c.path == selected.path && c.root == selected.root)
+        else {
             return Err(ProposalError::NoConflict(*id, path.to_string()));
         };
         let settled = files.remove(index);
@@ -77,8 +105,8 @@ impl ProposalStore {
     }
 
     /// Write every file of `proposal` as one set. Then keep the new state
-    /// and announce it. The caller holds the settle lock.
-    async fn write_all(
+    /// and announce it. The caller holds a reservation.
+    pub(super) async fn write_all(
         &self,
         mut proposal: Proposal,
         kilns: &[PathBuf],

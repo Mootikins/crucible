@@ -30,8 +30,11 @@ fn answer<T: serde::Serialize>(req: &Request, result: ProposalResult<T>) -> Resp
             e @ (ProposalError::NotFound(_)
             | ProposalError::Settled(..)
             | ProposalError::NoWrite(..)
-            | ProposalError::NoConflict(..)),
+            | ProposalError::NoConflict(..)
+            | ProposalError::Ambiguous(..)
+            | ProposalError::MixedSelection),
         ) => Response::error(id, INVALID_PARAMS, e.to_string()),
+        Err(e @ ProposalError::Busy(_)) => Response::error(id, -32009, e.to_string()),
         Err(e @ ProposalError::WriteFailed(_)) => {
             Response::error(id, INTERNAL_ERROR, e.to_string())
         }
@@ -88,7 +91,9 @@ pub(crate) async fn handle_proposal_accept(
     let kilns = write_roots(store, &params.id, km).await;
     answer(
         &req,
-        store.accept_paths(&params.id, &params.paths, &kilns).await,
+        store
+            .accept_files(&params.id, &params.paths, &params.files, &kilns)
+            .await,
     )
 }
 
@@ -97,7 +102,7 @@ pub(crate) async fn handle_proposal_reject(req: Request, store: &ProposalStore) 
     let params = params!(req, ProposalRejectRequest);
     answer(
         &req,
-        store.reject_paths(&params.id, &params.paths, params.reason),
+        store.reject_files(&params.id, &params.paths, &params.files, params.reason),
     )
 }
 
@@ -118,7 +123,13 @@ pub(crate) async fn handle_proposal_resolve(
     answer(
         &req,
         store
-            .resolve(&params.id, &params.path, &params.text, &kilns)
+            .resolve_file(
+                &params.id,
+                &params.path,
+                params.root.as_ref(),
+                &params.text,
+                &kilns,
+            )
             .await,
     )
 }

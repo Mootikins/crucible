@@ -426,12 +426,14 @@ const ProposalConflicts: Component<{ files: FileConflict[]; controls: ProposalCo
       >
         <ConflictView
           path={file.path}
+          label={props.files.some((other) => other.path === file.path && other.root !== file.root)
+            ? `${file.root} · ${file.path}` : undefined}
           mergedContent={file.merged_text}
           regions={file.regions}
           baseHash={textKey(file.disk_text)}
           saveLabel="Accept resolution"
           hint="The proposed text is in the note. Choose what to keep where the note on disk says something else."
-          onSave={(text) => props.controls.decide({ kind: 'resolve', path: file.path, text })}
+          onSave={(text) => props.controls.decide({ kind: 'resolve', root: file.root, path: file.path, text })}
         />
       </section>
     )}
@@ -567,7 +569,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
     return {
       busy: controls.busy(),
       run: (kind: 'accept' | 'reject', file: DiffFileEntry) =>
-        void controls.decide({ kind, paths: [file.path] }),
+        void controls.decide({ kind, files: [{ root: file.root, path: file.path }] }),
     };
   };
 

@@ -14,7 +14,7 @@ mod split;
 mod stale;
 mod store;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
@@ -35,6 +35,15 @@ pub use store::{proposals_root, root_beside_snapshots};
 /// Why a proposal operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum ProposalError {
+    /// Another decision owns the proposal until its file writes finish.
+    #[error("proposal {0} is busy; retry after the current decision finishes")]
+    Busy(ProposalId),
+    /// A legacy path identifies more than one kiln.
+    #[error("ambiguous proposal path {0}; specify a root: {1}")]
+    Ambiguous(String, String),
+    /// Legacy and qualified selections must not be mixed.
+    #[error("use either paths or files, not both")]
+    MixedSelection,
     /// No proposal file has this id.
     #[error("no proposal has the id {0}")]
     NotFound(ProposalId),
@@ -70,10 +79,7 @@ pub struct ProposalStore {
     turns: Mutex<HashMap<String, ProposalId>>,
     /// One writer at a time. A write can change several files: the proposal
     /// of the turn and each older proposal that it supersedes.
-    write: Mutex<()>,
-    /// One accept or resolve at a time. It stays locked across the file
-    /// writes, so two accepts of one proposal cannot both write.
-    settle: tokio::sync::Mutex<()>,
+    write: Mutex<HashSet<ProposalId>>,
     /// The event bus of the daemon. The server sets it at bind. A store
     /// without a bus, as in a unit test, changes its files and sends nothing.
     events: OnceLock<broadcast::Sender<SessionEventMessage>>,
@@ -85,8 +91,7 @@ impl ProposalStore {
         Self {
             files: store::ProposalFiles::new(dir),
             turns: Mutex::new(HashMap::new()),
-            write: Mutex::new(()),
-            settle: tokio::sync::Mutex::new(()),
+            write: Mutex::new(HashSet::new()),
             events: OnceLock::new(),
         }
     }
@@ -124,7 +129,7 @@ impl ProposalStore {
         base: ExpectedBase,
         new_text: String,
     ) -> ProposalResult<Proposal> {
-        let _write = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        let reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
         let write = ProposedWrite {
             root: root.clone(),
             path: path.to_string(),
@@ -132,6 +137,16 @@ impl ProposalStore {
             new_text,
         };
         let turn = self.turn_proposal(session, &author)?;
+        if let Some(id) = turn {
+            ensure_available(&reserved, &id)?;
+        }
+        // Preflight every superseded proposal before recording anything.
+        for older in self.files.all()? {
+            if older.author == author && older.state.is_pending() && older.writes_path(&root, path)
+            {
+                ensure_available(&reserved, &older.id)?;
+            }
+        }
         let proposal = match turn {
             Some(id) => self
                 .files
@@ -291,7 +306,12 @@ impl ProposalStore {
 
     /// Move a proposal in the Inbox to a state out of the Inbox.
     fn settle(&self, id: &ProposalId, state: ProposalState) -> ProposalResult<Proposal> {
-        let _write = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        let reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        ensure_available(&reserved, id)?;
+        self.settle_locked(id, state)
+    }
+
+    fn settle_locked(&self, id: &ProposalId, state: ProposalState) -> ProposalResult<Proposal> {
         let settled = self.files.update(id, |proposal| {
             if !proposal.state.is_listed() {
                 return Ok(Err(ProposalError::Settled(
@@ -305,6 +325,41 @@ impl ProposalStore {
         let settled = settled.ok_or(ProposalError::NotFound(*id))??;
         self.announce(settled.id);
         Ok(settled)
+    }
+}
+
+/// Held across asynchronous file writes, without holding a blocking mutex.
+struct Reservation<'a> {
+    store: &'a ProposalStore,
+    ids: Vec<ProposalId>,
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        let mut reserved = self.store.write.lock().unwrap_or_else(|e| e.into_inner());
+        for id in &self.ids {
+            reserved.remove(id);
+        }
+    }
+}
+
+fn ensure_available(reserved: &HashSet<ProposalId>, id: &ProposalId) -> ProposalResult<()> {
+    if reserved.contains(id) {
+        Err(ProposalError::Busy(*id))
+    } else {
+        Ok(())
+    }
+}
+
+impl ProposalStore {
+    fn reserve(&self, id: &ProposalId) -> ProposalResult<Reservation<'_>> {
+        let mut reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        ensure_available(&reserved, id)?;
+        reserved.insert(*id);
+        Ok(Reservation {
+            store: self,
+            ids: vec![*id],
+        })
     }
 }
 

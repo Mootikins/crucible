@@ -2041,6 +2041,8 @@ export interface components {
     schemas: {
         /** @description The body of an accept. */
         AcceptProposalBody: {
+            /** @description Root-qualified files. Use this instead of paths for per-file decisions. */
+            files?: components["schemas"]["ProposalFile"][];
             /**
              * @description The files to write, as the proposal names them. The daemon moves them
              *     into a new proposal and accepts that one. Absent or empty means every
@@ -3964,6 +3966,11 @@ export interface components {
         ProposalChangedEvent: {
             id: components["schemas"]["ProposalId"];
         };
+        /** @description The identity of a file within a proposal. A selector grants no write authority. */
+        ProposalFile: {
+            path: string;
+            root: string;
+        };
         /**
          * @description The identity of one proposal.
          *
@@ -4150,6 +4157,8 @@ export interface components {
         };
         /** @description The body of a reject. */
         RejectProposalBody: {
+            /** @description Root-qualified files. Use this instead of paths for per-file decisions. */
+            files?: components["schemas"]["ProposalFile"][];
             /**
              * @description The files to reject, as the proposal names them. The daemon moves
              *     them into a new proposal and rejects that one. Absent or empty means
@@ -4201,6 +4210,8 @@ export interface components {
         ResolveProposalBody: {
             /** @description The path relative to the kiln root, as the proposal names it. */
             path: string;
+            /** @description The stored kiln root. Omit only when the path is unique in the proposal. */
+            root?: string | null;
             /** @description The whole text to write. */
             text: string;
         };
@@ -5043,6 +5054,7 @@ export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnre
 export type SchemaProposal = components['schemas']['Proposal'];
 export type SchemaProposalAuthor = components['schemas']['ProposalAuthor'];
 export type SchemaProposalChangedEvent = components['schemas']['ProposalChangedEvent'];
+export type SchemaProposalFile = components['schemas']['ProposalFile'];
 export type SchemaProposalId = components['schemas']['ProposalId'];
 export type SchemaProposalState = components['schemas']['ProposalState'];
 export type SchemaProposedWrite = components['schemas']['ProposedWrite'];

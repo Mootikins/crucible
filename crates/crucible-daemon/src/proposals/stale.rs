@@ -2,8 +2,8 @@
 //!
 //! A proposal is `Stale` when a file on disk no longer matches the base that
 //! its writer read. The daemon checks at each file-watch event, at
-//! `proposal.list` and at accept, because the daemon does not watch a closed
-//! kiln. The check moves a proposal only between `Open` and `Stale`. An
+//! `proposal.list`, because the daemon does not watch a closed kiln.
+//! Acceptance rechecks the bases in the checked write itself. The check moves a proposal only between `Open` and `Stale`. An
 //! accept decides `Conflicted`, and a newer proposal decides `Superseded`.
 
 use std::path::{Path, PathBuf};
@@ -107,20 +107,18 @@ impl ProposalStore {
         self.check_stale_where(|proposal| proposal.writes.iter().any(touches))
     }
 
-    /// Run the stale check on the one proposal `id`.
-    pub(super) fn check_stale_of(&self, id: &ProposalId) -> ProposalResult<Vec<ProposalId>> {
-        self.check_stale_where(|proposal| proposal.id == *id)
-    }
-
     fn check_stale_where(
         &self,
         select: impl Fn(&Proposal) -> bool,
     ) -> ProposalResult<Vec<ProposalId>> {
         let changed = {
-            let _write = self.write.lock().unwrap_or_else(|e| e.into_inner());
+            let reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
             let mut changed = Vec::new();
             for proposal in self.files.all()? {
-                if !select(&proposal) || checked_state(&proposal).is_none() {
+                if reserved.contains(&proposal.id)
+                    || !select(&proposal)
+                    || checked_state(&proposal).is_none()
+                {
                     continue;
                 }
                 // Check again under the file lock, so the change applies to

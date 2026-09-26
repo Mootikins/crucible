@@ -45,6 +45,7 @@ pub async fn handle(cmd: ProposalCommands) -> Result<()> {
         ProposalCommands::Show {
             id,
             conflict,
+            root,
             format,
         } => {
             let proposal = client
@@ -52,7 +53,9 @@ pub async fn handle(cmd: ProposalCommands) -> Result<()> {
                 .await
                 .with_context(|| format!("reading the proposal {id}"))?;
             match (conflict, format) {
-                (Some(path), _) => print!("{}", conflict_text_of(&proposal, &path)?),
+                (Some(path), _) => {
+                    print!("{}", conflict_text_at(&proposal, &path, root.as_deref())?)
+                }
                 (None, TextFormat::Json) => {
                     println!("{}", serde_json::to_string_pretty(&proposal)?)
                 }
@@ -89,10 +92,16 @@ pub async fn handle(cmd: ProposalCommands) -> Result<()> {
                 .with_context(|| format!("dismissing the proposal {id}"))?;
             println!("{}", decision_line(&proposal));
         }
-        ProposalCommands::Resolve { id, path, from } => {
+        ProposalCommands::Resolve {
+            id,
+            path,
+            root,
+            from,
+        } => {
             let settled = read_settled_text(&from)?;
+            let root = root.map(crucible_core::session::PhysicalRoot::from_top_level);
             let proposal = client
-                .proposal_resolve(&id, &path, &settled)
+                .proposal_resolve_file(&id, &path, root.as_ref(), &settled)
                 .await
                 .with_context(|| format!("resolving {path} of the proposal {id}"))?;
             println!("{}", decision_line(&proposal));
@@ -299,7 +308,12 @@ fn push_side(out: &mut String, side: &str) {
 }
 
 /// The text with markers of the conflicted file `path`.
+#[cfg(test)]
 fn conflict_text_of(proposal: &Proposal, path: &str) -> Result<String> {
+    conflict_text_at(proposal, path, None)
+}
+
+fn conflict_text_at(proposal: &Proposal, path: &str, root: Option<&Path>) -> Result<String> {
     let ProposalState::Conflicted { files } = &proposal.state else {
         anyhow::bail!(
             "the proposal {} is {}, not conflicted",
@@ -307,7 +321,10 @@ fn conflict_text_of(proposal: &Proposal, path: &str) -> Result<String> {
             state_label(&proposal.state)
         );
     };
-    let conflict = files.iter().find(|c| c.path == path).with_context(|| {
+    let mut matches = files
+        .iter()
+        .filter(|c| c.path == path && root.is_none_or(|r| r == c.root.as_path()));
+    let conflict = matches.next().with_context(|| {
         let paths: Vec<&str> = files.iter().map(|c| c.path.as_str()).collect();
         format!(
             "{path} has no conflict in the proposal {}. The conflicted files: {}",
@@ -315,6 +332,10 @@ fn conflict_text_of(proposal: &Proposal, path: &str) -> Result<String> {
             paths.join(", ")
         )
     })?;
+    anyhow::ensure!(
+        matches.next().is_none(),
+        "ambiguous conflict path {path}; specify --root"
+    );
     Ok(conflict_text(conflict))
 }
 
@@ -364,7 +385,11 @@ pub(crate) fn show_view(proposal: &Proposal, opts: &DiffOptions) -> Node {
         )));
         for conflict in files {
             rows.push(blank_row());
-            rows.push(text(format!("conflict: {}", conflict.path)));
+            rows.push(text(format!(
+                "conflict: {} (root: {})",
+                conflict.path,
+                conflict.root.as_path().display()
+            )));
             rows.extend(
                 conflict_text(conflict)
                     .lines()
@@ -453,6 +478,29 @@ mod tests {
         // `--conflict` prints the same text and nothing else.
         assert_eq!(conflict_text_of(&p, "links.md").unwrap(), expected);
         assert!(conflict_text_of(&p, "other.md").is_err());
+    }
+
+    #[test]
+    fn a_duplicate_conflict_path_needs_a_root() {
+        let first = conflict("base\n", "first\n", "disk\n");
+        let mut second = conflict("base\n", "second\n", "disk\n");
+        second.root = PhysicalRoot::from_top_level("/second");
+        let p = proposal(
+            ProposalState::Conflicted {
+                files: vec![first, second.clone()],
+            },
+            vec![],
+        );
+        assert!(conflict_text_of(&p, "links.md")
+            .unwrap_err()
+            .to_string()
+            .contains("ambiguous"));
+        assert_eq!(
+            conflict_text_at(&p, "links.md", Some(Path::new("/second"))).unwrap(),
+            conflict_text(&second)
+        );
+        let shown = render_to_plain_text(&show_view(&p, &DiffOptions::for_width(100)), 100);
+        assert!(shown.contains("root: /second"));
     }
 
     #[test]
