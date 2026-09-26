@@ -19,7 +19,6 @@ import { initTheme } from '@/lib/theme';
 import { installSessionEventRoute } from '@/lib/query/routes/session';
 import { installSurfaceEventRoute } from '@/lib/query/routes/surfaces';
 import { installFsEventRoute } from '@/lib/query/routes/fs';
-import { installPluginEventRoute } from '@/lib/query/routes/plugins';
 import { installSystemEventRoute } from '@/lib/query/routes/system';
 
 // Before any pane opens a stream: a route turns an event into the cache write
@@ -30,7 +29,6 @@ import { installSystemEventRoute } from '@/lib/query/routes/system';
 installSessionEventRoute();
 installSurfaceEventRoute();
 installFsEventRoute();
-installPluginEventRoute();
 installSystemEventRoute();
 
 const root = document.getElementById('root');

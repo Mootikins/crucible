@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 import { usePublication } from '../usePublication';
-import { pluginEvents } from '@/lib/query/sse';
-import { installPluginEventRoute } from '@/lib/query/routes/plugins';
+import { systemEvents } from '@/lib/query/sse';
+import { installSystemEventRoute } from '@/lib/query/routes/system';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { PLUGIN_CALLER_HEADER } from '@/lib/api';
@@ -13,7 +13,7 @@ import { PLUGIN_CALLER_HEADER } from '@/lib/api';
  * `usePublication` held its own `EventSource` and its own refcount, so a
  * document with four blocks in it opened one stream and the rest of the app
  * opened a second one for the same URL. Here the blocks subscribe to
- * `pluginEvents()`, the shared root of `lib/query/sse.ts`, and this spec holds
+ * `systemEvents()`, the shared root of `lib/query/sse.ts`, and this spec holds
  * that: one source for the blocks and every other reader together.
  *
  * The block no longer re-reads for itself either. Its value is a cache entry,
@@ -46,7 +46,7 @@ function published(key: string, plugin: string, value: string) {
 beforeEach(() => {
   installFakeEventSource();
   // In the app `src/index.tsx` names the route once, at start.
-  installPluginEventRoute();
+  installSystemEventRoute();
   asked.length = 0;
   reply = () => ({});
   // A fresh cache per case: the entries of one case would otherwise answer the
@@ -78,21 +78,21 @@ describe('usePublication on the shared plugin stream', () => {
     ));
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(FakeEventSource.instances[0]!.url).toBe('/api/plugins/events');
+    expect(FakeEventSource.instances[0]!.url).toBe('/api/events/system');
   });
 
   // The fault this file exists to find: a block that goes around the root opens
   // a second source for a stream the app is already on.
   it('shares the source with every other reader of the stream', async () => {
     const other = vi.fn();
-    const stop = pluginEvents().subscribe(other);
+    const stop = systemEvents().subscribe(other);
     render(() => <Block plugin="board" publicationKey="rows" />);
 
     await waitFor(() => expect(asked).toHaveLength(1));
     expect(FakeEventSource.instances).toHaveLength(1);
 
     FakeEventSource.instances[0]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
-    expect(other).toHaveBeenCalledWith('board', 'rows');
+    expect(other).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
     stop();
   });
 

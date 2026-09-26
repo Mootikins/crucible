@@ -3,8 +3,8 @@ import type { QueryKey } from '@tanstack/solid-query';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { onlyEventSource, installFakeEventSource } from '@/test-utils/sse';
 import { keys } from '../../keys';
-import { pluginEvents } from '../../sse';
-import { installPluginEventRoute } from '../plugins';
+import { systemEvents } from '../../sse';
+import { installSystemEventRoute } from '../system';
 
 let env: TestQueryEnv;
 let invalidated: QueryKey[];
@@ -17,14 +17,14 @@ let stop: (() => void) | null = null;
  * way the daemon does: one frame on the wire.
  */
 function openStream() {
-  stop = pluginEvents().subscribe(() => {});
+  stop = systemEvents().subscribe(() => {});
   return onlyEventSource();
 }
 
 beforeEach(() => {
   installFakeEventSource();
   env = createTestQueryEnv();
-  installPluginEventRoute();
+  installSystemEventRoute();
   invalidated = [];
   vi.spyOn(env.client, 'invalidateQueries').mockImplementation((filters) => {
     invalidated.push((filters?.queryKey ?? []) as QueryKey);

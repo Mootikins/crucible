@@ -2,7 +2,7 @@
  * One shared root per server-sent-event stream.
  *
  * Four streams reach the browser: a session's chat events, surface changes,
- * filesystem changes, and plugin publications. Before this module each
+ * filesystem changes, and system events (publications and proposals). Before this module each
  * consumer opened its own `EventSource`, so two panes on one session held two
  * streams and the review store carried a hand-written refcount to stop a
  * third. Here every consumer of a stream shares one source: the first
@@ -29,7 +29,6 @@ import type { QueryClient } from '@tanstack/solid-query';
 import {
   subscribeToEvents,
   subscribeToFsEvents,
-  subscribeToPluginEvents,
   subscribeToSurfaceEvents,
   subscribeToSystemEvents,
   type SurfaceChangedEvent,
@@ -68,19 +67,6 @@ export interface SseStream<E> {
   latest: Accessor<E | undefined>;
 }
 
-/** What `pluginEvents` gives, where an event names a plugin and a key. */
-export interface PluginEventStream {
-  subscribe(handler: (plugin: string, key: string) => void, onOpen?: () => void): () => void;
-  reconnect(): void;
-  latest: Accessor<PluginPublicationEvent | undefined>;
-}
-
-/** One plugin published a new value for one key (`publication_changed`). */
-export interface PluginPublicationEvent {
-  plugin: string;
-  key: string;
-}
-
 // =============================================================================
 // The hook point Part D fills
 // =============================================================================
@@ -99,13 +85,11 @@ export interface SessionRouteContext extends SseRouteContext {
 export type SessionEventRoute = (event: ChatEvent, context: SessionRouteContext) => void;
 export type SurfaceEventRoute = (event: SurfaceChangedEvent, context: SseRouteContext) => void;
 export type FsEventRoute = (event: FsEvent, context: SseRouteContext) => void;
-export type PluginEventRoute = (event: PluginPublicationEvent, context: SseRouteContext) => void;
 export type SystemEventRoute = (event: SystemEvent, context: SseRouteContext) => void;
 
 let sessionRoute: SessionEventRoute | null = null;
 let surfaceRoute: SurfaceEventRoute | null = null;
 let fsRoute: FsEventRoute | null = null;
-let pluginRoute: PluginEventRoute | null = null;
 let systemRoute: SystemEventRoute | null = null;
 
 /** Names the route of the chat stream. `null` removes the one that is there. */
@@ -121,11 +105,6 @@ export function setSurfaceEventRoute(route: SurfaceEventRoute | null): void {
 /** Names the route of the filesystem stream. */
 export function setFsEventRoute(route: FsEventRoute | null): void {
   fsRoute = route;
-}
-
-/** Names the route of the plugin stream. */
-export function setPluginEventRoute(route: PluginEventRoute | null): void {
-  pluginRoute = route;
 }
 
 /** Names the route of the system stream. */
@@ -321,7 +300,6 @@ function rootFor<E>(
 const sessionRoots = new Map<string, SseStream<SequencedChatEvent>>();
 const surfaceRoots = new Map<string, SseStream<SurfaceChangedEvent>>();
 const fsRoots = new Map<string, SseStream<FsEvent>>();
-const pluginRoots = new Map<string, SseStream<PluginPublicationEvent>>();
 const systemRoots = new Map<string, SseStream<SystemEvent>>();
 
 /** The key of a stream the whole app shares, which has no id to key on. */
@@ -409,28 +387,6 @@ export function fsEvents(): SseStream<FsEvent> {
 }
 
 /**
- * The publications of every plugin (`GET /api/plugins/events`).
- *
- * The connect is a route call in `api.ts`, like the three other streams. It
- * does not reconnect on an error, which is what the stream does today; a
- * consumer that must get back on calls `reconnect()`.
- */
-export function pluginEvents(): PluginEventStream {
-  const stream = rootFor(pluginRoots, GLOBAL, {
-    name: 'plugin events',
-    connect: (onEvent, onOpen) => subscribeToPluginEvents(onEvent, onOpen),
-    route: (event) => runRoute('plugin events', pluginRoute, event, routeContext()),
-  });
-  return {
-    latest: stream.latest,
-    reconnect: () => stream.reconnect(),
-    subscribe(handler, onOpen) {
-      return stream.subscribe((event) => handler(event.plugin, event.key), onOpen);
-    },
-  };
-}
-
-/**
  * The daemon's system session (`GET /api/events/system`): plugin publications
  * and proposal changes. A proposal belongs to no user session, so only this
  * stream carries it.
@@ -459,12 +415,10 @@ export function resetSseForTests(): void {
   sessionRoots.clear();
   surfaceRoots.clear();
   fsRoots.clear();
-  pluginRoots.clear();
   systemRoots.clear();
   sessionCursors.clear();
   sessionRoute = null;
   surfaceRoute = null;
   fsRoute = null;
-  pluginRoute = null;
   systemRoute = null;
 }

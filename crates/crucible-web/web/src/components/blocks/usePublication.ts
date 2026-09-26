@@ -1,6 +1,6 @@
 import { createMemo, onCleanup, type Accessor } from 'solid-js';
 import { usePluginPublications } from '@/lib/query/plugins';
-import { pluginEvents } from '@/lib/query/sse';
+import { systemEvents } from '@/lib/query/sse';
 
 /**
  * One plugin's published value for `key`, kept live.
@@ -8,12 +8,12 @@ import { pluginEvents } from '@/lib/query/sse';
  * Read once, then re-read whenever the daemon says that key changed. The push
  * is what makes this different from polling: `cru.plugin.publish` fires a
  * `publication_changed` event on the daemon's system channel, and
- * `/api/plugins/events` forwards it. Without that a board would re-fetch on a
+ * `/api/events/system` forwards it. Without that a board would re-fetch on a
  * timer and still show a stale value between ticks.
  *
  * The block no longer re-reads for itself. The value is a cache entry keyed by
  * the plugin and the key, and the stream's route invalidates exactly that pair
- * (`lib/query/routes/plugins.ts`), so four blocks of one plugin get four small
+ * (`lib/query/routes/system.ts`), so four blocks of one plugin get four small
  * answers and an event about one of them refreshes one of them. A second block
  * on the same pair joins the first one's entry instead of asking again.
  */
@@ -36,7 +36,7 @@ export function usePublication<T>(plugin: string, key: string): Accessor<T | und
   // shared root. The subscription is still required — the root counts its
   // subscribers, and with none it closes the `EventSource` and no block hears
   // anything.
-  const stop = pluginEvents().subscribe(() => {});
+  const stop = systemEvents().subscribe(() => {});
   onCleanup(stop);
 
   return createMemo(() => published.data?.[key]?.[plugin] as T | undefined);

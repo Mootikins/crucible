@@ -4,11 +4,9 @@ import {
   sessionEvents,
   surfaceEvents,
   fsEvents,
-  pluginEvents,
   setSessionEventRoute,
   setSurfaceEventRoute,
   setFsEventRoute,
-  setPluginEventRoute,
   systemEvents,
   setSystemEventRoute,
   resetSseForTests,
@@ -447,23 +445,23 @@ describe('systemEvents', () => {
   });
 });
 
-describe('pluginEvents', () => {
+describe('systemEvents', () => {
   it('builds one EventSource for every subscriber, and names the plugin and the key', () => {
     const first = vi.fn();
     const second = vi.fn();
-    pluginEvents().subscribe(first);
-    pluginEvents().subscribe(second);
+    systemEvents().subscribe(first);
+    systemEvents().subscribe(second);
 
-    expect(onlySource().url).toBe('/api/plugins/events');
+    expect(onlySource().url).toBe('/api/events/system');
 
     onlySource().emit('publication_changed', { plugin: 'board', key: 'rows' });
-    expect(first).toHaveBeenCalledWith('board', 'rows');
-    expect(second).toHaveBeenCalledWith('board', 'rows');
+    expect(first).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
+    expect(second).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
   });
 
   it('closes the stream when the last subscriber leaves', async () => {
-    const stopFirst = pluginEvents().subscribe(vi.fn());
-    const stopSecond = pluginEvents().subscribe(vi.fn());
+    const stopFirst = systemEvents().subscribe(vi.fn());
+    const stopSecond = systemEvents().subscribe(vi.fn());
     const source = onlySource();
 
     stopFirst();
@@ -476,20 +474,20 @@ describe('pluginEvents', () => {
 
   it('gives each event to the route', () => {
     const route = vi.fn();
-    setPluginEventRoute(route);
-    pluginEvents().subscribe(vi.fn());
+    setSystemEventRoute(route);
+    systemEvents().subscribe(vi.fn());
 
     onlySource().emit('publication_changed', { plugin: 'board', key: 'rows' });
 
     expect(route).toHaveBeenCalledWith(
-      { plugin: 'board', key: 'rows' },
+      { event: 'publication_changed', plugin: 'board', key: 'rows' },
       { client: getQueryClient(), bus: getBus() },
     );
   });
 
   it('drops a frame it cannot parse, and keeps the stream', () => {
     const handler = vi.fn();
-    pluginEvents().subscribe(handler);
+    systemEvents().subscribe(handler);
 
     for (const listener of [...(onlySource().listeners.get('publication_changed') ?? [])]) {
       listener({ data: 'not json' } as MessageEvent);
@@ -505,7 +503,7 @@ describe('resetSseForTests', () => {
     sessionEvents('s1').subscribe(vi.fn());
     surfaceEvents().subscribe(vi.fn());
     fsEvents().subscribe(vi.fn());
-    pluginEvents().subscribe(vi.fn());
+    systemEvents().subscribe(vi.fn());
     expect(FakeEventSource.instances).toHaveLength(4);
 
     resetSseForTests();
@@ -567,7 +565,7 @@ describe('reconnect', () => {
 
   it('opens a new plugin source too', () => {
     const handler = vi.fn();
-    const stream = pluginEvents();
+    const stream = systemEvents();
     stream.subscribe(handler);
     const original = onlySource();
 
@@ -576,7 +574,7 @@ describe('reconnect', () => {
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(original.closed).toBe(true);
     FakeEventSource.instances[1]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
-    expect(handler).toHaveBeenCalledWith('board', 'rows');
+    expect(handler).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
   });
 
   it('makes a joiner wait for the next open', () => {

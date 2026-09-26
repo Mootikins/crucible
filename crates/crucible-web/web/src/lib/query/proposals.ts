@@ -5,7 +5,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import { diffsetKey } from '@/lib/diffset';
+import { invalidateProposal } from './proposal-cache';
 import {
   acceptProposal,
   dismissProposal,
@@ -68,19 +68,6 @@ export type ProposalDecision =
   | { kind: 'resolve'; path: string; root?: string; text: string };
 
 /**
- * Makes the proposal `id`, its diffset and the Inbox list wrong. A decision
- * changes the state, and a decision on some files changes the file list.
- */
-function invalidateProposal(id: string): Promise<void> {
-  const client = getQueryClient();
-  return Promise.all([
-    client.invalidateQueries({ queryKey: keys.proposal(id) }),
-    client.invalidateQueries({ queryKey: keys.proposals() }),
-    client.invalidateQueries({ queryKey: keys.diffset(diffsetKey({ kind: 'proposal', id })) }),
-  ]).then(() => undefined);
-}
-
-/**
  * Sends one decision on the proposal `id`. The reply is the proposal that
  * holds the decided files: `id` itself, or a new proposal for some files.
  */
@@ -102,7 +89,7 @@ export function useProposalDecision(
       },
       onSettled: (reply) => {
         const ids = new Set([id(), ...(reply ? [reply.id] : [])]);
-        return Promise.all([...ids].map(invalidateProposal));
+        return Promise.all([...ids].map(value => invalidateProposal(getQueryClient(), value)));
       },
     }),
     getQueryClient,
@@ -117,7 +104,7 @@ export function useDismissProposal(): UseMutationResult<Proposal, Error, string>
   return useMutation(
     () => ({
       mutationFn: dismissProposal,
-      onSettled: (_reply, _error, id) => invalidateProposal(id),
+      onSettled: (_reply, _error, id) => invalidateProposal(getQueryClient(), id),
     }),
     getQueryClient,
   );

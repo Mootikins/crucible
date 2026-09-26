@@ -4,8 +4,8 @@ import { apiError } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
 import { keys } from '../keys';
-import { installPluginEventRoute } from '../routes/plugins';
-import { pluginEvents } from '../sse';
+import { installSystemEventRoute } from '../routes/system';
+import { systemEvents } from '../sse';
 import {
   useExecutePluginOption,
   useInstallPlugin,
@@ -338,7 +338,7 @@ describe('a publication', () => {
         return { publications: { [key]: { board: `value ${answered}` } } };
       },
     });
-    installPluginEventRoute();
+    installSystemEventRoute();
 
     const read = inRoot(() => ({
       rows: usePluginPublications('board', 'rows'),
@@ -346,7 +346,7 @@ describe('a publication', () => {
     }));
     // A block holds the stream open while it is on screen; the route does the
     // cache write from inside it.
-    const stop = pluginEvents().subscribe(() => {});
+    const stop = systemEvents().subscribe(() => {});
     await vi.waitFor(() => {
       expect(read.rows.data).toBeDefined();
       expect(read.columns.data).toBeDefined();

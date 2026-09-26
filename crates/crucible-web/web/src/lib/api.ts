@@ -2032,45 +2032,6 @@ export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => vo
 }
 
 /**
- * Subscribe to plugin publication changes (`GET /api/plugins/events`).
- *
- * The one stream that does not reconnect: an error closes it, and a consumer
- * that must get back on reconnects the shared root in `lib/query/sse.ts`.
- * Returns a cleanup function that closes the stream.
- */
-export function subscribeToPluginEvents(
-  onEvent: (event: { plugin: string; key: string }) => void,
-  onOpen: () => void,
-): () => void {
-  // EventSource cannot set headers; the HttpOnly session cookie (set by
-  // login()) authenticates the stream for non-localhost clients.
-  const source = new EventSource('/api/plugins/events');
-  guardStreamVersion('plugin', source, () => {});
-  source.addEventListener('publication_changed', (e: MessageEvent) => {
-    try {
-      onEvent(
-        decodeEvent<{ plugin: string; key: string }>(
-          'plugin',
-          'publication_changed',
-          e.data,
-          (payload) =>
-            'plugin' in payload &&
-            typeof payload.plugin === 'string' &&
-            'key' in payload &&
-            typeof payload.key === 'string',
-        ),
-      );
-    } catch {
-      // A malformed frame is not worth tearing the stream down for; the next
-      // one will arrive, and a stale block is better than a dead one.
-      console.warn('Failed to parse plugin SSE event:', e.data);
-    }
-  });
-  source.onopen = () => onOpen();
-  return () => source.close();
-}
-
-/**
  * One event of the system stream. The `event` field copies the SSE event
  * name, so a consumer can tell the two shapes apart.
  */
@@ -2081,10 +2042,9 @@ export type SystemEvent =
 /**
  * Subscribe to the daemon's system session (`GET /api/events/system`).
  *
- * The stream carries `publication_changed` and `proposal_changed`. Like the
- * plugin stream, it does not reconnect: an error closes it, and the shared
- * root in `lib/query/sse.ts` reconnects it. Returns a cleanup function that
- * closes the stream.
+ * The stream carries `publication_changed` and `proposal_changed`. Native
+ * EventSource retry reopens a dropped connection. Cleanup closes it and stops
+ * retries; the shared root can also explicitly reconnect.
  */
 export function subscribeToSystemEvents(
   onEvent: (event: SystemEvent) => void,

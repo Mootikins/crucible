@@ -124,3 +124,7 @@ The web diff pane sends both. The RPC/HTTP accept and reject bodies accept
 mixing `paths` and `files` is refused before any change. Resolve carries `root`,
 `path` and `text`; omitting the root requires a unique path. A selector never
 admits a new write root. See [[Help/CLI/proposal]] for `--root` on CLI conflicts.
+
+The web Inbox and plugin publication blocks share the system event stream.
+Proposal events and decision replies use the same cache reconciliation rule;
+split decisions refresh both the original and the resulting proposal.

@@ -10,10 +10,10 @@
  * The list is in the set because a new proposal, a decision and a supersede
  * each change which proposals the Inbox shows.
  *
- * The plugin blocks read `publication_changed` through `/api/plugins/events`
- * and `routes/plugins.ts`. This route does not repeat that write.
+ * Plugin blocks share this stream. Publications invalidate only the named
+ * plugin and key, leaving other blocks alone.
  */
-import { diffsetKey } from '@/lib/diffset';
+import { invalidateProposal } from '../proposal-cache';
 import type { SystemEvent } from '@/lib/api';
 import { keys } from '../keys';
 import { setSystemEventRoute, type SseRouteContext } from '../sse';
@@ -23,13 +23,11 @@ function routeSystemEvent(event: SystemEvent, { client }: SseRouteContext): void
   switch (event.event) {
     case 'proposal_changed':
       if (!event.id) return;
-      void client.invalidateQueries({ queryKey: keys.proposal(event.id) });
-      void client.invalidateQueries({ queryKey: keys.proposals() });
-      void client.invalidateQueries({
-        queryKey: keys.diffset(diffsetKey({ kind: 'proposal', id: event.id })),
-      });
+      void invalidateProposal(client, event.id);
       return;
     case 'publication_changed':
+      if (!event.plugin || !event.key) return;
+      void client.invalidateQueries({ queryKey: keys.pluginPublications(event.plugin, event.key) });
       return;
   }
 }

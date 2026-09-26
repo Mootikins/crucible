@@ -57,7 +57,7 @@ import {
   resetLayout,
   subscribeToSurfaceEvents,
   subscribeToFsEvents,
-  subscribeToPluginEvents,
+  subscribeToSystemEvents,
   fetchRawFile,
 } from '../api';
 import { generateMessageId } from '../turn';
@@ -1611,17 +1611,16 @@ describe('subscribeToEvents', () => {
     });
 
     it('plugin stream keeps reading after a malformed publication frame', () => {
-      const events: Array<{ plugin: string; key: string }> = [];
-      const cleanup = subscribeToPluginEvents((e) => events.push(e), () => {});
+      const events: unknown[] = [];
+      const cleanup = subscribeToSystemEvents((e) => events.push(e), () => {});
       const source = MockEventSource.instances[0];
 
       source.dispatchRaw('publication_changed', 'not json {');
-      expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse plugin SSE event');
+      expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse system SSE event');
 
-      // The one stream that does not reconnect: a malformed frame must not
-      // tear it down, or publications go stale until a reload.
+      // A malformed frame must not tear down the shared system stream.
       source.dispatch('publication_changed', { plugin: 'kanban', key: 'board' });
-      expect(events).toEqual([{ plugin: 'kanban', key: 'board' }]);
+      expect(events).toEqual([{ event: 'publication_changed', plugin: 'kanban', key: 'board' }]);
 
       cleanup();
       expect(source.closed).toBe(true);
