@@ -104,3 +104,146 @@ async fn an_attaching_tui_reads_the_notifications_of_its_session() {
         "{msgs:?}"
     );
 }
+
+/// A daemon on a temporary socket, and a client of it.
+async fn daemon(tmp: &tempfile::TempDir) -> crucible_daemon::DaemonClient {
+    let socket = tmp.path().join("d.sock");
+    let server = crucible_daemon::Server::bind_with_plugin_config(
+        crucible_daemon::BindWithPluginConfigParams {
+            path: socket.clone(),
+            data_home: Some(tmp.path().join("data")),
+            config_home: Some(tmp.path().join("config")),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("the daemon binds");
+    tokio::spawn(server.run());
+    crucible_daemon::DaemonClient::connect_to(&socket)
+        .await
+        .expect("connect")
+}
+
+/// The TUI closes a shared notice over the socket. The daemon hides it for
+/// the session of the TUI only: an attach of that session does not read it
+/// again, and another session still reads it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_tui_close_hides_a_shared_notice_for_its_session_only() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let client = daemon(&tmp).await;
+    let mut sessions = Vec::new();
+    for _ in 0..2 {
+        let created = client
+            .call("session.create", serde_json::json!({ "type": "chat" }))
+            .await
+            .expect("session.create");
+        sessions.push(created["session_id"].as_str().unwrap().to_string());
+    }
+    client
+        .call(
+            "lua.eval",
+            serde_json::json!({ "code": "cru.log.notify('shared')" }),
+        )
+        .await
+        .expect("lua.eval");
+    // The hub stores what `cru.log.notify` queued on its own task.
+    let shared = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let msgs = OilChatRunner::notification_msgs(&client, &sessions[0]).await;
+            if let [ChatAppMsg::Notification(n)] = &msgs[..] {
+                return n.id.clone();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the hub never stored the notice");
+
+    let failures = OilChatRunner::close_notification_msgs(&client, &sessions[0], &[shared]).await;
+
+    assert!(failures.is_empty(), "{failures:?}");
+    let mine = OilChatRunner::notification_msgs(&client, &sessions[0]).await;
+    assert!(mine.is_empty(), "{mine:?}");
+    let theirs = OilChatRunner::notification_msgs(&client, &sessions[1]).await;
+    assert!(
+        matches!(&theirs[..], [ChatAppMsg::Notification(n)] if n.message == "shared"),
+        "{theirs:?}"
+    );
+}
+
+/// A close that the daemon cannot take reaches the user as a warning.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_tui_close_is_a_warning() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let client = daemon(&tmp).await;
+
+    let failures =
+        OilChatRunner::close_notification_msgs(&client, "no-such-session", &["n".into()]).await;
+
+    assert!(
+        matches!(&failures[..], [ChatAppMsg::Error(e)] if e.contains("could not close")),
+        "{failures:?}"
+    );
+}
+
+/// Run `:messages clear` through the real `process_action`. Answer the
+/// count of daemon calls that it started.
+async fn closes_started(is_replay: bool) -> usize {
+    use crate::chat::bridge::AgentEventBridge;
+    use crate::tui::oil::noop_agent::NoopAgentHandle;
+    use crucible_core::events::EventRing;
+    use crucible_oil::terminal::Terminal;
+
+    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+    runner.is_replay = is_replay;
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::Notification(
+        crucible_core::types::Notification::warning("shared"),
+    ));
+    // Real keystrokes, so the test runs the parse of the command too.
+    for c in ":messages clear".chars() {
+        app.update(crate::tui::oil::event::Event::Key(
+            crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(c),
+                crossterm::event::KeyModifiers::NONE,
+            ),
+        ));
+    }
+    let action = app.update(crate::tui::oil::event::Event::Key(
+        crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ),
+    ));
+    let mut agent = NoopAgentHandle::new("chat-1".to_string());
+    let bridge = AgentEventBridge::new(std::sync::Arc::new(EventRing::new(16)));
+    let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
+    let mut background_tasks = Vec::new();
+    runner
+        .process_action(ProcessActionParams {
+            action,
+            app: &mut app,
+            agent: &mut agent,
+            bridge: &bridge,
+            msg_tx: &msg_tx,
+            background_tasks: &mut background_tasks,
+        })
+        .await
+        .expect("process_action does not fail");
+
+    // The test runtime runs one thread, and nothing yielded, so the close
+    // never reaches a daemon before this abort.
+    let started = background_tasks.len();
+    OilChatRunner::abort_background_tasks(&mut background_tasks);
+    started
+}
+
+#[tokio::test]
+async fn messages_clear_starts_the_close_in_the_daemon() {
+    assert_eq!(closes_started(false).await, 1);
+}
+
+#[tokio::test]
+async fn a_replay_closes_nothing_in_the_daemon() {
+    assert_eq!(closes_started(true).await, 0);
+}

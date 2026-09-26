@@ -449,7 +449,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 
 - [x] **Toast Notifications** `P0` — auto-dismiss after 3 s; INFO/WARN badge in the status bar · `crucible-cli`
   - **Gets you:** the newest toast appears in the status bar with count badges beside it, and stops showing after 3 s. **ERROR is unreachable at runtime** — `NotificationKind` has only `Toast | Progress | Warning` and both mapping sites produce Info or Warning, so that level has been dropped from this entry.
-- [x] **Messages Drawer** `P0` — `:messages` toggles the full notification history panel · `crucible-cli`
+- [x] **Messages Drawer** `P0` — `:messages` toggles the full notification history panel; `:messages clear` closes every notification, and the daemon closes each daemon notification for this session · `crucible-cli`
   - **Gets you:** a bordered panel listing the whole notification history with timestamps; any key closes it.
 - [x] **Warning Badges** `P0` — persistent count badge when warnings exist · `crucible-cli`
   - **Gets you:** after a toast fades, a persistent ` WARN 2 ` count badge stays in the status bar, surviving narrow widths.

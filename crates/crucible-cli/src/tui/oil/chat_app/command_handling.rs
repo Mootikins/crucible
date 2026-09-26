@@ -225,10 +225,26 @@ impl OilChatApp {
         match repl {
             ReplCommand::Quit => Action::Quit,
             ReplCommand::Help => self.handle_help_repl(arg),
-            ReplCommand::Messages => {
-                self.notification_area.toggle();
-                Action::Continue
-            }
+            ReplCommand::Messages => match arg {
+                None => {
+                    self.notification_area.toggle();
+                    Action::Continue
+                }
+                Some("clear") => {
+                    let owned = self.notification_area.close_all();
+                    if owned.is_empty() {
+                        Action::Continue
+                    } else {
+                        Action::Send(ChatAppMsg::CloseDaemonNotifications(owned))
+                    }
+                }
+                Some(other) => {
+                    self.add_notification(crucible_core::types::Notification::warning(format!(
+                        "Unknown :messages argument: {other}. Use :messages or :messages clear."
+                    )));
+                    Action::Continue
+                }
+            },
             ReplCommand::Palette => {
                 self.popup.show = true;
                 self.popup.kind = super::state::AutocompleteKind::Command;

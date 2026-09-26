@@ -288,9 +288,12 @@ impl OilChatApp {
             ChatAppMsg::Notification(notification) => {
                 let history = self.notification_area.history();
                 if !history.iter().any(|(n, _)| n.id == notification.id) {
-                    self.add_notification(notification);
+                    self.notification_area
+                        .add_from_daemon(notification, self.frame_time);
                 }
             }
+            // The runner already sent the close to the daemon.
+            ChatAppMsg::CloseDaemonNotifications(_) => {}
             ChatAppMsg::DismissNotification(id) => {
                 self.notification_area.dismiss(&id);
             }

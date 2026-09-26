@@ -135,6 +135,10 @@ pub enum ChatAppMsg {
     Notification(crucible_core::types::Notification),
     /// **Event** (daemon → TUI): a client dismissed this daemon notification.
     DismissNotification(String),
+    /// **Command** (TUI → daemon): the user closed these daemon
+    /// notifications. The daemon drops a notification of the session and
+    /// hides a shared one for this session only.
+    CloseDaemonNotifications(Vec<String>),
     /// **Event** (daemon → TUI): a line the transcript draws beside the reply.
     ///
     /// Distinct from `Status`, which writes the status bar and leaves no
@@ -477,6 +481,7 @@ impl ChatAppMsg {
             | Self::Status(_)
             | Self::Notification(_)
             | Self::DismissNotification(_)
+            | Self::CloseDaemonNotifications(_)
             | Self::SystemNotice(_)
             | Self::ModeChanged(_)
             | Self::ModeSynced(_)

@@ -271,6 +271,46 @@ impl OilChatRunner {
         }));
     }
 
+    /// Close each notification `ids` for the session in the daemon. Returns
+    /// one warning for each close that failed.
+    pub(super) async fn close_notification_msgs(
+        client: &crucible_daemon::DaemonClient,
+        session_id: &str,
+        ids: &[String],
+    ) -> Vec<ChatAppMsg> {
+        let mut msgs = Vec::new();
+        for id in ids {
+            if let Err(e) = client.session_dismiss_notification(session_id, id).await {
+                msgs.push(ChatAppMsg::Error(format!(
+                    "The daemon could not close a notification: {e:#}"
+                )));
+            }
+        }
+        msgs
+    }
+
+    /// Close the notifications `ids` of the session in the daemon, so they
+    /// do not come back when a client attaches again.
+    fn spawn_notification_close(
+        session_id: String,
+        ids: Vec<String>,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) {
+        let tx = msg_tx.clone();
+        background_tasks.push(tokio::spawn(async move {
+            let msgs = match crucible_daemon::DaemonClient::connect().await {
+                Ok(client) => Self::close_notification_msgs(&client, &session_id, &ids).await,
+                Err(e) => vec![ChatAppMsg::Error(format!(
+                    "The daemon could not close a notification: {e:#}"
+                ))],
+            };
+            for msg in msgs {
+                let _ = tx.send(msg);
+            }
+        }));
+    }
+
     /// Read the proposals in the Inbox for the count and the `:proposals`
     /// view.
     ///
@@ -1120,6 +1160,18 @@ impl OilChatRunner {
                             let _ = tx.send(msg);
                         }));
                     }
+                    // The user closed daemon notifications. A session without
+                    // an id has no daemon notification to close.
+                    ChatAppMsg::CloseDaemonNotifications(ref ids) if !self.is_replay => {
+                        if let Some(session_id) = params.agent.session_id().map(str::to_string) {
+                            Self::spawn_notification_close(
+                                session_id,
+                                ids.clone(),
+                                params.msg_tx,
+                                params.background_tasks,
+                            );
+                        }
+                    }
                     // Swallow daemon-bound messages during replay. The match
                     // guards on the live arms above (`if !self.is_replay`)
                     // mean these land here in replay mode. Any new daemon
@@ -1142,6 +1194,7 @@ impl OilChatRunner {
                     | ChatAppMsg::RunPluginCommand { .. }
                     | ChatAppMsg::ClearContext
                     | ChatAppMsg::ExportSession(_)
+                    | ChatAppMsg::CloseDaemonNotifications(_)
                     | ChatAppMsg::FetchModels
                         if self.is_replay =>
                     {

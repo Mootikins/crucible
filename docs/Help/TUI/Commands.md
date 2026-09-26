@@ -32,6 +32,7 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:undo [N]` | Undo the last N agent turns (default 1); refused on an external-agent session |
 | `:export <path>` | Export session to markdown |
 | `:messages` | Toggle the notification drawer (aliases: `:msgs`, `:notifications`) |
+| `:messages clear` | Close every notification. The daemon removes a notification of this session, and hides a shared one for this session only |
 | `:palette` | Open command palette (alias: `:commands`, key: `F1`) |
 | `:pick [source]` | Open a fuzzy picker (notes, files, commands, sessions) |
 | `/resume [id]` | Open an earlier session: a picker, or the session with that id |
@@ -278,6 +279,8 @@ Sessions panel. See [[Help/Core/Sessions]].
 :undo [N]               # Undo the last N agent turns (also /undo)
 :export <path>          # Export session to markdown (~ expands)
 :messages               # Toggle notification drawer
+:messages clear         # Close every notification; a shared one stays
+                        # for the other sessions
 :palette                # Open command palette (F1)
 :mcp                    # MCP servers with connection status and tool counts
 :plugins                # Loaded plugins with state and version

@@ -12,6 +12,9 @@ use std::time::Duration;
 use crossterm::event::KeyCode;
 use crucible_core::types::Notification;
 
+use crate::tui::oil::app::Action;
+use crate::tui::oil::chat_app::ChatAppMsg;
+
 use super::support::StoryRuntime;
 
 fn add(story: &mut StoryRuntime, n: Notification) {
@@ -115,4 +118,33 @@ fn a_toast_stays_until_its_timeout() {
         "the toast must stay for its full 3s:\n{after}"
     );
     assert!(story.app().has_notifications(), "and stay in the store");
+}
+
+/// US-704: `:messages clear` closes every notification. The warning and its
+/// badge leave the screen, and the command asks the daemon to close the
+/// daemon notification for this session.
+#[test]
+fn messages_clear_closes_every_notification() {
+    let mut story = StoryRuntime::new(80, 24);
+    let daemon = Notification::warning("kiln docs failed");
+    story.send(ChatAppMsg::Notification(daemon.clone()));
+    add(&mut story, Notification::warning("context at 85 percent"));
+    story.app().show_messages();
+    assert!(story.screen().contains("kiln docs failed"));
+    story.key(KeyCode::Esc);
+
+    story.text(":messages clear");
+    let action = story.enter();
+
+    assert!(
+        matches!(&action, Action::Send(ChatAppMsg::CloseDaemonNotifications(ids)) if ids == std::slice::from_ref(&daemon.id)),
+        "{action:?}"
+    );
+    assert!(!story.app().has_notifications());
+    story.app().show_messages();
+    let screen = story.screen();
+    assert!(
+        !screen.contains("kiln docs failed") && !screen.contains("context at 85 percent"),
+        "the drawer is empty:\n{screen}"
+    );
 }

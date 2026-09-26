@@ -5,6 +5,7 @@
 
 use super::status_bar::NotificationToastKind;
 use crucible_core::types::{Notification, NotificationKind};
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 /// Default auto-dismiss timeout for toast notifications (3 seconds).
@@ -18,6 +19,9 @@ const TOAST_TIMEOUT: Duration = Duration::from_secs(3);
 #[derive(Debug, Clone)]
 pub struct NotificationArea {
     notifications: Vec<(Notification, Instant)>,
+    /// The ids of the entries that the daemon owns. A close by the user
+    /// must reach the daemon for these, and only for these.
+    from_daemon: HashSet<String>,
     visible: bool,
 }
 
@@ -32,6 +36,7 @@ impl NotificationArea {
     pub fn new() -> Self {
         Self {
             notifications: Vec::new(),
+            from_daemon: HashSet::new(),
             visible: false,
         }
     }
@@ -65,6 +70,13 @@ impl NotificationArea {
         self.notifications.push((notification, now));
     }
 
+    /// Add a notification that the daemon owns. [`Self::close_all`] names
+    /// it, so the daemon can close it too.
+    pub fn add_from_daemon(&mut self, notification: Notification, now: Instant) {
+        self.from_daemon.insert(notification.id.clone());
+        self.add(notification, now);
+    }
+
     /// Dismiss a notification by ID.
     pub fn dismiss(&mut self, id: &str) -> bool {
         if let Some(pos) = self.notifications.iter().position(|(n, _)| n.id == id) {
@@ -78,6 +90,20 @@ impl NotificationArea {
     /// Clear all notifications.
     pub fn clear(&mut self) {
         self.notifications.clear();
+        self.from_daemon.clear();
+    }
+
+    /// The user closed every notification. Returns the ids of those that the
+    /// daemon owns, oldest first, so the caller can close them there.
+    pub fn close_all(&mut self) -> Vec<String> {
+        let owned = self
+            .notifications
+            .iter()
+            .filter(|(n, _)| self.from_daemon.contains(&n.id))
+            .map(|(n, _)| n.id.clone())
+            .collect();
+        self.clear();
+        owned
     }
 
     /// Remove expired toast notifications.
@@ -89,6 +115,14 @@ impl NotificationArea {
             NotificationKind::Toast => now.saturating_duration_since(*added_at) < TOAST_TIMEOUT,
             NotificationKind::Progress { .. } | NotificationKind::Warning => true,
         });
+        // Every frame runs this, so it also drops the id of an entry that
+        // `dismiss` removed.
+        let Self {
+            notifications,
+            from_daemon,
+            ..
+        } = self;
+        from_daemon.retain(|id| notifications.iter().any(|(n, _)| &n.id == id));
         initial_len - self.notifications.len()
     }
 
@@ -159,6 +193,29 @@ mod tests {
 
     fn sample_warning() -> Notification {
         Notification::warning("Context at 85%")
+    }
+
+    /// The set of daemon ids follows the entries, so it does not grow
+    /// with every toast that expired.
+    #[test]
+    fn daemon_ids_leave_with_their_entries() {
+        let mut area = NotificationArea::new();
+        let now = Instant::now();
+        let toast = sample_toast();
+        let warning = sample_warning();
+        let dismissed = sample_warning();
+        area.add_from_daemon(toast, now);
+        area.add_from_daemon(warning.clone(), now);
+        area.add_from_daemon(dismissed.clone(), now);
+        area.add(sample_progress(), now);
+
+        area.dismiss(&dismissed.id);
+        area.expire_toasts(now + TOAST_TIMEOUT);
+
+        assert_eq!(area.from_daemon, HashSet::from([warning.id.clone()]));
+        assert_eq!(area.close_all(), vec![warning.id]);
+        assert!(area.is_empty());
+        assert!(area.from_daemon.is_empty());
     }
 
     #[test]

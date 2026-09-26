@@ -133,6 +133,11 @@ is a Keep a Changelog category.
   timeout only takes the toast off the screen. A global notification that
   two open sessions show is one toast, and its close reaches both sessions.
   A `notification_dismissed` event from another client takes the toast down.
+- **`:messages clear` closes every notification in the TUI.** The TUI had no
+  way to close a notification: a warning stayed until the session ended. The
+  command empties the notification area and calls
+  `session.dismiss_notification` for each daemon notification, so a closed
+  notification does not come back on the next attach.
 - **The render of each tool call.** The daemon renders each tool call through
   the `tool:render` stage: a `line`, a list of `fields` and, for a result, a
   `summary`. The TUI card, the web card, both permission prompts and `cru acp`

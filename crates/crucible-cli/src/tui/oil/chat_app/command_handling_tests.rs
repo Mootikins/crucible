@@ -218,6 +218,50 @@ fn a_dismissed_daemon_notification_leaves_the_notification_area() {
     );
 }
 
+/// `:messages clear` closes every notification. The command names only the
+/// notifications that the daemon owns, so the runner closes those in the
+/// daemon and no local one.
+#[test]
+fn messages_clear_closes_the_daemon_notifications() {
+    let mut app = app();
+    let daemon = crucible_core::types::Notification::warning("a notice for every session");
+    app.on_message(ChatAppMsg::Notification(daemon.clone()));
+    app.add_notification(crucible_core::types::Notification::warning(
+        "a local warning",
+    ));
+
+    let action = app.handle_repl_command(":messages clear");
+
+    assert!(
+        matches!(&action, Action::Send(ChatAppMsg::CloseDaemonNotifications(ids)) if ids == std::slice::from_ref(&daemon.id)),
+        "{action:?}"
+    );
+    assert!(app.notification_area.history().is_empty());
+    let screen = crate::tui::oil::tests::helpers::vt_render(&mut app);
+    assert!(
+        !screen.contains("a notice for every session") && !screen.contains("a local warning"),
+        "the notifications are gone:\n{screen}"
+    );
+    assert!(
+        matches!(app.handle_repl_command(":messages clear"), Action::Continue),
+        "nothing is left to close"
+    );
+}
+
+/// A daemon notification that expired or left already is not closed again.
+#[test]
+fn messages_clear_skips_a_daemon_notification_that_left() {
+    let mut app = app();
+    let gone = crucible_core::types::Notification::warning("closed in another client");
+    app.on_message(ChatAppMsg::Notification(gone.clone()));
+    app.on_message(ChatAppMsg::DismissNotification(gone.id));
+
+    assert!(matches!(
+        app.handle_repl_command(":messages clear"),
+        Action::Continue
+    ));
+}
+
 /// A write the daemon refuses leaves no value behind, and says so. Swallowing
 /// it into a local value is what let the TUI report a setting the daemon
 /// never took.
