@@ -228,10 +228,10 @@ describe("DM session persistence", function()
             expect.is_not_nil(key)
             local created_at = sessions.load_from(STATE_FILE)[key].last_active
 
-            -- `sessions.lua` reads `os.time()` at each use, so moving the clock
-            -- is how a unit test reaches an aged entry.
+            -- Freeze the later time relative to the stored creation time:
+            -- the real clock may cross a second while the test writes its file.
             local real_time = os.time
-            os.time = function() return real_time() + 3600 end
+            os.time = function() return created_at + 3600 end
             local ok, err = pcall(function()
                 expect.equals(id, sessions.get_or_create("dm-bump", nil, "u-bump"))
             end)
