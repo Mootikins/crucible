@@ -2,7 +2,8 @@ use super::session_commands::{
     __path_execute_command, __path_list_commands, execute_command, list_commands,
 };
 use super::session_status::{
-    __path_session_notifications, __path_session_status, session_notifications, session_status,
+    __path_dismiss_session_notification, __path_session_notifications, __path_session_status,
+    dismiss_session_notification, session_notifications, session_status,
 };
 use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
@@ -392,6 +393,7 @@ pub fn session_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(list_knobs))
         .routes(routes!(session_status))
         .routes(routes!(session_notifications))
+        .routes(routes!(dismiss_session_notification))
         .routes(routes!(connect_kiln))
         .routes(routes!(disconnect_kiln))
         .routes(routes!(set_workspace))

@@ -354,6 +354,18 @@ export interface Notification {
   /** Optional action rendered as a button; actionable notifications never
    * auto-dismiss (the user must act or dismiss explicitly). */
   action?: { label: string; run: () => void };
+  /** Where the entry came from, when a server owns it. */
+  origin?: NotificationOrigin;
+}
+
+/**
+ * The owner of a notification outside the browser, for example a daemon
+ * notification. The store shows one entry per `key`. When the user closes
+ * the entry, the store calls `close` once; a timeout does not call it.
+ */
+export interface NotificationOrigin {
+  key: string;
+  close: () => void;
 }
 
 // =============================================================================

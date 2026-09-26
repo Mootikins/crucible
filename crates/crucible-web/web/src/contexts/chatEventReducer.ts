@@ -1,5 +1,9 @@
 import { statusBarActions } from '@/stores/statusBarStore';
-import { showDaemonNotification } from '@/lib/daemon-notification';
+import {
+  dropDaemonNotification,
+  showDaemonNotification,
+  type DaemonNotification,
+} from '@/lib/query/daemon-notification';
 import {
   generateMessageId,
   originName,
@@ -23,6 +27,8 @@ import type {
 type ArraySetter<T> = (value: T[] | ((prev: T[]) => T[])) => void;
 
 interface ChatEventReducerDeps {
+  /** The session whose events this reducer reads. */
+  sessionId: string;
   messages: () => Message[];
   currentStreamingMessageId: () => string | null;
   setCurrentStreamingMessageId: (id: string | null) => void;
@@ -626,7 +632,19 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // A daemon notification: a warning stays a warning; a toast or a
         // progress line is information.
         if (event.event === 'notification_added') {
-          showDaemonNotification((event.data as { notification?: { kind?: unknown; message?: string } } | null)?.notification);
+          showDaemonNotification(
+            (event.data as { notification?: DaemonNotification } | null)?.notification,
+            deps.sessionId,
+          );
+          break;
+        }
+        // A client of this session closed a daemon notification, or the
+        // daemon dropped it for everyone.
+        if (event.event === 'notification_dismissed') {
+          dropDaemonNotification(
+            (event.data as { notification_id?: unknown } | null)?.notification_id,
+            deps.sessionId,
+          );
           break;
         }
         if (event.event === 'stream_gap') {

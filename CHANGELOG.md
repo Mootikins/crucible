@@ -126,6 +126,13 @@ is a Keep a Changelog category.
   `cru.log.notify` call is therefore visible to the user for the first time.
   When a client attaches to a session, it reads the notifications of that
   session once through `session.list_notifications`.
+- **The web closes a daemon notification in the daemon.** The close button
+  of its toast and **Clear all** call
+  `POST /api/session/{id}/notifications/{notification_id}/dismiss`, so the
+  notification does not come back when the browser attaches again. A
+  timeout only takes the toast off the screen. A global notification that
+  two open sessions show is one toast, and its close reaches both sessions.
+  A `notification_dismissed` event from another client takes the toast down.
 - **The render of each tool call.** The daemon renders each tool call through
   the `tool:render` stage: a `line`, a list of `fields` and, for a result, a
   `summary`. The TUI card, the web card, both permission prompts and `cru acp`

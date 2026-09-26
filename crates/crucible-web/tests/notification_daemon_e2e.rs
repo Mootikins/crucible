@@ -117,3 +117,108 @@ async fn the_web_route_lists_the_notifications_of_one_session() {
     assert_eq!(list[0]["message"], "mine", "{json}");
     assert_eq!(list[0]["kind"], "warning", "{json}");
 }
+
+/// A browser closes a shared notice through the web route. The real daemon
+/// hides it for that session only: the list of the session leaves it out,
+/// and the list of the other session keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_web_route_closes_a_shared_notice_for_one_session() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let socket = tmp.path().join("d.sock");
+    let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
+        path: socket.clone(),
+        data_home: Some(tmp.path().join("data")),
+        config_home: Some(tmp.path().join("config")),
+        ..Default::default()
+    })
+    .await
+    .expect("the daemon binds");
+    tokio::spawn(server.run());
+    let client = DaemonClient::connect_to(&socket).await.expect("connect");
+
+    let mut sessions = Vec::new();
+    for _ in 0..2 {
+        let created = client
+            .call("session.create", serde_json::json!({ "type": "chat" }))
+            .await
+            .expect("session.create");
+        sessions.push(created["session_id"].as_str().unwrap().to_string());
+    }
+    client
+        .call(
+            "lua.eval",
+            serde_json::json!({ "code": "cru.log.notify('shared')" }),
+        )
+        .await
+        .expect("lua.eval");
+    // The hub stores what `cru.log.notify` queued on its own task.
+    let shared_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let listed = client
+                .call("notification.list", serde_json::json!({ "all": true }))
+                .await
+                .expect("notification.list");
+            if let Some(id) = listed["notifications"][0]["id"].as_str() {
+                return id.to_string();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the hub never stored the notice");
+
+    let app = crucible_web::test_support::build_test_app(
+        crucible_web::test_support::build_mock_state(client),
+    );
+    let request = |method: &str, uri: String| {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap()
+    };
+    let json_of = |response: axum::response::Response| async move {
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+    };
+
+    let closed = json_of(
+        app.clone()
+            .oneshot(request(
+                "POST",
+                format!(
+                    "/api/session/{}/notifications/{shared_id}/dismiss",
+                    sessions[0]
+                ),
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(closed["success"], true, "{closed}");
+
+    for (session, expected) in [(&sessions[0], 0), (&sessions[1], 1)] {
+        let listed = json_of(
+            app.clone()
+                .oneshot(request(
+                    "GET",
+                    format!("/api/session/{session}/notifications"),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(
+            listed["notifications"].as_array().unwrap().len(),
+            expected,
+            "{session}: {listed}"
+        );
+    }
+}

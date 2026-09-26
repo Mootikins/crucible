@@ -1,7 +1,7 @@
 //! `/api/session/{id}/status` — the status list of a session: the items
 //! that plugins published and the engine's plugin-turn items. Also
 //! `/api/session/{id}/notifications`, the other per-session read a client
-//! makes on attach. Split from `session.rs`; the status shape is a surface of its own,
+//! makes on attach, and the close of one of those notifications. Split from `session.rs`; the status shape is a surface of its own,
 //! apart from the session router.
 
 use crate::services::daemon::AppState;
@@ -91,6 +91,43 @@ pub(super) async fn session_notifications(
         .await
         .daemon_err()?;
     Ok(Json(SessionNotificationsResponse { notifications }))
+}
+
+/// What `POST /api/session/{id}/notifications/{notification_id}/dismiss`
+/// answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub(super) struct DismissSessionNotificationResponse {
+    /// True when the daemon dropped the notification of the session, or hid
+    /// a shared notification for this session. False when the notification
+    /// does not reach the session.
+    success: bool,
+}
+
+/// The user closed a notification in this session. The daemon drops a
+/// notification of the session. A shared notification stays for the other
+/// sessions, and this session does not see it again.
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/notifications/{notification_id}/dismiss",
+    params(
+        ("id" = String, Path, description = "The session that closes the notification"),
+        ("notification_id" = String, Path, description = "The notification to close"),
+    ),
+    responses(
+        (status = 200, body = DismissSessionNotificationResponse),
+        (status = 502, description = "The daemon could not close the notification"),
+    )
+)]
+pub(super) async fn dismiss_session_notification(
+    State(state): State<AppState>,
+    Path((id, notification_id)): Path<(String, String)>,
+) -> Result<Json<DismissSessionNotificationResponse>, WebError> {
+    let success = state
+        .daemon
+        .session_dismiss_notification(&id, &notification_id)
+        .await
+        .daemon_err()?;
+    Ok(Json(DismissSessionNotificationResponse { success }))
 }
 
 #[cfg(test)]

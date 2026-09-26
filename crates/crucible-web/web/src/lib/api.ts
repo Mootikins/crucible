@@ -944,6 +944,23 @@ export async function getSessionNotifications(
   ).notifications;
 }
 
+/**
+ * Close one daemon notification in one session. The daemon drops a
+ * notification of the session, and hides a shared one for this session
+ * only. False when the notification does not reach the session.
+ */
+export async function dismissSessionNotification(
+  sessionId: string,
+  notificationId: string,
+): Promise<boolean> {
+  return decode(
+    await client.POST('/api/session/{id}/notifications/{notification_id}/dismiss', {
+      params: { path: { id: sessionId, notification_id: notificationId } },
+    }),
+    'Failed to close the notification',
+  ).success;
+}
+
 /** List the modes a session may enter, and the one it is in. */
 /**
  * Which settings this session can change.

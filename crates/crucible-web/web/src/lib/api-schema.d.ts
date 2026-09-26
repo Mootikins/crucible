@@ -1705,6 +1705,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/notifications/{notification_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The user closed a notification in this session. The daemon drops a
+         *     notification of the session. A shared notification stays for the other
+         *     sessions, and this session does not see it again.
+         */
+        post: operations["dismiss_session_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/pause": {
         parameters: {
             query?: never;
@@ -2784,6 +2805,18 @@ export interface components {
             id: components["schemas"]["ProposalId"];
             /** @enum {string} */
             kind: "proposal";
+        };
+        /**
+         * @description What `POST /api/session/{id}/notifications/{notification_id}/dismiss`
+         *     answers.
+         */
+        DismissSessionNotificationResponse: {
+            /**
+             * @description True when the daemon dropped the notification of the session, or hid
+             *     a shared notification for this session. False when the notification
+             *     does not reach the session.
+             */
+            success: boolean;
         };
         /** @description Why one edit could not be applied. The index is the caller's edit index. */
         EditRefusal: {
@@ -4928,6 +4961,7 @@ export type SchemaDiffResolveCommentResponse = components['schemas']['DiffResolv
 export type SchemaDiffset = components['schemas']['Diffset'];
 export type SchemaDiffsetId = components['schemas']['DiffsetId'];
 export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
+export type SchemaDismissSessionNotificationResponse = components['schemas']['DismissSessionNotificationResponse'];
 export type SchemaEditRefusal = components['schemas']['EditRefusal'];
 export type SchemaExecuteCommandRequest = components['schemas']['ExecuteCommandRequest'];
 export type SchemaExpectedBase = components['schemas']['ExpectedBase'];
@@ -8527,6 +8561,37 @@ export interface operations {
                 };
             };
             /** @description The daemon could not read the notifications */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    dismiss_session_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session that closes the notification */
+                id: string;
+                /** @description The notification to close */
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissSessionNotificationResponse"];
+                };
+            };
+            /** @description The daemon could not close the notification */
             502: {
                 headers: {
                     [name: string]: unknown;

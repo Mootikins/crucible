@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import type { Notification, NotificationType } from '@/lib/types';
+import type { Notification, NotificationOrigin, NotificationType } from '@/lib/types';
 import { statusBarActions } from '@/stores/statusBarStore';
 
 // ── Global notification state ────────────────────────────────────────────
@@ -39,9 +39,15 @@ function addNotification(
   type: NotificationType,
   message: string,
   action?: Notification['action'],
+  origin?: NotificationOrigin,
 ): string {
   const now = Date.now();
-  if (!action) {
+  // An owned entry is the same entry for as long as it is open, whatever its
+  // text, and two owned entries with one text are still two.
+  if (origin) {
+    const same = notifications.find((n) => !n.dismissed && n.origin?.key === origin.key);
+    if (same) return same.id;
+  } else if (!action) {
     const repeat = notifications.find(
       (n) => !n.dismissed && n.type === type && n.message === message && now - n.timestamp < DEDUPE_WINDOW_MS,
     );
@@ -56,6 +62,7 @@ function addNotification(
     dismissed: false,
     read: false,
     action,
+    origin,
   };
 
   setNotifications(produce((list) => list.push(notification)));
@@ -66,8 +73,10 @@ function addNotification(
   // is that the user gets to act on them.
   if (!action) {
     const dwell = type === 'info' || type === 'success' ? AUTO_DISMISS_MS : AUTO_DISMISS_ALERT_MS;
+    // A timeout takes the toast off the screen. It is not the user's
+    // close, so the owner of the entry does not hear about it.
     const timer = setTimeout(() => {
-      dismiss(id);
+      hide(id);
       dismissTimers.delete(id);
     }, dwell);
     dismissTimers.set(id, timer);
@@ -76,7 +85,22 @@ function addNotification(
   return id;
 }
 
+/** The user closed the entry. Its owner hears about it once. */
 function dismiss(id: string) {
+  const entry = notifications.find((n) => n.id === id);
+  if (entry && !entry.dismissed) entry.origin?.close();
+  hide(id);
+}
+
+/** The owner closed the entry. Take it off the screen; tell no one. */
+function dropOrigin(key: string) {
+  for (const n of notifications) {
+    if (!n.dismissed && n.origin?.key === key) hide(n.id);
+  }
+}
+
+/** Take the entry off the screen, without a word to its owner. */
+function hide(id: string) {
   // Cancel any pending auto-dismiss timer
   const timer = dismissTimers.get(id);
   if (timer) {
@@ -99,6 +123,10 @@ function clearAll() {
   }
   dismissTimers.clear();
 
+  // The user closed every open entry, so every owner hears about its own.
+  for (const n of notifications) {
+    if (!n.dismissed) n.origin?.close();
+  }
   setNotifications(
     produce((list) => {
       for (const n of list) {
@@ -131,6 +159,7 @@ export const notificationStore = {
 export const notificationActions = {
   addNotification,
   dismiss,
+  dropOrigin,
   clearAll,
   markAllRead,
 } as const;

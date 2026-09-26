@@ -3656,6 +3656,47 @@
         }
       }
     },
+    "/api/session/{id}/notifications/{notification_id}/dismiss": {
+      "post": {
+        "summary": "The user closed a notification in this session. The daemon drops a\nnotification of the session. A shared notification stays for the other\nsessions, and this session does not see it again.",
+        "operationId": "dismiss_session_notification",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session that closes the notification",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "notification_id",
+            "in": "path",
+            "description": "The notification to close",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissSessionNotificationResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not close the notification"
+          }
+        }
+      }
+    },
     "/api/session/{id}/pause": {
       "post": {
         "operationId": "pause_session",
@@ -6081,6 +6122,19 @@
           }
         ],
         "description": "Where the two sides of a diffset come from.\n\nThis set is closed. The daemon has one exhaustive match on it, and the web\nclient has one."
+      },
+      "DismissSessionNotificationResponse": {
+        "type": "object",
+        "description": "What `POST /api/session/{id}/notifications/{notification_id}/dismiss`\nanswers.",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "True when the daemon dropped the notification of the session, or hid\na shared notification for this session. False when the notification\ndoes not reach the session."
+          }
+        }
       },
       "EditRefusal": {
         "oneOf": [

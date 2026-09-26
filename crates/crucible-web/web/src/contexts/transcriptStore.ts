@@ -150,6 +150,7 @@ function ensureStream(sessionId: string): void {
   };
 
   const reducer = createChatEventReducer({
+    sessionId,
     messages: () => stateOf(sessionId).messages,
     currentStreamingMessageId: () => stateOf(sessionId).currentStreamingMessageId,
     setCurrentStreamingMessageId: (id) => patch({ currentStreamingMessageId: id }),

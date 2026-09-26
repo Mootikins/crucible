@@ -564,6 +564,15 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        /// Close one notification for one session: the daemon drops a
+        /// notification of the session and hides a shared one for this
+        /// session only. `Once`, because a replayed removal answers `false`.
+        Once SessionDismissNotification =>
+        session_dismiss_notification(session_id: &str, notification_id: &str)
+        -> bool = session_dismiss_notification(&session_id, &notification_id);
+    }
+
+    forward_rpc! {
         Safe SessionListAgentOptions =>
         session_list_agent_options(session_id: &str)
         -> serde_json::Value = session_list_agent_options(&session_id);

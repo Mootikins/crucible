@@ -38,7 +38,7 @@ import {
 } from '@/lib/api';
 import type { ChatEvent, FsEvent, SequencedChatEvent } from '@/lib/types';
 import { getBus, type Bus } from '@/lib/bus';
-import { showDaemonNotification, type DaemonNotification } from '@/lib/daemon-notification';
+import { showDaemonNotification, type DaemonNotification } from '@/lib/query/daemon-notification';
 import { notificationActions } from '@/stores/notificationStore';
 import { getQueryClient } from './client';
 
@@ -363,7 +363,9 @@ export function advanceSessionCursor(sessionId: string, seq: number): void {
  */
 function readSessionNotifications(sessionId: string): void {
   getSessionNotifications(sessionId)
-    .then((list) => [...list].reverse().forEach((n) => showDaemonNotification(n as DaemonNotification)))
+    .then((list) =>
+      [...list].reverse().forEach((n) => showDaemonNotification(n as DaemonNotification, sessionId)),
+    )
     .catch((e: unknown) =>
       notificationActions.addNotification(
         'warning',

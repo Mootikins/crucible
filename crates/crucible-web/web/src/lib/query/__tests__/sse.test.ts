@@ -17,7 +17,7 @@ import {
 } from '../sse';
 import { getQueryClient, setQueryClientForTests } from '../client';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
-import { notificationStore } from '@/stores/notificationStore';
+import { notificationActions, notificationStore } from '@/stores/notificationStore';
 import { getBus } from '../../bus';
 import {
   FakeEventSource,
@@ -80,6 +80,33 @@ describe('sessionEvents', () => {
         ]),
       );
       expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(1);
+    } finally {
+      env.restore();
+    }
+  });
+
+  it('a notice read on attach closes in the daemon for its session', async () => {
+    const env: TestQueryEnv = createTestQueryEnv({
+      'GET /api/session/s1/notifications': () => ({
+        notifications: [{ id: 'n-attach', kind: 'warning', message: 'read on attach' }],
+      }),
+      'POST /api/session/s1/notifications/n-attach/dismiss': () => ({ success: true }),
+    });
+    try {
+      sessionEvents('s1').subscribe(vi.fn());
+      const entry = await vi.waitFor(() => {
+        const found = notificationStore.notifications.find(
+          (n) => !n.dismissed && n.message === 'read on attach',
+        );
+        expect(found).toBeDefined();
+        return found!;
+      });
+
+      notificationActions.dismiss(entry.id);
+
+      await vi.waitFor(() =>
+        expect(env.fetch.calls('POST /api/session/s1/notifications/n-attach/dismiss')).toBe(1),
+      );
     } finally {
       env.restore();
     }

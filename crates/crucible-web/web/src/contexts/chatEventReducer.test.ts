@@ -21,6 +21,7 @@ vi.mock('@/stores/statusBarStore', () => ({
 vi.mock('@/stores/notificationStore', () => ({
   notificationActions: {
     addNotification: vi.fn(),
+    dropOrigin: vi.fn(),
   },
 }));
 
@@ -112,6 +113,7 @@ function createHarness(): ReducerHarness {
   };
 
   const reducer = createChatEventReducer({
+    sessionId: 's1',
     messages: () => state.messages,
     currentStreamingMessageId: () => state.currentStreamingMessageId,
     setCurrentStreamingMessageId: (id) => {
@@ -914,10 +916,23 @@ describe('event matrix — covers every ChatEvent variant', () => {
       event: 'notification_added',
       data: { notification_id: 'n2', notification: { id: 'n2', kind: 'toast', message: 'saved' } },
     });
-    expect(add.mock.calls).toEqual([
-      ['warning', 'kiln docs failed'],
-      ['info', 'saved'],
+    expect(add.mock.calls.map(([type, message, , origin]) => [type, message, origin?.key])).toEqual([
+      ['warning', 'kiln docs failed', 'n1'],
+      ['info', 'saved', 'n2'],
     ]);
+  });
+
+  it('session_event notification_dismissed: takes the daemon notification down', () => {
+    const h = createHarness();
+    const drop = notificationActions.dropOrigin as unknown as ReturnType<typeof vi.fn>;
+    drop.mockClear();
+    h.reducer({
+      type: 'session_event',
+      event: 'notification_added',
+      data: { notification_id: 'n3', notification: { id: 'n3', kind: 'toast', message: 'closed elsewhere' } },
+    });
+    h.reducer({ type: 'session_event', event: 'notification_dismissed', data: { notification_id: 'n3' } });
+    expect(drop.mock.calls).toEqual([['n3']]);
   });
 
   it('session_event stream_gap: still surfaces without a count', () => {
