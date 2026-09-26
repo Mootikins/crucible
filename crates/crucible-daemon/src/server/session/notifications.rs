@@ -71,7 +71,8 @@ pub(crate) async fn handle_session_list_notifications(
     )
 }
 
-/// Remove one notification of one session from the hub.
+/// Close one notification for one session. The hub drops a notification
+/// of the session, and hides a shared one for this session only.
 pub(crate) async fn handle_session_dismiss_notification(
     req: Request,
     sessions: &Arc<crate::session_manager::SessionManager>,
@@ -82,15 +83,16 @@ pub(crate) async fn handle_session_dismiss_notification(
         Err(response) => return *response,
     };
     let (session_id, notification_id) = (&params.session_id, &params.notification_id);
-    if let Err(response) = stored(sessions, session_id, req.id.clone()).await {
-        return *response;
-    }
+    let session = match stored(sessions, session_id, req.id.clone()).await {
+        Ok(session) => session,
+        Err(response) => return *response,
+    };
     Response::success(
         req.id,
         serde_json::json!({
             "session_id": session_id,
             "notification_id": notification_id,
-            "success": hub.dismiss_for_session(session_id, notification_id),
+            "success": hub.dismiss_for_session(&session, notification_id),
         }),
     )
 }

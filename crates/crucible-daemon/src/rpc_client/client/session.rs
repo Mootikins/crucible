@@ -552,6 +552,28 @@ impl DaemonClient {
         Ok(serde_json::from_value(reply["notifications"].clone())?)
     }
 
+    /// `session.dismiss_notification`: close one notification for one
+    /// session. True when the daemon dropped it, or hid a shared one for
+    /// this session; false when it does not reach the session.
+    pub async fn session_dismiss_notification(
+        &self,
+        session_id: &str,
+        notification_id: &str,
+    ) -> Result<bool> {
+        let reply: serde_json::Value = self
+            .typed_call(
+                "session.dismiss_notification",
+                SessionDismissNotificationRequest {
+                    session_id: session_id.to_string(),
+                    notification_id: notification_id.to_string(),
+                },
+            )
+            .await?;
+        reply["success"]
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("session.dismiss_notification: no success in {reply}"))
+    }
+
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {
         self.session_id_call("session.pause", session_id).await
     }

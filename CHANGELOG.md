@@ -65,8 +65,12 @@ is a Keep a Changelog category.
   session scope: only that session sees it, lists it and dismisses it. A
   notification that an older daemon kept on a session is not carried over.
   `session.list_notifications` also returns the workspace, kiln and global
-  notifications that the daemon delivers to the session. A session cannot
-  dismiss one of these shared notifications.
+  notifications that the daemon delivers to the session.
+  `session.dismiss_notification` on one of these shared notifications hides
+  it for that session only: the session does not list it or get it again,
+  and the other sessions still see it. The daemon keeps the hidden ids of
+  each session in `notifications.json` next to the ring, so they last as
+  long as their notification, across a daemon restart too.
 
 ### Fixed
 

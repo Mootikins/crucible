@@ -5,8 +5,12 @@
 //! `<data_home>/notifications.json`, and tells every matching live session
 //! with a `notification_added` event that carries the body. A notification
 //! with no scope goes out on the wildcard.
+//!
+//! A session that closes a shared notification hides it for itself only.
+//! The file keeps the hidden ids of each session next to the ring, so they
+//! live as long as the ring does, across a daemon restart too.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -41,6 +45,11 @@ const FILE_VERSION: u32 = 1;
 struct NotificationFile {
     version: u32,
     items: VecDeque<Notification>,
+    /// The shared notifications that each session closed, by session id.
+    /// Every id names an entry of `items`, so one set holds at most `RING`
+    /// ids. A file from before this field reads as no hidden notification.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    hidden: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Default for NotificationFile {
@@ -48,8 +57,41 @@ impl Default for NotificationFile {
         Self {
             version: FILE_VERSION,
             items: VecDeque::new(),
+            hidden: BTreeMap::new(),
         }
     }
+}
+
+impl NotificationFile {
+    /// Drop each hidden id whose notification left the ring, and each
+    /// session that then hides nothing. Call after every change to `items`.
+    fn prune_hidden(&mut self) {
+        let Self { items, hidden, .. } = self;
+        let in_ring: HashSet<&str> = items.iter().map(|n| n.id.as_str()).collect();
+        hidden.retain(|_, ids| {
+            ids.retain(|id| in_ring.contains(id.as_str()));
+            !ids.is_empty()
+        });
+    }
+
+    /// The ids that the session `session_id` hides. Empty when it hides none.
+    fn hidden_by(&self, session_id: &str) -> &BTreeSet<String> {
+        static NONE: BTreeSet<String> = BTreeSet::new();
+        self.hidden.get(session_id).unwrap_or(&NONE)
+    }
+}
+
+/// What `dismiss_for_session` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionDismissal {
+    /// The notification belonged to the session. The ring dropped it.
+    Removed,
+    /// The notification is shared. The session hides it from now on.
+    Hidden,
+    /// The session hid the notification before. Nothing changed.
+    AlreadyHidden,
+    /// The notification does not reach the session, or it is not there.
+    Refused,
 }
 
 /// The daemon's notification store and its fan-out.
@@ -149,15 +191,26 @@ impl NotificationHub {
     fn insert(&self, notification: Notification) -> Result<Notification> {
         let notification = notification.with_created_now();
         let stored = notification.clone();
-        self.store
+        let hidden = self
+            .store
             .update(move |file| {
                 file.items.push_front(notification);
                 file.items.truncate(RING);
-                Ok(())
+                file.prune_hidden();
+                Ok(file.hidden.clone())
             })
             .context("failed to store the notification")?;
-        self.fan_out(&stored);
+        self.fan_out(&stored, &hidden);
         Ok(stored)
+    }
+
+    /// The file, or an empty one when the read fails. A read failure is
+    /// logged, because a list that cannot read the ring shows nothing.
+    fn read_file(&self) -> NotificationFile {
+        self.store.read().unwrap_or_else(|e| {
+            warn!(error = %e, "failed to read the notification ring");
+            NotificationFile::default()
+        })
     }
 
     /// The ring, newest first. Without `all`, only what a client with
@@ -169,13 +222,7 @@ impl NotificationHub {
         kilns: &[KilnName],
         all: bool,
     ) -> Vec<Notification> {
-        let items = match self.store.read() {
-            Ok(file) => file.items,
-            Err(e) => {
-                warn!(error = %e, "failed to read the notification ring");
-                VecDeque::new()
-            }
-        };
+        let items = self.read_file().items;
         if all {
             return items.into();
         }
@@ -190,29 +237,76 @@ impl NotificationHub {
             .collect()
     }
 
-    /// Every notification the hub delivers to `session`, newest first.
+    /// Every notification the hub delivers to `session`, newest first,
+    /// without the shared notifications that the session hid.
     pub fn list_for_session(&self, session: &Session) -> Vec<Notification> {
-        let mut items = self.list(None, &[], true);
-        items.retain(|n| {
-            reaches(
-                n,
-                session.id.as_str(),
-                session.workspace.as_deref(),
-                &session.kilns,
-            )
-        });
-        items
+        let file = self.read_file();
+        let hidden = file.hidden_by(session.id.as_str());
+        file.items
+            .iter()
+            .filter(|n| {
+                reaches(
+                    n,
+                    session.id.as_str(),
+                    session.workspace.as_deref(),
+                    &session.kilns,
+                    hidden,
+                )
+            })
+            .cloned()
+            .collect()
     }
 
-    /// Drop one notification of the session `session_id`. False when the
-    /// session has no notification of its own with that id: a shared
-    /// notification is not one session's to drop for everyone.
-    pub fn dismiss_for_session(&self, session_id: &str, id: &str) -> bool {
-        let owned = self
-            .list(None, &[], true)
-            .iter()
-            .any(|n| n.id == id && n.scope.session.as_deref() == Some(session_id));
-        owned && self.dismiss(id)
+    /// Close one notification for `session`. The ring drops a notification
+    /// of the session itself. A shared notification that reaches the session
+    /// stays in the ring for the other sessions, and `session` hides it.
+    /// False when the notification is not there or does not reach `session`.
+    pub fn dismiss_for_session(&self, session: &Session, id: &str) -> bool {
+        let session_id = session.id.as_str();
+        let outcome = self.store.update(|file| {
+            let Some(notification) = file.items.iter().find(|n| n.id == id) else {
+                return Ok(SessionDismissal::Refused);
+            };
+            if notification.scope.session.as_deref() == Some(session_id) {
+                file.items.retain(|n| n.id != id);
+                file.prune_hidden();
+                return Ok(SessionDismissal::Removed);
+            }
+            // Ask without the hidden set: an id that the session hid before
+            // still reaches it, and a second close is not a refusal. A
+            // notification of another session does not reach this one.
+            let no_hidden = BTreeSet::new();
+            if !reaches(
+                notification,
+                session_id,
+                session.workspace.as_deref(),
+                &session.kilns,
+                &no_hidden,
+            ) {
+                return Ok(SessionDismissal::Refused);
+            }
+            let newly_hidden = file
+                .hidden
+                .entry(session_id.to_string())
+                .or_default()
+                .insert(id.to_string());
+            Ok(if newly_hidden {
+                SessionDismissal::Hidden
+            } else {
+                SessionDismissal::AlreadyHidden
+            })
+        });
+        let outcome = outcome.unwrap_or_else(|e| {
+            warn!(error = %e, "failed to dismiss a notification");
+            SessionDismissal::Refused
+        });
+        match outcome {
+            SessionDismissal::Removed => self.announce_dismissed(WILDCARD_SESSION, id),
+            // Only the clients of this session take the notification down.
+            SessionDismissal::Hidden => self.announce_dismissed(session_id, id),
+            SessionDismissal::AlreadyHidden | SessionDismissal::Refused => {}
+        }
+        outcome != SessionDismissal::Refused
     }
 
     /// Drop one notification. True when it was there. Every client hears
@@ -221,6 +315,7 @@ impl NotificationHub {
         let removed = self.store.update(|file| {
             let before = file.items.len();
             file.items.retain(|n| n.id != id);
+            file.prune_hidden();
             Ok(file.items.len() != before)
         });
         let removed = match removed {
@@ -231,16 +326,21 @@ impl NotificationHub {
             }
         };
         if removed {
-            emit_event(
-                &self.event_tx,
-                SessionEventMessage::new(
-                    WILDCARD_SESSION,
-                    "notification_dismissed",
-                    serde_json::json!({ "notification_id": id }),
-                ),
-            );
+            self.announce_dismissed(WILDCARD_SESSION, id);
         }
         removed
+    }
+
+    /// Tell the clients of `session_id` that the notification `id` closed.
+    fn announce_dismissed(&self, session_id: &str, id: &str) {
+        emit_event(
+            &self.event_tx,
+            SessionEventMessage::new(
+                session_id,
+                "notification_dismissed",
+                serde_json::json!({ "notification_id": id }),
+            ),
+        );
     }
 
     /// Explicit hints win. Without them, a session-stamped request takes the
@@ -280,8 +380,10 @@ impl NotificationHub {
     }
 
     /// One event per matching live session, or one wildcard event when the
-    /// notification is global.
-    fn fan_out(&self, notification: &Notification) {
+    /// notification is global. `hidden` is the file's hidden sets after the
+    /// store, so a session does not get a notification that it hid.
+    fn fan_out(&self, notification: &Notification, hidden: &BTreeMap<String, BTreeSet<String>>) {
+        let none = BTreeSet::new();
         let data = serde_json::json!({
             "notification_id": notification.id,
             "notification": notification,
@@ -309,6 +411,7 @@ impl NotificationHub {
                 session.id.as_str(),
                 session.workspace.as_deref(),
                 &session.kilns,
+                hidden.get(session.id.as_str()).unwrap_or(&none),
             ) {
                 continue;
             }
@@ -336,13 +439,18 @@ impl NotificationHub {
 }
 
 /// True when the hub delivers `notification` to `session`. Delivery and
-/// `list_for_session` both ask this, so they cannot disagree.
+/// `list_for_session` both ask this, so they cannot disagree. `hidden` is
+/// the set of ids that the session closed.
 fn reaches(
     notification: &Notification,
     session_id: &str,
     workspace: Option<&Path>,
     kilns: &[KilnName],
+    hidden: &BTreeSet<String>,
 ) -> bool {
+    if hidden.contains(&notification.id) {
+        return false;
+    }
     let workspace = workspace.map(canonical);
     notification.scope.session.as_deref() == Some(session_id)
         || notification.scope.matches(workspace.as_deref(), kilns)
@@ -653,6 +761,130 @@ mod tests {
         assert!(f.hub.list(None, &[], true).is_empty());
         assert!(!f.hub.dismiss(&stored.id));
         assert!(drain(&mut f.events).is_empty());
+    }
+
+    fn session(f: &Fixture, id: &str) -> Session {
+        f.sessions.get_session(id).expect("a live session")
+    }
+
+    /// A shared notice that session `a` closes leaves `a` only. The ring
+    /// keeps it, `b` still lists it, and only the clients of `a` hear the
+    /// close.
+    #[tokio::test]
+    async fn a_closed_shared_notice_leaves_that_session_only() {
+        let mut f = fixture();
+        let stored = f.hub.add(request("p", None, None, None)).unwrap();
+        drain(&mut f.events);
+        let (a, b) = (session(&f, &f.session_a), session(&f, &f.session_b));
+
+        assert!(f.hub.dismiss_for_session(&a, &stored.id));
+
+        assert!(f.hub.list_for_session(&a).is_empty());
+        assert_eq!(f.hub.list_for_session(&b).len(), 1);
+        assert_eq!(f.hub.list(None, &[], true).len(), 1);
+        let events = drain(&mut f.events);
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0].session_id, f.session_a);
+        assert_eq!(events[0].event, "notification_dismissed");
+        assert_eq!(events[0].data["notification_id"], stored.id);
+
+        assert!(
+            f.hub.dismiss_for_session(&a, &stored.id),
+            "a second close still answers success"
+        );
+        assert!(drain(&mut f.events).is_empty(), "and announces nothing");
+    }
+
+    /// A session cannot close a notice that never reached it.
+    #[tokio::test]
+    async fn a_session_cannot_close_a_notice_that_does_not_reach_it() {
+        let mut f = fixture();
+        let theirs = f
+            .hub
+            .add(request("p", None, Some(&f.workspace_b), None))
+            .unwrap();
+        let owned = f
+            .hub
+            .add_for_session(&f.session_b, Notification::toast("q"))
+            .unwrap();
+        drain(&mut f.events);
+        let a = session(&f, &f.session_a);
+
+        assert!(!f.hub.dismiss_for_session(&a, &theirs.id));
+        assert!(!f.hub.dismiss_for_session(&a, &owned.id));
+        assert!(!f.hub.dismiss_for_session(&a, "notif-absent"));
+
+        assert!(f.hub.read_file().hidden.is_empty());
+        assert_eq!(f.hub.list(None, &[], true).len(), 2);
+        assert!(drain(&mut f.events).is_empty());
+    }
+
+    /// Live delivery asks the same match as the list. A client may add a
+    /// notice with an id of its choice, so an id that a session hid can
+    /// arrive again; the session that hid it does not get it.
+    #[tokio::test]
+    async fn delivery_skips_a_session_that_hid_the_id() {
+        let mut f = fixture();
+        let notice = Notification::toast("p");
+        let kiln_request = |notification: Notification| NotifyRequest {
+            notification,
+            ..request("p", None, None, Some("notes"))
+        };
+        f.hub.add(kiln_request(notice.clone())).unwrap();
+        assert!(f
+            .hub
+            .dismiss_for_session(&session(&f, &f.session_a), &notice.id));
+        drain(&mut f.events);
+
+        f.hub.add(kiln_request(notice)).unwrap();
+
+        let added: Vec<_> = drain(&mut f.events)
+            .into_iter()
+            .filter(|e| e.event == "notification_added")
+            .collect();
+        assert!(added.is_empty(), "{added:?}");
+    }
+
+    /// The hidden ids live in the ring file, so they last as long as the
+    /// ring: across a reload, and no longer than their notice.
+    #[tokio::test]
+    async fn hidden_ids_last_as_long_as_their_notice() {
+        let f = fixture();
+        let a = session(&f, &f.session_a);
+        let first = f.hub.add(request("first", None, None, None)).unwrap();
+        let second = f.hub.add(request("second", None, None, None)).unwrap();
+        assert!(f.hub.dismiss_for_session(&a, &first.id));
+        assert!(f.hub.dismiss_for_session(&a, &second.id));
+
+        let reloaded = NotificationHub::new(
+            &f.data_home,
+            f.sessions.clone(),
+            f.projects.clone(),
+            f.event_tx.clone(),
+        );
+        assert!(
+            reloaded.list_for_session(&a).is_empty(),
+            "a restart keeps them"
+        );
+
+        assert!(f.hub.dismiss(&first.id));
+        let hidden = f.hub.read_file().hidden;
+        assert_eq!(
+            hidden.get(f.session_a.as_str()).map(|ids| ids.len()),
+            Some(1),
+            "{hidden:?}"
+        );
+
+        for i in 0..RING {
+            f.hub
+                .add(request(&format!("m{i}"), None, None, None))
+                .unwrap();
+        }
+        let hidden = f.hub.read_file().hidden;
+        assert!(
+            hidden.is_empty(),
+            "the ring dropped the notice, so the set drops its id: {hidden:?}"
+        );
     }
 
     #[tokio::test]

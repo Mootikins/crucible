@@ -6,7 +6,8 @@
 //! Contract methods:
 //! - `session.add_notification` - Add a notification, scoped to the session
 //! - `session.list_notifications` - The notifications of one session
-//! - `session.dismiss_notification` - Remove one notification of that session
+//! - `session.dismiss_notification` - Remove one notification of that session,
+//!   or hide a shared one for that session only
 //! - `notification.list` - The daemon's own ring, as a client may see it
 //! - `notification.dismiss` - Drop one entry of that ring
 
@@ -276,6 +277,14 @@ async fn a_session_lists_and_dismisses_only_its_own_notifications() {
         .await;
     assert_eq!(dismissed["result"]["success"], true, "{dismissed}");
     assert!(list_messages(&mut conn, &mine).await.is_empty());
+    let ring = conn
+        .call_method("notification.list", json!({ "all": true }), 6)
+        .await;
+    let ring = ring["result"]["notifications"].as_array().unwrap().clone();
+    assert!(
+        ring.iter().all(|n| n["id"] != id.as_str()),
+        "the ring drops a notice of the session itself: {ring:?}"
+    );
 
     daemon.stop().await.expect("Failed to stop daemon");
 }
@@ -404,27 +413,28 @@ async fn the_setting_turns_the_no_kiln_notice_off() {
     daemon.stop().await.unwrap();
 }
 
-/// A session lists every notice the daemon would deliver to it: a notice
-/// for its workspace and a global notice, not a notice for another
-/// workspace. A session cannot dismiss a shared notice for everyone.
-#[tokio::test]
-async fn a_session_lists_the_shared_notices_that_reach_it() {
-    let (mut daemon, mut conn) = setup_daemon().await;
-    let mine = daemon.home().join("mine");
-    let theirs = daemon.home().join("theirs");
-    std::fs::create_dir_all(&mine).unwrap();
-    std::fs::create_dir_all(&theirs).unwrap();
+async fn create_session_in(conn: &mut RpcConn, workspace: &std::path::Path) -> String {
     let created = conn
         .call_method(
             "session.create",
-            json!({ "type": "chat", "workspace": mine }),
+            json!({ "type": "chat", "workspace": workspace }),
             1,
         )
         .await;
-    let session_id = created["result"]["session_id"]
+    created["result"]["session_id"]
         .as_str()
         .unwrap_or_else(|| panic!("a session: {created}"))
-        .to_string();
+        .to_string()
+}
+
+/// Queue three notices through `cru.log.notify`: a global one, one for
+/// `mine` and one for `theirs`. Returns the ring once the hub stored all
+/// three.
+async fn notify_three(
+    conn: &mut RpcConn,
+    mine: &std::path::Path,
+    theirs: &std::path::Path,
+) -> Vec<serde_json::Value> {
     let code = format!(
         "cru.log.notify('global') \
          cru.log.notify('workspace', cru.log.levels.INFO, {{ workspace = {mine:?} }}) \
@@ -437,7 +447,7 @@ async fn a_session_lists_the_shared_notices_that_reach_it() {
     assert_eq!(eval["result"]["result"], "ok", "{eval}");
 
     // The hub stores what `cru.log.notify` queued on its own task.
-    let ring = loop {
+    loop {
         let listed = conn
             .call_method("notification.list", json!({ "all": true }), 3)
             .await;
@@ -446,25 +456,106 @@ async fn a_session_lists_the_shared_notices_that_reach_it() {
             .unwrap()
             .clone();
         if ring.len() == 3 {
-            break ring;
+            return ring;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    };
+    }
+}
 
-    let mut listed = list_messages(&mut conn, &session_id).await;
+fn id_of<'a>(ring: &'a [serde_json::Value], message: &str) -> &'a serde_json::Value {
+    &ring.iter().find(|n| n["message"] == message).unwrap()["id"]
+}
+
+async fn sorted_messages(conn: &mut RpcConn, session_id: &str) -> Vec<String> {
+    let mut listed = list_messages(conn, session_id).await;
     listed.sort();
-    assert_eq!(listed, ["global", "workspace"]);
+    listed
+}
 
-    let global = ring.iter().find(|n| n["message"] == "global").unwrap();
+/// A session lists every notice the daemon would deliver to it: a notice
+/// for its workspace and a global notice, not a notice for another
+/// workspace. It cannot close a notice that does not reach it.
+#[tokio::test]
+async fn a_session_lists_the_shared_notices_that_reach_it() {
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let mine = daemon.home().join("mine");
+    let theirs = daemon.home().join("theirs");
+    std::fs::create_dir_all(&mine).unwrap();
+    std::fs::create_dir_all(&theirs).unwrap();
+    let session_id = create_session_in(&mut conn, &mine).await;
+    let ring = notify_three(&mut conn, &mine, &theirs).await;
+
+    assert_eq!(
+        sorted_messages(&mut conn, &session_id).await,
+        ["global", "workspace"]
+    );
+
     let refused = conn
         .call_method(
             "session.dismiss_notification",
-            json!({ "session_id": session_id, "notification_id": global["id"] }),
+            json!({ "session_id": session_id, "notification_id": id_of(&ring, "other") }),
             4,
         )
         .await;
     assert_eq!(refused["result"]["success"], false, "{refused}");
     assert_eq!(list_messages(&mut conn, &session_id).await.len(), 2);
+
+    daemon.stop().await.unwrap();
+}
+
+/// Session A closes a shared notice. A does not see it again, also on a new
+/// attach. Session B in the same workspace still sees it, and the ring
+/// keeps it.
+#[tokio::test]
+async fn a_shared_notice_closed_in_one_session_still_reaches_the_other() {
+    let (mut daemon, mut conn) = setup_daemon().await;
+    let mine = daemon.home().join("mine");
+    let theirs = daemon.home().join("theirs");
+    std::fs::create_dir_all(&mine).unwrap();
+    std::fs::create_dir_all(&theirs).unwrap();
+    let a = create_session_in(&mut conn, &mine).await;
+    let b = create_session_in(&mut conn, &mine).await;
+    let ring = notify_three(&mut conn, &mine, &theirs).await;
+
+    for (request, message) in [(4, "workspace"), (5, "global")] {
+        let closed = conn
+            .call_method(
+                "session.dismiss_notification",
+                json!({ "session_id": a, "notification_id": id_of(&ring, message) }),
+                request,
+            )
+            .await;
+        assert_eq!(closed["result"]["success"], true, "{closed}");
+    }
+
+    assert!(list_messages(&mut conn, &a).await.is_empty());
+    assert_eq!(
+        sorted_messages(&mut conn, &b).await,
+        ["global", "workspace"]
+    );
+
+    let mut attach = RpcConn::connect(&daemon.socket_path).await.unwrap();
+    assert!(
+        list_messages(&mut attach, &a).await.is_empty(),
+        "a new attach of A must not bring the closed notices back"
+    );
+    let again = attach
+        .call_method(
+            "session.dismiss_notification",
+            json!({ "session_id": a, "notification_id": id_of(&ring, "global") }),
+            6,
+        )
+        .await;
+    assert_eq!(again["result"]["success"], true, "a second close: {again}");
+
+    let listed = attach
+        .call_method("notification.list", json!({ "all": true }), 7)
+        .await;
+    assert_eq!(
+        listed["result"]["notifications"].as_array().unwrap().len(),
+        3,
+        "the ring keeps a shared notice: {listed}"
+    );
 
     daemon.stop().await.unwrap();
 }
