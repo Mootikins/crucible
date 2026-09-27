@@ -1,0 +1,49 @@
+{
+  "version": "1.14.2",
+  "transport": "running native kanban moveCardToColumn used by card drops",
+  "property_types": {
+    "labels": "multitext"
+  },
+  "cases": [
+    {
+      "id": "status",
+      "key": "status",
+      "value": "done",
+      "header": "status: todo",
+      "before": "---\nstatus: todo\nkeep: unchanged\n---\nBody 🦀\n",
+      "after": "---\nstatus: done\nkeep: unchanged\n---\nBody 🦀\n"
+    },
+    {
+      "id": "empty-group",
+      "key": "status",
+      "value": null,
+      "header": "status: todo",
+      "before": "---\nstatus: todo\nkeep: unchanged\n---\nBody 🦀\n",
+      "after": "---\nkeep: unchanged\n---\nBody 🦀\n"
+    },
+    {
+      "id": "list-group",
+      "key": "labels",
+      "value": "b",
+      "header": "labels: [a, c]",
+      "before": "---\nlabels: [a, c]\nkeep: unchanged\n---\nBody 🦀\n",
+      "after": "---\nlabels:\n  - b\nkeep: unchanged\n---\nBody 🦀\n"
+    },
+    {
+      "id": "missing-list-group",
+      "key": "labels",
+      "value": "b",
+      "header": "status: todo",
+      "before": "---\nstatus: todo\nkeep: unchanged\n---\nBody 🦀\n",
+      "after": "---\nstatus: todo\nkeep: unchanged\nlabels:\n  - b\n---\nBody 🦀\n"
+    },
+    {
+      "id": "boolean-group",
+      "key": "checked",
+      "value": false,
+      "header": "checked: true",
+      "before": "---\nchecked: true\nkeep: unchanged\n---\nBody 🦀\n",
+      "after": "---\nchecked: false\nkeep: unchanged\n---\nBody 🦀\n"
+    }
+  ]
+}

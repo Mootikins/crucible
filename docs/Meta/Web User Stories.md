@@ -598,3 +598,15 @@ preserves the note body and uses its shared write lock.
 
 Proof: daemon `bases::tests`, `rpc_integration::bases`, and the web refusal test
 in `components/bases/__tests__/bases.test.tsx`.
+
+### WS-253: Preserve a base's presentation choices
+
+As a reader, I want card covers and sizes, list markers and indentation, table
+sizing, and kanban column width/empty-group settings to follow the saved base.
+Typed links, booleans, lists, icons, images and sanitized HTML retain their
+meaning across layouts; each group's summaries appear beside that group.
+
+T1: components/bases/__tests__/bases.test.tsx covers options and typed cells.
+T2: e2e/bases.spec.ts checks actual CSS, icon loading, sanitization and narrow
+layouts while switching native views. The CLI remains the terminal surface;
+a TUI note viewer does not exist yet.

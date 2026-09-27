@@ -479,7 +479,8 @@ impl ToolExecutor for PluginToolExecutor {
         // plugin tool reached `cru.storage`'s wrong namespace and held the
         // operator's own authority rather than its plugin's.
         let restore = crucible_lua::enter_plugin(&lua, &plugin);
-        let result = call_plugin_fn(&lua, &func, params, None).await;
+        let ctx = serde_json::json!({"session_id": context.session_id});
+        let result = call_plugin_fn(&lua, &func, params, Some(ctx)).await;
         // Restored on BOTH paths: a context left behind attributes whatever
         // runs next to this plugin.
         crucible_lua::set_source(&lua, restore);
@@ -748,7 +749,13 @@ mod tests {
 
     #[tokio::test]
     async fn executor_runs_a_registered_tool_and_reports_unknown_ones() {
-        let (lua, func) = lua_with_fn();
+        let (lua, _) = lua_with_fn();
+        let func = lua
+            .load(
+                "return function(args, ctx) return {echoed=args.text, session=ctx.session_id} end",
+            )
+            .eval::<mlua::Function>()
+            .unwrap();
         let registry = Arc::new(PluginRegistry::new());
         registry.register_plugin(
             "p",
@@ -759,13 +766,16 @@ mod tests {
             HashMap::new(),
         );
         let executor = PluginToolExecutor::new(registry);
-        let ctx = ExecutionContext::default();
+        let ctx = ExecutionContext::default().with_session("bases-session");
 
         let value = executor
             .execute_tool("echo", serde_json::json!({ "text": "hi" }), &ctx)
             .await
             .expect("registered tool should run");
-        assert_eq!(value, serde_json::json!({ "echoed": "hi" }));
+        assert_eq!(
+            value,
+            serde_json::json!({ "echoed": "hi", "session": "bases-session" })
+        );
 
         assert!(
             matches!(

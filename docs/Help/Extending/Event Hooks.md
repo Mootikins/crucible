@@ -102,6 +102,8 @@ disagree.
 | `tool:render` | to give the display data of one kind of tool call and of its result |
 | `search:rerank` | over the merged search hits, before the cut to the caller's limit |
 | `index:blocks` | over a note's block rows, before the pipeline writes them |
+| `base:before_write` | Before a Bases write; nil permits, cancel refuses; errors and timeouts refuse. |
+| `base:changed` | After an applied Bases write reaches disk; proposals do not fire it. |
 | `FileChanged` | a watched file was created or modified |
 | `FileDeleted` | a watched file was removed |
 | `FileMoved` | a watched file was renamed or moved |

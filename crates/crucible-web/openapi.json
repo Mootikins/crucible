@@ -4888,13 +4888,64 @@
             ],
             "properties": {
               "value": {
-                "type": "number",
-                "format": "double"
+                "type": "integer",
+                "format": "int64"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "dateonly"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "object",
+                "required": [
+                  "months",
+                  "milliseconds"
+                ],
+                "properties": {
+                  "months": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "milliseconds": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
               },
               "type": {
                 "type": "string",
                 "enum": [
                   "duration"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relativedate"
                 ]
               }
             }
@@ -4982,6 +5033,16 @@
                     "type": [
                       "string",
                       "null"
+                    ]
+                  },
+                  "display_value": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/BaseValue"
+                      }
                     ]
                   }
                 }
@@ -9287,6 +9348,7 @@
       "QueryResult": {
         "type": "object",
         "required": [
+          "options",
           "view",
           "view_type",
           "columns",
@@ -9297,7 +9359,16 @@
           "root"
         ],
         "properties": {
+          "options": {
+            "$ref": "#/components/schemas/ViewOptions"
+          },
           "source_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_path": {
             "type": [
               "string",
               "null"
@@ -10989,6 +11060,70 @@
                 "description": "Where in the note the hit sits, or `null` when the hit names the whole\nnote. Always written, so `null` reads as \"the whole note\" and never as\n\"unknown\"."
               }
             ]
+          }
+        }
+      },
+      "ViewOptions": {
+        "type": "object",
+        "description": "Built-in presentation options, projected from preserved Obsidian view data.",
+        "required": [
+          "card_size",
+          "column_width",
+          "image_fit",
+          "image_aspect_ratio",
+          "hide_empty_groups",
+          "markers",
+          "indent_properties",
+          "separator",
+          "row_height",
+          "column_size"
+        ],
+        "properties": {
+          "card_size": {
+            "type": "number",
+            "format": "double"
+          },
+          "column_width": {
+            "type": "number",
+            "format": "double"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "image_fit": {
+            "type": "string"
+          },
+          "image_aspect_ratio": {
+            "type": "number",
+            "format": "double"
+          },
+          "hide_empty_groups": {
+            "type": "boolean"
+          },
+          "markers": {
+            "type": "string"
+          },
+          "indent_properties": {
+            "type": "boolean"
+          },
+          "separator": {
+            "type": "string"
+          },
+          "row_height": {
+            "type": "string"
+          },
+          "column_size": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },

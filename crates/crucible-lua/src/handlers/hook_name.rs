@@ -47,6 +47,8 @@ use crate::handler_budget::{LIFECYCLE_BUDGET, PERMISSION_BUDGET, TURN_STAGE_BUDG
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum EventName {
+    /// An applied Bases mutation has landed on disk.
+    BaseChanged,
     /// A watched file was created or modified.
     FileChanged,
     /// A watched file was removed.
@@ -77,6 +79,7 @@ pub enum EventName {
 impl EventName {
     /// Every variant. [`tests::every_event_variant_is_listed`] proves it.
     pub const ALL: &'static [Self] = &[
+        Self::BaseChanged,
         Self::FileChanged,
         Self::FileDeleted,
         Self::FileMoved,
@@ -101,6 +104,7 @@ impl EventName {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::BaseChanged => "base:changed",
             Self::FileChanged => "FileChanged",
             Self::FileDeleted => "FileDeleted",
             Self::FileMoved => "FileMoved",
@@ -121,7 +125,8 @@ impl EventName {
     #[must_use]
     pub const fn budget(self) -> Duration {
         match self {
-            Self::FileChanged
+            Self::BaseChanged
+            | Self::FileChanged
             | Self::FileDeleted
             | Self::FileMoved
             | Self::NoteCreated
@@ -170,7 +175,8 @@ impl EventName {
     #[must_use]
     pub const fn carries_session(self) -> bool {
         match self {
-            Self::FileChanged
+            Self::BaseChanged
+            | Self::FileChanged
             | Self::FileDeleted
             | Self::FileMoved
             | Self::NoteCreated
@@ -211,6 +217,8 @@ impl EventName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum StageId {
+    /// Before an admitted Bases write is applied or proposed.
+    BaseBeforeWrite,
     /// Before a tool runs, and before the permission gate.
     PreToolCall,
     /// After a tool returns, over its result.
@@ -259,6 +267,7 @@ pub enum StageId {
 impl StageId {
     /// Every variant. [`tests::every_stage_variant_is_listed`] proves it.
     pub const ALL: &'static [Self] = &[
+        Self::BaseBeforeWrite,
         Self::PreToolCall,
         Self::ToolResult,
         Self::PreLlmCall,
@@ -283,6 +292,7 @@ impl StageId {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::BaseBeforeWrite => "base:before_write",
             Self::PreToolCall => "pre_tool_call",
             Self::ToolResult => "tool_result",
             Self::PreLlmCall => "pre_llm_call",
@@ -313,7 +323,8 @@ impl StageId {
     #[must_use]
     pub const fn budget(self) -> Duration {
         match self {
-            Self::PreToolCall
+            Self::BaseBeforeWrite
+            | Self::PreToolCall
             | Self::ToolResult
             | Self::PreLlmCall
             | Self::PostLlmCall
@@ -356,7 +367,8 @@ impl StageId {
     #[must_use]
     pub const fn carries_session(self) -> bool {
         match self {
-            Self::PreToolCall
+            Self::BaseBeforeWrite
+            | Self::PreToolCall
             | Self::ToolResult
             | Self::PreLlmCall
             | Self::PostLlmCall
@@ -464,7 +476,8 @@ impl HookName {
         match self {
             Self::Event(_) => None,
             Self::Stage(stage) => match stage {
-                StageId::PreToolCall
+                StageId::BaseBeforeWrite
+                | StageId::PreToolCall
                 | StageId::ToolResult
                 | StageId::PreLlmCall
                 | StageId::PostLlmCall

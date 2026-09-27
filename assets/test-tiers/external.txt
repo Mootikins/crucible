@@ -6,6 +6,7 @@
 # gated` runs every ignored test EXCEPT these; `just test external`
 # runs exactly these.
 agent_fs_leg_tui_write
+bases_regenerate_live_obsidian_reference
 chat_multiturn_basic
 chat_short_prompt_streams_response
 claude_profile_completes_the_real_handshake

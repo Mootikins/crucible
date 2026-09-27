@@ -106,6 +106,11 @@ pub struct EventRow {
 /// Every daemon event that reaches Lua. Adding one is a row.
 pub const ROWS: &[EventRow] = &[
     EventRow {
+        wire: "base:changed",
+        hook: EventName::BaseChanged,
+        identifier: Some("path"),
+    },
+    EventRow {
         wire: "file_changed",
         hook: EventName::FileChanged,
         identifier: None,
@@ -464,6 +469,13 @@ mod tests {
     /// outbound half is exercised too.
     fn sample_messages() -> Vec<SessionEventMessage> {
         vec![
+            SessionEventMessage::typed(
+                SYSTEM_SESSION,
+                SystemPayload::BaseChanged {
+                    path: "tickets/a.md".into(),
+                    change: serde_json::json!({"key":"status","value":"done"}),
+                },
+            ),
             message_for(&InternalSessionEvent::FileChanged {
                 path: PathBuf::from("/w/a.md"),
                 kind: FileChangeKind::Modified,
@@ -641,6 +653,7 @@ mod tests {
     #[test]
     fn the_identifier_is_the_value_a_pattern_filters_on() {
         let expected = [
+            Some("tickets/a.md"),
             None,
             None,
             None,

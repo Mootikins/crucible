@@ -1,0 +1,486 @@
+[
+  {
+    "id": "Date",
+    "expression": "date('2025-01-01').year == 2025"
+  },
+  {
+    "id": "Duration",
+    "expression": "duration('1h') == duration('60m')"
+  },
+  {
+    "id": "File",
+    "expression": "file('notes/a.md').path == 'notes/a.md'"
+  },
+  {
+    "id": "Link",
+    "expression": "link('notes/a.md') == file"
+  },
+  {
+    "id": "List",
+    "expression": "list('one').length == 1"
+  },
+  {
+    "id": "Image",
+    "expression": "image('a.png').isType('image')"
+  },
+  {
+    "id": "Icon",
+    "expression": "icon('plus').isType('icon')"
+  },
+  {
+    "id": "Html",
+    "expression": "html('<b>x</b>').isType('html')"
+  },
+  {
+    "id": "EscapeHTML",
+    "expression": "escapeHTML('<a>') == '&lt;a&gt;'"
+  },
+  {
+    "id": "If",
+    "expression": "if(true, 1, 0) == 1"
+  },
+  {
+    "id": "Max",
+    "expression": "max(1,4,2) == 4"
+  },
+  {
+    "id": "Min",
+    "expression": "min(1,4,2) == 1"
+  },
+  {
+    "id": "Now",
+    "expression": "now().isType('date')"
+  },
+  {
+    "id": "Today",
+    "expression": "today().hour == 0"
+  },
+  {
+    "id": "Number",
+    "expression": "number('4.2') == 4.2"
+  },
+  {
+    "id": "Random",
+    "expression": "random() >= 0 && random() < 1"
+  },
+  {
+    "id": "IsTruthy",
+    "expression": "(1).isTruthy()"
+  },
+  {
+    "id": "IsType",
+    "expression": "true.isType('boolean')"
+  },
+  {
+    "id": "ToString",
+    "expression": "(123).toString() == '123'"
+  },
+  {
+    "id": "Format",
+    "expression": "date('2025-01-01').format('YYYY-MM-DD') == '2025-01-01'"
+  },
+  {
+    "id": "Time",
+    "expression": "date('2025-01-01 12:34:56').time() == '12:34:56'"
+  },
+  {
+    "id": "Relative",
+    "expression": "now().relative().toString()"
+  },
+  {
+    "id": "IsEmpty",
+    "expression": "null.isEmpty()"
+  },
+  {
+    "id": "Contains",
+    "expression": "[1,2].contains(2)"
+  },
+  {
+    "id": "ContainsAll",
+    "expression": "'hello'.containsAll('h','e')"
+  },
+  {
+    "id": "ContainsAny",
+    "expression": "[1,2].containsAny(9,2)"
+  },
+  {
+    "id": "StartsWith",
+    "expression": "'hello'.startsWith('he')"
+  },
+  {
+    "id": "EndsWith",
+    "expression": "'hello'.endsWith('lo')"
+  },
+  {
+    "id": "Lower",
+    "expression": "'ABC'.lower() == 'abc'"
+  },
+  {
+    "id": "Title",
+    "expression": "'hello world'.title() == 'Hello World'"
+  },
+  {
+    "id": "Trim",
+    "expression": "' hi '.trim() == 'hi'"
+  },
+  {
+    "id": "Replace",
+    "expression": "'a:b:c'.replace(/:/g,'-') == 'a-b-c'"
+  },
+  {
+    "id": "Repeat",
+    "expression": "'ab'.repeat(2) == 'abab'"
+  },
+  {
+    "id": "Reverse",
+    "expression": "[1,2].reverse()[0] == 2"
+  },
+  {
+    "id": "Slice",
+    "expression": "'hello'.slice(1,-1) == 'ell'"
+  },
+  {
+    "id": "Split",
+    "expression": "'a,b,c'.split(',',2).length == 2"
+  },
+  {
+    "id": "Abs",
+    "expression": "(-5).abs() == 5"
+  },
+  {
+    "id": "Ceil",
+    "expression": "2.1.ceil() == 3"
+  },
+  {
+    "id": "Floor",
+    "expression": "2.9.floor() == 2"
+  },
+  {
+    "id": "Round",
+    "expression": "(-2.5).round() == -2"
+  },
+  {
+    "id": "ToFixed",
+    "expression": "3.14159.toFixed(2) == '3.14'"
+  },
+  {
+    "id": "Filter",
+    "expression": "[1,2,3].filter(value > 1).length == 2"
+  },
+  {
+    "id": "Map",
+    "expression": "[1,2].map(value + index)[1] == 3"
+  },
+  {
+    "id": "Reduce",
+    "expression": "[1,2,3].reduce(acc + value,0) == 6"
+  },
+  {
+    "id": "Flat",
+    "expression": "[1,[2,3]].flat().length == 3"
+  },
+  {
+    "id": "Join",
+    "expression": "[1,2].join('-') == '1-2'"
+  },
+  {
+    "id": "Sort",
+    "expression": "[10,2,1].sort()[0] == 1"
+  },
+  {
+    "id": "Unique",
+    "expression": "[1,1,2].unique().length == 2"
+  },
+  {
+    "id": "AsFile",
+    "expression": "link('notes/a.md').asFile() == file"
+  },
+  {
+    "id": "LinksTo",
+    "expression": "link('notes/a.md').linksTo(file)"
+  },
+  {
+    "id": "AsLink",
+    "expression": "file.asLink('A') == file"
+  },
+  {
+    "id": "HasLink",
+    "expression": "file.hasLink('notes/a.md')"
+  },
+  {
+    "id": "HasProperty",
+    "expression": "file.hasProperty('status')"
+  },
+  {
+    "id": "HasTag",
+    "expression": "file.hasTag('work')"
+  },
+  {
+    "id": "InFolder",
+    "expression": "file.inFolder('notes')"
+  },
+  {
+    "id": "Keys",
+    "expression": "file.properties.keys().contains('status')"
+  },
+  {
+    "id": "Values",
+    "expression": "file.properties.values().contains('todo')"
+  },
+  {
+    "id": "Matches",
+    "expression": "/abc/i.matches('ABC')"
+  },
+  {
+    "id": "Mean",
+    "expression": "[1,2,3].mean() == 2"
+  },
+  {
+    "id": "FileName",
+    "expression": "file.name"
+  },
+  {
+    "id": "StringLength",
+    "expression": "'\ud83d\ude00'.length"
+  },
+  {
+    "id": "Utf16Escape",
+    "expression": "'\\uD83D\\uDE00' == '\ud83d\ude00'"
+  },
+  {
+    "id": "Lookahead",
+    "expression": "/a(?=b)/.matches('ab')"
+  },
+  {
+    "id": "Lookbehind",
+    "expression": "/(?<=a)b/.matches('ab')"
+  },
+  {
+    "id": "Backreference",
+    "expression": "/(a)\\1/.matches('aa')"
+  },
+  {
+    "id": "ReplaceCapture",
+    "expression": "'John Smith'.replace(/(\\w+) (\\w+)/, '$2, $1')"
+  },
+  {
+    "id": "ReplaceMatch",
+    "expression": "'abc'.replace(/b/, '[$&]')"
+  },
+  {
+    "id": "FormatExtra",
+    "expression": "date('2024-02-29 13:04:05').format('M D Do d dd DDD Q h H m s a')"
+  },
+  {
+    "id": "MonthDuration",
+    "expression": "number(duration('1M'))"
+  },
+  {
+    "id": "EmptyMean",
+    "expression": "[].mean()"
+  },
+  {
+    "id": "EmptyMax",
+    "expression": "max()"
+  },
+  {
+    "id": "FalsyList",
+    "expression": "[].isTruthy()"
+  },
+  {
+    "id": "FalsyObject",
+    "expression": "file.properties.isTruthy()"
+  },
+  {
+    "id": "FalsyZero",
+    "expression": "(0).isEmpty()"
+  },
+  {
+    "id": "ListString",
+    "expression": "[1,2,null].toString()"
+  },
+  {
+    "id": "ObjectString",
+    "expression": "file.properties.toString()"
+  },
+  {
+    "id": "NullString",
+    "expression": "null.toString()"
+  },
+  {
+    "id": "NumberNull",
+    "expression": "number(null)"
+  },
+  {
+    "id": "UnknownCall",
+    "expression": "(42).noSuchMethod()"
+  },
+  {
+    "id": "ThisNull",
+    "expression": "this == null"
+  },
+  {
+    "id": "NestedFlat",
+    "expression": "[1,[2,[3]]].flat().toString()"
+  },
+  {
+    "id": "DurationMonthAdd",
+    "expression": "(date('2024-01-31') + duration('1M')).format('YYYY-MM-DD')"
+  },
+  {
+    "id": "TagType",
+    "expression": "note.tags[0].isType('string')"
+  },
+  {
+    "id": "TagName",
+    "expression": "note.tags[0].toString()"
+  },
+  {
+    "id": "TagIsLink",
+    "expression": "note.tags[0].isType('link')"
+  },
+  {
+    "id": "IconType",
+    "expression": "icon('plus').isType('html')"
+  },
+  {
+    "id": "IconString",
+    "expression": "icon('plus').toString()"
+  },
+  {
+    "id": "RelativeType",
+    "expression": "now().relative().isType('date')"
+  },
+  {
+    "id": "DurationMillis",
+    "expression": "duration('1M').toString()"
+  },
+  {
+    "id": "DateMonthString",
+    "expression": "(date('2024-01-31') + '1M').format('YYYY-MM-DD')"
+  },
+  {
+    "id": "IconStringType",
+    "expression": "icon('plus').isType('string')"
+  },
+  {
+    "id": "IconUpperType",
+    "expression": "icon('plus').isType('Icon')"
+  },
+  {
+    "id": "MonthDays",
+    "expression": "((date('2024-01-01') + '1M') - date('2024-01-01')) / 86400000"
+  },
+  {
+    "id": "YearDays",
+    "expression": "((date('2024-01-01') + '1y') - date('2024-01-01')) / 86400000"
+  },
+  {
+    "id": "FractionalMonthDays",
+    "expression": "((date('2024-01-01') + '0.5M') - date('2024-01-01')) / 86400000"
+  },
+  {
+    "id": "FractionDefault",
+    "expression": "1 / 3"
+  },
+  {
+    "id": "FractionString",
+    "expression": "(1 / 3).toString()"
+  },
+  {
+    "id": "SmallNumber",
+    "expression": "0.0001"
+  },
+  {
+    "id": "DateDefault",
+    "expression": "date('2024-01-01')"
+  },
+  {
+    "id": "DurationRatio",
+    "expression": "duration('2h') / duration('1h')"
+  },
+  {
+    "id": "DurationProduct",
+    "expression": "duration('2h') * duration('1h')"
+  },
+  {
+    "id": "DurationNumberAdd",
+    "expression": "duration('2h') + 2"
+  },
+  {
+    "id": "NumberDurationProduct",
+    "expression": "2 * duration('2h')"
+  },
+  {
+    "id": "DurationRemainder",
+    "expression": "duration('3h') % duration('2h')"
+  },
+  {
+    "id": "DurationDivide",
+    "expression": "duration('2h') / 2"
+  },
+  {
+    "id": "LinkIcon",
+    "expression": "link('notes/a.md', icon('plus'))"
+  },
+  {
+    "id": "LocaleWeekYearEnd",
+    "expression": "date('2024-12-29').format('w ww gggg gg W GGGG')"
+  },
+  {
+    "id": "LocaleWeekYearStart",
+    "expression": "date('2025-01-01').format('w ww gggg gg W GGGG')"
+  },
+  {
+    "id": "RegexUnmatchedNamed",
+    "expression": "\"b\".replace(/(?<a>a)?b/,\"[$<a>]\")"
+  },
+  {
+    "id": "RegexUnknownNamed",
+    "expression": "\"b\".replace(/(?<a>a)?b/,\"[$<missing>]\")"
+  },
+  {
+    "id": "RegexLeadingZeroCapture",
+    "expression": "\"ab\".replace(/(a)(b)/,\"$02$01\")"
+  },
+  {
+    "id": "DstSpringDay",
+    "expression": "(date('2024-03-10') + '1d').format('YYYY-MM-DD HH:mm')"
+  },
+  {
+    "id": "DstFallDay",
+    "expression": "(date('2024-11-03') + '1d').format('YYYY-MM-DD HH:mm')"
+  },
+  {
+    "id": "DstSpringHours",
+    "expression": "(date('2024-03-10') + '24h').format('YYYY-MM-DD HH:mm')"
+  },
+  {
+    "id": "DateOnlyEpoch",
+    "expression": "number(date('2024-01-01'))"
+  },
+  {
+    "id": "DateTimeEpoch",
+    "expression": "number(date('2024-01-01 12:30:00'))"
+  },
+  {
+    "id": "DateUtcFields",
+    "expression": "date('2024-01-01T12:30:00Z').format('YYYY-MM-DD HH:mm Z')"
+  },
+  {
+    "id": "DstDateTimeHours",
+    "expression": "(date('2024-03-10 01:00:00') + '24h').format('YYYY-MM-DD HH:mm')"
+  },
+  {
+    "id": "DstGapParse",
+    "expression": "date('2024-03-10 02:30:00').format('YYYY-MM-DD HH:mm')"
+  },
+  {
+    "id": "DstGapAdd",
+    "expression": "(date('2024-03-10 01:30:00') + '1h').format('YYYY-MM-DD HH:mm')"
+  },
+  {
+    "id": "DstAmbiguous",
+    "expression": "number(date('2024-11-03 01:30:00'))"
+  }
+]

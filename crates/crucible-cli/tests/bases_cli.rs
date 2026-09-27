@@ -43,7 +43,9 @@ fn bases_cli_queries_and_creates_through_the_daemon() {
         ])
     };
     let rows: Value = serde_json::from_str(&query("json")).unwrap();
-    assert_eq!(rows["rows"][0]["path"], "One.md");
+    assert_eq!(rows[0]["path"], "One.md");
     assert_eq!(query("paths"), "One.md\n");
-    assert!(query("csv").contains("\"One.md\",\"todo\""));
+    assert!(query("csv").contains("One,todo"));
+    let data: Value = serde_json::from_str(&query("data")).unwrap();
+    assert_eq!(data["rows"][0]["path"], "One.md");
 }

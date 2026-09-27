@@ -1,0 +1,253 @@
+{
+  "version": "1.14.2",
+  "transport": "running native table view summary evaluation",
+  "base": {
+    "filters": "file.inFolder('cases')",
+    "formulas": {
+      "when": "date('2024-01-01') + duration(score + 'd')"
+    },
+    "views": [
+      {
+        "type": "table",
+        "name": "Case",
+        "order": [
+          "file.name",
+          "note.score",
+          "note.checked",
+          "note.labels",
+          "formula.when"
+        ],
+        "groupBy": {
+          "property": "note.status",
+          "direction": "ASC"
+        }
+      }
+    ]
+  },
+  "summaries": [
+    {
+      "name": "Average",
+      "property": "note.score",
+      "all": "3.33",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "4"
+        },
+        {
+          "group": "todo",
+          "value": "3"
+        }
+      ]
+    },
+    {
+      "name": "Min",
+      "property": "note.score",
+      "all": "2",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "4"
+        },
+        {
+          "group": "todo",
+          "value": "2"
+        }
+      ]
+    },
+    {
+      "name": "Max",
+      "property": "note.score",
+      "all": "4",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "4"
+        },
+        {
+          "group": "todo",
+          "value": "4"
+        }
+      ]
+    },
+    {
+      "name": "Sum",
+      "property": "note.score",
+      "all": "10",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "4"
+        },
+        {
+          "group": "todo",
+          "value": "6"
+        }
+      ]
+    },
+    {
+      "name": "Range",
+      "property": "note.score",
+      "all": "2",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "0"
+        },
+        {
+          "group": "todo",
+          "value": "2"
+        }
+      ]
+    },
+    {
+      "name": "Median",
+      "property": "note.score",
+      "all": "4",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "4"
+        },
+        {
+          "group": "todo",
+          "value": "3"
+        }
+      ]
+    },
+    {
+      "name": "Stddev",
+      "property": "note.score",
+      "all": "0.94",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "0"
+        },
+        {
+          "group": "todo",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "name": "Earliest",
+      "property": "formula.when",
+      "all": "2024-01-03T00:00:00",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "2024-01-05T00:00:00"
+        },
+        {
+          "group": "todo",
+          "value": "2024-01-03T00:00:00"
+        }
+      ]
+    },
+    {
+      "name": "Latest",
+      "property": "formula.when",
+      "all": "2024-01-05T00:00:00",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "2024-01-05T00:00:00"
+        },
+        {
+          "group": "todo",
+          "value": "2024-01-05T00:00:00"
+        }
+      ]
+    },
+    {
+      "name": "Checked",
+      "property": "note.checked",
+      "all": "1",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "0"
+        },
+        {
+          "group": "todo",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "name": "Unchecked",
+      "property": "note.checked",
+      "all": "1",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "1"
+        },
+        {
+          "group": "todo",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "name": "Empty",
+      "property": "note.labels",
+      "all": "1",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "0"
+        },
+        {
+          "group": "todo",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "name": "Filled",
+      "property": "note.labels",
+      "all": "2",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "1"
+        },
+        {
+          "group": "todo",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "name": "Unique",
+      "property": "note.labels",
+      "all": "3",
+      "empty": "null",
+      "groups": [
+        {
+          "group": "done",
+          "value": "1"
+        },
+        {
+          "group": "todo",
+          "value": "2"
+        }
+      ]
+    }
+  ]
+}

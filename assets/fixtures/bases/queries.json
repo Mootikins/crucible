@@ -1,0 +1,181 @@
+{
+  "files": {
+    "cases/a.md": "---\nstatus: todo\nscore: 2\nlabels: [a, b]\nchecked: true\n---\n[[cases/b]]\n",
+    "cases/b.md": "---\nstatus: done\nscore: 4\nlabels: [b]\nchecked: false\n---\n",
+    "cases/c.md": "---\nstatus: todo\nscore: 4\n---\n"
+  },
+  "cases": [
+    {
+      "id": "compose",
+      "base": {
+        "filters": {
+          "and": [
+            "file.inFolder('cases')",
+            "score >= 2"
+          ]
+        },
+        "formulas": {
+          "double": "score * 2"
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "filters": "status == 'todo'",
+            "order": [
+              "file.name",
+              "formula.double"
+            ],
+            "sort": [
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "sort-limit",
+      "base": {
+        "filters": "file.inFolder('cases')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.score"
+            ],
+            "sort": [
+              {
+                "property": "note.score",
+                "direction": "DESC"
+              },
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ],
+            "limit": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-values",
+      "base": {
+        "filters": "file.inFolder('cases')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.labels",
+              "note.checked",
+              "note.absent"
+            ],
+            "sort": [
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "list-groups",
+      "base": {
+        "filters": "file.inFolder('cases')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.labels"
+            ],
+            "groupBy": {
+              "property": "note.labels",
+              "direction": "ASC"
+            },
+            "sort": [
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "this-file",
+      "base": {
+        "filters": "file.path == 'cases/a.md'",
+        "formulas": {
+          "host": "this.file.name"
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "formula.host"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "backlinks",
+      "base": {
+        "filters": "file.inFolder('cases') && file.hasLink(link('cases/b'))",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "empty-invalid-call",
+      "base": {
+        "filters": "false",
+        "formulas": {
+          "bad": "missingFunction()"
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "formula.bad"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-views",
+      "base": {
+        "filters": "file.inFolder('cases')"
+      }
+    },
+    {
+      "id": "empty-views",
+      "base": {
+        "views": [],
+        "filters": "file.inFolder('cases')"
+      }
+    }
+  ]
+}

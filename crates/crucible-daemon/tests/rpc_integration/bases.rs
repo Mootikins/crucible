@@ -8,16 +8,21 @@ async fn bases_cross_the_socket_and_write_the_same_note() {
     let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
     let root = server.socket_path.parent().unwrap().join("kiln");
     let yaml="filters: 'status == \"todo\"'\nviews: [{type: table, name: Tasks, order: [file.name, note.status]}]";
-    tokio::fs::write(root.join("Tasks.base"), yaml)
+    tokio::fs::create_dir(root.join("boards")).await.unwrap();
+    tokio::fs::write(root.join("Host.md"), "![[Tasks.base#Tasks]]")
         .await
         .unwrap();
-    let params = json!({"kiln":"kiln","source":{"path":"Tasks.base"}});
+    tokio::fs::write(root.join("boards/Tasks.base"), yaml)
+        .await
+        .unwrap();
+    let params =
+        json!({"kiln":"kiln","source":{"path":"Tasks.base"},"view":"Tasks","this":"Host.md"});
     assert_eq!(
         client
             .call("base.list", json!({"kiln":"kiln"}))
             .await
             .unwrap(),
-        json!(["Tasks.base"])
+        json!(["boards/Tasks.base"])
     );
     assert_eq!(
         client.call("base.views", params.clone()).await.unwrap(),
@@ -31,6 +36,7 @@ async fn bases_cross_the_socket_and_write_the_same_note() {
     );
     let query = client.call("base.query", params.clone()).await.unwrap();
     assert_eq!(query["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(query["source_path"], "boards/Tasks.base");
     let hash = query["rows"][0]["ancestor_hash"].clone();
     let edit =
         json!({"kiln":"kiln","path":"First.md","key":"status","value":"done","ancestor_hash":hash});

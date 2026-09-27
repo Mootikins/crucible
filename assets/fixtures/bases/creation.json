@@ -1,0 +1,14 @@
+{
+  "files": {"templates/base.md":"---\nstatus: template\nowner: Template owner\n---\nTemplate body\n"},
+  "cases": [
+    {"id":"equal","base":{"filters":"status == 'todo'","views":[{"type":"table","name":"Case","order":["file.name","note.owner"]}]}},
+    {"id":"contains-all","base":{"filters":"labels.containsAll('a','b')","views":[{"type":"table","name":"Case"}]}},
+    {"id":"contains-any","base":{"filters":"labels.containsAny('a','b')","views":[{"type":"table","name":"Case"}]}},
+    {"id":"or","base":{"filters":{"or":["status == 'todo'","owner == 'someone'"]},"views":[{"type":"table","name":"Case"}]}},
+    {"id":"not","base":{"filters":{"not":["status == 'done'"]},"views":[{"type":"table","name":"Case"}]}},
+    {"id":"template","base":{"filters":"status == 'todo'","newItemTemplate":"templates/base.md","views":[{"type":"table","name":"Case","order":["file.name","note.owner"]}]}},
+    {"id":"folder","base":{"filters":"file.inFolder('created')","views":[{"type":"table","name":"Case"}]}},
+    {"id":"file-tags","base":{"filters":"file.tags.containsAll('a','b')","views":[{"type":"table","name":"Case"}]}},
+    {"id":"has-tags","base":{"filters":"file.hasTag('a','b')","views":[{"type":"table","name":"Case"}]}}
+  ]
+}

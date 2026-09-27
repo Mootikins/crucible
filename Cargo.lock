@@ -1401,6 +1401,7 @@ dependencies = [
  "dashmap",
  "dirs",
  "encoding_rs",
+ "fancy-regex 0.16.2",
  "fastembed",
  "flume",
  "fs2",

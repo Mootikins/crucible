@@ -11,6 +11,47 @@ use crucible_core::config::components::permissions::{PermissionConfig, Permissio
 use tracing::warn;
 
 impl AgentManager {
+    /// An unattended Bases edit uses the same card, mode and operator decision.
+    pub(crate) async fn bases_write_permission(
+        &self,
+        session: &crucible_core::session::Session,
+        args: &serde_json::Value,
+    ) -> Result<(), String> {
+        use super::messaging::gate_decision::{decide_permission, Decision, PermissionContext};
+        let engine = self.session_permission_engine(session.id.as_str());
+        let slot = self.slot(session.id.as_str());
+        let hooks = self.plugin_handlers();
+        let context = PermissionContext {
+            session_id: session.id.as_str(),
+            tool_policy: session.agent.as_ref().and_then(|a| a.tool_policy.as_ref()),
+            engine: &engine,
+            permission_override: None,
+            plugin: session.plugin.as_deref(),
+            plugin_approval: session
+                .plugin
+                .as_deref()
+                .map(|p| session.plugin_approval(p))
+                .unwrap_or_default(),
+            patterns: None,
+            slot: Some(&slot),
+            hooks: hooks.as_ref(),
+            mode: session
+                .agent
+                .as_ref()
+                .and_then(|a| a.mode.as_deref())
+                .unwrap_or("normal"),
+            modes: &self.modes,
+            mcp_read_only: &Default::default(),
+            prompt: None,
+        };
+        let call = crucible_core::types::CanonicalToolCall::crucible_tool("write_file", args);
+        match decide_permission(&context, &call, args).await {
+            Decision::Allow(_) | Decision::UserAllowed => Ok(()),
+            Decision::Deny(reason) => Err(reason),
+            Decision::NoAnswer => Err("Bases write needs approval".into()),
+        }
+    }
+
     /// The `[permissions]` rules that apply to `session_id`.
     ///
     /// Resolved the same way and in the same order as the agent dispatch path:

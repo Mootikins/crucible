@@ -1,5 +1,5 @@
 use super::*;
-use crate::file_write::{lock, write_locked, LockedChange};
+use crate::file_write::lock;
 use crucible_core::{file_write::ExpectedBase, note_edit::disk_hash};
 use serde_json::{json, Value as Json};
 
@@ -51,7 +51,15 @@ fn property_text(text: &str, key: &str, value: Option<Json>) -> Result<String> {
         header.trim_end().replace('\n', newline)
     ))
 }
+#[cfg(test)]
 pub(super) async fn set_property(root: &Path, params: &Json) -> Result<Json> {
+    set_property_with(root, params, &super::disposition::Writer::default()).await
+}
+pub(super) async fn set_property_with(
+    root: &Path,
+    params: &Json,
+    writer: &super::disposition::Writer<'_>,
+) -> Result<Json> {
     let path = params["path"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("path required"))?;
@@ -72,6 +80,7 @@ pub(super) async fn set_property(root: &Path, params: &Json) -> Result<Json> {
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("ancestor_hash required"))?;
     let _guard = lock(&path).await;
+    writer.read_path(root, &path)?;
     let text = tokio::fs::read_to_string(&path).await?;
     if disk_hash(&text) != hash {
         return Ok(json!({"ok":false,"error":"stale_base","current_hash":disk_hash(&text)}));
@@ -86,15 +95,29 @@ pub(super) async fn set_property(root: &Path, params: &Json) -> Result<Json> {
                 .clone(),
         )
     };
+    let text = writer.proposed_text(root, &path)?.unwrap_or(text);
     let types = property_types(root).await?;
     let value = value.map(|v| normalize_property(key, v, &types));
+    let mut params = params.clone();
+    let parsed = crucible_core::parser::CrucibleParser::new()
+        .parse_content(&text, &path)
+        .await?;
+    params["old_value"] = parsed
+        .frontmatter
+        .as_ref()
+        .and_then(|f| f.properties().get(key))
+        .cloned()
+        .unwrap_or(Json::Null);
     let content = property_text(&text, key, value)?;
-    Ok(write_locked(
-        &path,
-        LockedChange::Put(content),
-        ExpectedBase::Hash { hash: hash.into() },
-    )
-    .await?)
+    writer
+        .put(
+            root,
+            &path,
+            content,
+            ExpectedBase::Hash { hash: hash.into() },
+            &params,
+        )
+        .await
 }
 fn plain(v: &Value) -> Json {
     match v {
@@ -156,10 +179,17 @@ fn derive(e: &Expr, props: &mut BTreeMap<String, Json>, folder: &mut String) {
                     if let Some(key) = property(o) {
                         if method == "isEmpty" {
                             props.insert(key, json!(""));
-                        } else if matches!(
-                            method.as_str(),
-                            "contains" | "startsWith" | "endsWith" | "containsAll" | "containsAny"
-                        ) {
+                        } else if matches!(method.as_str(), "containsAll" | "containsAny") {
+                            let values = if method == "containsAny" {
+                                literal.into_iter().take(1).collect::<Vec<_>>()
+                            } else {
+                                literal
+                            };
+                            if !values.is_empty() {
+                                props.insert(key, json!(values));
+                            }
+                        } else if matches!(method.as_str(), "contains" | "startsWith" | "endsWith")
+                        {
                             if let Some(v) = literal.first() {
                                 props.insert(key, v.clone());
                             }
@@ -176,7 +206,7 @@ fn derive(e: &Expr, props: &mut BTreeMap<String, Json>, folder: &mut String) {
                                     props.entry(v.clone()).or_insert(Json::Null);
                                 }
                             }
-                            "hasTag" => {
+                            "hasTag" if args.len() == 1 => {
                                 let tags = props.entry("tags".into()).or_insert(json!([]));
                                 if let Some(xs) = tags.as_array_mut() {
                                     xs.extend(literal)
@@ -220,8 +250,19 @@ fn derive_filter(
     }
     Ok(())
 }
+#[cfg(test)]
 pub(super) async fn create_entry(root: &Path, params: &Json) -> Result<Json> {
+    create_entry_with(root, params, &super::disposition::Writer::default()).await
+}
+pub(super) async fn create_entry_with(
+    root: &Path,
+    params: &Json,
+    writer: &super::disposition::Writer<'_>,
+) -> Result<Json> {
     let source: Source = serde_json::from_value(params["source"].clone())?;
+    if let Source::Path { path } = &source {
+        writer.read_path(root, &source_path(root, path)?)?;
+    }
     let base = load(root, &source).await?;
     let view = base.view(params["view"].as_str())?;
     let mut props = BTreeMap::new();
@@ -267,14 +308,15 @@ pub(super) async fn create_entry(root: &Path, params: &Json) -> Result<Json> {
         "Entry name must be a filename"
     );
     let stem = name.strip_suffix(".md").unwrap_or(name);
-    let mut body = if let Some(template) = &base.new_item_template {
-        tokio::fs::read_to_string(contained(root, template)?).await?
+    let mut body = if let Some(content) = params["content"].as_str() {
+        content.to_owned()
+    } else if let Some(template) = &base.new_item_template {
+        let path = contained(root, template)?;
+        writer.read_path(root, &path)?;
+        tokio::fs::read_to_string(path).await?
     } else {
         String::new()
     };
-    if let Some(content) = params["content"].as_str() {
-        body.push_str(content)
-    }
     let types = property_types(root).await?;
     for (key, value) in props {
         body = property_text(&body, &key, Some(normalize_property(&key, value, &types)))?;
@@ -287,15 +329,19 @@ pub(super) async fn create_entry(root: &Path, params: &Json) -> Result<Json> {
         };
         let path = parent.join(filename);
         let _guard = lock(&path).await;
-        if path.exists() {
+        if path.exists() || writer.proposed_text(root, &path)?.is_some() {
             continue;
         }
-        let result =
-            write_locked(&path, LockedChange::Put(body.clone()), ExpectedBase::Absent).await?;
+        let result = writer
+            .put(root, &path, body.clone(), ExpectedBase::Absent, params)
+            .await?;
         ensure!(result["ok"] == true, "Entry creation refused: {result}");
-        return Ok(
-            json!({"path":path.strip_prefix(root)?.to_string_lossy(),"ancestor_hash":disk_hash(&body),"ok":true}),
-        );
+        let mut result = result;
+        result["path"] = json!(path.strip_prefix(root)?.to_string_lossy());
+        if result["status"] != "proposed" {
+            result["ancestor_hash"] = json!(disk_hash(&body));
+        }
+        return Ok(result);
     }
     anyhow::bail!("No unused entry name")
 }
@@ -315,16 +361,25 @@ fn normalize_property(key: &str, value: Json, types: &BTreeMap<String, String>) 
     }
 }
 
+#[cfg(test)]
 pub(super) async fn reorder_groups(root: &Path, params: &Json) -> Result<Json> {
+    reorder_groups_with(root, params, &super::disposition::Writer::default()).await
+}
+pub(super) async fn reorder_groups_with(
+    root: &Path,
+    params: &Json,
+    writer: &super::disposition::Writer<'_>,
+) -> Result<Json> {
     let source: Source = serde_json::from_value(params["source"].clone())?;
-    let Source::Path { path } = source else {
-        anyhow::bail!("Edit the host note to reorder an inline base")
+    let path = match &source {
+        Source::Path { path } => source_path(root, path)?,
+        Source::Inline { .. } => contained(
+            root,
+            params["this"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Inline writes require the host note"))?,
+        )?,
     };
-    let path = contained(root, &path)?;
-    ensure!(
-        crucible_core::kiln::KilnFileKind::of(&path) == crucible_core::kiln::KilnFileKind::Base,
-        "Expected a .base file"
-    );
     let hash = params["ancestor_hash"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("ancestor_hash required"))?;
@@ -333,7 +388,11 @@ pub(super) async fn reorder_groups(root: &Path, params: &Json) -> Result<Json> {
     if disk_hash(&text) != hash {
         return Ok(json!({"ok":false,"current_hash":disk_hash(&text)}));
     }
-    let mut base = BaseFile::parse(&text)?;
+    let range = match &source {
+        Source::Inline { yaml } => Some(super::inline::range(&path, &text, yaml).await?),
+        _ => None,
+    };
+    let mut base = BaseFile::parse(range.as_ref().map(|r| &text[r.clone()]).unwrap_or(&text))?;
     let index = match params["view"].as_str() {
         Some(name) => base.views.iter().position(|v| v.name == name),
         None => (!base.views.is_empty()).then_some(0),
@@ -345,17 +404,32 @@ pub(super) async fn reorder_groups(root: &Path, params: &Json) -> Result<Json> {
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("group_order required"))?,
     )?;
-    Ok(write_locked(
-        &path,
-        LockedChange::Put(base.to_yaml()?),
-        ExpectedBase::Hash { hash: hash.into() },
-    )
-    .await?)
+    let yaml = base.to_yaml()?;
+    let content = if let Some(range) = range {
+        let yaml = if text.contains("\r\n") {
+            yaml.replace('\n', "\r\n")
+        } else {
+            yaml
+        };
+        format!("{}{}{}", &text[..range.start], yaml, &text[range.end..])
+    } else {
+        yaml
+    };
+    writer
+        .put(
+            root,
+            &path,
+            content,
+            ExpectedBase::Hash { hash: hash.into() },
+            params,
+        )
+        .await
 }
 pub(super) async fn move_entry(
     root: &Path,
     params: &Json,
     km: &std::sync::Arc<crate::kiln_manager::KilnManager>,
+    writer: &super::disposition::Writer<'_>,
 ) -> Result<Json> {
     let from = params["path"]
         .as_str()
@@ -391,6 +465,8 @@ pub(super) async fn move_entry(
     if from == to {
         return Ok(json!({"ok":true,"path":from.strip_prefix(root)?.to_string_lossy()}));
     }
+    let _order = lock(&root.join(".crucible-bases-writes")).await;
+    let payload = writer.before(root, &from, params).await?;
     let from_rel = from.strip_prefix(root)?.to_string_lossy();
     let to_rel = to.strip_prefix(root)?.to_string_lossy();
     if crucible_core::kiln::is_indexable_file(&from) {
@@ -398,5 +474,6 @@ pub(super) async fn move_entry(
     } else {
         crate::server::fs::move_within(root, &from_rel, &to_rel)?;
     }
+    writer.changed(payload);
     Ok(json!({"ok":true,"path":to_rel,"ancestor_hash":current}))
 }

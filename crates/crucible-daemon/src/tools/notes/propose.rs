@@ -62,7 +62,7 @@ impl NoteWrites {
 
     /// The text that the current turn already proposes for `root`/`path`,
     /// or `None` when the turn proposes no write of that path.
-    pub(super) fn proposed_text(
+    pub(crate) fn proposed_text(
         &self,
         root: &PhysicalRoot,
         path: &str,
@@ -75,7 +75,7 @@ impl NoteWrites {
     }
 
     /// Record one proposed write. The disk does not change.
-    pub(super) fn propose(
+    pub(crate) fn propose(
         &self,
         root: PhysicalRoot,
         path: &str,

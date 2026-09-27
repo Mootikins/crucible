@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS note_links (
     span_start       INTEGER NOT NULL,
     span_end         INTEGER NOT NULL,
     kind             INTEGER NOT NULL DEFAULT 0,
+    heading_ref      TEXT,
     is_ambiguous     INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (source_path, span_start),
     FOREIGN KEY (source_path) REFERENCES notes(path) ON DELETE CASCADE
@@ -86,6 +87,18 @@ pub(crate) fn ensure_note_links_v2(conn: &Connection) -> rusqlite::Result<bool> 
     }
 
     conn.execute_batch(NOTE_LINKS_V2_SCHEMA)?;
+    let has_fragment = conn
+        .query_row(
+            "SELECT 1 FROM pragma_table_info('note_links') WHERE name='heading_ref'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !has_fragment {
+        conn.execute("ALTER TABLE note_links ADD COLUMN heading_ref TEXT", [])?;
+        needs_relink = true;
+    }
 
     // A kiln indexed before the link index existed at all (no v1 table to
     // drop) has notes but an empty note_links — and change detection never
@@ -129,72 +142,65 @@ fn like_escape(s: &str) -> String {
 /// Resolve one raw target. Pure function of the `notes` table.
 pub(crate) fn resolve_raw_target(conn: &Connection, raw: &str) -> rusqlite::Result<LinkResolution> {
     let key = target_key(raw);
-    if key.is_empty() {
-        return Ok(LinkResolution {
-            resolved_target: None,
-            target_key: key,
-            is_ambiguous: false,
-        });
-    }
-
-    // 1. Exact extension-less path (also covers full-path-with-extension).
-    let by_path: Option<String> = conn
-        .query_row(
-            "SELECT path FROM notes WHERE lower(path) = ?1 || '.md' OR lower(path) = ?1",
-            [&key],
-            |r| r.get(0),
-        )
-        .optional()?;
-    if let Some(path) = by_path {
-        return Ok(LinkResolution {
-            resolved_target: Some(path),
-            target_key: key,
-            is_ambiguous: false,
-        });
-    }
-
-    // 2. Unique title match.
-    let mut stmt = conn.prepare("SELECT path FROM notes WHERE lower(title) = ?1 LIMIT 2")?;
-    let titles: Vec<String> = stmt
-        .query_map([&key], |r| r.get(0))?
-        .collect::<Result<_, _>>()?;
-    if titles.len() == 1 {
-        return Ok(LinkResolution {
-            resolved_target: Some(titles.into_iter().next().unwrap()),
-            target_key: key,
-            is_ambiguous: false,
-        });
-    }
-
-    // 3./4. File-stem match — unique wins; ties get a deterministic winner
-    // (shortest path, then lexicographic) flagged ambiguous.
     let mut stmt = conn.prepare(
-        r"SELECT path FROM notes
-          WHERE lower(path) LIKE '%/' || ?1 || '.md' ESCAPE '\'
-             OR lower(path) = ?2 || '.md'",
+        r"SELECT path, title FROM notes
+          WHERE lower(path) = ?1 || '.md' OR lower(path) = ?1 OR lower(title) = ?1
+             OR lower(path) LIKE '%/' || ?2 || '.md' ESCAPE '\'
+             OR lower(path) LIKE '%/' || ?2 ESCAPE '\'
+             OR path GLOB '*[^ -~]*' OR title GLOB '*[^ -~]*'",
     )?;
-    let mut stems: Vec<String> = stmt
-        .query_map(params![like_escape(&key), &key], |r| r.get(0))?
-        .collect::<Result<_, _>>()?;
-    match stems.len() {
-        0 => Ok(LinkResolution {
-            resolved_target: None,
-            target_key: key,
-            is_ambiguous: false,
-        }),
-        1 => Ok(LinkResolution {
-            resolved_target: stems.pop(),
-            target_key: key,
-            is_ambiguous: false,
-        }),
-        _ => {
-            stems.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
-            Ok(LinkResolution {
-                resolved_target: stems.into_iter().next(),
-                target_key: key,
-                is_ambiguous: true,
-            })
+    // SQLite lower() folds ASCII only. Keep non-ASCII candidates for the
+    // shared Unicode normalization policy rather than discarding them here.
+    let candidates = stmt
+        .query_map(params![key, like_escape(&key)], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(resolve_candidates(
+        raw,
+        candidates.iter().map(|(p, t)| (p.as_str(), t.as_str())),
+    ))
+}
+
+/// Shared identity policy for the persisted index and a fresh filesystem query.
+/// Candidate acquisition may differ; precedence and ambiguous-name handling must not.
+pub(crate) fn resolve_candidates<'a>(
+    raw: &str,
+    candidates: impl Iterator<Item = (&'a str, &'a str)>,
+) -> LinkResolution {
+    let key = target_key(raw);
+    let mut exact = vec![];
+    let mut titles = vec![];
+    let mut stems = vec![];
+    if !key.is_empty() {
+        for (path, title) in candidates {
+            let normalized = path.to_lowercase();
+            let extless = normalized.strip_suffix(".md").unwrap_or(&normalized);
+            if extless == key || normalized == key {
+                exact.push(path);
+            }
+            if title.to_lowercase() == key {
+                titles.push(path);
+            }
+            if extless.rsplit('/').next() == Some(key.as_str())
+                || normalized.rsplit('/').next() == Some(key.as_str())
+            {
+                stems.push(path);
+            }
         }
+    }
+    let mut choices = if !exact.is_empty() {
+        exact
+    } else if titles.len() == 1 {
+        titles
+    } else {
+        stems
+    };
+    choices.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+    LinkResolution {
+        resolved_target: choices.first().map(|p| (*p).to_owned()),
+        target_key: key,
+        is_ambiguous: choices.len() > 1,
     }
 }
 
@@ -215,8 +221,8 @@ pub(crate) fn write_links(
 
     let mut stmt = conn.prepare(
         "INSERT OR REPLACE INTO note_links
-         (source_path, resolved_target, raw_target, target_key, span_start, span_end, kind, is_ambiguous)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         (source_path, resolved_target, raw_target, target_key, span_start, span_end, kind, is_ambiguous, heading_ref)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
 
     if links.is_empty() {
@@ -231,6 +237,7 @@ pub(crate) fn write_links(
                 -1i64,
                 0i64,
                 res.is_ambiguous as i64,
+                None::<String>,
             ])?;
         }
         return Ok(());
@@ -247,6 +254,7 @@ pub(crate) fn write_links(
             occ.span_end as i64,
             occ.is_embed as i64,
             res.is_ambiguous as i64,
+            occ.heading_ref,
         ])?;
     }
     Ok(())
@@ -408,7 +416,51 @@ mod tests {
             span_start: start,
             span_end: start + raw.len(),
             is_embed: false,
+            heading_ref: None,
         }
+    }
+
+    #[test]
+    fn canonical_candidates_agree_with_sql_for_unicode_and_after_rename() {
+        let conn = mem_db();
+        add_note(&conn, "notes/Été.md", "Été");
+        for path in ["notes/Été.md", "archive/Été.md"] {
+            conn.execute("UPDATE notes SET path = ?1", [path]).unwrap();
+            let scanned = resolve_candidates("été", std::iter::once((path, "Été")));
+            let stored = resolve_raw_target(&conn, "été").unwrap();
+            assert_eq!(scanned.resolved_target.as_deref(), Some(path));
+            assert_eq!(stored.resolved_target, scanned.resolved_target);
+            assert_eq!(stored.is_ambiguous, scanned.is_ambiguous);
+        }
+    }
+
+    #[test]
+    fn embed_fragments_survive_storage_and_v2_upgrade_requests_relink() {
+        let conn = mem_db();
+        add_note(&conn, "host.md", "Host");
+        add_note(&conn, "boards/Tasks.base", "Tasks");
+        let mut link = occ("Tasks.base", 2);
+        link.is_embed = true;
+        link.heading_ref = Some("Board".into());
+        write_links(&conn, "host.md", &[link], &[]).unwrap();
+        let stored: (String, String, i64) = conn
+            .query_row(
+                "SELECT resolved_target, heading_ref, kind FROM note_links",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("boards/Tasks.base".into(), "Board".into(), 1));
+        conn.execute("ALTER TABLE note_links DROP COLUMN heading_ref", [])
+            .unwrap();
+        assert!(
+            ensure_note_links_v2(&conn).unwrap(),
+            "old v2 links need a fragment rebuild"
+        );
+        assert!(
+            !ensure_note_links_v2(&conn).unwrap(),
+            "migration is idempotent"
+        );
     }
 
     /// Every form a wikilink can be written in resolves to the same note

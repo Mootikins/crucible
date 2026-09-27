@@ -78,6 +78,7 @@ rmcp = { version = "2.2", features = ["macros", "server", "client", "transport-i
 axum = "0.8"
 schemars = { workspace = true }
 regex = { workspace = true }
+fancy-regex = { workspace = true }
 oq = { workspace = true }
 grep = "0.4"
 ignore = "0.4"

@@ -154,7 +154,7 @@ fn bases_every_declared_function_has_a_working_example() {
             Link => "link('notes/a.md') == file",
             List => "list('one').length == 1",
             Image => "image('a.png').isType('image')",
-            Icon => "icon('plus').isType('icon')",
+            Icon => "icon('plus').isType('string')",
             Html => "html('<b>x</b>').isType('html')",
             EscapeHTML => "escapeHTML('<a>') == '&lt;a&gt;'",
             If => "if(true, 1, 0) == 1",
@@ -169,7 +169,7 @@ fn bases_every_declared_function_has_a_working_example() {
             ToString => "123.toString() == '123'",
             Format => "date('2025-01-01').format('YYYY-MM-DD') == '2025-01-01'",
             Time => "date('2025-01-01 12:34:56').time() == '12:34:56'",
-            Relative => "now().relative().contains('ago')",
+            Relative => "now().relative().toString().contains('ago')",
             IsEmpty => "null.isEmpty()",
             Contains => "[1,2].contains(2)",
             ContainsAll => "'hello'.containsAll('h','e')",
@@ -246,4 +246,339 @@ async fn bases_saved_column_order_roundtrips_unknown_options_and_refuses_stale()
         write::reorder_groups(root, &params).await.unwrap()["ok"],
         false
     );
+}
+
+#[tokio::test]
+async fn bases_named_embed_resolves_a_subfolder_source() {
+    let dir = TempDir::new().unwrap();
+    tokio::fs::create_dir(dir.path().join("boards"))
+        .await
+        .unwrap();
+    tokio::fs::write(
+        dir.path().join("boards/Tasks.base"),
+        "views: [{type: table, name: Tasks}]",
+    )
+    .await
+    .unwrap();
+    let mut request = request("");
+    request.source = Source::Path {
+        path: "Tasks.base".into(),
+    };
+    assert!(query(dir.path(), &request).await.is_ok());
+}
+
+#[test]
+fn bases_matches_captured_obsidian_expressions() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../assets/fixtures/bases/obsidian-1.14.2-expressions.json"
+    ))
+    .unwrap();
+    // Local date parsing deliberately reads TZ; nextest isolates this test.
+    let _timezone = crucible_core::test_support::EnvVarGuard::set(
+        "TZ",
+        corpus["timezone"].as_str().unwrap().into(),
+    );
+    let entry = Entry {
+        path: "notes/a.md".into(),
+        tags: vec!["work/deep".into()],
+        properties: BTreeMap::from([
+            ("status".into(), Value::String("todo".into())),
+            (
+                "tags".into(),
+                Value::List(vec![Value::String("#work/deep".into())]),
+            ),
+        ]),
+        links: vec!["notes/a.md".into()],
+        ..Entry::default()
+    };
+    let entries = [entry];
+    let formulas = BTreeMap::new();
+    let mut failures = vec![];
+    for case in corpus["cases"].as_array().unwrap() {
+        let expression = case["expression"].as_str().unwrap();
+        let mut eval = Eval::new(
+            &entries,
+            &entries[0],
+            None,
+            &formulas,
+            chrono::Local::now().timestamp_millis(),
+        );
+        let result = Expr::parse(expression).and_then(|e| eval.eval(&e));
+        if case.get("error").is_some() {
+            if result.is_ok() {
+                failures.push(format!(
+                    "{}: expected reference error, got {result:?}",
+                    case["id"]
+                ));
+            }
+            continue;
+        }
+        let expected_error = case["output"][0]["result"]
+            .as_str()
+            .is_some_and(|s| s.starts_with("Error: "));
+        if expected_error {
+            if result.is_ok() {
+                failures.push(format!(
+                    "{}: expected an evaluation error, got {result:?}",
+                    case["id"]
+                ));
+            }
+            continue;
+        }
+        let actual = result
+            .ok()
+            .filter(|v| !matches!(v, Value::Null))
+            .map(|v| v.text())
+            .filter(|s| !s.is_empty());
+        let expected = case["output"][0]["result"].as_str().map(str::to_owned);
+        if actual != expected {
+            failures.push(format!(
+                "{}: expected {expected:?}, got {actual:?}",
+                case["id"]
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+#[ignore = "requires: playwright harness — Obsidian 1.14.2 running a disposable conformance vault with CLI and CDP on port 19222"]
+fn bases_regenerate_live_obsidian_reference() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let status = std::process::Command::new("node")
+        .arg("scripts/capture-bases-conformance.mjs")
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[tokio::test]
+async fn bases_inline_column_order_preserves_host_bytes_and_checks_host_ancestor() {
+    let dir = TempDir::new().unwrap();
+    let yaml = "views:\n  - type: kanban\n    name: Board\n    groupBy: {property: note.status, direction: ASC}\n";
+    let text = format!(
+        "---\r\ntitle: Host\r\n---\r\nBefore 🦀\r\n\r\n```base\r\n{}```\r\n\r\nAfter\r\n",
+        yaml.replace('\n', "\r\n")
+    );
+    let path = dir.path().join("host.md");
+    std::fs::write(&path, &text).unwrap();
+    let mut request = request(yaml);
+    request.host = Some("host.md".into());
+    let result = query(dir.path(), &request).await.unwrap();
+    assert_eq!(
+        result.source_hash.as_deref(),
+        Some(crucible_core::note_edit::disk_hash(&text).as_str())
+    );
+    let params = json!({"source":{"yaml":yaml},"this":"host.md","view":"Board","group_order":["done","todo"],"ancestor_hash":result.source_hash});
+    assert_eq!(
+        write::reorder_groups(dir.path(), &params).await.unwrap()["ok"],
+        true
+    );
+    let changed = std::fs::read_to_string(&path).unwrap();
+    assert!(changed.starts_with("---\r\ntitle: Host\r\n---\r\nBefore 🦀\r\n\r\n```base\r\n"));
+    assert!(changed.ends_with("```\r\n\r\nAfter\r\n"));
+    assert!(changed.contains("groupOrder:"));
+    assert_eq!(
+        write::reorder_groups(dir.path(), &params).await.unwrap()["ok"],
+        false
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), changed);
+}
+
+#[tokio::test]
+async fn bases_matches_captured_obsidian_queries() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../assets/fixtures/bases/obsidian-1.14.2-queries.json"
+    ))
+    .unwrap();
+    let dir = TempDir::new().unwrap();
+    for (path, text) in corpus["files"].as_object().unwrap() {
+        let path = dir.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text.as_str().unwrap()).unwrap();
+    }
+    let mut failures = vec![];
+    for case in corpus["cases"].as_array().unwrap() {
+        // CLI evaluation supplies no embedding host. Native saved views separately
+        // test the documented main-pane `this` context.
+        let yaml = serde_yaml::to_string(&case["base"]).unwrap();
+        let result = query(dir.path(), &request(&yaml)).await;
+        let expected: serde_json::Value =
+            serde_json::from_str(case["formats"]["json"]["output"].as_str().unwrap()).unwrap();
+        match result {
+            Ok(result) => {
+                let rows = result
+                    .rows
+                    .iter()
+                    .map(|row| {
+                        let mut map = serde_json::Map::new();
+                        map.insert("path".into(), json!(row.path));
+                        for column in &result.columns {
+                            let text = row
+                                .values
+                                .get(&column.property)
+                                .filter(|v| **v != Value::Null)
+                                .map(Value::text)
+                                .filter(|s| !s.is_empty());
+                            map.insert(column.display_name.clone(), json!(text));
+                        }
+                        serde_json::Value::Object(map)
+                    })
+                    .collect::<Vec<_>>();
+                if json!(rows) != expected {
+                    failures.push(format!(
+                        "{}: expected {expected}, got {}",
+                        case["id"],
+                        json!(rows)
+                    ));
+                }
+            }
+            Err(e) => failures.push(format!("{}: {e:#}", case["id"])),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[tokio::test]
+async fn bases_creation_matches_obsidian_frontmatter_and_body() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../assets/fixtures/bases/obsidian-1.14.2-creation.json"
+    ))
+    .unwrap();
+    let mut failures = Vec::new();
+    for case in corpus["cases"].as_array().unwrap() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join("created")).unwrap();
+        for (path, text) in corpus["files"].as_object().unwrap() {
+            let path = dir.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text.as_str().unwrap()).unwrap();
+        }
+        let params = json!({"source":{"yaml":case["base"].to_string()},"view":"Case","name":format!("Oracle-{}",case["id"].as_str().unwrap()),"content":"Body\n"});
+        let result = write::create_entry(dir.path(), &params).await.unwrap();
+        let actual =
+            std::fs::read_to_string(dir.path().join(result["path"].as_str().unwrap())).unwrap();
+        let expected = case["bytes"].as_str().unwrap();
+        let parser = crucible_core::parser::CrucibleParser::new();
+        let a = parser
+            .parse_content(&actual, Path::new("a.md"))
+            .await
+            .unwrap();
+        let b = parser
+            .parse_content(expected, Path::new("a.md"))
+            .await
+            .unwrap();
+        if a.frontmatter.as_ref().map(|f| f.properties())
+            != b.frontmatter.as_ref().map(|f| f.properties())
+            || actual[a.body_offset..] != expected[b.body_offset..]
+            || result["path"] != case["path"]
+        {
+            failures.push(format!(
+                "{}: expected {expected:?}, got {actual:?}",
+                case["id"]
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[tokio::test]
+async fn bases_summaries_match_native_obsidian_groups_and_empty_sets() {
+    let queries: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../assets/fixtures/bases/queries.json"
+    ))
+    .unwrap();
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../assets/fixtures/bases/obsidian-1.14.2-summaries.json"
+    ))
+    .unwrap();
+    let dir = TempDir::new().unwrap();
+    for (path, text) in queries["files"].as_object().unwrap() {
+        let path = dir.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text.as_str().unwrap()).unwrap();
+    }
+    let mut failures = vec![];
+    for case in corpus["summaries"].as_array().unwrap() {
+        let mut base = corpus["base"].clone();
+        let property = case["property"].as_str().unwrap();
+        base["views"][0]["summaries"] = json!({property:case["name"]});
+        let result = query(dir.path(), &request(&base.to_string()))
+            .await
+            .unwrap();
+        let actual = result.summaries[property].text();
+        if actual != case["all"].as_str().unwrap() {
+            failures.push(format!("{}: {actual} != {}", case["name"], case["all"]));
+        }
+        for group in &result.groups {
+            let expected = case["groups"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|g| g["group"] == group.value.text())
+                .unwrap();
+            if group.summaries[property].text() != expected["value"].as_str().unwrap() {
+                failures.push(format!(
+                    "{} group {}: {} != {}",
+                    case["name"],
+                    group.value.text(),
+                    group.summaries[property].text(),
+                    expected["value"]
+                ));
+            }
+        }
+        base["filters"] = json!("false");
+        let result = query(dir.path(), &request(&base.to_string()))
+            .await
+            .unwrap();
+        if result.summaries[property].text() != case["empty"].as_str().unwrap() {
+            failures.push(format!(
+                "{} empty: {} != {}",
+                case["name"],
+                result.summaries[property].text(),
+                case["empty"]
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[tokio::test]
+async fn bases_property_moves_match_native_obsidian_file_outcomes() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../assets/fixtures/bases/obsidian-1.14.2-moves.json"
+    ))
+    .unwrap();
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join(".obsidian")).unwrap();
+    std::fs::write(
+        dir.path().join(".obsidian/types.json"),
+        json!({"types":corpus["property_types"]}).to_string(),
+    )
+    .unwrap();
+    let path = dir.path().join("item.md");
+    let parser = crucible_core::parser::CrucibleParser::new();
+    for case in corpus["cases"].as_array().unwrap() {
+        let before = case["before"].as_str().unwrap();
+        std::fs::write(&path, before).unwrap();
+        let result = write::set_property(dir.path(), &json!({"path":"item.md","key":case["key"],"value":case["value"],"delete":case["value"].is_null(),"ancestor_hash":crucible_core::note_edit::disk_hash(before)})).await.unwrap();
+        assert_eq!(result["ok"], true, "{}", case["id"]);
+        let actual = std::fs::read_to_string(&path).unwrap();
+        let expected = case["after"].as_str().unwrap();
+        let a = parser.parse_content(&actual, &path).await.unwrap();
+        let b = parser.parse_content(expected, &path).await.unwrap();
+        assert_eq!(
+            a.frontmatter.as_ref().map(|f| f.properties()),
+            b.frontmatter.as_ref().map(|f| f.properties()),
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            &actual[a.body_offset..],
+            &expected[b.body_offset..],
+            "{}",
+            case["id"]
+        );
+    }
 }

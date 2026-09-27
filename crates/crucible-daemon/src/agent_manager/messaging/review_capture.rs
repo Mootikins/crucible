@@ -6,6 +6,17 @@ use super::super::{is_safe, StreamContext};
 use std::sync::Arc;
 use tracing::debug;
 
+tokio::task_local! {
+    /// Only this future's capture may own a nested daemon write.
+    pub(crate) static CURRENT_CAPTURE: (String, std::cell::Cell<bool>);
+}
+
+pub(crate) fn captures_session(session: &str) -> bool {
+    CURRENT_CAPTURE
+        .try_with(|(id, active)| id == session && active.get())
+        .unwrap_or(false)
+}
+
 /// Whether a tool call needs a review capture bracket around it (§5).
 ///
 /// Deliberately the inverse of [`is_safe`] rather than a positive list of

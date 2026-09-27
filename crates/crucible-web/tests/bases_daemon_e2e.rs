@@ -34,7 +34,9 @@ async fn bases_http_queries_and_refuses_stale_edits_through_real_daemon() {
     let home = tempfile::tempdir().unwrap();
     let kiln = home.path().join("kiln");
     std::fs::create_dir(&kiln).unwrap();
-    std::fs::write(kiln.join("Tasks.base"), "filters: 'file.ext == \"md\"'\nviews: [{type: table, name: Tasks, order: [file.name, note.status]}]").unwrap();
+    std::fs::create_dir(kiln.join("boards")).unwrap();
+    std::fs::write(kiln.join("Host.md"), "![[Tasks.base#Tasks]]").unwrap();
+    std::fs::write(kiln.join("boards/Tasks.base"), "filters: 'file.ext == \"md\"'\nviews: [{type: table, name: Tasks, order: [file.name, note.status]}]").unwrap();
     let socket = home.path().join("daemon.sock");
     let server = Server::bind_with_data_home_and_kilns(
         &socket,
@@ -50,14 +52,16 @@ async fn bases_http_queries_and_refuses_stale_edits_through_real_daemon() {
     let (status, created) = request(&app, "POST", "/api/bases/entries", json!({"kiln":"Work", "source":{"path":"Tasks.base"}, "name":"First", "content":"# Body\n"})).await;
     assert_eq!(status, StatusCode::OK, "{created}");
     assert_eq!(created["path"], "First.md");
-    let uri = "/api/bases/query?kiln=Work&path=Tasks.base&view=Tasks";
+    let uri = "/api/bases/query?kiln=Work&path=Tasks.base&view=Tasks&this=Host.md";
     let (status, result) = request(&app, "GET", uri, Value::Null).await;
     assert_eq!(status, StatusCode::OK, "{result}");
     assert_eq!(result["rows"][0]["path"], "First.md");
     assert_eq!(
         result["rows"][0]["values"]["file.name"],
-        json!({"type":"string","value":"First.md"})
+        json!({"type":"string","value":"First"})
     );
+    assert_eq!(result["source_path"], "boards/Tasks.base");
+    assert_eq!(result["options"]["row_height"], "");
     let edit = json!({"kiln":"Work", "path":"First.md", "key":"status", "value":"done", "ancestor_hash":result["rows"][0]["ancestor_hash"]});
     let (status, result) = request(&app, "PUT", "/api/bases/property", edit.clone()).await;
     assert_eq!(status, StatusCode::OK, "{result}");

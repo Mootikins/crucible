@@ -1,318 +1,81 @@
 --!strict
---- kanban — a board over a folder of markdown tickets.
----
---- The reference implementation of the plugin contract: **a plugin owns data;
---- each frontend draws it natively.** This file owns the tickets and nothing
---- else. It publishes the board with `cru.plugin.publish`, which pushes a
---- `publication_changed` event to every client, and it accepts one command to
---- move a card. It describes no layout, no colour and no widget.
----
---- The earlier version of this plugin declared an Oil view that both frontends
---- rendered. That was the wrong seam: it made a terminal's vocabulary the
---- cross-frontend contract, so a browser inherited cells, sixteen colours and
---- no way to say "stack when narrow". See
---- `docs/Meta/Analysis/Oil in Documents.md`.
----
---- Everything a ticket is lives in the file. A ticket is a markdown note with
---- a `status:` in its frontmatter, and moving a card rewrites that one line —
---- so the board holds no state of its own, and the folder is still a folder of
---- notes that any editor opens. That is the constraint that makes this worth
---- building rather than storing cards in a database and rendering them.
-
-local M = {}
-
-local COLUMNS = { "todo", "doing", "done" }
-
-local config = {
-    folder = "tickets",
-}
-
-function M.setup(cfg)
-    if type(cfg) ~= "table" then return end
-    if type(cfg.folder) == "string" then config.folder = cfg.folder end
+-- Native Bases owns queries, grouping and writes. This plugin owns ticket policy.
+local policy: any
+local config: any = { folder = "tickets", base = "tickets.base", wip = {}, transitions = {} }
+local function setup(cfg: any)
+    if type(cfg) ~= "table" then cfg = {} end
+    for _, key in { "folder", "base", "wip", "transitions" } do
+        if cfg[key] ~= nil then config[key] = cfg[key] end
+    end
+    cru.on("base:before_write", {key="tickets"}, policy)
 end
-
---- The kiln root a relative folder hangs off, else the workspace.
----
---- `named` comes from the view's own params, and it is FIRST for a reason this
---- plugin exists to expose: a view is rendered without a session, so
---- `cru.kiln.active` — which every other kiln-reading plugin leans on — is
---- empty here. `plugin.view_render` carries a plugin, a view and params, and
---- nothing that says which kiln is in front of the user. Until it does, a
---- board embedded in a note must name its own kiln.
-local function root(named: string?): string?
-    if type(named) == "string" and named ~= "" then
-        local ok, path = pcall(cru.kiln.path, named)
-        if ok and type(path) == "string" and path ~= "" then return path end
+local function definition(): string
+    return cru.json.encode({
+        filters = 'file.inFolder(' .. cru.json.encode(config.folder) .. ') && file.ext == "md"',
+        newItemFolder = config.folder,
+        views = {{ type = "kanban", name = "Board", order = { "file.name", "note.status" },
+            groupBy = { property = "note.status", direction = "ASC" }, groupOrder = { "todo", "doing", "done" } }},
+    })
+end
+local function request(args: any, ctx: any): any
+    assert(type(args.kiln) == "string", "kiln is required")
+    return { session = ctx and ctx.session_id, source = { path = config.base }, view = "Board" }
+end
+local function board(args: any, ctx: any): any
+    return cru.kiln.query(args.kiln, request(args, ctx))
+end
+local function initialize(args: any, ctx: any): any
+    local options = request(args, ctx)
+    assert(options.session, "Initialize tickets from a session")
+    return cru.kiln.ensure_base(args.kiln, { session = options.session, path = config.base, yaml = definition() })
+end
+local function move(args: any, ctx: any): any
+    local options = request(args, ctx)
+    assert(options.session, "Move tickets from a session")
+    assert(type(args.file) == "string" and not args.file:find("[/\\]"), "file must be a ticket filename")
+    local path = config.folder .. "/" .. args.file
+    local rows = cru.kiln.query(args.kiln, options).rows
+    for _, row in rows do
+        if row.path == path then
+            return cru.kiln.set_property(args.kiln, { session = options.session, path = path, key = "status",
+                value = args.to, ancestor_hash = args.ancestor_hash or row.ancestor_hash })
+        end
     end
-    local active = cru.kiln and cru.kiln.active
-    if type(active) == "string" then
-        local ok, path = pcall(cru.kiln.path, active)
-        if ok and type(path) == "string" and path ~= "" then return path end
+    error("Ticket not found")
+end
+policy = function(_ctx: any, event: any): any
+    if type(event.path) ~= "string" or event.path:sub(1, #config.folder + 1) ~= config.folder .. "/" then return nil end
+    local target = if event.key == "status" or event.key == "note.status" then event.value else event.group
+    if target == nil then return nil end
+    local allowed = config.transitions[event.old_value or ""]
+    if allowed and event.old_value ~= target and not table.find(allowed, target) then
+        return { cancel = true, reason = "Ticket transition is not allowed" }
     end
-    local ok, path = pcall(cru.paths.workspace)
-    if ok and type(path) == "string" and path ~= "" then return path end
+    local limit = config.wip[target]
+    if limit and event.old_value ~= target then
+        local result = cru.kiln.query(event.kiln, { source = { path = config.base }, view = "Board" })
+        local count = 0
+        for _, group in result.groups do
+            if group.value.value == target then count = #group.rows end
+        end
+        if count >= limit then
+            return { cancel = true, reason = "Ticket WIP limit reached" }
+        end
+    end
     return nil
 end
-
-local function board_dir(folder: string?, kiln: string?): string?
-    local rel = folder or config.folder
-    -- An absolute folder needs no root, and is checked BEFORE resolving one:
-    -- otherwise a board with a full path is unreachable on a daemon that has
-    -- no active kiln, which is every daemon rendering a view.
-    if rel:sub(1, 1) == "/" then return rel end
-    local base = root(kiln)
-    if not base then return nil end
-    return base .. "/" .. rel
-end
-
-local function read_file(path: string): string?
-    local handle = io.open(path, "r")
-    if not handle then return nil end
-    local content = handle:read("a")
-    handle:close()
-    return content
-end
-
-local function write_file(path: string, content: string): boolean
-    local handle = io.open(path, "w")
-    if not handle then return false end
-    local ok = pcall(function() handle:write(content) end)
-    handle:close()
-    return ok
-end
-
---- One ticket, read from the file and nothing else.
-type Ticket = {
-    file: string,
-    title: string,
-    status: string,
-}
-
---- Read `status:` and `title:` out of a leading `---` frontmatter block.
----
---- A deliberate hand parse rather than a YAML one: the board reads two scalar
---- keys, and `move` below rewrites the status LINE rather than re-emitting the
---- document. Re-emitting is what made the old todo-list writer delete every
---- heading in the file, and a ticket's body is the part a human wrote.
-local function parse(content: string): (string?, string?)
-    if content:sub(1, 4) ~= "---\n" then return nil, nil end
-    local close = content:find("\n---", 4, true)
-    if not close then return nil, nil end
-    local block = content:sub(5, close)
-    local status = block:match("\nstatus:%s*([%w_-]+)") or block:match("^status:%s*([%w_-]+)")
-    local title = block:match('\ntitle:%s*"?([^"\n]+)"?') or block:match('^title:%s*"?([^"\n]+)"?')
-    if title then title = (title:gsub("%s+$", "")) end
-    return status, title
-end
-
-local function tickets(folder: string?, kiln: string?): { Ticket }
-    local dir = board_dir(folder, kiln)
-    local out: { Ticket } = {}
-    if not dir then return out end
-    local ok, entries = pcall(cru.fs.list, dir)
-    if not ok or type(entries) ~= "table" then return out end
-
-    for _, name in entries do
-        if type(name) == "string" and name:sub(-3) == ".md" then
-            local path = dir .. "/" .. name
-            local content = read_file(path)
-            if content then
-                local status, title = parse(content)
-                table.insert(out, {
-                    file = name,
-                    -- A ticket with no `title:` is named by its file. Falling
-                    -- back to the filename beats hiding the card: an untitled
-                    -- ticket is a real ticket someone forgot to title.
-                    title = title or (name:gsub("%.md$", "")),
-                    status = status or COLUMNS[1],
-                })
-            end
-        end
-    end
-    table.sort(out, function(a, b) return a.file < b.file end)
-    return out
-end
-
---- Rewrite one ticket's status line in place.
-local function move(folder: string?, kiln: string?, file: string, to: string): boolean
-    -- A file name, never a path: a `params` table reaches here from a rendered
-    -- tree, which a note author can hand-write, so `../` must not escape the
-    -- board folder.
-    if file:find("/", 1, true) or file:find("\\", 1, true) or file:find("..", 1, true) then
-        return false
-    end
-    -- A ticket is a markdown file. `tickets()` filters on that when it reads,
-    -- and without the same rule here a move would write a status line into
-    -- any file in the folder that a caller happened to name.
-    if file:sub(-3) ~= ".md" then
-        return false
-    end
-    if not table.find(COLUMNS, to) then return false end
-
-    local dir = board_dir(folder, kiln)
-    if not dir then return false end
-    local path = dir .. "/" .. file
-    local content = read_file(path)
-    if not content then return false end
-
-    -- Rewrite inside the frontmatter block ONLY. `parse` reads `status:`
-    -- there and nowhere else, so a ticket with no status in its block is a
-    -- legal ticket that shows in the default column. A `gsub` over the whole
-    -- document rewrote the first `status:` ANYWHERE, which for such a ticket
-    -- is a line in prose or inside a fenced code block that a human wrote.
-    local replaced
-    -- The opening fence is `---` then a line ending. A CRLF file spells that
-    -- `---\r\n`, and a test for `---\n` alone gave such a ticket a whole
-    -- SECOND frontmatter block in front of the one it already had.
-    local fence = content:match("^%-%-%-\r?\n")
-    local head_end = fence and content:find("\n%-%-%-")
-    if fence and head_end then
-        local block = content:sub(#fence + 1, head_end)
-        -- The value runs to the end of the line. A narrower class — `[%w_-]+`
-        -- was here — matches neither `"todo"` nor `to do`, so a value a human
-        -- typed and the reader cannot parse took the insert path below and
-        -- produced a second `status:` key in one block.
-        local rewritten, count = block:gsub("(\nstatus:%s*)[^\r\n]*", "%1" .. to, 1)
-        if count == 0 then
-            -- `parse` also accepts `^status:`, where the pattern above finds
-            -- no leading newline. `block` starts after the opening fence, so
-            -- the two readers agree only when this case is handled too.
-            rewritten, count = block:gsub("^(status:%s*)[^\r\n]*", "%1" .. to, 1)
-        end
-        if count == 0 then
-            -- No status key yet: add one inside the existing block rather
-            -- than creating a second block.
-            rewritten = "status: " .. to .. "\n" .. block
-        end
-        replaced = fence .. rewritten .. content:sub(head_end + 1)
-    else
-        replaced = "---\nstatus: " .. to .. "\n---\n" .. content
-    end
-    return write_file(path, replaced)
-end
-
---- The board, as data. No layout, no colour, no widget.
----
---- One flat list plus the column order. A renderer groups; that is a
---- renderer's job, and a web board that wants a different grouping (by
---- assignee, say) should not need this plugin to change.
-function M.board(folder: string?, kiln: string?)
-    local all = tickets(folder, kiln)
-    local out = {}
-    for _, t in all do
-        table.insert(out, { file = t.file, title = t.title, status = t.status })
-    end
-    return {
-        columns = COLUMNS,
-        tickets = out,
-        folder = folder or config.folder,
-        kiln = kiln,
-        dir = board_dir(folder, kiln),
-    }
-end
-
---- Publish the board. Every client is told to re-read.
----
---- Keyed by `kanban:board` rather than `board`: a publication key is a global
---- namespace shared by every plugin, and `board` is a word more than one
---- plugin will want.
-function M.republish(folder: string?, kiln: string?)
-    -- `pcall` because `cru.plugin.publish` is bound per plugin by the loader,
-    -- and a plugin body also runs in the bare VM that `cru plugin check` and
-    -- the Lua test runner use. Failing to publish there must not fail the move
-    -- that preceded it.
-    pcall(function()
-        cru.plugin.publish("kanban:board", M.board(folder, kiln))
-    end)
-end
-
---- Move a ticket, then republish so every client redraws.
----
---- The command is the whole write surface. A frontend never edits a file; it
---- asks this to, and learns the result by being told the data changed.
-type MoveResult = { ok: boolean, error: string? }
-
-function M.move_command(args): MoveResult
-    if type(args) ~= "table" then
-        return { ok = false, error = "expected a table of arguments" }
-    end
-    local file, to = args.file, args.to
-    if type(file) ~= "string" or type(to) ~= "string" then
-        return { ok = false, error = "`file` and `to` are required" }
-    end
-    local ok = move(args.folder, args.kiln, file, to)
-    if not ok then
-        return { ok = false, error = "no such ticket, or not a column this board has" }
-    end
-    M.republish(args.folder, args.kiln)
-    return { ok = true }
-end
-
+local kiln_param = { name = "kiln", type = "string", desc = "Kiln name" }
 return {
-    setup = M.setup,
-
+    setup = setup,
     tools = {
-        kanban_board = {
-            desc = "Read the ticket board as data",
-            params = {
-                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
-                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
-            },
-            fn = function(args: any)
-                local t = if type(args) == "table" then args else {}
-                return M.board(t.folder, t.kiln)
-            end,
-        },
-        kanban_move = {
-            desc = "Move a ticket to another column",
-            params = {
-                { name = "file", type = "string", desc = "Ticket file name" },
-                { name = "to", type = "string", desc = "Target column" },
-                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
-                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
-            },
-            fn = M.move_command,
-        },
+        kanban_board = { desc = "Query the native ticket base", params = { kiln_param }, fn = board },
+        kanban_move = { desc = "Move a ticket through Bases policy and session review", params = {
+            kiln_param, { name = "file", type = "string", desc = "Ticket filename" },
+            { name = "to", type = "string", desc = "Target status" },
+            { name = "ancestor_hash", type = "string", desc = "Expected ticket hash", optional = true },
+        }, fn = move },
     },
-
-    -- Commands, not just tools: `plugin.run_command` is what a frontend can
-    -- reach over RPC, and the web board is a frontend. Tools are for agents.
-    --
-    -- These two are the plugin API's pair of shapes. `kanban` re-derives the
-    -- board from the ticket files and publishes it: it changes nothing a user
-    -- could lose, so it is a `read` even though something observable moves.
-    -- `kanban_move` rewrites a ticket's `status:` line, so it is a `write` and
-    -- a UI must not press it for you without asking.
-    --
-    -- Both keep their `hint`: it is one line of free text for a person, and a
-    -- dialog is generated from `params` instead.
     commands = {
-        kanban = {
-            desc = "Publish the ticket board so clients redraw",
-            hint = "[folder]",
-            effect = "read",
-            params = {
-                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
-                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
-            },
-            fn = function(args: any)
-                local t = if type(args) == "table" then args else {}
-                M.republish(t.folder, t.kiln)
-                return { ok = true }
-            end,
-        },
-        kanban_move = {
-            desc = "Move a ticket to another column",
-            hint = "<file> <column>",
-            effect = "write",
-            params = {
-                { name = "file", type = "string", desc = "Ticket file name" },
-                { name = "to", type = "string", desc = "Target column" },
-                { name = "folder", type = "string", desc = "Ticket folder", optional = true },
-                { name = "kiln", type = "string", desc = "Kiln name", optional = true },
-            },
-            fn = M.move_command,
-        },
+        kanban = { desc = "Create tickets.base if absent", effect = "write", params = { kiln_param }, fn = initialize },
     },
 }

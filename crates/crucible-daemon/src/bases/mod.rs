@@ -1,8 +1,17 @@
 //! Daemon-owned Bases queries. Files remain the source of truth, including attachments.
 use crucible_core::bases::BaseValue;
+mod date_format;
+mod disposition;
 mod eval;
+mod inline;
+pub(crate) mod plugin_api;
+#[cfg(test)]
+mod plugin_tests;
+mod policy;
+mod regexp;
 #[cfg(test)]
 mod tests;
+mod view_options;
 mod write;
 use anyhow::{ensure, Context, Result};
 use crucible_core::bases::{BaseFile, Direction, Expr, Filter, FilterTree, Value, View};
@@ -12,10 +21,12 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
+pub use view_options::ViewOptions;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct Entry {
     path: String,
+    title: String,
     ancestor_hash: String,
     properties: BTreeMap<String, Value>,
     tags: Vec<String>,
@@ -65,7 +76,9 @@ pub struct Group {
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct QueryResult {
+    pub options: ViewOptions,
     pub source_hash: Option<String>,
+    pub source_path: Option<String>,
     pub view: String,
     pub view_type: String,
     pub columns: Vec<Column>,
@@ -118,10 +131,56 @@ pub(crate) fn contained(root: &Path, path: &str) -> Result<PathBuf> {
     );
     Ok(canonical)
 }
+fn source_path(root: &Path, raw: &str) -> Result<PathBuf> {
+    let direct = root.join(raw);
+    if direct.exists()
+        || Path::new(raw).is_absolute()
+        || Path::new(raw)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return contained(root, raw);
+    }
+    let candidates = walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| {
+            e.depth() == 0
+                || (!e.file_name().to_string_lossy().starts_with('.')
+                    && !crucible_core::kiln::EXCLUDED_DIRS
+                        .contains(&e.file_name().to_string_lossy().as_ref()))
+        })
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_type().is_file()
+                && crucible_core::kiln::KilnFileKind::of(e.path())
+                    == crucible_core::kiln::KilnFileKind::Base
+        })
+        .map(|e| {
+            e.path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect::<Vec<_>>();
+    let resolved = crate::storage::sqlite::link_index::resolve_candidates(
+        raw,
+        candidates.iter().map(|p| (p.as_str(), "")),
+    );
+    ensure!(!resolved.is_ambiguous, "Ambiguous base reference: {raw}");
+    contained(
+        root,
+        &resolved
+            .resolved_target
+            .ok_or_else(|| anyhow::anyhow!("Base not found: {raw}"))?,
+    )
+}
+
 async fn source_text(root: &Path, source: &Source) -> Result<String> {
     let yaml = match source {
         Source::Path { path } => {
-            let path = contained(root, path)?;
+            let path = source_path(root, path)?;
             ensure!(
                 crucible_core::kiln::KilnFileKind::of(&path)
                     == crucible_core::kiln::KilnFileKind::Base,
@@ -155,6 +214,12 @@ async fn property_types(root: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 async fn entries(root: &Path) -> Result<Vec<Entry>> {
+    entries_scoped(root, None).await
+}
+async fn entries_scoped(
+    root: &Path,
+    scope: Option<&crate::tools::fs_scope::FsScope>,
+) -> Result<Vec<Entry>> {
     let mut out = vec![];
     let types = property_types(root).await?;
     let parser = crucible_core::parser::CrucibleParser::new();
@@ -173,6 +238,12 @@ async fn entries(root: &Path) -> Result<Vec<Entry>> {
             continue;
         }
         let path = contained(root, &item.path().to_string_lossy())?;
+        if scope.is_some_and(|s| {
+            s.resolve(&path.strip_prefix(root).unwrap().to_string_lossy())
+                .is_err()
+        }) {
+            continue;
+        }
         let meta = tokio::fs::metadata(&path).await?;
         let millis = |t: std::io::Result<std::time::SystemTime>| {
             t.ok()
@@ -193,6 +264,7 @@ async fn entries(root: &Path) -> Result<Vec<Entry>> {
             let content = tokio::fs::read_to_string(&path).await?;
             e.ancestor_hash = crucible_core::note_edit::disk_hash(&content);
             let parsed = parser.parse_content(&content, &path).await?;
+            e.title = parsed.title();
             if let Some(fm) = parsed.frontmatter {
                 e.properties = fm
                     .properties()
@@ -201,12 +273,33 @@ async fn entries(root: &Path) -> Result<Vec<Entry>> {
                     .collect();
             }
             for (key, value) in &mut e.properties {
+                if key == "tags" {
+                    let tag = |v: &mut Value| {
+                        if let Value::String(s) = v {
+                            if !s.starts_with('#') {
+                                *s = format!("#{s}");
+                            }
+                        }
+                    };
+                    if let Value::List(xs) = value {
+                        for x in xs {
+                            tag(x);
+                        }
+                    } else {
+                        tag(value);
+                    }
+                }
+
                 if matches!(
                     types.get(key).map(String::as_str),
                     Some("date" | "datetime")
                 ) {
                     if let Value::String(text) = value {
-                        *value = Value::Date(eval::parse_date(text)?);
+                        *value = if types.get(key).is_some_and(|t| t == "date") {
+                            Value::DateOnly(eval::parse_date(text)?)
+                        } else {
+                            Value::Date(eval::parse_date(text)?)
+                        };
                     }
                 }
             }
@@ -301,21 +394,53 @@ fn matches(filter: Option<&Filter>, eval: &mut Eval<'_>) -> Result<bool> {
     }
 }
 pub async fn query(root: &Path, request: &Query) -> Result<QueryResult> {
+    query_scoped(root, request, None).await
+}
+async fn query_scoped(
+    root: &Path,
+    request: &Query,
+    scope: Option<&crate::tools::fs_scope::FsScope>,
+) -> Result<QueryResult> {
     let root = root.canonicalize()?;
+    if let (Some(scope), Source::Path { path }) = (scope, &request.source) {
+        let source = source_path(&root, path)?;
+        scope
+            .resolve(&source.strip_prefix(&root)?.to_string_lossy())
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    }
+    if let (Some(scope), Some(host)) = (scope, &request.host) {
+        scope
+            .resolve(host)
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    }
     let yaml = source_text(&root, &request.source).await?;
-    let source_hash = matches!(request.source, Source::Path { .. })
-        .then(|| crucible_core::note_edit::disk_hash(&yaml));
+    let source_hash = match (&request.source, &request.host) {
+        (Source::Path { .. }, _) => Some(crucible_core::note_edit::disk_hash(&yaml)),
+        (Source::Inline { yaml }, Some(host)) => {
+            let path = contained(&root, host)?;
+            let text = tokio::fs::read_to_string(&path).await?;
+            inline::range(&path, &text, yaml)
+                .await
+                .ok()
+                .map(|_| crucible_core::note_edit::disk_hash(&text))
+        }
+        _ => None,
+    };
     let base = BaseFile::parse(&yaml)?;
     let view = base.view(request.view.as_deref())?;
-    let all = entries(&root).await?;
+    let all = entries_scoped(&root, scope).await?;
     let host_path = request.host.as_deref().or(match &request.source {
         Source::Path { path } => Some(path.as_str()),
         _ => None,
     });
     let host_path = host_path
         .map(|p| {
-            contained(&root, p)
-                .and_then(|p| Ok(p.strip_prefix(&root)?.to_string_lossy().into_owned()))
+            if request.host.is_some() {
+                contained(&root, p)
+            } else {
+                source_path(&root, p)
+            }
+            .and_then(|p| Ok(p.strip_prefix(&root)?.to_string_lossy().into_owned()))
         })
         .transpose()?;
     let host = host_path
@@ -336,7 +461,12 @@ pub async fn query(root: &Path, request: &Query) -> Result<QueryResult> {
                 .get(p)
                 .or_else(|| base.properties.get(p.strip_prefix("note.").unwrap_or(p)))
                 .and_then(|p| p.display_name.clone())
-                .unwrap_or_else(|| p.clone()),
+                .unwrap_or_else(|| {
+                    p.strip_prefix("note.")
+                        .or_else(|| p.strip_prefix("formula."))
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| p.replace("file.", "file "))
+                }),
         })
         .collect();
     let mut selected = vec![];
@@ -347,8 +477,14 @@ pub async fn query(root: &Path, request: &Query) -> Result<QueryResult> {
         {
             continue;
         }
+        let image_property = view
+            .extra
+            .get("image")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
         let values = order
             .iter()
+            .chain(image_property.iter())
             .chain(view.summaries.keys())
             .map(|p| Ok((p.clone(), eval.property(p)?)))
             .collect::<Result<_>>()?;
@@ -451,7 +587,17 @@ pub async fn query(root: &Path, request: &Query) -> Result<QueryResult> {
         }
     }
     Ok(QueryResult {
+        options: ViewOptions::from(view),
         source_hash,
+        source_path: match &request.source {
+            Source::Path { path } => Some(
+                source_path(&root, path)?
+                    .strip_prefix(&root)?
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            Source::Inline { .. } => None,
+        },
         summaries: summaries(&base, view, &rows, now)?,
         view: view.name.clone(),
         view_type: view.kind.clone().into(),
@@ -480,7 +626,7 @@ fn summaries(
                 .iter()
                 .filter_map(|v| match v {
                     Value::Number(n) => Some(*n),
-                    Value::Date(t) => Some(*t as f64),
+                    Value::Date(t) | Value::DateOnly(t) => Some(*t as f64),
                     _ => None,
                 })
                 .collect();
@@ -494,6 +640,8 @@ fn summaries(
                 eval.locals
                     .insert("values".into(), Value::List(values.clone()));
                 eval.eval(&Expr::parse(source)?)?
+            } else if rows.is_empty() {
+                Value::Null
             } else {
                 match name.as_str() {
                     "Empty" => count(Value::empty),
@@ -535,7 +683,11 @@ fn summaries(
                             if matches!(name.as_str(), "Earliest" | "Latest") {
                                 Value::Date(n as i64)
                             } else {
-                                Value::Number(n)
+                                Value::Number(if matches!(name.as_str(), "Average" | "Stddev") {
+                                    (n * 100.0).round() / 100.0
+                                } else {
+                                    n
+                                })
                             }
                         }
                     }
@@ -583,6 +735,10 @@ async fn handle_inner(
         .path()
         .ok_or_else(|| anyhow::anyhow!("Kiln is not available"))?;
     ctx.kiln.open(&root).await?;
+    let writer = disposition::Writer {
+        ctx: Some(ctx),
+        session: None,
+    };
     match req.method.as_str() {
         "base.list" => {
             let files = entries(&root)
@@ -612,11 +768,11 @@ async fn handle_inner(
             Ok(serde_json::to_value(query(&root, &query_request).await?)?)
         }
         "base.set_property" if req.params["key"] == "file.folder" => {
-            write::move_entry(&root, &req.params, &ctx.kiln).await
+            write::move_entry(&root, &req.params, &ctx.kiln, &writer).await
         }
-        "base.set_property" => write::set_property(&root, &req.params).await,
-        "base.reorder_groups" => write::reorder_groups(&root, &req.params).await,
-        "base.create_entry" => write::create_entry(&root, &req.params).await,
+        "base.set_property" => write::set_property_with(&root, &req.params, &writer).await,
+        "base.reorder_groups" => write::reorder_groups_with(&root, &req.params, &writer).await,
+        "base.create_entry" => write::create_entry_with(&root, &req.params, &writer).await,
         _ => anyhow::bail!("Unknown Bases method"),
     }
 }

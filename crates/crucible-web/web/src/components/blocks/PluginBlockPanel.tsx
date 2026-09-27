@@ -50,8 +50,7 @@ function offeredCommands(commands: PluginCommand[]): PluginCommand[] {
 }
 
 /**
- * A publication key is `<plugin>:<block>` by convention (kanban publishes
- * `kanban:board`). Split on the first colon so a panel can address the block;
+ * A publication key is `<plugin>:<block>` by convention. Split on the first colon so a panel can address the block;
  * a key with no colon addresses a block of the same name.
  */
 function blockNameOf(key: string): string {

@@ -486,13 +486,17 @@ impl AgentManager {
                         // cancelled turn drops this frame and fires the
                         // handle's own `Drop` guard.
                         let mut bracket = None;
-                        let call_result = Self::handle_tool_call_in_stream(
-                            &stream_ctx,
-                            &tool_call,
-                            call.map(|call| call.diffs).unwrap_or_default(),
-                            &mut bracket,
-                        )
-                        .await;
+                        let call_result = super::review_capture::CURRENT_CAPTURE
+                            .scope(
+                                (stream_ctx.session_id.clone(), std::cell::Cell::new(false)),
+                                Self::handle_tool_call_in_stream(
+                                    &stream_ctx,
+                                    &tool_call,
+                                    call.map(|call| call.diffs).unwrap_or_default(),
+                                    &mut bracket,
+                                ),
+                            )
+                            .await;
                         if let Some(bracket) = bracket {
                             stream_ctx.close_review_bracket(bracket, &id).await;
                         }

@@ -1,0 +1,345 @@
+{
+  "version": "1.14.2",
+  "timezone": "America/Chicago",
+  "files": {
+    "cases/a.md": "---\nstatus: todo\nscore: 2\nlabels: [a, b]\nchecked: true\n---\n[[cases/b]]\n",
+    "cases/b.md": "---\nstatus: done\nscore: 4\nlabels: [b]\nchecked: false\n---\n",
+    "cases/c.md": "---\nstatus: todo\nscore: 4\n---\n"
+  },
+  "cases": [
+    {
+      "id": "compose",
+      "base": {
+        "filters": {
+          "and": [
+            "file.inFolder('cases')",
+            "score >= 2"
+          ]
+        },
+        "formulas": {
+          "double": "score * 2"
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "filters": "status == 'todo'",
+            "order": [
+              "file.name",
+              "formula.double"
+            ],
+            "sort": [
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ]
+          }
+        ]
+      },
+      "path": "Corpus-compose.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/a.md\",\n    \"file name\": \"a\",\n    \"double\": \"4\"\n  },\n  {\n    \"path\": \"cases/c.md\",\n    \"file name\": \"c\",\n    \"double\": \"8\"\n  }\n]"
+        },
+        "csv": {
+          "output": "file name,double\na,4\nc,8"
+        },
+        "tsv": {
+          "output": "file name\tdouble\na\t4\nc\t8"
+        },
+        "md": {
+          "output": "| file name | double |\n| --------- | ------ |\n|     a     |   4    |\n|     c     |   8    |"
+        },
+        "paths": {
+          "output": "cases/a.md\ncases/c.md"
+        }
+      }
+    },
+    {
+      "id": "sort-limit",
+      "base": {
+        "filters": "file.inFolder('cases')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.score"
+            ],
+            "sort": [
+              {
+                "property": "note.score",
+                "direction": "DESC"
+              },
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ],
+            "limit": 2
+          }
+        ]
+      },
+      "path": "Corpus-sort-limit.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/b.md\",\n    \"file name\": \"b\",\n    \"score\": \"4\"\n  },\n  {\n    \"path\": \"cases/c.md\",\n    \"file name\": \"c\",\n    \"score\": \"4\"\n  }\n]"
+        },
+        "csv": {
+          "output": "file name,score\nb,4\nc,4"
+        },
+        "tsv": {
+          "output": "file name\tscore\nb\t4\nc\t4"
+        },
+        "md": {
+          "output": "| file name | score |\n| --------- | ----- |\n|     b     |   4   |\n|     c     |   4   |"
+        },
+        "paths": {
+          "output": "cases/b.md\ncases/c.md"
+        }
+      }
+    },
+    {
+      "id": "missing-values",
+      "base": {
+        "filters": "file.inFolder('cases')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.labels",
+              "note.checked",
+              "note.absent"
+            ],
+            "sort": [
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ]
+          }
+        ]
+      },
+      "path": "Corpus-missing-values.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/a.md\",\n    \"file name\": \"a\",\n    \"labels\": \"a, b\",\n    \"checked\": \"true\",\n    \"absent\": null\n  },\n  {\n    \"path\": \"cases/b.md\",\n    \"file name\": \"b\",\n    \"labels\": \"b\",\n    \"checked\": \"false\",\n    \"absent\": null\n  },\n  {\n    \"path\": \"cases/c.md\",\n    \"file name\": \"c\",\n    \"labels\": null,\n    \"checked\": null,\n    \"absent\": null\n  }\n]"
+        },
+        "csv": {
+          "output": "file name,labels,checked,absent\na,\"a, b\",true,\nb,b,false,\nc,,,"
+        },
+        "tsv": {
+          "output": "file name\tlabels\tchecked\tabsent\na\ta, b\ttrue\t\nb\tb\tfalse\t\nc\t\t\t"
+        },
+        "md": {
+          "output": "| file name | labels | checked | absent |\n| --------- | ------ | ------- | ------ |\n|     a     |  a, b  |  true   |        |\n|     b     |   b    |  false  |        |\n|     c     |        |         |        |"
+        },
+        "paths": {
+          "output": "cases/a.md\ncases/b.md\ncases/c.md"
+        }
+      }
+    },
+    {
+      "id": "list-groups",
+      "base": {
+        "filters": "file.inFolder('cases')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.labels"
+            ],
+            "groupBy": {
+              "property": "note.labels",
+              "direction": "ASC"
+            },
+            "sort": [
+              {
+                "property": "file.name",
+                "direction": "ASC"
+              }
+            ]
+          }
+        ]
+      },
+      "path": "Corpus-list-groups.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/a.md\",\n    \"file name\": \"a\",\n    \"labels\": \"a, b\"\n  },\n  {\n    \"path\": \"cases/b.md\",\n    \"file name\": \"b\",\n    \"labels\": \"b\"\n  },\n  {\n    \"path\": \"cases/c.md\",\n    \"file name\": \"c\",\n    \"labels\": null\n  }\n]"
+        },
+        "csv": {
+          "output": "file name,labels\na,\"a, b\"\nb,b\nc,"
+        },
+        "tsv": {
+          "output": "file name\tlabels\na\ta, b\nb\tb\nc\t"
+        },
+        "md": {
+          "output": "| file name | labels |\n| --------- | ------ |\n|     a     |  a, b  |\n|     b     |   b    |\n|     c     |        |"
+        },
+        "paths": {
+          "output": "cases/a.md\ncases/b.md\ncases/c.md"
+        }
+      }
+    },
+    {
+      "id": "this-file",
+      "base": {
+        "filters": "file.path == 'cases/a.md'",
+        "formulas": {
+          "host": "this.file.name"
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "formula.host"
+            ]
+          }
+        ]
+      },
+      "path": "Corpus-this-file.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/a.md\",\n    \"host\": null\n  }\n]"
+        },
+        "csv": {
+          "output": "host\n"
+        },
+        "tsv": {
+          "output": "host\n"
+        },
+        "md": {
+          "output": "| host |\n| ---- |\n|      |"
+        },
+        "paths": {
+          "output": "cases/a.md"
+        }
+      }
+    },
+    {
+      "id": "backlinks",
+      "base": {
+        "filters": "file.inFolder('cases') && file.hasLink(link('cases/b'))",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name"
+            ]
+          }
+        ]
+      },
+      "path": "Corpus-backlinks.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/a.md\",\n    \"file name\": \"a\"\n  }\n]"
+        },
+        "csv": {
+          "output": "file name\na"
+        },
+        "tsv": {
+          "output": "file name\na"
+        },
+        "md": {
+          "output": "| file name |\n| --------- |\n|     a     |"
+        },
+        "paths": {
+          "output": "cases/a.md"
+        }
+      }
+    },
+    {
+      "id": "empty-invalid-call",
+      "base": {
+        "filters": "false",
+        "formulas": {
+          "bad": "missingFunction()"
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "formula.bad"
+            ]
+          }
+        ]
+      },
+      "path": "Corpus-empty-invalid-call.base",
+      "formats": {
+        "json": {
+          "output": "[]"
+        },
+        "csv": {
+          "output": "bad"
+        },
+        "tsv": {
+          "output": "bad"
+        },
+        "md": {
+          "output": "| bad |\n| --- |"
+        },
+        "paths": {
+          "output": ""
+        }
+      }
+    },
+    {
+      "id": "missing-views",
+      "base": {
+        "filters": "file.inFolder('cases')"
+      },
+      "path": "Corpus-missing-views.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/a.md\",\n    \"file name\": \"a\"\n  },\n  {\n    \"path\": \"cases/b.md\",\n    \"file name\": \"b\"\n  },\n  {\n    \"path\": \"cases/c.md\",\n    \"file name\": \"c\"\n  }\n]"
+        },
+        "csv": {
+          "output": "file name\na\nb\nc"
+        },
+        "tsv": {
+          "output": "file name\na\nb\nc"
+        },
+        "md": {
+          "output": "| file name |\n| --------- |\n|     a     |\n|     b     |\n|     c     |"
+        },
+        "paths": {
+          "output": "cases/a.md\ncases/b.md\ncases/c.md"
+        }
+      }
+    },
+    {
+      "id": "empty-views",
+      "base": {
+        "views": [],
+        "filters": "file.inFolder('cases')"
+      },
+      "path": "Corpus-empty-views.base",
+      "formats": {
+        "json": {
+          "output": "[\n  {\n    \"path\": \"cases/a.md\",\n    \"file name\": \"a\"\n  },\n  {\n    \"path\": \"cases/b.md\",\n    \"file name\": \"b\"\n  },\n  {\n    \"path\": \"cases/c.md\",\n    \"file name\": \"c\"\n  }\n]"
+        },
+        "csv": {
+          "output": "file name\na\nb\nc"
+        },
+        "tsv": {
+          "output": "file name\na\nb\nc"
+        },
+        "md": {
+          "output": "| file name |\n| --------- |\n|     a     |\n|     b     |\n|     c     |"
+        },
+        "paths": {
+          "output": "cases/a.md\ncases/b.md\ncases/c.md"
+        }
+      }
+    }
+  ]
+}

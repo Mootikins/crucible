@@ -40,9 +40,10 @@ cru base create Tasks.base --kiln Work --name "First task"
 cru base set "tickets/First task.md" status '"done"' --kiln Work --ancestor-hash HASH
 ```
 
-`query` supports `table`, `json`, `csv`, `tsv`, `md` and `paths`. `--this Host.md`
-sets the embedding file. JSON includes typed values and each note's current
-`ancestor_hash`; use that hash for `set`. A stale hash refuses the whole edit.
+`query` supports `table`, `json`, `csv`, `tsv`, `md`, `paths` and `data`.
+JSON follows Obsidian's display-row format. `--format data` returns the full
+typed daemon result, including groups, summaries and each note's current
+`ancestor_hash`; use that hash for `set`. `--this Host.md` sets the host. A stale hash refuses the whole edit.
 `set --delete` removes a property. A value parses as JSON when possible,
 otherwise it is text.
 
@@ -64,12 +65,12 @@ is null. Filesystem events invalidate the query cache.
 **New item** creates a note from the base and view filters. New notes inherit
 literal property comparisons, tag and folder rules and displayed note
 properties; `newItemFolder` overrides the inferred folder. `newItemTemplate`
-provides initial note text. Existing names receive a numeric suffix.
+provides initial note text when explicit content is absent. Existing names receive a numeric suffix.
 
 Drag a kanban card between note-property groups to update frontmatter. The row's
 ancestor hash protects the edit. Moving to the empty group deletes the property;
 a list property receives a replacement list, including a one-item list for a
-scalar group. For `file.folder` groups, dragging moves the file through the daemon refactor path. Saved-base column headings can be dragged to write `groupOrder`, or reset with **Reset columns**. Inline column order is edited in the host note. Body bytes are preserved, including line endings. Writes use the
+scalar group. For `file.folder` groups, dragging moves the file through the daemon refactor path. Column headings can be dragged to write `groupOrder`, or reset with **Reset columns**. Inline column edits replace the matching fence using the host note's ancestor hash; ambiguous or stale fences are refused. Body bytes are preserved, including line endings. Writes use the
 same daemon lock and writer as the editor. Errors remain visible in the view.
 
 ## Expressions and compatibility
@@ -86,17 +87,47 @@ Obsidian's `.obsidian/types.json` supplies date and list property types when
 present. Unknown document, property and view options round-trip as YAML values;
 comments and original YAML whitespace are not preserved by serialization.
 
-The current implementation scans files on each query. It has no SQL prefilter
-or persistent file-facts migration. Date formatting supports the common
-Moment tokens (`YYYY`, `YY`, `MMMM`, `MMM`, `MM`, `DD`, `dddd`, `ddd`, `HH`, `hh`,
-`mm`, `ss`, `SSS`, `A`, `Z`) and bracketed literals. Unsupported format tokens
-and regex syntax produce errors; the regex engine is Rust's regex engine,
-not JavaScript's. HTML formula values are sanitized before web rendering.
+Card size, image fit/aspect ratio, kanban width/empty columns, list markers,
+indentation/separators and table row/column sizing follow saved view options.
+All layouts share typed value rendering, and group summaries appear with each
+group. Bare saved-base references use the daemon's canonical link resolution;
+queries return the resolved source identity for subsequent edits. Indexed
+embeds retain their heading/view fragments, including after a schema upgrade.
 
-Plugin write-policy hooks and migration of the existing kanban plugin are not implemented yet. Native
-Bases writes are human edits; no new agent or plugin write API bypasses the
-session review disposition. Full conformance against a running Obsidian app has
-not been established.
+The compatibility target is Obsidian 1.14.2. Versioned reference outputs and a
+live regeneration script are in `assets/fixtures/bases/`. Offline tests compare
+expressions, query/CLI formats, creation, and native summaries. Date arithmetic
+uses calendar month overflow; durations preserve months separately from elapsed
+time. Regex supports lookaround, backreferences and JavaScript replacement
+strings with a bounded backtracking budget. Formula work, depth and output
+allocations remain limited. This is a tested corpus, not a claim that every
+possible ECMAScript or Moment expression is equivalent. HTML values are
+sanitized before rendering.
+
+Queries still scan files. Index/prefilter/cache optimization is deliberately
+out of scope for this compatibility pass.
+
+## Lua and ticket policy
+
+`cru.kiln.query(kiln, options)` uses the same query contract. For writes,
+`cru.kiln.set_property`, `create_entry` and `ensure_base` require an explicit
+`options.session` id. Plugin tools receive that id in their second argument,
+`ctx.session_id`. The daemon checks the attached kiln, current trust/isolation,
+containment and the session's card, mode and operator permissions. An
+unattended call cannot answer a permission prompt. Apply mode records changes
+in the session review ledger; propose mode records a proposal without changing
+disk. `ensure_base` creates a valid `.base` only when absent.
+
+A synchronous `base:before_write` hook receives the mutation, kiln, path and
+proposed content; property edits also include `old_value`. Return nil to permit
+or `{cancel=true, reason="..."}` to refuse. Errors and timeouts refuse the
+write. `base:changed` broadcasts only after a change reaches disk. Both hooks
+are owned by their registering Lua source and cleared on reload.
+
+The shipped kanban plugin creates `tickets.base` through that API, queries
+native Bases, and provides optional WIP/transition policy. It no longer parses
+frontmatter, writes files directly or publishes a global board. Human web/CLI
+edits use the same Bases policy stage.
 
 The follow-up work and acceptance criteria are in [[Meta/Bases Compatibility Plan]].
 

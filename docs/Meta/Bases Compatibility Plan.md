@@ -1,191 +1,126 @@
 ---
 title: Bases Compatibility Plan
-description: Remaining compatibility, ownership, performance and plugin work after native Bases support.
+description: Compatibility work, evidence and the deferred indexing phase for native Bases.
 tags: [meta, plan, bases]
 ---
 
 # Bases Compatibility Plan
 
-The initial implementation is `6ae566dca`. It delivers daemon-owned queries,
-CLI output, web embeds and native views, entry creation, property edits and
-kanban moves. See [[Help/Query/Bases]] for supported behavior. This is a
-working implementation, not a completed Obsidian conformance claim.
+The initial native implementation is `6ae566dca`; the gap inventory is
+`ad9b93023`. The follow-up scope covers compatibility, canonical links,
+presentation and session-aware plugin operations. **Index optimization is
+explicitly deferred.** See [[Help/Query/Bases]] for the user contract.
 
-This plan follows the local scope and research notes dated 2026-09-25 in
-`thoughts/`. Those notes are gitignored. The tracked plan below records what
-remains without making them a prerequisite for a contributor.
+## Compatibility target and oracle
 
-## Evidence and priority
+The target is Obsidian **1.14.2**, English locale, America/Chicago timezone.
+The running desktop app, in an isolated disposable vault, produced the
+versioned files under `assets/fixtures/bases/`. The capture script invokes its
+registered CLI handlers and native table summary evaluation; no Obsidian
+implementation source is vendored.
 
-The implementation passed `just ci`: 9,714 Rust tests, 68 gated tests, feature
-and documentation checks, 3,464 frontend tests with coverage, 158 UI/story
-browser tests, and 120 live/served browser tests (67 skipped). These establish
-Crucible's behavior; they do not establish equivalence with Obsidian.
+The corpus contains expressions for every declared function plus Unicode,
+regex, duration, date, coercion and receiver cases; named queries in five CLI
+formats; entry creation and native kanban moves with captured file bytes; and every built-in summary
+over all rows, groups and empty sets. Offline gates compare those outputs.
+The live regeneration test is ignored with the required desktop/CDP setup
+named explicitly. The README records inputs and regeneration commands.
 
-| Priority | Gap | Consequence |
-| --- | --- | --- |
-| P0 | No live Obsidian golden outputs | Current fixtures cannot detect a consistently wrong interpretation of the spec. |
-| P0 | Bases has its own path/stem link resolver | Links and backlinks can disagree with the canonical SQLite link index. |
-| P0 | Saved source paths are resolved directly against the kiln | A bare embed naming a base in a subfolder can fail even when that base exists. |
-| P1 | Expression semantics are only partly verified | Regex, dates, Unicode, coercion and method edge cases can differ from Obsidian. |
-| P1 | Many view options are preserved but not rendered | Loading and saving an option does not mean the view honors it. |
-| P1 | Lua query/write bindings and policy lifecycle are absent | The old kanban plugin still runs its separate board implementation. |
-| P2 | Every query scans and hashes files | Large kilns and attachments make repeated queries expensive. |
+The CLI oracle has two context limitations: it enumerates Markdown, and it
+supplies no host for `this`. Native views retain attachments and use the base
+file or embedding note as `this`, following Obsidian's documented syntax.
+Creation compares paths, frontmatter values and exact body bytes; YAML
+indentation and null spelling are serializer choices. JSON display rows are
+compatible; `cru base query --format data` retains Crucible's typed API result.
 
-P0/P1 here rank follow-up work; they are not claims of security severity.
+## Canonical links and source identity
 
-## 1. Establish a versioned conformance corpus
+SQLite and Bases now share the daemon link resolver's normalization,
+exact/title/stem precedence and ambiguity handling, including Unicode case matching
+before and after rename. Bases supplies fresh file
+candidates without introducing an index prefilter. A bare saved-base reference
+can resolve into a subfolder; an ambiguous source is refused. Resolved source
+identity is returned with query results and used for subsequent mutations.
+Containment remains mandatory after resolution.
 
-Owner: daemon tests and `assets/fixtures/bases/`.
+Link occurrences retain heading/view fragments. Existing v2 link tables gain
+the fragment column and request a relink; fresh tables include it. Regression
+coverage includes migration/idempotence and stored fragments. Socket and HTTP
+fixtures exercise short saved-base references, named views and host context.
 
-Use a disposable Obsidian vault containing the existing input fixtures. Capture
-`base:query` output for named views and every CLI format, recording the exact
-Obsidian version, commands, timezone and property-type configuration. The first
-attempt to invoke the installed app did not yield usable CLI query output;
-no current fixture is a captured Obsidian result.
+## Expression, creation and summary corrections
 
-Add cases for global/view filter composition, `this`, formulas, every supported
-function and summary, null and missing values, links, attachments, sort ties,
-list-valued groups, limits and custom views. Capture new-entry and drag outcomes
-as file bytes as well as query output. Normalize only unavoidable timestamps
-and temporary paths; retain value types and ordering.
+Observed differences are pinned by failing reference comparisons and fixes:
+UTF-16 surrogate-pair escapes; falsey empty lists; note tag display; file names;
+regular-expression lookaround, backreferences and JavaScript replacements;
+calendar-month overflow, DST wall-time arithmetic and ambiguous/gap handling,
+locale week-year boundaries and typed durations/relative dates; missing/empty
+view defaults; property labels; multi-value creation inference; explicit
+content precedence; and built-in summary/empty-set behavior.
 
-Done when deterministic offline tests compare Crucible output to captured
-results, and an explicitly ignored live regeneration test names Obsidian as
-its prerequisite. Deliberately alter one expected value and observe failure.
-Pin the compatibility target before extending behavior from a newer app.
+Regex execution has a backtracking budget and a compiled-pattern size limit.
+Expression work, nesting and allocation limits remain. The corpus is evidence
+for the pinned cases, not proof that all ECMAScript regex or Moment locale
+behavior is equivalent. Unknown plugin view types are preserved and displayed
+with the documented table fallback.
 
-## 2. Restore canonical link and embed ownership
+## Native presentation
 
-Owner: daemon SQLite link index and note pipeline; core only for stored types.
+The query DTO projects card size, image/fit/aspect, kanban width/empty groups,
+list markers/indentation/separator and table row/column sizes. A shared typed
+cell renderer serves all layouts, including booleans, lists, links, images,
+icons and sanitized HTML. Overall and group summaries are shown.
 
-`bases/eval.rs::resolve` currently searches the query's scanned entries by exact
-path or unique stem. Replace that separate policy with the canonical link
-resolver. Cover title/case matching, duplicate stems, fragments, unresolved
-links, file/link equality and backlink direction. Do not teach clients another
-resolution rule.
+Saved and inline kanban column order can be edited. Inline writes use canonical
+parser fence spans and the host note ancestor; surrounding bytes and line
+endings survive. Duplicate matching fences and stale hosts are refused.
+WS-253 covers component behavior and actual browser layout, including narrow
+panels. Screenshots are inspected individually. The CLI is the terminal
+surface until a TUI note viewer exists.
 
-`bases/mod.rs::source_text` currently opens the supplied path directly. Resolve
-saved-base references through the same daemon owner, with explicit host context
-where required. Return the resolved source identity so query, create and
-column-order writes address the same file. Preserve containment after resolution.
+## Lua operations and kanban migration
 
-Persist an embed's heading/view fragment through link storage; the current web
-renderer extracts the view from source text, which does not prove the indexed
-representation retains it. Add any required schema migration and rebuild path.
+`cru.kiln.query`, `set_property`, `create_entry` and `ensure_base` delegate to
+the daemon. Writes require an explicit session id, avoiding reliance on the
+shared VM's ambient session slot. Plugin tool callbacks receive their host
+invocation context as their second argument.
 
-Done when a note can embed a named view in a subfolder through the real HTTP and
-socket paths, and links/backlinks agree with the canonical index before and
-after rename. Include ambiguous names and out-of-kiln targets. Keep mutations
-behind the existing ancestor-hash check and write door.
+The daemon checks attached kiln, current provider trust/isolation, filesystem
+scope and existing card/mode/operator permissions. It uses the session write
+disposition: apply writes enter the persisted review ledger; proposals leave
+disk unchanged and use the existing proposal store. An absent file remains
+absent on rejection, and an empty file remains empty. Repeated proposed edits
+compose, and pending entry names are reserved. Nested plugin edits retain the
+enclosing tool call’s review attribution.
 
-## 3. Close expression and creation mismatches
+`base:before_write` is a synchronous, bounded, fail-closed stage; nil permits
+and cancel refuses. `base:changed` is a typed broadcast emitted only after an
+applied write. The existing LuaSource registry owns registration and reload
+cleanup. Tests cross Lua -> daemon -> filesystem/review and cover stale
+ancestors, refusal, timeout, cleanup and proposals.
 
-Owner: core expression parser/types; daemon evaluator and entry writer.
+Kanban initializes `tickets.base` only if absent and uses native queries and
+writes. Optional WIP/transition rules use the policy stage. Manual frontmatter
+parsing, direct file writes and global board publication are removed; legacy
+web embeds route to the native base. General `cru.fs` cleanup is separate.
 
-Confirmed implementation differences:
+## Deferred: index optimization
 
-- Regex uses Rust `regex`, not ECMAScript semantics. Lookaround/backreferences
-  and supported flags need a compatibility decision backed by corpus cases.
-- Date formatting translates a finite subset of Moment tokens. Calendar month
-  offsets exist, but standalone month/year durations use 30/365-day values.
-- String escapes use scalar Unicode decoding; UTF-16 surrogate-pair escapes
-  need explicit coverage.
-- Function names have an exhaustive implementation gate, but that gate does
-  not prove all receiver types, overloads or edge cases match Obsidian.
-- Expression evaluation depends on selected rows: invalid calls can remain
-  undetected in an empty dataset. Separate document validation from evaluation
-  if the pinned reference rejects those calls at load time.
+Do not add this work to the compatibility pass:
 
-Audit against the corpus before labeling the following as defects: missing or
-empty `views`, default-view selection, locale/timezone/DST behavior, empty
-aggregates, list comparison/grouping, fractional durations, and coercion.
-For creation, cover all filter-inference rules, multi-value `containsAll` versus
-`containsAny`, property types, template precedence and empty-group overrides.
+- Persist filesystem mtime, ctime and size with migration/backfill and watcher
+  reconciliation. Index timestamps must never replace filesystem times.
+- Add only SQL prefilters proven equivalent to full expression evaluation.
+- Parse expressions once per query and avoid hashing every attachment on reads.
+- Scope cache invalidation to affected kilns while retaining gap reconciliation.
+- Compare indexed and scanning results over the same corpus, then benchmark
+  cold rebuilds and large-kiln latency, work and memory.
 
-Done when each confirmed mismatch has a red regression followed by a fix, with
-existing depth, work and allocation limits retained. Choose a regex implementation
-only after evaluating both compatibility and bounded execution. No silent
-translation into a second expression language.
+The broad `base_hash` to `ancestor_hash` wire/storage rename is also a separate
+optional migration. Existing proposals and offline payloads must not be changed
+incidentally.
 
-## 4. Honor native view options and typed values
-
-Owner: web presentation; daemon supplies configuration and query results.
-
-`BaseView` currently implements basic layouts. Unknown options round-trip, but
-card image/size controls, list formatting and table sizing are not fully
-interpreted. Cards/lists mostly stringify values; the table has richer HTML,
-image and link cells. Group summaries are returned but not presented alongside
-each group. Inline column order still requires editing source text.
-
-Inventory the pinned reference's built-in view options. Add typed configuration
-to the query contract for those that affect rendering, then implement them in
-the existing native components. Keep plugin view types preserved with an honest
-fallback; do not add a second plugin rendering registry.
-
-Done when each implemented option has a user story, component coverage and a
-browser assertion on the actual layout. Cover dates, booleans, lists, links,
-images, icons and sanitized HTML in each applicable view, narrow layouts,
-empty states and surfaced write refusals. Inspect screenshots individually.
-The CLI remains the terminal surface until a TUI note viewer exists.
-
-## 5. Add session-aware Lua operations, then migrate kanban
-
-Owner: daemon review/plugin lifecycle, Lua host API, shipped runtime plugin.
-
-Add `cru.kiln.query` and daemon-backed property/entry writes. Define how each
-call obtains kiln and session context. Agent/plugin writes must resolve the
-session's existing review disposition; do not expose the human direct-write
-RPC as a general plugin write bypass.
-
-A before-write policy needs a synchronous stage hook with a correlated result,
-timeout and cleanup. After-write notification is a broadcast event. Register
-both with their `LuaSource` and prove source cleanup on reload. Publish a
-successful change only after the write lands.
-
-Then migrate the kanban plugin: create `tickets.base` only when absent, remove
-manual frontmatter parsing and direct file writes, replace the global board
-publication with native Bases, and express WIP/transition rules as policy.
-Update host declarations, signature projection, Lua API docs and plugin README.
-
-Done when tests cross Lua -> daemon -> filesystem/review, proving apply,
-proposal, rejection, stale hashes, policy refusal, timeout and reload cleanup.
-Plugin migration depends on this API; it is not required to use native human
-Bases views today. General `cru.fs.write/edit` cleanup remains a separate issue.
-
-## 6. Index and optimize without changing answers
-
-Owner: daemon storage, pipeline and query planner.
-
-Persist actual filesystem `mtime`, `ctime` and `size` with migration/backfill
-and watcher reconciliation. Index the embed fragment from step 2. Introduce a
-conservative SQL prefilter only for predicates proven equivalent to the full
-evaluator; unsupported expressions must retain all candidate rows. Preserve
-attachments in an unfiltered base.
-
-Parse expressions once per query. Avoid hashing every attachment on every read;
-retain a reliable ancestor identity and recheck it on mutation. Scope cache
-invalidation to affected kilns while preserving stream-gap reconciliation.
-
-Done when the indexed and scan implementations produce the same corpus results
-and representative large-kiln benchmarks measure scan work, latency and memory.
-Test create/update/delete/rename, property-type changes and cold rebuilds.
-Index time must never substitute for filesystem modification time.
-
-## Delivery order and boundaries
-
-Suggested follow-up commits: conformance fixtures; canonical links and embed
-identity; expression/creation fixes in independently testable slices; native
-view options; Lua operations and policy lifecycle; kanban migration; indexed
-query optimization. Steps 3 and 4 depend on step 1. Plugin migration depends on
-step 5's API. Optimization comes after correctness and retains a comparison
-path during development.
-
-The broad wire/storage rename from `base_hash` to `ancestor_hash` remains a
-separate optional migration. The glossary and new Bases APIs already use
-ancestor terminology. Do not change existing stored proposals or offline
-outbox payloads incidentally.
-
-Reference: [Obsidian Bases syntax](https://obsidian.md/help/bases/syntax),
-[functions](https://obsidian.md/help/bases/functions), and
-[views](https://obsidian.md/help/bases/views).
+Reference: [Bases syntax](https://obsidian.md/help/bases/syntax),
+[functions](https://obsidian.md/help/bases/functions),
+[views](https://obsidian.md/help/bases/views), and
+[CLI](https://obsidian.md/help/cli).

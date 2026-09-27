@@ -168,6 +168,9 @@ pub struct LinkOccurrence {
     pub span_end: usize,
     /// Whether the occurrence is an embed (`![[...]]`)
     pub is_embed: bool,
+    /// Heading or named Base view following the target.
+    #[serde(default)]
+    pub heading_ref: Option<String>,
 }
 
 /// One directed edge in the note-link graph, deduped per (source, target,

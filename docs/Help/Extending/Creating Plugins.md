@@ -1011,3 +1011,35 @@ See [[Help/Task Management]] for a complete example plugin that demonstrates:
 - [[Help/Extending/Scripted UI]] - cru.oil UI building
 - [[Help/Config/Workspaces]] - Project and kiln security configuration
 - [[Extending Crucible]] - All extension points
+
+## Querying and editing Bases
+
+Use `cru.kiln.query(kiln, {source={path="Tasks.base"}, view="Board"})` for
+native Bases results. Inline sources use `{yaml="..."}` and may name the host
+with `["this"]="Host.md"`. Results contain typed rows, groups, summaries,
+view options, resolved source identity and ancestor hashes.
+
+Plugin tools receive `(args, ctx)`. Pass `ctx.session_id` explicitly for a write:
+
+```lua
+local function finish(args, ctx)
+    return cru.kiln.set_property(args.kiln, {
+        session = ctx.session_id, path = args.path, key = "status", value = "done",
+        ancestor_hash = args.ancestor_hash,
+    })
+end
+```
+
+`create_entry` accepts the same source/view plus `name`, optional `content` and
+`group`. `ensure_base` accepts `path` and valid `yaml`, and never replaces an
+existing base. All three require `session`; commands invoked without a session
+must report that requirement. Queries can optionally name a session to use its
+scope. The daemon checks attached kilns, trust, isolation and permissions.
+An unattended permission prompt is refused. The session's apply/propose mode
+controls whether bytes land or a proposal enters the Inbox.
+
+Use `cru.on("base:before_write", {key="my-policy"}, handler)` for synchronous
+policy: nil permits; `{cancel=true, reason="..."}` refuses. Errors and timeouts
+refuse too. Observe `base:changed` after applied writes. Registrations belong
+to their Lua source and are cleared on reload. See [[Help/Query/Bases]] and the
+shipped kanban plugin for the complete contract and a WIP policy example.

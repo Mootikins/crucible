@@ -320,6 +320,7 @@ async fn relink_kiln(root: &Path, store: &dyn crucible_core::storage::NoteStore)
                 span_start: parsed.body_offset + w.target_span.0,
                 span_end: parsed.body_offset + w.target_span.1,
                 is_embed: w.is_embed,
+                heading_ref: w.heading_ref.clone(),
             })
             .collect();
         if let Err(e) = store.reindex_links(&rec.path, &links).await {

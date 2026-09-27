@@ -124,6 +124,7 @@ mod tools_api;
 mod types;
 pub mod ui;
 mod vault;
+pub use vault::bases as bases_api;
 mod vec_api;
 mod ws;
 

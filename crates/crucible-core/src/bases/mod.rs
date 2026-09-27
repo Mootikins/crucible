@@ -1,6 +1,6 @@
 //! Obsidian Bases documents and expressions. Unknown view/plugin options round-trip.
 mod expression;
-pub use expression::{BaseValue, Expr};
+pub use expression::{human_duration, BaseValue, DurationValue, Expr};
 pub use BaseValue as Value;
 
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,12 @@ pub struct BaseFile {
 }
 impl BaseFile {
     pub fn parse(yaml: &str) -> anyhow::Result<Self> {
-        let result: Self = serde_yaml::from_str(yaml)?;
+        let mut result: Self = serde_yaml::from_str(yaml)?;
+        if result.views.is_empty() {
+            result.views.push(serde_yaml::from_str(
+                "type: table\nname: Table\nsort: [{property: file.name, direction: ASC}]",
+            )?);
+        }
         if let Some(f) = &result.filters {
             f.validate()?;
         }

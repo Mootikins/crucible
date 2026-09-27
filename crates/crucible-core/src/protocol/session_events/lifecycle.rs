@@ -354,6 +354,8 @@ event_payload! {
         /// knows the two paths are the same note. The reindex underneath it is a
         /// delete followed by an insert, so `note:deleted` and `note:created` fire
         /// for the same operation; this is the event that says they were a move.
+        /// A Bases mutation has reached disk. Proposed writes do not emit this.
+        "base:changed" => BaseChanged { path: String, change: Value },
         "note:renamed" => NoteRenamed { from: String, to: String },
         "webhook:received" => WebhookReceived {
             #[serde(default)]

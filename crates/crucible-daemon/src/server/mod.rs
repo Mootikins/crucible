@@ -1222,6 +1222,12 @@ impl Server {
             if let Err(e) = loader.upgrade_with_sessions(session_api) {
                 warn!("Failed to upgrade Lua sessions module: {}", e);
             }
+            if let Err(e) = crucible_lua::bases_api::register(
+                loader.executor().lua(),
+                Some(crate::bases::plugin_api::resolver(self.rpc_context.clone())),
+            ) {
+                warn!("Failed to bind Bases API: {e}");
+            }
             // `cru.log.notify` on the plugin VM goes to the hub unstamped;
             // the hub reads `opts.workspace` / `opts.kiln` or goes global.
             // One VM, one sink. A handler that wants a notification scoped to

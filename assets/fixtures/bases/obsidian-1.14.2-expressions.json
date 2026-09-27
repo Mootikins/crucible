@@ -1,0 +1,1217 @@
+{
+  "version": "1.14.2",
+  "timezone": "America/Chicago",
+  "transport": "running Obsidian registered base:query CLI handler via CDP",
+  "cases": [
+    {
+      "id": "Date",
+      "expression": "date('2025-01-01').year == 2025",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Duration",
+      "expression": "duration('1h') == duration('60m')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "File",
+      "expression": "file('notes/a.md').path == 'notes/a.md'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Link",
+      "expression": "link('notes/a.md') == file",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "List",
+      "expression": "list('one').length == 1",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Image",
+      "expression": "image('a.png').isType('image')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Icon",
+      "expression": "icon('plus').isType('icon')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "false"
+        }
+      ]
+    },
+    {
+      "id": "Html",
+      "expression": "html('<b>x</b>').isType('html')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "EscapeHTML",
+      "expression": "escapeHTML('<a>') == '&lt;a&gt;'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "If",
+      "expression": "if(true, 1, 0) == 1",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Max",
+      "expression": "max(1,4,2) == 4",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Min",
+      "expression": "min(1,4,2) == 1",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Now",
+      "expression": "now().isType('date')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Today",
+      "expression": "today().hour == 0",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Number",
+      "expression": "number('4.2') == 4.2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Random",
+      "expression": "random() >= 0 && random() < 1",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "IsTruthy",
+      "expression": "(1).isTruthy()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "IsType",
+      "expression": "true.isType('boolean')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "ToString",
+      "expression": "(123).toString() == '123'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Format",
+      "expression": "date('2025-01-01').format('YYYY-MM-DD') == '2025-01-01'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Time",
+      "expression": "date('2025-01-01 12:34:56').time() == '12:34:56'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Relative",
+      "expression": "now().relative().toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "a few seconds ago"
+        }
+      ]
+    },
+    {
+      "id": "IsEmpty",
+      "expression": "null.isEmpty()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Contains",
+      "expression": "[1,2].contains(2)",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "ContainsAll",
+      "expression": "'hello'.containsAll('h','e')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "ContainsAny",
+      "expression": "[1,2].containsAny(9,2)",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "StartsWith",
+      "expression": "'hello'.startsWith('he')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "EndsWith",
+      "expression": "'hello'.endsWith('lo')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Lower",
+      "expression": "'ABC'.lower() == 'abc'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Title",
+      "expression": "'hello world'.title() == 'Hello World'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Trim",
+      "expression": "' hi '.trim() == 'hi'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Replace",
+      "expression": "'a:b:c'.replace(/:/g,'-') == 'a-b-c'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Repeat",
+      "expression": "'ab'.repeat(2) == 'abab'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Reverse",
+      "expression": "[1,2].reverse()[0] == 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Slice",
+      "expression": "'hello'.slice(1,-1) == 'ell'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Split",
+      "expression": "'a,b,c'.split(',',2).length == 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Abs",
+      "expression": "(-5).abs() == 5",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Ceil",
+      "expression": "2.1.ceil() == 3",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Floor",
+      "expression": "2.9.floor() == 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Round",
+      "expression": "(-2.5).round() == -2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "ToFixed",
+      "expression": "3.14159.toFixed(2) == '3.14'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Filter",
+      "expression": "[1,2,3].filter(value > 1).length == 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Map",
+      "expression": "[1,2].map(value + index)[1] == 3",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Reduce",
+      "expression": "[1,2,3].reduce(acc + value,0) == 6",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Flat",
+      "expression": "[1,[2,3]].flat().length == 3",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Join",
+      "expression": "[1,2].join('-') == '1-2'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Sort",
+      "expression": "[10,2,1].sort()[0] == 1",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Unique",
+      "expression": "[1,1,2].unique().length == 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "AsFile",
+      "expression": "link('notes/a.md').asFile() == file",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "LinksTo",
+      "expression": "link('notes/a.md').linksTo(file)",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "AsLink",
+      "expression": "file.asLink('A') == file",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "HasLink",
+      "expression": "file.hasLink('notes/a.md')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "HasProperty",
+      "expression": "file.hasProperty('status')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "HasTag",
+      "expression": "file.hasTag('work')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "InFolder",
+      "expression": "file.inFolder('notes')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Keys",
+      "expression": "file.properties.keys().contains('status')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Values",
+      "expression": "file.properties.values().contains('todo')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Matches",
+      "expression": "/abc/i.matches('ABC')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Mean",
+      "expression": "[1,2,3].mean() == 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "FileName",
+      "expression": "file.name",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "a"
+        }
+      ]
+    },
+    {
+      "id": "StringLength",
+      "expression": "'😀'.length",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2"
+        }
+      ]
+    },
+    {
+      "id": "Utf16Escape",
+      "expression": "'\\uD83D\\uDE00' == '😀'",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Lookahead",
+      "expression": "/a(?=b)/.matches('ab')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Lookbehind",
+      "expression": "/(?<=a)b/.matches('ab')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "Backreference",
+      "expression": "/(a)\\1/.matches('aa')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "ReplaceCapture",
+      "expression": "'John Smith'.replace(/(\\w+) (\\w+)/, '$2, $1')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Smith, John"
+        }
+      ]
+    },
+    {
+      "id": "ReplaceMatch",
+      "expression": "'abc'.replace(/b/, '[$&]')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "a[b]c"
+        }
+      ]
+    },
+    {
+      "id": "FormatExtra",
+      "expression": "date('2024-02-29 13:04:05').format('M D Do d dd DDD Q h H m s a')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2 29 29th 4 Th 60 1 1 13 4 5 pm"
+        }
+      ]
+    },
+    {
+      "id": "MonthDuration",
+      "expression": "number(duration('1M'))",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Unable to convert \"Duration\" to a number."
+        }
+      ]
+    },
+    {
+      "id": "EmptyMean",
+      "expression": "[].mean()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": null
+        }
+      ]
+    },
+    {
+      "id": "EmptyMax",
+      "expression": "max()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": null
+        }
+      ]
+    },
+    {
+      "id": "FalsyList",
+      "expression": "[].isTruthy()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "false"
+        }
+      ]
+    },
+    {
+      "id": "FalsyObject",
+      "expression": "file.properties.isTruthy()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "FalsyZero",
+      "expression": "(0).isEmpty()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "false"
+        }
+      ]
+    },
+    {
+      "id": "ListString",
+      "expression": "[1,2,null].toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "1, 2, null"
+        }
+      ]
+    },
+    {
+      "id": "ObjectString",
+      "expression": "file.properties.toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "{\"status\":\"todo\",\"tags\":\"#work/deep\"}"
+        }
+      ]
+    },
+    {
+      "id": "NullString",
+      "expression": "null.toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "null"
+        }
+      ]
+    },
+    {
+      "id": "NumberNull",
+      "expression": "number(null)",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": null
+        }
+      ]
+    },
+    {
+      "id": "UnknownCall",
+      "expression": "(42).noSuchMethod()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Cannot find function \"noSuchMethod\" on type Number"
+        }
+      ]
+    },
+    {
+      "id": "ThisNull",
+      "expression": "this == null",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "NestedFlat",
+      "expression": "[1,[2,[3]]].flat().toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "1, 2, 3"
+        }
+      ]
+    },
+    {
+      "id": "DurationMonthAdd",
+      "expression": "(date('2024-01-31') + duration('1M')).format('YYYY-MM-DD')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-03-02"
+        }
+      ]
+    },
+    {
+      "id": "TagType",
+      "expression": "note.tags[0].isType('string')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "TagName",
+      "expression": "note.tags[0].toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "#work/deep"
+        }
+      ]
+    },
+    {
+      "id": "TagIsLink",
+      "expression": "note.tags[0].isType('link')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "false"
+        }
+      ]
+    },
+    {
+      "id": "IconType",
+      "expression": "icon('plus').isType('html')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "false"
+        }
+      ]
+    },
+    {
+      "id": "IconString",
+      "expression": "icon('plus').toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "plus"
+        }
+      ]
+    },
+    {
+      "id": "RelativeType",
+      "expression": "now().relative().isType('date')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "DurationMillis",
+      "expression": "duration('1M').toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "a month"
+        }
+      ]
+    },
+    {
+      "id": "DateMonthString",
+      "expression": "(date('2024-01-31') + '1M').format('YYYY-MM-DD')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-03-02"
+        }
+      ]
+    },
+    {
+      "id": "IconStringType",
+      "expression": "icon('plus').isType('string')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "true"
+        }
+      ]
+    },
+    {
+      "id": "IconUpperType",
+      "expression": "icon('plus').isType('Icon')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "false"
+        }
+      ]
+    },
+    {
+      "id": "MonthDays",
+      "expression": "((date('2024-01-01') + '1M') - date('2024-01-01')) / 86400000",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "a few seconds"
+        }
+      ]
+    },
+    {
+      "id": "YearDays",
+      "expression": "((date('2024-01-01') + '1y') - date('2024-01-01')) / 86400000",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "a few seconds"
+        }
+      ]
+    },
+    {
+      "id": "FractionalMonthDays",
+      "expression": "((date('2024-01-01') + '0.5M') - date('2024-01-01')) / 86400000",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Invalid operator between String and Date"
+        }
+      ]
+    },
+    {
+      "id": "FractionDefault",
+      "expression": "1 / 3",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "0.3333333333333333"
+        }
+      ]
+    },
+    {
+      "id": "FractionString",
+      "expression": "(1 / 3).toString()",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "0.3333333333333333"
+        }
+      ]
+    },
+    {
+      "id": "SmallNumber",
+      "expression": "0.0001",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "0.0001"
+        }
+      ]
+    },
+    {
+      "id": "DateDefault",
+      "expression": "date('2024-01-01')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-01-01"
+        }
+      ]
+    },
+    {
+      "id": "DurationRatio",
+      "expression": "duration('2h') / duration('1h')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Invalid operator between Duration and Duration"
+        }
+      ]
+    },
+    {
+      "id": "DurationProduct",
+      "expression": "duration('2h') * duration('1h')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Invalid operator between Duration and Duration"
+        }
+      ]
+    },
+    {
+      "id": "DurationNumberAdd",
+      "expression": "duration('2h') + 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Invalid operator between Duration and Number"
+        }
+      ]
+    },
+    {
+      "id": "NumberDurationProduct",
+      "expression": "2 * duration('2h')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Invalid operator between Number and Duration"
+        }
+      ]
+    },
+    {
+      "id": "DurationRemainder",
+      "expression": "duration('3h') % duration('2h')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "Error: Invalid operator between Duration and Duration"
+        }
+      ]
+    },
+    {
+      "id": "DurationDivide",
+      "expression": "duration('2h') / 2",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "an hour"
+        }
+      ]
+    },
+    {
+      "id": "LinkIcon",
+      "expression": "link('notes/a.md', icon('plus'))",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "[[notes/a.md|plus]]"
+        }
+      ]
+    },
+    {
+      "id": "LocaleWeekYearEnd",
+      "expression": "date('2024-12-29').format('w ww gggg gg W GGGG')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "1 01 2025 25 52 2024"
+        }
+      ]
+    },
+    {
+      "id": "LocaleWeekYearStart",
+      "expression": "date('2025-01-01').format('w ww gggg gg W GGGG')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "1 01 2025 25 1 2025"
+        }
+      ]
+    },
+    {
+      "id": "RegexUnmatchedNamed",
+      "expression": "\"b\".replace(/(?<a>a)?b/,\"[$<a>]\")",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "[]"
+        }
+      ]
+    },
+    {
+      "id": "RegexUnknownNamed",
+      "expression": "\"b\".replace(/(?<a>a)?b/,\"[$<missing>]\")",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "[]"
+        }
+      ]
+    },
+    {
+      "id": "RegexLeadingZeroCapture",
+      "expression": "\"ab\".replace(/(a)(b)/,\"$02$01\")",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "ba"
+        }
+      ]
+    },
+    {
+      "id": "DstSpringDay",
+      "expression": "(date('2024-03-10') + '1d').format('YYYY-MM-DD HH:mm')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-03-11 00:00"
+        }
+      ]
+    },
+    {
+      "id": "DstFallDay",
+      "expression": "(date('2024-11-03') + '1d').format('YYYY-MM-DD HH:mm')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-11-04 00:00"
+        }
+      ]
+    },
+    {
+      "id": "DstSpringHours",
+      "expression": "(date('2024-03-10') + '24h').format('YYYY-MM-DD HH:mm')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-03-11 00:00"
+        }
+      ]
+    },
+    {
+      "id": "DateOnlyEpoch",
+      "expression": "number(date('2024-01-01'))",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "1704088800000"
+        }
+      ]
+    },
+    {
+      "id": "DateTimeEpoch",
+      "expression": "number(date('2024-01-01 12:30:00'))",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "1704133800000"
+        }
+      ]
+    },
+    {
+      "id": "DateUtcFields",
+      "expression": "date('2024-01-01T12:30:00Z').format('YYYY-MM-DD HH:mm Z')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-01-01 06:30 -06:00"
+        }
+      ]
+    },
+    {
+      "id": "DstDateTimeHours",
+      "expression": "(date('2024-03-10 01:00:00') + '24h').format('YYYY-MM-DD HH:mm')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-03-11 01:00"
+        }
+      ]
+    },
+    {
+      "id": "DstGapParse",
+      "expression": "date('2024-03-10 02:30:00').format('YYYY-MM-DD HH:mm')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-03-10 03:30"
+        }
+      ]
+    },
+    {
+      "id": "DstGapAdd",
+      "expression": "(date('2024-03-10 01:30:00') + '1h').format('YYYY-MM-DD HH:mm')",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "2024-03-10 03:30"
+        }
+      ]
+    },
+    {
+      "id": "DstAmbiguous",
+      "expression": "number(date('2024-11-03 01:30:00'))",
+      "output": [
+        {
+          "path": "notes/a.md",
+          "result": "1730615400000"
+        }
+      ]
+    }
+  ]
+}

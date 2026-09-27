@@ -3,6 +3,60 @@ use anyhow::{bail, ensure, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DurationValue {
+    pub months: f64,
+    pub milliseconds: f64,
+}
+impl DurationValue {
+    pub fn millis(milliseconds: f64) -> Self {
+        Self {
+            months: 0.0,
+            milliseconds,
+        }
+    }
+    pub fn approximate_millis(self) -> f64 {
+        self.milliseconds + self.months * 30.436875 * 86_400_000.0
+    }
+    pub fn scaled(self, factor: f64) -> Self {
+        Self {
+            months: self.months * factor,
+            milliseconds: self.milliseconds * factor,
+        }
+    }
+}
+/// English relative time vocabulary used by the pinned reference's default locale.
+pub fn human_duration(milliseconds: f64) -> String {
+    let seconds = (milliseconds.abs() / 1000.0).round();
+    let minutes = (seconds / 60.0).round();
+    let hours = (minutes / 60.0).round();
+    let days = (hours / 24.0).round();
+    if seconds < 45.0 {
+        "a few seconds".into()
+    } else if seconds < 90.0 {
+        "a minute".into()
+    } else if minutes < 45.0 {
+        format!("{minutes} minutes")
+    } else if minutes < 90.0 {
+        "an hour".into()
+    } else if hours < 22.0 {
+        format!("{hours} hours")
+    } else if hours < 36.0 {
+        "a day".into()
+    } else if days < 26.0 {
+        format!("{days} days")
+    } else if days < 46.0 {
+        "a month".into()
+    } else if days < 320.0 {
+        format!("{} months", (days / 30.436875).round())
+    } else if days < 548.0 {
+        "a year".into()
+    } else {
+        format!("{} years", (days / 365.2425).round())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "openapi", schema(as = BaseValue, no_recursion))]
@@ -13,13 +67,17 @@ pub enum BaseValue {
     Number(f64),
     String(String),
     Date(i64),
-    Duration(f64),
+    DateOnly(i64),
+    Duration(#[cfg_attr(feature = "openapi", schema(inline))] DurationValue),
+    RelativeDate(i64),
     List(Vec<BaseValue>),
     Object(BTreeMap<String, BaseValue>),
     File(String),
     Link {
         path: String,
         display: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display_value: Option<Box<BaseValue>>,
     },
     Regexp {
         pattern: String,
@@ -42,6 +100,7 @@ impl BaseValue {
                 Self::Link {
                     path: path.into(),
                     display,
+                    display_value: None,
                 }
             }
             serde_json::Value::String(s) => Self::String(s.clone()),
@@ -57,7 +116,9 @@ impl BaseValue {
         match self {
             Self::Null => false,
             Self::Boolean(b) => *b,
-            Self::Number(n) | Self::Duration(n) => *n != 0.0 && !n.is_nan(),
+            Self::Number(n) => *n != 0.0 && !n.is_nan(),
+            Self::Duration(n) => n.approximate_millis() != 0.0,
+            Self::List(xs) => !xs.is_empty(),
             Self::String(s) => !s.is_empty(),
             _ => true,
         }
@@ -75,16 +136,43 @@ impl BaseValue {
         match self {
             Self::Null => "null".into(),
             Self::Boolean(b) => b.to_string(),
-            Self::Number(n) | Self::Duration(n) => n.to_string(),
+            Self::Number(n) => n.to_string(),
+            Self::Duration(n) => human_duration(n.approximate_millis()),
+            Self::RelativeDate(t) => {
+                let delta = chrono::Utc::now().timestamp_millis() - t;
+                let text = human_duration(delta as f64);
+                if delta >= 0 {
+                    format!("{text} ago")
+                } else {
+                    format!("in {text}")
+                }
+            }
             Self::String(s) | Self::File(s) | Self::Html(s) | Self::Icon(s) | Self::Image(s) => {
                 s.clone()
             }
-            Self::Link { path, display } => display.as_ref().unwrap_or(path).clone(),
-            Self::Date(t) => chrono::DateTime::from_timestamp_millis(*t)
-                .map(|t| t.to_rfc3339())
+            Self::Link { path, display, .. } => match display {
+                Some(display) => format!("[[{path}|{display}]]"),
+                None => format!("[[{path}]]"),
+            },
+            Self::Date(t) | Self::DateOnly(t) => chrono::DateTime::from_timestamp_millis(*t)
+                .map(|t| {
+                    t.with_timezone(&chrono::Local)
+                        .format(if matches!(self, Self::DateOnly(_)) {
+                            "%Y-%m-%d"
+                        } else {
+                            "%Y-%m-%dT%H:%M:%S"
+                        })
+                        .to_string()
+                })
                 .unwrap_or_default(),
             Self::List(v) => v.iter().map(Self::text).collect::<Vec<_>>().join(", "),
-            Self::Object(_) => "[object Object]".into(),
+            Self::Object(values) => serde_json::to_string(
+                &values
+                    .iter()
+                    .map(|(k, v)| (k, v.text()))
+                    .collect::<BTreeMap<_, _>>(),
+            )
+            .unwrap_or_default(),
             Self::Regexp { pattern, flags } => format!("/{pattern}/{flags}"),
         }
     }
@@ -186,7 +274,23 @@ impl Parser<'_> {
                                 })?,
                             );
                         }
-                        let code = u32::from_str_radix(&digits, 16)?;
+                        let mut code = u32::from_str_radix(&digits, 16)?;
+                        if (0xD800..=0xDBFF).contains(&code) {
+                            ensure!(
+                                self.bump() == Some('\\') && self.bump() == Some('u'),
+                                "Expected low surrogate escape"
+                            );
+                            let mut low = String::new();
+                            for _ in 0..4 {
+                                low.push(
+                                    self.bump()
+                                        .ok_or_else(|| anyhow::anyhow!("Unterminated surrogate"))?,
+                                );
+                            }
+                            let low = u32::from_str_radix(&low, 16)?;
+                            ensure!((0xDC00..=0xDFFF).contains(&low), "Invalid low surrogate");
+                            code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                        }
                         out.push(
                             char::from_u32(code)
                                 .ok_or_else(|| anyhow::anyhow!("Invalid unicode scalar"))?,

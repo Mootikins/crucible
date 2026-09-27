@@ -403,6 +403,7 @@ fn a_fresh_database_has_every_kiln_table_after_migrations_alone() {
             "span_start",
             "span_end",
             "kind",
+            "heading_ref",
             "is_ambiguous",
         ],
         "note_links v2 must exist without SqliteNoteStore::apply_schema"

@@ -1,7 +1,7 @@
 use super::Entry;
 use anyhow::{bail, ensure, Result};
 use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike};
-use crucible_core::bases::{Expr, Value};
+use crucible_core::bases::{DurationValue, Expr, Value};
 use std::collections::BTreeMap;
 use strum::{EnumIter, EnumString};
 
@@ -313,22 +313,17 @@ impl<'a> Eval<'a> {
         }
     }
     fn resolve(&self, path: &str) -> Option<&Entry> {
-        let path = path.split('#').next().unwrap_or(path);
-        self.entries.iter().find(|e| e.path == path).or_else(|| {
-            let matches: Vec<_> = self
-                .entries
+        let resolved = crate::storage::sqlite::link_index::resolve_candidates(
+            path,
+            self.entries
                 .iter()
-                .filter(|e| {
-                    e.path.strip_suffix(".md") == Some(path)
-                        || std::path::Path::new(&e.path)
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            == Some(path)
-                })
-                .collect();
-            (matches.len() == 1).then(|| matches[0])
-        })
+                .map(|e| (e.path.as_str(), e.title.as_str())),
+        );
+        resolved
+            .resolved_target
+            .and_then(|p| self.entries.iter().find(|e| e.path == p))
     }
+
     fn path(&self, v: &Value) -> Option<String> {
         match v {
             Value::File(p) | Value::Link { path: p, .. } | Value::String(p) => {
@@ -338,6 +333,10 @@ impl<'a> Eval<'a> {
         }
     }
     fn equal(&self, a: &Value, b: &Value) -> bool {
+        if let (Ok(a), Ok(b)) = (date_num(a), date_num(b)) {
+            return a == b;
+        }
+
         if matches!(a, Value::Link { .. } | Value::File(_))
             && matches!(b, Value::Link { .. } | Value::File(_))
         {
@@ -370,7 +369,7 @@ impl<'a> Eval<'a> {
                     "properties" => Value::Object(e.properties.clone()),
                     "path" => Value::String(e.path.clone()),
                     "name" => Value::String(
-                        std::path::Path::new(&path)
+                        std::path::Path::new(path.strip_suffix(".md").unwrap_or(&path))
                             .file_name()
                             .unwrap_or_default()
                             .to_string_lossy()
@@ -407,6 +406,7 @@ impl<'a> Eval<'a> {
                             .map(|p| Value::Link {
                                 path: p.clone(),
                                 display: None,
+                                display_value: None,
                             })
                             .collect(),
                     ),
@@ -425,7 +425,7 @@ impl<'a> Eval<'a> {
                     _ => e.properties.get(&key).cloned().unwrap_or(Value::Null),
                 }
             }
-            Value::Date(t) => {
+            Value::Date(t) | Value::DateOnly(t) | Value::RelativeDate(t) => {
                 let d = Local
                     .timestamp_millis_opt(t)
                     .single()
@@ -460,18 +460,32 @@ impl<'a> Eval<'a> {
                     _ => ord.is_le(),
                 })
             }
-            "+" | "-" if matches!(a, Date(_)) => {
-                let Date(t) = a else { unreachable!() };
+            "+" | "-" if matches!(a, Date(_) | DateOnly(_) | RelativeDate(_)) => {
+                let (Date(t) | DateOnly(t) | RelativeDate(t)) = a else {
+                    unreachable!()
+                };
                 let sign = if op == "+" { 1 } else { -1 };
                 match b {
-                    Date(u) if op == "-" => Number((t - u) as f64),
+                    Date(u) | DateOnly(u) | RelativeDate(u) if op == "-" => {
+                        Duration(DurationValue::millis((t - u) as f64))
+                    }
                     String(s) => Date(offset_date(t, &s, sign)?),
-                    Duration(d) => Date(t + sign * d as i64),
+                    Duration(d) => Date(offset_duration(t, d, sign)?),
                     _ => bail!("Dates require a duration"),
                 }
             }
             "+" if matches!(a, String(_)) || matches!(b, String(_)) => String(a.text() + &b.text()),
             "+" | "-" | "*" | "/" | "%" => {
+                match (&a, &b) {
+                    (Duration(_), Duration(_)) => {
+                        ensure!(matches!(op, "+" | "-"), "Invalid duration operator")
+                    }
+                    (Duration(_), Number(_)) => {
+                        ensure!(matches!(op, "*" | "/"), "Invalid duration operator")
+                    }
+                    (Duration(_), _) | (_, Duration(_)) => bail!("Invalid duration operand"),
+                    _ => {}
+                }
                 let x = num(&a)?;
                 let y = num(&b)?;
                 let n = match op {
@@ -482,8 +496,20 @@ impl<'a> Eval<'a> {
                     _ => x % y,
                 };
                 ensure!(n.is_finite(), "Arithmetic result is not finite");
-                if matches!(a, Duration(_)) {
-                    Duration(n)
+                if let Duration(d) = a {
+                    if let Duration(e) = b {
+                        Duration(DurationValue {
+                            months: d.months + if op == "-" { -e.months } else { e.months },
+                            milliseconds: d.milliseconds
+                                + if op == "-" {
+                                    -e.milliseconds
+                                } else {
+                                    e.milliseconds
+                                },
+                        })
+                    } else {
+                        Duration(d.scaled(if op == "/" { 1.0 / y } else { y }))
+                    }
                 } else {
                     Number(n)
                 }
@@ -520,31 +546,46 @@ impl<'a> Eval<'a> {
             IsEmpty => Value::Boolean(recv.empty()),
             IsType => Value::Boolean(type_name(recv) == arg(0)?.text()),
             ToString => Value::String(recv.text()),
-            Number => Value::Number(match arg(0)? {
-                Value::Boolean(b) => {
-                    if *b {
-                        1.0
-                    } else {
-                        0.0
-                    }
+            Number => {
+                if matches!(arg(0)?, Value::Null) {
+                    Value::Null
+                } else {
+                    Value::Number(match arg(0)? {
+                        Value::Boolean(b) => {
+                            if *b {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        Value::Null => 0.0,
+                        Value::String(s) if s.trim().is_empty() => 0.0,
+                        Value::String(s) => s.trim().parse()?,
+                        Value::Duration(_) => bail!("Unable to convert duration to number"),
+                        v => num(v)?,
+                    })
                 }
-                Value::Null => 0.0,
-                Value::String(s) if s.trim().is_empty() => 0.0,
-                Value::String(s) => s.trim().parse()?,
-                v => num(v)?,
-            }),
+            }
             List => match arg(0)? {
                 Value::List(xs) => Value::List(xs.clone()),
                 v => Value::List(vec![v.clone()]),
             },
             Now => Value::Date(self.now),
-            Today => Value::Date(midnight(self.now)?),
+            Today => Value::DateOnly(midnight(self.now)?),
             Random => Value::Number(rand::random::<f64>()),
-            Date => Value::Date(if receiver.is_some() {
-                midnight(date_num(recv)?)?
-            } else {
-                parse_date(&arg(0)?.text())?
-            }),
+            Date => {
+                if receiver.is_some() {
+                    Value::DateOnly(midnight(date_num(recv)?)?)
+                } else {
+                    let text = arg(0)?.text();
+                    let time = parse_date(&text)?;
+                    if text.len() == 10 {
+                        Value::DateOnly(time)
+                    } else {
+                        Value::Date(time)
+                    }
+                }
+            }
             Duration => Value::Duration(duration(&arg(0)?.text())?),
             File | AsFile => {
                 let v = if receiver.is_some() { recv } else { arg(0)? };
@@ -555,6 +596,10 @@ impl<'a> Eval<'a> {
             Link | AsLink => {
                 let v = if receiver.is_some() { recv } else { arg(0)? };
                 Value::Link {
+                    display_value: args
+                        .get(if receiver.is_some() { 0 } else { 1 })
+                        .cloned()
+                        .map(Box::new),
                     path: self.path(v).unwrap_or(v.text()),
                     display: args
                         .get(if receiver.is_some() { 0 } else { 1 })
@@ -621,12 +666,7 @@ impl<'a> Eval<'a> {
                 let replacement = arg(1)?.text();
                 Value::String(match arg(0)? {
                     Value::Regexp { pattern, flags } => {
-                        let re = regex(pattern, flags)?;
-                        if flags.contains('g') {
-                            re.replace_all(&s, replacement.as_str()).into()
-                        } else {
-                            re.replace(&s, replacement.as_str()).into()
-                        }
+                        super::regexp::Pattern::new(pattern, flags)?.replace(&s, &replacement)?
                     }
                     v => s.replace(&v.text(), &replacement),
                 })
@@ -640,10 +680,9 @@ impl<'a> Eval<'a> {
                     .transpose()?
                     .unwrap_or(usize::MAX as f64) as usize;
                 let parts: Vec<String> = match sep {
-                    Value::Regexp { pattern, flags } => regex(pattern, flags)?
-                        .split(&s)
-                        .map(str::to_owned)
-                        .collect(),
+                    Value::Regexp { pattern, flags } => {
+                        super::regexp::Pattern::new(pattern, flags)?.split(&s, max)?
+                    }
                     v if v.text().is_empty() => s.chars().map(|c| c.to_string()).collect(),
                     v => s.split(&v.text()).map(str::to_owned).collect(),
                 };
@@ -757,7 +796,9 @@ impl<'a> Eval<'a> {
                 let Value::Regexp { pattern, flags } = recv else {
                     bail!("matches requires a regex")
                 };
-                Value::Boolean(regex(pattern, flags)?.is_match(&arg(0)?.text()))
+                Value::Boolean(
+                    super::regexp::Pattern::new(pattern, flags)?.matches(&arg(0)?.text())?,
+                )
             }
             HasLink | LinksTo | HasTag | HasProperty | InFolder => {
                 let e = self.path(recv).and_then(|p| self.resolve(&p));
@@ -787,34 +828,17 @@ impl<'a> Eval<'a> {
                     false
                 })
             }
-            Format | Time | Relative => {
+            Relative => Value::RelativeDate(date_num(recv)?),
+            Format | Time => {
                 let t = date_num(recv)?;
                 let d = Local
                     .timestamp_millis_opt(t)
                     .single()
                     .ok_or_else(|| anyhow::anyhow!("Invalid date"))?;
-                Value::String(match f {
-                    Format => d.format(&moment_format(&arg(0)?.text())?).to_string(),
-                    Time => d.format("%H:%M:%S").to_string(),
-                    Relative => {
-                        let secs = (self.now - t) / 1000;
-                        let (n, unit) = if secs.abs() < 60 {
-                            (secs, "second")
-                        } else if secs.abs() < 3600 {
-                            (secs / 60, "minute")
-                        } else if secs.abs() < 86400 {
-                            (secs / 3600, "hour")
-                        } else {
-                            (secs / 86400, "day")
-                        };
-                        format!(
-                            "{} {unit}{} {}",
-                            n.abs(),
-                            if n.abs() == 1 { "" } else { "s" },
-                            if n >= 0 { "ago" } else { "from now" }
-                        )
-                    }
-                    _ => unreachable!(),
+                Value::String(if matches!(f, Time) {
+                    d.format("%H:%M:%S").to_string()
+                } else {
+                    super::date_format::format(d, &arg(0)?.text())?
                 })
             }
         })
@@ -826,19 +850,23 @@ pub fn compare(a: &Value, b: &Value) -> std::cmp::Ordering {
         (Value::Null, _) => std::cmp::Ordering::Less,
         (_, Value::Null) => std::cmp::Ordering::Greater,
         (Value::Number(a), Value::Number(b)) => a.total_cmp(b),
-        (Value::Date(a), Value::Date(b)) => a.cmp(b),
+        (
+            Value::Date(a) | Value::DateOnly(a) | Value::RelativeDate(a),
+            Value::Date(b) | Value::DateOnly(b) | Value::RelativeDate(b),
+        ) => a.cmp(b),
         _ => a.text().cmp(&b.text()),
     }
 }
 fn num(v: &Value) -> Result<f64> {
     match v {
-        Value::Number(n) | Value::Duration(n) => Ok(*n),
-        Value::Date(n) => Ok(*n as f64),
+        Value::Number(n) => Ok(*n),
+        Value::Duration(n) => Ok(n.approximate_millis()),
+        Value::Date(n) | Value::DateOnly(n) | Value::RelativeDate(n) => Ok(*n as f64),
         _ => bail!("Expected number, got {}", type_name(v)),
     }
 }
 fn date_num(v: &Value) -> Result<i64> {
-    if let Value::Date(t) = v {
+    if let Value::Date(t) | Value::DateOnly(t) | Value::RelativeDate(t) = v {
         Ok(*t)
     } else {
         bail!("Expected date")
@@ -857,7 +885,7 @@ fn type_name(v: &Value) -> &'static str {
         Value::Boolean(_) => "boolean",
         Value::Number(_) => "number",
         Value::String(_) => "string",
-        Value::Date(_) => "date",
+        Value::Date(_) | Value::DateOnly(_) | Value::RelativeDate(_) => "date",
         Value::Duration(_) => "duration",
         Value::List(_) => "list",
         Value::Object(_) => "object",
@@ -866,20 +894,8 @@ fn type_name(v: &Value) -> &'static str {
         Value::Regexp { .. } => "regexp",
         Value::Html(_) => "html",
         Value::Image(_) => "image",
-        Value::Icon(_) => "icon",
+        Value::Icon(_) => "string",
     }
-}
-fn regex(p: &str, flags: &str) -> Result<regex::Regex> {
-    ensure!(
-        flags.chars().all(|c| "gimsu".contains(c)),
-        "Unsupported regex flag"
-    );
-    Ok(regex::RegexBuilder::new(p)
-        .case_insensitive(flags.contains('i'))
-        .multi_line(flags.contains('m'))
-        .dot_matches_new_line(flags.contains('s'))
-        .size_limit(1_000_000)
-        .build()?)
 }
 pub(super) fn parse_date(s: &str) -> Result<i64> {
     if let Ok(d) = chrono::DateTime::parse_from_rfc3339(s) {
@@ -888,11 +904,27 @@ pub(super) fn parse_date(s: &str) -> Result<i64> {
     let d = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").or_else(|_| {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").map(|d| d.and_hms_opt(0, 0, 0).unwrap())
     })?;
-    Ok(Local
-        .from_local_datetime(&d)
-        .earliest()
-        .ok_or_else(|| anyhow::anyhow!("Invalid local date"))?
-        .timestamp_millis())
+    local_timestamp(d)
+}
+fn local_timestamp(date: NaiveDateTime) -> Result<i64> {
+    match Local.from_local_datetime(&date) {
+        chrono::LocalResult::Single(value) => Ok(value.timestamp_millis()),
+        chrono::LocalResult::Ambiguous(a, b) => Ok(a.timestamp_millis().min(b.timestamp_millis())),
+        chrono::LocalResult::None => {
+            // JavaScript advances a nonexistent wall time by the DST gap.
+            // Interpreting it with the preceding day's offset gives that instant.
+            let prior = date
+                .checked_sub_signed(chrono::Duration::days(1))
+                .and_then(|d| Local.from_local_datetime(&d).earliest())
+                .ok_or_else(|| anyhow::anyhow!("Invalid local date"))?;
+            Ok(prior
+                .offset()
+                .from_local_datetime(&date)
+                .single()
+                .ok_or_else(|| anyhow::anyhow!("Invalid local date"))?
+                .timestamp_millis())
+        }
+    }
 }
 fn midnight(t: i64) -> Result<i64> {
     let d = Local
@@ -908,88 +940,56 @@ fn duration_parts(s: &str) -> Result<(f64, &str)> {
         .ok_or_else(|| anyhow::anyhow!("Invalid duration"))?;
     Ok((s[..i].trim().parse()?, s[i..].trim()))
 }
-fn duration(s: &str) -> Result<f64> {
+fn duration(s: &str) -> Result<DurationValue> {
     let (n, u) = duration_parts(s)?;
-    let factor = match u {
-        "y" | "year" | "years" => 365.0 * 86400000.0,
-        "M" | "month" | "months" => 30.0 * 86400000.0,
-        "w" | "week" | "weeks" => 7.0 * 86400000.0,
-        "d" | "day" | "days" => 86400000.0,
-        "h" | "hour" | "hours" => 3600000.0,
-        "m" | "minute" | "minutes" => 60000.0,
-        "s" | "second" | "seconds" => 1000.0,
+    ensure!(
+        n.is_finite() && n.fract() == 0.0,
+        "Duration requires an integer amount"
+    );
+    Ok(match u {
+        "M" | "month" | "months" => DurationValue {
+            months: n,
+            milliseconds: 0.0,
+        },
+        "y" | "year" | "years" => DurationValue {
+            months: n * 12.0,
+            milliseconds: 0.0,
+        },
+        "w" | "week" | "weeks" => DurationValue::millis(n * 7.0 * 86400000.0),
+        "d" | "day" | "days" => DurationValue::millis(n * 86400000.0),
+        "h" | "hour" | "hours" => DurationValue::millis(n * 3600000.0),
+        "m" | "minute" | "minutes" => DurationValue::millis(n * 60000.0),
+        "s" | "second" | "seconds" => DurationValue::millis(n * 1000.0),
         _ => bail!("Unknown duration unit: {u}"),
-    };
-    Ok(n * factor)
+    })
+}
+fn offset_duration(t: i64, duration: DurationValue, sign: i64) -> Result<i64> {
+    let d = Local
+        .timestamp_millis_opt(t)
+        .single()
+        .ok_or_else(|| anyhow::anyhow!("Invalid date"))?;
+    let months = (d.year() as i64 * 12 + d.month0() as i64)
+        .checked_add((duration.months * sign as f64) as i64)
+        .ok_or_else(|| anyhow::anyhow!("Date overflow"))?;
+    let first = NaiveDate::from_ymd_opt(
+        (months.div_euclid(12)).try_into()?,
+        months.rem_euclid(12) as u32 + 1,
+        1,
+    )
+    .ok_or_else(|| anyhow::anyhow!("Date overflow"))?;
+    let date = first
+        .checked_add_signed(chrono::Duration::days(d.day0() as i64))
+        .ok_or_else(|| anyhow::anyhow!("Date overflow"))?
+        .and_time(d.time());
+    let duration = chrono::Duration::try_milliseconds((duration.milliseconds * sign as f64) as i64)
+        .ok_or_else(|| anyhow::anyhow!("Date overflow"))?;
+    let date = date
+        .checked_add_signed(duration)
+        .ok_or_else(|| anyhow::anyhow!("Date overflow"))?;
+    local_timestamp(date)
 }
 fn offset_date(t: i64, s: &str, sign: i64) -> Result<i64> {
-    let (n, u) = duration_parts(s)?;
-    if matches!(u, "M" | "month" | "months" | "y" | "year" | "years") {
-        let months =
-            n * if matches!(u, "y" | "year" | "years") {
-                12.0
-            } else {
-                1.0
-            } * sign as f64;
-        let d = Local
-            .timestamp_millis_opt(t)
-            .single()
-            .ok_or_else(|| anyhow::anyhow!("Invalid date"))?;
-        let d = if months >= 0.0 {
-            d.checked_add_months(chrono::Months::new(months as u32))
-        } else {
-            d.checked_sub_months(chrono::Months::new(-months as u32))
-        };
-        Ok(d.ok_or_else(|| anyhow::anyhow!("Date overflow"))?
-            .timestamp_millis())
-    } else {
-        Ok(t + sign * duration(s)? as i64)
-    }
-}
-fn moment_format(s: &str) -> Result<String> {
-    let tokens = [
-        ("YYYY", "%Y"),
-        ("MMMM", "%B"),
-        ("MMM", "%b"),
-        ("MM", "%m"),
-        ("DD", "%d"),
-        ("dddd", "%A"),
-        ("ddd", "%a"),
-        ("HH", "%H"),
-        ("hh", "%I"),
-        ("mm", "%M"),
-        ("ss", "%S"),
-        ("SSS", "%3f"),
-        ("YY", "%y"),
-        ("A", "%p"),
-        ("Z", "%:z"),
-    ];
-    let mut rest = s;
-    let mut out = String::new();
-    while !rest.is_empty() {
-        if rest.starts_with('[') {
-            let end = rest
-                .find(']')
-                .ok_or_else(|| anyhow::anyhow!("Unclosed date format literal"))?;
-            out.push_str(&rest[1..end].replace('%', "%%"));
-            rest = &rest[end + 1..];
-        } else if let Some((a, b)) = tokens.iter().find(|(a, _)| rest.starts_with(a)) {
-            out.push_str(b);
-            rest = &rest[a.len()..];
-        } else {
-            let c = rest.chars().next().unwrap();
-            ensure!(
-                !c.is_ascii_alphabetic(),
-                "Unsupported date format token: {c}"
-            );
-            if c == '%' {
-                out.push('%')
-            }
-            out.push(c);
-            rest = &rest[c.len_utf8()..];
-        }
-    }
-    Ok(out)
+    offset_duration(t, duration(s)?, sign)
 }
 
 fn value_size(value: &Value) -> usize {
@@ -997,7 +997,15 @@ fn value_size(value: &Value) -> usize {
         Value::String(s) | Value::Html(s) | Value::Image(s) | Value::Icon(s) | Value::File(s) => {
             s.len()
         }
-        Value::Link { path, display } => path.len() + display.as_ref().map_or(0, String::len),
+        Value::Link {
+            path,
+            display,
+            display_value,
+        } => {
+            path.len()
+                + display.as_ref().map_or(0, String::len)
+                + display_value.as_ref().map_or(0, |v| value_size(v))
+        }
         Value::List(xs) => xs.iter().map(value_size).sum::<usize>() + xs.len() * 24,
         Value::Object(xs) => xs
             .iter()

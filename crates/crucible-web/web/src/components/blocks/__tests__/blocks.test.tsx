@@ -131,112 +131,19 @@ describe('GenericBlock', () => {
   });
 });
 
-// Drag-and-drop is the capability that moved the seam: an Oil tree could never
-// express it, because a terminal has no gesture to project. So it is worth a
-// test at the tier that runs on every commit.
 describe('KanbanBlock', () => {
-  const board = {
-    columns: ['todo', 'doing', 'done'],
-    tickets: [{ file: 'alpha.md', title: 'Alpha', status: 'todo' }],
-    folder: 'tickets',
-  };
-
-  function stubFetch(
-    onCommand?: (body: unknown) => void,
-    onCaller?: (url: string, caller: string | null) => void,
-  ) {
-    vi.stubGlobal(
-      'fetch',
-      // The generated client hands `fetch` one `Request`, so the stub reads
-      // the URL, the headers and the body off that rather than off an init.
-      vi.fn(async (request: Request) => {
-        const url = request.url;
-        onCaller?.(url, request.headers.get('X-Crucible-Plugin'));
-        if (url.includes('/api/plugins/command')) {
-          onCommand?.(JSON.parse((await request.text()) || '{}'));
-          return new Response(JSON.stringify({ result: { ok: true } }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          });
-        }
-        return new Response(JSON.stringify({ publications: { 'kanban:board': { kanban: board } } }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }),
-    );
-  }
-
-  it('groups the published tickets into the published column order', async () => {
-    stubFetch();
-    const { container } = render(() => (
-      <KanbanBlock plugin="kanban" block="board" params={{ folder: 'tickets' }} />
-    ));
-    await waitFor(() => expect(container.textContent).toContain('Alpha'));
-    expect(container.textContent).toContain('todo (1)');
-    expect(container.textContent).toContain('doing (0)');
-  });
-
-  it('sends a move command naming the ticket and the column it was dropped on', async () => {
-    let sent: any;
-    stubFetch((body) => {
-      sent = body;
-    });
-    const { container } = render(() => (
-      <KanbanBlock plugin="kanban" block="board" params={{ folder: 'tickets', kiln: 'k' }} />
-    ));
-    await waitFor(() => expect(container.textContent).toContain('Alpha'));
-
-    const card = container.querySelector('[draggable="true"]')!;
-    const columns = container.querySelectorAll('.flex-wrap > div');
-    fireEvent.dragStart(card);
-    fireEvent.drop(columns[1]);
-
-    await waitFor(() => expect(sent).toBeTruthy());
-    expect(sent.name).toBe('kanban_move');
-    expect(sent.args).toMatchObject({ file: 'alpha.md', to: 'doing', folder: 'tickets', kiln: 'k' });
-  });
-
-  // The block declares which plugin it draws for, on the read AND on the
-  // write. Without it the block is indistinguishable from the app and the
-  // route's per-plugin comparison never runs in production — the Rust tests
-  // would still pass, because they send the header by hand.
-  //
-  // Asserted, not proved: `props.plugin` is the fence's first line, so a note
-  // author chose it. See `routes/plugin_caller.rs`.
-  it('declares itself as the plugin it draws for on every call it makes', async () => {
-    const callers = new Map<string, string | null>();
-    stubFetch(undefined, (url, caller) => {
-      callers.set(url.includes('/command') ? 'command' : 'publications', caller);
-    });
-    const { container } = render(() => (
-      <KanbanBlock plugin="kanban" block="board" params={{ folder: 'tickets' }} />
-    ));
-    await waitFor(() => expect(container.textContent).toContain('Alpha'));
-    expect(callers.get('publications')).toBe('kanban');
-
-    const card = container.querySelector('[draggable="true"]')!;
-    const columns = container.querySelectorAll('.flex-wrap > div');
-    fireEvent.dragStart(card);
-    fireEvent.drop(columns[1]);
-
-    await waitFor(() => expect(callers.get('command')).toBe('kanban'));
-  });
-
-  // The plugin republishes and the push re-renders. A component that applied
-  // the move locally would hold a second description of the board, free to
-  // disagree with the plugin's.
-  it('does not move the card locally before the plugin answers', async () => {
-    stubFetch();
-    const { container } = render(() => (
-      <KanbanBlock plugin="kanban" block="board" params={{}} />
-    ));
-    await waitFor(() => expect(container.textContent).toContain('Alpha'));
-    const card = container.querySelector('[draggable="true"]')!;
-    fireEvent.dragStart(card);
-    fireEvent.drop(container.querySelectorAll('.flex-wrap > div')[1]);
-    // Still in todo: the stubbed publication never changed.
-    expect(container.textContent).toContain('todo (1)');
+  it('routes legacy embeds to the native saved base', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (request: Request) => {
+      if (request.url.includes('/api/kilns')) return Response.json({ kilns: [{name: 'Work', path: '/kiln', registered:true}], default_kiln:'Work' });
+      if (request.url.includes('/api/bases/query')) {
+        const url = new URL(request.url);
+        expect(url.searchParams.get('view')).toBe('Board');
+        return Response.json({root:'/kiln',view:'Board',view_type:'kanban',columns:[],rows:[],groups:[],summaries:{},views:[{name:'Board',type:'kanban'}]});
+      }
+      throw new Error(`Unexpected legacy publication request: ${request.url}`);
+    }));
+    const {container} = render(() => <KanbanBlock plugin="kanban" block="board" params={{kiln:'Work'}} />);
+    await waitFor(() => expect(container.querySelector('.base-view select')).toBeTruthy());
   });
 });
 

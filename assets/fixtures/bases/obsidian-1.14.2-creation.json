@@ -1,0 +1,161 @@
+{
+  "version": "1.14.2",
+  "files": {
+    "templates/base.md": "---\nstatus: template\nowner: Template owner\n---\nTemplate body\n"
+  },
+  "cases": [
+    {
+      "id": "equal",
+      "base": {
+        "filters": "status == 'todo'",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.owner"
+            ]
+          }
+        ]
+      },
+      "output": "Created: Oracle-equal.md",
+      "path": "Oracle-equal.md",
+      "bytes": "---\nstatus: todo\nowner:\n---\nBody\n"
+    },
+    {
+      "id": "contains-all",
+      "base": {
+        "filters": "labels.containsAll('a','b')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case"
+          }
+        ]
+      },
+      "output": "Created: Oracle-contains-all.md",
+      "path": "Oracle-contains-all.md",
+      "bytes": "---\nlabels:\n  - a\n  - b\n---\nBody\n"
+    },
+    {
+      "id": "contains-any",
+      "base": {
+        "filters": "labels.containsAny('a','b')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case"
+          }
+        ]
+      },
+      "output": "Created: Oracle-contains-any.md",
+      "path": "Oracle-contains-any.md",
+      "bytes": "---\nlabels:\n  - a\n---\nBody\n"
+    },
+    {
+      "id": "or",
+      "base": {
+        "filters": {
+          "or": [
+            "status == 'todo'",
+            "owner == 'someone'"
+          ]
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case"
+          }
+        ]
+      },
+      "output": "Created: Oracle-or.md",
+      "path": "Oracle-or.md",
+      "bytes": "---\nstatus: todo\nowner: someone\n---\nBody\n"
+    },
+    {
+      "id": "not",
+      "base": {
+        "filters": {
+          "not": [
+            "status == 'done'"
+          ]
+        },
+        "views": [
+          {
+            "type": "table",
+            "name": "Case"
+          }
+        ]
+      },
+      "output": "Created: Oracle-not.md",
+      "path": "Oracle-not.md",
+      "bytes": "Body\n"
+    },
+    {
+      "id": "template",
+      "base": {
+        "filters": "status == 'todo'",
+        "newItemTemplate": "templates/base.md",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case",
+            "order": [
+              "file.name",
+              "note.owner"
+            ]
+          }
+        ]
+      },
+      "output": "Created: Oracle-template.md",
+      "path": "Oracle-template.md",
+      "bytes": "---\nstatus: todo\nowner:\n---\nBody\n"
+    },
+    {
+      "id": "folder",
+      "base": {
+        "filters": "file.inFolder('created')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case"
+          }
+        ]
+      },
+      "output": "Created: created/Oracle-folder.md",
+      "path": "created/Oracle-folder.md",
+      "bytes": "Body\n"
+    },
+    {
+      "id": "file-tags",
+      "base": {
+        "filters": "file.tags.containsAll('a','b')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case"
+          }
+        ]
+      },
+      "output": "Created: Oracle-file-tags.md",
+      "path": "Oracle-file-tags.md",
+      "bytes": "---\ntags:\n  - a\n  - b\n---\nBody\n"
+    },
+    {
+      "id": "has-tags",
+      "base": {
+        "filters": "file.hasTag('a','b')",
+        "views": [
+          {
+            "type": "table",
+            "name": "Case"
+          }
+        ]
+      },
+      "output": "Created: Oracle-has-tags.md",
+      "path": "Oracle-has-tags.md",
+      "bytes": "Body\n"
+    }
+  ]
+}

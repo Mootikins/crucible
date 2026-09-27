@@ -2273,8 +2273,22 @@ export interface components {
             value: number;
         } | {
             /** @enum {string} */
+            type: "dateonly";
+            /** Format: int64 */
+            value: number;
+        } | {
+            /** @enum {string} */
             type: "duration";
-            /** Format: double */
+            value: {
+                /** Format: double */
+                milliseconds: number;
+                /** Format: double */
+                months: number;
+            };
+        } | {
+            /** @enum {string} */
+            type: "relativedate";
+            /** Format: int64 */
             value: number;
         } | {
             /** @enum {string} */
@@ -2295,6 +2309,7 @@ export interface components {
             type: "link";
             value: {
                 display?: string | null;
+                display_value?: null | components["schemas"]["BaseValue"];
                 path: string;
             };
         } | {
@@ -4267,9 +4282,11 @@ export interface components {
             columns: components["schemas"]["Column"][];
             group_property?: string | null;
             groups: components["schemas"]["Group"][];
+            options: components["schemas"]["ViewOptions"];
             root: string;
             rows: components["schemas"]["Row"][];
             source_hash?: string | null;
+            source_path?: string | null;
             summaries: {
                 [key: string]: components["schemas"]["BaseValue"];
             };
@@ -5063,6 +5080,25 @@ export interface components {
              */
             score: number;
         };
+        /** @description Built-in presentation options, projected from preserved Obsidian view data. */
+        ViewOptions: {
+            /** Format: double */
+            card_size: number;
+            column_size: {
+                [key: string]: number;
+            };
+            /** Format: double */
+            column_width: number;
+            hide_empty_groups: boolean;
+            image?: string | null;
+            /** Format: double */
+            image_aspect_ratio: number;
+            image_fit: string;
+            indent_properties: boolean;
+            markers: string;
+            row_height: string;
+            separator: string;
+        };
         ViewSummary: {
             name: string;
             type: string;
@@ -5318,6 +5354,7 @@ export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
 export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
 export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
+export type SchemaViewOptions = components['schemas']['ViewOptions'];
 export type SchemaViewSummary = components['schemas']['ViewSummary'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
 export type SchemaWikilinkRow = components['schemas']['WikilinkRow'];

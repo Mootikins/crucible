@@ -381,6 +381,8 @@ impl AgentManager {
         // sees the real tool name, so `invoke_tool`→`read_file` stops being
         // bracketed and `invoke_tool`→`delegate_session` is correctly excluded.
         *bracket = stream_ctx.open_review_bracket(&tool_call.name).await;
+        let _ = super::review_capture::CURRENT_CAPTURE
+            .try_with(|(_, active)| active.set(bracket.is_some()));
 
         // Session-scoped handlers first, then plugin-registered ones; the
         // first interception wins. Plugins live in the loader's VM with their

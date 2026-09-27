@@ -64,6 +64,8 @@
 //! through a repository the host already bound to the named kiln, and that
 //! repository applies the same authority.
 
+pub mod bases;
+
 use crate::error::LuaError;
 use crucible_core::storage::{
     scoped_backlinks, scoped_outlinks, visible_paths, NoteStore, Scope, StorageError, StorageResult,
@@ -236,7 +238,18 @@ fn kiln_path(
 
 /// The `cru.kiln` members the host binds through a resolver, which a storage
 /// upgrade must carry over rather than replace with the stubs.
-const HOST_BOUND: &[&str] = &["blocks", "note", "notes", "links", "search", "path"];
+const HOST_BOUND: &[&str] = &[
+    "blocks",
+    "note",
+    "notes",
+    "links",
+    "search",
+    "path",
+    "query",
+    "set_property",
+    "create_entry",
+    "ensure_base",
+];
 
 /// Register the named reads — `cru.kiln.blocks`, `note`, `notes`, `links`
 /// and `search` — against a repository resolver.
@@ -499,6 +512,7 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
     )?;
 
     kiln.publish()?;
+    bases::register(lua, None)?;
 
     Ok(())
 }

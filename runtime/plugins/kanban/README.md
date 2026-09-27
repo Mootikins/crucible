@@ -1,23 +1,25 @@
 # kanban
 
-A board over a folder of markdown tickets, declared as an Oil tree.
+A ticket policy plugin for native Obsidian Bases. Run `/kanban` in a session,
+passing a registered `kiln`, to create `tickets.base` if it is absent. The
+`tickets` folder must exist. Existing base definitions are never overwritten.
+The initialization follows the session's apply/propose disposition.
 
-A ticket is a `.md` file with `status:` in its frontmatter. Nothing else is a
-ticket, and the plugin stores nothing of its own — moving a card rewrites that
-one line, so the folder stays a folder of notes.
+Open `tickets.base` in the web editor or embed `![[tickets.base#Board]]`.
+Use `cru base query --help` for the terminal query surface. The TUI does not
+yet have a note viewer. Legacy `kanban/board` web blocks redirect to this base;
+pass `kiln` in their parameters.
 
-Embed the board in any note:
+Ticket notes remain ordinary Markdown. Native Bases owns reads, grouping,
+card moves and entry creation. `kanban_board` queries it; `kanban_move` receives
+the tool invocation's explicit session context and uses the daemon write API.
+There is no global board publication, manual YAML parser or direct file writer.
+Unattended plugin writes need permission under the session's card, mode and
+operator rules; proposals enter the Inbox instead of changing disk.
 
-    ```oil
-    kanban/board
-    { "folder": "tickets" }
-    ```
-
-`folder` is optional and resolves against the active kiln. It defaults to
-`tickets`.
-
-## Why this plugin exists
-
-It is the smallest honest test of one question: can a plugin declare a whole
-view — not a settings form — and have the TUI and the web both draw it from
-that one declaration? See `docs/Meta/Analysis/Oil in Documents.md`.
+Optional setup keys: `folder` (default `tickets`), `base` (default
+`tickets.base`), `wip` (status -> maximum count), and `transitions` (old status
+-> allowed new statuses). The `base:before_write` policy applies to human
+Bases edits as well as plugin edits. Policy errors and timeouts refuse writes.
+Reload removes the old source's policy callback before activation registers it
+again. Post-commit observers use `base:changed`; proposed writes do not emit it.
