@@ -1,3 +1,4 @@
+import { mountBases } from '@/components/bases/mount';
 /**
  * Rendered markdown view of a note buffer — the reading half of the editor's
  * Edit ↔ Preview toggle. Renders through the same pipeline as chat messages
@@ -81,7 +82,9 @@ export const MarkdownPreview: Component<{
     disposeBlocks?.();
     disposeBlocks = undefined;
     if (rendered === undefined || !proseHost) return;
-    disposeBlocks = mountPluginBlocks(proseHost);
+    const plugins = mountPluginBlocks(proseHost);
+    const bases = mountBases(proseHost, props.path, props.kiln);
+    disposeBlocks = () => { plugins(); bases(); };
   });
   onCleanup(() => disposeBlocks?.());
 

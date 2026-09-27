@@ -147,3 +147,5 @@ pub enum CrucibleError {
 }
 
 pub type Result<T> = std::result::Result<T, CrucibleError>;
+
+pub mod bases;

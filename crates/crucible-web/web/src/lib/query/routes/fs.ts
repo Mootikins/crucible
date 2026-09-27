@@ -42,6 +42,7 @@ function pathsOf(event: FsEvent): string[] {
 /** Turns one filesystem event into the cache writes it owes every reader. */
 function routeFsEvent(event: FsEvent, { client }: SseRouteContext): void {
   const paths = pathsOf(event);
+  if (paths.length) void client.invalidateQueries({ queryKey: keys.bases() });
   for (const path of paths) {
     void client.invalidateQueries({ queryKey: keys.fsFile(path) });
   }
@@ -75,6 +76,6 @@ export function installFsEventRoute(): void {
   setFsEventRoute(routeFsEvent, ({ client }) => {
     // A first open closes the snapshot/subscription window; a later open or
     // gap recovers missed changes even if no further event follows.
-    void reconcileQueries(client, [keys.fsFamily(), keys.notesFamily()]);
+    void reconcileQueries(client, [keys.fsFamily(), keys.notesFamily(), keys.bases()]);
   });
 }

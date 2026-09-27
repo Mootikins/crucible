@@ -572,3 +572,29 @@ Chromium EventSource retry in `system-stream-recovery.spec.ts`. Rust socket/SSE
 tests cover reconnect with open HTTP bodies, cancellation, failed restoration,
 last-reader cleanup and lag in each system projection. This is web transport
 behavior; the TUI does not use the web broker.
+
+### WS-250: Open a base and switch views
+
+As a reader, I open a `.base` file from Files, see typed values under the configured
+column names, switch named views, and open a selected entry. Source editing is
+available without losing unknown Obsidian view options.
+
+Proof: `components/bases/__tests__/bases.test.tsx`.
+
+### WS-251: Read a base embedded in a note
+
+As a note author, I use a `base` fence or `![[Tasks.base#Board]]` in reading view
+and live preview. The host note supplies `this`; embedded YAML containing markup
+is data and does not execute as HTML.
+
+Proof: `components/bases/__tests__/bases.test.tsx` (reading mounts and host context).
+CodeMirror mounting and cursor reveal are covered by `components/editor/__tests__/live-preview.test.ts`.
+
+### WS-252: Create and move entries without losing outside edits
+
+As a board user, I create entries and move cards between note-property columns.
+A stale ancestor hash refuses a move and the error stays visible. The daemon
+preserves the note body and uses its shared write lock.
+
+Proof: daemon `bases::tests`, `rpc_integration::bases`, and the web refusal test
+in `components/bases/__tests__/bases.test.tsx`.

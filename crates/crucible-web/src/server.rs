@@ -152,6 +152,7 @@ fn api_router(
         .merge(mcp_routes())
         .merge(kiln_routes())
         .merge(canvas_routes())
+        .merge(crate::routes::bases_routes())
         .merge(layout_routes())
         .merge(skills_routes())
         .merge(webhook_routes())

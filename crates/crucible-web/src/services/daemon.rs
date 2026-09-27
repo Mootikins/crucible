@@ -91,6 +91,12 @@ impl ReconnectingDaemon {
         }
     }
 
+    forward_rpc! { Safe BaseQuery => base_query(params: serde_json::Value) -> serde_json::Value = call("base.query", params); }
+    forward_rpc! { Safe BaseViews => base_views(params: serde_json::Value) -> serde_json::Value = call("base.views", params); }
+    forward_rpc! { Once BaseCreateEntry => base_create_entry(params: serde_json::Value) -> serde_json::Value = call("base.create_entry", params); }
+    forward_rpc! { Once BaseSetProperty => base_set_property(params: serde_json::Value) -> serde_json::Value = call("base.set_property", params); }
+    forward_rpc! { Once BaseReorderGroups => base_reorder_groups(params: serde_json::Value) -> serde_json::Value = call("base.reorder_groups", params); }
+
     /// The daemon's cheapest RPC, for the readiness probe.
     ///
     /// `Safe` replay: `ping` changes nothing, so reconnecting and retrying once

@@ -74,7 +74,7 @@ impl FileSystemKilnStatsService {
                     crucible_core::KilnFileKind::Note => stats.markdown_files += 1,
                     crucible_core::KilnFileKind::Canvas => stats.canvas_files += 1,
                     crucible_core::KilnFileKind::PlainText => stats.plain_text_files += 1,
-                    crucible_core::KilnFileKind::Asset => {}
+                    crucible_core::KilnFileKind::Base | crucible_core::KilnFileKind::Asset => {}
                 }
             } else if entry_path.is_dir() {
                 // Skip excluded directories

@@ -1,3 +1,4 @@
+import { isBasePath } from './markdown-path';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 import { initializeHighlighter, SHIKI_THEMES } from './shiki';
@@ -250,6 +251,7 @@ function sanitizeHtml(value: string): string {
     // read as a decision to permit arbitrary inline CSS. What actually governs
     // it is filterInlineCss.
     ADD_ATTR: [
+      'data-base-yaml', 'data-base-path', 'data-base-view',
       'data-note',
       'data-copy',
       // The SOURCE line a task box came from, so a tap can anchor a one-line
@@ -335,8 +337,9 @@ function wikilinkPlugin(md: MarkdownIt): void {
 
         while (match) {
           const [fullMatch, noteName] = match;
-          const start = match.index;
-          const end = start + fullMatch.length;
+          const isBaseEmbed = match.index > 0 && text[match.index - 1] === '!' && isBasePath(parseWikilinkInner(noteName).target);
+          const start = match.index - (isBaseEmbed ? 1 : 0);
+          const end = match.index + fullMatch.length;
 
           if (start > lastIndex) {
             const textToken = new state.Token('text', '', 0);
@@ -349,6 +352,10 @@ function wikilinkPlugin(md: MarkdownIt): void {
           const safeAttr = escapeHtml(target);
           const linkToken = new state.Token('html_inline', '', 0);
           linkToken.content = `<a class="wikilink" href="#" data-note="${safeAttr}">${safeText}</a>`;
+          if (isBaseEmbed) {
+            const view = noteName.split('|')[0].split('#').slice(1).join('#');
+            linkToken.content = `<span class="base-mount" data-base-path="${safeAttr}" data-base-view="${escapeHtml(view)}"></span>`;
+          }
           nextChildren.push(linkToken);
 
           lastIndex = end;
@@ -460,6 +467,10 @@ async function highlightCodeBlocks(
     // it needs a real component rather than a second string pass. Emit a mount
     // point that survives DOMPurify and let mountPluginBlocks (which runs
     // against the DOM, after sanitizing) put a component in it.
+    if (language === 'base') {
+      result += `<div class="base-mount" data-base-yaml="${escapeHtml(encodeURIComponent(decodeHtml(encodedCode)))}"></div>`;
+      continue;
+    }
     if (language === 'plugin') {
       result += pluginMountHtml(decodeHtml(encodedCode));
       continue;

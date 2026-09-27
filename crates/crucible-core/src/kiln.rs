@@ -25,6 +25,8 @@ pub enum KilnFileKind {
     /// A JSON Canvas document. Indexed like a note (it contributes links to the
     /// graph) but parsed completely differently.
     Canvas,
+    /// An Obsidian Bases saved query.
+    Base,
     /// A plain text file. Full-text searchable, and nothing more.
     ///
     /// Deliberately not a [`Note`](Self::Note). A `.txt` has no frontmatter, no
@@ -52,6 +54,7 @@ impl KilnFileKind {
         match ext.to_ascii_lowercase().as_str() {
             "md" | "markdown" => Self::Note,
             "canvas" => Self::Canvas,
+            "base" => Self::Base,
             "txt" => Self::PlainText,
             _ => Self::Asset,
         }
@@ -69,11 +72,15 @@ impl KilnFileKind {
     /// for it and can `cru search` find it", which is a wider question than
     /// "is it a note" — use [`is_note_file`] for the latter.
     pub fn is_indexable(self) -> bool {
-        matches!(self, Self::Note | Self::Canvas | Self::PlainText)
+        matches!(
+            self,
+            Self::Note | Self::Canvas | Self::Base | Self::PlainText
+        )
     }
 
     /// The kiln-facing extensions, for watcher filters that take a list.
-    pub const INDEXABLE_EXTENSIONS: &'static [&'static str] = &["md", "markdown", "canvas", "txt"];
+    pub const INDEXABLE_EXTENSIONS: &'static [&'static str] =
+        &["md", "markdown", "canvas", "base", "txt"];
 
     /// The [`Note`](Self::Note) extensions alone, for parsers that *advertise* a
     /// list rather than test a path. An advertisement that disagrees with
@@ -110,6 +117,12 @@ pub fn is_indexable_file(path: &Path) -> bool {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn bases_are_indexable_documents() {
+        assert!(is_indexable_file(Path::new("Tasks.BASE")));
+        assert!(!is_note_file(Path::new("Tasks.base")));
+    }
 
     #[test]
     fn classifies_by_extension() {

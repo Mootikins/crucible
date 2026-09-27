@@ -10,6 +10,7 @@ dist = false
 
 
 [dependencies]
+strum = { version = "0.28", features = ["derive"] }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -119,7 +120,6 @@ futures-util = { workspace = true }
 # assert per-tool classifications walk every variant the compiler knows about
 # rather than a hand-written list that goes stale. Dev-only: the derive is
 # `#[cfg_attr(test, ...)]` and the shipped daemon never pays for it.
-strum = { version = "0.28", features = ["derive"] }
 test-case = { workspace = true }
 
 # LLM embedding benchmark absorbed from crucible-llm

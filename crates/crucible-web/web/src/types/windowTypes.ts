@@ -21,6 +21,7 @@ export type TabContentType =
   | 'backlinks'
   | 'graph'
   | 'canvas'
+  | 'base'
   | 'surfaces'
   // One tab for each diffset. The tab metadata holds the `DiffsetSource`.
   | 'diff';

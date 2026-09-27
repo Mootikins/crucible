@@ -183,3 +183,24 @@ it('delivers filesystem and surface events, reconnects, and cancels pending reco
     expect(Source.instances).toHaveLength(count + 1);
   }
 });
+
+it('Bases forwards source and host context, with hash-checked writes', async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ rows: [] })));
+  vi.stubGlobal('fetch', fetch);
+  await api.queryBase({ kiln: 'Work', source: { path: 'Tasks.base' }, view: 'Board', this: 'Host.md' });
+  expect((await sent(fetch)).url).toBe('/api/bases/query?kiln=Work&path=Tasks.base&view=Board&this=Host.md');
+  fetch.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+  const body = { kiln: 'Work', path: 'Task.md', key: 'status', value: 'done', ancestor_hash: 'h1' };
+  await api.writeBaseProperty(body);
+  expect(await sent(fetch, 1)).toEqual({ url: '/api/bases/property', path: '/api/bases/property', method: 'PUT', body });
+  const create = { kiln: 'Work', source: { path: 'Tasks.base' }, view: 'Board', name: 'New task', group: 'todo' };
+  fetch.mockResolvedValue(new Response(JSON.stringify({ ok: true, path: 'New task.md' })));
+  expect(await api.createBaseEntry(create)).toEqual({ ok: true, path: 'New task.md' });
+  expect(await sent(fetch, 2)).toEqual({ url: '/api/bases/entries', path: '/api/bases/entries', method: 'POST', body: create });
+  const reorder = { kiln: 'Work', source: { path: 'Tasks.base' }, view: 'Board', group_order: ['done', 'todo'], ancestor_hash: 'h2' };
+  fetch.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+  await api.reorderBaseGroups(reorder);
+  expect(await sent(fetch, 3)).toEqual({ url: '/api/bases/group-order', path: '/api/bases/group-order', method: 'PUT', body: reorder });
+  fetch.mockResolvedValue(new Response(JSON.stringify({ error: 'stale ancestor' }), { status: 409 }));
+  await expect(api.reorderBaseGroups(reorder)).rejects.toThrow('stale ancestor');
+});

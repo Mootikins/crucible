@@ -2162,3 +2162,18 @@ export async function fetchRawFile(path: string): Promise<Blob> {
   if (!response.ok) throw new Error(`attachment ${path}: ${response.status}`);
   return await response.blob();
 }
+
+/** Bases expressions are evaluated by the daemon. */
+export async function queryBase(request: import('./query/bases').BaseRequest): Promise<Schemas['QueryResult']> {
+  return decode(await client.GET('/api/bases/query', { params: { query: { kiln: request.kiln, ...request.source, view: request.view, this: request.this } } }), 'Could not query base');
+}
+export async function writeBaseProperty(request: Record<string, unknown>): Promise<unknown> {
+  return decode(await client.PUT('/api/bases/property', { body: request }), 'Base write refused');
+}
+export async function createBaseEntry(request: Record<string, unknown>): Promise<unknown> {
+  return decode(await client.POST('/api/bases/entries', { body: request }), 'Base write refused');
+}
+
+export async function reorderBaseGroups(request: Record<string, unknown>): Promise<unknown> {
+  return decode(await client.PUT('/api/bases/group-order', { body: request }), 'Could not reorder groups');
+}

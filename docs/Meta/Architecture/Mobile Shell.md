@@ -878,7 +878,7 @@ Four facts, each verified in the tree.
 
 1. **The write endpoint has no conflict control.** `put_kiln_file` in
    `crates/crucible-web/src/routes/kiln.rs` calls `fs::write` on the whole
-   file. It reads no `If-Match` header and no base hash. The last writer wins,
+   file. It reads no `If-Match` header and no ancestor hash. The last writer wins,
    and the loser gets no signal.
 2. **The read endpoint returns content alone.** `get_kiln_file` answers
    `{ "content": … }`. It sends no hash and no modification time, so a client
@@ -903,7 +903,7 @@ Four facts, each verified in the tree.
 `content_hash` taken from the disk bytes it just read, not from the index, and
 `PUT`/`PATCH` hash the disk inside the read-modify-write, so a base names what
 the writer actually read. Since 2026-09-14 the write path also holds a per-path
-lock and merges a stale write that carries its base text — the conflict rule
+lock and merges a stale write that carries its ancestor text — the conflict rule
 below. Fact 4 is untouched and still decides the mechanism.
 
 **The offline store is app-level, not a service worker cache.** The worker keeps
@@ -1008,7 +1008,7 @@ a 422 — the pair is one fact.
   the current text, the merged text and the **regions** — one span per place the
   two writers changed the same lines differently, each with its base, ours and
   theirs.
-- **A write with no base text is still refused**, as before. It cannot be merged,
+- **A write with no ancestor text is still refused**, as before. It cannot be merged,
   because a merge needs three texts.
 
 **A conflict is an entry, not a copy.** The refused write stays in the outbox in
@@ -1029,18 +1029,18 @@ keeps the conflict open.
 the buffer it was made from: the buffer goes dirty, keeps its text, and the notice
 points at where the conflict waits.
 
-**An anchored edit has no base text of its own.** The drain turns a stale anchored
-entry into a whole write by applying its anchors to its base text, then merges it
-like any other. An entry stored before base texts were kept is a conflict with one
+**An anchored edit has no ancestor text of its own.** The drain turns a stale anchored
+entry into a whole write by applying its anchors to its ancestor text, then merges it
+like any other. An entry stored before ancestor texts were kept is a conflict with one
 region over the whole note — never a merge, and never a silent overwrite.
 
 **One queued write per note.** The first queued base is what lets the drain see a
 remote change, so a second write to a queued note folds into the entry instead of
 taking a second one: a tick folds into a queued whole write's text, two ticks
 compose into one edit set, and a whole write replaces a queued tick. A fold keeps
-the base AND the base text of the first write, because a base that names a text it
+the base AND the ancestor text of the first write, because a base that names a text it
 was not made from is the route's 422. A write arriving for a *conflicted* entry
-replaces it with its own base and base text rather than folding — the conflict's
+replaces it with its own base and ancestor text rather than folding — the conflict's
 base is the one the daemon already refused. A write that lands from the outbox
 moves the open buffer's base, so the user's next save is not refused for their own
 queued write.
@@ -1798,7 +1798,7 @@ Follow the tiers in [[Web User Stories]].
   them.
   **PARTLY BUILT (2026-09-14).** The 409 case is covered live:
   `e2e/live/kiln-truth.live.spec.ts` proves the route's two answers against a
-  real daemon — a stale write merged when it carries its base text, and the
+  real daemon — a stale write merged when it carries its ancestor text, and the
   region answer when both writers changed one line — and
   `e2e/live/conflict.live.spec.ts` drives the whole journey through the app, at
   a phone's viewport as well as a desktop's: two writers on one line, the

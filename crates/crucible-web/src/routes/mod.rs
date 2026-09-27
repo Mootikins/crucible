@@ -57,3 +57,6 @@ pub use skills::skills_routes;
 pub use surface::{surface_routes, SurfaceChangedEvent};
 pub use terminal::terminal_routes;
 pub use webhook::webhook_routes;
+
+mod bases;
+pub use bases::bases_routes;

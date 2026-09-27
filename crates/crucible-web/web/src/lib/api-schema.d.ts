@@ -49,6 +49,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bases/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bases/group-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["reorder_groups"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bases/property": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_property"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bases/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["query_base"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bases/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["base_views"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas": {
         parameters: {
             query?: never;
@@ -2170,6 +2250,73 @@ export interface components {
             note: components["schemas"]["FocusedNoteRow"];
             unlinked: components["schemas"]["UnlinkedMentionRow"][];
         };
+        BaseValue: {
+            /** @enum {string} */
+            type: "null";
+        } | {
+            /** @enum {string} */
+            type: "boolean";
+            value: boolean;
+        } | {
+            /** @enum {string} */
+            type: "number";
+            /** Format: double */
+            value: number;
+        } | {
+            /** @enum {string} */
+            type: "string";
+            value: string;
+        } | {
+            /** @enum {string} */
+            type: "date";
+            /** Format: int64 */
+            value: number;
+        } | {
+            /** @enum {string} */
+            type: "duration";
+            /** Format: double */
+            value: number;
+        } | {
+            /** @enum {string} */
+            type: "list";
+            value: components["schemas"]["BaseValue"][];
+        } | {
+            /** @enum {string} */
+            type: "object";
+            value: {
+                [key: string]: components["schemas"]["BaseValue"];
+            };
+        } | {
+            /** @enum {string} */
+            type: "file";
+            value: string;
+        } | {
+            /** @enum {string} */
+            type: "link";
+            value: {
+                display?: string | null;
+                path: string;
+            };
+        } | {
+            /** @enum {string} */
+            type: "regexp";
+            value: {
+                flags: string;
+                pattern: string;
+            };
+        } | {
+            /** @enum {string} */
+            type: "html";
+            value: string;
+        } | {
+            /** @enum {string} */
+            type: "image";
+            value: string;
+        } | {
+            /** @enum {string} */
+            type: "icon";
+            value: string;
+        };
         /** @description Where in a note a hit sits. */
         BlockRef: {
             /**
@@ -2466,6 +2613,10 @@ export interface components {
             name?: string | null;
             /** @description Remote repo: https://…, git@host:…, or `owner/repo` shorthand. */
             url: string;
+        };
+        Column: {
+            display_name: string;
+            property: string;
         };
         /**
          * @description Whether running a command changes state a user could lose, mirroring
@@ -3201,6 +3352,13 @@ export interface components {
         GrepSearchResponse: {
             hits: components["schemas"]["GrepHit"][];
             truncated: boolean;
+        };
+        Group: {
+            rows: components["schemas"]["Row"][];
+            summaries: {
+                [key: string]: components["schemas"]["BaseValue"];
+            };
+            value: components["schemas"]["BaseValue"];
         };
         /**
          * @description The one word of [`StatusProgress::Unknown`].
@@ -4105,6 +4263,20 @@ export interface components {
              */
             kiln: string;
         };
+        QueryResult: {
+            columns: components["schemas"]["Column"][];
+            group_property?: string | null;
+            groups: components["schemas"]["Group"][];
+            root: string;
+            rows: components["schemas"]["Row"][];
+            source_hash?: string | null;
+            summaries: {
+                [key: string]: components["schemas"]["BaseValue"];
+            };
+            view: string;
+            view_type: string;
+            views: components["schemas"]["ViewSummary"][];
+        };
         RecentFile: {
             /** @description Absolute path of the file that was opened. */
             abs_path: string;
@@ -4264,6 +4436,13 @@ export interface components {
             root: string;
             /** @description The side that `line_range` counts its lines on. */
             side: components["schemas"]["CommentSideRow"];
+        };
+        Row: {
+            ancestor_hash: string;
+            path: string;
+            values: {
+                [key: string]: components["schemas"]["BaseValue"];
+            };
         };
         /**
          * @description The values one save carries, in the shape `config.save` takes.
@@ -4884,6 +5063,10 @@ export interface components {
              */
             score: number;
         };
+        ViewSummary: {
+            name: string;
+            type: string;
+        };
         /**
          * @description What `webhook.receive` answers.
          *
@@ -4935,6 +5118,7 @@ export type SchemaAnchoredEdit = components['schemas']['AnchoredEdit'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
 export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
 export type SchemaBacklinksResponse = components['schemas']['BacklinksResponse'];
+export type SchemaBaseValue = components['schemas']['BaseValue'];
 export type SchemaBlockRef = components['schemas']['BlockRef'];
 export type SchemaCancelledResponse = components['schemas']['CancelledResponse'];
 export type SchemaCanvas = components['schemas']['Canvas'];
@@ -4947,6 +5131,7 @@ export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedRespon
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
 export type SchemaChatEvent = components['schemas']['ChatEvent'];
 export type SchemaCloneRequest = components['schemas']['CloneRequest'];
+export type SchemaColumn = components['schemas']['Column'];
 export type SchemaCommandEffectRow = components['schemas']['CommandEffectRow'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
 export type SchemaCommandResponse = components['schemas']['CommandResponse'];
@@ -4996,6 +5181,7 @@ export type SchemaGraphNoteRow = components['schemas']['GraphNoteRow'];
 export type SchemaGrepHit = components['schemas']['GrepHit'];
 export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
 export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
+export type SchemaGroup = components['schemas']['Group'];
 export type SchemaIndeterminateProgress = components['schemas']['IndeterminateProgress'];
 export type SchemaInstallRequest = components['schemas']['InstallRequest'];
 export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
@@ -5064,6 +5250,7 @@ export type SchemaPublicationChangedEvent = components['schemas']['PublicationCh
 export type SchemaPutCanvasRequest = components['schemas']['PutCanvasRequest'];
 export type SchemaPutFileRequest = components['schemas']['PutFileRequest'];
 export type SchemaPutNoteRequest = components['schemas']['PutNoteRequest'];
+export type SchemaQueryResult = components['schemas']['QueryResult'];
 export type SchemaRecentFile = components['schemas']['RecentFile'];
 export type SchemaRecentsResponse = components['schemas']['RecentsResponse'];
 export type SchemaRecordRecentRequest = components['schemas']['RecordRecentRequest'];
@@ -5075,6 +5262,7 @@ export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResp
 export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
+export type SchemaRow = components['schemas']['Row'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
 export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
@@ -5130,6 +5318,7 @@ export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
 export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
 export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
+export type SchemaViewSummary = components['schemas']['ViewSummary'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
 export type SchemaWikilinkRow = components['schemas']['WikilinkRow'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
@@ -5199,6 +5388,188 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not read the links, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Daemon refused entry creation */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reorder_groups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Stale ancestor */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid base */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_property: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Stale ancestor */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daemon refused write */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    query_base: {
+        parameters: {
+            query: {
+                kiln: string;
+                path?: string;
+                this?: string;
+                view?: string;
+                yaml?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueryResult"];
+                };
+            };
+            /** @description Invalid base */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daemon unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    base_views: {
+        parameters: {
+            query: {
+                kiln: string;
+                path?: string;
+                this?: string;
+                view?: string;
+                yaml?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid base */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daemon unavailable */
             502: {
                 headers: {
                     [name: string]: unknown;

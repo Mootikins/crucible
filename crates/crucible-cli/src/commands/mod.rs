@@ -40,3 +40,5 @@ pub mod storage;
 
 #[cfg(test)]
 mod chat_factory_tests;
+
+pub mod base;

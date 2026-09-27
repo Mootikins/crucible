@@ -211,7 +211,10 @@ impl NotePipeline {
         // inside it, and nothing else. None of the markdown phases apply: there
         // is no frontmatter to read, no headings to extract, and no wikilink
         // syntax to resolve.
-        if crucible_core::kiln::is_plain_text_file(path) {
+        if crucible_core::kiln::is_plain_text_file(path)
+            || crucible_core::kiln::KilnFileKind::of(path)
+                == crucible_core::kiln::KilnFileKind::Base
+        {
             return self.process_plain_text(path, phase1_duration).await;
         }
 
@@ -399,6 +402,8 @@ impl NotePipeline {
         let markdown = file.filter(|file| {
             !crucible_core::kiln::is_canvas_file(file)
                 && !crucible_core::kiln::is_plain_text_file(file)
+                && crucible_core::kiln::KilnFileKind::of(file)
+                    != crucible_core::kiln::KilnFileKind::Base
         });
         let enriched = match (&body, markdown) {
             (Some(_), Some(file)) => match self.parser.parse_file(file).await {

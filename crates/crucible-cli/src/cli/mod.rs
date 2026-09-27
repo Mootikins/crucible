@@ -106,6 +106,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Query and edit Obsidian Bases.
+    Base {
+        #[command(subcommand)]
+        command: crate::commands::base::BaseCommands,
+    },
     /// Interactive AI chat with session persistence and tool access
     #[command(
         long_about = "Interactive AI chat with session persistence and tool access.\n\nExamples:\n  # Interactive chat session\n  cru chat\n\n  # One-shot query\n  cru chat \"Explain the architecture\"\n\n  # Resume previous session\n  cru chat --resume chat-20250102-1430-a1b2\n\n  # Use a specific ACP agent\n  cru chat --acp claude\n\n  # Plan mode (read-only)\n  cru chat --plan",

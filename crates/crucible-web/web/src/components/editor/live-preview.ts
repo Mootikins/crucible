@@ -1,3 +1,6 @@
+import { isBasePath } from '@/lib/markdown-path';
+import { render } from 'solid-js/web';
+import { BaseView } from '@/components/bases/BaseView';
 /**
  * Obsidian-style live preview for markdown buffers.
  *
@@ -105,6 +108,9 @@ const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
 /** The document's directory, used to resolve relative image srcs. Injected
  * per-editor by {@link livePreview} so images load the same way the reading
  * view does (through the raw project-file endpoint). */
+const baseHostFacet = Facet.define<string, string>({ combine: values => values[0] ?? '' });
+const baseKilnFacet = Facet.define<string, string>({ combine: values => values[0] ?? '' });
+
 const baseDirFacet = Facet.define<string, string>({
   combine: (values) => values[0] ?? '',
 });
@@ -231,6 +237,25 @@ class MathWidget extends WidgetType {
   override ignoreEvent(): boolean {
     return false;
   }
+}
+
+/** A daemon-backed base island, disposed when its source is revealed. */
+class BaseWidget extends WidgetType {
+  private dispose?: () => void;
+  constructor(readonly yaml: string, readonly host: string, readonly kiln: string, readonly file?: string, readonly baseView?: string) { super(); }
+  eq(other: BaseWidget) { return this.yaml === other.yaml && this.host === other.host && this.kiln === other.kiln && this.file === other.file && this.baseView === other.baseView; }
+  toDOM(view: EditorView): HTMLElement {
+    const node = document.createElement('div');
+    node.className = 'cm-lp-base';
+    this.dispose = render(() => BaseView({ yaml: this.file ? undefined : this.yaml, filePath: this.file, view: this.baseView, host: this.host, kiln: this.kiln || undefined }), node);
+    const observer = new ResizeObserver(() => view.requestMeasure());
+    observer.observe(node);
+    const dispose = this.dispose;
+    this.dispose = () => { observer.disconnect(); dispose(); };
+    return node;
+  }
+  destroy() { this.dispose?.(); }
+  ignoreEvent() { return true; }
 }
 
 /** A ```mermaid fence rendered as a diagram. Mermaid renders async, so toDOM
@@ -912,6 +937,21 @@ function buildBlockWidgets(state: EditorState): DecorationSet {
     enter: (nodeRef) => {
       // ```mermaid fence → a diagram block widget (unless the cursor is inside,
       // which reveals the source, or diagrams are disabled in the editor).
+      if (nodeRef.name === 'Paragraph' && !selectionTouches(state, nodeRef.from, nodeRef.to)) {
+        const embed = /^!\[\[([^\]#|]+)(?:#([^\]|]+))?(?:\|[^\]]+)?\]\]$/.exec(state.doc.sliceString(nodeRef.from,nodeRef.to));
+        if (embed && isBasePath(embed[1])) {
+          decorations.push(Decoration.replace({ widget: new BaseWidget('', state.facet(baseHostFacet), state.facet(baseKilnFacet), embed[1], embed[2]), block: true }).range(nodeRef.from,nodeRef.to));
+          return false;
+        }
+      }
+      if (nodeRef.name === 'FencedCode' && fencedCodeInfo(state, nodeRef.node) === 'base') {
+        if (!selectionTouches(state, nodeRef.from, nodeRef.to)) {
+          const codeText = nodeRef.node.getChildren('CodeText')[0];
+          const code = codeText ? state.doc.sliceString(codeText.from, codeText.to) : '';
+          decorations.push(Decoration.replace({ widget: new BaseWidget(code, state.facet(baseHostFacet), state.facet(baseKilnFacet)), block: true }).range(nodeRef.from, nodeRef.to));
+        }
+        return false;
+      }
       if (nodeRef.name === 'FencedCode' && diagramsOn) {
         if (fencedCodeInfo(state, nodeRef.node) === 'mermaid') {
           if (!selectionTouches(state, nodeRef.from, nodeRef.to)) {
@@ -1356,6 +1396,8 @@ const livePreviewTheme = EditorView.baseTheme({
 export function livePreview(opts?: {
   maxLineWidth?: number;
   baseDir?: string;
+  path?: string;
+  kiln?: string;
   renderMath?: boolean;
   renderDiagrams?: boolean;
   hideFrontmatterGap?: boolean;
@@ -1367,6 +1409,8 @@ export function livePreview(opts?: {
     EditorView.editorAttributes.of({ class: 'cm-lp' }),
     // The document's directory, for resolving relative image srcs.
     baseDirFacet.of(opts?.baseDir ?? ''),
+    baseHostFacet.of(opts?.path ?? ''),
+    baseKilnFacet.of(opts?.kiln ?? ''),
     renderMathFacet.of(opts?.renderMath ?? true),
     renderDiagramsFacet.of(opts?.renderDiagrams ?? true),
     hideFrontmatterGapFacet.of(opts?.hideFrontmatterGap ?? true),

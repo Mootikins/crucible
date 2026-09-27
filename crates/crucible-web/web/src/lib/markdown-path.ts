@@ -65,3 +65,8 @@ export function isMarkdownPath(path: string): boolean {
 export function noteStem(name: string): string {
   return isMarkdownPath(name) ? name.slice(0, name.lastIndexOf('.')) : name;
 }
+
+/** Obsidian Bases document; mirrors KilnFileKind::Base. */
+export function isBasePath(path: string): boolean {
+  return extensionOf(path) === "base";
+}

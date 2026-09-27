@@ -15,7 +15,7 @@ const DOC = [
 
 function makeView(
   doc = DOC,
-  opts?: { baseDir?: string; hideFrontmatterGap?: boolean; reflowParagraphs?: boolean },
+  opts?: { path?: string; kiln?: string; baseDir?: string; hideFrontmatterGap?: boolean; reflowParagraphs?: boolean },
 ): EditorView {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
@@ -869,5 +869,29 @@ describe('paragraph reflow', () => {
     const view = track(makeView(['Alpha beta', 'gamma delta'].join('\n')));
     cursorAt(view, 3);
     expect(lines(view)).toEqual(['Alpha beta gamma delta']);
+  });
+});
+
+vi.mock('@/components/bases/BaseView', () => ({ BaseView: (props: { yaml?: string; filePath?: string; host?: string; view?: string }) => {
+  const node = document.createElement('div');
+  node.textContent = JSON.stringify(props);
+  node.setAttribute('data-testid', 'live-base');
+  return node;
+} }));
+
+describe('Bases live preview', () => {
+  it('mounts a base fence and restores its source at the cursor', () => {
+    const doc = 'Before\n\n```base\nviews: [{type: table, name: Tasks}]\n```\n\nAfter';
+    const view = track(makeView(doc, { path: "/kiln/Host.md", kiln: "Work" }));
+    expect(view.dom.querySelector('[data-testid="live-base"]')?.textContent).toContain("/kiln/Host.md");
+    expect(view.dom.querySelector('[data-testid="live-base"]')?.textContent).toContain('views:');
+    cursorAt(view,doc.indexOf('views:'));
+    expect(view.dom.querySelector('[data-testid="live-base"]')).toBeNull();
+    expect(text(view)).toContain('views:');
+  });
+  it('mounts a named saved base embed', () => {
+    const view = track(makeView('Before\n\n![[Tasks.base#Board]]\n\nAfter'));
+    expect(view.dom.querySelector('[data-testid="live-base"]')?.textContent).toContain('Tasks.base');
+    expect(view.dom.querySelector('[data-testid="live-base"]')?.textContent).toContain('Board');
   });
 });

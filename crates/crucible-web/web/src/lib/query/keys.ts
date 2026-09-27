@@ -7,6 +7,8 @@
  * reaches that session's history, models, modes, knobs and scope.
  */
 export const keys = {
+  bases: () => ['bases'] as const,
+  baseQuery: (request: unknown) => ['bases', request] as const,
   kilns: () => ['kilns'] as const,
   config: () => ['config'] as const,
   projects: () => ['projects'] as const,

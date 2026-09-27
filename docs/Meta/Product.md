@@ -73,6 +73,9 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
   - **Gets you:** edits and refactors land as markdown bytes on disk; the editor's save carries the exact buffer, and a rename rewrites real files rather than an index.
 - [ ] **Note Types** `P3` — templates and typed notes (book, meeting, movie) · `crucible-core`
 
+- [-] **Obsidian Bases** `P1` — `.base` files and embedded queries · [[Help/Query/Bases]] · `crucible-core`, `crucible-daemon`, `crucible-cli`, `crucible-web`
+  - **Gets you:** daemon-evaluated filters, formulas, summaries and groups; `cru base` queries/creates/edits; web table, cards, list and kanban views in files and notes, with hash-checked frontmatter writes. Full Obsidian conformance and plugin policy migration remain incomplete.
+
 ## Knowledge Discovery
 
 - [x] **Semantic Search** `P0` — vector similarity search over kiln notes · [[Help/Concepts/Semantic Search]] · `crucible-daemon` (storage, llm)
@@ -91,7 +94,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
   - **Gets you:** nothing a user or agent can call. `kiln.graph` hands back a flat edge list; all traversal happens client-side in the web graph view.
 - [ ] **Query System** `P0` — structured note queries with a composable pipeline · [[Help/Query/Query System]] · `crucible-daemon` (storage)
   - **Demoted `[-]` → `[ ]` 2026-08-18.** The subsystem this entry described is deleted, so there is no work in progress to be in the middle of. `storage/sqlite/query/` (~5,739 lines: an IR, four syntax front-ends, a SQLite renderer, 17 snapshots) was removed on 2026-08-11 — not for want of callers, but because the renderer targeted a schema that never existed. See [[Meta/Product Decision Log]] for the full reasoning and the deletion SHA.
-  - **Documentation:** [[Help/Query/Query System]] already marks the query language unavailable and directs users to the live search commands.
+  - **Documentation:** [[Help/Query/Query System]] records the retired custom DSL and directs users to search and the separate Obsidian Bases implementation.
 - [x] **Property Search** `P0` — search notes by frontmatter properties and tags · `crucible-daemon` (tools)
   - **Gets you:** an agent calling `property_search {"status":"draft"}` or `{"tags":["urgent","important"]}` gets JSON listing only the matching notes with their paths and tags.
 - [-] **Document Clustering** `P0` — heuristic clustering and MoC detection · `crucible-daemon` (storage)
@@ -995,7 +998,8 @@ HTTP Gateway (crucible-web wired to daemon)
   - **Gets you:** the note's frontmatter as a card, its wikilinks as working anchors with hover previews, and linked *and* unlinked backlinks in a side panel where one click wraps a mention as a wikilink in the open buffer. A failed request draws an error with the HTTP status and a Retry, not the empty state that used to report a 404 as "Linked mentions (0)". The old entry's "custom columns/sort/filters" framing does **not** ship — that idea now lives entirely in `Structured Data Views`.
 - [x] **Search UI** `P2` — one query fanned out over notes, files and sessions, with a Text|Semantic toggle · `crucible-web`
   - **Gets you:** results from all three sources in one panel, a toggle that swaps note results between literal grep and vector similarity, matched spans highlighted, and scoping that drops the other sections. Reachable from the Navigator's search takeover and the command palette. **Property search does not ship** — there is no frontmatter-field query path in the UI.
-- [ ] **Structured Data Views** `P3` — Obsidian Bases-style tables and kanban from frontmatter. If built it is a TypeScript panel over the storage query layer, not a Lua extension · `crucible-web`, `crucible-daemon` (storage)
+- [-] **Structured Data Views** `P1` — native Obsidian Bases table, cards, list and kanban views over daemon queries · [[Help/Query/Bases]] · `crucible-web`, `crucible-daemon`
+  - **Gets you:** saved `.base` panels and embedded views, with view switching, grouped cards, new entries and hash-checked property edits. See **Obsidian Bases** above for the compatibility limits.
 
 ### Artifacts & Rich Content
 

@@ -1,4 +1,5 @@
-import { Component, For, Show } from 'solid-js';
+import { DataTable } from '../DataTable';
+import { Component, Show } from 'solid-js';
 import { usePublication } from './usePublication';
 import type { BlockProps } from './registry';
 
@@ -56,32 +57,7 @@ const Rows: Component<{ value: unknown }> = (props) => {
       }
     >
       {(cols) => (
-        <div class="overflow-x-auto">
-          <table class="text-sm">
-            <thead>
-              <tr>
-                <For each={cols()}>
-                  {(k) => <th class="px-2 py-1 text-left text-muted font-medium">{k}</th>}
-                </For>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={rows() ?? []}>
-                {(row) => (
-                  <tr>
-                    <For each={cols()}>
-                      {(k) => (
-                        <td class="px-2 py-1 align-top">
-                          {String((row as Record<string, unknown>)[k] ?? '')}
-                        </td>
-                      )}
-                    </For>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </div>
+        <DataTable columns={cols().map(key => ({ key, title: key }))} rows={rows() ?? []} cell={(row,key) => String((row as Record<string, unknown>)[key] ?? '')} />
       )}
     </Show>
   );

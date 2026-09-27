@@ -1,3 +1,4 @@
+import { isBasePath } from './markdown-path';
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
 
@@ -76,7 +77,8 @@ export function openFileAtLine(filePath: string, line: number, fileName?: string
  * Which panel opens a path. A `.canvas` is a spatial document, not text, so it
  * routes to the canvas editor rather than the file viewer.
  */
-function contentTypeForPath(filePath: string): 'file' | 'canvas' {
+function contentTypeForPath(filePath: string): 'file' | 'canvas' | 'base' {
+  if (isBasePath(filePath)) return 'base';
   return /\.canvas$/i.test(filePath) ? 'canvas' : 'file';
 }
 

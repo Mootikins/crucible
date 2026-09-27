@@ -22,3 +22,6 @@ mod scope;
 mod sessions;
 #[path = "rpc_integration/tui_flow.rs"]
 mod tui_flow;
+
+#[path = "rpc_integration/bases.rs"]
+mod bases;

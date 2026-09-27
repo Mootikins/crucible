@@ -97,6 +97,12 @@ rpc_methods! {
     EmbedQuery = "embed.query",
     ListNotes = "list_notes",
     GetNoteByName = "get_note_by_name",
+    BaseList = "base.list",
+    BaseViews = "base.views",
+    BaseQuery = "base.query",
+    BaseCreateEntry = "base.create_entry",
+    BaseSetProperty = "base.set_property",
+    BaseReorderGroups = "base.reorder_groups",
     GetBacklinks = "get_backlinks",
     KilnGraph = "kiln.graph",
     NoteUpsert = "note.upsert",
@@ -467,6 +473,14 @@ impl RpcDispatcher {
                 id,
                 crate::server::kiln::handle_get_note_by_name(req.clone(), &self.ctx.kiln)
             ),
+            RpcMethod::BaseList
+            | RpcMethod::BaseViews
+            | RpcMethod::BaseQuery
+            | RpcMethod::BaseCreateEntry
+            | RpcMethod::BaseSetProperty
+            | RpcMethod::BaseReorderGroups => {
+                forward!(id, crate::bases::handle(req.clone(), &self.ctx))
+            }
             RpcMethod::GetBacklinks => forward!(
                 id,
                 crate::server::kiln::handle_get_backlinks(req.clone(), &self.ctx.kiln)

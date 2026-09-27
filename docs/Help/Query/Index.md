@@ -1,16 +1,15 @@
 ---
 title: Query
-description: Why Crucible has no query language, and what to use instead
-status: rejected
+description: Obsidian Bases, search, and the history of the retired Crucible query DSL
+status: active
 tags:
   - query
   - search
 ---
 
-> **⚠️ Not a feature, and not planned.** Crucible has no query language and no
-> work in progress toward one. This note exists to record that a query DSL was
-> built, explored and removed, so the next person to reach for one starts from
-> the evidence rather than from scratch.
+[[Help/Query/Bases]] implements Obsidian's saved-query format. The historical
+Crucible-specific query DSL below remains removed; Bases does not revive its
+IR, SQL renderer or alternative syntaxes.
 
 # Query System
 
@@ -59,10 +58,11 @@ there.
 
 ## What to use instead
 
-Everything the examples above described is already served, without a DSL:
+Use the existing search and graph interfaces, or Obsidian Bases for saved views:
 
 | Want | Use |
 |---|---|
+| Saved filters, formulas and structured views | [[Help/Query/Bases]], in the web and `cru base` |
 | Full-text search over note bodies | `cru search`, backed by the `notes_fts` FTS5 index |
 | Semantic / similarity search | the `semantic_search` agent tool and the `search_vectors` RPC |
 | Backlinks and outlinks | `cru.kiln.backlinks()` / `outlinks()` / `neighbors()` in Lua, exact over the resolved-link index |

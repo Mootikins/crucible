@@ -1,3 +1,4 @@
+import { BasePanel } from '@/components/bases/BasePanel';
 import { getGlobalRegistry } from './panel-registry';
 import { ChatPanel } from '@/components/ChatPanel';
 import { CenterComposer } from '@/components/CenterComposer';
@@ -60,6 +61,7 @@ export function registerPanels(): void {
   // tab for each diffset, so the panel is never opened by name.
   registry.register('diff', 'Diff', DiffPanel, 'center');
   registry.register('graph', 'Graph', GraphPanel, 'center');
+  registry.register('base', 'Base', BasePanel, 'center');
   registry.register('canvas', 'Canvas', CanvasPanel, 'center');
   // A plugin block, docked rather than embedded in a note. Until this existed
   // a plugin could contribute content to a document and could not contribute a

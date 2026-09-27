@@ -236,6 +236,8 @@ export const CodeMirrorEditor: Component<{
       extensions.push(
         livePreview({
           maxLineWidth: props.lineWidth,
+          path: props.path,
+          kiln: props.kiln,
           baseDir: props.path.replace(/\/[^/]*$/, ''),
           renderMath: props.renderMath ?? true,
           renderDiagrams: props.renderDiagrams ?? true,

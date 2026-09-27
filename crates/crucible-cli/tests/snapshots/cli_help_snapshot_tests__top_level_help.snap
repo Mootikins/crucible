@@ -7,6 +7,7 @@ cru - Crucible CLI - Interactive knowledge management with semantic search
 Usage: cru [OPTIONS] [COMMAND]
 
 Commands:
+  base         Query and edit Obsidian Bases
   chat         Interactive AI chat with session persistence and tool access [alias: c]
   mcp          Start MCP server exposing Crucible tools for external AI agents
   acp          Run Crucible as an ACP agent for editors (speaks ACP over stdio)

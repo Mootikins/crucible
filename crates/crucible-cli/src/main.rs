@@ -177,7 +177,8 @@ fn config_need(command: &Option<Commands>) -> ConfigNeed {
         | Commands::Agents { .. }
         | Commands::Tasks { .. }
         | Commands::Tools(_) => ConfigNeed::Local,
-        Commands::Kiln { .. }
+        Commands::Base { .. }
+        | Commands::Kiln { .. }
         | Commands::Project { .. }
         | Commands::Doctor { .. }
         | Commands::Daemon(_)
@@ -474,6 +475,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Eval(cmd)) => cmd.execute(config).await?,
 
+        Some(Commands::Base { command }) => commands::base::handle(command).await?,
         Some(Commands::Kiln { command }) => commands::kiln::handle(command).await?,
 
         Some(Commands::Project { command }) => commands::project::handle(command).await?,

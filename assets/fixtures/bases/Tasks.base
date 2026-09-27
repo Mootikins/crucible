@@ -1,0 +1,20 @@
+filters:
+  and:
+    - file.ext == "md"
+    - file.hasTag("work")
+formulas:
+  doubled: priority * 2
+properties:
+  formula.doubled:
+    displayName: Doubled priority
+views:
+  - type: table
+    name: Tasks
+    order: [file.name, note.status, formula.doubled]
+    sort: [{property: formula.doubled, direction: DESC}]
+    summaries: {formula.doubled: Sum}
+  - type: kanban
+    name: Board
+    groupBy: {property: note.status, direction: ASC}
+    groupOrder: [todo, doing, done]
+    order: [file.name, note.status]

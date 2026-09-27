@@ -76,6 +76,218 @@
         }
       }
     },
+    "/api/bases/entries": {
+      "post": {
+        "operationId": "create_entry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "502": {
+            "description": "Daemon refused entry creation"
+          }
+        }
+      }
+    },
+    "/api/bases/group-order": {
+      "put": {
+        "operationId": "reorder_groups",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "Stale ancestor"
+          },
+          "422": {
+            "description": "Invalid base"
+          }
+        }
+      }
+    },
+    "/api/bases/property": {
+      "put": {
+        "operationId": "set_property",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "Stale ancestor"
+          },
+          "502": {
+            "description": "Daemon refused write"
+          }
+        }
+      }
+    },
+    "/api/bases/query": {
+      "get": {
+        "operationId": "query_base",
+        "parameters": [
+          {
+            "name": "kiln",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "yaml",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "this",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid base"
+          },
+          "502": {
+            "description": "Daemon unavailable"
+          }
+        }
+      }
+    },
+    "/api/bases/views": {
+      "get": {
+        "operationId": "base_views",
+        "parameters": [
+          {
+            "name": "kiln",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "yaml",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "this",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid base"
+          },
+          "502": {
+            "description": "Daemon unavailable"
+          }
+        }
+      }
+    },
     "/api/canvas": {
       "get": {
         "summary": "`GET /api/canvas?path=<path>` — read and validate a canvas document.",
@@ -4578,6 +4790,296 @@
           }
         }
       },
+      "BaseValue": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "boolean"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "number"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "string"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "date"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "duration"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BaseValue"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "list"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/BaseValue"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "object"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "file"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "display": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "link"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "object",
+                "required": [
+                  "pattern",
+                  "flags"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "flags": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "regexp"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "html"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "icon"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "BlockRef": {
         "type": "object",
         "description": "Where in a note a hit sits.",
@@ -5446,6 +5948,21 @@
               "null"
             ],
             "description": "The project name for the clone. Absent takes the name in the URL."
+          }
+        }
+      },
+      "Column": {
+        "type": "object",
+        "required": [
+          "property",
+          "display_name"
+        ],
+        "properties": {
+          "property": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
           }
         }
       },
@@ -7008,6 +7525,34 @@
           },
           "truncated": {
             "type": "boolean"
+          }
+        }
+      },
+      "Group": {
+        "type": "object",
+        "required": [
+          "value",
+          "rows",
+          "summaries"
+        ],
+        "properties": {
+          "value": {
+            "$ref": "#/components/schemas/BaseValue"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Row"
+            }
+          },
+          "summaries": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BaseValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },
@@ -8739,6 +9284,75 @@
           }
         }
       },
+      "QueryResult": {
+        "type": "object",
+        "required": [
+          "view",
+          "view_type",
+          "columns",
+          "rows",
+          "groups",
+          "summaries",
+          "views",
+          "root"
+        ],
+        "properties": {
+          "source_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "view": {
+            "type": "string"
+          },
+          "view_type": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Column"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Row"
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Group"
+            }
+          },
+          "summaries": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BaseValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "group_property": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ViewSummary"
+            }
+          },
+          "root": {
+            "type": "string"
+          }
+        }
+      },
       "RecentFile": {
         "type": "object",
         "required": [
@@ -9015,6 +9629,31 @@
             "type": "string",
             "format": "date-time",
             "description": "When the comment was written, RFC 3339.\n\nA string rather than a date type: the daemon's spelling reaches the\nbrowser unchanged, and a parse and a reformat here could only lose\nprecision the daemon sent."
+          }
+        }
+      },
+      "Row": {
+        "type": "object",
+        "required": [
+          "path",
+          "ancestor_hash",
+          "values"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "ancestor_hash": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BaseValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },
@@ -10350,6 +10989,21 @@
                 "description": "Where in the note the hit sits, or `null` when the hit names the whole\nnote. Always written, so `null` reads as \"the whole note\" and never as\n\"unknown\"."
               }
             ]
+          }
+        }
+      },
+      "ViewSummary": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
           }
         }
       },

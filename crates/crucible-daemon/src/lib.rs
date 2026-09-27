@@ -163,3 +163,5 @@ pub use subscription::{ClientId, SubscriptionManager};
 pub use tools::grep_engine::{GrepHit, GrepSearchResponse};
 pub use tools_bridge::DaemonToolsBridge;
 pub use watch::*;
+
+pub mod bases;

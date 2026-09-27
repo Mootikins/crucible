@@ -31,6 +31,7 @@ const TAB_ICONS: Partial<Record<TabContentType, Component<{ class?: string }>>> 
   backlinks: Link2,
   graph: ChartNetwork,
   canvas: ChartNetwork,
+  base: ClipboardList,
   files: FolderTree,
   search: Search,
   activity: Activity,

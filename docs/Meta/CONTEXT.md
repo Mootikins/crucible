@@ -46,7 +46,7 @@ The disposition of the file edits of one session in `apply` mode, per hunk, per 
 _Avoid_: approval, proposal (for this meaning)
 
 **Proposal**:
-A set of note writes that waits for a person. Each write holds its expected base and its new text, and the file on disk does not change until the person accepts. Daemon state under the data root, not kiln content. A proposal never expires: only accept, reject or dismiss removes it from the Inbox.
+A set of note writes that waits for a person. Each write holds its expected ancestor and its new text, and the file on disk does not change until the person accepts. Daemon state under the data root, not kiln content. A proposal never expires: only accept, reject or dismiss removes it from the Inbox.
 _Avoid_: staged note, suggestion, pending write
 
 **Write mode**:
@@ -113,11 +113,11 @@ _Avoid_: save, overwrite
 A note write that changes named lines by their text, and is refused whole when a line moved.
 _Avoid_: patch, diff, partial write
 
-**Base**:
-The hash of the note text a note write was made from. The daemon refuses a write whose base is not the current hash as stale.
-_Avoid_: version, etag, revision
+**Ancestor hash**:
+The hash of the note text a note write was made from. The daemon refuses a write whose ancestor is not the current hash as stale.
+_Avoid_: base, version, etag, revision
 
-**Base text**:
+**Ancestor text**:
 The note text a note write was made from. The browser keeps it with the write, so a stale write can be merged.
 _Avoid_: original, snapshot (for this meaning)
 
@@ -126,7 +126,7 @@ A note write the daemon refused as stale whose merge left regions. It waits in t
 _Avoid_: collision, conflict copy
 
 **Region**:
-One span both sides of a merge changed differently, with the base, ours and theirs.
+One span both sides of a merge changed differently, with the ancestor, ours and theirs.
 _Avoid_: hunk (for this meaning), chunk
 
 **Outbox**:
@@ -136,3 +136,15 @@ _Avoid_: queue, pending writes, sync log
 **Kept kiln**:
 A kiln this device mirrors for offline reading.
 _Avoid_: cached kiln, offline kiln, downloaded kiln
+
+### Bases
+
+**Base file**: A `.base` YAML file describing an Obsidian Bases query and its views.
+
+**Base block**: A `base` code fence containing the same YAML in a note.
+
+**View**: A named presentation of a base's entries, with its own filters, order and grouping.
+
+**Entry**: A kiln file selected by a base. File properties also apply to attachments.
+
+**Group**: Entries sharing a value of the view's grouping property.
