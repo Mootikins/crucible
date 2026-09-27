@@ -71,9 +71,8 @@ fn test_context(data_home: &std::path::Path, kiln: &std::path::Path) -> Arc<RpcC
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
     use crate::project_manager::ProjectManager;
-    use tokio::sync::broadcast;
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let kiln_manager = Arc::new(KilnManager::new());
     let session_manager = crate::test_support::temp_session_manager_with_kilns(&[("kiln", kiln)]);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));

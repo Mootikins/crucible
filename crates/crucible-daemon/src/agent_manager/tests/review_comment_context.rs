@@ -127,7 +127,7 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
         workspace.path().join("projects.json"),
     ));
     let root = projects.register(repo.path()).unwrap().path;
-    let (tx, mut rx) = broadcast::channel(256);
+    let (tx, mut rx) = crate::EventBus::channel(256);
     let ctx = crate::rpc::RpcContext::for_test(
         am.kiln_manager.clone(),
         sm.clone(),
@@ -354,7 +354,7 @@ async fn an_acp_turn_keeps_the_review_tag_next_to_a_file_attachment() {
         workspace.path().join("projects.json"),
     ));
     let root = projects.register(repo.path()).unwrap().path;
-    let (tx, mut rx) = broadcast::channel(256);
+    let (tx, mut rx) = crate::EventBus::channel(256);
     let ctx = crate::rpc::RpcContext::for_test(
         am.kiln_manager.clone(),
         sm.clone(),

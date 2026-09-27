@@ -53,7 +53,7 @@ impl Rig {
         let tmp = TempDir::new().unwrap();
         let sessions = temp_session_manager();
         let shared_loader = Arc::new(tokio::sync::Mutex::new(None));
-        let (events, _) = broadcast::channel(128);
+        let (events, _) = crate::EventBus::channel(128);
         let kilns = Arc::new(KilnManager::new());
         // A configured provider is what admits a loopback endpoint.
         let mut llm = bridge_llm_config();

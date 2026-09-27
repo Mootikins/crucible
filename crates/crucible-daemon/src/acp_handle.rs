@@ -110,7 +110,7 @@ pub struct AcpAgentHandleParams<'a> {
     /// Where connect-time announcements go — today only the resume
     /// fallback note. `None` drops the announcement; the fallback itself
     /// still happens.
-    pub event_tx: Option<tokio::sync::broadcast::Sender<crate::protocol::SessionEventMessage>>,
+    pub event_tx: Option<crate::EventBus>,
 }
 
 impl AcpAgentHandle {
@@ -282,7 +282,7 @@ impl AcpAgentHandle {
                 "session/resume unsupported; started a fresh agent session"
             );
             if let (Some(tx), Some(daemon_session_id)) = (event_tx.as_ref(), parent_session_id) {
-                let _ = tx.send(
+                let _ = tx.emit(
                     crate::protocol::SessionEventMessage::new(
                         daemon_session_id,
                         "acp_resume_fallback",

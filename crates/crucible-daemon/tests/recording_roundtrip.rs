@@ -55,7 +55,7 @@ async fn roundtrip(events: Vec<SessionEventMessage>) -> Vec<SessionEventMessage>
     drop(tx);
     handle.await.expect("join writer").expect("writer ok");
 
-    let (replay_tx, mut replay_rx) = broadcast::channel(64);
+    let (replay_tx, mut replay_rx) = crucible_daemon::EventBus::channel(64);
     let replay = ReplaySession::new(
         path,
         0.0,
@@ -289,7 +289,7 @@ async fn empty_recording_produces_only_replay_complete() {
     drop(tx);
     handle.await.expect("join writer").expect("writer ok");
 
-    let (replay_tx, mut replay_rx) = broadcast::channel(16);
+    let (replay_tx, mut replay_rx) = crucible_daemon::EventBus::channel(16);
     let replay = ReplaySession::new(
         path,
         0.0,
@@ -331,7 +331,7 @@ async fn harness_fixture_roundtrips_through_replay() {
 
     let path = create_test_recording("fixture-session", fixture_events);
 
-    let (replay_tx, mut replay_rx) = broadcast::channel(64);
+    let (replay_tx, mut replay_rx) = crucible_daemon::EventBus::channel(64);
     let replay = ReplaySession::new(
         path.to_path_buf(),
         0.0,

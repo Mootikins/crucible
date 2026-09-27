@@ -419,7 +419,7 @@ async fn run_and_emit_assessment(
     }
 
     let msg = SessionEventMessage::workflow_assessed(session_id, &passed, &failed, &manual);
-    crate::event_emitter::emit_event(&ctx.event_tx, msg);
+    ctx.event_tx.emit(msg);
 }
 
 const VALIDATION_OUTPUT_CAP: usize = 4096;
@@ -563,7 +563,7 @@ fn truncate_utf8_lossy(bytes: &[u8], cap: usize) -> String {
 fn drain_and_broadcast(ctx: &RpcContext, session_id: &str, exec: &mut WorkflowExecution) {
     for event in exec.drain_events() {
         let msg = workflow_event_to_message(session_id, event);
-        crate::event_emitter::emit_event(&ctx.event_tx, msg);
+        ctx.event_tx.emit(msg);
     }
 }
 
@@ -846,7 +846,7 @@ mod tests {
         use crate::project_manager::ProjectManager;
         use std::sync::Arc;
 
-        let (event_tx, _rx) = tokio::sync::broadcast::channel(16);
+        let (event_tx, _rx) = crate::EventBus::channel(16);
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = crate::test_support::temp_session_manager();
         let acp_config = profile.map(|permissions| {

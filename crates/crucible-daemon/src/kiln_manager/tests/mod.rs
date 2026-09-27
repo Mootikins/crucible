@@ -48,7 +48,7 @@ async fn enrichment_config_wiring_no_config_skips_enrichment() {
 
 #[tokio::test]
 async fn enrichment_config_wiring_with_config_enables_enrichment() {
-    let (tx, _rx) = broadcast::channel(1);
+    let (tx, _rx) = crate::EventBus::channel(1);
     let km = KilnManager::with_event_tx(
         tx,
         Some(EmbeddingProviderConfig::mock(Some(384))),
@@ -820,7 +820,7 @@ async fn opening_a_kiln_backfills_a_text_index_that_was_never_written() {
 /// without a counter that exists only for this test.
 #[tokio::test]
 async fn opening_one_kiln_from_two_callers_at_once_opens_it_once() {
-    let (tx, mut rx) = broadcast::channel(64);
+    let (tx, mut rx) = crate::EventBus::channel(64);
     let km = Arc::new(KilnManager::with_event_tx(
         tx,
         None,

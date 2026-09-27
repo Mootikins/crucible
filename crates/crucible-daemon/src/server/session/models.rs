@@ -5,7 +5,7 @@ use crate::rpc_helpers::typed_params;
 pub(crate) async fn handle_session_switch_model(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionSwitchModelRequest>(&req) {
         Ok(p) => p,

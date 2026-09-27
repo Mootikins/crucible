@@ -194,7 +194,7 @@ async fn a_model_switch_during_an_agent_build_is_not_lost() {
 
     // 2. Now the turn claims the slot and parks in the build. The switch is
     //    already past the check that would have rejected it.
-    let (event_tx, _event_rx) = broadcast::channel(64);
+    let (event_tx, _event_rx) = crate::EventBus::channel(64);
     let sending = {
         let agent_manager = agent_manager.clone();
         let session_id = session.id.clone();

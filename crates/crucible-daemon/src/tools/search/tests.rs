@@ -172,7 +172,7 @@ async fn semantic_search_returns_the_registry_name_when_there_is_one() {
 async fn semantic_search_names_a_failed_kiln_to_the_model_and_the_user() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_path_buf();
-    let (event_tx, _events) = tokio::sync::broadcast::channel(16);
+    let (event_tx, _events) = crate::EventBus::channel(16);
     let hub = Arc::new(crate::notifications::NotificationHub::new(
         temp_dir.path(),
         crate::test_support::temp_session_manager(),

@@ -168,7 +168,10 @@ impl Rig {
             "{door}: the context attachment of the session was not released"
         );
         assert_eq!(
-            self.daemon.ctx.agents.session_residue(&self.id),
+            self.daemon
+                .ctx
+                .agents
+                .session_residue(&self.id, &self.daemon.ctx.event_tx),
             Vec::<&str>::new(),
             "{door}: cleanup_session did not run"
         );

@@ -53,7 +53,7 @@ pub(crate) async fn handle_session_configure_agent(
 pub(crate) async fn handle_session_send_message(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     admission: crate::server::diff::Admission<'_>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
@@ -142,7 +142,7 @@ pub(crate) async fn handle_session_send_message(
 pub(crate) async fn inject_context_impl(
     sm: &SessionManager,
     am: &AgentManager,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     session_id: &str,
     role: &str,
     content: &str,
@@ -198,17 +198,14 @@ pub(crate) async fn inject_context_impl(
         .await
         .map_err(|e| e.to_string())?;
     drop(input);
-    let _ = emit_event(
-        event_tx,
-        SessionEventMessage::new(
-            session_id,
-            "context_injected",
-            serde_json::json!({
-                "role": role,
-                "content": content,
-            }),
-        ),
-    );
+    let _ = event_tx.emit(SessionEventMessage::new(
+        session_id,
+        "context_injected",
+        serde_json::json!({
+            "role": role,
+            "content": content,
+        }),
+    ));
 
     Ok(())
 }
@@ -217,7 +214,7 @@ pub(crate) async fn handle_session_inject_context(
     req: Request,
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionInjectContextRequest>(&req) {
         Ok(p) => p,
@@ -269,7 +266,7 @@ pub(crate) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) 
 pub(crate) async fn handle_session_clear(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
@@ -322,7 +319,7 @@ pub(crate) async fn handle_session_pending_interactions(
 pub(crate) async fn handle_session_interaction_respond(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionInteractionRespondRequest>(&req) {
         Ok(p) => p,
@@ -358,10 +355,9 @@ pub(crate) async fn handle_session_interaction_respond(
         );
     }
 
-    if !emit_event(
-        event_tx,
-        SessionEventMessage::interaction_completed(session_id, request_id, response),
-    ) {
+    if !event_tx.emit(SessionEventMessage::interaction_completed(
+        session_id, request_id, response,
+    )) {
         tracing::debug!("Failed to emit interaction_completed event (no subscribers)");
     }
 
@@ -376,7 +372,7 @@ pub(crate) async fn handle_session_interaction_respond(
 
 pub(crate) async fn handle_session_test_interaction(
     req: Request,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionTestInteractionRequest>(&req) {
         Ok(p) => p,
@@ -426,17 +422,14 @@ pub(crate) async fn handle_session_test_interaction(
         }
     };
 
-    if !emit_event(
-        event_tx,
-        SessionEventMessage::new(
-            session_id.to_string(),
-            "interaction_requested",
-            serde_json::json!({
-                "request_id": request_id,
-                "request": request,
-            }),
-        ),
-    ) {
+    if !event_tx.emit(SessionEventMessage::new(
+        session_id.to_string(),
+        "interaction_requested",
+        serde_json::json!({
+            "request_id": request_id,
+            "request": request,
+        }),
+    )) {
         tracing::debug!("Failed to emit interaction_requested event (no subscribers)");
     }
 
@@ -470,7 +463,7 @@ mod tests {
     /// permission prompt at all.
     #[tokio::test]
     async fn the_renamed_type_field_and_its_payload_reach_the_emitted_event() {
-        let (event_tx, mut events) = broadcast::channel(8);
+        let (event_tx, mut events) = crate::EventBus::channel(8);
 
         let resp = handle_session_test_interaction(
             request(serde_json::json!({
@@ -497,7 +490,7 @@ mod tests {
     /// when `type` is absent.
     #[tokio::test]
     async fn an_omitted_type_asks_the_question_the_caller_supplied() {
-        let (event_tx, mut events) = broadcast::channel(8);
+        let (event_tx, mut events) = crate::EventBus::channel(8);
 
         let resp = handle_session_test_interaction(
             request(serde_json::json!({
@@ -517,7 +510,7 @@ mod tests {
     /// not swallowed by the request struct.
     #[tokio::test]
     async fn an_unknown_type_is_refused_and_named() {
-        let (event_tx, _events) = broadcast::channel(8);
+        let (event_tx, _events) = crate::EventBus::channel(8);
 
         let resp = handle_session_test_interaction(
             request(serde_json::json!({ "session_id": "sess", "type": "toast" })),

@@ -237,7 +237,7 @@ async fn listing_models_brings_the_acp_agent_up_and_answers_its_own_models() {
 #[tokio::test]
 async fn session_modes_bring_the_acp_agent_up_and_answer_its_own_modes() {
     let (agent_manager, _sm, session_id) = acp_session().await;
-    let (event_tx, _rx) = tokio::sync::broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, _rx) = crate::EventBus::channel(64);
 
     let modes = agent_manager
         .live_session_modes(&session_id, Some(&event_tx))
@@ -264,7 +264,7 @@ async fn session_modes_bring_the_acp_agent_up_and_answer_its_own_modes() {
 #[tokio::test]
 async fn session_knobs_report_the_advertised_model_selector_without_a_send() {
     let (agent_manager, _sm, session_id) = acp_session().await;
-    let (event_tx, _rx) = tokio::sync::broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, _rx) = crate::EventBus::channel(64);
 
     let knobs = agent_manager
         .live_session_knobs(&session_id, Some(&event_tx))
@@ -288,7 +288,7 @@ async fn session_knobs_report_the_advertised_model_selector_without_a_send() {
 #[tokio::test]
 async fn switching_model_on_a_fresh_acp_session_bring_the_agent_up_first() {
     let (agent_manager, _sm, session_id) = acp_session().await;
-    let (event_tx, _rx) = tokio::sync::broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, _rx) = crate::EventBus::channel(64);
 
     agent_manager
         .switch_model(&session_id, "mock-opus", Some(&event_tx))

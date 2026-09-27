@@ -6,7 +6,6 @@ use crate::agent_factory::{
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::delegation::DelegationService;
-use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
 use crate::multi_kiln_search::KilnSearchSource;
 use crate::protocol::SessionEventMessage;
@@ -37,7 +36,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
-use tokio::sync::{broadcast, oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
@@ -237,7 +236,7 @@ pub type AgentFactoryOverride = Box<
 >;
 
 fn emit_precognition_event(
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     session_id: &str,
     query: &str,
     notes: Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
@@ -247,7 +246,7 @@ fn emit_precognition_event(
         query_summary: query.chars().take(100).collect(),
         notes,
     };
-    if !emit_event(event_tx, SessionEventMessage::typed(session_id, payload)) {
+    if !event_tx.emit(SessionEventMessage::typed(session_id, payload)) {
         warn!(
             session_id = %session_id,
             "No subscribers for precognition_complete event"
@@ -264,7 +263,7 @@ pub(crate) struct PendingPermission {
 struct StreamContext {
     session_id: String,
     message_id: String,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     workspace_path: PathBuf,
     session_dir: PathBuf,
     /// The `whitelists.d` directory the permission gate reads saved grants
@@ -487,8 +486,10 @@ impl AgentManager {
     /// for contexts that never delegate (most tests). Production and
     /// delegation tests use [`AgentManager::new_with_delegation`] and bind.
     pub fn new(params: AgentManagerParams) -> Self {
-        let delegation_service =
-            DelegationService::new(params.session_manager.clone(), broadcast::channel(16).0);
+        let delegation_service = DelegationService::new(
+            params.session_manager.clone(),
+            crate::EventBus::channel(16).0,
+        );
         Self::new_with_delegation(params, delegation_service)
     }
 
@@ -1142,7 +1143,7 @@ impl AgentManager {
     pub async fn live_session_modes(
         &self,
         session_id: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> crucible_core::types::acp::schema::SessionModeState {
         if let Err(e) = self.ensure_agent_handle(session_id, event_tx).await {
             tracing::warn!(
@@ -1159,7 +1160,7 @@ impl AgentManager {
     pub async fn live_session_knobs(
         &self,
         session_id: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Vec<(SessionKnob, bool)> {
         if let Err(e) = self.ensure_agent_handle(session_id, event_tx).await {
             tracing::warn!(
@@ -1175,7 +1176,7 @@ impl AgentManager {
     pub async fn live_agent_config_options(
         &self,
         session_id: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Vec<crucible_core::types::AgentConfigOption> {
         if let Err(e) = self.ensure_agent_handle(session_id, event_tx).await {
             tracing::warn!(
@@ -1198,7 +1199,7 @@ impl AgentManager {
         session_id: &str,
         option_id: &str,
         value: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         // The value belongs to the agent's session; the handle that carries
         // it comes up here (the handshake is the resume) rather than the
@@ -1640,7 +1641,7 @@ impl AgentManager {
         }
     }
 
-    pub fn cleanup_session(&self, session_id: &str) {
+    pub fn cleanup_session(&self, session_id: &str, events: &crate::EventBus) {
         // Cascade: a parent going away must not leave running children.
         // Spawned (cleanup_session is sync); cancellation resolves each
         // child's completion channel, then the records are dropped.
@@ -1724,9 +1725,9 @@ impl AgentManager {
         self.slots.remove(session_id);
         // Last, deliberately: see `forget_session`. The spawns above can still
         // emit, and a re-created counter is cheaper than a duplicate `seq`.
-        crate::event_emitter::forget_session(session_id);
+        events.forget_session(session_id);
 
-        self.debug_assert_no_residue(session_id, review_harvest_spawned);
+        self.debug_assert_no_residue(session_id, review_harvest_spawned, events);
     }
 
     pub(crate) fn get_session(

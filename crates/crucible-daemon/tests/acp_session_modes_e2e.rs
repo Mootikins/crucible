@@ -72,7 +72,7 @@ struct Harness {
     log: PathBuf,
     agent_manager: Arc<AgentManager>,
     session_id: crucible_core::session::SessionId,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crucible_daemon::EventBus,
     events: broadcast::Receiver<SessionEventMessage>,
 }
 

@@ -11,7 +11,7 @@ struct Fixture {
     dir: TempDir,
     am: Arc<AgentManager>,
     sm: Arc<SessionManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
 }
 
 use crate::test_support::git;
@@ -30,7 +30,7 @@ impl Fixture {
         git(dir.path(), &["add", "."]).await;
         git(dir.path(), &["commit", "-q", "-m", "init"]).await;
 
-        let (event_tx, _) = broadcast::channel(64);
+        let (event_tx, _) = crate::EventBus::channel(64);
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = temp_session_manager();
         let am = Arc::new(AgentManager::new(AgentManagerParams {
@@ -237,7 +237,7 @@ async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
     );
     let snapshots = TempDir::new().unwrap();
 
-    let (event_tx, _events) = broadcast::channel(256);
+    let (event_tx, _events) = crate::EventBus::channel(256);
     let sm = crate::test_support::temp_session_manager_with_kilns(&[("notes", kiln.path())]);
     let am = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),

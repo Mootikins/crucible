@@ -34,7 +34,6 @@ use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager};
-use tokio::sync::broadcast;
 use tokio::time::timeout;
 
 use crate::support::{mock_agent_path, mock_path_acp_config, mock_session_agent, MockScript, Step};
@@ -47,7 +46,7 @@ use crate::support::{mock_agent_path, mock_path_acp_config, mock_session_agent, 
 /// this process would race the rest of the suite.
 async fn delegated_turn_events(turn: Vec<Step>) -> Vec<SessionEventMessage> {
     let session_manager = temp_session_manager();
-    let (event_tx, mut event_rx) = broadcast::channel(256);
+    let (event_tx, mut event_rx) = crucible_daemon::EventBus::channel(256);
 
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),

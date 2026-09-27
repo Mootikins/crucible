@@ -12,7 +12,6 @@ use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::kiln_manager::KilnManager;
 use crucible_daemon::kiln_registry::KilnRegistry;
 use crucible_daemon::test_support::kiln_registry;
-use tokio::sync::broadcast;
 
 const NOTE: &str = "# Title\n\nAlpha has enough words here for embedding.\n\n## Section\n\nBeta has enough words here for embedding too.\n";
 
@@ -35,7 +34,7 @@ async fn processed_kiln() -> ProcessedKiln {
     std::fs::write(kiln_dir.join("other.md"), LINKING_NOTE).expect("write note");
 
     let registry = kiln_registry(&dir.path().join("data"), &[("notes", &kiln_dir)]);
-    let (event_tx, _rx) = broadcast::channel(8);
+    let (event_tx, _rx) = crucible_daemon::EventBus::channel(8);
     let embedder = EmbeddingProviderConfig::Mock(MockConfig {
         model: "mock".to_string(),
         dimensions: 8,

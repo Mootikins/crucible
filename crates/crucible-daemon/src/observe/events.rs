@@ -428,7 +428,7 @@ impl SessionLogLine {
 /// callers must not warn on it.
 pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
     // Events reaching the persist task via `emit_event` are stamped
-    // (`event_emitter.rs`'s `stamp_event`); the ~15 direct `event_tx.send` sites are
+    // (`EventBus::emit`); historical direct sends are
     // not, so `timestamp` is genuinely absent on some real lines.
     // `Utc::now()` is the fail-safe fallback: `handle_session_cleanup`
     // (`server/observe.rs`) deletes sessions whose newest event predates

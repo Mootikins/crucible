@@ -60,32 +60,18 @@ impl<T> Clone for Sender<T> {
 impl<T> Sender<T> {
     /// Queue `item`. Returns false when the consumer stopped.
     pub(crate) fn send(&self, item: T) -> bool {
-        self.send_then(|| (item, ()), |()| ()).0
-    }
-
-    /// Make an item with `make`, queue it, and run `then` with the rest of
-    /// what `make` gave, all before a concurrent sender can queue.
-    ///
-    /// A caller that numbers the item or publishes it elsewhere does so in
-    /// `make` and `then`, so that its order and the queue order are one order.
-    pub(crate) fn send_then<U, R>(
-        &self,
-        make: impl FnOnce() -> (T, U),
-        then: impl FnOnce(U) -> R,
-    ) -> (bool, R) {
         let mut sent = self
             .count
             .sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let (item, rest) = make();
         // A stopped consumer does not count the item, so that a wait does not
         // wait for an item that nobody will read.
         let queued = self.tx.send(item).is_ok();
         if queued {
             *sent += 1;
         }
-        (queued, then(rest))
+        queued
     }
 
     /// A wait for the consumer of this queue.

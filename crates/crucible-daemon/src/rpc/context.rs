@@ -4,7 +4,6 @@ use crate::agent_manager::AgentManager;
 use crate::daemon_plugins::DaemonPluginLoader;
 use crate::kiln_manager::KilnManager;
 use crate::mcp_server::McpServerManager;
-use crate::protocol::SessionEventMessage;
 use crate::session_lifecycle::SessionLifecycle;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
@@ -63,7 +62,7 @@ pub struct RpcContext {
     pub sessions: Arc<SessionManager>,
     pub agents: Arc<AgentManager>,
     pub subscriptions: Arc<SubscriptionManager>,
-    pub event_tx: broadcast::Sender<SessionEventMessage>,
+    pub event_tx: crate::EventBus,
     pub shutdown: Arc<DeferredShutdown>,
     pub project_manager: Arc<crate::project_manager::ProjectManager>,
     pub lua_sessions: Arc<DashMap<String, Arc<Mutex<crate::server::LuaSessionState>>>>,
@@ -152,7 +151,7 @@ pub struct RpcContextParams {
     pub sessions: Arc<SessionManager>,
     pub agents: Arc<AgentManager>,
     pub subscriptions: Arc<SubscriptionManager>,
-    pub event_tx: broadcast::Sender<SessionEventMessage>,
+    pub event_tx: crate::EventBus,
     pub shutdown_tx: broadcast::Sender<()>,
     pub project_manager: Arc<crate::project_manager::ProjectManager>,
     pub lua_sessions: Arc<DashMap<String, Arc<Mutex<crate::server::LuaSessionState>>>>,
@@ -320,7 +319,7 @@ impl RpcContext {
         sessions: Arc<SessionManager>,
         agents: Arc<AgentManager>,
         project_manager: Arc<crate::project_manager::ProjectManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
         data_home: std::path::PathBuf,
     ) -> Self {
         Self::for_test_with_plugin_loader(
@@ -347,7 +346,7 @@ impl RpcContext {
         sessions: Arc<SessionManager>,
         agents: Arc<AgentManager>,
         project_manager: Arc<crate::project_manager::ProjectManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
         data_home: std::path::PathBuf,
         plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     ) -> Self {

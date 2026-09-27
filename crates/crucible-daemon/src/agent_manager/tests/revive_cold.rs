@@ -21,12 +21,11 @@ use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
 use crate::session_manager::SessionManager;
 use crate::session_storage::FileSessionStorage;
-use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::SessionType;
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::Mutex;
 
 /// A `SessionManager` over `data_home`, resolving `kiln` under the name
 /// `"kiln"` — the same root and the same registry on both sides of the
@@ -84,11 +83,7 @@ pub(super) async fn cold_manager(
     data_home: &Path,
     kiln: &Path,
     open_kiln: Option<&Path>,
-) -> (
-    Arc<SessionManager>,
-    Arc<AgentManager>,
-    broadcast::Sender<SessionEventMessage>,
-) {
+) -> (Arc<SessionManager>, Arc<AgentManager>, crate::EventBus) {
     let sm = manager_over(data_home, kiln);
 
     let km = Arc::new(KilnManager::new());
@@ -96,7 +91,7 @@ pub(super) async fn cold_manager(
         km.open(kiln).await.unwrap();
     }
 
-    let (event_tx, _) = broadcast::channel(64);
+    let (event_tx, _) = crate::EventBus::channel(64);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
     let am: Arc<AgentManager> = AgentManager::new(AgentManagerParams {
         kiln_manager: km,
@@ -235,7 +230,7 @@ async fn the_trust_gate_re_runs_when_a_session_is_revived_from_storage() {
     // exists only on disk, and the turn below is what revives it.
     let sm = manager_over(data_home.path(), kiln.path());
     let am = super::create_test_agent_manager_with_llm_config(sm.clone(), cloud);
-    let (tx, _rx) = broadcast::channel(64);
+    let (tx, _rx) = crate::EventBus::channel(64);
     assert!(
         sm.get_session(&session_id).is_none(),
         "precondition: the session is on disk only, so the send path revives it"

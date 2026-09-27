@@ -165,7 +165,7 @@ async fn set_mode_unknown_session_errors() {
 async fn set_mode_emits_mode_changed_event() {
     let (_tmp, _session_manager, session, agent_manager) = setup_with_agent().await;
 
-    let (tx, mut rx) = tokio::sync::broadcast::channel(8);
+    let (tx, mut rx) = crate::EventBus::channel(8);
     agent_manager
         .set_mode(&session.id, "plan", Some(&tx))
         .await

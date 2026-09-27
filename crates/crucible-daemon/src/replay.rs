@@ -6,7 +6,6 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::{Session, SessionType};
-use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing::{debug, warn};
@@ -14,7 +13,7 @@ use tracing::{debug, warn};
 pub struct ReplaySession {
     replay_source: PathBuf,
     speed: f64,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     replay_session: Session,
     header: RecordingHeader,
     events: Vec<RecordedEvent>,
@@ -25,7 +24,7 @@ impl ReplaySession {
     pub fn new(
         recording_path: PathBuf,
         speed: f64,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
         replay_session_id: crucible_core::session::SessionId,
     ) -> Result<Self> {
         let file = std::fs::File::open(&recording_path)
@@ -146,14 +145,12 @@ impl ReplaySession {
                 event.timestamp = Some(recorded.ts);
                 event.seq = Some(recorded.seq);
 
-                // Deliberately NOT `event_emitter::emit_event`, and the next
-                // person will want to "fix" that: replay's whole job is to
-                // reproduce a recording, so the seq and timestamp above are the
+                // Replay reproduces a recording, so the seq and timestamp above are the
                 // recorded ones. Stamping would renumber history from the live
                 // counter and silently rewrite what a recording says happened.
                 // The `replay_event` msg_type is what tells a client these seqs
                 // belong to their own stream and not to its live session.
-                if !crate::event_emitter::publish_recorded(&self.event_tx, event) {
+                if !self.event_tx.publish_recorded(event) {
                     warn!(
                         source = %self.replay_source.display(),
                         "Replay broadcast has no receiver, continuing"
@@ -173,7 +170,7 @@ impl ReplaySession {
             // and stamping this one from the live counter would put a number
             // from a different sequence space next to them. `replay_event` is
             // the marker that tells a client to skip contiguity here.
-            if !crate::event_emitter::publish_recorded(&self.event_tx, complete) {
+            if !self.event_tx.publish_recorded(complete) {
                 tracing::debug!("No receiver for the replay_complete event");
             }
 
@@ -277,7 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn replay_session_invalid_path_returns_error() {
-        let (tx, _rx) = broadcast::channel(16);
+        let (tx, _rx) = crate::EventBus::channel(16);
         let replay = ReplaySession::new(
             PathBuf::from("/definitely/not/a/real/recording.jsonl"),
             1.0,
@@ -294,7 +291,7 @@ mod tests {
         let events = sample_events(Utc::now(), 5);
         write_recording(&path, &events, None, None);
 
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let replay =
             ReplaySession::new(path, 0.0, tx, sid("replay-session")).expect("create replay");
 
@@ -315,7 +312,7 @@ mod tests {
         let events = sample_events(Utc::now(), 1);
         write_recording(&path, &events, None, None);
 
-        let (tx, _rx) = broadcast::channel(16);
+        let (tx, _rx) = crate::EventBus::channel(16);
         let replay = ReplaySession::new(path.clone(), 1.0, tx, sid("replay-session"))
             .expect("create replay");
 
@@ -330,7 +327,7 @@ mod tests {
         let events = sample_events(Utc::now(), 120);
         write_recording(&path, &events, None, None);
 
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let replay = ReplaySession::new(path, 1.0, tx, sid("replay-1x")).expect("create");
 
         let start = Instant::now();
@@ -350,7 +347,7 @@ mod tests {
         let events = sample_events(Utc::now(), 120);
         write_recording(&path, &events, None, None);
 
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let replay = ReplaySession::new(path, 2.0, tx, sid("replay-2x")).expect("create");
 
         let start = Instant::now();
@@ -370,7 +367,7 @@ mod tests {
         let events = sample_events(Utc::now(), 200);
         write_recording(&path, &events, None, None);
 
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let replay = ReplaySession::new(path, 0.0, tx, sid("replay-instant")).expect("create");
 
         let start = Instant::now();
@@ -390,7 +387,7 @@ mod tests {
         let events = sample_events(Utc::now(), 1);
         write_recording(&path, &events, None, Some("not-json"));
 
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let replay = ReplaySession::new(path, 0.0, tx, sid("replay-malformed")).expect("create");
         let handle = replay.start();
 
@@ -425,7 +422,7 @@ mod tests {
         ];
         write_recording(&path, &events, None, None);
 
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let replay = ReplaySession::new(path, 0.0, tx, sid("replay-no-key")).expect("create");
         let handle = replay.start();
 

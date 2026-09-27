@@ -1045,7 +1045,7 @@ async fn a_lua_hook_decides_an_acp_request() {
         "#,
     )
     .await;
-    let (event_tx, mut event_rx) = broadcast::channel(16);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(16);
     let handle = am
         .build_acp_permissions(&id, &event_tx, std::path::Path::new("/w"), None)
         .handler();
@@ -1263,7 +1263,7 @@ async fn a_plugin_turn_prompt_renders_with_the_plugin_name() {
         "#,
     )
     .await;
-    let (event_tx, _events) = broadcast::channel(16);
+    let (event_tx, _events) = crate::EventBus::channel(16);
     let handle = am
         .build_acp_permissions(&id, &event_tx, std::path::Path::new("/w"), None)
         .handler();

@@ -29,11 +29,9 @@ use std::time::Duration;
 use crucible_core::session::SessionType;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
-use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::{AgentManager, SessionManager};
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 use tokio::time::timeout;
 
 #[path = "acp_support/mock_agent.rs"]
@@ -58,7 +56,7 @@ async fn a_plugin_prompt_reaches_acp_inside_its_system_message_tag() {
     std::fs::create_dir_all(&kiln).unwrap();
     let log_path = temp.path().join("methods.log");
     let sessions = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, mut rx) = broadcast::channel(256);
+    let (event_tx, mut rx) = crucible_daemon::EventBus::channel(256);
     let session = sessions
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
@@ -115,7 +113,7 @@ fn resuming_script(log_path: &Path) -> MockScript {
 fn manager(
     session_manager: Arc<SessionManager>,
     script: MockScript,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crucible_daemon::EventBus,
 ) -> Arc<AgentManager> {
     Arc::new(AgentManager::new(acp_manager_params(
         session_manager,
@@ -149,7 +147,7 @@ async fn clear_opens_a_new_acp_session_under_the_same_crucible_id() {
     std::fs::create_dir_all(&kiln).unwrap();
     let log_path = temp.path().join("methods.log");
     let sessions = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _rx) = broadcast::channel(256);
+    let (event_tx, _rx) = crucible_daemon::EventBus::channel(256);
     let session = sessions
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
@@ -213,7 +211,7 @@ async fn a_rebuilt_handle_resumes_the_agent_session_the_first_turn_opened() {
     let log_path = temp.path().join("methods.log");
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _event_rx) = broadcast::channel(256);
+    let (event_tx, _event_rx) = crucible_daemon::EventBus::channel(256);
 
     let session = session_manager
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
@@ -311,7 +309,7 @@ async fn a_resume_fallback_replaces_the_stale_stored_id_with_the_new_one() {
     let log_path = temp.path().join("methods.log");
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _event_rx) = broadcast::channel(256);
+    let (event_tx, _event_rx) = crucible_daemon::EventBus::channel(256);
 
     let session = session_manager
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)

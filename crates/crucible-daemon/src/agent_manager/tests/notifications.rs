@@ -25,7 +25,7 @@ struct HubFixture {
 async fn hub_fixture() -> HubFixture {
     let (workspace, session_manager, session) = setup_session_manager().await;
     let data_home = TempDir::new().unwrap();
-    let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, event_rx) = crate::EventBus::channel(64);
     let projects = Arc::new(ProjectManager::new(data_home.path().join("projects.json")));
     let hub = Arc::new(NotificationHub::new(
         data_home.path(),

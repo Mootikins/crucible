@@ -108,9 +108,7 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub resume_acp_session_id: Option<String>,
     /// Broadcast sender for the session's events, so the ACP handle can
     /// announce a resume fallback. Ignored by internal agents.
-    pub event_tx: Option<
-        &'a tokio::sync::broadcast::Sender<crucible_core::protocol::rpc::SessionEventMessage>,
-    >,
+    pub event_tx: Option<&'a crate::EventBus>,
 }
 
 /// Build a `DelegationContext` for a session's MCP server.

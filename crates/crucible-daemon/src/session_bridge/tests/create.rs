@@ -28,7 +28,7 @@ fn create_rig_with_llm_config(
     ]);
     let agent_manager =
         build_test_agent_manager_with_llm_config(session_manager.clone(), Some(llm_config.clone()));
-    let (event_tx, events) = broadcast::channel(256);
+    let (event_tx, events) = crate::EventBus::channel(256);
     let bridge = DaemonSessionBridge::new(bridge_ctx(
         session_manager.clone(),
         agent_manager,
@@ -484,7 +484,7 @@ async fn bridge_configure_agent_refuses_a_provider_the_attached_kiln_does_not_cl
         .await
         .unwrap();
     let agent_manager = build_test_agent_manager(session_manager.clone());
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let bridge = DaemonSessionBridge::new(bridge_ctx(
         session_manager.clone(),
         agent_manager,

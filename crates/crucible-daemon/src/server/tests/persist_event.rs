@@ -14,7 +14,7 @@ fn sweep_lifecycle(
     Arc<crate::session_lifecycle::SessionLifecycle>,
     Arc<AgentManager>,
 ) {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),
@@ -660,7 +660,7 @@ async fn test_granular_session_creates_recording_file() {
         .to_string();
 
     let event = SessionEventMessage::text_delta(&session_id, "hello world");
-    event_tx.send(event).unwrap();
+    assert!(event_tx.emit(event));
 
     // Wait for recording writer flush (500ms interval + margin)
     tokio::time::sleep(Duration::from_millis(700)).await;
@@ -709,7 +709,7 @@ async fn test_non_granular_session_has_no_recording_file() {
         .to_string();
 
     let event = SessionEventMessage::user_message(&session_id, "msg-1", "hello");
-    event_tx.send(event).unwrap();
+    assert!(event_tx.emit(event));
 
     tokio::time::sleep(Duration::from_millis(300)).await;
 
@@ -749,7 +749,7 @@ async fn test_granular_recording_stops_on_session_end() {
         .to_string();
 
     let event = SessionEventMessage::text_delta(&session_id, "before end");
-    event_tx.send(event).unwrap();
+    assert!(event_tx.emit(event));
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // End the session

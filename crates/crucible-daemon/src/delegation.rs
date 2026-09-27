@@ -14,7 +14,6 @@
 //! reference cycle.
 
 use crate::agent_manager::{AgentManager, TurnOutcome, TurnStatus};
-use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use crate::session_lifecycle::{SessionLifecycle, StopCause};
 use crate::session_manager::SessionManager;
@@ -25,7 +24,7 @@ use crucible_core::text::truncate_chars;
 use dashmap::DashMap;
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
-use tokio::sync::{broadcast, watch, Semaphore};
+use tokio::sync::{watch, Semaphore};
 use tracing::{debug, info, warn};
 
 /// Parent-facing lifecycle event names. `delegation_*` names are preserved
@@ -98,7 +97,7 @@ pub struct DelegationService {
     /// at startup; unbound in tests that wire no plugin loader, where no claim
     /// can exist to escape.
     session_lifecycle: OnceLock<Arc<SessionLifecycle>>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     records: Arc<DashMap<String, DelegationRecord>>,
     pub(crate) completed: Arc<tokio::sync::Notify>,
     /// Per-parent concurrency permits. Sized from the parent's
@@ -108,10 +107,7 @@ pub struct DelegationService {
 }
 
 impl DelegationService {
-    pub fn new(
-        session_manager: Arc<SessionManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
-    ) -> Arc<Self> {
+    pub fn new(session_manager: Arc<SessionManager>, event_tx: crate::EventBus) -> Arc<Self> {
         Arc::new(Self {
             agent_manager: OnceLock::new(),
             session_manager,
@@ -212,6 +208,7 @@ impl DelegationService {
             self.session_lifecycle.get().map(Arc::as_ref),
             &self.session_manager,
             manager.as_deref(),
+            &self.event_tx,
             child_id,
             cause,
         )
@@ -300,7 +297,7 @@ impl DelegationService {
     }
 
     fn emit_completion_events(
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         parent_id: &str,
         delegation_id: &str,
         result: &JobResult,
@@ -326,10 +323,7 @@ impl DelegationService {
                 }),
             )
         };
-        if !emit_event(
-            event_tx,
-            SessionEventMessage::new(parent_id, event_type, data),
-        ) {
+        if !event_tx.emit(SessionEventMessage::new(parent_id, event_type, data)) {
             debug!(
                 delegation_id,
                 "No subscribers for delegation completion event"
@@ -530,20 +524,17 @@ impl DelegationSpawner for DelegationService {
             },
         );
 
-        if !emit_event(
-            &self.event_tx,
-            SessionEventMessage::new(
-                &parent.id,
-                events::DELEGATION_SPAWNED,
-                serde_json::json!({
-                    "delegation_id": child.id,
-                    "child_session_id": child.id,
-                    "prompt": truncate_chars(&req.prompt, 100, true),
-                    "target_agent": req.target_agent,
-                    "parent_session_id": parent.id,
-                }),
-            ),
-        ) {
+        if !self.event_tx.emit(SessionEventMessage::new(
+            &parent.id,
+            events::DELEGATION_SPAWNED,
+            serde_json::json!({
+                "delegation_id": child.id,
+                "child_session_id": child.id,
+                "prompt": truncate_chars(&req.prompt, 100, true),
+                "target_agent": req.target_agent,
+                "parent_session_id": parent.id,
+            }),
+        )) {
             debug!("No subscribers for delegation_spawned event");
         }
 
@@ -627,6 +618,7 @@ impl DelegationSpawner for DelegationService {
                 lifecycle.as_deref(),
                 &session_manager,
                 manager_weak.as_ref().and_then(Weak::upgrade).as_deref(),
+                &event_tx,
                 &child_id,
                 StopCause::ChildDone,
             )
@@ -749,6 +741,7 @@ async fn stop_child_session(
     lifecycle: Option<&SessionLifecycle>,
     session_manager: &SessionManager,
     manager: Option<&AgentManager>,
+    events: &crate::EventBus,
     child_id: &str,
     cause: StopCause,
 ) {
@@ -763,7 +756,7 @@ async fn stop_child_session(
                 debug!(child_id = %child_id, error = %e, "Child session already ended");
             }
             if let Some(manager) = manager {
-                manager.cleanup_session(child_id);
+                manager.cleanup_session(child_id, events);
             }
         }
     }

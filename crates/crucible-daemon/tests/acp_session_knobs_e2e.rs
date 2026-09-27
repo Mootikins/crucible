@@ -26,12 +26,10 @@ use std::time::Duration;
 use crucible_core::config::AgentProfile;
 use crucible_core::session::SessionType;
 use crucible_core::types::SessionKnob;
-use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::AgentManager;
 use serde_json::Value;
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 
 #[path = "acp_support/mock_agent.rs"]
 mod mock_agent;
@@ -93,7 +91,7 @@ struct Harness {
     log_path: std::path::PathBuf,
     agent_manager: Arc<AgentManager>,
     session_id: crucible_core::session::SessionId,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crucible_daemon::EventBus,
 }
 
 async fn setup() -> Harness {
@@ -443,7 +441,7 @@ async fn knobs_survive_a_handle_rebuild(resume_unknown: bool) {
     let log_path = temp.path().join("methods.log");
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _events) = broadcast::channel(256);
+    let (event_tx, _events) = crucible_daemon::EventBus::channel(256);
     let manager = |resume: Resume| {
         let script = MockScript {
             models: true,

@@ -66,7 +66,7 @@ async fn session_with_two_turns(
 #[tokio::test]
 async fn undo_on_an_acp_session_is_refused_with_its_reason() {
     let (am, _sm, id, _tmp) = session_with_two_turns("acp").await;
-    let (tx, _rx) = broadcast::channel(16);
+    let (tx, _rx) = crate::EventBus::channel(16);
 
     let error = am
         .undo(&id, 1, Some(&tx))
@@ -97,7 +97,7 @@ async fn the_undo_readers_report_nothing_to_undo_on_an_acp_session() {
 #[tokio::test]
 async fn undo_on_an_internal_session_still_rewinds_a_turn() {
     let (am, _sm, id, _tmp) = session_with_two_turns("internal").await;
-    let (tx, _rx) = broadcast::channel(16);
+    let (tx, _rx) = crate::EventBus::channel(16);
 
     assert!(am.can_undo(&id).await.unwrap());
     assert_eq!(am.undo_depth(&id).await.unwrap(), 2);
@@ -110,7 +110,7 @@ async fn undo_on_an_internal_session_still_rewinds_a_turn() {
 #[tokio::test]
 async fn the_undo_rpc_carries_the_refusal_to_the_client() {
     let (am, _sm, id, _tmp) = session_with_two_turns("acp").await;
-    let (tx, _rx) = broadcast::channel(16);
+    let (tx, _rx) = crate::EventBus::channel(16);
 
     let response = crate::server::session::handle_session_undo(
         serde_json::from_value(serde_json::json!({
@@ -145,7 +145,7 @@ async fn the_undo_rpc_carries_the_refusal_to_the_client() {
 #[tokio::test]
 async fn the_lua_bridge_refuses_undo_with_the_same_reason() {
     let (am, sm, id, tmp) = session_with_two_turns("acp").await;
-    let (tx, _rx) = broadcast::channel(16);
+    let (tx, _rx) = crate::EventBus::channel(16);
     let ctx = Arc::new(crate::rpc::RpcContext::for_test(
         am.kiln_manager.clone(),
         sm.clone(),

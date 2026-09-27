@@ -6,7 +6,6 @@
 //! backlinks, and it opens nothing.
 
 use super::*;
-use crate::event_emitter::emit_event;
 use crate::kiln_manager::request_scope;
 
 /// The kiln of `server`, in the form the index keys it by.
@@ -240,10 +239,11 @@ async fn a_bus_lag_does_not_leave_the_index_stale() {
         .await
         .expect("emit");
     for i in 0..EVENT_CHANNEL_CAPACITY + 64 {
-        emit_event(
-            &server.event_tx,
-            SessionEventMessage::model_switched("lag-flood", format!("model-{i}"), "mock"),
-        );
+        server.event_tx.emit(SessionEventMessage::model_switched(
+            "lag-flood",
+            format!("model-{i}"),
+            "mock",
+        ));
     }
 
     // Settled now, well before the watcher's own report of the edit.

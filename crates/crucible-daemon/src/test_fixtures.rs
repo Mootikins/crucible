@@ -10,11 +10,9 @@
 
 use crate::agent_manager::{AgentManager, AgentManagerParams};
 use crate::kiln_manager::KilnManager;
-use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
 use std::sync::Arc;
-use tokio::sync::broadcast;
 
 /// An [`LlmConfig`] whose single provider is the default, at its backend's
 /// built-in trust level.
@@ -81,7 +79,7 @@ pub(crate) fn test_session_agent() -> crucible_core::session::SessionAgent {
 pub(crate) fn test_agent_manager(
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     llm_config: Option<LlmConfig>,
 ) -> Arc<AgentManager> {
     let background_manager = Arc::new(crate::background_manager::BackgroundJobManager::new(

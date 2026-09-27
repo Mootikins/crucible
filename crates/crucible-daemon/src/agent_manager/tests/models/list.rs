@@ -28,7 +28,7 @@ async fn test_list_models_returns_all_providers() {
         models: Default::default(),
     };
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -395,7 +395,7 @@ async fn test_list_models_no_llm_config() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -533,7 +533,7 @@ async fn test_list_models_prefixes_with_provider_key() {
         models: Default::default(),
     };
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),

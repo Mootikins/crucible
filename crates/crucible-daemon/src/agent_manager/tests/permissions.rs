@@ -755,7 +755,7 @@ mod permission_channel_tests {
             PermRequest::bash(["npm", "install"]),
         );
 
-        agent_manager.cleanup_session(session_id);
+        agent_manager.cleanup_session(session_id, &crate::EventBus::channel(4).0);
 
         assert!(
             rx.await.is_err(),
@@ -823,7 +823,7 @@ mod permission_channel_tests {
         );
 
         // Cleanup session 1 should not affect session 2
-        agent_manager.cleanup_session(session1);
+        agent_manager.cleanup_session(session1, &crate::EventBus::channel(4).0);
 
         let pending1_after = agent_manager.slot(session1).list_permissions();
         let pending2_after = agent_manager.slot(session2).list_permissions();
@@ -1100,7 +1100,7 @@ mod session_permission_config_tests {
                 ..Default::default()
             },
         );
-        let (event_tx, _) = broadcast::channel(16);
+        let (event_tx, _) = crate::EventBus::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
         AgentManager::new(AgentManagerParams {
             kiln_manager: Arc::new(KilnManager::new()),
@@ -1202,7 +1202,7 @@ mod session_permission_config_tests {
                 is_interactive: false,
                 ..Default::default()
             });
-        let (event_tx, _events) = broadcast::channel(16);
+        let (event_tx, _events) = crate::EventBus::channel(16);
         let handle = manager
             .build_acp_permissions(&session_id, &event_tx, std::path::Path::new("/w"), None)
             .handler();
@@ -1341,7 +1341,7 @@ mod plugin_permission_tests {
         let session_id = session.id.to_string();
         session_manager.register_transient(session);
         let am = Arc::new(create_test_agent_manager(session_manager));
-        let (event_tx, unsubscribed) = broadcast::channel(16);
+        let (event_tx, unsubscribed) = crate::EventBus::channel(16);
         drop(unsubscribed);
         let asked = tokio::spawn({
             let am = Arc::clone(&am);
@@ -1388,7 +1388,7 @@ mod plugin_permission_tests {
         let session_id = session.id.to_string();
         session_manager.register_transient(session);
         let agent_manager = create_test_agent_manager(session_manager);
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
 
         let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         let am = Arc::new(agent_manager);

@@ -258,7 +258,7 @@ async fn resume_fallback_is_announced_in_the_event_stream() {
     // The default script sets no `session_resume`: the binary answers -32601.
     let agent_config = crate::support::mock_session_agent(&agent_path);
 
-    let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(16);
+    let (event_tx, mut event_rx) = crucible_daemon::EventBus::channel(16);
     let handle = AcpAgentHandle::new(AcpAgentHandleParams {
         resume_acp_session_id: Some("mock-session-stale".into()),
         event_tx: Some(event_tx),
@@ -275,6 +275,8 @@ async fn resume_fallback_is_announced_in_the_event_stream() {
 
     let event = event_rx.try_recv().expect("the fallback was announced");
     assert_eq!(event.event, "acp_resume_fallback");
+    assert_eq!(event.seq, Some(1));
+    assert!(event.timestamp.is_some());
     assert_eq!(event.session_id, "sess-w7");
     assert_eq!(event.data["requested_session_id"], "mock-session-stale");
     assert_eq!(event.data["new_session_id"], new_id);

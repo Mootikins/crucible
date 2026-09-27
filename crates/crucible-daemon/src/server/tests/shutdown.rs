@@ -6,7 +6,6 @@
 //! other side: a write that never finishes does not hold the exit.
 
 use super::*;
-use crate::event_emitter::emit_event;
 
 /// Stop the server, but keep `server` alive: [`TestServer::shutdown`] drops
 /// the TempDir, and with it the files that the test reads.
@@ -24,10 +23,11 @@ async fn events_queued_at_shutdown_are_all_persisted() {
     let session_id = create_chat_session(&mut client, TestServer::KILN, 1).await;
 
     for i in 0..QUEUED {
-        let _ = emit_event(
-            &server.event_tx,
-            SessionEventMessage::model_switched(&session_id, format!("model-{i}"), "mock"),
-        );
+        let _ = server.event_tx.emit(SessionEventMessage::model_switched(
+            &session_id,
+            format!("model-{i}"),
+            "mock",
+        ));
     }
     stop_keeping_files(&mut server).await;
 
@@ -87,10 +87,11 @@ async fn a_write_under_way_at_the_deadline_is_finished() {
         "mkfifo {log:?}"
     );
 
-    let _ = emit_event(
-        &server.event_tx,
-        SessionEventMessage::model_switched(&session_id, "late-model", "mock"),
-    );
+    let _ = server.event_tx.emit(SessionEventMessage::model_switched(
+        &session_id,
+        "late-model",
+        "mock",
+    ));
 
     // A channel with a timeout, not a join: if no write comes, the open blocks
     // for ever, and the test must fail rather than hang.

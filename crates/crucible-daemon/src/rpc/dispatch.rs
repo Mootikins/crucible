@@ -562,7 +562,8 @@ impl RpcDispatcher {
                 crate::server::session::handle_session_unarchive(
                     req.clone(),
                     &self.ctx.sessions,
-                    &self.ctx.agents
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
                 )
             ),
             RpcMethod::SessionDelete => forward!(
@@ -1510,10 +1511,9 @@ impl RpcDispatcher {
             .and_then(|v| v.get("session_id"))
             .and_then(|v| v.as_str())
         {
-            crate::event_emitter::emit_event(
-                &self.ctx.event_tx,
-                crate::event_map::session_created(sid),
-            );
+            self.ctx
+                .event_tx
+                .emit(crate::event_map::session_created(sid));
         }
 
         started
@@ -1689,10 +1689,9 @@ impl RpcDispatcher {
                 // same event a create emits. Without this a session list shows
                 // every session except the forked ones. The id comes from `id`,
                 // not `session_id` — for a fork the latter is the parent's.
-                crate::event_emitter::emit_event(
-                    &self.ctx.event_tx,
-                    crate::event_map::session_created(&fork_id),
-                );
+                self.ctx
+                    .event_tx
+                    .emit(crate::event_map::session_created(&fork_id));
                 Ok(mapped)
             }
             Err(e) => Err(RpcError {
@@ -2328,7 +2327,7 @@ impl RpcDispatcher {
         let event = crate::event_map::webhook_received(p.name, p.headers, p.body);
 
         // Best-effort broadcast — no subscribers is fine
-        crate::event_emitter::emit_event(&self.ctx.event_tx, event);
+        self.ctx.event_tx.emit(event);
 
         serde_json::to_value(WebhookReceiveReply {
             status: "ok".to_string(),
@@ -2537,9 +2536,8 @@ mod tests {
 
         use crate::kiln_manager::KilnManager;
         use crate::project_manager::ProjectManager;
-        use tokio::sync::broadcast;
 
-        let (event_tx, _) = broadcast::channel(16);
+        let (event_tx, _) = crate::EventBus::channel(16);
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = crate::test_support::temp_session_manager_with_kilns(extra);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
@@ -2580,9 +2578,8 @@ mod tests {
         use crate::background_manager::BackgroundJobManager;
         use crate::kiln_manager::KilnManager;
         use crate::project_manager::ProjectManager;
-        use tokio::sync::broadcast;
 
-        let (event_tx, _) = broadcast::channel(16);
+        let (event_tx, _) = crate::EventBus::channel(16);
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = crate::test_support::temp_session_manager();
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
@@ -4090,10 +4087,9 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         use crate::project_manager::ProjectManager;
         use crate::subscription::SubscriptionManager;
         use dashmap::DashMap;
-        use tokio::sync::broadcast;
 
-        let (event_tx, _) = broadcast::channel(16);
-        let (shutdown_tx, _) = broadcast::channel(1);
+        let (event_tx, _) = crate::EventBus::channel(16);
+        let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = temp_session_manager();
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));

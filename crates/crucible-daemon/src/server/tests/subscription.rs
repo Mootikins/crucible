@@ -17,7 +17,7 @@ async fn test_server_has_event_broadcast() {
 
     // Should be able to send events
     let event = SessionEventMessage::text_delta("test-session", "hello");
-    assert!(event_tx.send(event).is_ok());
+    assert!(event_tx.emit(event));
 
     // Verify the event was received
     let received = rx.recv().await.unwrap();
@@ -208,7 +208,7 @@ async fn test_event_broadcast_to_subscriber() {
 
     // Send event through broadcast channel
     let event = SessionEventMessage::text_delta("chat-test", "hello world");
-    server.event_tx.send(event).unwrap();
+    assert!(server.event_tx.emit(event));
 
     // Client should receive the event
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -253,7 +253,7 @@ async fn test_event_not_sent_to_non_subscriber() {
 
     // Send event for "chat-test" (different session)
     let event = SessionEventMessage::text_delta("chat-test", "should not receive");
-    server.event_tx.send(event).unwrap();
+    assert!(server.event_tx.emit(event));
 
     // Client should NOT receive the event (timeout expected)
     tokio::time::sleep(Duration::from_millis(50)).await;

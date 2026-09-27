@@ -30,7 +30,7 @@ use crucible_core::session::{
 };
 use dashmap::DashSet;
 use std::sync::{Arc, OnceLock, Weak};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::Mutex;
 
 /// Why a session stops. The cause selects the steps that
 /// [`SessionLifecycle::stop`] runs, and it names the stop in the
@@ -145,7 +145,7 @@ pub struct SessionLifecycle {
     sessions: Arc<SessionManager>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     /// The daemon bus. A stop announces itself here after its steps are done.
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     agents: OnceLock<Weak<AgentManager>>,
     /// Sessions whose plugin `on_session_end` hooks have already been claimed
     /// since their start hooks last fired.
@@ -165,7 +165,7 @@ impl SessionLifecycle {
     pub fn new(
         sessions: Arc<SessionManager>,
         plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
     ) -> Arc<Self> {
         Arc::new(Self {
             sessions,
@@ -514,7 +514,7 @@ impl SessionLifecycle {
         let changed = self.change_state(session_id, cause).await;
         if !cause.keeps_conversation() {
             if let Some(agents) = &agents {
-                agents.cleanup_session(session_id);
+                agents.cleanup_session(session_id, &self.event_tx);
             }
         }
         let ended = (in_service && changed.is_ok())
@@ -526,7 +526,7 @@ impl SessionLifecycle {
         drop(guard);
 
         if let Some(ended) = ended {
-            crate::event_emitter::emit_event(&self.event_tx, ended);
+            self.event_tx.emit(ended);
         }
         changed.map_err(StopError::from)
     }

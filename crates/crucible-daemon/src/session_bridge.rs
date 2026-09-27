@@ -4,7 +4,6 @@
 //! `AgentManager`, and event broadcast infrastructure.
 
 use crate::agent_manager::AgentManager;
-use crate::protocol::SessionEventMessage;
 use crate::protocol::{Request, Response};
 use crate::rpc::RpcContext;
 use crate::rpc::RpcMethod;
@@ -40,7 +39,7 @@ pub struct DaemonSessionBridge {
     ctx: Arc<RpcContext>,
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     subscriptions: Arc<dashmap::DashMap<String, tokio::sync::watch::Sender<bool>>>,
     /// Overrides the agent manager's delegation service. Production leaves it
     /// `None`; tests inject a mock so the delegation gates can be proven

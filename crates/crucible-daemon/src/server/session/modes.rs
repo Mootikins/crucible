@@ -23,7 +23,7 @@ use crate::rpc_helpers::typed_params;
 pub(crate) async fn handle_session_list_modes(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
@@ -83,7 +83,7 @@ pub(crate) async fn handle_session_list_modes(
 pub(crate) async fn handle_session_list_knobs(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
@@ -129,7 +129,7 @@ pub(crate) async fn handle_session_list_knobs(
 pub(crate) async fn handle_session_list_agent_options(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
@@ -159,7 +159,7 @@ pub(crate) async fn handle_session_list_agent_options(
 pub(crate) async fn handle_session_set_agent_option(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     #[derive(serde::Deserialize)]
     struct SetAgentOptionRequest {
@@ -231,7 +231,7 @@ mod stored_session_tests {
     async fn list_modes_answers_for_a_session_held_in_storage_only() {
         let tmp = tempfile::tempdir().unwrap();
         let (id, sm) = stored_only(&tmp).await;
-        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let (event_tx, _) = crate::EventBus::channel(8);
         let am = crate::test_fixtures::test_agent_manager(
             Arc::new(crate::kiln_manager::KilnManager::new()),
             sm,
@@ -265,7 +265,7 @@ mod stored_session_tests {
 
         let tmp = tempfile::tempdir().unwrap();
         let (id, sm) = stored_only(&tmp).await;
-        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let (event_tx, _) = crate::EventBus::channel(8);
         // Static models, so the offer is answered without dialling anything.
         let llm_config = LlmConfig {
             default: Some("ollama".to_string()),
@@ -349,7 +349,7 @@ mod writes_tests {
     }
 
     fn manager(sm: Arc<crate::session_manager::SessionManager>) -> Arc<AgentManager> {
-        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let (event_tx, _) = crate::EventBus::channel(8);
         let am = crate::test_fixtures::test_agent_manager(
             Arc::new(crate::kiln_manager::KilnManager::new()),
             sm,
@@ -366,7 +366,7 @@ mod writes_tests {
 
     /// The `writes` value of the current mode, as `session.list_modes` answers.
     async fn current_writes(am: &Arc<AgentManager>, id: &str) -> (String, WriteMode) {
-        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let (event_tx, _) = crate::EventBus::channel(8);
         let req: Request = serde_json::from_value(serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,

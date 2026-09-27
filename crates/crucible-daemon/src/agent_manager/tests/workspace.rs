@@ -7,7 +7,7 @@ fn create_test_agent_manager_with_workspace_root(
     session_manager: Arc<SessionManager>,
     _workspace_root: &Path,
 ) -> AgentManager {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),

@@ -92,7 +92,6 @@ pub fn thinking(content: &str) -> (String, Value) {
 mod tests {
     use super::*;
     use crucible_daemon::replay::ReplaySession;
-    use tokio::sync::broadcast;
 
     #[test]
     fn test_create_recording_with_events() {
@@ -125,7 +124,7 @@ mod tests {
         let events = vec![text_delta("test"), message_complete()];
         let path = create_test_recording("replay-test", events);
 
-        let (tx, _rx) = broadcast::channel(16);
+        let (tx, _rx) = crucible_daemon::EventBus::channel(16);
         let result = ReplaySession::new(
             path.to_path_buf(),
             0.0,

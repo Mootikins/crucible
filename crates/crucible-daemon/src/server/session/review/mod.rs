@@ -78,15 +78,8 @@ pub(crate) async fn list_hunks(
     }
 }
 
-pub(crate) fn emit_review_changed(
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    session_id: &str,
-    reason: &str,
-) {
-    if !emit_event(
-        event_tx,
-        SessionEventMessage::review_changed(session_id, reason),
-    ) {
+pub(crate) fn emit_review_changed(event_tx: &crate::EventBus, session_id: &str, reason: &str) {
+    if !event_tx.emit(SessionEventMessage::review_changed(session_id, reason)) {
         debug!(session_id, reason, "no subscribers for review_changed");
     }
 }

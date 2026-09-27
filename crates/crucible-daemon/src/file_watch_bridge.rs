@@ -18,12 +18,9 @@ use crucible_core::events::{
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::broadcast;
 use tracing::debug;
 
-use crate::event_emitter::emit_event;
 use crate::kiln_manager::{ChangeOrigin, IndexJob, IndexQueue};
-use crate::protocol::SessionEventMessage;
 use crate::watch::WATCH_RESCAN_EVENT;
 
 /// Bridges the watcher of one kiln to the kiln's index owner and to the
@@ -34,7 +31,7 @@ use crate::watch::WATCH_RESCAN_EVENT;
 /// must not depend on the bus. The echo of a daemon write goes to neither:
 /// the index owner already indexed and announced that change.
 pub struct DaemonEventBridge {
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     /// The index owner's queue. `None` for a bridge that only broadcasts.
     index: Option<Arc<IndexQueue>>,
     /// The kiln this bridge's watcher watches, for a rescan.
@@ -44,7 +41,7 @@ pub struct DaemonEventBridge {
 impl DaemonEventBridge {
     /// A bridge for the watcher of `kiln`.
     pub(crate) fn new(
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
         index: Option<Arc<IndexQueue>>,
         kiln: &Path,
     ) -> Self {
@@ -118,7 +115,7 @@ impl EventEmitter for DaemonEventBridge {
                 if !folder_move {
                     let msg = crate::event_map::message_for(inner.as_ref());
                     debug!(event_type = %msg.event, "Broadcasting file event via daemon bus");
-                    if !emit_event(&self.event_tx, msg) {
+                    if !self.event_tx.emit(msg) {
                         tracing::debug!("Failed to emit file watch event (no subscribers)");
                     }
                 }
@@ -150,7 +147,7 @@ impl EventEmitter for DaemonEventBridge {
 /// Create the bridge for the watcher of `kiln`, for
 /// `WatchManager::with_emitter`.
 pub(crate) fn create_event_bridge(
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     index: Option<Arc<IndexQueue>>,
     kiln: &Path,
 ) -> Arc<dyn EventEmitter<Event = SessionEvent>> {
@@ -165,7 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bridge_broadcasts_file_changed() {
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let bridge = DaemonEventBridge::new(tx, None, Path::new("/tmp"));
 
         let event = SessionEvent::internal(InternalSessionEvent::FileChanged {
@@ -183,7 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bridge_broadcasts_file_deleted() {
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let bridge = DaemonEventBridge::new(tx, None, Path::new("/tmp"));
 
         let event = SessionEvent::internal(InternalSessionEvent::FileDeleted {
@@ -199,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bridge_broadcasts_file_moved() {
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let bridge = DaemonEventBridge::new(tx, None, Path::new("/tmp"));
 
         let event = SessionEvent::internal(InternalSessionEvent::FileMoved {
@@ -216,7 +213,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bridge_ignores_non_file_events() {
-        let (tx, mut rx) = broadcast::channel(16);
+        let (tx, mut rx) = crate::EventBus::channel(16);
         let bridge = DaemonEventBridge::new(tx, None, Path::new("/tmp"));
 
         let event = SessionEvent::Custom {
@@ -232,7 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bridge_is_available() {
-        let (tx, _rx) = broadcast::channel(16);
+        let (tx, _rx) = crate::EventBus::channel(16);
         let bridge = DaemonEventBridge::new(tx, None, Path::new("/tmp"));
         assert!(bridge.is_available());
     }

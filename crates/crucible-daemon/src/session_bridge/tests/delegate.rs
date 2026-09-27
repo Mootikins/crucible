@@ -75,7 +75,7 @@ async fn delegate_rig(
     let session_manager =
         crate::test_support::temp_session_manager_with_kilns(&[("kiln", temp.path())]);
     let agent_manager = build_test_agent_manager(Arc::clone(&session_manager));
-    let (event_tx, _events) = broadcast::channel(256);
+    let (event_tx, _events) = crate::EventBus::channel(256);
     let bridge = DaemonSessionBridge::new(bridge_ctx(
         Arc::clone(&session_manager),
         Arc::clone(&agent_manager),

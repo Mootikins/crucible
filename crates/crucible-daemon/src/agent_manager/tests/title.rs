@@ -15,7 +15,6 @@ use crucible_core::session::SessionType;
 use crucible_lua::{CommandEffect, DiscoveredCommand, PublicationRegistry};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::broadcast;
 
 /// A session whose log holds one exchange, which is what titling reads.
 async fn session_with_an_opening_exchange(sm: &Arc<SessionManager>, user: &str) -> String {
@@ -96,7 +95,7 @@ async fn a_publishing_plugin_titles_the_session() {
         "return function(args) return { title = 'Fixing the auth flow' } end",
     );
 
-    let (tx, mut rx) = broadcast::channel(8);
+    let (tx, mut rx) = crate::EventBus::channel(8);
     let title = am.generate_session_title(&id, &tx).await.expect("a title");
 
     assert_eq!(title, "Fixing the auth flow");
@@ -125,7 +124,7 @@ async fn the_plugin_is_handed_the_opening_exchange() {
         "return function(args) return { title = args.user .. ' / ' .. args.assistant } end",
     );
 
-    let (tx, _rx) = broadcast::channel(8);
+    let (tx, _rx) = crate::EventBus::channel(8);
     let title = am.generate_session_title(&id, &tx).await.expect("a title");
     assert_eq!(title, "help me fix the auth flow / of course");
 }
@@ -139,7 +138,7 @@ async fn no_titling_plugin_falls_back_to_truncation() {
     let id = session_with_an_opening_exchange(&sm, "please help me fix the auth flow").await;
     let am = create_test_agent_manager(sm.clone());
 
-    let (tx, _rx) = broadcast::channel(8);
+    let (tx, _rx) = crate::EventBus::channel(8);
     let title = am.generate_session_title(&id, &tx).await.expect("a title");
     assert_eq!(title, "please help me fix the auth flow");
 }
@@ -160,7 +159,7 @@ async fn a_raising_plugin_falls_back_to_truncation() {
         "return function(args) error('no API key') end",
     );
 
-    let (tx, _rx) = broadcast::channel(8);
+    let (tx, _rx) = crate::EventBus::channel(8);
     let title = am.generate_session_title(&id, &tx).await.expect("a title");
     assert_eq!(title, "please help me fix the auth flow");
 }
@@ -181,7 +180,7 @@ async fn an_empty_plugin_answer_falls_back_to_truncation() {
         "return function(args) return { title = '   ' } end",
     );
 
-    let (tx, _rx) = broadcast::channel(8);
+    let (tx, _rx) = crate::EventBus::channel(8);
     let title = am.generate_session_title(&id, &tx).await.expect("a title");
     assert_eq!(title, "please help me fix the auth flow");
 }
@@ -201,7 +200,7 @@ async fn a_publication_naming_an_undeclared_command_falls_back() {
         "return function(args) return { title = 'never reached' } end",
     );
 
-    let (tx, _rx) = broadcast::channel(8);
+    let (tx, _rx) = crate::EventBus::channel(8);
     let title = am.generate_session_title(&id, &tx).await.expect("a title");
     assert_eq!(title, "please help me fix the auth flow");
 }
@@ -289,7 +288,7 @@ async fn an_absent_assistant_turn_reaches_the_plugin_as_nil() {
         "return function(args) return { title = type(args.assistant) } end",
     );
 
-    let (tx, _rx) = broadcast::channel(8);
+    let (tx, _rx) = crate::EventBus::channel(8);
     let title = am.generate_session_title(&id, &tx).await.expect("a title");
     assert_eq!(title, "nil");
 }

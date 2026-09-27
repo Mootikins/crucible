@@ -5,7 +5,7 @@ struct ExecuteMultiKilnSearchParams<'a> {
     query_embedding: Vec<f32>,
     agent_config: &'a SessionAgent,
     session: &'a crucible_core::session::Session,
-    event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    event_tx: &'a crate::EventBus,
     original_content: &'a str,
     rerank: &'a RerankStage,
 }
@@ -446,7 +446,7 @@ impl AgentManager {
         original_content: &str,
         session: &crucible_core::session::Session,
         agent_config: &SessionAgent,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
     ) -> Option<crucible_core::traits::ContextMessage> {
         // Every failure below this point emits, because the gate already said
         // Precognition should run for this turn. A silent `None` leaves the

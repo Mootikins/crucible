@@ -30,12 +30,10 @@ use std::time::Duration;
 use crucible_core::config::{AgentProfile, EmbeddingProviderConfig};
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
-use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager};
 use crucible_lua::PluginSource;
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 
 #[path = "acp_support/mock_agent.rs"]
 mod mock_agent;
@@ -107,7 +105,7 @@ struct Harness {
     agent_manager: Arc<AgentManager>,
     session_manager: Arc<crucible_daemon::SessionManager>,
     session_id: crucible_core::session::SessionId,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crucible_daemon::EventBus,
 }
 
 /// A session over a kiln holding one indexed note, whose agent is the ACP
@@ -120,7 +118,7 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
     let log_path = temp.path().join("mock-agent.log");
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln_path)]);
-    let (event_tx, _event_rx) = broadcast::channel(256);
+    let (event_tx, _event_rx) = crucible_daemon::EventBus::channel(256);
 
     let loaded_plugin = match plugin_init {
         Some(init) => Some(load_plugin(temp.path(), init).await),

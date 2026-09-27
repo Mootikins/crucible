@@ -42,7 +42,7 @@ impl AgentManager {
     pub async fn generate_session_title(
         &self,
         session_id: &str,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
     ) -> Result<String, AgentError> {
         let session = self
             .session_manager
@@ -107,14 +107,11 @@ impl AgentManager {
         self.session_manager
             .set_title(session_id, title.clone())
             .await?;
-        emit_event(
-            event_tx,
-            SessionEventMessage::new(
-                session_id,
-                "title_changed",
-                serde_json::json!({ "title": title }),
-            ),
-        );
+        event_tx.emit(SessionEventMessage::new(
+            session_id,
+            "title_changed",
+            serde_json::json!({ "title": title }),
+        ));
         info!(session_id = %session_id, title = %title, "Session title generated");
         Ok(title)
     }

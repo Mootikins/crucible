@@ -16,11 +16,9 @@
 //! redraw signal for exactly this reason.
 
 use crucible_core::protocol::SessionEventMessage;
-use tokio::sync::broadcast;
 use tracing::debug;
 
 use crate::agent_manager::AgentManager;
-use crate::event_emitter::emit_event;
 
 /// The event name clients match on.
 pub const UI_STYLE_CHANGED: &str = "ui_style_changed";
@@ -50,25 +48,25 @@ pub const GLOBAL: &str = crate::subscription::WILDCARD_SESSION;
 /// Addressed to the real session rather than [`GLOBAL`]: a value belongs to one
 /// session, unlike a theme or layout change.
 pub fn broadcast_exprs_changed(
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     agents: &AgentManager,
     session_id: &str,
 ) {
     let payload = crate::rpc::ui::expr_payload(agents, session_id);
     let msg = SessionEventMessage::new(session_id, UI_STYLE_CHANGED, payload);
-    if !emit_event(event_tx, msg) {
+    if !event_tx.emit(msg) {
         debug!("statusline value change had no subscribers");
     }
 }
 
 pub fn broadcast_style_changed(
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     agents: &AgentManager,
     session_id: &str,
 ) {
     let payload = crate::rpc::ui::style_payload(agents, session_id);
     let msg = SessionEventMessage::new(session_id, UI_STYLE_CHANGED, payload);
-    if !emit_event(event_tx, msg) {
+    if !event_tx.emit(msg) {
         debug!("ui style change had no subscribers");
     }
 }
@@ -99,7 +97,7 @@ mod tests {
     /// bar on every theme switch, `init.lua` reload and layout change.
     #[test]
     fn a_global_style_payload_carries_no_expression_set() {
-        let (event_tx, _keep_open) = broadcast::channel(8);
+        let (event_tx, _keep_open) = crate::EventBus::channel(8);
         let agents = crate::test_fixtures::test_agent_manager(
             std::sync::Arc::new(crate::kiln_manager::KilnManager::new()),
             crate::test_support::temp_session_manager(),

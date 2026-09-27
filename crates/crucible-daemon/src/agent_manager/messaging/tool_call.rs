@@ -30,15 +30,12 @@ fn deny_tool_call(
     tool_name: &str,
     error_msg: String,
 ) -> crucible_core::traits::chat::ChatToolResult {
-    if !emit_event(
-        &stream_ctx.event_tx,
-        SessionEventMessage::tool_result(
-            &stream_ctx.session_id,
-            call_id,
-            tool_name,
-            serde_json::json!({ "error": &error_msg }),
-        ),
-    ) {
+    if !stream_ctx.event_tx.emit(SessionEventMessage::tool_result(
+        &stream_ctx.session_id,
+        call_id,
+        tool_name,
+        serde_json::json!({ "error": &error_msg }),
+    )) {
         warn!(
             session_id = %stream_ctx.session_id,
             tool = %tool_name,
@@ -434,9 +431,9 @@ impl AgentManager {
                 result.result = patched;
                 result.error = patched_error;
                 let call = stream_ctx.rendered_call(&tool_call.name, &args).await;
-                emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_call_with_metadata(
+                stream_ctx
+                    .event_tx
+                    .emit(SessionEventMessage::tool_call_with_metadata(
                         &stream_ctx.session_id,
                         &call_id,
                         &tool_call.name,
@@ -445,19 +442,17 @@ impl AgentManager {
                         None,
                         Some(call),
                         None,
-                    ),
-                );
+                    ));
                 let payload = tool_result_body(&result.result, result.error.as_deref());
-                emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_result_with_terminate(
+                stream_ctx
+                    .event_tx
+                    .emit(SessionEventMessage::tool_result_with_terminate(
                         &stream_ctx.session_id,
                         &call_id,
                         &tool_call.name,
                         payload,
                         result.terminate,
-                    ),
-                );
+                    ));
             }
             return result;
         }
@@ -755,9 +750,9 @@ impl StreamContext {
     ) {
         let (description, source) = labels;
         let tool = call.tool.clone();
-        if !emit_event(
-            &self.event_tx,
-            SessionEventMessage::tool_call_with_metadata(
+        if !self
+            .event_tx
+            .emit(SessionEventMessage::tool_call_with_metadata(
                 &self.session_id,
                 call_id,
                 &tool,
@@ -766,8 +761,8 @@ impl StreamContext {
                 source,
                 Some(call),
                 auto_approved,
-            ),
-        ) {
+            ))
+        {
             warn!(session_id = %self.session_id, %tool, "No subscribers for tool_call event");
         }
     }
@@ -854,10 +849,12 @@ impl StreamContext {
         if let Some(render) = render {
             event_result["render"] = serde_json::json!(render);
         }
-        if !emit_event(
-            &self.event_tx,
-            SessionEventMessage::tool_result(&self.session_id, call_id, tool, event_result),
-        ) {
+        if !self.event_tx.emit(SessionEventMessage::tool_result(
+            &self.session_id,
+            call_id,
+            tool,
+            event_result,
+        )) {
             warn!(session_id = %self.session_id, %tool, "No subscribers for tool_result event");
         }
         (result, error)

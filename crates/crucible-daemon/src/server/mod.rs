@@ -4,7 +4,6 @@ use crate::activity::{DaemonActivity, WorkKind};
 use crate::agent_manager::{AgentError, AgentManager, AgentManagerParams, MODEL_CACHE_TTL};
 use crate::background_manager::BackgroundJobManager;
 use crate::daemon_plugins::DaemonPluginLoader;
-use crate::event_emitter::emit_event;
 #[cfg(test)]
 use crate::event_emitter::stamp_event;
 use crate::kiln_manager::KilnManager;
@@ -211,10 +210,10 @@ impl Server {
 
         let listener = bind_private_listener(&params.path)?;
         let (shutdown_tx, _) = broadcast::channel(1);
-        let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         // The persist task reads this journal, not the broadcast ring, so a
         // lag of the ring cannot lose a line of a session log.
-        let (journal_waiter, journal) = crate::event_emitter::attach_journal(&event_tx);
+        let (event_tx, journal_waiter, journal) =
+            crate::EventBus::journaled_channel(EVENT_CHANNEL_CAPACITY);
 
         use tokio::sync::RwLock;
 
@@ -413,13 +412,10 @@ impl Server {
                 let hook_tx = event_tx.clone();
                 if !loader.publications().set_change_hook(std::sync::Arc::new(
                     move |plugin: &str, key: &str| {
-                        crate::event_emitter::emit_event(
-                            &hook_tx,
-                            crate::event_map::publication_changed(
-                                plugin.to_string(),
-                                key.to_string(),
-                            ),
-                        );
+                        hook_tx.emit(crate::event_map::publication_changed(
+                            plugin.to_string(),
+                            key.to_string(),
+                        ));
                     },
                 )) {
                     warn!("publication change hook was already installed");
@@ -689,7 +685,7 @@ impl Server {
     ///
     /// Used to send session events to all subscribed clients.
     #[cfg(test)] // only the in-process server tests subscribe through it
-    pub fn event_sender(&self) -> broadcast::Sender<SessionEventMessage> {
+    pub fn event_sender(&self) -> crate::EventBus {
         self.rpc_context.event_tx.clone()
     }
 
@@ -1315,10 +1311,7 @@ impl Server {
             if !loader
                 .surfaces()
                 .set_emitter(std::sync::Arc::new(move |change| {
-                    crate::event_emitter::emit_event(
-                        &surface_tx,
-                        crate::event_map::surface_changed(change),
-                    );
+                    surface_tx.emit(crate::event_map::surface_changed(change));
                 }))
             {
                 tracing::warn!("surface change emitter was already installed");

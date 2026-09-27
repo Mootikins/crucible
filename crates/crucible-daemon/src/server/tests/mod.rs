@@ -152,7 +152,7 @@ pub(super) struct TestServer {
     pub tmp: TempDir,
     pub sock_path: PathBuf,
     pub kiln_path: PathBuf,
-    pub event_tx: broadcast::Sender<SessionEventMessage>,
+    pub event_tx: crate::EventBus,
     pub kiln_manager: Arc<KilnManager>,
     shutdown_tx: broadcast::Sender<()>,
     task: tokio::task::JoinHandle<Result<()>>,

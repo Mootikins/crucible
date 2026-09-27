@@ -9,6 +9,7 @@ use crucible_core::turn::{StopReason, TurnEvent};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex as StdMutex};
 use tempfile::TempDir;
+use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
 
 /// Test DSL for assembling `TurnEvent` scripts in fixture tests.
@@ -427,7 +428,7 @@ async fn assert_no_event_until_message_complete(
 struct ReactorTestHarness {
     agent_manager: Arc<AgentManager>,
     session_id: String,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     event_rx: broadcast::Receiver<SessionEventMessage>,
     /// The daemon's session start and end paths, bound by
     /// [`Self::attach_lifecycle`]. `None` until a test binds a loader.
@@ -474,7 +475,7 @@ impl ReactorTestHarness {
             .configure_agent(&session.id, test_agent())
             .await
             .unwrap();
-        let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
+        let (event_tx, event_rx) = crate::EventBus::channel(64);
         bind_test_hub(
             &agent_manager,
             tmp.path(),
@@ -814,7 +815,7 @@ fn create_test_agent_manager_with_permissions(
     session_manager: Arc<SessionManager>,
     permission_config: Option<PermissionConfig>,
 ) -> Arc<AgentManager> {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -837,7 +838,7 @@ pub(in crate::agent_manager) fn bind_test_hub(
     agent_manager: &AgentManager,
     dir: &std::path::Path,
     sessions: Arc<SessionManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Arc<crate::notifications::NotificationHub> {
     let projects = crate::project_manager::ProjectManager::new(dir.join("projects.json"));
     let hub = Arc::new(crate::notifications::NotificationHub::new(
@@ -854,7 +855,7 @@ fn create_test_agent_manager_with_enrichment(
     session_manager: Arc<SessionManager>,
     enrichment_config: crucible_core::config::EmbeddingProviderConfig,
 ) -> Arc<AgentManager> {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::with_event_tx(
@@ -880,7 +881,7 @@ fn create_test_agent_manager_with_llm_config(
     session_manager: Arc<SessionManager>,
     llm_config: crucible_core::config::LlmConfig,
 ) -> Arc<AgentManager> {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),

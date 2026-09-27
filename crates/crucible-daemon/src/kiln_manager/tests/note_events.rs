@@ -8,13 +8,14 @@
 //! not.
 
 use super::*;
+use tokio::sync::broadcast;
 
 /// A manager wired to a bus, plus the receiving end.
 fn km_with_bus() -> (
     KilnManager,
     broadcast::Receiver<crate::protocol::SessionEventMessage>,
 ) {
-    let (tx, rx) = broadcast::channel(256);
+    let (tx, rx) = crate::EventBus::channel(256);
     let km = KilnManager::with_event_tx(
         tx,
         None,

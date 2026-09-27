@@ -44,7 +44,7 @@ async fn a_burst_of_external_writes_announces_each_session_once() {
     tracker.track("s1", std::slice::from_ref(&root));
     tracker.track("s2", std::slice::from_ref(&root));
 
-    let (event_tx, mut event_rx) = broadcast::channel(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     let cancel = CancellationToken::new();
     let task = tokio::spawn(announce_external_changes(
         tracker.subscribe(),
@@ -80,7 +80,7 @@ async fn a_bracketed_write_announces_nothing() {
     let tracker = Arc::new(ExternalChangeTracker::default());
     tracker.track("s1", std::slice::from_ref(&root));
 
-    let (event_tx, mut event_rx) = broadcast::channel(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     let cancel = CancellationToken::new();
     let task = tokio::spawn(announce_external_changes(
         tracker.subscribe(),

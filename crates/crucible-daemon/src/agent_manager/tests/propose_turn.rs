@@ -93,7 +93,7 @@ async fn a_propose_turn_leaves_the_disk_unchanged_and_lists_a_proposal() {
         }))),
     );
 
-    let (tx, mut rx) = broadcast::channel(128);
+    let (tx, mut rx) = crate::EventBus::channel(128);
     am.send_message(&session.id, "Remember this".into(), &tx, false, None)
         .await
         .unwrap();

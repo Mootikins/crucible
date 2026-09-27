@@ -14,7 +14,6 @@ use crate::test_support::temp_session_manager;
 use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::broadcast;
 
 /// A listener that accepts and then never answers, so a probe against it waits
 /// for `delay` and gives up. Returns the endpoint to point a provider at.
@@ -77,7 +76,7 @@ fn claim_every_backend() -> std::collections::BTreeMap<String, LlmProviderConfig
 }
 
 fn manager_with(providers: std::collections::BTreeMap<String, LlmProviderConfig>) -> AgentManager {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: temp_session_manager(),

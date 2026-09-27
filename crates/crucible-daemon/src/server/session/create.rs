@@ -573,7 +573,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sm = crate::test_support::temp_session_manager();
         let km = Arc::new(crate::kiln_manager::KilnManager::new());
-        let (event_tx, _) = tokio::sync::broadcast::channel(64);
+        let (event_tx, _) = crate::EventBus::channel(64);
         let delegation = DelegationConfig {
             enabled: true,
             max_depth: 2,
@@ -688,7 +688,7 @@ mod tests {
         std::fs::create_dir(&notes).unwrap();
         let sm = crate::test_support::temp_session_manager_with_kilns(&[("notes", &notes)]);
         let km = Arc::new(crate::kiln_manager::KilnManager::new());
-        let (event_tx, _) = tokio::sync::broadcast::channel(64);
+        let (event_tx, _) = crate::EventBus::channel(64);
         let am = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: km.clone(),
             session_manager: sm.clone(),

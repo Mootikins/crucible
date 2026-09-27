@@ -24,7 +24,7 @@ macro_rules! session_config_setter {
         pub(crate) async fn $fn_name(
             $req: Request,
             am: &Arc<AgentManager>,
-            event_tx: &broadcast::Sender<SessionEventMessage>,
+            event_tx: &crate::EventBus,
         ) -> Response {
             let session_id = require_param!($req, "session_id", as_str);
             let value = $extract;
@@ -100,7 +100,7 @@ macro_rules! session_config_getter {
 pub(crate) async fn handle_session_set_mode(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let mode_id = require_param!(req, "mode_id", as_str);
@@ -138,7 +138,7 @@ session_config_setter!(
 pub(crate) async fn handle_session_set_plugin_turn_limit(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let limit = require_param!(req, "limit", as_u64);
@@ -188,7 +188,7 @@ session_config_getter!(
 pub(crate) async fn handle_session_set_context_strategy(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let strategy_str = require_param!(req, "context_strategy", as_str);
@@ -216,7 +216,7 @@ pub(crate) async fn handle_session_set_context_strategy(
 pub(crate) async fn handle_session_undo(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let count = optional_param!(req, "count", as_u64).unwrap_or(1) as usize;

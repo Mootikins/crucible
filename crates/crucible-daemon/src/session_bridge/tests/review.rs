@@ -13,7 +13,7 @@ use crucible_lua::{register_sessions_module_with_api, DaemonSessionApi, Proposal
 fn bridge_over(tmp: &std::path::Path) -> (Arc<RpcContext>, Arc<dyn DaemonSessionApi>) {
     let session_manager = temp_session_manager();
     let agent_manager = build_test_agent_manager(session_manager.clone());
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let ctx = bridge_ctx(session_manager, agent_manager, event_tx, tmp);
     let bridge: Arc<dyn DaemonSessionApi> = Arc::new(DaemonSessionBridge::new(ctx.clone()));
     (ctx, bridge)

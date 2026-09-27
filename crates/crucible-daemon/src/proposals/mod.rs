@@ -21,9 +21,7 @@ use std::sync::{Mutex, OnceLock};
 use chrono::Utc;
 use crucible_core::file_write::ExpectedBase;
 use crucible_core::proposal::{Proposal, ProposalAuthor, ProposalId, ProposalState, ProposedWrite};
-use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::{PhysicalRoot, SessionId};
-use tokio::sync::broadcast;
 
 pub(crate) use rpc::{
     handle_proposal_accept, handle_proposal_dismiss, handle_proposal_get, handle_proposal_list,
@@ -82,7 +80,7 @@ pub struct ProposalStore {
     write: Mutex<HashSet<ProposalId>>,
     /// The event bus of the daemon. The server sets it at bind. A store
     /// without a bus, as in a unit test, changes its files and sends nothing.
-    events: OnceLock<broadcast::Sender<SessionEventMessage>>,
+    events: OnceLock<crate::EventBus>,
 }
 
 impl ProposalStore {
@@ -98,7 +96,7 @@ impl ProposalStore {
 
     /// Send `proposal_changed` on `events` after each change. Returns false
     /// when the store has a bus already; the first bus stays.
-    pub fn set_events(&self, events: broadcast::Sender<SessionEventMessage>) -> bool {
+    pub fn set_events(&self, events: crate::EventBus) -> bool {
         self.events.set(events).is_ok()
     }
 
@@ -107,7 +105,7 @@ impl ProposalStore {
     /// sees the change.
     fn announce(&self, id: ProposalId) {
         if let Some(events) = self.events.get() {
-            crate::event_emitter::emit_event(events, crate::event_map::proposal_changed(id));
+            events.emit(crate::event_map::proposal_changed(id));
         }
     }
 

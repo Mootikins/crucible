@@ -174,10 +174,9 @@ mod tests {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::HashSet;
     use std::sync::Arc;
-    use tokio::sync::broadcast;
 
     fn make_agent_manager_with_config(config: Option<LlmConfig>) -> AgentManager {
-        let (event_tx, _) = broadcast::channel(16);
+        let (event_tx, _) = crate::EventBus::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
 
         AgentManager::new(AgentManagerParams {

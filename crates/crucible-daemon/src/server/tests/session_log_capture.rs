@@ -13,7 +13,6 @@
 //! would defeat the point, which is that CI notices drift.
 
 use super::*;
-use crate::event_emitter::emit_event;
 use crucible_core::protocol::SessionEventMessage;
 
 pub(super) fn fixture_path() -> PathBuf {
@@ -84,7 +83,7 @@ async fn the_committed_session_log_is_what_the_daemon_writes() {
     // `emit_event`, not a bare `send`: the stamping it applies
     // (`event_emitter.rs`'s `stamp_event`) is part of what lands on disk.
     for event in scripted_turn(&session_id) {
-        emit_event(&event_tx, event);
+        event_tx.emit(event);
     }
 
     let jsonl_path = server

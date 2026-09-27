@@ -19,7 +19,7 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
     let ctx = RpcContext::for_test(
         km.clone(),
@@ -64,7 +64,7 @@ async fn bridge_create_refuses_a_cloud_provider_on_a_confidential_kiln() {
     let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
     let bridge = crate::session_bridge::DaemonSessionBridge::new(Arc::new(RpcContext::for_test(
         km,
@@ -109,7 +109,7 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
     let ctx = RpcContext::for_test(
         km.clone(),
@@ -144,7 +144,7 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
     let ctx = RpcContext::for_test(
         km.clone(),
@@ -180,7 +180,7 @@ async fn untrusted_provider_internal_kiln_returns_error() {
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
     let ctx = RpcContext::for_test(
         km.clone(),
@@ -236,7 +236,7 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
     let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
-    let (event_tx, _rx) = broadcast::channel(16);
+    let (event_tx, _rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
 
     let ctx = RpcContext::for_test(
@@ -329,7 +329,7 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
     let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
-    let (event_tx, _rx) = broadcast::channel(16);
+    let (event_tx, _rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
 
     let ctx = RpcContext::for_test(
@@ -433,7 +433,7 @@ async fn a_confidential_kiln_anywhere_in_the_set_is_refused_without_creating_a_s
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
     let ctx = RpcContext::for_test(
         km.clone(),
@@ -492,7 +492,7 @@ async fn create_reads_a_bare_provider_name_as_the_runtime_gates_do() {
     let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config);
     let ctx = RpcContext::for_test(km, sm.clone(), am, pm, event_tx, tmp.path().to_path_buf());
 

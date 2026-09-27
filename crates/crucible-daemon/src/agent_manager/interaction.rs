@@ -13,7 +13,7 @@
 use super::{AgentError, AgentManager, PermissionId};
 use crate::protocol::SessionEventMessage;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::oneshot;
 use tracing::debug;
 
 /// A non-permission interaction a caller is parked on.
@@ -49,7 +49,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         request: InteractionRequest,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
     ) -> Result<InteractionResponse, AgentError> {
         // Existence is checked before the id is minted so a bad session id is
         // an error rather than a request nothing will ever answer.
@@ -66,10 +66,11 @@ impl AgentManager {
             },
         );
 
-        if !crate::event_emitter::emit_event(
-            event_tx,
-            SessionEventMessage::interaction_requested(session_id, &request_id, &request),
-        ) {
+        if !event_tx.emit(SessionEventMessage::interaction_requested(
+            session_id,
+            &request_id,
+            &request,
+        )) {
             debug!(
                 session_id = %session_id,
                 request_id = %request_id,

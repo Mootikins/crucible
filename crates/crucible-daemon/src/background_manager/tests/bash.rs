@@ -71,7 +71,7 @@ async fn cancel_job_stops_running_job() {
 
 #[tokio::test]
 async fn history_eviction_at_limit() {
-    let (tx, _) = broadcast::channel(16);
+    let (tx, _) = crate::EventBus::channel(16);
     let mut manager = BackgroundJobManager::new(tx);
     manager.max_history = 3;
 
@@ -278,7 +278,7 @@ async fn cancel_nonexistent_job_returns_false() {
 
 #[tokio::test]
 async fn bash_events_are_broadcast() {
-    let (tx, mut rx) = broadcast::channel(16);
+    let (tx, mut rx) = crate::EventBus::channel(16);
     let manager = BackgroundJobManager::new(tx);
 
     let _job_id = manager

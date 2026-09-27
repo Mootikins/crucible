@@ -23,7 +23,7 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
         events: vec![script::text("reply"), script::done()],
     }) as BoxedAgentHandle));
     am.install_agent_for_test(session.id.to_string(), handle.clone());
-    let (tx, mut rx) = broadcast::channel(64);
+    let (tx, mut rx) = crate::EventBus::channel(64);
     let ctx = Arc::new(crate::rpc::RpcContext::for_test(
         am.kiln_manager.clone(),
         sm.clone(),

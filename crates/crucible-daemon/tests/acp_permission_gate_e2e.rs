@@ -37,7 +37,7 @@ struct Gate {
     log: PathBuf,
     am: Arc<AgentManager>,
     session_id: SessionId,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crucible_daemon::EventBus,
     events: broadcast::Receiver<SessionEventMessage>,
     /// The text that the agent streamed, over every turn.
     text: String,
@@ -77,7 +77,7 @@ async fn gate(mode: &str) -> Gate {
         .exec()
         .expect("the Lua defaults load");
     let session_manager = temp_session_manager();
-    let (event_tx, events) = broadcast::channel(256);
+    let (event_tx, events) = crucible_daemon::EventBus::channel(256);
     let am = Arc::new(
         AgentManager::new(acp_manager_params(
             session_manager.clone(),

@@ -42,6 +42,7 @@ pub mod embedding;
 mod empty_providers;
 pub mod enrichment;
 pub mod event_emitter;
+pub use event_emitter::EventBus;
 pub mod event_map;
 pub(crate) mod execution_roots;
 pub mod file_watch_bridge;

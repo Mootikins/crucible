@@ -52,7 +52,7 @@ async fn end_hook_rig(
         Arc::new(tokio::sync::Mutex::new(None));
 
     let session_manager = temp_session_manager();
-    let (event_tx, _keep_open) = broadcast::channel(64);
+    let (event_tx, _keep_open) = crate::EventBus::channel(64);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),
@@ -238,7 +238,7 @@ async fn session_end_sweeps_the_handlers_that_session_activated() {
         Arc::new(tokio::sync::Mutex::new(None));
 
     let session_manager = temp_session_manager();
-    let (event_tx, _keep_open) = broadcast::channel(64);
+    let (event_tx, _keep_open) = crate::EventBus::channel(64);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),
@@ -350,7 +350,7 @@ async fn session_end_forgets_the_sessions_statusline_values() {
         Arc::new(tokio::sync::Mutex::new(None));
 
     let session_manager = temp_session_manager();
-    let (event_tx, _keep_open) = broadcast::channel(64);
+    let (event_tx, _keep_open) = crate::EventBus::channel(64);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),

@@ -22,17 +22,16 @@ use async_trait::async_trait;
 use crucible_core::turn::TurnStatus;
 use crucible_core::workflow::{ExecContext, StepHandler, StepOutcome};
 use std::sync::Arc;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::oneshot;
 use tracing::warn;
 
 use crate::agent_manager::{AgentManager, TurnOutcome};
-use crate::protocol::SessionEventMessage;
 use crate::workflow_handlers::interpolate::interpolate;
 
 pub struct DaemonInlineHandler {
     session_id: String,
     agents: Arc<AgentManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     /// One LLM turn at a time per workflow run. A session has a single
     /// conversation, and `AgentManager` rejects concurrent requests on it,
     /// so parallel-group members must serialize their turns here. True
@@ -44,7 +43,7 @@ impl DaemonInlineHandler {
     pub fn new(
         session_id: impl Into<String>,
         agents: Arc<AgentManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
     ) -> Self {
         Self {
             session_id: session_id.into(),

@@ -25,7 +25,7 @@ async fn lua_can_read_ended_sessions_after_restart_without_reviving_them() {
     sm.end_session(&session.id).await.unwrap();
     let restarted = Arc::new(SessionManager::with_storage(sm.storage().clone()));
     let am = build_test_agent_manager(restarted.clone());
-    let (tx, _) = broadcast::channel(32);
+    let (tx, _) = crate::EventBus::channel(32);
     let bridge = DaemonSessionBridge::new(bridge_ctx(restarted.clone(), am, tx, workspace.path()));
     let listed = bridge.list_sessions().await.unwrap();
     assert_eq!(listed.len(), 1);

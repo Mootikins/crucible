@@ -19,7 +19,6 @@
 use super::permission::prompt_user;
 use crate::agent_manager::slot::SessionSlot;
 use crate::agent_manager::{is_safe, AgentManager, PluginHandlers};
-use crate::protocol::SessionEventMessage;
 use crucible_core::agent::{ToolPolicy, ToolPolicyMap};
 use crucible_core::config::components::permissions::{
     PermissionDecision, PermissionEngine, PermissionMode,
@@ -31,7 +30,6 @@ use crucible_core::types::CanonicalToolCall;
 use crucible_lua::{ModeRegistry, ModeStance, PermissionHookResult};
 use std::collections::HashSet;
 use std::path::Path;
-use tokio::sync::broadcast;
 
 /// What one decision reads from the session of the call.
 pub(crate) struct PermissionContext<'a> {
@@ -62,7 +60,7 @@ pub(crate) struct PermissionContext<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct Prompt<'a> {
     pub slot: &'a SessionSlot,
-    pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    pub event_tx: &'a crate::EventBus,
 }
 
 /// The decision about one tool call.
@@ -611,7 +609,7 @@ mod tests {
         let no_mcp = HashSet::new();
         let engine = PermissionEngine::new(None);
         let slot = SessionSlot::default();
-        let (event_tx, _events) = broadcast::channel(1);
+        let (event_tx, _events) = crate::EventBus::channel(1);
         let ctx = PermissionContext {
             session_id: "s",
             tool_policy: None,

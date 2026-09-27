@@ -80,17 +80,14 @@ impl BackgroundJobManager {
                     .start(crate::activity::WorkKind::BackgroundJob),
             },
         );
-        if !emit_event(
-            &self.event_tx,
-            SessionEventMessage::new(
-                session_id,
-                events::BASH_SPAWNED,
-                serde_json::json!({
-                    "job_id": job_id,
-                    "command": command,
-                }),
-            ),
-        ) {
+        if !self.event_tx.emit(SessionEventMessage::new(
+            session_id,
+            events::BASH_SPAWNED,
+            serde_json::json!({
+                "job_id": job_id,
+                "command": command,
+            }),
+        )) {
             tracing::debug!("Failed to emit BASH_SPAWNED event (no subscribers)");
         }
         let _ = registered_tx.send(());
@@ -123,7 +120,7 @@ impl BackgroundJobManager {
     }
 
     fn emit_completion_events(
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         session_id: &str,
         job_id: &JobId,
         result: &JobResult,
@@ -150,17 +147,14 @@ impl BackgroundJobManager {
             )
         };
 
-        if !emit_event(
-            event_tx,
-            SessionEventMessage::new(session_id, event_type, event_data),
-        ) {
+        if !event_tx.emit(SessionEventMessage::new(session_id, event_type, event_data)) {
             warn!(job_id = %job_id, "No subscribers for bash completion event");
         }
         Self::emit_background_completed(event_tx, session_id, job_id, result, "bash");
     }
 
     pub(super) fn emit_background_completed(
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         session_id: &str,
         job_id: &JobId,
         result: &JobResult,
@@ -176,18 +170,15 @@ impl BackgroundJobManager {
             summary
         };
 
-        if !emit_event(
-            event_tx,
-            SessionEventMessage::new(
-                session_id,
-                events::BACKGROUND_COMPLETED,
-                serde_json::json!({
-                    "job_id": job_id,
-                    "kind": kind,
-                    "summary": summary,
-                }),
-            ),
-        ) {
+        if !event_tx.emit(SessionEventMessage::new(
+            session_id,
+            events::BACKGROUND_COMPLETED,
+            serde_json::json!({
+                "job_id": job_id,
+                "kind": kind,
+                "summary": summary,
+            }),
+        )) {
             warn!(job_id = %job_id, kind = %kind, "No subscribers for background completion event");
         }
     }

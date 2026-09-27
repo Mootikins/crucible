@@ -182,7 +182,7 @@ pub fn profile_session_agent(profile: &str) -> SessionAgent {
 pub fn acp_manager_params(
     session_manager: Arc<SessionManager>,
     agents: BTreeMap<String, AgentProfile>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crucible_daemon::EventBus,
 ) -> AgentManagerParams {
     AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -231,7 +231,7 @@ pub async fn completed_turn(done: oneshot::Receiver<TurnOutcome>, limit: Duratio
 pub struct MockSession {
     pub agent_manager: Arc<crucible_daemon::AgentManager>,
     pub session_id: crucible_core::session::SessionId,
-    pub event_tx: broadcast::Sender<SessionEventMessage>,
+    pub event_tx: crucible_daemon::EventBus,
     /// Every event that the session broadcasts.
     pub events: broadcast::Receiver<SessionEventMessage>,
 }
@@ -259,7 +259,7 @@ pub async fn mock_session_with(
     permissions: Option<crucible_core::config::components::permissions::PermissionConfig>,
 ) -> MockSession {
     let session_manager = crucible_daemon::test_support::temp_session_manager_with_kilns(kilns);
-    let (event_tx, events) = broadcast::channel(256);
+    let (event_tx, events) = crucible_daemon::EventBus::channel(256);
     let profile = mock_profile(BTreeMap::from([script.env()]));
     let agent_manager = Arc::new(crucible_daemon::AgentManager::new(AgentManagerParams {
         permission_config: permissions,

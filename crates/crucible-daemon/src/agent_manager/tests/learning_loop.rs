@@ -51,7 +51,7 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
                 .collect(),
         }))),
     );
-    let (tx, mut rx) = broadcast::channel(128);
+    let (tx, mut rx) = crate::EventBus::channel(128);
     am.send_message(
         &writer.id,
         "Remember these decisions".into(),

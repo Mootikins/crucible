@@ -1,12 +1,11 @@
 //! `seq` must be universal, because a gap marker no client can act on is not a
 //! signal.
 //!
-//! `SessionEventMessage.seq` is stamped by `event_emitter::emit_event` and by
+//! `SessionEventMessage.seq` is stamped by `EventBus::emit` and by
 //! nothing else. Every site that reached for `event_tx.send` directly shipped
 //! `seq: None`, so a client could not check contiguity even if it wanted to —
 //! one `None` in a stream makes the whole stream unverifiable. These tests pin
-//! both halves: the events themselves carry a seq, and no new bypass can appear
-//! without the lint below going red.
+//! emitted events carry a seq. The private sender prevents bypassing publication.
 use crate::test_support::temp_session_manager;
 
 use super::*;
@@ -21,7 +20,7 @@ fn seqs(events: &[SessionEventMessage]) -> Vec<u64> {
             e.seq.unwrap_or_else(|| {
                 panic!(
                     "event `{}` on session `{}` carries no seq: it bypassed \
-                     event_emitter::emit_event, so this client's stream cannot be \
+                     EventBus::emit, so this client's stream cannot be \
                      gap-checked",
                     e.event, e.session_id
                 )
@@ -48,7 +47,7 @@ fn assert_contiguous_from_one(seqs: &[u64]) {
 /// to a session that may have no turn stream at all.
 #[tokio::test]
 async fn ui_style_broadcasts_carry_a_contiguous_seq() {
-    let (event_tx, _) = broadcast::channel(64);
+    let (event_tx, _) = crate::EventBus::channel(64);
     let mut event_rx = event_tx.subscribe();
 
     let km = Arc::new(KilnManager::new());
@@ -73,15 +72,12 @@ async fn ui_style_broadcasts_carry_a_contiguous_seq() {
 /// per-session contiguity checkable at all.
 #[tokio::test]
 async fn seq_is_per_session_not_per_channel() {
-    let (event_tx, _) = broadcast::channel(64);
+    let (event_tx, _) = crate::EventBus::channel(64);
     let mut event_rx = event_tx.subscribe();
 
     for _ in 0..2 {
         for session in ["seq-probe-a", "seq-probe-b"] {
-            crate::event_emitter::emit_event(
-                &event_tx,
-                SessionEventMessage::text_delta(session, "x"),
-            );
+            event_tx.emit(SessionEventMessage::text_delta(session, "x"));
         }
     }
 
@@ -101,104 +97,4 @@ async fn seq_is_per_session_not_per_channel() {
             ("seq-probe-b".to_string(), 2),
         ]
     );
-}
-
-/// Files allowed to call `event_tx.send` directly, each with the reason.
-///
-/// Every entry is checked to still contain a direct send, so an entry that stops
-/// being needed fails this test instead of quietly widening the hole.
-const DIRECT_SEND_ALLOWED: &[(&str, &str)] = &[
-    (
-        "event_emitter.rs",
-        "the one place that may: it stamps seq first",
-    ),
-    (
-        "rpc_client/client/mod.rs",
-        "an mpsc relay of already-stamped daemon events, not the broadcast",
-    ),
-];
-
-/// The lint that keeps `seq` universal.
-///
-/// A behavioural test can only cover the sites that exist today; roughly a dozen
-/// bypasses accumulated one at a time, each invisible because nothing failed. So
-/// the check is on the source: outside the allowlist, no production file in this
-/// crate may reach for `event_tx.send`.
-///
-/// Honest about its limit — it matches the identifier `event_tx`, so a sender
-/// bound to another name slips through. It catches the pattern every existing
-/// bypass actually used, which is the class that has been recurring.
-///
-/// The pattern tolerates the line break rustfmt inserts before `.send(` when the
-/// call is long; matching the one-line form only would let a reformat hide a
-/// bypass.
-#[test]
-fn no_production_code_bypasses_emit_event() {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let direct_send = regex::Regex::new(r"event_tx\s*\.\s*send\(").expect("static pattern");
-
-    let mut offenders: Vec<String> = Vec::new();
-    let mut allowlist_hits: std::collections::HashSet<&str> = std::collections::HashSet::new();
-
-    for path in rust_files(&src) {
-        let rel = path
-            .strip_prefix(&src)
-            .expect("walked from src")
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        // Test fixtures push raw events on purpose — a fixture asserting on an
-        // unstamped event is testing the transport, not the emitter.
-        if rel.starts_with("server/tests/") {
-            continue;
-        }
-
-        let text = std::fs::read_to_string(&path).expect("read source");
-        if !direct_send.is_match(&text) {
-            continue;
-        }
-
-        match DIRECT_SEND_ALLOWED.iter().find(|(f, _)| rel.ends_with(f)) {
-            Some((f, _)) => {
-                allowlist_hits.insert(f);
-            }
-            None => {
-                for m in direct_send.find_iter(&text) {
-                    offenders.push(format!("{rel}:{}", text[..m.start()].lines().count()));
-                }
-            }
-        }
-    }
-
-    assert!(
-        offenders.is_empty(),
-        "these sites send on the event broadcast without stamping a seq, which \
-         makes every client's stream ungappable; route them through \
-         `crate::event_emitter::emit_event`:\n  {}",
-        offenders.join("\n  ")
-    );
-
-    for (file, reason) in DIRECT_SEND_ALLOWED {
-        assert!(
-            allowlist_hits.contains(file),
-            "allowlist entry `{file}` ({reason}) no longer contains a direct \
-             `event_tx.send(` — delete the entry rather than leaving the hole open"
-        );
-    }
-}
-
-fn rust_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        for entry in std::fs::read_dir(&d).expect("read_dir").flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.extension().is_some_and(|e| e == "rs") {
-                out.push(p);
-            }
-        }
-    }
-    out
 }

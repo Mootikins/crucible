@@ -23,7 +23,7 @@ impl Fixture {
         let sm = temp_session_manager();
         let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
         let km = Arc::new(KilnManager::new());
-        let (event_tx, _rx) = broadcast::channel(16);
+        let (event_tx, _rx) = crate::EventBus::channel(16);
         let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), None);
         let ctx = RpcContext::for_test(km, sm.clone(), am, pm, event_tx, tmp.path().to_path_buf());
         Self { tmp, sm, ctx }

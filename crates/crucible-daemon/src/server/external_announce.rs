@@ -10,8 +10,6 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-use super::emit_event;
-
 /// Turn observed external changes into one `review_changed` per session.
 ///
 /// Coalesced, because
@@ -24,7 +22,7 @@ use super::emit_event;
 /// was recorded.
 pub(super) async fn announce_external_changes(
     mut rx: broadcast::Receiver<crate::watch::external_changes::ExternalChange>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     cancel: CancellationToken,
 ) {
     /// Long enough to fold an editor's save burst and a formatter's rewrite
@@ -48,9 +46,7 @@ pub(super) async fn announce_external_changes(
                 }
             } => {
                 for session_id in pending.drain() {
-                    emit_event(
-                        &event_tx,
-                        SessionEventMessage::review_changed(&session_id, "external"),
+                    event_tx.emit(SessionEventMessage::review_changed(&session_id, "external"),
                     );
                 }
                 deadline = None;

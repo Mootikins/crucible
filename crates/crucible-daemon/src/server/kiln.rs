@@ -14,7 +14,7 @@ pub(crate) async fn handle_kiln_open(
     req: Request,
     km: &Arc<KilnManager>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<crate::rpc_client::KilnOpenRequest>(&req) {
         Ok(p) => p,
@@ -49,20 +49,17 @@ pub(crate) async fn handle_kiln_open(
     if process {
         match km.open_and_process(kiln_path, force).await {
             Ok((discovered, processed, skipped, errors)) => {
-                if !emit_event(
-                    event_tx,
-                    SessionEventMessage::new(
-                        "process",
-                        "process_complete",
-                        serde_json::json!({
-                            "kiln": params.path,
-                            "discovered": discovered,
-                            "processed": processed,
-                            "skipped": skipped,
-                            "errors": errors.len()
-                        }),
-                    ),
-                ) {
+                if !event_tx.emit(SessionEventMessage::new(
+                    "process",
+                    "process_complete",
+                    serde_json::json!({
+                        "kiln": params.path,
+                        "discovered": discovered,
+                        "processed": processed,
+                        "skipped": skipped,
+                        "errors": errors.len()
+                    }),
+                )) {
                     tracing::debug!("process_complete event had no subscribers");
                 }
 

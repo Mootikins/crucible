@@ -23,7 +23,7 @@ async fn test_configure_agent() {
 async fn a_session_notification_goes_through_the_hub() {
     let (tmp, session_manager, session) = setup_session_manager().await;
     let agent_manager = create_test_agent_manager(session_manager.clone());
-    let (event_tx, mut events) = broadcast::channel(16);
+    let (event_tx, mut events) = crate::EventBus::channel(16);
     let hub = bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
 
     let notification = crucible_core::types::Notification::toast("saved");
@@ -56,7 +56,7 @@ async fn test_send_message_no_agent() {
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let agent_manager = create_test_agent_manager(session_manager);
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
 
     let result = agent_manager
         .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
@@ -194,29 +194,23 @@ async fn test_switch_model_invalidates_cache() {
 }
 
 #[tokio::test]
-async fn test_broadcast_send_with_no_receivers_returns_error() {
-    let (tx, _rx) = broadcast::channel::<SessionEventMessage>(16);
+async fn test_emit_with_no_receivers_returns_false() {
+    let (tx, _rx) = crate::EventBus::channel(16);
 
     drop(_rx);
 
-    let result = tx.send(SessionEventMessage::text_delta("test-session", "hello"));
+    let result = tx.emit(SessionEventMessage::text_delta("test-session", "hello"));
 
-    assert!(
-        result.is_err(),
-        "Broadcast send should return error when no receivers"
-    );
+    assert!(!result, "Publication reports no live receivers");
 }
 
 #[tokio::test]
-async fn test_broadcast_send_with_receiver_succeeds() {
-    let (tx, mut rx) = broadcast::channel::<SessionEventMessage>(16);
+async fn test_emit_with_receiver_succeeds() {
+    let (tx, mut rx) = crate::EventBus::channel(16);
 
-    let result = tx.send(SessionEventMessage::text_delta("test-session", "hello"));
+    let result = tx.emit(SessionEventMessage::text_delta("test-session", "hello"));
 
-    assert!(
-        result.is_ok(),
-        "Broadcast send should succeed with receiver"
-    );
+    assert!(result, "Publication reports live receivers");
 
     let received = rx.recv().await.unwrap();
     assert_eq!(received.session_id, "test-session");
@@ -294,7 +288,7 @@ async fn test_switch_model_emits_event() {
         .await
         .unwrap();
 
-    let (tx, mut rx) = broadcast::channel::<SessionEventMessage>(16);
+    let (tx, mut rx) = crate::EventBus::channel(16);
 
     agent_manager
         .switch_model(&session.id, "gpt-4", Some(&tx))

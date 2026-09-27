@@ -1033,10 +1033,7 @@ impl SessionManager {
     /// a pre-feature session would otherwise stay "Untitled" forever.
     ///
     /// Returns how many sessions were titled. Emits `title_changed` per hit.
-    pub async fn title_untitled_sessions(
-        &self,
-        event_tx: &tokio::sync::broadcast::Sender<SessionEventMessage>,
-    ) -> usize {
+    pub async fn title_untitled_sessions(&self, event_tx: &crate::EventBus) -> usize {
         let mut titled = 0;
         for summary in self
             .list_sessions_filtered_async(KilnFilter::Any, None, None, None, false)
@@ -1081,14 +1078,11 @@ impl SessionManager {
                     continue;
                 }
             }
-            crate::event_emitter::emit_event(
-                event_tx,
-                SessionEventMessage::new(
-                    &summary.id,
-                    "title_changed",
-                    serde_json::json!({ "title": title }),
-                ),
-            );
+            event_tx.emit(SessionEventMessage::new(
+                &summary.id,
+                "title_changed",
+                serde_json::json!({ "title": title }),
+            ));
             info!(session_id = %summary.id, title = %title, "Catch-up title applied");
             titled += 1;
         }

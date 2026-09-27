@@ -95,6 +95,13 @@ during reconnect and failed initial subscription.
 
 ## 3. Make the daemon bus a concrete owned value
 
+**Implemented:** `EventBus` owns its private live ring, lossless journal and
+sequence counters. Publication holds one lock through stamping and both sends;
+replay explicitly preserves recorded metadata. Cleanup retires the supplied
+bus's session counter. Independent buses no longer share counters. The private
+sender replaces the raw-send source scanner, and the queue no longer needs
+a callback-based publication API.
+
 `crates/crucible-daemon/src/event_emitter.rs` exposes a raw broadcast sender,
 but publishing also depends on process-global sequence counters (line 7), a
 global weak-channel-to-journal registry (line 95), and a registry lookup for

@@ -6,7 +6,6 @@
 //! the writer of `session.jsonl` must not read the ring.
 
 use super::*;
-use crate::event_emitter::emit_event;
 
 /// The `model_id` of each `model_switched` line in `session_id`'s log, in
 /// file order.
@@ -51,10 +50,11 @@ async fn a_burst_past_the_broadcast_ring_is_stored_whole_and_in_order() {
 
     let expected: Vec<String> = (0..BURST).map(|i| format!("model-{i}")).collect();
     for model in &expected {
-        emit_event(
-            &server.event_tx,
-            SessionEventMessage::model_switched(&session_id, model.clone(), "mock"),
-        );
+        server.event_tx.emit(SessionEventMessage::model_switched(
+            &session_id,
+            model.clone(),
+            "mock",
+        ));
     }
 
     let stored = wait_for_switches(&server.sessions_root(), &session_id, BURST).await;
@@ -85,10 +85,11 @@ async fn a_history_read_after_an_event_sees_the_event() {
     let session_id = create_chat_session(&mut client, TestServer::KILN, 1).await;
 
     for i in 0..SENT {
-        emit_event(
-            &server.event_tx,
-            SessionEventMessage::model_switched(&session_id, format!("model-{i}"), "mock"),
-        );
+        server.event_tx.emit(SessionEventMessage::model_switched(
+            &session_id,
+            format!("model-{i}"),
+            "mock",
+        ));
     }
 
     let tail = rpc_call(

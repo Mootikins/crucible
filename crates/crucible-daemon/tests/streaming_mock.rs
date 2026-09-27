@@ -31,7 +31,7 @@ impl TestHarness {
         let temp_dir = TempDir::new().expect("failed to create temp dir");
         let session_manager = temp_session_manager();
 
-        let (event_tx, event_rx) = broadcast::channel(16);
+        let (event_tx, event_rx) = crucible_daemon::EventBus::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
 
         let agent_manager = AgentManager::new(AgentManagerParams {

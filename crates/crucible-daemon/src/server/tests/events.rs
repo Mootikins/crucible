@@ -106,7 +106,7 @@ async fn test_events_auto_persisted() {
     // `emit_event` feeds, not the broadcast ring.
     // Use user_message since text_delta is filtered out to reduce storage
     let event = SessionEventMessage::user_message(&session_id, "msg-1", "hello world");
-    crate::event_emitter::emit_event(&event_tx, event);
+    event_tx.emit(event);
 
     let session_dir = server.sessions_root().join(&session_id);
     let jsonl_path = session_dir.join("session.jsonl");
@@ -134,23 +134,23 @@ async fn test_events_auto_persisted() {
 
 #[test]
 fn test_emitted_event_has_timestamp() {
-    let seq_counter = std::sync::atomic::AtomicU64::new(0);
+    let mut seq_counter = 0;
     let event = SessionEventMessage::text_delta("test-session", "hello");
 
-    let stamped = stamp_event(event, &seq_counter);
+    let stamped = stamp_event(event, &mut seq_counter);
 
     assert!(stamped.timestamp.is_some());
 }
 
 #[test]
 fn test_emitted_events_have_increasing_seq() {
-    let seq_counter = std::sync::atomic::AtomicU64::new(0);
+    let mut seq_counter = 0;
 
     let events: Vec<SessionEventMessage> = (0..5)
         .map(|_| {
             stamp_event(
                 SessionEventMessage::text_delta("test-session", "x"),
-                &seq_counter,
+                &mut seq_counter,
             )
         })
         .collect();

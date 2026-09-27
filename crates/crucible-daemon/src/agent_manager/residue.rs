@@ -16,13 +16,17 @@ impl AgentManager {
     /// as per-session (add a check) or not (bind it to `_` with a reason). That
     /// compile error is the whole mechanism — a runtime list of maps is a list
     /// someone forgets to extend, which is exactly how
-    /// `event_emitter::SESSION_SEQ_COUNTERS` came to leak an entry per session
+    /// the former global sequence counters came to leak an entry per session
     /// while sitting outside every cleanup test.
     ///
     /// It cannot detect state added *outside* `AgentManager`; the seq counters
-    /// are covered by calling into their module, which at least puts the
+    /// are covered by the supplied bus, which at least puts the
     /// question inside the one function a reviewer reads.
-    pub(crate) fn session_residue(&self, session_id: &str) -> Vec<&'static str> {
+    pub(crate) fn session_residue(
+        &self,
+        session_id: &str,
+        events: &crate::EventBus,
+    ) -> Vec<&'static str> {
         let Self {
             // Per-session: every one of these must be empty after cleanup.
             request_state,
@@ -86,7 +90,7 @@ impl AgentManager {
         if active_tools.has_session(session_id) {
             residue.push("active_tools");
         }
-        if crate::event_emitter::has_seq_counter(session_id) {
+        if events.has_seq_counter(session_id) {
             residue.push("seq_counters");
         }
         residue
@@ -104,8 +108,13 @@ impl AgentManager {
     /// It asserts on [`leaked_stores`] rather than the raw residue: two of the
     /// stores can be re-populated by a task that is still running, and this
     /// check has no way to wait for one.
-    pub(super) fn debug_assert_no_residue(&self, session_id: &str, review_spawned: bool) {
-        let leaked = leaked_stores(self.session_residue(session_id), review_spawned);
+    pub(super) fn debug_assert_no_residue(
+        &self,
+        session_id: &str,
+        review_spawned: bool,
+        events: &crate::EventBus,
+    ) {
+        let leaked = leaked_stores(self.session_residue(session_id, events), review_spawned);
         debug_assert!(
             leaked.is_empty(),
             "cleanup_session left per-session state behind: {leaked:?}"

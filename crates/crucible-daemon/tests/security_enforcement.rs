@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 
 /// An `ollama` provider pinned to Local trust — the key `internal_agent()`
 /// already carries, so a session configured with it clears a confidential kiln.
@@ -151,7 +150,7 @@ struct Rig {
     _temp: TempDir,
     workspace: std::path::PathBuf,
     agent_manager: Arc<AgentManager>,
-    event_tx: broadcast::Sender<crucible_daemon::SessionEventMessage>,
+    event_tx: crucible_daemon::EventBus,
     session_id: String,
 }
 
@@ -165,7 +164,7 @@ async fn rig(
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().to_path_buf();
     let session_manager = temp_session_manager();
-    let (event_tx, _) = broadcast::channel(256);
+    let (event_tx, _) = crucible_daemon::EventBus::channel(256);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),
@@ -410,7 +409,7 @@ async fn delegation_trust_derives_from_child_provider() {
     // the classification walk finds nothing and this passes for the wrong
     // reason — the child would be refused by no gate at all.
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &workspace)]);
-    let (event_tx, _) = broadcast::channel(64);
+    let (event_tx, _) = crucible_daemon::EventBus::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
         AgentManagerParams {
@@ -526,7 +525,7 @@ async fn card_allow_does_not_override_config_deny() {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().to_path_buf();
     let session_manager = temp_session_manager();
-    let (event_tx, _) = broadcast::channel(256);
+    let (event_tx, _) = crucible_daemon::EventBus::channel(256);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),

@@ -11,8 +11,6 @@
 
 use std::collections::HashMap;
 
-use tokio::sync::broadcast;
-
 use crucible_core::diff::{DiffFileText, DiffsetId, DiffsetSource, FileStatus};
 use crucible_core::proposal::ProposalId;
 use crucible_core::session::{
@@ -22,7 +20,7 @@ use crucible_core::session::{
 use crate::diff::branch;
 use crate::diff::comments::{quoted_lines, ListedComment};
 use crate::proposals::{ProposalError, ProposalStore};
-use crate::protocol::{Request, Response, SessionEventMessage};
+use crate::protocol::{Request, Response};
 use crate::review::{ReviewError, ReviewLedgers, ReviewResult};
 use crate::rpc_client::{
     DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
@@ -120,7 +118,7 @@ fn build(
 /// of the session shows these comments.
 pub(crate) async fn record_comment(
     review: &ReviewLedgers,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     session: &SessionId,
     root: &PhysicalRoot,
     spec: &CommentSpec<'_>,
@@ -155,7 +153,7 @@ pub(crate) async fn record_comment(
 /// For a session record, the daemon tells the clients of the session.
 pub(crate) fn resolve_in(
     review: &ReviewLedgers,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     diffset: &DiffsetId,
     session: Option<&SessionId>,
     comment_id: &str,
@@ -172,7 +170,7 @@ pub(crate) fn resolve_in(
 /// For a session record, the daemon tells the clients of the session.
 pub(crate) fn delete_in(
     review: &ReviewLedgers,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     diffset: &DiffsetId,
     session: Option<&SessionId>,
     comment_id: &str,
@@ -247,7 +245,7 @@ pub(crate) async fn serve(
 
 async fn diff_comment(
     admission: &Admission<'_>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     request: &DiffCommentRequest,
 ) -> Result<DiffCommentReply, Refusal> {
     check_path(&request.path)?;
@@ -330,7 +328,7 @@ async fn diff_comment(
 
 async fn diff_resolve_comment(
     admission: &Admission<'_>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     request: &DiffResolveCommentRequest,
 ) -> Result<DiffResolveCommentReply, Refusal> {
     let served = serve(admission, &request.source).await?;
@@ -352,7 +350,7 @@ async fn diff_resolve_comment(
 
 async fn diff_delete_comment(
     admission: &Admission<'_>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     request: &DiffDeleteCommentRequest,
 ) -> Result<DiffDeleteCommentReply, Refusal> {
     let served = serve(admission, &request.source).await?;
@@ -532,7 +530,7 @@ async fn diff_comments(
 pub(crate) async fn handle_diff_comment(
     req: Request,
     admission: Admission<'_>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<DiffCommentRequest>(&req) {
         Ok(p) => p,
@@ -545,7 +543,7 @@ pub(crate) async fn handle_diff_comment(
 pub(crate) async fn handle_diff_resolve_comment(
     req: Request,
     admission: Admission<'_>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<DiffResolveCommentRequest>(&req) {
         Ok(p) => p,
@@ -561,7 +559,7 @@ pub(crate) async fn handle_diff_resolve_comment(
 pub(crate) async fn handle_diff_delete_comment(
     req: Request,
     admission: Admission<'_>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<DiffDeleteCommentRequest>(&req) {
         Ok(p) => p,

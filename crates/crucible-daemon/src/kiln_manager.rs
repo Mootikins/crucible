@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::pipeline::{NotePipeline, NotePipelineConfig};
@@ -364,7 +364,7 @@ pub struct KilnManager {
     /// bounded by the kilns themselves, and removing one would reopen the race
     /// between a caller that holds it and a caller about to look it up.
     opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
-    event_tx: Option<broadcast::Sender<SessionEventMessage>>,
+    event_tx: Option<crate::EventBus>,
     enrichment_config: Option<EmbeddingProviderConfig>,
     max_precognition_chars: usize,
     /// The plugin VM every kiln's pipeline fires `index:blocks` through.
@@ -404,7 +404,7 @@ impl KilnManager {
     }
 
     pub fn with_event_tx(
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
         enrichment_config: Option<EmbeddingProviderConfig>,
         max_precognition_chars: usize,
     ) -> Self {
@@ -703,7 +703,7 @@ impl KilnManager {
                     "classification_required",
                     serde_json::Value::Object(data),
                 );
-                crate::event_emitter::emit_event(tx, event);
+                tx.emit(event);
             }
         }
 
@@ -927,7 +927,7 @@ impl KilnManager {
     /// were one move.
     pub fn announce_note_renamed(&self, from: &str, to: &str) {
         if let Some(tx) = self.event_tx.as_ref() {
-            crate::event_emitter::emit_event(tx, crate::event_map::note_renamed(from, to));
+            tx.emit(crate::event_map::note_renamed(from, to));
         }
     }
 
@@ -950,7 +950,7 @@ impl KilnManager {
         };
         for event in events {
             if let crucible_core::events::SessionEvent::Internal(inner) = event {
-                crate::event_emitter::emit_event(tx, crate::event_map::message_for(inner.as_ref()));
+                tx.emit(crate::event_map::message_for(inner.as_ref()));
             }
         }
     }

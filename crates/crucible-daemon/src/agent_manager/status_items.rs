@@ -9,7 +9,6 @@
 //! hold.
 
 use super::AgentManager;
-use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use crucible_core::protocol::session_events::SystemPayload;
 use crucible_core::session::PluginApproval;
@@ -18,7 +17,6 @@ use crucible_core::types::{
     StatusDisplayItem, StatusItemKind, PLUGIN_APPROVAL_ACTION, PLUGIN_TURNS_ID_PREFIX,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use tokio::sync::broadcast;
 
 /// The engine items of one session. One item for each plugin whose
 /// approval is not `inherit` or whose turn runs now. Each item is pinned:
@@ -136,11 +134,7 @@ impl AgentManager {
     }
 
     /// Send the whole list of `session_id` to its clients.
-    pub(crate) async fn emit_status_items(
-        &self,
-        session_id: &str,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
-    ) {
+    pub(crate) async fn emit_status_items(&self, session_id: &str, event_tx: &crate::EventBus) {
         let status = self.status_items(session_id).await;
         emit_status_items_changed(event_tx, session_id, status);
     }
@@ -151,7 +145,7 @@ impl AgentManager {
 /// weak, because the manager holds the registry that holds the notifier.
 pub(crate) fn change_notifier(
     agents: std::sync::Weak<AgentManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
 ) -> crucible_lua::statusline_exprs::ChangeNotifier {
     std::sync::Arc::new(move |session_id: &str| {
         if let Some(agents) = agents.upgrade() {
@@ -166,13 +160,13 @@ pub(crate) fn change_notifier(
 
 /// Send `status` as the new list of `session_id`.
 pub(crate) fn emit_status_items_changed(
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     session_id: &str,
     status: Vec<StatusDisplayItem>,
 ) {
     let event =
         SessionEventMessage::typed(session_id, SystemPayload::StatusItemsChanged { status });
-    if !emit_event(event_tx, event) {
+    if !event_tx.emit(event) {
         tracing::debug!(%session_id, "status item change had no subscribers");
     }
 }

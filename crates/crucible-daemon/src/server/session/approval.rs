@@ -5,7 +5,7 @@ use crucible_core::session::PluginApproval;
 pub(crate) async fn handle_session_set_plugin_approval(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let plugin = require_param!(req, "plugin", as_str);

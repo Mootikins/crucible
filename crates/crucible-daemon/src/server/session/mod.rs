@@ -66,7 +66,7 @@ pub(crate) use scope::{
 /// (the CLI subscribes slightly after `session.create` returns) and is
 /// logged at `debug`, not `warn`.
 fn emit_setup_event<P: serde::Serialize>(
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     session_id: &str,
     event_type: &str,
     payload: P,
@@ -79,7 +79,7 @@ fn emit_setup_event<P: serde::Serialize>(
         }
     };
     let msg = SessionEventMessage::new(session_id.to_string(), event_type.to_string(), data);
-    if !crate::event_emitter::emit_event(event_tx, msg) {
+    if !event_tx.emit(msg) {
         tracing::debug!(event_type, session_id, "no subscribers for setup event");
     }
 }
@@ -98,7 +98,7 @@ fn emit_setup_event<P: serde::Serialize>(
 fn spawn_setup_task(
     session: &crucible_core::session::Session,
     agent_type: String,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     am: Arc<AgentManager>,
     mcp_config: Option<McpConfig>,
 ) {

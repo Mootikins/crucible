@@ -663,6 +663,7 @@ mod event_dispatch {
 
 #[tokio::test]
 async fn cleanup_session_cancels_pending_requests() {
+    let (event_tx, _) = crate::EventBus::channel(4);
     let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
@@ -683,7 +684,7 @@ async fn cleanup_session_cancels_pending_requests() {
         "Request state should exist after insertion"
     );
 
-    agent_manager.cleanup_session(session_id);
+    agent_manager.cleanup_session(session_id, &event_tx);
 
     assert!(
         !agent_manager.request_state.contains_key(session_id),
@@ -748,7 +749,7 @@ async fn cancel_drops_pending_permission_senders() {
 /// The post-cleanup invariant, in one place instead of five. Populate every
 /// per-session store this manager owns, end the session, and assert nothing is
 /// left — including the stores that are not `AgentManager` fields, which is how
-/// `SESSION_SEQ_COUNTERS` came to leak an entry per session unnoticed.
+/// the former global counter map leaked an entry per session unnoticed.
 ///
 /// A unique session id, not a shared `"test-session"`: the seq counters are a
 /// process-global `static` shared with every other test in this binary.
@@ -818,49 +819,52 @@ async fn cleanup_session_leaves_no_per_session_residue() {
         .active_tools()
         .set(session_id, vec!["read_file".to_string()]);
     // And one emitted event, so the session owns a sequence counter.
-    let (event_tx, _event_rx) = broadcast::channel(4);
-    crate::event_emitter::emit_event(
-        &event_tx,
-        SessionEventMessage::new(session_id, "test_event", serde_json::json!({})),
-    );
+    let (event_tx, _event_rx) = crate::EventBus::channel(4);
+    event_tx.emit(SessionEventMessage::new(
+        session_id,
+        "test_event",
+        serde_json::json!({}),
+    ));
 
     assert!(
-        !agent_manager.session_residue(session_id).is_empty(),
+        !agent_manager
+            .session_residue(session_id, &event_tx)
+            .is_empty(),
         "the fixture must actually populate something, or this proves nothing"
     );
 
-    agent_manager.cleanup_session(session_id);
+    agent_manager.cleanup_session(session_id, &event_tx);
 
     assert_eq!(
-        agent_manager.session_residue(session_id),
+        agent_manager.session_residue(session_id, &event_tx),
         Vec::<&str>::new(),
         "cleanup_session must free every per-session store"
     );
 }
 
-/// The seq-counter map is a process-global `static` with no `Drop` reaching it,
-/// so "one entry per session, forever" was its shipped behaviour. Assert the
+/// The bus retains counters until session retirement. Assert the
 /// bound directly rather than only through the residue check: N create/cleanup
 /// cycles must leave N-0 entries, not N.
 #[tokio::test]
 async fn ending_sessions_does_not_grow_the_seq_counter_map() {
     let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
-    let (event_tx, _event_rx) = broadcast::channel(16);
+    let (event_tx, _event_rx) = crate::EventBus::channel(16);
 
     for i in 0..8 {
         let session_id = format!("seq-cycle-{i}");
-        crate::event_emitter::emit_event(
-            &event_tx,
-            SessionEventMessage::new(&session_id, "test_event", serde_json::json!({})),
-        );
+        event_tx.emit(SessionEventMessage::new(
+            &session_id,
+            "test_event",
+            serde_json::json!({}),
+        ));
         assert!(
-            crate::event_emitter::has_seq_counter(&session_id),
+            event_tx.has_seq_counter(&session_id),
             "emitting must mint a counter, or this test proves nothing"
         );
-        agent_manager.cleanup_session(&session_id);
+        agent_manager.cleanup_session(&session_id, &event_tx);
         assert!(
-            !crate::event_emitter::has_seq_counter(&session_id),
+            !event_tx.has_seq_counter(&session_id),
             "session {session_id}'s counter must be freed at cleanup"
         );
     }

@@ -5,7 +5,7 @@ use super::*;
 use crate::agent_manager::messaging::review_capture::{delegated_child_id, needs_review_bracket};
 
 fn manager() -> AgentManager {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: temp_session_manager(),
@@ -134,7 +134,7 @@ async fn session_cleanup_drops_the_ledger() {
         .expect("open ledger");
     assert!(manager.review.is_open("s1"));
 
-    manager.cleanup_session("s1");
+    manager.cleanup_session("s1", &crate::EventBus::channel(4).0);
 
     assert!(!manager.review.is_open("s1"));
 }
@@ -175,7 +175,7 @@ async fn cleaning_up_a_delegated_child_harvests_into_its_parent_first() {
         .await
         .expect("close");
 
-    manager.cleanup_session("child");
+    manager.cleanup_session("child", &crate::EventBus::channel(4).0);
 
     // Spawned, because the harvest journals and `cleanup_session` is sync.
     let harvested = tokio::time::timeout(std::time::Duration::from_secs(5), async {

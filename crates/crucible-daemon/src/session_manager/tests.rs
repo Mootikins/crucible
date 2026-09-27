@@ -59,7 +59,7 @@ async fn title_sweep_titles_untitled_sessions_with_content() {
         .await
         .unwrap();
 
-    let (tx, mut rx) = tokio::sync::broadcast::channel(8);
+    let (tx, mut rx) = crate::EventBus::channel(8);
     let titled = manager.title_untitled_sessions(&tx).await;
 
     assert_eq!(titled, 1);

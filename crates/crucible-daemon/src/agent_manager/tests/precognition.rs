@@ -33,7 +33,7 @@ async fn test_precognition_skipped_when_disabled() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     agent_manager
         .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
         .await
@@ -73,7 +73,7 @@ async fn test_precognition_skipped_for_search_command() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     agent_manager
         .send_message(
             &session.id,
@@ -102,7 +102,7 @@ async fn precognition_with_no_kiln_tells_the_user() {
         .unwrap();
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
     let mut agent = test_agent();
     agent.precognition_enabled = true;
@@ -166,7 +166,7 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     agent_manager
         .send_message(
             &session.id,
@@ -220,7 +220,7 @@ async fn a_failed_precognition_search_warns_the_user() {
     );
     let agent_manager =
         create_test_agent_manager_with_enrichment(session_manager.clone(), unreachable);
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
     let mut agent = test_agent();
     agent.precognition_enabled = true;
@@ -272,7 +272,7 @@ async fn a_kiln_that_does_not_open_warns_the_user() {
         session_manager.clone(),
         crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
     );
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     bind_test_hub(&agent_manager, tmp.path(), session_manager, &event_tx);
     let mut agent = test_agent();
     agent.precognition_enabled = true;
@@ -346,7 +346,7 @@ async fn test_precognition_runs_only_on_first_user_message_of_session() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(128);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(128);
 
     // Turn 1.
     agent_manager
@@ -420,7 +420,7 @@ async fn test_precognition_does_not_re_fire_when_session_has_prior_history() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     am.send_message(
         &session_id,
         "follow-up after resume".into(),
@@ -508,7 +508,7 @@ async fn test_precognition_enriched_content_reaches_agent() {
         }) as BoxedAgentHandle)),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     agent_manager
         .send_message(
             &session.id,
@@ -649,7 +649,7 @@ async fn test_precognition_emits_note_info_in_event() {
         }))),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     agent_manager
         .send_message(
             &session.id,
@@ -700,7 +700,7 @@ async fn setup_precog_session_with_handler(
 ) -> (
     Arc<AgentManager>,
     String,
-    broadcast::Sender<SessionEventMessage>,
+    crate::EventBus,
     broadcast::Receiver<SessionEventMessage>,
     Arc<StdMutex<Option<Vec<crucible_core::traits::ContextMessage>>>>,
     TempDir,
@@ -774,7 +774,7 @@ async fn setup_precog_session_with_handler(
         }) as BoxedAgentHandle)),
     );
 
-    let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, event_rx) = crate::EventBus::channel(64);
 
     (
         agent_manager,
@@ -1003,7 +1003,7 @@ async fn precognition_disabled_mid_session_stops_enriching() {
         }) as BoxedAgentHandle)),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(128);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(128);
 
     // Control turn: enrichment happens. Without seeing this pass, the
     // negative assertion below would be worthless.

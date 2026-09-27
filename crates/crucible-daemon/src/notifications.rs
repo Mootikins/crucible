@@ -20,10 +20,9 @@ use crucible_core::session::{Session, SessionState};
 use crucible_core::types::{Notification, NotificationScope};
 use crucible_lua::{NotificationSink, NotifyRequest};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
-use crate::event_emitter::emit_event;
 use crate::project_manager::ProjectManager;
 use crate::protocol::SessionEventMessage;
 use crate::registry_store::RegistryStore;
@@ -99,7 +98,7 @@ pub struct NotificationHub {
     store: RegistryStore<NotificationFile>,
     sessions: Arc<SessionManager>,
     projects: Arc<ProjectManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     tx: mpsc::Sender<NotifyRequest>,
     /// Taken once by `spawn_drain`.
     rx: Mutex<Option<mpsc::Receiver<NotifyRequest>>>,
@@ -129,7 +128,7 @@ impl NotificationHub {
         data_home: &Path,
         sessions: Arc<SessionManager>,
         projects: Arc<ProjectManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
     ) -> Self {
         let (tx, rx) = mpsc::channel(NOTIFY_QUEUE);
         Self {
@@ -333,14 +332,11 @@ impl NotificationHub {
 
     /// Tell the clients of `session_id` that the notification `id` closed.
     fn announce_dismissed(&self, session_id: &str, id: &str) {
-        emit_event(
-            &self.event_tx,
-            SessionEventMessage::new(
-                session_id,
-                "notification_dismissed",
-                serde_json::json!({ "notification_id": id }),
-            ),
-        );
+        self.event_tx.emit(SessionEventMessage::new(
+            session_id,
+            "notification_dismissed",
+            serde_json::json!({ "notification_id": id }),
+        ));
     }
 
     /// Explicit hints win. Without them, a session-stamped request takes the
@@ -389,17 +385,19 @@ impl NotificationHub {
             "notification": notification,
         });
         if let Some(session_id) = &notification.scope.session {
-            emit_event(
-                &self.event_tx,
-                SessionEventMessage::new(session_id.as_str(), "notification_added", data),
-            );
+            self.event_tx.emit(SessionEventMessage::new(
+                session_id.as_str(),
+                "notification_added",
+                data,
+            ));
             return;
         }
         if notification.scope.is_global() {
-            emit_event(
-                &self.event_tx,
-                SessionEventMessage::new(WILDCARD_SESSION, "notification_added", data),
-            );
+            self.event_tx.emit(SessionEventMessage::new(
+                WILDCARD_SESSION,
+                "notification_added",
+                data,
+            ));
             return;
         }
         for session in self.sessions.list_sessions() {
@@ -415,10 +413,11 @@ impl NotificationHub {
             ) {
                 continue;
             }
-            emit_event(
-                &self.event_tx,
-                SessionEventMessage::new(session.id.as_str(), "notification_added", data.clone()),
-            );
+            self.event_tx.emit(SessionEventMessage::new(
+                session.id.as_str(),
+                "notification_added",
+                data.clone(),
+            ));
         }
     }
 
@@ -483,7 +482,7 @@ mod tests {
         session_b: String,
         sessions: Arc<crate::session_manager::SessionManager>,
         projects: Arc<ProjectManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
         events: broadcast::Receiver<SessionEventMessage>,
         hub: Arc<NotificationHub>,
     }
@@ -511,7 +510,7 @@ mod tests {
         sessions.register_transient(b);
 
         let projects = Arc::new(ProjectManager::new(data_home.join("projects.json")));
-        let (event_tx, events) = broadcast::channel(512);
+        let (event_tx, events) = crate::EventBus::channel(512);
         let hub = Arc::new(NotificationHub::new(
             &data_home,
             sessions.clone(),

@@ -31,7 +31,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::Mutex;
 
 /// A plugin that claims isolation for every session that asked for it.
 ///
@@ -102,7 +102,7 @@ impl Daemon {
         hook_lua: Option<&str>,
     ) -> Self {
         let sm = manager_over(data_home, kiln);
-        let (event_tx, _) = broadcast::channel(64);
+        let (event_tx, _) = crate::EventBus::channel(64);
         let plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>> = Arc::new(Mutex::new(None));
         let am = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: Arc::new(KilnManager::new()),

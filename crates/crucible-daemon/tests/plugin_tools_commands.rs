@@ -13,7 +13,6 @@ use crucible_lua::PluginSource;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 
 /// Write a plugin declaring one tool and one command, both with real `fn`s.
 ///
@@ -97,7 +96,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
     let loader = loader_with_fixture(tmp.path()).await;
 
     let session_manager = temp_session_manager();
-    let (event_tx, _rx) = broadcast::channel(16);
+    let (event_tx, _rx) = crucible_daemon::EventBus::channel(16);
     let manager = AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager,
@@ -164,7 +163,7 @@ async fn a_plugin_tool_runs_under_its_own_plugins_context() {
     lua.globals().set("_probe", probe).expect("install probe");
 
     let session_manager = temp_session_manager();
-    let (event_tx, _rx) = broadcast::channel(16);
+    let (event_tx, _rx) = crucible_daemon::EventBus::channel(16);
     let manager = AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager,

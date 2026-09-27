@@ -137,7 +137,7 @@ impl AcpPermissions {
 struct AcpGate {
     slot: Arc<crate::agent_manager::slot::SessionSlot>,
     session_id: String,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     workspace: PathBuf,
     whitelists_dir: Option<PathBuf>,
     hooks: Option<PluginHandlers>,
@@ -270,15 +270,12 @@ impl AcpGate {
         let id = (call.raw.as_ref()).and_then(|raw| raw.tool_call_id.clone());
         match (&decision, id) {
             (super::gate_decision::Decision::Allow(Some(layer)), Some(id)) => {
-                emit_event(
-                    &self.event_tx,
-                    SessionEventMessage::tool_call_update(
-                        &self.session_id,
-                        id,
-                        call,
-                        Some(layer.clone()),
-                    ),
-                );
+                self.event_tx.emit(SessionEventMessage::tool_call_update(
+                    &self.session_id,
+                    id,
+                    call,
+                    Some(layer.clone()),
+                ));
             }
             (super::gate_decision::Decision::Deny(reason), Some(id)) => {
                 self.slot.note_denial(&id, reason.clone());
@@ -315,7 +312,7 @@ impl AcpGate {
 pub(in crate::agent_manager) async fn prompt_user(
     slot: &crate::agent_manager::slot::SessionSlot,
     session_id: &str,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
     request: PermRequest,
 ) -> Option<PermResponse> {
     let _one_at_a_time = slot.prompt_lock().await;
@@ -328,10 +325,11 @@ pub(in crate::agent_manager) async fn prompt_user(
         id: &permission_id,
         answered: false,
     };
-    if !emit_event(
-        event_tx,
-        SessionEventMessage::interaction_requested(session_id, &permission_id, &interaction),
-    ) {
+    if !event_tx.emit(SessionEventMessage::interaction_requested(
+        session_id,
+        &permission_id,
+        &interaction,
+    )) {
         debug!(session_id = %session_id, "no subscribers for the permission prompt");
     }
 
@@ -349,7 +347,7 @@ pub(in crate::agent_manager) async fn prompt_user(
 struct OpenPrompt<'a> {
     slot: &'a crate::agent_manager::slot::SessionSlot,
     session_id: &'a str,
-    event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    event_tx: &'a crate::EventBus,
     id: &'a str,
     answered: bool,
 }
@@ -360,14 +358,12 @@ impl Drop for OpenPrompt<'_> {
             return;
         }
         self.slot.take_permission(self.id);
-        emit_event(
-            self.event_tx,
-            SessionEventMessage::interaction_completed(
+        self.event_tx
+            .emit(SessionEventMessage::interaction_completed(
                 self.session_id,
                 self.id,
                 crucible_core::interaction::InteractionResponse::Cancelled,
-            ),
-        );
+            ));
     }
 }
 
@@ -376,7 +372,7 @@ impl AgentManager {
     pub(in crate::agent_manager) fn build_acp_permissions(
         &self,
         session_id: &str,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         workspace: &std::path::Path,
         tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
     ) -> AcpPermissions {
@@ -1042,7 +1038,7 @@ mod acp_tool_policy_tests {
         config: Option<PermissionConfig>,
         hooks: Option<PluginHandlers>,
     ) -> Asked {
-        let (event_tx, mut events) = broadcast::channel::<SessionEventMessage>(16);
+        let (event_tx, mut events) = crate::EventBus::channel(16);
         let slot = Arc::new(crate::agent_manager::slot::SessionSlot::default());
         slot.set_turn_gate(crate::agent_manager::slot::TurnGate {
             is_interactive: true,
@@ -1105,7 +1101,7 @@ mod acp_tool_policy_tests {
         use crucible_core::interaction::InteractionRequest;
         use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
         let whitelists = tempfile::TempDir::new().unwrap();
-        let (event_tx, mut events) = broadcast::channel::<SessionEventMessage>(16);
+        let (event_tx, mut events) = crate::EventBus::channel(16);
         let slot = Arc::new(crate::agent_manager::slot::SessionSlot::default());
         slot.set_turn_gate(crate::agent_manager::slot::TurnGate {
             is_interactive: true,
@@ -1711,7 +1707,7 @@ mod acp_permission_handler_tests {
     /// Build the handler for an interactive session with no override.
     fn handler(
         am: &AgentManager,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         tool_policy: Option<ToolPolicyMap>,
     ) -> crate::acp::client::PermissionRequestHandler {
         am.slot(SESSION).set_turn_gate(TurnGate {
@@ -1724,7 +1720,7 @@ mod acp_permission_handler_tests {
     }
 
     /// Read events until the prompt arrives. Return its request id.
-    async fn prompt_id(rx: &mut broadcast::Receiver<SessionEventMessage>) -> String {
+    async fn prompt_id(rx: &mut tokio::sync::broadcast::Receiver<SessionEventMessage>) -> String {
         loop {
             let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
                 .await
@@ -1743,7 +1739,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn a_declared_allow_selects_allow_once_without_a_prompt() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, Some(policy(ToolPolicy::Allow)));
 
         let outcome = ask(&handle).await;
@@ -1765,7 +1761,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn a_declared_deny_selects_reject_once_without_a_prompt() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, Some(policy(ToolPolicy::Deny)));
 
         let outcome = ask(&handle).await;
@@ -1790,7 +1786,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn with_no_policy_the_user_answer_selects_the_option() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
 
         for (answer, expected) in [
@@ -1815,7 +1811,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn a_card_bash_deny_refuses_an_unnamed_acp_command() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let card = ToolPolicyMap::from([("bash".to_string(), ToolPolicy::Deny)]);
         let handle = handler(&am, &event_tx, Some(card));
 
@@ -1837,7 +1833,7 @@ mod acp_permission_handler_tests {
                 kiln_manager: Arc::new(crate::kiln_manager::KilnManager::new()),
                 session_manager: temp_session_manager(),
                 background_manager: Arc::new(crate::background_manager::BackgroundJobManager::new(
-                    broadcast::channel(16).0,
+                    crate::EventBus::channel(16).0,
                 )),
                 mcp_gateway: None,
                 llm_config: None,
@@ -1873,7 +1869,7 @@ mod acp_permission_handler_tests {
             "cargo test",
         )
         .expect("the grant is stored");
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
 
         let outcome = tokio::time::timeout(Duration::from_secs(5), ask(&handle))
@@ -1891,7 +1887,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn a_later_non_interactive_turn_is_not_asked() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
         am.slot(SESSION).set_turn_gate(TurnGate {
             is_interactive: false,
@@ -1912,7 +1908,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn a_changed_override_applies_on_the_next_call() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, _event_rx) = broadcast::channel(16);
+        let (event_tx, _event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
 
         for (mode, expected) in [
@@ -1937,7 +1933,7 @@ mod acp_permission_handler_tests {
     async fn the_prompt_shows_the_agent_the_raw_name_the_diff_and_the_layer() {
         use crucible_core::interaction::InteractionRequest;
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
         am.slot(SESSION).set_turn_gate(TurnGate {
             is_interactive: true,
@@ -1996,7 +1992,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn a_cancel_answers_the_waiting_prompt() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
 
         let pending = tokio::spawn(ask(&handle));
@@ -2015,7 +2011,7 @@ mod acp_permission_handler_tests {
     }
 
     /// Read events until a prompt ends. Return its request id.
-    async fn ended_id(rx: &mut broadcast::Receiver<SessionEventMessage>) -> String {
+    async fn ended_id(rx: &mut tokio::sync::broadcast::Receiver<SessionEventMessage>) -> String {
         loop {
             let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
                 .await
@@ -2037,7 +2033,7 @@ mod acp_permission_handler_tests {
     #[tokio::test]
     async fn an_abandoned_prompt_leaves_the_registry_and_the_clients() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
 
         let pending = tokio::spawn(ask(&handle));
@@ -2088,7 +2084,7 @@ mod acp_permission_handler_tests {
             permission_override: Some(PermissionMode::Allow),
             origin: crucible_core::turn::TurnOrigin::Plugin("alpha".into()),
         });
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = am
             .build_acp_permissions(&session_id, &event_tx, std::path::Path::new("/w"), None)
             .handler();
@@ -2114,7 +2110,7 @@ mod acp_permission_handler_tests {
     #[tokio::test(start_paused = true)]
     async fn an_unanswered_prompt_waits_past_five_minutes() {
         let am = create_test_agent_manager(temp_session_manager());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (event_tx, mut event_rx) = crate::EventBus::channel(16);
         let handle = handler(&am, &event_tx, None);
 
         let pending = tokio::spawn(ask(&handle));

@@ -25,7 +25,6 @@
 //! }
 //! ```
 
-use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
 
@@ -35,7 +34,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
@@ -55,7 +54,7 @@ use types::{events, BashError, RunningJob};
 pub struct BackgroundJobManager {
     running: Arc<DashMap<JobId, RunningJob>>,
     history: Arc<DashMap<String, std::collections::VecDeque<JobResult>>>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     max_history: usize,
     pub(crate) completed: Arc<tokio::sync::Notify>,
     /// Where a running job reports itself, so the daemon does not exit in the
@@ -66,7 +65,7 @@ pub struct BackgroundJobManager {
 }
 
 impl BackgroundJobManager {
-    pub fn new(event_tx: broadcast::Sender<SessionEventMessage>) -> Self {
+    pub fn new(event_tx: crate::EventBus) -> Self {
         Self {
             running: Arc::new(DashMap::new()),
             history: Arc::new(DashMap::new()),

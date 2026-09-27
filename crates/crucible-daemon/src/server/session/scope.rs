@@ -203,7 +203,7 @@ pub(crate) async fn handle_session_connect_kiln(
     am: &Arc<AgentManager>,
     km: &Arc<KilnManager>,
     kiln_state: &Arc<crate::kiln_state::KilnStateStore>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str).to_string();
     let kiln = require_param!(req, "kiln", as_str).to_string();
@@ -255,7 +255,7 @@ pub(crate) async fn handle_session_connect_kiln(
 pub(crate) async fn handle_session_disconnect_kiln(
     req: Request,
     am: &Arc<AgentManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str).to_string();
     // Detach does not go through the registry: shrinking scope can never leak,

@@ -2,6 +2,7 @@ use super::*;
 use crate::agent_manager::{AgentManager, AgentManagerParams};
 use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
+use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crate::test_support::temp_session_manager;
 mod async_session;
@@ -34,7 +35,7 @@ use tempfile::TempDir;
 fn bridge_ctx(
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     data_home: &std::path::Path,
 ) -> Arc<RpcContext> {
     Arc::new(RpcContext::for_test(
@@ -57,7 +58,7 @@ fn build_test_agent_manager_with_llm_config(
     session_manager: Arc<SessionManager>,
     llm_config: Option<LlmConfig>,
 ) -> Arc<AgentManager> {
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -181,15 +182,13 @@ impl crucible_core::traits::chat::AgentHandle for BashCallingAgent {
 /// A session whose single turn calls `bash`, driven through the real
 /// scheduler and tool dispatch behind a [`DaemonSessionBridge`]. No
 /// `[permissions]` config, so the gate has no rule to fall back on.
-async fn bash_calling_rig(
-    event_tx: broadcast::Sender<SessionEventMessage>,
-) -> (TempDir, DaemonSessionBridge, String) {
+async fn bash_calling_rig(event_tx: crate::EventBus) -> (TempDir, DaemonSessionBridge, String) {
     bash_calling_rig_with_source_roots(event_tx, Default::default()).await
 }
 
 /// As [`bash_calling_rig`], with the config home the whitelist gate reads.
 async fn bash_calling_rig_with_source_roots(
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     source_roots: crate::runtime_path::SourceRoots,
 ) -> (TempDir, DaemonSessionBridge, String) {
     let tmp = TempDir::new().unwrap();
@@ -239,7 +238,7 @@ async fn bash_calling_rig_with_source_roots(
 /// rather than as a prompt anyone in the room could answer.
 #[tokio::test]
 async fn a_collected_plugin_turn_errors_on_a_gated_tool_instead_of_prompting() {
-    let (event_tx, _keep_open) = broadcast::channel(256);
+    let (event_tx, _keep_open) = crate::EventBus::channel(256);
     let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
 
     let mut rx = bridge
@@ -296,7 +295,7 @@ async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
         levels: Default::default(),
         kiln_priorities: Default::default(),
     };
-    let (event_tx, _keep_open) = broadcast::channel(256);
+    let (event_tx, _keep_open) = crate::EventBus::channel(256);
     let (_tmp, bridge, session_id) =
         bash_calling_rig_with_source_roots(event_tx, source_roots).await;
 
@@ -327,7 +326,7 @@ async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
 /// inspect: nothing may reach the broadcast that a subscriber could answer.
 #[tokio::test]
 async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
-    let (event_tx, mut events) = broadcast::channel(256);
+    let (event_tx, mut events) = crate::EventBus::channel(256);
     let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
 
     bridge
@@ -373,7 +372,7 @@ async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
 #[test]
 fn bridge_managers_are_the_contexts_own() {
     let tmp = TempDir::new().unwrap();
-    let (event_tx, _) = broadcast::channel(100);
+    let (event_tx, _) = crate::EventBus::channel(100);
     let session_manager = temp_session_manager();
     let agent_manager = build_test_agent_manager(session_manager.clone());
     let ctx = bridge_ctx(
@@ -410,7 +409,7 @@ async fn context_usage_returns_expected_shape() {
         .await
         .unwrap();
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let ctx = bridge_ctx(
         session_manager.clone(),
         agent_manager.clone(),
@@ -447,7 +446,7 @@ async fn compact_transitions_session_to_compacting() {
         .unwrap();
 
     let agent_manager = build_test_agent_manager(session_manager.clone());
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let ctx = bridge_ctx(
         session_manager.clone(),
         agent_manager.clone(),
@@ -509,7 +508,7 @@ async fn remove_messages_last_n_rewinds_tree() {
         assert_eq!(t.path_to_here(cur).len(), 4);
     }
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let ctx = bridge_ctx(session_manager.clone(), agent_manager, event_tx, tmp.path());
     let bridge = DaemonSessionBridge::new(ctx);
 
@@ -575,7 +574,7 @@ async fn remove_messages_indices_truncates_from_start() {
         );
     }
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let ctx = bridge_ctx(session_manager.clone(), agent_manager, event_tx, tmp.path());
     let bridge = DaemonSessionBridge::new(ctx);
 
@@ -638,7 +637,7 @@ async fn undo_rewinds_tree_and_emits_event() {
         );
     }
 
-    let (event_tx, mut event_rx) = broadcast::channel(16);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(16);
     let ctx = bridge_ctx(
         session_manager.clone(),
         agent_manager.clone(),
@@ -700,7 +699,7 @@ async fn remove_messages_invalid_range_type_errors() {
         .await
         .unwrap();
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crate::EventBus::channel(16);
     let ctx = bridge_ctx(session_manager, agent_manager, event_tx, tmp.path());
     let bridge = DaemonSessionBridge::new(ctx);
 
@@ -731,7 +730,7 @@ async fn a_plugin_titles_and_switches_the_session_it_created_and_the_daemon_read
         session_manager.clone(),
         Some(bridge_llm_config()),
     );
-    let (event_tx, _keep_open) = broadcast::channel(64);
+    let (event_tx, _keep_open) = crate::EventBus::channel(64);
     let ctx = bridge_ctx(
         session_manager.clone(),
         agent_manager.clone(),

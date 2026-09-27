@@ -142,7 +142,7 @@ async fn setup_with_plugin(
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, event_rx) = broadcast::channel(256);
+    let (event_tx, event_rx) = crucible_daemon::EventBus::channel(256);
 
     let agents: BTreeMap<String, AgentProfile> = profiles
         .iter()

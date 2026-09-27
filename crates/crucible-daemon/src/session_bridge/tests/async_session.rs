@@ -6,7 +6,7 @@ use crucible_lua::register_sessions_module_with_api;
 fn rig() -> (TempDir, Arc<DaemonSessionBridge>, mlua::Lua) {
     let tmp = TempDir::new().unwrap();
     let sm = temp_session_manager();
-    let (tx, _) = broadcast::channel(64);
+    let (tx, _) = crate::EventBus::channel(64);
     let am = Arc::new(AgentManager::new_with_delegation(
         AgentManagerParams {
             kiln_manager: Arc::new(KilnManager::new()),
@@ -191,7 +191,7 @@ async fn lua_fork_refuses_requested_or_claimed_isolation_without_creating_a_chil
         bridge.session_manager.storage().clone(),
     ));
     let am = build_test_agent_manager(cold.clone());
-    let (tx, _) = broadcast::channel(16);
+    let (tx, _) = crate::EventBus::channel(16);
     let restarted = Arc::new(DaemonSessionBridge::new(bridge_ctx(
         cold.clone(),
         am,
@@ -472,10 +472,11 @@ async fn lua_unsubscribe_closes_its_iterators_without_closing_other_sessions() {
     .await
     .unwrap();
     let emit = |id, content| {
-        assert!(crate::event_emitter::emit_event(
-            &bridge.event_tx,
-            SessionEventMessage::new(id, "text_delta", serde_json::json!({"content":content})),
-        ));
+        assert!(bridge.event_tx.emit(SessionEventMessage::new(
+            id,
+            "text_delta",
+            serde_json::json!({"content":content})
+        ),));
     };
     emit("first", "one");
     emit("second", "two");

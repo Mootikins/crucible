@@ -15,7 +15,6 @@
 //! fresh every turn.
 
 use super::*;
-use crate::event_emitter::emit_event;
 use crate::kiln_registry::KilnRegistry;
 use crate::tools::containment::RootSet;
 use crucible_core::config::KilnName;
@@ -124,20 +123,13 @@ impl AgentManager {
         }
     }
 
-    fn emit_scope_changed(
-        &self,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-        session: &Session,
-    ) {
+    fn emit_scope_changed(&self, event_tx: Option<&crate::EventBus>, session: &Session) {
         if let Some(tx) = event_tx {
             let data = serde_json::json!({
                 "kilns": session.kilns,
                 "workspace": session.workspace,
             });
-            if !emit_event(
-                tx,
-                SessionEventMessage::new(&session.id, "scope_changed", data),
-            ) {
+            if !tx.emit(SessionEventMessage::new(&session.id, "scope_changed", data)) {
                 tracing::debug!("Failed to emit scope_changed event (no subscribers)");
             }
         }
@@ -153,7 +145,7 @@ impl AgentManager {
     async fn mutate_scope(
         &self,
         session_id: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
         apply: impl FnOnce(&mut Session) -> bool,
     ) -> Result<Session, AgentError> {
         let _slot =
@@ -181,7 +173,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         kiln: &KilnName,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<Session, AgentError> {
         let kiln = kiln.clone();
         self.mutate_scope(session_id, event_tx, move |session| session.add_kiln(kiln))
@@ -194,7 +186,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         kiln: &KilnName,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<Session, AgentError> {
         self.mutate_scope(session_id, event_tx, |session| session.remove_kiln(kiln))
             .await

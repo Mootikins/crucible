@@ -167,7 +167,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         model_id: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         let model_id = model_id.trim();
         if model_id.is_empty() {
@@ -224,14 +224,11 @@ impl AgentManager {
                 .await?;
 
             if let Some(tx) = event_tx {
-                if !emit_event(
-                    tx,
-                    SessionEventMessage::model_switched(
-                        session_id,
-                        model_id,
-                        agent_config.provider.as_str(),
-                    ),
-                ) {
+                if !tx.emit(SessionEventMessage::model_switched(
+                    session_id,
+                    model_id,
+                    agent_config.provider.as_str(),
+                )) {
                     tracing::debug!("Failed to emit model_switched event (no subscribers)");
                 }
             }
@@ -295,14 +292,11 @@ impl AgentManager {
         );
 
         if let Some(tx) = event_tx {
-            if !emit_event(
-                tx,
-                SessionEventMessage::model_switched(
-                    session_id,
-                    &agent_config.model,
-                    agent_config.provider.as_str(),
-                ),
-            ) {
+            if !tx.emit(SessionEventMessage::model_switched(
+                session_id,
+                &agent_config.model,
+                agent_config.provider.as_str(),
+            )) {
                 tracing::debug!("Failed to emit model_switched event (no subscribers)");
             }
         }
@@ -488,7 +482,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         knob: crucible_core::types::SessionKnob,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
         event_type: &str,
         event_payload: serde_json::Value,
         no_subscribers_debug: &str,
@@ -539,10 +533,11 @@ impl AgentManager {
         on_updated();
 
         if let Some(tx) = event_tx {
-            if !emit_event(
-                tx,
-                SessionEventMessage::new(session_id, event_type, event_payload),
-            ) {
+            if !tx.emit(SessionEventMessage::new(
+                session_id,
+                event_type,
+                event_payload,
+            )) {
                 tracing::debug!("{}", no_subscribers_debug);
             }
         }
@@ -579,7 +574,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         enabled: bool,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         self.update_agent_config_and_emit(
             session_id,
@@ -610,7 +605,7 @@ impl AgentManager {
         session_id: &str,
         plugin: &str,
         approval: crucible_core::session::PluginApproval,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         if plugin.is_empty() {
             return Err(AgentError::InvalidConfig(
@@ -624,14 +619,11 @@ impl AgentManager {
             })
             .await?;
         if let Some(tx) = event_tx {
-            emit_event(
-                tx,
-                SessionEventMessage::new(
-                    session_id,
-                    "plugin_approval_changed",
-                    serde_json::json!({"plugin": plugin, "approval": approval.as_str()}),
-                ),
-            );
+            tx.emit(SessionEventMessage::new(
+                session_id,
+                "plugin_approval_changed",
+                serde_json::json!({"plugin": plugin, "approval": approval.as_str()}),
+            ));
             // The plugin-turn status item reads the knob, so it changes
             // with it.
             self.emit_status_items(session_id, tx).await;
@@ -650,7 +642,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         limit: u32,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         if limit == 0 {
             return Err(AgentError::InvalidConfig(
@@ -664,14 +656,11 @@ impl AgentManager {
             })
             .await?;
         if let Some(tx) = event_tx {
-            emit_event(
-                tx,
-                SessionEventMessage::new(
-                    session_id,
-                    "plugin_turn_limit_changed",
-                    serde_json::json!({"limit": limit}),
-                ),
-            );
+            tx.emit(SessionEventMessage::new(
+                session_id,
+                "plugin_turn_limit_changed",
+                serde_json::json!({"limit": limit}),
+            ));
         }
         Ok(())
     }
@@ -748,7 +737,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         strategy: ContextStrategy,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         let strategy_str = strategy.to_string();
         self.update_agent_config_and_emit(
@@ -786,7 +775,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         count: usize,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
         let (session, agent_config) = self.get_session_with_agent(session_id)?;
         if let Some(reason) = undo_refusal(&agent_config.agent_type) {
@@ -862,17 +851,14 @@ impl AgentManager {
 
             if let Some(tx) = event_tx {
                 let total_removed: usize = summaries.iter().map(|s| s.messages_removed).sum();
-                emit_event(
-                    tx,
-                    SessionEventMessage::new(
-                        session_id,
-                        "session_undo",
-                        serde_json::json!({
-                            "turns_undone": summaries.len(),
-                            "messages_removed": total_removed,
-                        }),
-                    ),
-                );
+                tx.emit(SessionEventMessage::new(
+                    session_id,
+                    "session_undo",
+                    serde_json::json!({
+                        "turns_undone": summaries.len(),
+                        "messages_removed": total_removed,
+                    }),
+                ));
             }
             info!(
                 session_id = %session_id,
@@ -1021,7 +1007,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         mode_id: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         let mode_id = mode_id.trim();
         // Consult the registry, not the built-in list: a Lua-declared mode
@@ -1105,7 +1091,7 @@ impl AgentManager {
             .await?;
 
         if let Some(tx) = event_tx {
-            if !emit_event(tx, SessionEventMessage::mode_changed(session_id, mode_id)) {
+            if !tx.emit(SessionEventMessage::mode_changed(session_id, mode_id)) {
                 tracing::debug!("Failed to emit mode_changed event (no subscribers)");
             }
         }

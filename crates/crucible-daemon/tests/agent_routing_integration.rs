@@ -6,12 +6,11 @@ use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionMana
 use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 
 fn make_agent_manager() -> (Arc<AgentManager>, Arc<SessionManager>, TempDir) {
     let tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crucible_daemon::EventBus::channel(16);
     let bg = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -99,7 +98,7 @@ async fn unsupported_agent_type_fails_at_send_message_time() {
         .await
         .unwrap();
 
-    let (event_tx, _) = broadcast::channel(16);
+    let (event_tx, _) = crucible_daemon::EventBus::channel(16);
     let result = agent_manager
         .send_message(
             &session.id,

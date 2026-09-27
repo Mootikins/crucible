@@ -1,6 +1,7 @@
 use super::*;
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
+use crate::protocol::SessionEventMessage;
 use crate::protocol::{RequestId, RpcError, INVALID_PARAMS};
 use crate::session_manager::SessionManager;
 use crate::test_support::{git, init_repo};
@@ -8,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::sync::broadcast;
 
 /// The daemon state of one test, as in the `server::diff` tests, and the
 /// event channel that the comment RPCs announce on.
@@ -17,7 +19,7 @@ struct Daemon {
     sessions: Arc<SessionManager>,
     review: Arc<ReviewLedgers>,
     proposals: crate::proposals::ProposalStore,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crate::EventBus,
     events: broadcast::Receiver<SessionEventMessage>,
     _store: TempDir,
 }
@@ -25,7 +27,7 @@ struct Daemon {
 impl Daemon {
     fn new() -> Self {
         let store = TempDir::new().unwrap();
-        let (event_tx, events) = broadcast::channel(16);
+        let (event_tx, events) = crate::EventBus::channel(16);
         Self {
             projects: Arc::new(ProjectManager::new(store.path().join("projects.json"))),
             kilns: Arc::new(KilnManager::new()),

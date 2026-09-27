@@ -189,7 +189,7 @@ async fn a_turn_without_a_key_is_refused_before_it_reaches_the_provider() {
     let rig = Rig::new().await;
     rig.accept_only("never-sent").await;
     let (am, id) = rig.session(None).await;
-    let (tx, _rx) = tokio::sync::broadcast::channel(64);
+    let (tx, _rx) = crate::EventBus::channel(64);
 
     let refused = am
         .send_message(&id, "hello".to_string(), &tx, true, None)
@@ -212,7 +212,7 @@ async fn a_turn_without_a_key_is_refused_before_it_reaches_the_provider() {
 /// The error of a turn whose key the provider refuses.
 async fn turn_error(am: &Arc<AgentManager>, id: &str) -> String {
     use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
-    let (tx, mut rx) = tokio::sync::broadcast::channel(256);
+    let (tx, mut rx) = crate::EventBus::channel(256);
     am.send_message(id, "hello".to_string(), &tx, true, None)
         .await
         .expect("a turn with a key starts");

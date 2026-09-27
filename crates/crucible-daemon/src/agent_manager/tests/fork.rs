@@ -85,7 +85,7 @@ async fn lua_and_rpc_forks_inherit_scope_config_and_run_with_the_selected_histor
     ] {
         sm.storage().append_event(&parent, &event).await.unwrap();
     }
-    let (tx, _) = broadcast::channel(128);
+    let (tx, _) = crate::EventBus::channel(128);
     let ctx = Arc::new(crate::rpc::RpcContext::for_test(
         am.kiln_manager.clone(),
         sm.clone(),
@@ -286,7 +286,7 @@ async fn lua_and_rpc_refuse_to_fork_an_acp_session() {
         .unwrap();
     let sessions_before = sm.list_sessions().len();
 
-    let (tx, _) = broadcast::channel(16);
+    let (tx, _) = crate::EventBus::channel(16);
     let ctx = Arc::new(crate::rpc::RpcContext::for_test(
         am.kiln_manager.clone(),
         sm.clone(),

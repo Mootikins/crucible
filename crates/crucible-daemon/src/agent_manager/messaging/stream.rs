@@ -155,16 +155,16 @@ impl AgentManager {
                 }
             }
         }
-        if !emit_event(
-            &stream_ctx.event_tx,
-            SessionEventMessage::message_complete(
+        if !stream_ctx
+            .event_tx
+            .emit(SessionEventMessage::message_complete(
                 &stream_ctx.session_id,
                 &stream_ctx.message_id,
                 accumulated_response.clone(),
                 usage,
                 facts.stop_reason,
-            ),
-        ) {
+            ))
+        {
             warn!(
                 session_id = %stream_ctx.session_id,
                 "No subscribers for message_complete event"
@@ -343,10 +343,10 @@ impl AgentManager {
                         delta_len = delta.len(),
                         "Sending text_delta event"
                     );
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::text_delta(&stream_ctx.session_id, &delta),
-                    ) {
+                    if !stream_ctx.event_tx.emit(SessionEventMessage::text_delta(
+                        &stream_ctx.session_id,
+                        &delta,
+                    )) {
                         warn!(
                             session_id = %stream_ctx.session_id,
                             "No subscribers for text_delta event"
@@ -355,10 +355,10 @@ impl AgentManager {
                 }
                 TurnEvent::Thinking(reasoning) => {
                     debug!(session_id = %stream_ctx.session_id, "Sending thinking event");
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::thinking(&stream_ctx.session_id, &reasoning),
-                    ) {
+                    if !stream_ctx.event_tx.emit(SessionEventMessage::thinking(
+                        &stream_ctx.session_id,
+                        &reasoning,
+                    )) {
                         warn!(
                             session_id = %stream_ctx.session_id,
                             "No subscribers for thinking event"
@@ -379,15 +379,15 @@ impl AgentManager {
                     // most one segment — subsequent calls see no new text.
                     if accumulated_response.len() > last_segment_end {
                         let segment_text = accumulated_response[last_segment_end..].to_string();
-                        if !emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::segment_complete(
+                        if !stream_ctx
+                            .event_tx
+                            .emit(SessionEventMessage::segment_complete(
                                 &stream_ctx.session_id,
                                 &stream_ctx.message_id,
                                 segment_index,
                                 segment_text,
-                            ),
-                        ) {
+                            ))
+                        {
                             warn!(
                                 session_id = %stream_ctx.session_id,
                                 "No subscribers for segment_complete event"
@@ -460,15 +460,12 @@ impl AgentManager {
                     // Dispatch (honoring blocked list + failure tracking).
                     let mut attempt: Option<usize> = None;
                     let mut tool_result = if let Some(blocked_error) = loop_guard.refusal(&name) {
-                        if !emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::tool_result(
-                                &stream_ctx.session_id,
-                                &id,
-                                &name,
-                                serde_json::json!({ "error": blocked_error }),
-                            ),
-                        ) {
+                        if !stream_ctx.event_tx.emit(SessionEventMessage::tool_result(
+                            &stream_ctx.session_id,
+                            &id,
+                            &name,
+                            serde_json::json!({ "error": blocked_error }),
+                        )) {
                             warn!(
                                 session_id = %stream_ctx.session_id,
                                 tool = %name,
@@ -660,15 +657,15 @@ impl AgentManager {
                     if let Some((_, known)) = agent_calls.get_mut(&id) {
                         *known = (*call).clone();
                     }
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::tool_call_update(
+                    if !stream_ctx
+                        .event_tx
+                        .emit(SessionEventMessage::tool_call_update(
                             &stream_ctx.session_id,
                             &id,
                             *call,
                             None,
-                        ),
-                    ) {
+                        ))
+                    {
                         warn!(
                             session_id = %stream_ctx.session_id,
                             call_id = %id,
@@ -702,14 +699,14 @@ impl AgentManager {
                     // one is the point — every subscriber already assigns
                     // `context_limit_resolved` to its context total, so the
                     // statusline lights up with no client change at all.
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::context_limit_resolved(
+                    if !stream_ctx
+                        .event_tx
+                        .emit(SessionEventMessage::context_limit_resolved(
                             &stream_ctx.session_id,
                             limit as usize,
                             ContextLimitSource::Agent,
-                        ),
-                    ) {
+                        ))
+                    {
                         warn!(
                             session_id = %stream_ctx.session_id,
                             "No subscribers for context_limit_resolved event"
@@ -831,7 +828,7 @@ impl AgentManager {
             name: post_llm.event.clone(),
             payload: post_llm.data.clone(),
         };
-        if !emit_event(&stream_ctx.event_tx, post_llm) {
+        if !stream_ctx.event_tx.emit(post_llm) {
             warn!(
                 session_id = %stream_ctx.session_id,
                 "No subscribers for post_llm_call event"

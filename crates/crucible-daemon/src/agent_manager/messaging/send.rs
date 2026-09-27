@@ -28,7 +28,7 @@ pub(crate) struct TurnRequest<'a> {
     /// The review comments that the message attaches, as the daemon rendered
     /// them. `server::diff_context::review_context` builds this text.
     pub review_context: Option<crate::diff::context::ReviewContext>,
-    pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    pub event_tx: &'a crate::EventBus,
     pub is_interactive: bool,
     pub permission_override: Option<PermissionMode>,
     /// Resolved when the turn reaches a terminal state. `None` when nobody
@@ -47,7 +47,7 @@ impl AgentManager {
         session_id: &'a str,
         prompt: Option<String>,
         plugin: Option<String>,
-        event_tx: &'a broadcast::Sender<SessionEventMessage>,
+        event_tx: &'a crate::EventBus,
     ) -> futures::future::BoxFuture<'a, Result<Option<String>, AgentError>> {
         let gate = crate::agent_manager::slot::TurnGate {
             is_interactive: true,
@@ -65,7 +65,7 @@ impl AgentManager {
         session_id: &'a str,
         prompt: Option<String>,
         gate: crate::agent_manager::slot::TurnGate,
-        event_tx: &'a broadcast::Sender<SessionEventMessage>,
+        event_tx: &'a crate::EventBus,
     ) -> futures::future::BoxFuture<'a, Result<Option<String>, AgentError>> {
         Box::pin(async move {
             if gate.origin.plugin().is_some() && self.request_state.contains_key(session_id) {
@@ -130,7 +130,7 @@ impl AgentManager {
         &self,
         session: &crucible_core::session::Session,
         plugin: Option<&str>,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
     ) -> Result<(), AgentError> {
         let session_id = session.id.to_string();
         let slot = self.slot(&session_id);
@@ -172,15 +172,12 @@ impl AgentManager {
                 .await?;
             slot.invalidate_agent();
         }
-        emit_event(
-            event_tx,
-            SessionEventMessage::typed(
-                session_id.as_str(),
-                crucible_core::protocol::session_events::TurnPayload::ContextCleared {
-                    plugin: plugin.map(str::to_owned),
-                },
-            ),
-        );
+        event_tx.emit(SessionEventMessage::typed(
+            session_id.as_str(),
+            crucible_core::protocol::session_events::TurnPayload::ContextCleared {
+                plugin: plugin.map(str::to_owned),
+            },
+        ));
         Ok(())
     }
 
@@ -188,7 +185,7 @@ impl AgentManager {
         self: &Arc<Self>,
         session_id: &str,
         content: String,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
     ) -> Result<String, AgentError> {
@@ -216,7 +213,7 @@ impl AgentManager {
         session_id: &str,
         content: String,
         plugin: String,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
     ) -> Result<String, AgentError> {
         self.send_message_inner(
             session_id,
@@ -241,7 +238,7 @@ impl AgentManager {
         session_id: &str,
         content: String,
         relay: Option<String>,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         is_interactive: bool,
     ) -> Result<String, AgentError> {
         self.send_message_inner(
@@ -267,7 +264,7 @@ impl AgentManager {
         session_id: &str,
         content: String,
         review_context: Option<crate::diff::context::ReviewContext>,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
     ) -> Result<String, AgentError> {
@@ -295,7 +292,7 @@ impl AgentManager {
         self: &Arc<Self>,
         session_id: &str,
         content: String,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
     ) -> Result<(String, oneshot::Receiver<TurnOutcome>), AgentError> {
@@ -331,7 +328,7 @@ impl AgentManager {
         self: &Arc<Self>,
         session_id: String,
         follow_up: crate::agent_manager::slot::FollowUpTurn,
-        event_tx: broadcast::Sender<SessionEventMessage>,
+        event_tx: crate::EventBus,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
     ) -> futures::future::BoxFuture<'static, ()> {
@@ -574,7 +571,7 @@ impl AgentManager {
                 },
             ),
         };
-        if !emit_event(event_tx, opening_event) {
+        if !event_tx.emit(opening_event) {
             warn!(session_id = %session_id, "No subscribers for user_message event");
         }
 
@@ -930,10 +927,12 @@ impl AgentManager {
             // comes after the slot is free, so a client that sends its next
             // message when it sees this event does not get
             // `ConcurrentRequest`.
-            if !emit_event(
-                &event_tx_clone,
-                SessionEventMessage::turn_finished(&session_id_owned, status, stop_reason, error),
-            ) {
+            if !event_tx_clone.emit(SessionEventMessage::turn_finished(
+                &session_id_owned,
+                status,
+                stop_reason,
+                error,
+            )) {
                 warn!(session_id = %session_id_owned, "No subscribers for turn_finished event");
             }
 
@@ -1123,7 +1122,7 @@ impl AgentManager {
         session_id: &str,
         agent_config: &SessionAgent,
         workspace: &std::path::Path,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
     ) -> Result<Arc<Mutex<BoxedAgentHandle>>, AgentError> {
         // Check the cache, and note the generation the build below has to
         // install against. Anything that invalidates while we are awaiting
@@ -1231,10 +1230,7 @@ impl AgentManager {
         // makes them re-fetch the list.
         if let Some(current) = agent_modes.as_ref().map(|m| m.current_mode_id.0.as_ref()) {
             if agent_config.mode.as_deref() != Some(current) {
-                emit_event(
-                    event_tx,
-                    SessionEventMessage::mode_changed(session_id, current),
-                );
+                event_tx.emit(SessionEventMessage::mode_changed(session_id, current));
             }
         }
 
@@ -1290,7 +1286,7 @@ impl AgentManager {
     pub(crate) async fn ensure_agent_handle(
         &self,
         session_id: &str,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+        event_tx: Option<&crate::EventBus>,
     ) -> Result<(), AgentError> {
         if self.slot(session_id).cached_agent().is_some() {
             return Ok(());
@@ -1306,7 +1302,7 @@ impl AgentManager {
 
         // Announcements ride the caller's channel when it has one; a caller
         // without one drops them rather than inventing a bus.
-        let (detached_tx, _rx) = broadcast::channel(16);
+        let (detached_tx, _rx) = crate::EventBus::channel(16);
         let event_tx = event_tx.unwrap_or(&detached_tx);
 
         let tool_root = crate::agent_manager::scope::session_tool_root(
@@ -1328,7 +1324,7 @@ impl AgentManager {
         session_id: &str,
         agent_config: &SessionAgent,
         workspace: &std::path::Path,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
+        event_tx: &crate::EventBus,
     ) -> Result<(BoxedAgentHandle, SessionAgent), AgentError> {
         let mut resolved_config = if agent_config.endpoint.is_none() {
             let provider_key = agent_config

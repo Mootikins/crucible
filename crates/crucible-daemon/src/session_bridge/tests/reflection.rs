@@ -83,7 +83,7 @@ impl Rig {
         let kiln = TempDir::new().unwrap();
         let sessions = temp_session_manager_with_kilns(&[("knowledge", kiln.path())]);
         let shared_loader = Arc::new(tokio::sync::Mutex::new(None));
-        let (events, observed) = broadcast::channel(128);
+        let (events, observed) = crate::EventBus::channel(128);
         let kilns = Arc::new(KilnManager::with_event_tx(
             events.clone(),
             Some(crucible_core::config::EmbeddingProviderConfig::mock(Some(

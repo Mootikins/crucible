@@ -479,7 +479,7 @@ mod tests {
         let root = tmp.path().canonicalize().unwrap();
         std::fs::write(root.join("Old.md"), "# Old\n").unwrap();
 
-        let (tx, mut rx) = tokio::sync::broadcast::channel(256);
+        let (tx, mut rx) = crate::EventBus::channel(256);
         let km = Arc::new(crate::kiln_manager::KilnManager::with_event_tx(
             tx,
             None,

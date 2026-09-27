@@ -248,7 +248,7 @@ fn changed_id(event: &crucible_core::protocol::SessionEventMessage) -> String {
 #[test]
 fn a_reject_emits_proposal_changed_on_the_system_channel() {
     let fx = Fixture::new();
-    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    let (tx, mut events) = crate::EventBus::channel(16);
     fx.store.set_events(tx);
     let made = fx.write(plugin("reflection"), "aux-1", "a.md", "a1");
     let written: Vec<_> = drain(&mut events).iter().map(changed_id).collect();
@@ -266,7 +266,7 @@ fn a_reject_emits_proposal_changed_on_the_system_channel() {
 #[test]
 fn a_supersede_emits_proposal_changed_for_both_proposals() {
     let fx = Fixture::new();
-    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    let (tx, mut events) = crate::EventBus::channel(16);
     fx.store.set_events(tx);
     let older = fx.write(plugin("reflection"), "aux-1", "a.md", "a1");
     drain(&mut events);
@@ -307,7 +307,7 @@ fn kiln_proposal(fx: &Fixture) -> (PathBuf, Proposal) {
 #[tokio::test]
 async fn accept_and_resolve_emit_proposal_changed() {
     let fx = Fixture::new();
-    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    let (tx, mut events) = crate::EventBus::channel(16);
     fx.store.set_events(tx);
     let (kiln, made) = kiln_proposal(&fx);
     std::fs::write(kiln.join("a.md"), "eins\ntwo\n").unwrap();
@@ -342,7 +342,7 @@ async fn accept_and_resolve_emit_proposal_changed() {
 #[tokio::test]
 async fn a_file_event_on_a_proposed_path_makes_the_proposal_stale() {
     let fx = Fixture::new();
-    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    let (tx, mut events) = crate::EventBus::channel(16);
     fx.store.set_events(tx.clone());
     let (kiln, made) = kiln_proposal(&fx);
     drain(&mut events);
@@ -357,7 +357,7 @@ async fn a_file_event_on_a_proposed_path_makes_the_proposal_stale() {
             kind: Default::default(),
         },
     );
-    tx.send(event).unwrap();
+    assert!(tx.emit(event));
 
     // The watcher announces the change after it writes the state.
     let announced = loop {

@@ -103,7 +103,7 @@ fn make_acp_agent_factory() -> AgentFactoryOverride {
 /// returned `AgentManager` must be kept alive for the duration of the test:
 /// the `DelegationService` holds only a `Weak` back-reference to it.
 fn build_delegation_stack(
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    event_tx: crucible_daemon::EventBus,
     factory: AgentFactoryOverride,
 ) -> (
     Arc<AgentManager>,
@@ -577,7 +577,7 @@ async fn inject_errors_causes_handshake_failure() {
 #[tokio::test]
 async fn delegation_depth_limit_enforced() {
     let temp = TempDir::new().expect("temp dir");
-    let (event_tx, _) = broadcast::channel(32);
+    let (event_tx, _) = crucible_daemon::EventBus::channel(32);
 
     // The factory must never run: the depth check rejects before any child
     // session is created.
@@ -625,7 +625,7 @@ async fn mock_acp_delegation_emits_events() {
     let temp = TempDir::new().expect("temp dir");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
 
-    let (event_tx, mut rx) = broadcast::channel(256);
+    let (event_tx, mut rx) = crucible_daemon::EventBus::channel(256);
     let (manager, session_manager, service) =
         build_delegation_stack(event_tx, make_acp_agent_factory());
 
@@ -691,7 +691,7 @@ async fn mock_acp_delegation_captured_in_recording() {
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let recording_path = temp.path().join("recording.jsonl");
 
-    let (event_tx, mut assertion_rx) = broadcast::channel(256);
+    let (event_tx, mut assertion_rx) = crucible_daemon::EventBus::channel(256);
     let (manager, session_manager, service) =
         build_delegation_stack(event_tx.clone(), make_acp_agent_factory());
 

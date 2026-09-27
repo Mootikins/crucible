@@ -1185,7 +1185,7 @@ async fn at_mention_attaches_the_file_contents_to_the_turn() {
         }) as BoxedAgentHandle)),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     agent_manager
         .send_message(
             &session.id,
@@ -1257,7 +1257,7 @@ async fn at_mention_with_a_range_attaches_only_the_range() {
         }) as BoxedAgentHandle)),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     agent_manager
         .send_message(
             &session.id,
@@ -1357,7 +1357,7 @@ async fn the_agents_acp_session_id_is_persisted_for_resume() {
         Box::pin(async { Ok(Box::new(AcpIdReportingAgent) as BoxedAgentHandle) })
     }));
 
-    let (event_tx, _event_rx) = broadcast::channel(64);
+    let (event_tx, _event_rx) = crate::EventBus::channel(64);
     let (_message_id, completion) = agent_manager
         .send_message_notified(&session.id, "hello".to_string(), &event_tx, true, None)
         .await

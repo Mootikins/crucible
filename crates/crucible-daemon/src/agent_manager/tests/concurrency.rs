@@ -65,7 +65,7 @@ async fn concurrent_send_to_same_session_returns_error() {
         },
     );
 
-    let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, _event_rx) = crate::EventBus::channel(64);
     let result = agent_manager
         .send_message(&session.id, "hello".to_string(), &event_tx, true, None)
         .await;
@@ -92,7 +92,7 @@ async fn cancel_during_streaming_emits_ended_event() {
         Arc::new(Mutex::new(Box::new(PendingMockAgent) as BoxedAgentHandle)),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     let _message_id = agent_manager
         .send_message(&session.id, "test".to_string(), &event_tx, true, None)
         .await
@@ -166,7 +166,7 @@ async fn send_during_cancel_wind_down_is_rejected() {
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, _event_rx) = crate::EventBus::channel(64);
     let result = agent_manager
         .send_message(
             &session.id,
@@ -219,7 +219,7 @@ async fn empty_stream_without_done_cleans_up_request_state() {
         Arc::new(Mutex::new(Box::new(MockAgent) as BoxedAgentHandle)),
     );
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let (event_tx, mut event_rx) = crate::EventBus::channel(64);
     let _message_id = agent_manager
         .send_message(&session.id, "test".to_string(), &event_tx, true, None)
         .await
@@ -264,7 +264,7 @@ async fn parallel_workflow_steps_serialize_llm_turns_on_one_session() {
         }) as BoxedAgentHandle)),
     );
 
-    let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(256);
+    let (event_tx, _event_rx) = crate::EventBus::channel(256);
     let handler = DaemonInlineHandler::new(&session.id, agent_manager.clone(), event_tx.clone());
 
     fn step(title: &str) -> WorkflowStep {
@@ -436,7 +436,7 @@ async fn concurrent_first_uses_share_one_session_slot() {
 #[tokio::test]
 async fn reading_plugin_state_does_not_queue_behind_the_loader_lock() {
     let session_manager = temp_session_manager();
-    let (event_tx, _rx) = broadcast::channel(16);
+    let (event_tx, _rx) = crate::EventBus::channel(16);
     let loader = Arc::new(Mutex::new(None));
     let agent_manager = AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -503,7 +503,7 @@ async fn workflow_cancel_stops_the_running_step_turn() {
         session.id.to_string(),
         Arc::new(Mutex::new(Box::new(PendingMockAgent) as BoxedAgentHandle)),
     );
-    let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(256);
+    let (event_tx, _event_rx) = crate::EventBus::channel(256);
     let ctx = Arc::new(crate::rpc::RpcContext::for_test(
         agent_manager.kiln_manager.clone(),
         session_manager.clone(),
@@ -608,7 +608,7 @@ async fn workflow_cancel_between_steps_stops_the_next_step() {
         Arc::new(crate::project_manager::ProjectManager::new(
             tmp.path().join("projects.json"),
         )),
-        broadcast::channel(16).0,
+        crate::EventBus::channel(16).0,
         tmp.path().into(),
     ));
     let source = "---\ntype: workflow\n---\n# W\n\n## One\n\nA.\n\n## Two\n\nB.\n";

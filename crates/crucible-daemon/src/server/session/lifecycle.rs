@@ -231,6 +231,7 @@ pub(crate) async fn handle_session_unarchive(
     req: Request,
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
+    events: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
@@ -243,7 +244,7 @@ pub(crate) async fn handle_session_unarchive(
 
     match sm.unarchive_session(session_id).await {
         Ok(session) => {
-            am.cleanup_session(session_id);
+            am.cleanup_session(session_id, events);
             Response::success(
                 req.id,
                 serde_json::json!({
@@ -259,7 +260,7 @@ pub(crate) async fn handle_session_unarchive(
 pub(crate) async fn handle_session_replay(
     req: Request,
     sm: &Arc<SessionManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
+    event_tx: &crate::EventBus,
 ) -> Response {
     let params = match typed_params::<crate::rpc_client::SessionReplayRequest>(&req) {
         Ok(p) => p,

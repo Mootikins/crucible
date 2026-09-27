@@ -82,6 +82,7 @@ struct Harness {
     service: Arc<DelegationService>,
     lifecycle: Arc<SessionLifecycle>,
     event_rx: broadcast::Receiver<SessionEventMessage>,
+    event_tx: crucible_daemon::EventBus,
     parent_id: String,
 }
 
@@ -101,7 +102,7 @@ async fn setup_with_plugin(
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, event_rx) = broadcast::channel(64);
+    let (event_tx, event_rx) = crucible_daemon::EventBus::channel(64);
 
     let loader = match plugin_init {
         Some(init) => Some(load_test_plugin(temp.path(), init).await),
@@ -157,6 +158,7 @@ async fn setup_with_plugin(
         service,
         lifecycle,
         event_rx,
+        event_tx,
         parent_id: session.id.to_string(),
     }
 }
@@ -586,7 +588,7 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
     // harness whose override always errors.
     let _temp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
-    let (event_tx, event_rx) = broadcast::channel(64);
+    let (event_tx, event_rx) = crucible_daemon::EventBus::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
         AgentManagerParams {
@@ -652,7 +654,7 @@ async fn parent_cleanup_cancels_running_children() {
         .expect("spawn");
 
     // Ending/cleaning the parent must not leave the child running.
-    h.agent_manager.cleanup_session(&h.parent_id);
+    h.agent_manager.cleanup_session(&h.parent_id, &h.event_tx);
 
     let result = h
         .service
@@ -796,7 +798,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
     let temp = TempDir::new().unwrap();
     std::fs::write(temp.path().join("probe.txt"), "TOOL-PROBE-CONTENT").unwrap();
     let session_manager = temp_session_manager();
-    let (event_tx, mut event_rx) = broadcast::channel(256);
+    let (event_tx, mut event_rx) = crucible_daemon::EventBus::channel(256);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
         AgentManagerParams {
@@ -1028,7 +1030,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).unwrap();
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _event_rx) = broadcast::channel(256);
+    let (event_tx, _event_rx) = crucible_daemon::EventBus::channel(256);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
         AgentManagerParams {
@@ -1239,7 +1241,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).unwrap();
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _) = broadcast::channel(64);
+    let (event_tx, _) = crucible_daemon::EventBus::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let llm_config = crucible_core::config::LlmConfig {
         default: None,
