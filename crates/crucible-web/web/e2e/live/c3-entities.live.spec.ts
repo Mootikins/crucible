@@ -114,7 +114,7 @@ test.describe('live C3 entities', () => {
     expect(log.count('GET', SKILLS_SEARCH), describeRequests(log, SKILLS_SEARCH)).toBe(afterFirst);
   });
 
-  test('the surfaces panel reads the roster once and holds one stream', async ({ page }) => {
+  test('the surfaces panel reconciles each open and holds one stream', async ({ page }) => {
     await installEventSourceSpy(page);
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
@@ -131,7 +131,11 @@ test.describe('live C3 entities', () => {
     await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toBeVisible({ timeout: 20_000 });
     await apiQuiet(log);
 
-    expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(1);
+    const initialReads = log.count('GET', '/api/surfaces');
+    // Opening the stream reconciles the initial snapshot: if a read already
+    // started, it is cancelled and replaced. There is no timer or per-pane read.
+    expect(initialReads, describeRequests(log, '/api/surfaces')).toBeGreaterThanOrEqual(1);
+    expect(initialReads, describeRequests(log, '/api/surfaces')).toBeLessThanOrEqual(2);
     expect(log.count('GET', '/api/surfaces/events')).toBe(1);
     expect((await sourcesFor(page, '/api/surfaces/events')).filter((s) => s.open).length).toBe(1);
 
@@ -144,12 +148,10 @@ test.describe('live C3 entities', () => {
     // fire at four seconds and still pass, as long as the count it happened
     // to move was not this one.
     await apiQuiet(log, 5000);
-    expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(1);
+    expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(initialReads);
 
-    // The panel leaves and takes its stream. A second mount opens a fresh one,
-    // and reads the roster again only because the first mount's entry is the
-    // one it shares — so the count is what the cache decides, never more than
-    // one per mount.
+    // The panel leaves and takes its stream. Changes can occur while nobody
+    // is listening, so the next open must refresh the cached roster once.
     await closeTab(page, groupId, 'surfaces-tab');
     await expect
       .poll(async () => (await sourcesFor(page, '/api/surfaces/events')).some((s) => s.open), {
@@ -165,8 +167,8 @@ test.describe('live C3 entities', () => {
     await expect(page.getByTestId('edge-tab-left-surfaces-again')).toBeVisible({ timeout: 20_000 });
     await apiQuiet(log);
 
-    // The roster came from the cache the first mount filled: still one read.
-    expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(1);
+    // A fresh stream reconciles changes missed while it was closed.
+    expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(initialReads + 1);
 
     // The stream did NOT come from a cache, because the last subscriber closed
     // it, so the second mount opened a second one.

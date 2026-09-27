@@ -22,7 +22,11 @@ synchronous interception stages stay separate from broadcast observers.
 **Implemented:** publication blocks and proposal readers now share the system
 root and decoder. The system route owns publication invalidation; the server
 alias remains available. Connection sharing and publication routing regressions
-were observed failing before the change. Gap recovery remains the next step.
+were observed failing before the change. All system projections now share subscription, handshake, keepalive and gap
+forwarding. Browser caches reconcile open/reopen and gaps; Chromium verifies
+native retry without a subsequent change event. Recovery cancels an initial
+fetch before refetching; ordinary invalidation can reuse a snapshot started
+before the gap. New readers wait through disconnection before seeing open.
 
 **Small first step.** `crates/crucible-web/src/routes/events.rs` already serves
 both publication and proposal changes on `/api/events/system`. The plugin
@@ -56,6 +60,13 @@ the plugin/system streams do not reconnect, but their implementations install
 no error handler that disables the browser's native retry.
 
 ## 2. Give the web broker ownership of subscription lifetimes
+
+**Implemented:** stream leases own local reception and upstream interest.
+The first reader subscribes and the last releases; reconnect restores every
+active receiver and announces the unknown lost span before forwarding new
+events. Initial failure and cancellation release interest. Failed restoration
+does not advance the connection generation. Socket/SSE regressions and mutation
+checks cover these paths.
 
 `routes/chat.rs:142` creates a local receiver and separately subscribes the
 daemon. `services/daemon.rs:153` reconnects the daemon connection and restores

@@ -311,6 +311,7 @@ pub enum SystemPayload {
     /// leave unvalidated. Consumers should treat it as "your transcript has a hole
     /// here", not as session content.
     StreamGap {
+        /// Zero means the lost span is unknown, as after a connection restart.
         #[serde(default)]
         dropped: u64,
     },

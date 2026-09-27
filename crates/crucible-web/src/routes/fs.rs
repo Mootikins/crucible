@@ -4,13 +4,12 @@
 //! (live filesystem-change SSE).
 
 use crate::fs_events::FsEvent;
-use crate::routes::helpers::{stream_version_frame, versioned};
 use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Query, State},
-    response::sse::{Event, KeepAlive, Sse},
+    response::sse::Event,
     Json,
 };
 // The daemon owns every shape these four routes forward. Its module used to
@@ -18,10 +17,7 @@ use axum::{
 // is the kind of contract that cannot fail a build. The routes read the types
 // instead.
 use crucible_daemon::{FsListing, FsMoveReply, FsTrashReply};
-use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
-use tokio_stream::StreamExt;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -232,39 +228,16 @@ async fn trash_path(
 )]
 async fn fs_event_stream(
     State(state): State<AppState>,
-) -> Result<
-    (
-        [(axum::http::HeaderName, String); 1],
-        Sse<impl Stream<Item = Result<Event, Infallible>>>,
-    ),
-    WebError,
-> {
-    // ORDERING IS LOAD-BEARING: open the LOCAL broker channel BEFORE telling the
-    // daemon to forward. The daemon only forwards "system" events after
-    // `subscribe_sticky` lands; `EventBroker::dispatch` drops events for session
-    // ids with no local subscriber (verified by
-    // `dispatch_ignores_unsubscribed_sessions`). If we subscribed the daemon
-    // first, an event forwarded in the window before `events.subscribe` created
-    // the "system" channel would be dropped (a first-connection loss window).
-    // Creating the broker channel first means every forwarded event has a buffer
-    // to land in (broadcast buffers up to capacity regardless of SSE polling).
-    let rx = state.events.subscribe("system").await;
-    // Sticky: survives reconnect, shared by all browser connections.
-    state.daemon.subscribe_sticky("system").await.daemon_err()?;
-
-    let stream = futures::stream::iter([Ok(stream_version_frame())]).chain(
-        tokio_stream::wrappers::BroadcastStream::new(rx)
-            .filter_map(|result| result.ok())
-            .filter_map(|event| {
-                FsEvent::from_daemon_event(&event).map(|fe| {
-                    let name = fe.event_name();
-                    let data = serde_json::to_string(&fe).unwrap_or_default();
-                    Ok(Event::default().event(name).data(data))
-                })
-            }),
-    );
-
-    Ok(versioned(Sse::new(stream).keep_alive(KeepAlive::default())))
+) -> Result<crate::routes::events::SystemStream, WebError> {
+    crate::routes::events::system_stream(&state, |event| {
+        FsEvent::from_daemon_event(event).map(|frame| {
+            let name = frame.event_name();
+            Event::default()
+                .event(name)
+                .data(serde_json::to_string(&frame).unwrap_or_default())
+        })
+    })
+    .await
 }
 
 #[cfg(test)]

@@ -568,7 +568,7 @@ impl PublicationChangedEvent {
 /// `GET /api/plugins/events` — a push when a plugin's published data changes.
 ///
 /// This route is an alias of `GET /api/events/system` (`routes/events.rs`).
-/// It forwards only `publication_changed`, until the web client moves.
+/// It forwards publications and stream gap control frames.
 ///
 /// The counterpart to `GET /api/plugins/publications`: that answers "what is
 /// true now", this says "read it again". A panel drawing a plugin's own state
@@ -599,7 +599,11 @@ async fn publication_event_stream(
 ) -> Result<super::events::SystemStream, WebError> {
     // An alias of `GET /api/events/system`. Its client knows only the
     // publications, so the alias forwards nothing else.
-    super::events::system_stream(&state, super::events::SystemEvent::publication_only).await
+    super::events::system_stream(&state, |event| {
+        super::events::SystemEvent::publication_only(event)
+            .map(super::events::SystemEvent::into_frame)
+    })
+    .await
 }
 
 /// What `POST /api/plugins/command` answers.

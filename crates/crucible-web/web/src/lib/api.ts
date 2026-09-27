@@ -1291,6 +1291,24 @@ export async function getSurfaces(): Promise<Surface[]> {
   return decode(await client.GET('/api/surfaces'), 'Failed to list plugin surfaces').surfaces;
 }
 
+/** Recovery controls are shared by every projection of the system session. */
+function observeStreamRecovery(
+  source: EventSource,
+  onOpen: () => void,
+  onGap: () => void,
+): void {
+  source.onopen = onOpen;
+  source.addEventListener('stream_gap', (event: MessageEvent) => {
+    try {
+      decodeEvent<{ dropped: number }>('system', 'stream_gap', event.data,
+        payload => 'dropped' in payload && typeof payload.dropped === 'number' && payload.dropped >= 0);
+      onGap();
+    } catch {
+      console.warn('Failed to parse stream gap:', event.data);
+    }
+  });
+}
+
 /**
  * Subscribe to surface changes (`GET /api/surfaces/events`). Mirrors
  * `subscribeToFsEvents`: one `EventSource` with exponential-backoff reconnect.
@@ -1298,6 +1316,9 @@ export async function getSurfaces(): Promise<Surface[]> {
  */
 export function subscribeToSurfaceEvents(
   onEvent: (event: SurfaceChangedEvent) => void,
+  onOpen: () => void = () => {},
+  onGap: () => void = () => {},
+  onDisconnect: () => void = () => {},
 ): () => void {
   const url = '/api/surfaces/events';
   let source: EventSource | null = null;
@@ -1308,7 +1329,9 @@ export function subscribeToSurfaceEvents(
   function connect() {
     if (closed) return;
     source = new EventSource(url);
+    observeStreamRecovery(source, onOpen, onGap);
     guardStreamVersion('surface', source, () => {
+      onDisconnect();
       closed = true;
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
@@ -1342,6 +1365,7 @@ export function subscribeToSurfaceEvents(
 
     source.onerror = () => {
       if (closed) return;
+      onDisconnect();
       source?.close();
       source = null;
       reconnectAttempts++;
@@ -1972,7 +1996,12 @@ const FS_EVENT_TAG_SET = new Set<string>(FS_EVENT_TAGS);
  * auth. In Phase 1 only watched kiln directories emit these. Returns a cleanup
  * function that closes the stream.
  */
-export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => void {
+export function subscribeToFsEvents(
+  onEvent: (event: FsEvent) => void,
+  onOpen: () => void = () => {},
+  onGap: () => void = () => {},
+  onDisconnect: () => void = () => {},
+): () => void {
   const url = '/api/fs/events';
   let source: EventSource | null = null;
   let reconnectAttempts = 0;
@@ -1983,7 +2012,9 @@ export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => vo
     if (closed) return;
 
     source = new EventSource(url);
+    observeStreamRecovery(source, onOpen, onGap);
     guardStreamVersion('file-system', source, () => {
+      onDisconnect();
       closed = true;
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
@@ -2014,6 +2045,7 @@ export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => vo
 
     source.onerror = () => {
       if (closed) return;
+      onDisconnect();
       source?.close();
       source = null;
       reconnectAttempts++;
@@ -2049,11 +2081,13 @@ export type SystemEvent =
 export function subscribeToSystemEvents(
   onEvent: (event: SystemEvent) => void,
   onOpen: () => void,
+  onGap: () => void = () => {},
+  onDisconnect: () => void = () => {},
 ): () => void {
   // EventSource cannot set headers; the HttpOnly session cookie (set by
   // login()) authenticates the stream for non-localhost clients.
   const source = new EventSource('/api/events/system');
-  guardStreamVersion('system', source, () => {});
+  guardStreamVersion('system', source, onDisconnect);
   source.addEventListener('publication_changed', (e: MessageEvent) => {
     try {
       const payload = decodeEvent<{ plugin: string; key: string }>(
@@ -2081,7 +2115,8 @@ export function subscribeToSystemEvents(
       console.warn('Failed to parse system SSE event:', e.data);
     }
   });
-  source.onopen = () => onOpen();
+  observeStreamRecovery(source, onOpen, onGap);
+  source.onerror = () => onDisconnect();
   return () => source.close();
 }
 

@@ -1696,7 +1696,7 @@
     "/api/plugins/events": {
       "get": {
         "summary": "`GET /api/plugins/events` — a push when a plugin's published data changes.",
-        "description": "This route is an alias of `GET /api/events/system` (`routes/events.rs`).\nIt forwards only `publication_changed`, until the web client moves.\n\nThe counterpart to `GET /api/plugins/publications`: that answers \"what is\ntrue now\", this says \"read it again\". A panel drawing a plugin's own state\nwould otherwise poll on a timer and still show a stale value between ticks.\n\nSame shape as the file-tree stream in `routes/fs.rs`, including the\nload-bearing ordering: subscribe the LOCAL broker channel before telling the\ndaemon to forward, because `EventBroker::dispatch` drops events for a\nsession id with no local subscriber and the window between the two calls\nwould lose the first event.",
+        "description": "This route is an alias of `GET /api/events/system` (`routes/events.rs`).\nIt forwards publications and stream gap control frames.\n\nThe counterpart to `GET /api/plugins/publications`: that answers \"what is\ntrue now\", this says \"read it again\". A panel drawing a plugin's own state\nwould otherwise poll on a timer and still show a stale value between ticks.\n\nSame shape as the file-tree stream in `routes/fs.rs`, including the\nload-bearing ordering: subscribe the LOCAL broker channel before telling the\ndaemon to forward, because `EventBroker::dispatch` drops events for a\nsession id with no local subscriber and the window between the two calls\nwould lose the first event.",
         "operationId": "publication_event_stream",
         "responses": {
           "200": {

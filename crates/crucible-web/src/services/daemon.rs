@@ -14,6 +14,10 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 const EVENT_CHANNEL_CAPACITY: usize = 256;
 
+#[path = "daemon_event_stream.rs"]
+mod event_stream;
+pub use event_stream::EventStream;
+
 #[derive(Clone)]
 pub struct AppState {
     pub daemon: Arc<ReconnectingDaemon>,
@@ -64,12 +68,9 @@ pub struct ReconnectingDaemon {
     broker: Arc<EventBroker>,
     /// Handle to the current event-router task, aborted and replaced on reconnect.
     router: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Session ids that must be re-subscribed on every reconnect. Chat sessions
-    /// re-subscribe themselves via the browser `EventSource`; process-wide
-    /// channels with no browser-driven re-subscribe (e.g. the file-watch
-    /// `"system"` channel) live here so a daemon restart doesn't silently kill
-    /// them. See `subscribe_sticky`.
-    sticky_subscriptions: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Serializes first subscribe with last-drop cleanup. Reconnect reads
+    /// receiver ownership from the broker while holding the daemon write lock.
+    subscription_changes: tokio::sync::Mutex<()>,
 }
 
 impl ReconnectingDaemon {
@@ -86,25 +87,8 @@ impl ReconnectingDaemon {
             reconnect_socket: None,
             broker,
             router: std::sync::Mutex::new(Some(router)),
-            sticky_subscriptions: std::sync::Mutex::new(std::collections::HashSet::new()),
+            subscription_changes: tokio::sync::Mutex::new(()),
         }
-    }
-
-    /// Subscribe the daemon client to `session_id` and record it so the
-    /// subscription is re-issued on every reconnect. Idempotent.
-    ///
-    /// Callers (the `/api/fs/events` handler) call this once per SSE connection
-    /// with the shared key `"system"`. The `"system"` entry is intentionally
-    /// NEVER removed: it is one cheap, process-wide subscription shared by all
-    /// browser SSE connections, and the daemon's only cost is keeping one
-    /// broadcast fan-out key alive. Refcounted teardown would buy nothing, so
-    /// this is an accepted, bounded single-entry "leak" for Phase 1.
-    pub async fn subscribe_sticky(&self, session_id: &str) -> anyhow::Result<()> {
-        self.sticky_subscriptions
-            .lock()
-            .unwrap()
-            .insert(session_id.to_string());
-        self.session_subscribe(&[session_id]).await.map(|_| ())
     }
 
     /// The daemon's cheapest RPC, for the readiness probe.
@@ -172,37 +156,36 @@ impl ReconnectingDaemon {
             None => DaemonClient::connect_or_start_with_events().await,
         };
         let (new_daemon, event_rx) = connection?;
-        *daemon = new_daemon.without_timeout_retries();
-
-        // Rewire SSE: abort the old router (its event_rx died with the old
-        // connection) and point a fresh one at the same broker, so fan-out
-        // survives a daemon restart instead of staying dead until a manual
-        // restart. (Live per-session subscriptions still need re-issuing by the
-        // client after a reconnect.)
+        let new_daemon = new_daemon.without_timeout_retries();
+        let active: Vec<String> = self
+            .broker
+            .sessions
+            .read()
+            .await
+            .iter()
+            .filter(|(_, tx)| tx.receiver_count() > 0)
+            .map(|(id, _)| id.clone())
+            .collect();
+        if !active.is_empty() {
+            let borrowed: Vec<&str> = active.iter().map(String::as_str).collect();
+            // Refuse this reconnect if restoration fails. Leaving generation
+            // unchanged lets the next safe call retry; a half-restored link
+            // must not look healthy while its browser streams stay silent.
+            new_daemon.session_subscribe(&borrowed).await?;
+        }
+        *daemon = new_daemon;
+        // HTTP streams survive a daemon reconnect. Their lost span is unknown
+        // (zero), so announce recovery before forwarding the new live tail.
+        self.broker
+            .dispatch(event_stream::stream_gap(
+                crucible_daemon::subscription::WILDCARD_SESSION,
+                0,
+            ))
+            .await;
         let new_router = spawn_event_router(event_rx, self.broker.clone());
         if let Ok(mut guard) = self.router.lock() {
             if let Some(old) = guard.replace(new_router) {
                 old.abort();
-            }
-        }
-
-        // Re-issue sticky subscriptions (e.g. the file-watch "system" channel)
-        // on the fresh connection, directly through the held write guard so we
-        // don't re-enter `forward_rpc` (which would deadlock on the
-        // read lock). Best-effort: a failure here is retried on the next
-        // reconnect. Browser-driven per-session subscriptions re-issue
-        // themselves via `EventSource`, so they are NOT in this set.
-        let sticky: Vec<String> = self
-            .sticky_subscriptions
-            .lock()
-            .unwrap()
-            .iter()
-            .cloned()
-            .collect();
-        if !sticky.is_empty() {
-            let borrowed: Vec<&str> = sticky.iter().map(String::as_str).collect();
-            if let Err(e) = daemon.session_subscribe(&borrowed).await {
-                tracing::warn!(error = %e, "Failed to re-issue sticky subscriptions after reconnect");
             }
         }
 
@@ -442,10 +425,7 @@ impl ReconnectingDaemon {
         -> () = session_clear(&session_id);
     }
 
-    pub async fn session_subscribe(
-        &self,
-        session_ids: &[&str],
-    ) -> anyhow::Result<serde_json::Value> {
+    async fn session_subscribe(&self, session_ids: &[&str]) -> anyhow::Result<serde_json::Value> {
         let ids: Vec<String> = session_ids.iter().map(|id| (*id).to_string()).collect();
         self.forward_rpc(
             ReplayPolicy::Safe,
@@ -797,6 +777,8 @@ impl EventBroker {
         }
     }
 
+    /// Raw reception for transport fixtures. Production readers hold an EventStream.
+    #[cfg(any(test, feature = "test-utils"))]
     pub async fn subscribe(&self, session_id: &str) -> broadcast::Receiver<SessionEvent> {
         let mut sessions = self.sessions.write().await;
         let tx = sessions
@@ -839,10 +821,6 @@ impl EventBroker {
     #[cfg(any(test, feature = "test-utils"))]
     pub async fn publish_for_tests(&self, event: SessionEvent) {
         self.dispatch(event).await;
-    }
-
-    pub async fn remove_session(&self, session_id: &str) {
-        self.sessions.write().await.remove(session_id);
     }
 }
 
@@ -993,22 +971,6 @@ mod tests {
         let event = test_event("unknown-session", "test_event");
         // Should not panic
         broker.dispatch(event).await;
-    }
-
-    #[tokio::test]
-    async fn remove_session_deletes_channel() {
-        let broker = EventBroker::new();
-        let _rx = broker.subscribe("session-1").await;
-
-        {
-            let sessions = broker.sessions.read().await;
-            assert_eq!(sessions.len(), 1);
-        }
-
-        broker.remove_session("session-1").await;
-
-        let sessions = broker.sessions.read().await;
-        assert_eq!(sessions.len(), 0, "Session should be removed");
     }
 
     #[tokio::test]

@@ -2,15 +2,20 @@
 //! Reconnects use the same isolated listener, never the developer's daemon.
 use super::*;
 use serde_json::{json, Value};
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::time::{timeout, Duration};
 
 struct Peer {
-    daemon: ReconnectingDaemon,
+    daemon: Arc<ReconnectingDaemon>,
     applied: Arc<AtomicUsize>,
     subscriptions: Arc<AtomicUsize>,
+    unsubscriptions: Arc<AtomicUsize>,
+    reject_subscription: Arc<AtomicBool>,
+    hold_subscription: Arc<AtomicBool>,
+    subscription_started: Arc<tokio::sync::Notify>,
+    release_subscription: Arc<tokio::sync::Notify>,
     task: tokio::task::JoinHandle<()>,
     _dir: tempfile::TempDir,
 }
@@ -30,11 +35,22 @@ impl Peer {
         let subscriptions = Arc::new(AtomicUsize::new(0));
         let calls = applied.clone();
         let subs = subscriptions.clone();
+        let unsubscriptions = Arc::new(AtomicUsize::new(0));
+        let unsubs = unsubscriptions.clone();
+        let reject_subscription = Arc::new(AtomicBool::new(false));
+        let reject = reject_subscription.clone();
+        let hold_subscription = Arc::new(AtomicBool::new(false));
+        let hold = hold_subscription.clone();
+        let subscription_started = Arc::new(tokio::sync::Notify::new());
+        let started = subscription_started.clone();
+        let release_subscription = Arc::new(tokio::sync::Notify::new());
+        let release = release_subscription.clone();
         let task = tokio::spawn(async move {
             loop {
                 let (socket, _) = listener.accept().await.unwrap();
                 let (read, mut write) = socket.into_split();
                 let mut lines = BufReader::new(read).lines();
+                let mut active = std::collections::HashSet::<String>::new();
                 while let Some(line) = lines.next_line().await.unwrap() {
                     let request: Value = serde_json::from_str(&line).unwrap();
                     if request["method"] == method && calls.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -42,8 +58,29 @@ impl Peer {
                         break;
                     }
                     if request["method"] == "session.subscribe" {
-                        assert_eq!(request["params"]["session_ids"], json!(["system"]));
+                        if reject.swap(false, Ordering::SeqCst) {
+                            let reply = json!({"jsonrpc":"2.0", "id":request["id"],
+                                "error":{"code":-32602,"message":"subscription refused"}});
+                            write
+                                .write_all(format!("{reply}\n").as_bytes())
+                                .await
+                                .unwrap();
+                            continue;
+                        }
+                        for id in request["params"]["session_ids"].as_array().unwrap() {
+                            active.insert(id.as_str().unwrap().to_owned());
+                        }
                         subs.fetch_add(1, Ordering::SeqCst);
+                        if hold.swap(false, Ordering::SeqCst) {
+                            started.notify_one();
+                            release.notified().await;
+                        }
+                    }
+                    if request["method"] == "session.unsubscribe" {
+                        unsubs.fetch_add(1, Ordering::SeqCst);
+                        for id in request["params"]["session_ids"].as_array().unwrap() {
+                            active.remove(id.as_str().unwrap());
+                        }
                     }
                     let result = if request["method"] == "plugin.commands" {
                         json!([])
@@ -56,13 +93,24 @@ impl Peer {
                         .await
                         .unwrap();
                     if request["method"] == "plugin.commands" {
-                        let event = SessionEvent::new("system", "file_changed", json!({}));
-                        write
-                            .write_all(
-                                format!("{}\n", serde_json::to_string(&event).unwrap()).as_bytes(),
-                            )
-                            .await
-                            .unwrap();
+                        for id in &active {
+                            let event = if id == "system" {
+                                SessionEvent::new(id, "file_changed", json!({}))
+                            } else {
+                                SessionEvent::new(
+                                    id,
+                                    "text_delta",
+                                    json!({"content": "after reconnect"}),
+                                )
+                            };
+                            write
+                                .write_all(
+                                    format!("{}\n", serde_json::to_string(&event).unwrap())
+                                        .as_bytes(),
+                                )
+                                .await
+                                .unwrap();
+                        }
                     }
                 }
             }
@@ -71,7 +119,12 @@ impl Peer {
         let mut daemon = ReconnectingDaemon::new(client, rx, Arc::new(EventBroker::new()));
         daemon.reconnect_socket = Some(path);
         Self {
-            daemon,
+            daemon: Arc::new(daemon),
+            unsubscriptions,
+            reject_subscription,
+            hold_subscription,
+            subscription_started,
+            release_subscription,
             applied,
             subscriptions,
             task,
@@ -137,10 +190,10 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
 }
 
 #[tokio::test]
-async fn replay_safe_reads_reconnect_once_and_restore_sticky_events() {
+async fn replay_safe_reads_reconnect_once_and_restore_active_events() {
     let peer = Peer::losing_first_reply("plugin.commands").await;
-    let mut events = peer.daemon.broker.subscribe("system").await;
-    peer.daemon.subscribe_sticky("system").await.unwrap();
+    use futures::StreamExt;
+    let mut events = peer.daemon.subscribe_events("system").await.unwrap();
     let result = timeout(Duration::from_secs(2), peer.daemon.plugin_commands())
         .await
         .expect("read should reconnect promptly")
@@ -148,9 +201,239 @@ async fn replay_safe_reads_reconnect_once_and_restore_sticky_events() {
     assert!(result.is_empty());
     assert_eq!(peer.applied.load(Ordering::SeqCst), 2);
     assert_eq!(peer.subscriptions.load(Ordering::SeqCst), 2);
-    let event = timeout(Duration::from_secs(2), events.recv())
+    let event = timeout(Duration::from_secs(2), async {
+        loop {
+            let event = events.next().await.unwrap();
+            if event.event != "stream_gap" {
+                break Some(event);
+            }
+        }
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(event.event, "file_changed");
+}
+
+async fn browser_stream(peer: &Peer, session: &str) -> axum::body::Body {
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+    let state = AppState {
+        daemon: peer.daemon.clone(),
+        events: peer.daemon.broker.clone(),
+        config: Arc::new(CliAppConfig::default()),
+        http_client: reqwest::Client::new(),
+        layout_path: Arc::new(peer._dir.path().join("layout.json")),
+        remote_shell: false,
+        swr: Arc::new(crate::services::catalog::SwrCache::default()),
+        recents_lock: Arc::new(tokio::sync::Mutex::new(())),
+    };
+    let response = crate::test_support::build_test_app(state)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/chat/events/{session}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let mut body = response.into_body();
+    browser_frame(&mut body, "stream_version").await;
+    body
+}
+
+async fn browser_frame(body: &mut axum::body::Body, marker: &str) -> String {
+    use http_body_util::BodyExt;
+    timeout(Duration::from_secs(2), async {
+        let mut text = String::new();
+        loop {
+            let frame = body.frame().await.expect("SSE remains open").unwrap();
+            if let Some(data) = frame.data_ref() {
+                text.push_str(&String::from_utf8_lossy(data));
+                if text.contains(marker) {
+                    return text;
+                }
+            }
+        }
+    })
+    .await
+    .expect("browser receives the next event without reopening")
+}
+
+#[tokio::test]
+async fn reconnect_restores_open_browser_streams_and_last_drop_reclaims_interest() {
+    let peer = Peer::losing_first_reply("plugin.commands").await;
+    let mut first = browser_stream(&peer, "chat").await;
+    let mut second = browser_stream(&peer, "chat").await;
+    assert_eq!(
+        peer.subscriptions.load(Ordering::SeqCst),
+        1,
+        "shared upstream interest"
+    );
+
+    peer.daemon.plugin_commands().await.unwrap();
+    for body in [&mut first, &mut second] {
+        let text = browser_frame(body, "after reconnect").await;
+        assert!(
+            text.contains("stream_gap"),
+            "reconnect announces the unknown lost span"
+        );
+    }
+    assert_eq!(peer.subscriptions.load(Ordering::SeqCst), 2);
+
+    drop(first);
+    peer.daemon.plugin_commands().await.unwrap();
+    browser_frame(&mut second, "after reconnect").await;
+    drop(second);
+    timeout(Duration::from_secs(2), async {
+        loop {
+            if peer.daemon.broker.sessions.read().await.is_empty()
+                && peer.unsubscriptions.load(Ordering::SeqCst) == 1
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("last browser closes both local and upstream interest");
+
+    // A queued cleanup must not unsubscribe a replacement reader.
+    let old = browser_stream(&peer, "chat").await;
+    drop(old);
+    let mut replacement = browser_stream(&peer, "chat").await;
+    peer.daemon.plugin_commands().await.unwrap();
+    browser_frame(&mut replacement, "after reconnect").await;
+}
+
+#[tokio::test]
+async fn refused_subscription_releases_its_local_receiver() {
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+    let (_mock, client) = crate::test_support::start_mock_daemon_with_errors(
+        [("session.subscribe".into(), (-32602, "refused".into()))].into(),
+    )
+    .await;
+    let state = crate::test_support::build_mock_state(client);
+    let broker = state.events.clone();
+    let response = crate::test_support::build_test_app(state)
+        .oneshot(
+            Request::builder()
+                .uri("/api/chat/events/chat")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 422);
+    timeout(Duration::from_secs(2), async {
+        while !broker.sessions.read().await.is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("failed subscription leaves no broker entry");
+}
+
+#[tokio::test]
+async fn cancelled_subscription_releases_interest_after_the_peer_applies_it() {
+    let peer = Peer::losing_first_reply("never").await;
+    peer.hold_subscription.store(true, Ordering::SeqCst);
+    let daemon = peer.daemon.clone();
+    let subscribing = tokio::spawn(async move { daemon.subscribe_events("chat").await });
+    timeout(Duration::from_secs(2), peer.subscription_started.notified())
+        .await
+        .unwrap();
+    subscribing.abort();
+    assert!(matches!(subscribing.await, Err(error) if error.is_cancelled()));
+    peer.release_subscription.notify_one();
+    timeout(Duration::from_secs(2), async {
+        loop {
+            if peer.daemon.broker.sessions.read().await.is_empty()
+                && peer.unsubscriptions.load(Ordering::SeqCst) == 1
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("cancellation releases local and already applied upstream interest");
+}
+
+#[tokio::test]
+async fn failed_restoration_does_not_mark_a_half_restored_connection_healthy() {
+    let peer = Peer::losing_first_reply("plugin.commands").await;
+    let mut body = browser_stream(&peer, "chat").await;
+    peer.reject_subscription.store(true, Ordering::SeqCst);
+    assert!(peer.daemon.plugin_commands().await.is_err());
+    assert_eq!(peer.daemon.generation.load(Ordering::SeqCst), 0);
+    timeout(Duration::from_secs(2), peer.daemon.plugin_commands())
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(event.event, "file_changed");
+    assert_eq!(peer.daemon.generation.load(Ordering::SeqCst), 1);
+    browser_frame(&mut body, "after reconnect").await;
+}
+
+#[tokio::test]
+async fn a_reader_replaced_during_reconnect_keeps_its_upstream_subscription() {
+    let peer = Arc::new(Peer::losing_first_reply("plugin.commands").await);
+    let old = browser_stream(&peer, "chat").await;
+    peer.hold_subscription.store(true, Ordering::SeqCst);
+    let daemon = peer.daemon.clone();
+    let repairing = tokio::spawn(async move { daemon.plugin_commands().await });
+    timeout(Duration::from_secs(2), peer.subscription_started.notified())
+        .await
+        .unwrap();
+    drop(old);
+    let joining_peer = peer.clone();
+    let joining = tokio::spawn(async move { browser_stream(&joining_peer, "chat").await });
+    peer.release_subscription.notify_one();
+    timeout(Duration::from_secs(2), repairing)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let mut body = timeout(Duration::from_secs(2), joining)
+        .await
+        .unwrap()
+        .unwrap();
+    peer.daemon.plugin_commands().await.unwrap();
+    browser_frame(&mut body, "after reconnect").await;
+}
+
+#[tokio::test]
+async fn simultaneous_last_readers_unsubscribe_upstream_once() {
+    let peer = Peer::losing_first_reply("never").await;
+    let mut streams = Vec::new();
+    for _ in 0..3 {
+        streams.push(peer.daemon.subscribe_events("chat").await.unwrap());
+    }
+    drop(streams);
+    tokio::task::yield_now().await;
+    let _settled = peer.daemon.subscription_changes.lock().await;
+    assert_eq!(peer.unsubscriptions.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn explicit_session_end_closes_streams_without_unsubscribing_a_later_reader() {
+    use futures::StreamExt;
+    let peer = Peer::losing_first_reply("never").await;
+    let mut old = peer.daemon.subscribe_events("chat").await.unwrap();
+    peer.daemon.close_event_streams("chat").await;
+    assert!(timeout(Duration::from_secs(2), old.next())
+        .await
+        .unwrap()
+        .is_none());
+    let mut current = peer.daemon.subscribe_events("chat").await.unwrap();
+    drop(old);
+    peer.daemon.plugin_commands().await.unwrap();
+    let event = timeout(Duration::from_secs(2), current.next())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.event, "text_delta");
+    assert_eq!(peer.unsubscriptions.load(Ordering::SeqCst), 1);
 }

@@ -554,3 +554,21 @@ Proof: `ChatContext.notifications.test.tsx`, `session-notifications.test.ts`, an
 `notification_daemon_e2e.rs` (two web connections receive the same dismissal
 through real daemon sockets). TUI notification behavior is unchanged; this
 corrects the browser's asynchronous attachment path.
+
+### WS-329: Open panes recover after an event connection changes
+
+**As a user**, I leave panes open while the daemon or browser event connection
+reconnects, and their data becomes current again.
+
+**Acceptance:** browser readers of one session share upstream interest. Reconnecting
+the daemon restores every active interest without a page reload; closing the last
+reader releases it. Filesystem, surface, publication and proposal caches refresh
+on open and after a reported gap, even when no later change occurs. A chat gap
+still warns that its transcript may be incomplete; an unknown lost count is not
+presented as zero lost events.
+
+**Tests:** W1 `stream-recovery.test.ts` and the chat gap reducer; W2 native
+Chromium EventSource retry in `system-stream-recovery.spec.ts`. Rust socket/SSE
+tests cover reconnect with open HTTP bodies, cancellation, failed restoration,
+last-reader cleanup and lag in each system projection. This is web transport
+behavior; the TUI does not use the web broker.

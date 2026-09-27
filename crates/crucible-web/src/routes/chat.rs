@@ -11,7 +11,6 @@ use axum::{
 use futures::stream::{iter, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
-use tokio_stream::wrappers::BroadcastStream;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -139,10 +138,9 @@ async fn event_stream(
     // the read runs must land in this receiver's buffer — if it can land in
     // neither the snapshot nor the live tail, it is lost exactly when the
     // client reconnected because it was already losing events.
-    let rx = state.events.subscribe(&session_id).await;
-    state
+    let live = state
         .daemon
-        .session_subscribe(&[session_id.as_str()])
+        .subscribe_events(&session_id)
         .await
         .daemon_err()?;
 
@@ -173,24 +171,7 @@ async fn event_stream(
     // Not fatal: the receiver stays usable after lagging, having been advanced to
     // the oldest surviving event, so the stream continues rather than ending the
     // SSE connection and provoking a reconnect that would lose more.
-    let live = BroadcastStream::new(rx)
-        .map(move |result| match result {
-            Ok(event) => event,
-            Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n)) => {
-                tracing::warn!(session_id = %session_id, dropped = n, "SSE subscriber lagged");
-                // Name and payload come from the typed vocabulary rather than a
-                // literal, so this cannot drift from what the daemon emits for
-                // the same condition.
-                let (event_type, data) =
-                    crucible_core::protocol::session_events::SessionEventPayload::from(
-                        crucible_core::protocol::session_events::SystemPayload::StreamGap {
-                            dropped: n,
-                        },
-                    )
-                    .to_wire();
-                crucible_daemon::SessionEvent::new(session_id.clone(), event_type, data)
-            }
-        })
+    let live = live
         .filter(move |event| futures::future::ready(event.seq.is_none_or(|seq| seq > max_replayed)))
         .map(|event| to_sse(&event));
     let stream = iter([Ok(stream_version_frame())])

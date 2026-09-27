@@ -878,7 +878,7 @@ export interface paths {
         /**
          * `GET /api/plugins/events` — a push when a plugin's published data changes.
          * @description This route is an alias of `GET /api/events/system` (`routes/events.rs`).
-         *     It forwards only `publication_changed`, until the web client moves.
+         *     It forwards publications and stream gap control frames.
          *
          *     The counterpart to `GET /api/plugins/publications`: that answers "what is
          *     true now", this says "read it again". A panel drawing a plugin's own state

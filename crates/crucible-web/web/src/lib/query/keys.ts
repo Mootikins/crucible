@@ -83,6 +83,11 @@ export const keys = {
   diffFile: (key: string, root: string, path: string, from?: string) =>
     ['diff', key, 'file', root, path, from] as const,
   diffComments: (key: string) => ['diff', key, 'comments'] as const,
+  proposalFamily: () => ['proposal'] as const,
+  publicationsFamily: () => ['plugins', 'publications'] as const,
+  fsFamily: () => ['fs'] as const,
+  notesFamily: () => ['notes'] as const,
+  diffFamily: () => ['diff'] as const,
   proposal: (id: string) => ['proposal', id] as const,
   // The proposals in the Inbox. A proposal belongs to no session, so the
   // list has no session in its key.

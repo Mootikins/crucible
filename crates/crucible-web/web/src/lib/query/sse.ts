@@ -91,6 +91,10 @@ let sessionRoute: SessionEventRoute | null = null;
 let surfaceRoute: SurfaceEventRoute | null = null;
 let fsRoute: FsEventRoute | null = null;
 let systemRoute: SystemEventRoute | null = null;
+type Reconcile = (context: SseRouteContext) => void;
+let surfaceReconcile: Reconcile | null = null;
+let fsReconcile: Reconcile | null = null;
+let systemReconcile: Reconcile | null = null;
 
 /** Names the route of the chat stream. `null` removes the one that is there. */
 export function setSessionEventRoute(route: SessionEventRoute | null): void {
@@ -98,18 +102,21 @@ export function setSessionEventRoute(route: SessionEventRoute | null): void {
 }
 
 /** Names the route of the surface stream. */
-export function setSurfaceEventRoute(route: SurfaceEventRoute | null): void {
+export function setSurfaceEventRoute(route: SurfaceEventRoute | null, reconcile: Reconcile | null = null): void {
   surfaceRoute = route;
+  surfaceReconcile = reconcile;
 }
 
 /** Names the route of the filesystem stream. */
-export function setFsEventRoute(route: FsEventRoute | null): void {
+export function setFsEventRoute(route: FsEventRoute | null, reconcile: Reconcile | null = null): void {
   fsRoute = route;
+  fsReconcile = reconcile;
 }
 
 /** Names the route of the system stream. */
-export function setSystemEventRoute(route: SystemEventRoute | null): void {
+export function setSystemEventRoute(route: SystemEventRoute | null, reconcile: Reconcile | null = null): void {
   systemRoute = route;
+  systemReconcile = reconcile;
 }
 
 /** The two stores as they are now. A route reads the injected client in a test. */
@@ -141,7 +148,7 @@ function runRoute<E, C>(
 // =============================================================================
 
 /** Opens the source, and answers the function that closes it. */
-type Connect<E> = (onEvent: (event: E) => void, onOpen: () => void) => () => void;
+type Connect<E> = (onEvent: (event: E) => void, onOpen: () => void, onGap: () => void, onDisconnect: () => void) => () => void;
 
 /** What one stream needs to run. */
 interface StreamSpec<E> {
@@ -149,6 +156,7 @@ interface StreamSpec<E> {
   name: string;
   connect: Connect<E>;
   route: (event: E) => void;
+  reconcile?: () => void;
   /**
    * Reads the transport state out of an event: true for open, false for down,
    * undefined for an event that says nothing about it. The chat stream carries
@@ -225,7 +233,16 @@ function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E>
     });
   }
 
+  function reconcile(): void {
+    try {
+      spec.reconcile?.();
+    } catch (error) {
+      console.warn(`SSE reconciliation failed (${spec.name}):`, error);
+    }
+  }
+
   function announceOpen(): void {
+    reconcile();
     open = true;
     for (const subscriber of [...subscribers]) deliverOpen(subscriber);
   }
@@ -238,7 +255,7 @@ function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E>
       subscribers.add(subscriber);
       // The connect may open at once, which announces to this subscriber too;
       // `deliverOpen` then does nothing on the line below.
-      if (!close) close = spec.connect(deliver, announceOpen);
+      if (!close) close = spec.connect(deliver, announceOpen, reconcile, () => { open = false; });
       if (open) deliverOpen(subscriber);
       let live = true;
       return () => {
@@ -258,7 +275,7 @@ function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E>
       // A new connect, not a reopen of the old one: the backoff of each
       // stream lives in the closure `connect` builds, so a new closure starts
       // the wait again at its first step.
-      close = spec.connect(deliver, announceOpen);
+      close = spec.connect(deliver, announceOpen, reconcile, () => { open = false; });
     },
   };
 }
@@ -372,7 +389,8 @@ export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> 
 export function surfaceEvents(): SseStream<SurfaceChangedEvent> {
   return rootFor(surfaceRoots, GLOBAL, {
     name: 'surface events',
-    connect: (onEvent) => subscribeToSurfaceEvents(onEvent),
+    connect: subscribeToSurfaceEvents,
+    reconcile: () => surfaceReconcile?.(routeContext()),
     route: (event) => runRoute('surface events', surfaceRoute, event, routeContext()),
   });
 }
@@ -381,7 +399,8 @@ export function surfaceEvents(): SseStream<SurfaceChangedEvent> {
 export function fsEvents(): SseStream<FsEvent> {
   return rootFor(fsRoots, GLOBAL, {
     name: 'fs events',
-    connect: (onEvent) => subscribeToFsEvents(onEvent),
+    connect: subscribeToFsEvents,
+    reconcile: () => fsReconcile?.(routeContext()),
     route: (event) => runRoute('fs events', fsRoute, event, routeContext()),
   });
 }
@@ -394,7 +413,8 @@ export function fsEvents(): SseStream<FsEvent> {
 export function systemEvents(): SseStream<SystemEvent> {
   return rootFor(systemRoots, GLOBAL, {
     name: 'system events',
-    connect: (onEvent, onOpen) => subscribeToSystemEvents(onEvent, onOpen),
+    connect: subscribeToSystemEvents,
+    reconcile: () => systemReconcile?.(routeContext()),
     route: (event) => runRoute('system events', systemRoute, event, routeContext()),
   });
 }
@@ -421,4 +441,7 @@ export function resetSseForTests(): void {
   surfaceRoute = null;
   fsRoute = null;
   systemRoute = null;
+  surfaceReconcile = null;
+  fsReconcile = null;
+  systemReconcile = null;
 }

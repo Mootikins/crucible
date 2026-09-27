@@ -1,3 +1,4 @@
+import { reconcileQueries } from '../recovery';
 /**
  * The route of the filesystem stream: one event, one cache write.
  *
@@ -71,5 +72,9 @@ function routeFsEvent(event: FsEvent, { client }: SseRouteContext): void {
  * `resetSseForTests` forgets it.
  */
 export function installFsEventRoute(): void {
-  setFsEventRoute(routeFsEvent);
+  setFsEventRoute(routeFsEvent, ({ client }) => {
+    // A first open closes the snapshot/subscription window; a later open or
+    // gap recovers missed changes even if no further event follows.
+    void reconcileQueries(client, [keys.fsFamily(), keys.notesFamily()]);
+  });
 }

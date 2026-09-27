@@ -529,20 +529,13 @@ async fn create_session(
         .daemon_err()?;
 
     // A create response without a usable session_id (protocol drift) would
-    // otherwise let subscribe run against an empty id and surface as a confusing
-    // downstream error; fail loudly here instead.
+    // otherwise leave the browser with no stream it can open; fail loudly here.
     let session_id = result["session_id"].as_str().unwrap_or("");
     if session_id.is_empty() {
         return Err(WebError::Daemon(
             "daemon returned no session_id from session.create".to_string(),
         ));
     }
-
-    state
-        .daemon
-        .session_subscribe(&[session_id])
-        .await
-        .daemon_err()?;
 
     Ok(Json(daemon_shape(result, "session.create")?))
 }
@@ -765,13 +758,6 @@ async fn resume_session(
         }
     };
 
-    let session_id = id.as_str();
-    state
-        .daemon
-        .session_subscribe(&[session_id])
-        .await
-        .daemon_err()?;
-
     Ok(Json(reply))
 }
 
@@ -790,7 +776,7 @@ async fn end_session(
 ) -> Result<Json<SessionLifecycleResponse>, WebError> {
     let result = state.daemon.session_end(&id).await.daemon_err()?;
 
-    state.events.remove_session(&id).await;
+    state.daemon.close_event_streams(&id).await;
 
     Ok(Json(daemon_shape(result, "session.end")?))
 }
@@ -814,7 +800,7 @@ async fn archive_session(
         .session_archive(&id)
         .await
         .map_err(|e| map_session_not_found(e, &id))?;
-    state.events.remove_session(&id).await;
+    state.daemon.close_event_streams(&id).await;
     Ok(Json(ArchiveResponse { archived: true }))
 }
 
@@ -859,7 +845,7 @@ async fn delete_session(
         .session_delete(&id)
         .await
         .map_err(|e| map_session_not_found(e, &id))?;
-    state.events.remove_session(&id).await;
+    state.daemon.close_event_streams(&id).await;
     Ok(Json(DeleteResponse { deleted: true }))
 }
 

@@ -3,7 +3,7 @@
 //! `GET /api/events/system` forwards each system event that a browser acts
 //! on: `publication_changed` and `proposal_changed`. The older route
 //! `GET /api/plugins/events` stays as an alias that forwards the
-//! publications only, until the web client moves to the general route.
+//! publications only. All projections also forward stream gap control frames.
 //!
 //! `/api/fs/events` and `/api/surfaces/events` also read the system session.
 //! They keep their own routes, because their clients read other shapes.
@@ -15,7 +15,7 @@ use crate::{error::WebResultExt, WebError};
 use axum::extract::State;
 use axum::response::sse::{Event, KeepAlive, KeepAliveStream, Sse};
 use crucible_core::proposal::ProposalId;
-use crucible_core::protocol::SystemPayload;
+use crucible_core::protocol::{SessionEventPayload, SystemPayload};
 use crucible_daemon::SessionEvent;
 use futures::stream::BoxStream;
 use serde::Serialize;
@@ -82,7 +82,7 @@ impl SystemEvent {
         }
     }
 
-    fn into_frame(self) -> Event {
+    pub(crate) fn into_frame(self) -> Event {
         let data = match &self {
             Self::Publication(e) => serde_json::to_string(e),
             Self::Proposal(e) => serde_json::to_string(e),
@@ -106,16 +106,23 @@ pub(crate) type SystemStream = (
 /// local subscriber, so the other order loses the first event.
 pub(crate) async fn system_stream(
     state: &AppState,
-    project: fn(&SessionEvent) -> Option<SystemEvent>,
+    project: fn(&SessionEvent) -> Option<Event>,
 ) -> Result<SystemStream, WebError> {
-    let rx = state.events.subscribe("system").await;
-    state.daemon.subscribe_sticky("system").await.daemon_err()?;
+    let live = state.daemon.subscribe_events("system").await.daemon_err()?;
 
-    let stream = futures::stream::iter([Ok(stream_version_frame())]).chain(
-        tokio_stream::wrappers::BroadcastStream::new(rx)
-            .filter_map(|result| result.ok())
-            .filter_map(move |event| project(&event).map(|frame| Ok(frame.into_frame()))),
-    );
+    let stream =
+        futures::stream::iter([Ok(stream_version_frame())]).chain(live.filter_map(move |event| {
+            if matches!(
+                event.payload(),
+                Ok(SessionEventPayload::System(SystemPayload::StreamGap { .. }))
+            ) {
+                Some(Ok(Event::default()
+                    .event(event.event)
+                    .data(event.data.to_string())))
+            } else {
+                project(&event).map(Ok)
+            }
+        }));
     let stream: BoxStream<'static, Result<Event, Infallible>> = Box::pin(stream);
 
     Ok(versioned(Sse::new(stream).keep_alive(KeepAlive::default())))
@@ -142,7 +149,10 @@ pub(crate) async fn system_stream(
     ))
 )]
 async fn system_event_stream(State(state): State<AppState>) -> Result<SystemStream, WebError> {
-    system_stream(&state, SystemEvent::from_daemon_event).await
+    system_stream(&state, |event| {
+        SystemEvent::from_daemon_event(event).map(SystemEvent::into_frame)
+    })
+    .await
 }
 
 #[cfg(test)]

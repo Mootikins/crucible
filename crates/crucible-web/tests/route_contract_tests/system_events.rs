@@ -101,3 +101,83 @@ async fn the_plugin_alias_carries_only_publications() {
         "the alias forwarded a proposal: {text}"
     );
 }
+
+async fn assert_gap_reaches_projection(uri: &str, event: &str, data: serde_json::Value) {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let mut body = build_test_app(state.clone())
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+        .into_body();
+    read_until(&mut body, |text| text.contains("stream_version")).await;
+    // Do not poll the browser while overflowing the bounded broker ring.
+    for _ in 0..300 {
+        state
+            .events
+            .publish_for_tests(SessionEvent::new("system", event, data.clone()))
+            .await;
+    }
+    let text = read_until(&mut body, |text| text.contains("gap-probe")).await;
+    assert!(
+        text.contains("event: stream_gap"),
+        "{uri} silently discarded lag: {text}"
+    );
+    assert!(
+        text.contains("gap-probe"),
+        "{uri} stopped after its gap: {text}"
+    );
+
+    state
+        .events
+        .publish_for_tests(SessionEvent::typed(
+            "*",
+            SystemPayload::StreamGap { dropped: 7 },
+        ))
+        .await;
+    let text = read_until(&mut body, |text| text.contains("\"dropped\":7")).await;
+    assert!(
+        text.contains("event: stream_gap"),
+        "{uri} dropped an upstream gap: {text}"
+    );
+}
+
+#[tokio::test]
+async fn system_projection_reports_gaps() {
+    assert_gap_reaches_projection(
+        "/api/events/system",
+        "publication_changed",
+        json!({"plugin":"gap-probe", "key":"rows"}),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn plugin_alias_reports_gaps() {
+    assert_gap_reaches_projection(
+        "/api/plugins/events",
+        "publication_changed",
+        json!({"plugin":"gap-probe", "key":"rows"}),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn filesystem_projection_reports_gaps() {
+    assert_gap_reaches_projection(
+        "/api/fs/events",
+        "file_changed",
+        json!({"path":"/gap-probe.md", "kind":"modified"}),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn surface_projection_reports_gaps() {
+    assert_gap_reaches_projection(
+        "/api/surfaces/events",
+        "surface_changed",
+        json!({"plugin":"gap-probe", "name":"rows", "version":1}),
+    )
+    .await;
+}

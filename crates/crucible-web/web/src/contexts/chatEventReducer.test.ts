@@ -907,6 +907,13 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.error).toMatch(/incomplete/i);
   });
 
+  it('session_event stream_gap: reconnect does not claim zero events were lost', () => {
+    const h = createHarness();
+    h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 0 } });
+    expect(h.state.error).toMatch(/incomplete/i);
+    expect(h.state.error).not.toContain('0 events');
+  });
+
   it('tool_call: carries the daemon display, with its diffs, and auto-approval onto the card', () => {
     const h = createHarness();
     const display = {

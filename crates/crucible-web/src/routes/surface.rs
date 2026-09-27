@@ -9,21 +9,13 @@
 //! Its own channel rather than a variant on [`FsEvent`](crate::fs_events::FsEvent),
 //! which is a *filesystem* change by its own definition. A focused type per
 //! channel is what keeps either one honest.
-use crate::routes::helpers::{stream_version_frame, versioned};
 use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{
-    extract::State,
-    response::sse::{Event, KeepAlive, Sse},
-    Json,
-};
+use axum::{extract::State, response::sse::Event, Json};
 use crucible_core::protocol::SystemPayload;
 use crucible_daemon::SessionEvent;
-use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
-use tokio_stream::StreamExt;
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -206,37 +198,15 @@ async fn list_surfaces(
 )]
 async fn surface_event_stream(
     State(state): State<AppState>,
-) -> Result<
-    (
-        [(axum::http::HeaderName, String); 1],
-        Sse<impl Stream<Item = Result<Event, Infallible>>>,
-    ),
-    WebError,
-> {
-    // ORDERING IS LOAD-BEARING, same as `fs_event_stream`: open the LOCAL broker
-    // channel BEFORE telling the daemon to forward. The daemon forwards "system"
-    // events only after `subscribe_sticky` lands, and `EventBroker::dispatch`
-    // drops events for a session id with no local subscriber — so subscribing the
-    // daemon first leaves a first-connection loss window.
-    let rx = state.events.subscribe("system").await;
-    // Sticky: survives reconnect, shared by all browser connections. A surface is
-    // daemon-wide, so "system" is the right address.
-    state.daemon.subscribe_sticky("system").await.daemon_err()?;
-
-    let stream = futures::stream::iter([Ok(stream_version_frame())]).chain(
-        tokio_stream::wrappers::BroadcastStream::new(rx)
-            .filter_map(|result| result.ok())
-            .filter_map(|event| {
-                SurfaceChangedEvent::from_daemon_event(&event).map(|se| {
-                    let data = serde_json::to_string(&se).unwrap_or_default();
-                    Ok(Event::default()
-                        .event(SurfaceChangedEvent::EVENT_NAME)
-                        .data(data))
-                })
-            }),
-    );
-
-    Ok(versioned(Sse::new(stream).keep_alive(KeepAlive::default())))
+) -> Result<crate::routes::events::SystemStream, WebError> {
+    crate::routes::events::system_stream(&state, |event| {
+        SurfaceChangedEvent::from_daemon_event(event).map(|frame| {
+            Event::default()
+                .event(SurfaceChangedEvent::EVENT_NAME)
+                .data(serde_json::to_string(&frame).unwrap_or_default())
+        })
+    })
+    .await
 }
 
 #[cfg(test)]

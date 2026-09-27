@@ -627,7 +627,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         if (event.event === 'stream_gap') {
           const dropped = (event.data as { dropped?: number } | null)?.dropped;
           deps.setError(
-            dropped === undefined
+            (dropped === undefined || dropped === 0)
               ? 'Event stream fell behind and events were dropped — this conversation is incomplete. Reload to see it whole.'
               : `Event stream fell behind and ${dropped} events were dropped — this conversation is incomplete. Reload to see it whole.`,
           );

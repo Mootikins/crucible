@@ -1,3 +1,4 @@
+import { reconcileQueries } from '../recovery';
 /**
  * The route of the surface stream: one event, one cache write.
  *
@@ -45,5 +46,9 @@ function routeSurfaceEvent(event: SurfaceChangedEvent, { client }: SseRouteConte
  * `resetSseForTests` forgets it.
  */
 export function installSurfaceEventRoute(): void {
-  setSurfaceEventRoute(routeSurfaceEvent);
+  setSurfaceEventRoute(routeSurfaceEvent, ({ client }) => {
+    // A first open closes the snapshot/subscription window; a later open or
+    // gap recovers missed changes even if no further event follows.
+    void reconcileQueries(client, [keys.surfaces()]);
+  });
 }
