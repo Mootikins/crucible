@@ -27,25 +27,27 @@ use std::path::PathBuf;
 use crate::types::mcp_status::McpServerInfo;
 use crate::types::{PluginStatusEntry, ProviderInfo};
 
-/// Setup-phase events, adjacently tagged so the enum's serialization *is* the
-/// `{event, data}` pair the envelope carries.
-///
-/// `context_limit_resolved` is the one that is not exclusively a setup event.
-/// A delegated agent has no endpoint or model for the daemon to query, so its
-/// window arrives mid-turn instead (ACP `usage_update` →
-/// [`TurnEvent::ContextWindow`](crate::turn::TurnEvent::ContextWindow)) and the
-/// daemon re-emits the same event from the turn stream. Consumers treat it as a
-/// plain assignment, so a late one needs no special case.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "event", content = "data", rename_all = "snake_case")]
-pub enum SetupPayload {
-    SessionInitialized(SessionInitializedPayload),
-    ProvidersListed(ProvidersListedPayload),
-    ContextLimitResolved(ContextLimitResolvedPayload),
-    WorkspaceIndexed(WorkspaceIndexedPayload),
-    KilnNotesIndexed(KilnNotesIndexedPayload),
-    PluginsDiscovered(PluginsDiscoveredPayload),
-    McpServersReady(McpServersReadyPayload),
+event_payload! {
+    /// Setup-phase events, adjacently tagged so the enum's serialization *is* the
+    /// `{event, data}` pair the envelope carries.
+    ///
+    /// `context_limit_resolved` is the one that is not exclusively a setup event.
+    /// A delegated agent has no endpoint or model for the daemon to query, so its
+    /// window arrives mid-turn instead (ACP `usage_update` →
+    /// [`TurnEvent::ContextWindow`](crate::turn::TurnEvent::ContextWindow)) and the
+    /// daemon re-emits the same event from the turn stream. Consumers treat it as a
+    /// plain assignment, so a late one needs no special case.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(tag = "event", content = "data")]
+    pub enum SetupPayload {
+        "session_initialized" => SessionInitialized(SessionInitializedPayload),
+        "providers_listed" => ProvidersListed(ProvidersListedPayload),
+        "context_limit_resolved" => ContextLimitResolved(ContextLimitResolvedPayload),
+        "workspace_indexed" => WorkspaceIndexed(WorkspaceIndexedPayload),
+        "kiln_notes_indexed" => KilnNotesIndexed(KilnNotesIndexedPayload),
+        "plugins_discovered" => PluginsDiscovered(PluginsDiscoveredPayload),
+        "mcp_servers_ready" => McpServersReady(McpServersReadyPayload),
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

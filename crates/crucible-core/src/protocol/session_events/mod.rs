@@ -75,6 +75,32 @@
 //! `inject_context` and `fork`, wire-envelope lines from the broadcast path.
 //! The asymmetry is correct, not debt.
 
+// Each wire name is written once: serde and routing metadata expand from
+// the same literal. Payload fields remain ordinary Rust/serde declarations.
+macro_rules! event_payload {
+    (
+        $(#[$enum_meta:meta])*
+        $visibility:vis enum $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $wire:literal => $variant:ident $fields:tt
+            ),* $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        $visibility enum $name {
+            $(
+                $(#[$variant_meta])*
+                #[serde(rename = $wire)]
+                $variant $fields,
+            )*
+        }
+        impl $name {
+            pub const WIRE_NAMES: &'static [&'static str] = &[$($wire),*];
+        }
+    };
+}
+
 pub mod lifecycle;
 pub mod settings;
 pub mod setup;
@@ -117,7 +143,7 @@ pub enum SessionEventPayload {
 /// The one place a wire name maps to a Rust type. `Group::of` returning `None`
 /// is the forward-compatibility path: an event a newer daemon minted, or a name
 /// only a recording contains.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::EnumIter)]
 pub enum Group {
     Turn,
     Setup,
@@ -130,83 +156,23 @@ pub enum Group {
 }
 
 impl Group {
+    /// Names declared by this group's payload enum.
+    pub fn wire_names(self) -> &'static [&'static str] {
+        match self {
+            Self::Turn => TurnPayload::WIRE_NAMES,
+            Self::Setup => SetupPayload::WIRE_NAMES,
+            Self::Settings => SettingsPayload::WIRE_NAMES,
+            Self::Job => JobPayload::WIRE_NAMES,
+            Self::Review => ReviewPayload::WIRE_NAMES,
+            Self::Notification => NotificationPayload::WIRE_NAMES,
+            Self::Workflow => WorkflowPayload::WIRE_NAMES,
+            Self::System => SystemPayload::WIRE_NAMES,
+        }
+    }
+
     pub fn of(event: &str) -> Option<Self> {
-        Some(match event {
-            // Turn (14). [`migrate`] gives the old names their current form.
-            "user_message"
-            | "context_cleared"
-            | "text_delta"
-            | "thinking"
-            | "segment_complete"
-            | "message_complete"
-            | "tool_call"
-            | "tool_call_update"
-            | "tool_result"
-            | "turn_finished"
-            | "interaction_requested"
-            | "interaction_completed"
-            | "context_injected"
-            | "precognition_complete"
-            | "post_llm_call" => Self::Turn,
-            // Setup (7)
-            "session_initialized"
-            | "providers_listed"
-            | "context_limit_resolved"
-            | "workspace_indexed"
-            | "kiln_notes_indexed"
-            | "plugins_discovered"
-            | "mcp_servers_ready" => Self::Setup,
-            // Settings (12)
-            "model_switched"
-            | "mode_changed"
-            | "scope_changed"
-            | "title_changed"
-            | "system_prompt_changed"
-            | "precognition_toggled"
-            | "context_strategy_changed" => Self::Settings,
-            // Job (7)
-            "delegation_spawned"
-            | "delegation_completed"
-            | "delegation_failed"
-            | "bash_job_spawned"
-            | "bash_job_completed"
-            | "bash_job_failed"
-            | "background_job_completed" => Self::Job,
-            // Review (2)
-            "review_changed" | "session_undo" => Self::Review,
-            // Notification (2)
-            "notification_added" | "notification_dismissed" => Self::Notification,
-            // Workflow (8)
-            "workflow.step_started"
-            | "workflow.step_completed"
-            | "workflow.gate_reached"
-            | "workflow.gate_approved"
-            | "workflow.completed"
-            | "workflow.assessed"
-            | "workflow.failed"
-            | "workflow.cancelled" => Self::Workflow,
-            // System (18)
-            "file_changed"
-            | "file_deleted"
-            | "file_moved"
-            | "note:created"
-            | "note:modified"
-            | "note:deleted"
-            | "note:renamed"
-            | "classification_required"
-            | "process_complete"
-            | "ui_style_changed"
-            | "status_items_changed"
-            | "stream_gap"
-            | "webhook:received"
-            | "replay_complete"
-            | "session:created"
-            | "session:ended"
-            | "surface_changed"
-            | "publication_changed"
-            | "proposal_changed" => Self::System,
-            _ => return None,
-        })
+        use strum::IntoEnumIterator;
+        Self::iter().find(|group| group.wire_names().contains(&event))
     }
 }
 

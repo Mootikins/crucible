@@ -146,6 +146,11 @@ absent event cannot leave the initiating client's cache permanently stale.
 
 ## 5. Replace source-scanning event completeness tests with derived metadata
 
+**Implemented:** a shared declaration generates serde tags and routing metadata
+from each wire name. Group routing is exhaustive, and completeness tests inspect
+compiled metadata instead of Rust source. Recorded fixtures and malformed/unknown
+decode tests remain. Removing the generated names breaks both new gates.
+
 `crucible-core/src/protocol/session_events/mod.rs:133` manually maps wire names
 to groups before deserializing them into the payload enums. The completeness
 tests at `session_events/tests.rs:230` and `:255` scan Rust source to extract

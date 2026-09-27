@@ -8,48 +8,50 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Session-settings events, adjacently tagged so the enum's serialization *is*
-/// the `{event, data}` pair the envelope carries.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "event", content = "data", rename_all = "snake_case")]
-pub enum SettingsPayload {
-    ModelSwitched {
-        #[serde(default)]
-        model_id: String,
-        #[serde(default)]
-        provider: String,
-    },
-    /// `data.mode` is the field the web SSE mapper and the TUI reducers read —
-    /// keep the name stable.
-    ModeChanged {
-        #[serde(default)]
-        mode: String,
-    },
-    ScopeChanged {
-        #[serde(default)]
-        workspace: PathBuf,
-        /// Always serialized, as `[]` when empty: the producer builds this with
-        /// `json!` from `Session::kilns`, which bypasses that field's own
-        /// `skip_serializing_if`.
-        #[serde(default)]
-        kilns: Vec<PathBuf>,
-    },
-    TitleChanged {
-        #[serde(default)]
-        title: String,
-    },
-    SystemPromptChanged {
-        #[serde(default)]
-        system_prompt: String,
-    },
-    PrecognitionToggled {
-        #[serde(default)]
-        enabled: bool,
-    },
-    ContextStrategyChanged {
-        #[serde(default)]
-        context_strategy: String,
-    },
+event_payload! {
+    /// Session-settings events, adjacently tagged so the enum's serialization *is*
+    /// the `{event, data}` pair the envelope carries.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(tag = "event", content = "data")]
+    pub enum SettingsPayload {
+        "model_switched" => ModelSwitched {
+            #[serde(default)]
+            model_id: String,
+            #[serde(default)]
+            provider: String,
+        },
+        /// `data.mode` is the field the web SSE mapper and the TUI reducers read —
+        /// keep the name stable.
+        "mode_changed" => ModeChanged {
+            #[serde(default)]
+            mode: String,
+        },
+        "scope_changed" => ScopeChanged {
+            #[serde(default)]
+            workspace: PathBuf,
+            /// Always serialized, as `[]` when empty: the producer builds this with
+            /// `json!` from `Session::kilns`, which bypasses that field's own
+            /// `skip_serializing_if`.
+            #[serde(default)]
+            kilns: Vec<PathBuf>,
+        },
+        "title_changed" => TitleChanged {
+            #[serde(default)]
+            title: String,
+        },
+        "system_prompt_changed" => SystemPromptChanged {
+            #[serde(default)]
+            system_prompt: String,
+        },
+        "precognition_toggled" => PrecognitionToggled {
+            #[serde(default)]
+            enabled: bool,
+        },
+        "context_strategy_changed" => ContextStrategyChanged {
+            #[serde(default)]
+            context_strategy: String,
+        },
+    }
 }
 
 impl SettingsPayload {

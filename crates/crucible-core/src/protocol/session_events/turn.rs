@@ -40,196 +40,198 @@ use crate::interaction::{InteractionRequest, InteractionResponse};
 use crate::traits::chat::PrecognitionNoteInfo;
 use crate::types::{CanonicalToolCall, ToolRender};
 
-/// Turn-stream events, adjacently tagged so the enum's serialization *is* the
-/// `{event, data}` pair the envelope carries.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "event", content = "data", rename_all = "snake_case")]
-pub enum TurnPayload {
-    /// Context before this marker remains in the transcript but is excluded
-    /// from future model turns.
-    ContextCleared {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        plugin: Option<String>,
-    },
-    UserMessage {
-        #[serde(default)]
-        message_id: String,
-        #[serde(default)]
-        content: String,
-        /// Who asked for this turn. `None` and `User` both mean a person;
-        /// `None` keeps the wire of a person's message as it always was.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        origin: Option<crate::turn::TurnOrigin>,
-    },
-    TextDelta {
-        #[serde(default)]
-        content: String,
-    },
-    Thinking {
-        #[serde(default)]
-        content: String,
-    },
-    /// A text segment that streamed before a tool call, emitted at the
-    /// text→tool boundary. `message_id` is the turn id (shared with
-    /// `user_message` and `message_complete`); `index` is the 0-based segment
-    /// position within the turn; `content` is the segment's text (the delta
-    /// accumulated since the previous boundary). Lets viewers converge on
-    /// canonical per-segment bubbles across live streaming and history reload.
-    /// `message_complete` still carries the WHOLE turn's accumulated text —
-    /// segments are additive, not a replacement.
-    SegmentComplete {
-        #[serde(default)]
-        message_id: String,
-        #[serde(default)]
-        index: usize,
-        #[serde(default)]
-        content: String,
-    },
-    /// The five token fields are absent when the provider reported no usage,
-    /// and the two cache fields are absent when the provider reported no
-    /// caching. `skip_serializing_if` is what keeps that distinction on the
-    /// wire — a client tells "no data" from "zero" by presence, and the TUI
-    /// status bar's sentinel depends on it.
-    MessageComplete {
-        #[serde(default)]
-        message_id: String,
-        #[serde(default)]
-        full_response: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        prompt_tokens: Option<u32>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        completion_tokens: Option<u32>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        total_tokens: Option<u32>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_read_tokens: Option<u32>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_creation_tokens: Option<u32>,
-        /// Why the turn ended. Absent for the same reason the token fields
-        /// are: no data rather than a default. A turn whose stream closed
-        /// without a terminal `Done` has no reason to report, and every
-        /// `session.jsonl` line an older daemon wrote predates the field.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        stop_reason: Option<crate::turn::StopReason>,
-    },
-    /// Field order is load-bearing: `serde_json` is built with
-    /// `preserve_order`, so the declaration order here is the key order on the
-    /// wire and in `session.jsonl`. It reproduces the insertion order of the
-    /// `json!` block this variant replaced — `display` after `source`, not
-    /// next to `args`.
-    ToolCall {
-        #[serde(default)]
-        call_id: String,
-        #[serde(default)]
-        tool: String,
-        #[serde(default)]
-        args: Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        description: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source: Option<String>,
-        /// The canonical tool call with its render, so the TUI and the web
-        /// draw the same table instead of each rebuilding the call.
+event_payload! {
+    /// Turn-stream events, adjacently tagged so the enum's serialization *is* the
+    /// `{event, data}` pair the envelope carries.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(tag = "event", content = "data")]
+    pub enum TurnPayload {
+        /// Context before this marker remains in the transcript but is excluded
+        /// from future model turns.
+        "context_cleared" => ContextCleared {
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            plugin: Option<String>,
+        },
+        "user_message" => UserMessage {
+            #[serde(default)]
+            message_id: String,
+            #[serde(default)]
+            content: String,
+            /// Who asked for this turn. `None` and `User` both mean a person;
+            /// `None` keeps the wire of a person's message as it always was.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            origin: Option<crate::turn::TurnOrigin>,
+        },
+        "text_delta" => TextDelta {
+            #[serde(default)]
+            content: String,
+        },
+        "thinking" => Thinking {
+            #[serde(default)]
+            content: String,
+        },
+        /// A text segment that streamed before a tool call, emitted at the
+        /// text→tool boundary. `message_id` is the turn id (shared with
+        /// `user_message` and `message_complete`); `index` is the 0-based segment
+        /// position within the turn; `content` is the segment's text (the delta
+        /// accumulated since the previous boundary). Lets viewers converge on
+        /// canonical per-segment bubbles across live streaming and history reload.
+        /// `message_complete` still carries the WHOLE turn's accumulated text —
+        /// segments are additive, not a replacement.
+        "segment_complete" => SegmentComplete {
+            #[serde(default)]
+            message_id: String,
+            #[serde(default)]
+            index: usize,
+            #[serde(default)]
+            content: String,
+        },
+        /// The five token fields are absent when the provider reported no usage,
+        /// and the two cache fields are absent when the provider reported no
+        /// caching. `skip_serializing_if` is what keeps that distinction on the
+        /// wire — a client tells "no data" from "zero" by presence, and the TUI
+        /// status bar's sentinel depends on it.
+        "message_complete" => MessageComplete {
+            #[serde(default)]
+            message_id: String,
+            #[serde(default)]
+            full_response: String,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            prompt_tokens: Option<u32>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            completion_tokens: Option<u32>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            total_tokens: Option<u32>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            cache_read_tokens: Option<u32>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            cache_creation_tokens: Option<u32>,
+            /// Why the turn ended. Absent for the same reason the token fields
+            /// are: no data rather than a default. A turn whose stream closed
+            /// without a terminal `Done` has no reason to report, and every
+            /// `session.jsonl` line an older daemon wrote predates the field.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            stop_reason: Option<crate::turn::StopReason>,
+        },
+        /// Field order is load-bearing: `serde_json` is built with
+        /// `preserve_order`, so the declaration order here is the key order on the
+        /// wire and in `session.jsonl`. It reproduces the insertion order of the
+        /// `json!` block this variant replaced — `display` after `source`, not
+        /// next to `args`.
+        "tool_call" => ToolCall {
+            #[serde(default)]
+            call_id: String,
+            #[serde(default)]
+            tool: String,
+            #[serde(default)]
+            args: Value,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            source: Option<String>,
+            /// The canonical tool call with its render, so the TUI and the web
+            /// draw the same table instead of each rebuilding the call.
+            ///
+            /// Every producer in this workspace sets it. `None` means the event came
+            /// from something else — a recording made before the field existed (only
+            /// 7 of 97 recorded `tool_call` lines carry it), or a foreign emitter —
+            /// and the consumer falls back to its own heuristic.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            display: Option<Box<CanonicalToolCall>>,
+            /// Which layer granted permission without asking, if any. Rides on this
+            /// event rather than a follow-up: the gate decides BEFORE the card is
+            /// emitted, so a separate event would only make the marker pop in late.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            auto_approved: Option<String>,
+        },
+        /// A new canonical form of a tool call that a prior `tool_call` already
+        /// announced. An ACP agent can send the arguments or the diff of a call
+        /// in a later frame. Subscribers replace `args` and `display` of the
+        /// entry with `call_id`. A `display` with no render carries only the
+        /// diffs of an old transcript (see [`super::migrate`]), so the card keeps
+        /// its line.
+        "tool_call_update" => ToolCallUpdate {
+            #[serde(default)]
+            call_id: String,
+            #[serde(default)]
+            args: Value,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            display: Option<Box<CanonicalToolCall>>,
+            /// Which layer granted the call without asking. An ACP agent asks
+            /// after it announced the call, so the marker comes in an update.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            auto_approved: Option<String>,
+        },
+        /// `terminate` is serialized even when `false` — an existing subscriber
+        /// reads `data.terminate` unconditionally. Do NOT add
+        /// `skip_serializing_if`.
         ///
-        /// Every producer in this workspace sets it. `None` means the event came
-        /// from something else — a recording made before the field existed (only
-        /// 7 of 97 recorded `tool_call` lines carry it), or a foreign emitter —
-        /// and the consumer falls back to its own heuristic.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        display: Option<Box<CanonicalToolCall>>,
-        /// Which layer granted permission without asking, if any. Rides on this
-        /// event rather than a follow-up: the gate decides BEFORE the card is
-        /// emitted, so a separate event would only make the marker pop in late.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        auto_approved: Option<String>,
-    },
-    /// A new canonical form of a tool call that a prior `tool_call` already
-    /// announced. An ACP agent can send the arguments or the diff of a call
-    /// in a later frame. Subscribers replace `args` and `display` of the
-    /// entry with `call_id`. A `display` with no render carries only the
-    /// diffs of an old transcript (see [`super::migrate`]), so the card keeps
-    /// its line.
-    ToolCallUpdate {
-        #[serde(default)]
-        call_id: String,
-        #[serde(default)]
-        args: Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        display: Option<Box<CanonicalToolCall>>,
-        /// Which layer granted the call without asking. An ACP agent asks
-        /// after it announced the call, so the marker comes in an update.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        auto_approved: Option<String>,
-    },
-    /// `terminate` is serialized even when `false` — an existing subscriber
-    /// reads `data.terminate` unconditionally. Do NOT add
-    /// `skip_serializing_if`.
-    ///
-    /// `result` is the nested [`ToolResultBody`] envelope, kept as a `Value`
-    /// here because a recorded `tool_result` may carry any shape and the event
-    /// must still decode. Use [`ToolResultBody::of`] to read it.
-    ToolResult {
-        #[serde(default)]
-        call_id: String,
-        #[serde(default)]
-        tool: String,
-        #[serde(default)]
-        result: Value,
-        #[serde(default)]
-        terminate: bool,
-    },
-    /// The whole turn is over. The daemon sends it exactly once for each
-    /// turn, as the last event of the turn, after the request slot is free.
-    /// A client ends a turn on this event, not on `message_complete`.
-    ///
-    /// `status` has no default: an event that does not say how the turn
-    /// ended tells a client nothing.
-    TurnFinished {
-        status: crate::turn::TurnStatus,
-        /// The stop reason of the last provider call, when it sent one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        stop_reason: Option<crate::turn::StopReason>,
-        /// The error text for `failed` and `timed_out`, and the reason for
-        /// `handler_cancelled`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        error: Option<String>,
-    },
-    InteractionRequested {
-        #[serde(default)]
-        request_id: String,
-        request: InteractionRequest,
-    },
-    InteractionCompleted {
-        #[serde(default)]
-        request_id: String,
-        response: InteractionResponse,
-    },
-    ContextInjected {
-        #[serde(default)]
-        role: String,
-        #[serde(default)]
-        content: String,
-    },
-    PrecognitionComplete {
-        #[serde(default)]
-        notes_count: usize,
-        #[serde(default)]
-        query_summary: String,
-        /// Absent when the search found no notes. Older recordings carry
-        /// `[]` for that case, and the decode reads both.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        notes: Vec<PrecognitionNoteInfo>,
-    },
-    /// The same payload goes to the subscribers and to the Lua
-    /// `post_llm_call` handlers (`messaging/stream.rs`).
-    PostLlmCall {
-        #[serde(default)]
-        response_summary: String,
-        #[serde(default)]
-        model: String,
-        #[serde(default)]
-        duration_ms: u64,
-    },
+        /// `result` is the nested [`ToolResultBody`] envelope, kept as a `Value`
+        /// here because a recorded `tool_result` may carry any shape and the event
+        /// must still decode. Use [`ToolResultBody::of`] to read it.
+        "tool_result" => ToolResult {
+            #[serde(default)]
+            call_id: String,
+            #[serde(default)]
+            tool: String,
+            #[serde(default)]
+            result: Value,
+            #[serde(default)]
+            terminate: bool,
+        },
+        /// The whole turn is over. The daemon sends it exactly once for each
+        /// turn, as the last event of the turn, after the request slot is free.
+        /// A client ends a turn on this event, not on `message_complete`.
+        ///
+        /// `status` has no default: an event that does not say how the turn
+        /// ended tells a client nothing.
+        "turn_finished" => TurnFinished {
+            status: crate::turn::TurnStatus,
+            /// The stop reason of the last provider call, when it sent one.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            stop_reason: Option<crate::turn::StopReason>,
+            /// The error text for `failed` and `timed_out`, and the reason for
+            /// `handler_cancelled`.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            error: Option<String>,
+        },
+        "interaction_requested" => InteractionRequested {
+            #[serde(default)]
+            request_id: String,
+            request: InteractionRequest,
+        },
+        "interaction_completed" => InteractionCompleted {
+            #[serde(default)]
+            request_id: String,
+            response: InteractionResponse,
+        },
+        "context_injected" => ContextInjected {
+            #[serde(default)]
+            role: String,
+            #[serde(default)]
+            content: String,
+        },
+        "precognition_complete" => PrecognitionComplete {
+            #[serde(default)]
+            notes_count: usize,
+            #[serde(default)]
+            query_summary: String,
+            /// Absent when the search found no notes. Older recordings carry
+            /// `[]` for that case, and the decode reads both.
+            #[serde(default, skip_serializing_if = "Vec::is_empty")]
+            notes: Vec<PrecognitionNoteInfo>,
+        },
+        /// The same payload goes to the subscribers and to the Lua
+        /// `post_llm_call` handlers (`messaging/stream.rs`).
+        "post_llm_call" => PostLlmCall {
+            #[serde(default)]
+            response_summary: String,
+            #[serde(default)]
+            model: String,
+            #[serde(default)]
+            duration_ms: u64,
+        },
+    }
 }
 
 impl TurnPayload {

@@ -150,132 +150,52 @@ fn notification_added_carries_the_body_when_present_and_tolerates_its_absence() 
     assert_eq!(n.message, "hi");
 }
 
-/// The eight group enums, source-scanned. Order matters only for the error
-/// message.
-const GROUP_ENUMS: &[(&str, &str)] = &[
-    ("TurnPayload", include_str!("turn.rs")),
-    ("SetupPayload", include_str!("setup.rs")),
-    ("SettingsPayload", include_str!("settings.rs")),
-    ("JobPayload", include_str!("lifecycle.rs")),
-    ("ReviewPayload", include_str!("lifecycle.rs")),
-    ("NotificationPayload", include_str!("lifecycle.rs")),
-    ("WorkflowPayload", include_str!("lifecycle.rs")),
-    ("SystemPayload", include_str!("lifecycle.rs")),
-];
-
-/// Wire names of a group enum's variants: the `#[serde(rename)]` where one is
-/// present, else the variant ident snake_cased.
-fn variant_wire_names(src: &str, enum_name: &str) -> BTreeSet<String> {
-    let needle = format!("pub enum {enum_name} {{\n");
-    let start = src
-        .find(&needle)
-        .unwrap_or_else(|| panic!("`pub enum {enum_name} {{` not found — did the enum move?"))
-        + needle.len();
-    let body = &src[start..];
-    let end = body
-        .find("\n}\n")
-        .unwrap_or_else(|| panic!("unterminated enum {enum_name}"));
-
+/// Metadata supplies routing and every wire name belongs to exactly one group.
+#[test]
+fn declared_events_have_unique_routes() {
+    use strum::IntoEnumIterator;
     let mut names = BTreeSet::new();
-    let mut depth = 0i32;
-    let mut pending_rename: Option<String> = None;
-    for line in body[..end].lines() {
-        let trimmed = line.trim();
-        if depth == 0 {
-            if let Some(rest) = trimmed.strip_prefix("#[serde(rename = \"") {
-                if let Some(name) = rest.split('"').next() {
-                    pending_rename = Some(name.to_string());
-                }
-            } else if trimmed
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_uppercase())
-            {
-                let ident: String = trimmed
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                    .collect();
-                names.insert(pending_rename.take().unwrap_or_else(|| snake_case(&ident)));
-            }
-        }
-        depth += line.matches(['{', '(']).count() as i32;
-        depth -= line.matches(['}', ')']).count() as i32;
-    }
-    names
-}
-
-fn snake_case(ident: &str) -> String {
-    let mut out = String::new();
-    for (i, c) in ident.chars().enumerate() {
-        if c.is_ascii_uppercase() {
-            if i > 0 {
-                out.push('_');
-            }
-            out.push(c.to_ascii_lowercase());
-        } else {
-            out.push(c);
+    for group in Group::iter() {
+        assert!(!group.wire_names().is_empty());
+        for name in group.wire_names() {
+            assert!(names.insert(name), "duplicate wire name: {name}");
+            assert_eq!(Group::of(name), Some(group));
+            assert!(!matches!(
+                SessionEventPayload::from_wire(name, &serde_json::json!({})),
+                Err(EventDecodeError::UnknownEvent { .. }),
+            ));
         }
     }
-    out
 }
 
-/// `Group::of` decides which enum a name decodes into, so a declared variant
-/// it does not know is an event nothing can decode — `payload()` returns
-/// `UnknownEvent` and the consumer takes its passthrough arm, so the feature
-/// silently disappears.
-///
-/// Derived from the enums rather than from a hand-maintained name list. The
-/// list this used to read (`EVENT_NAMES`) had no non-test consumer: it existed
-/// so this test could diff it against the variants that were already the source
-/// of truth.
-#[test]
-fn group_of_knows_every_declared_event() {
-    let mut declared = BTreeSet::new();
-    for (name, src) in GROUP_ENUMS {
-        let group = variant_wire_names(src, name);
-        assert!(
-            !group.is_empty(),
-            "{name}: extracted no variants — the scan markers moved, fix this test"
-        );
-        declared.extend(group);
+event_payload! {
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    #[serde(tag = "event", content = "data")]
+    enum MetadataProbe {
+        /// A name whose spelling cannot be inferred from its Rust identifier.
+        "probe:empty" => Empty {},
+        "probe.value" => Value { value: u64 },
+        "probe_tuple" => Tuple(String),
     }
-    let unknown: Vec<_> = declared
-        .iter()
-        .filter(|n| Group::of(n).is_none())
-        .cloned()
-        .collect();
-    assert!(
-        unknown.is_empty(),
-        "declared by a payload enum but absent from Group::of: {unknown:?}"
-    );
 }
 
-/// And the reverse: each name must land in the group whose enum declares it.
 #[test]
-fn group_of_routes_each_name_to_the_enum_that_declares_it() {
-    let expected = [
-        (Group::Turn, "TurnPayload"),
-        (Group::Setup, "SetupPayload"),
-        (Group::Settings, "SettingsPayload"),
-        (Group::Job, "JobPayload"),
-        (Group::Review, "ReviewPayload"),
-        (Group::Notification, "NotificationPayload"),
-        (Group::Workflow, "WorkflowPayload"),
-        (Group::System, "SystemPayload"),
+fn declared_metadata_matches_serde_for_struct_empty_and_tuple_variants() {
+    let cases = [
+        (MetadataProbe::Empty {}, serde_json::json!({})),
+        (
+            MetadataProbe::Value { value: 7 },
+            serde_json::json!({"value":7}),
+        ),
+        (MetadataProbe::Tuple("x".into()), serde_json::json!("x")),
     ];
-    for (group, enum_name) in expected {
-        let src = GROUP_ENUMS
-            .iter()
-            .find(|(n, _)| *n == enum_name)
-            .expect("group enum listed")
-            .1;
-        for name in variant_wire_names(src, enum_name) {
-            assert_eq!(
-                Group::of(&name),
-                Some(group),
-                "`{name}` is declared by {enum_name} but Group::of sends it elsewhere"
-            );
-        }
+    let fixtures = ["probe:empty", "probe.value", "probe_tuple"];
+    assert_eq!(MetadataProbe::WIRE_NAMES, fixtures);
+    for ((value, data), event) in cases.into_iter().zip(fixtures) {
+        let fixture = serde_json::json!({"event":event,"data":data});
+        assert_eq!(serde_json::to_value(&value).unwrap(), fixture);
+        let decoded: MetadataProbe = serde_json::from_value(fixture.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), fixture);
     }
 }
 
