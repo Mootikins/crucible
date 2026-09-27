@@ -236,6 +236,15 @@ pub fn note_renamed(from: &str, to: &str) -> SessionEventMessage {
     )
 }
 
+/// Build the `base:changed` message.
+///
+/// Its own constructor: a Bases write reports the change it made after the
+/// disk holds it, and no pipeline event describes that change. `change` is
+/// the policy payload with the note text removed.
+pub fn base_changed(path: String, change: serde_json::Value) -> SessionEventMessage {
+    SessionEventMessage::typed(SYSTEM_SESSION, SystemPayload::BaseChanged { path, change })
+}
+
 /// Build the `webhook:received` message.
 ///
 /// Also its own constructor: a delivery arrives over HTTP, so there is no
@@ -469,12 +478,9 @@ mod tests {
     /// outbound half is exercised too.
     fn sample_messages() -> Vec<SessionEventMessage> {
         vec![
-            SessionEventMessage::typed(
-                SYSTEM_SESSION,
-                SystemPayload::BaseChanged {
-                    path: "tickets/a.md".into(),
-                    change: serde_json::json!({"key":"status","value":"done"}),
-                },
+            base_changed(
+                "tickets/a.md".into(),
+                serde_json::json!({"key":"status","value":"done"}),
             ),
             message_for(&InternalSessionEvent::FileChanged {
                 path: PathBuf::from("/w/a.md"),

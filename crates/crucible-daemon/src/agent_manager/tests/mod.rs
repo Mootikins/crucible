@@ -983,6 +983,7 @@ async fn start_mock_openai_models_server(
 mod acp_undo;
 mod active_tools;
 mod agent_tool_chain;
+mod bases_attribution;
 mod build_race;
 mod concurrency;
 mod context_injection;

@@ -29,19 +29,14 @@
 /// ```
 #[must_use]
 pub fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
-    // Check if starts with ---
-    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
-        return None;
+    let header = crucible_core::note_frontmatter::split_yaml_frontmatter(content)
+        .ok()?
+        .header?;
+    // A blank or comment-only header is an empty mapping, not `null`.
+    match serde_yaml::from_str(header.yaml).ok()? {
+        serde_json::Value::Null => Some(serde_json::json!({})),
+        value => Some(value),
     }
-
-    // Find closing ---
-    let rest = &content[4..]; // Skip opening ---\n
-    let end_pos = rest.find("\n---\n").or_else(|| rest.find("\r\n---\r\n"))?;
-
-    let yaml_str = &rest[..end_pos];
-
-    // Parse YAML to serde_json::Value
-    serde_yaml::from_str(yaml_str).ok()
 }
 
 #[cfg(test)]
@@ -78,5 +73,26 @@ mod tests {
         assert!(result.is_some());
         let fm = result.unwrap();
         assert!(fm.get("tags").unwrap().is_array());
+    }
+
+    #[test]
+    fn test_parse_frontmatter_bom_and_dot_fence() {
+        let fm = parse_yaml_frontmatter("\u{feff}---\ntitle: T\n...\nbody").unwrap();
+        assert_eq!(fm["title"], "T");
+    }
+
+    #[test]
+    fn test_parse_frontmatter_empty_header_is_empty_object() {
+        assert_eq!(
+            parse_yaml_frontmatter("---\n---\nbody"),
+            Some(serde_json::json!({}))
+        );
+    }
+
+    #[test]
+    fn test_parse_frontmatter_unclosed_or_invalid_is_none() {
+        assert!(parse_yaml_frontmatter("---\ntitle: T\nbody").is_none());
+        assert!(parse_yaml_frontmatter("---\ntitle: [\n---\nbody").is_none());
+        assert!(parse_yaml_frontmatter("---\n- a\n---\nbody").is_none());
     }
 }

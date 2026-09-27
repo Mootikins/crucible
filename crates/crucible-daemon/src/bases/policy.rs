@@ -4,13 +4,15 @@ use crate::agent_manager::PluginHandlers;
 use crucible_core::events::SessionEvent;
 use crucible_lua::{Firing, ScriptHandlerResult, StageId};
 
+/// Run the `base:before_write` handlers. `Some(reason)` when one cancels the
+/// write; an error when one fails, which refuses the write too.
 pub(super) async fn before(
     handlers: Option<PluginHandlers>,
     session: Option<&str>,
     payload: serde_json::Value,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let Some((registry, lua)) = handlers else {
-        return Ok(());
+        return Ok(None);
     };
     let stage = StageId::BaseBeforeWrite;
     let event = SessionEvent::Custom {
@@ -28,10 +30,10 @@ pub(super) async fn before(
         {
             ScriptHandlerResult::PassThrough => {}
             ScriptHandlerResult::Cancel { reason } => {
-                anyhow::bail!("Bases policy refused: {reason}")
+                return Ok(Some(format!("Bases policy refused: {reason}")))
             }
             _ => anyhow::bail!("Bases policy must return nil or cancel"),
         }
     }
-    Ok(())
+    Ok(None)
 }

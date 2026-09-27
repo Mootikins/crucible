@@ -948,37 +948,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/plugins/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/plugins/events` — a push when a plugin's published data changes.
-         * @description This route is an alias of `GET /api/events/system` (`routes/events.rs`).
-         *     It forwards publications and stream gap control frames.
-         *
-         *     The counterpart to `GET /api/plugins/publications`: that answers "what is
-         *     true now", this says "read it again". A panel drawing a plugin's own state
-         *     would otherwise poll on a timer and still show a stale value between ticks.
-         *
-         *     Same shape as the file-tree stream in `routes/fs.rs`, including the
-         *     load-bearing ordering: subscribe the LOCAL broker channel before telling the
-         *     daemon to forward, because `EventBroker::dispatch` drops events for a
-         *     session id with no local subscriber and the window between the two calls
-         *     would lose the first event.
-         */
-        get: operations["publication_event_stream"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/plugins/options": {
         parameters: {
             query?: never;
@@ -2250,6 +2219,10 @@ export interface components {
             note: components["schemas"]["FocusedNoteRow"];
             unlinked: components["schemas"]["UnlinkedMentionRow"][];
         };
+        /**
+         * @description A Bases value. Query cells use [`BaseValue::Error`] for a cell whose
+         *     evaluation failed, so one bad cell does not stop the query.
+         */
         BaseValue: {
             /** @enum {string} */
             type: "null";
@@ -2279,11 +2252,13 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "duration";
+            /** @description The wire form of [`DurationValue`]. */
             value: {
                 /** Format: double */
                 milliseconds: number;
                 /** Format: double */
                 months: number;
+                text: string;
             };
         } | {
             /** @enum {string} */
@@ -2330,6 +2305,11 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "icon";
+            value: string;
+        } | {
+            /** @enum {string} */
+            type: "error";
+            /** @description The message of a cell that failed to evaluate. */
             value: string;
         };
         /** @description Where in a note a hit sits. */
@@ -2834,6 +2814,20 @@ export interface components {
              *     choice of its own.
              */
             context_strategy?: string | null;
+        };
+        /**
+         * @description `base.create_entry`: create a note that the base's filters admit.
+         *
+         *     `group` names the group the entry joins; JSON `null` is the group of
+         *     entries with no value.
+         */
+        CreateEntryParams: {
+            content?: string | null;
+            group?: unknown;
+            kiln?: string | null;
+            name?: string | null;
+            source: components["schemas"]["Source"];
+            view?: string | null;
         };
         CreateSessionRequest: {
             /** @description Internal-agent card name; never resolved in the web layer. */
@@ -3374,7 +3368,17 @@ export interface components {
                 [key: string]: components["schemas"]["BaseValue"];
             };
             value: components["schemas"]["BaseValue"];
+            /**
+             * @description The `value` of the `base.set_property` call that puts a row into this
+             *     group, in the form the note stores. Null means "delete the property".
+             */
+            write_value: unknown;
         };
+        /**
+         * @description How a cards or kanban cover image fills its box.
+         * @enum {string}
+         */
+        ImageFit: "cover" | "contain";
         /**
          * @description The one word of [`StatusProgress::Unknown`].
          * @enum {string}
@@ -3550,6 +3554,11 @@ export interface components {
              */
             outdated: boolean;
         };
+        /**
+         * @description List view item markers.
+         * @enum {string}
+         */
+        Markers: "bullet" | "number" | "none";
         /** @description The running arm of [`McpStatus`]. */
         McpRunning: {
             /**
@@ -4185,17 +4194,26 @@ export interface components {
             kind: "dismissed";
         };
         /**
-         * @description One file that a proposal creates or replaces.
+         * @description One file that a proposal creates, replaces or deletes.
          *
-         *     A proposal does not delete or rename a file.
+         *     A proposal has no rename entry. A move is a deletion of the old path and
+         *     a creation of the new path in one proposal, which accept writes as one set.
          */
         ProposedWrite: {
             /** @description The disk state that the writer read before it proposed the write. */
             base: components["schemas"]["ExpectedBase"];
-            /** @description The whole text that the write puts on disk. */
+            /**
+             * @description The path, in the same root, of a file that this proposal deletes and
+             *     that this file replaces: the two writes are one move. Accept and
+             *     reject keep the pair together.
+             */
+            moved_from?: string | null;
+            /** @description The whole text that the write puts on disk. Empty for a deletion. */
             new_text: string;
             /** @description The path relative to `root`. */
             path: string;
+            /** @description The write deletes the file. */
+            remove?: boolean;
             /** @description The kiln root. */
             root: string;
         };
@@ -4357,6 +4375,16 @@ export interface components {
             /** @description Why the user rejects the proposal. The proposal keeps it. */
             reason?: string | null;
         };
+        /** @description `base.reorder_groups`: save a view's group order. `null` removes it. */
+        ReorderGroupsParams: {
+            ancestor_hash: string;
+            group_order?: unknown[] | null;
+            kiln?: string | null;
+            source: components["schemas"]["Source"];
+            /** @description The note that embeds an inline base. */
+            this?: string | null;
+            view?: string | null;
+        };
         /** @description Information about the git repository containing this project. */
         RepositoryInfo: {
             /**
@@ -4456,11 +4484,19 @@ export interface components {
         };
         Row: {
             ancestor_hash: string;
+            /** @description Whether this row can move between the groups of this view. */
+            movable: boolean;
             path: string;
+            /** @description Column property → value. A cell that failed holds [`BaseValue::Error`]. */
             values: {
                 [key: string]: components["schemas"]["BaseValue"];
             };
         };
+        /**
+         * @description Table row height.
+         * @enum {string}
+         */
+        RowHeight: "short" | "medium" | "tall" | "extra";
         /**
          * @description The values one save carries, in the shape `config.save` takes.
          *
@@ -4763,6 +4799,22 @@ export interface components {
         SetPrecognitionRequest: {
             enabled: boolean;
         };
+        /**
+         * @description `base.set_property`: set or delete one frontmatter property of a note.
+         *
+         *     `value` present, including JSON `null`, sets the property; `null` writes
+         *     an empty property, as Obsidian does. An absent `value` needs
+         *     `delete: true`, so that a forgotten value never deletes a property.
+         *     The key `file.folder` moves the note into the folder that `value` names.
+         */
+        SetPropertyParams: {
+            ancestor_hash: string;
+            delete?: boolean;
+            key: string;
+            kiln?: string | null;
+            path: string;
+            value?: unknown;
+        };
         SetTitleRequest: {
             title: string;
         };
@@ -4852,6 +4904,11 @@ export interface components {
             description: string;
             /** @description Bare name, no leading slash. */
             name: string;
+        };
+        Source: {
+            path: string;
+        } | {
+            yaml: string;
         };
         /**
          * @description Where one leaf came from, in the shape the wire uses.
@@ -5080,7 +5137,10 @@ export interface components {
              */
             score: number;
         };
-        /** @description Built-in presentation options, projected from preserved Obsidian view data. */
+        /**
+         * @description Built-in presentation options, projected from preserved Obsidian view data.
+         *     Every field has its default, so clients do not repeat them.
+         */
         ViewOptions: {
             /** Format: double */
             card_size: number;
@@ -5093,10 +5153,10 @@ export interface components {
             image?: string | null;
             /** Format: double */
             image_aspect_ratio: number;
-            image_fit: string;
+            image_fit: components["schemas"]["ImageFit"];
             indent_properties: boolean;
-            markers: string;
-            row_height: string;
+            markers: components["schemas"]["Markers"];
+            row_height: components["schemas"]["RowHeight"];
             separator: string;
         };
         ViewSummary: {
@@ -5136,6 +5196,33 @@ export interface components {
          * @enum {string}
          */
         WriteModeRow: "apply" | "propose";
+        /** @description What a Bases write did. */
+        WriteOutcome: {
+            ancestor_hash: string;
+            path: string;
+            /** @enum {string} */
+            status: "applied";
+        } | {
+            ancestor_hash: string;
+            path: string;
+            /** @enum {string} */
+            status: "unchanged";
+        } | {
+            path: string;
+            proposal: string;
+            /** @enum {string} */
+            status: "proposed";
+        } | {
+            current_hash: string;
+            path: string;
+            /** @enum {string} */
+            status: "stale";
+        } | {
+            path: string;
+            reason: string;
+            /** @enum {string} */
+            status: "refused";
+        };
     };
     responses: never;
     parameters: never;
@@ -5181,6 +5268,7 @@ export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
+export type SchemaCreateEntryParams = components['schemas']['CreateEntryParams'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDeleteCommentBody = components['schemas']['DeleteCommentBody'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
@@ -5218,6 +5306,7 @@ export type SchemaGrepHit = components['schemas']['GrepHit'];
 export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
 export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
 export type SchemaGroup = components['schemas']['Group'];
+export type SchemaImageFit = components['schemas']['ImageFit'];
 export type SchemaIndeterminateProgress = components['schemas']['IndeterminateProgress'];
 export type SchemaInstallRequest = components['schemas']['InstallRequest'];
 export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
@@ -5233,6 +5322,7 @@ export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteRespon
 export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
 export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
 export type SchemaListedCommentRow = components['schemas']['ListedCommentRow'];
+export type SchemaMarkers = components['schemas']['Markers'];
 export type SchemaMcpRunning = components['schemas']['McpRunning'];
 export type SchemaMcpStatus = components['schemas']['McpStatus'];
 export type SchemaMcpStopped = components['schemas']['McpStopped'];
@@ -5292,6 +5382,7 @@ export type SchemaRecentsResponse = components['schemas']['RecentsResponse'];
 export type SchemaRecordRecentRequest = components['schemas']['RecordRecentRequest'];
 export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
 export type SchemaRejectProposalBody = components['schemas']['RejectProposalBody'];
+export type SchemaReorderGroupsParams = components['schemas']['ReorderGroupsParams'];
 export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
 export type SchemaResolveCommentBody = components['schemas']['ResolveCommentBody'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
@@ -5299,6 +5390,7 @@ export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBo
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
 export type SchemaRow = components['schemas']['Row'];
+export type SchemaRowHeight = components['schemas']['RowHeight'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
 export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
@@ -5325,6 +5417,7 @@ export type SchemaSetModeRequest = components['schemas']['SetModeRequest'];
 export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApprovalRequest'];
 export type SchemaSetPluginTurnLimitRequest = components['schemas']['SetPluginTurnLimitRequest'];
 export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitionRequest'];
+export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
 export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
 export type SchemaShellEvent = components['schemas']['ShellEvent'];
@@ -5335,6 +5428,7 @@ export type SchemaSkillSummary = components['schemas']['SkillSummary'];
 export type SchemaSkippedRef = components['schemas']['SkippedRef'];
 export type SchemaSkipReason = components['schemas']['SkipReason'];
 export type SchemaSlashCommand = components['schemas']['SlashCommand'];
+export type SchemaSource = components['schemas']['Source'];
 export type SchemaSourceOrigin = components['schemas']['SourceOrigin'];
 export type SchemaStatusColorGroup = components['schemas']['StatusColorGroup'];
 export type SchemaStatusDisplayItem = components['schemas']['StatusDisplayItem'];
@@ -5360,6 +5454,7 @@ export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveRep
 export type SchemaWikilinkRow = components['schemas']['WikilinkRow'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
 export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
+export type SchemaWriteOutcome = components['schemas']['WriteOutcome'];
 export type $defs = Record<string, never>;
 export interface operations {
     list_agents: {
@@ -5442,19 +5537,48 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": unknown;
+                "application/json": components["schemas"]["CreateEntryParams"];
             };
         };
         responses: {
+            /** @description Applied, unchanged or proposed */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WriteOutcome"];
                 };
             };
-            /** @description Daemon refused entry creation */
+            /** @description A permission rule or a base policy refused the write */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The kiln, the base or the view is absent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file changed since it was read */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The entry cannot be created as asked */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon failed */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -5472,27 +5596,49 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": unknown;
+                "application/json": components["schemas"]["ReorderGroupsParams"];
             };
         };
         responses: {
+            /** @description Applied, unchanged or proposed */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WriteOutcome"];
                 };
             };
-            /** @description Stale ancestor */
+            /** @description A permission rule or a base policy refused the write */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The kiln, the base or the view is absent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file changed since it was read */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Invalid base */
+            /** @description The group order cannot be saved as asked */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon failed */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5509,26 +5655,48 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": unknown;
+                "application/json": components["schemas"]["SetPropertyParams"];
             };
         };
         responses: {
+            /** @description Applied, unchanged or proposed */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WriteOutcome"];
                 };
             };
-            /** @description Stale ancestor */
+            /** @description A permission rule or a base policy refused the write */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The kiln or the note is absent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file changed since it was read */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Daemon refused write */
+            /** @description The property cannot be written as asked */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon failed */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -5560,14 +5728,21 @@ export interface operations {
                     "application/json": components["schemas"]["QueryResult"];
                 };
             };
-            /** @description Invalid base */
+            /** @description The kiln, the base or the view is absent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The query cannot run as asked */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Daemon unavailable */
+            /** @description The daemon failed */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -5596,17 +5771,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ViewSummary"][];
                 };
             };
-            /** @description Invalid base */
+            /** @description The kiln or the base is absent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request cannot run as asked */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Daemon unavailable */
+            /** @description The daemon failed */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -7400,27 +7582,6 @@ export interface operations {
             };
         };
     };
-    publication_event_stream: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
-                    "X-Crucible-Stream-Version"?: number;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["PublicationChangedEvent"];
-                };
-            };
-        };
-    };
     list_options: {
         parameters: {
             query?: never;
@@ -7707,6 +7868,13 @@ export interface operations {
                     "application/json": components["schemas"]["Proposal"];
                 };
             };
+            /** @description Another decision holds the proposal; send the request again after it finishes */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description No proposal has the id, or the proposal is already settled */
             422: {
                 headers: {
@@ -7742,6 +7910,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Proposal"];
                 };
+            };
+            /** @description Another decision holds the proposal; send the request again after it finishes */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description No proposal has the id, or the proposal is already settled */
             422: {
@@ -7783,6 +7958,13 @@ export interface operations {
                     "application/json": components["schemas"]["Proposal"];
                 };
             };
+            /** @description Another decision holds the proposal; send the request again after it finishes */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description No proposal has the id, or the proposal is already settled */
             422: {
                 headers: {
@@ -7822,6 +8004,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Proposal"];
                 };
+            };
+            /** @description Another decision holds the proposal; send the request again after it finishes */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description No proposal has the id, or the file has no conflict */
             422: {

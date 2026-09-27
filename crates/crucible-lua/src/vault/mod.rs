@@ -238,18 +238,11 @@ fn kiln_path(
 
 /// The `cru.kiln` members the host binds through a resolver, which a storage
 /// upgrade must carry over rather than replace with the stubs.
-const HOST_BOUND: &[&str] = &[
-    "blocks",
-    "note",
-    "notes",
-    "links",
-    "search",
-    "path",
-    "query",
-    "set_property",
-    "create_entry",
-    "ensure_base",
-];
+fn host_bound() -> impl Iterator<Item = &'static str> {
+    ["blocks", "note", "notes", "links", "search", "path"]
+        .into_iter()
+        .chain(bases::BaseOperation::names())
+}
 
 /// Register the named reads — `cru.kiln.blocks`, `note`, `notes`, `links`
 /// and `search` — against a repository resolver.
@@ -553,9 +546,7 @@ pub fn register_vault_module_with_store_scoped(
         .get::<Table>("cru")
         .and_then(|cru| cru.get::<Table>("kiln"))
     {
-        Ok(previous) => HOST_BOUND
-            .iter()
-            .copied()
+        Ok(previous) => host_bound()
             .filter_map(|name| previous.get::<Value>(name).ok().map(|v| (name, v)))
             .filter(|(_, v)| v.is_function())
             .collect(),

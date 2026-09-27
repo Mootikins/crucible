@@ -82,22 +82,38 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CreateEntryParams"
+              }
             }
           },
           "required": true
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Applied, unchanged or proposed",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOutcome"
+                }
               }
             }
           },
+          "403": {
+            "description": "A permission rule or a base policy refused the write"
+          },
+          "404": {
+            "description": "The kiln, the base or the view is absent"
+          },
+          "409": {
+            "description": "The file changed since it was read"
+          },
+          "422": {
+            "description": "The entry cannot be created as asked"
+          },
           "502": {
-            "description": "Daemon refused entry creation"
+            "description": "The daemon failed"
           }
         }
       }
@@ -108,25 +124,38 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/ReorderGroupsParams"
+              }
             }
           },
           "required": true
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Applied, unchanged or proposed",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOutcome"
+                }
               }
             }
           },
+          "403": {
+            "description": "A permission rule or a base policy refused the write"
+          },
+          "404": {
+            "description": "The kiln, the base or the view is absent"
+          },
           "409": {
-            "description": "Stale ancestor"
+            "description": "The file changed since it was read"
           },
           "422": {
-            "description": "Invalid base"
+            "description": "The group order cannot be saved as asked"
+          },
+          "502": {
+            "description": "The daemon failed"
           }
         }
       }
@@ -137,25 +166,38 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/SetPropertyParams"
+              }
             }
           },
           "required": true
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Applied, unchanged or proposed",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOutcome"
+                }
               }
             }
           },
+          "403": {
+            "description": "A permission rule or a base policy refused the write"
+          },
+          "404": {
+            "description": "The kiln or the note is absent"
+          },
           "409": {
-            "description": "Stale ancestor"
+            "description": "The file changed since it was read"
+          },
+          "422": {
+            "description": "The property cannot be written as asked"
           },
           "502": {
-            "description": "Daemon refused write"
+            "description": "The daemon failed"
           }
         }
       }
@@ -216,11 +258,14 @@
               }
             }
           },
+          "404": {
+            "description": "The kiln, the base or the view is absent"
+          },
           "422": {
-            "description": "Invalid base"
+            "description": "The query cannot run as asked"
           },
           "502": {
-            "description": "Daemon unavailable"
+            "description": "The daemon failed"
           }
         }
       }
@@ -275,15 +320,23 @@
             "description": "",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ViewSummary"
+                  }
+                }
               }
             }
           },
+          "404": {
+            "description": "The kiln or the base is absent"
+          },
           "422": {
-            "description": "Invalid base"
+            "description": "The request cannot run as asked"
           },
           "502": {
-            "description": "Daemon unavailable"
+            "description": "The daemon failed"
           }
         }
       }
@@ -1905,35 +1958,6 @@
         }
       }
     },
-    "/api/plugins/events": {
-      "get": {
-        "summary": "`GET /api/plugins/events` — a push when a plugin's published data changes.",
-        "description": "This route is an alias of `GET /api/events/system` (`routes/events.rs`).\nIt forwards publications and stream gap control frames.\n\nThe counterpart to `GET /api/plugins/publications`: that answers \"what is\ntrue now\", this says \"read it again\". A panel drawing a plugin's own state\nwould otherwise poll on a timer and still show a stale value between ticks.\n\nSame shape as the file-tree stream in `routes/fs.rs`, including the\nload-bearing ordering: subscribe the LOCAL broker channel before telling the\ndaemon to forward, because `EventBroker::dispatch` drops events for a\nsession id with no local subscriber and the window between the two calls\nwould lose the first event.",
-        "operationId": "publication_event_stream",
-        "responses": {
-          "200": {
-            "description": "",
-            "headers": {
-              "X-Crucible-Stream-Version": {
-                "schema": {
-                  "type": "integer",
-                  "format": "int64",
-                  "minimum": 0
-                },
-                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
-              }
-            },
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicationChangedEvent"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/plugins/options": {
       "get": {
         "summary": "`GET /api/plugins/options` — the settings trees plugins declared.",
@@ -2392,6 +2416,9 @@
               }
             }
           },
+          "409": {
+            "description": "Another decision holds the proposal; send the request again after it finishes"
+          },
           "422": {
             "description": "No proposal has the id, or the proposal is already settled"
           },
@@ -2426,6 +2453,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Another decision holds the proposal; send the request again after it finishes"
           },
           "422": {
             "description": "No proposal has the id, or the proposal is already settled"
@@ -2473,6 +2503,9 @@
               }
             }
           },
+          "409": {
+            "description": "Another decision holds the proposal; send the request again after it finishes"
+          },
           "422": {
             "description": "No proposal has the id, or the proposal is already settled"
           },
@@ -2517,6 +2550,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Another decision holds the proposal; send the request again after it finishes"
           },
           "422": {
             "description": "No proposal has the id, or the file has no conflict"
@@ -4908,9 +4944,11 @@
             "properties": {
               "value": {
                 "type": "object",
+                "description": "The wire form of [`DurationValue`].",
                 "required": [
                   "months",
-                  "milliseconds"
+                  "milliseconds",
+                  "text"
                 ],
                 "properties": {
                   "months": {
@@ -4920,6 +4958,9 @@
                   "milliseconds": {
                     "type": "number",
                     "format": "double"
+                  },
+                  "text": {
+                    "type": "string"
                   }
                 }
               },
@@ -5138,8 +5179,29 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The message of a cell that failed to evaluate.",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "string",
+                "description": "The message of a cell that failed to evaluate."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              }
+            }
           }
-        ]
+        ],
+        "description": "A Bases value. Query cells use [`BaseValue::Error`] for a cell whose\nevaluation failed, so one bad cell does not stop the query."
       },
       "BlockRef": {
         "type": "object",
@@ -6362,6 +6424,43 @@
             ],
             "description": "The strategy's string spelling, or `null` where the session carries no\nchoice of its own."
           }
+        }
+      },
+      "CreateEntryParams": {
+        "type": "object",
+        "description": "`base.create_entry`: create a note that the base's filters admit.\n\n`group` names the group the entry joins; JSON `null` is the group of\nentries with no value.",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "kiln": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          },
+          "view": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {}
         }
       },
       "CreateSessionRequest": {
@@ -7593,12 +7692,16 @@
         "type": "object",
         "required": [
           "value",
+          "write_value",
           "rows",
           "summaries"
         ],
         "properties": {
           "value": {
             "$ref": "#/components/schemas/BaseValue"
+          },
+          "write_value": {
+            "description": "The `value` of the `base.set_property` call that puts a row into this\ngroup, in the form the note stores. Null means \"delete the property\"."
           },
           "rows": {
             "type": "array",
@@ -7616,6 +7719,14 @@
             }
           }
         }
+      },
+      "ImageFit": {
+        "type": "string",
+        "description": "How a cards or kanban cover image fills its box.",
+        "enum": [
+          "cover",
+          "contain"
+        ]
       },
       "IndeterminateProgress": {
         "type": "string",
@@ -7896,6 +8007,15 @@
             "description": "The current text of the side does not contain the quoted text. The\npane shows an outdated comment at the end of its file."
           }
         }
+      },
+      "Markers": {
+        "type": "string",
+        "description": "List view item markers.",
+        "enum": [
+          "bullet",
+          "number",
+          "none"
+        ]
       },
       "McpRunning": {
         "type": "object",
@@ -9161,7 +9281,7 @@
       },
       "ProposedWrite": {
         "type": "object",
-        "description": "One file that a proposal creates or replaces.\n\nA proposal does not delete or rename a file.",
+        "description": "One file that a proposal creates, replaces or deletes.\n\nA proposal has no rename entry. A move is a deletion of the old path and\na creation of the new path in one proposal, which accept writes as one set.",
         "required": [
           "root",
           "path",
@@ -9183,7 +9303,18 @@
           },
           "new_text": {
             "type": "string",
-            "description": "The whole text that the write puts on disk."
+            "description": "The whole text that the write puts on disk. Empty for a deletion."
+          },
+          "remove": {
+            "type": "boolean",
+            "description": "The write deletes the file."
+          },
+          "moved_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The path, in the same root, of a file that this proposal deletes and\nthat this file replaces: the two writes are one move. Accept and\nreject keep the pair together."
           }
         }
       },
@@ -9525,6 +9656,48 @@
           }
         }
       },
+      "ReorderGroupsParams": {
+        "type": "object",
+        "description": "`base.reorder_groups`: save a view's group order. `null` removes it.",
+        "required": [
+          "source",
+          "ancestor_hash"
+        ],
+        "properties": {
+          "kiln": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          },
+          "view": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "this": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The note that embeds an inline base."
+          },
+          "group_order": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {}
+          },
+          "ancestor_hash": {
+            "type": "string"
+          }
+        }
+      },
       "RepositoryInfo": {
         "type": "object",
         "description": "Information about the git repository containing this project.",
@@ -9708,7 +9881,8 @@
         "required": [
           "path",
           "ancestor_hash",
-          "values"
+          "values",
+          "movable"
         ],
         "properties": {
           "path": {
@@ -9719,14 +9893,29 @@
           },
           "values": {
             "type": "object",
+            "description": "Column property → value. A cell that failed holds [`BaseValue::Error`].",
             "additionalProperties": {
               "$ref": "#/components/schemas/BaseValue"
             },
             "propertyNames": {
               "type": "string"
             }
+          },
+          "movable": {
+            "type": "boolean",
+            "description": "Whether this row can move between the groups of this view."
           }
         }
+      },
+      "RowHeight": {
+        "type": "string",
+        "description": "Table row height.",
+        "enum": [
+          "short",
+          "medium",
+          "tall",
+          "extra"
+        ]
       },
       "SaveRequest": {
         "type": "object",
@@ -10375,6 +10564,36 @@
           }
         }
       },
+      "SetPropertyParams": {
+        "type": "object",
+        "description": "`base.set_property`: set or delete one frontmatter property of a note.\n\n`value` present, including JSON `null`, sets the property; `null` writes\nan empty property, as Obsidian does. An absent `value` needs\n`delete: true`, so that a forgotten value never deletes a property.\nThe key `file.folder` moves the note into the folder that `value` names.",
+        "required": [
+          "path",
+          "key",
+          "ancestor_hash"
+        ],
+        "properties": {
+          "kiln": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "value": {},
+          "delete": {
+            "type": "boolean"
+          },
+          "ancestor_hash": {
+            "type": "string"
+          }
+        }
+      },
       "SetTitleRequest": {
         "type": "object",
         "required": [
@@ -10635,6 +10854,32 @@
             "type": "string"
           }
         }
+      },
+      "Source": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "yaml"
+            ],
+            "properties": {
+              "yaml": {
+                "type": "string"
+              }
+            }
+          }
+        ]
       },
       "SourceOrigin": {
         "type": "object",
@@ -11065,7 +11310,7 @@
       },
       "ViewOptions": {
         "type": "object",
-        "description": "Built-in presentation options, projected from preserved Obsidian view data.",
+        "description": "Built-in presentation options, projected from preserved Obsidian view data.\nEvery field has its default, so clients do not repeat them.",
         "required": [
           "card_size",
           "column_width",
@@ -11094,7 +11339,7 @@
             ]
           },
           "image_fit": {
-            "type": "string"
+            "$ref": "#/components/schemas/ImageFit"
           },
           "image_aspect_ratio": {
             "type": "number",
@@ -11104,7 +11349,7 @@
             "type": "boolean"
           },
           "markers": {
-            "type": "string"
+            "$ref": "#/components/schemas/Markers"
           },
           "indent_properties": {
             "type": "boolean"
@@ -11113,7 +11358,7 @@
             "type": "string"
           },
           "row_height": {
-            "type": "string"
+            "$ref": "#/components/schemas/RowHeight"
           },
           "column_size": {
             "type": "object",
@@ -11193,6 +11438,126 @@
           "apply",
           "propose"
         ]
+      },
+      "WriteOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The disk holds the change. `ancestor_hash` is the hash of the file now,\nfor the next write.",
+            "required": [
+              "path",
+              "ancestor_hash",
+              "status"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "ancestor_hash": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "applied"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file already said what the write asked for, so nothing was\nwritten: an equal value, or a base that already exists.",
+            "required": [
+              "path",
+              "ancestor_hash",
+              "status"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "ancestor_hash": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unchanged"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The session proposes the write; the disk is unchanged.",
+            "required": [
+              "path",
+              "proposal",
+              "status"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "proposal": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "proposed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file changed since the caller read it.",
+            "required": [
+              "path",
+              "current_hash",
+              "status"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "current_hash": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "stale"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A permission rule or a `base:before_write` policy refused the write.",
+            "required": [
+              "path",
+              "reason",
+              "status"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "refused"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What a Bases write did."
       }
     }
   }

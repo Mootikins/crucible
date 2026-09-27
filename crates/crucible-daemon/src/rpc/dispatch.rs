@@ -473,14 +473,42 @@ impl RpcDispatcher {
                 id,
                 crate::server::kiln::handle_get_note_by_name(req.clone(), &self.ctx.kiln)
             ),
-            RpcMethod::BaseList
-            | RpcMethod::BaseViews
-            | RpcMethod::BaseQuery
-            | RpcMethod::BaseCreateEntry
-            | RpcMethod::BaseSetProperty
-            | RpcMethod::BaseReorderGroups => {
-                forward!(id, crate::bases::handle(req.clone(), &self.ctx))
-            }
+            RpcMethod::BaseList => forward!(
+                id,
+                crate::bases::handle(crate::bases::BaseOperation::List, req.clone(), &self.ctx)
+            ),
+            RpcMethod::BaseViews => forward!(
+                id,
+                crate::bases::handle(crate::bases::BaseOperation::Views, req.clone(), &self.ctx)
+            ),
+            RpcMethod::BaseQuery => forward!(
+                id,
+                crate::bases::handle(crate::bases::BaseOperation::Query, req.clone(), &self.ctx)
+            ),
+            RpcMethod::BaseCreateEntry => forward!(
+                id,
+                crate::bases::handle(
+                    crate::bases::BaseOperation::CreateEntry,
+                    req.clone(),
+                    &self.ctx
+                )
+            ),
+            RpcMethod::BaseSetProperty => forward!(
+                id,
+                crate::bases::handle(
+                    crate::bases::BaseOperation::SetProperty,
+                    req.clone(),
+                    &self.ctx
+                )
+            ),
+            RpcMethod::BaseReorderGroups => forward!(
+                id,
+                crate::bases::handle(
+                    crate::bases::BaseOperation::ReorderGroups,
+                    req.clone(),
+                    &self.ctx
+                )
+            ),
             RpcMethod::GetBacklinks => forward!(
                 id,
                 crate::server::kiln::handle_get_backlinks(req.clone(), &self.ctx.kiln)

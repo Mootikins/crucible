@@ -11,15 +11,18 @@ yet have a note viewer. Legacy `kanban/board` web blocks redirect to this base;
 pass `kiln` in their parameters.
 
 Ticket notes remain ordinary Markdown. Native Bases owns reads, grouping,
-card moves and entry creation. `kanban_board` queries it; `kanban_move` receives
-the tool invocation's explicit session context and uses the daemon write API.
+card moves and entry creation. `kanban_board` queries it; `kanban_move` acts
+for the session of its tool call and uses the daemon write API. It fails when
+the write is refused or stale. When the caller gives `ancestor_hash`, it does
+not query the board first.
 There is no global board publication, manual YAML parser or direct file writer.
 Unattended plugin writes need permission under the session's card, mode and
 operator rules; proposals enter the Inbox instead of changing disk.
 
 Optional setup keys: `folder` (default `tickets`), `base` (default
 `tickets.base`), `wip` (status -> maximum count), and `transitions` (old status
--> allowed new statuses). The `base:before_write` policy applies to human
+-> allowed new statuses). A WIP limit counts the tickets in the column on disk
+and the pending proposals that move a ticket into it. The `base:before_write` policy applies to human
 Bases edits as well as plugin edits, using final note properties for creations,
 property edits and folder moves. Policy errors and timeouts refuse writes.
 Reload removes the old source's policy callback before activation registers it

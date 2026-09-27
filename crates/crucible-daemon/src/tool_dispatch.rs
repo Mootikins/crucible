@@ -210,6 +210,9 @@ pub struct DaemonToolDispatcher {
     /// sees once it holds the turn: if they differ, someone else ran the walk
     /// it was waiting on and its outcome is the one to take.
     hydration_attempts: std::sync::atomic::AtomicU64,
+    /// The session whose calls this dispatcher runs. A plugin tool reads it
+    /// as `ctx.session_id` and acts for that session.
+    session: Option<String>,
 }
 
 impl DaemonToolDispatcher {
@@ -239,7 +242,14 @@ impl DaemonToolDispatcher {
             blocking_hydration_timeout: BLOCKING_HYDRATION_TIMEOUT,
             hydration_turn: parking_lot::Mutex::new(()),
             hydration_attempts: std::sync::atomic::AtomicU64::new(0),
+            session: None,
         }
+    }
+
+    /// Run every call for `session`, so an executor knows whose call it runs.
+    pub fn for_session(mut self, session: &str) -> Self {
+        self.session = Some(session.to_string());
+        self
     }
 
     /// Test-support: shorten the hydration budget so a test can prove the bound
@@ -714,6 +724,7 @@ impl ToolDispatcher for DaemonToolDispatcher {
 
         let ctx = ExecutionContext {
             env_vars,
+            session_id: self.session.clone(),
             ..ExecutionContext::default()
         };
 

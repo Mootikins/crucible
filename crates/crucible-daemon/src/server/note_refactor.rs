@@ -123,6 +123,97 @@ pub(crate) async fn rename_note(
     from_rel: &str,
     to_rel: &str,
 ) -> Result<RenameOutcome, RenameError> {
+    let plan = plan_rename(km, kiln_root, from_rel, to_rel).await?;
+    apply_rename(km, kiln_root, from_rel, to_rel, plan).await
+}
+
+/// The disk edits of one rename, computed before any of them lands.
+///
+/// A caller that must check the final bytes, or lock every file the rename
+/// writes, plans first and applies after.
+pub(crate) struct RenamePlan {
+    /// Each edited markdown source: its kiln-relative path, the path the
+    /// edited bytes go to, and the bytes.
+    staged: Vec<(String, std::path::PathBuf, Vec<u8>)>,
+    skipped: Vec<SkippedRef>,
+    canvas_sources: Vec<String>,
+    /// The bytes each edited markdown source held when the plan read it.
+    originals: BTreeMap<String, Vec<u8>>,
+}
+
+/// One source file that a rename rewrites, with the text it held and the
+/// text it gets.
+pub(crate) struct SourceEdit {
+    pub path: String,
+    pub original: String,
+    pub text: String,
+}
+
+impl RenamePlan {
+    /// The bytes that the moved file holds after the rename, when the rename
+    /// edits it (a self-link). `None`: the file moves unchanged.
+    pub(crate) fn moved_bytes(&self, from_rel: &str) -> Option<&[u8]> {
+        self.staged
+            .iter()
+            .find(|(source, _, _)| source == from_rel)
+            .map(|(_, _, bytes)| bytes.as_slice())
+    }
+
+    /// Each source, other than the moved file, that the rename rewrites,
+    /// with its old and new text. A canvas is rewritten here, not on disk.
+    pub(crate) fn source_edits(
+        &self,
+        kiln_root: &Path,
+        from_rel: &str,
+        to_rel: &str,
+    ) -> anyhow::Result<Vec<SourceEdit>> {
+        let mut edits = Vec::new();
+        for (source, _, bytes) in &self.staged {
+            if source == from_rel {
+                continue;
+            }
+            let original = self.originals.get(source).cloned().unwrap_or_default();
+            edits.push(SourceEdit {
+                path: source.clone(),
+                original: String::from_utf8(original)?,
+                text: String::from_utf8(bytes.clone())?,
+            });
+        }
+        for source in self.canvas_sources.iter().filter(|s| *s != from_rel) {
+            if let Some((original, text)) =
+                canvas_rewrite(&kiln_root.join(source), from_rel, to_rel)?
+            {
+                edits.push(SourceEdit {
+                    path: source.clone(),
+                    original,
+                    text,
+                });
+            }
+        }
+        Ok(edits)
+    }
+
+    /// The kiln-relative paths, other than the moved file, that the rename
+    /// writes.
+    pub(crate) fn rewritten(&self, from_rel: &str) -> Vec<String> {
+        self.staged
+            .iter()
+            .map(|(source, _, _)| source)
+            .chain(&self.canvas_sources)
+            .filter(|source| *source != from_rel)
+            .cloned()
+            .collect()
+    }
+}
+
+/// Compute the edits of renaming `from_rel` → `to_rel`. Reads the index and
+/// the sources; writes nothing.
+pub(crate) async fn plan_rename(
+    km: &Arc<KilnManager>,
+    kiln_root: &Path,
+    from_rel: &str,
+    to_rel: &str,
+) -> Result<RenamePlan, RenameError> {
     // Both ends must name the same kind of kiln file. Renaming `a.md` to
     // `a.canvas` is not a rename, it is a format conversion that would leave
     // the index describing a document that no longer parses.
@@ -180,6 +271,7 @@ pub(crate) async fn rename_note(
     }
 
     let mut staged: Vec<(String, std::path::PathBuf, Vec<u8>)> = Vec::new();
+    let mut originals = BTreeMap::new();
     for (source, mut refs) in by_source {
         // A note's own row set never includes itself pointing at `from` after
         // the move — but a self-link is still a valid rewrite target when the
@@ -202,6 +294,7 @@ pub(crate) async fn rename_note(
             }
         };
 
+        let original = bytes.clone();
         refs.sort_by_key(|r| std::cmp::Reverse(r.span_start));
         let mut edited = false;
         for r in refs {
@@ -233,9 +326,32 @@ pub(crate) async fn rename_note(
             } else {
                 path
             };
+            originals.insert(source.clone(), original);
             staged.push((source, write_path, bytes));
         }
     }
+    Ok(RenamePlan {
+        staged,
+        skipped,
+        canvas_sources: canvas_sources.into_keys().collect(),
+        originals,
+    })
+}
+
+/// Apply `plan`: move the file, write the edited sources, re-index.
+pub(crate) async fn apply_rename(
+    km: &Arc<KilnManager>,
+    kiln_root: &Path,
+    from_rel: &str,
+    to_rel: &str,
+    plan: RenamePlan,
+) -> Result<RenameOutcome, RenameError> {
+    let RenamePlan {
+        staged,
+        mut skipped,
+        canvas_sources,
+        ..
+    } = plan;
 
     // 2. Rename on disk — the same validated move fs.move uses (containment,
     //    overwrite refusal, symlink-as-link semantics). Unlike a DnD drop
@@ -278,7 +394,7 @@ pub(crate) async fn rename_note(
     // that must survive untouched (see `crucible_core::canvas`). Parsing and
     // re-serializing gets both for free, at the cost of rewriting the whole
     // file — acceptable, since a canvas is small and this runs only on rename.
-    for (source, ()) in canvas_sources {
+    for source in canvas_sources {
         // If the canvas IS the file being moved, it has already been renamed on
         // disk, so edit it at its new location.
         let disk_path = if source == from_rel {
@@ -309,7 +425,30 @@ pub(crate) async fn rename_note(
         }
     }
 
-    // 4. Re-index inline (the watcher's later pass is an idempotent no-op):
+    reindex_rename(km, kiln_root, from_rel, to_rel, &rewritten_sources).await;
+
+    Ok(RenameOutcome {
+        from: from_rel.to_string(),
+        to: to_rel.to_string(),
+        rewritten_sources,
+        skipped,
+    })
+}
+
+/// Bring the index up to a rename that landed on disk: the old identity
+/// out, the new one in, and each rewritten source parsed again. Then say
+/// that the delete and the insert were one move.
+///
+/// An applied rename and an accepted move proposal both call this, so the
+/// backlinks are right as soon as the files are.
+pub(crate) async fn reindex_rename(
+    km: &KilnManager,
+    kiln_root: &Path,
+    from_rel: &str,
+    to_rel: &str,
+    rewritten_sources: &[String],
+) {
+    // Re-index inline (the watcher's later pass is an idempotent no-op):
     //    old identity out, new identity in, edited sources re-parsed. The
     //    upsert/delete re-resolution steps repoint every remaining bare-stem
     //    row automatically.
@@ -328,7 +467,7 @@ pub(crate) async fn rename_note(
     {
         tracing::warn!(error = %e, "rename: indexing new path failed");
     }
-    for source in &rewritten_sources {
+    for source in rewritten_sources {
         if source == from_rel {
             continue; // already indexed under `to_rel`
         }
@@ -343,13 +482,6 @@ pub(crate) async fn rename_note(
     // one — it really performed both — so this is the event that says the two
     // were one move.
     km.announce_note_renamed(from_rel, to_rel);
-
-    Ok(RenameOutcome {
-        from: from_rel.to_string(),
-        to: to_rel.to_string(),
-        rewritten_sources,
-        skipped,
-    })
 }
 
 /// Repoint every `file` node in the canvas at `path` from `from_rel` to
@@ -367,6 +499,20 @@ pub(crate) fn rewrite_canvas_refs(
     from_rel: &str,
     to_rel: &str,
 ) -> anyhow::Result<bool> {
+    let Some((_, text)) = canvas_rewrite(path, from_rel, to_rel)? else {
+        return Ok(false);
+    };
+    std::fs::write(path, text)?;
+    Ok(true)
+}
+
+/// The text of the canvas at `path` before and after its references move
+/// from `from_rel` to `to_rel`, or `None` when no reference changes.
+pub(crate) fn canvas_rewrite(
+    path: &Path,
+    from_rel: &str,
+    to_rel: &str,
+) -> anyhow::Result<Option<(String, String)>> {
     use crucible_core::canvas::{Canvas, NodeKind};
 
     let source = std::fs::read_to_string(path)?;
@@ -388,11 +534,9 @@ pub(crate) fn rewrite_canvas_refs(
     }
 
     if !changed {
-        return Ok(false);
+        return Ok(None);
     }
-
-    std::fs::write(path, canvas.to_json_pretty()?)?;
-    Ok(true)
+    Ok(Some((source, canvas.to_json_pretty()?)))
 }
 
 /// Render the rewritten target token, preserving the author's link style:
@@ -555,6 +699,26 @@ mod tests {
             out.skipped
         );
         assert!(out.rewritten_sources.is_empty());
+    }
+
+    /// A partial path (`[[sub/Old]]` for `a/sub/Old.md`) resolves by path
+    /// suffix, so a rename rewrites it to the new path.
+    #[tokio::test]
+    async fn rename_rewrites_partial_path_links() {
+        let (_tmp, km, root) = kiln_with(&[
+            ("a/sub/Old.md", "# Old\n"),
+            ("linker.md", "p [[sub/Old]] q [[Sub/Old|Label]]"),
+        ])
+        .await;
+
+        let out = rename_note(&km, &root, "a/sub/Old.md", "a/sub/New.md")
+            .await
+            .unwrap();
+        assert_eq!(out.rewritten_sources, vec!["linker.md"]);
+        assert_eq!(
+            read(&root, "linker.md"),
+            "p [[a/sub/New]] q [[a/sub/New|Label]]"
+        );
     }
 
     /// Path-style raw links keep their path style; bare links stay bare.

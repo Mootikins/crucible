@@ -1019,24 +1019,56 @@ native Bases results. Inline sources use `{yaml="..."}` and may name the host
 with `["this"]="Host.md"`. Results contain typed rows, groups, summaries,
 view options, resolved source identity and ancestor hashes.
 
-Plugin tools receive `(args, ctx)`. Pass `ctx.session_id` explicitly for a write:
+Inside a plugin tool, command or session hook, a Bases call acts for the
+session of that call. You can omit `session`. A call that names a different
+session is refused, so a tool cannot borrow the permissions or the review
+ledger of another session. Outside any session, name the session explicitly:
 
 ```lua
 local function finish(args, ctx)
-    return cru.kiln.set_property(args.kiln, {
-        session = ctx.session_id, path = args.path, key = "status", value = "done",
+    local result = cru.kiln.set_property(args.kiln, {
+        path = args.path, key = "status", value = "done",
         ancestor_hash = args.ancestor_hash,
     })
+    if result.status == "refused" or result.status == "stale" then
+        error(result.reason or "The note changed; query again")
+    end
+    return result
 end
 ```
 
+Each write returns a table with a `status` field:
+
+| `status` | Meaning | Other fields |
+|---|---|---|
+| `applied` | The disk holds the change. | `path`, `ancestor_hash` |
+| `unchanged` | The file already held the value, or the base exists. | `path`, `ancestor_hash` |
+| `proposed` | The session proposes its writes. The disk did not change. | `path`, `proposal` |
+| `stale` | The file changed since you read it. | `path`, `current_hash` |
+| `refused` | A permission rule or a `base:before_write` policy refused the write. | `path`, `reason` |
+
+Invalid options, a missing file and daemon failures raise a Lua error.
+
+`set_property` needs `value` or `delete = true`. The key `file.folder` moves
+the note into the folder that `value` names. Links to the note follow it, and
+each file that the move rewrites passes the `base:before_write` policy with
+its final text. In propose mode, the move is one proposal: it deletes the old
+path, creates the new one and rewrites the linking notes. Accept writes all of
+them as one set. A file that is not text moves only in apply mode.
 `create_entry` accepts the same source/view plus `name`, optional `content` and
-`group`. `ensure_base` accepts `path` and valid `yaml`, and never replaces an
-existing base. All three require `session`; commands invoked without a session
-must report that requirement. Queries can optionally name a session to use its
-scope. The daemon checks attached kilns, trust, isolation and permissions.
-An unattended permission prompt is refused. The session's apply/propose mode
+`group`. `reorder_groups` accepts the source, `view`, `group_order` and
+`ancestor_hash`. `ensure_base` accepts `path` and valid `yaml`. It never
+replaces an existing file or follows a symlink. `list_bases` and `base_views`
+list the saved bases and the views of one base. `pending_writes` lists the
+pending proposed note writes of a kiln with their final `properties`, so a
+policy can count proposals too. The daemon checks attached kilns, trust,
+isolation and permissions. A write inside a plugin tool call that the
+permission gate allowed uses the grant of that call. A write that needs a
+prompt outside such a call is refused. The session's apply/propose mode
 controls whether bytes land or a proposal enters the Inbox.
+
+A `base:before_write` handler cannot write through Bases. Such a write raises
+an error, because the policy runs while the kiln's Bases writes are held.
 
 Use `cru.on("base:before_write", {key="my-policy"}, handler)` for synchronous
 policy: nil permits; `{cancel=true, reason="..."}` refuses. Errors and timeouts

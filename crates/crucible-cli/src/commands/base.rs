@@ -1,8 +1,14 @@
 //! Thin terminal client for daemon-owned Obsidian Bases.
+use crate::formatting::OutputFormat;
 use anyhow::Result;
 use clap::{Subcommand, ValueEnum};
-use crucible_daemon::bases::{QueryResult, Row};
-use serde_json::json;
+use crucible_daemon::bases::{
+    Column, CreateEntryParams, ListParams, QueryParams, QueryResult, Row, SetPropertyParams,
+    Source, ViewSummary, ViewsParams, WriteOutcome,
+};
+use crucible_daemon::DaemonClient;
+use serde::Serialize;
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Format {
@@ -37,8 +43,9 @@ pub enum BaseCommands {
         view: Option<String>,
         #[arg(long = "this")]
         host: Option<String>,
-        #[arg(long, value_enum, default_value = "table")]
-        format: Format,
+        /// Output format. The default is a table on a terminal, else TSV.
+        #[arg(long, value_enum)]
+        format: Option<Format>,
     },
     /// Create a note using the base and view filters.
     Create {
@@ -51,14 +58,18 @@ pub enum BaseCommands {
         name: Option<String>,
         #[arg(long)]
         content: Option<String>,
-        #[arg(long)]
-        group: Option<String>,
+        /// The group of the new entry: JSON, else text. `null` is the group
+        /// of entries with no value.
+        #[arg(long, value_parser = json_or_text)]
+        group: Option<Value>,
     },
     /// Set a frontmatter property using the hash returned by query.
     Set {
         note: String,
         key: String,
-        value: Option<String>,
+        /// The new value: JSON, else text. `null` sets an empty property.
+        #[arg(required_unless_present = "delete", value_parser = json_or_text)]
+        value: Option<Value>,
         #[arg(long)]
         kiln: Option<String>,
         #[arg(long)]
@@ -67,26 +78,57 @@ pub enum BaseCommands {
         delete: bool,
     },
 }
+
+/// A command-line value as JSON when it parses, else as text, so that
+/// `'"done"'`, `done`, `3` and `null` all mean what a person expects.
+fn json_or_text(text: &str) -> Result<Value, std::convert::Infallible> {
+    Ok(serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_owned())))
+}
+
 pub async fn handle(cmd: BaseCommands) -> Result<()> {
     let client = crate::common::daemon_client().await?;
-    let (method, params, format) = match cmd {
-        BaseCommands::List { kiln } => ("base.list", json!({"kiln":kiln}), None),
-        BaseCommands::Views { file, kiln } => (
-            "base.views",
-            json!({"kiln":kiln,"source":{"path":file}}),
-            None,
-        ),
+    match cmd {
+        BaseCommands::List { kiln } => {
+            let files: Vec<String> = client.typed_call("base.list", ListParams { kiln }).await?;
+            print_json(&files)
+        }
+        BaseCommands::Views { file, kiln } => {
+            let views: Vec<ViewSummary> = client
+                .typed_call(
+                    "base.views",
+                    ViewsParams {
+                        kiln,
+                        source: Source::Path { path: file },
+                    },
+                )
+                .await?;
+            print_json(&views)
+        }
         BaseCommands::Query {
             file,
             kiln,
             view,
             host,
             format,
-        } => (
-            "base.query",
-            json!({"kiln":kiln,"source":{"path":file},"view":view,"this":host}),
-            Some(format),
-        ),
+        } => {
+            let result: QueryResult = client
+                .typed_call(
+                    "base.query",
+                    QueryParams {
+                        kiln,
+                        source: Source::Path { path: file },
+                        view,
+                        host,
+                    },
+                )
+                .await?;
+            let format = format.unwrap_or(match OutputFormat::for_stdout(None) {
+                OutputFormat::Table => Format::Table,
+                OutputFormat::Json | OutputFormat::Plain => Format::Tsv,
+            });
+            print!("{}", render(&result, format)?);
+            Ok(())
+        }
         BaseCommands::Create {
             file,
             kiln,
@@ -95,11 +137,19 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
             content,
             group,
         } => {
-            let mut params = json!({"kiln":kiln,"source":{"path":file},"view":view,"name":name,"content":content});
-            if let Some(g) = group {
-                params["group"] = serde_json::from_str(&g).unwrap_or(json!(g));
-            }
-            ("base.create_entry", params, None)
+            write(
+                &client,
+                "base.create_entry",
+                CreateEntryParams {
+                    kiln,
+                    source: Source::Path { path: file },
+                    view,
+                    name,
+                    content,
+                    group,
+                },
+            )
+            .await
         }
         BaseCommands::Set {
             note,
@@ -108,175 +158,179 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
             kiln,
             ancestor_hash,
             delete,
-        } => (
-            "base.set_property",
-            json!({"kiln":kiln,"path":note,"key":key,"value":value.map(|v|serde_json::from_str(&v).unwrap_or(json!(v))),"ancestor_hash":ancestor_hash,"delete":delete}),
-            None,
-        ),
-    };
-    let result = client.call(method, params).await?;
-    anyhow::ensure!(
-        result.get("ok") != Some(&json!(false)),
-        "Base write refused: {result}"
-    );
-    if let Some(format) = format {
-        let result: QueryResult = serde_json::from_value(result)?;
-        print!("{}", render(&result, format)?)
-    } else {
-        println!("{}", serde_json::to_string_pretty(&result)?)
+        } => {
+            write(
+                &client,
+                "base.set_property",
+                SetPropertyParams {
+                    kiln,
+                    path: note,
+                    key,
+                    value,
+                    delete,
+                    ancestor_hash,
+                },
+            )
+            .await
+        }
     }
+}
+
+fn print_json(value: &impl Serialize) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
 }
+
+/// Send one Bases write. A stale or refused write prints its outcome to
+/// stderr and fails, so that a script sees that the disk did not change.
+async fn write(client: &DaemonClient, method: &str, params: impl Serialize) -> Result<()> {
+    let outcome: WriteOutcome = client.typed_call(method, params).await?;
+    let text = serde_json::to_string_pretty(&outcome)?;
+    match outcome {
+        WriteOutcome::Applied { .. }
+        | WriteOutcome::Unchanged { .. }
+        | WriteOutcome::Proposed { .. } => {
+            println!("{text}");
+            Ok(())
+        }
+        WriteOutcome::Stale { path, .. } => {
+            eprintln!("{text}");
+            anyhow::bail!("{path} changed since it was read; query the base again")
+        }
+        WriteOutcome::Refused { path, reason } => {
+            eprintln!("{text}");
+            anyhow::bail!("The write to {path} was refused: {reason}")
+        }
+    }
+}
+
+/// The text of one cell: empty for an absent or null value.
+fn cell(row: &Row, column: &Column) -> String {
+    row.values
+        .get(&column.property)
+        .filter(|v| **v != crucible_core::bases::BaseValue::Null)
+        .map(crucible_core::bases::BaseValue::text)
+        .unwrap_or_default()
+}
+
 fn render(result: &QueryResult, format: Format) -> Result<String> {
-    if matches!(format, Format::Data) {
-        return Ok(serde_json::to_string_pretty(result)? + "\n");
-    }
-    if matches!(format, Format::Json) {
-        let rows = result
-            .rows
-            .iter()
-            .map(|row| {
-                let mut map = serde_json::Map::new();
-                map.insert("path".into(), json!(row.path));
-                for column in &result.columns {
-                    let value = row
-                        .values
-                        .get(&column.property)
-                        .filter(|v| **v != crucible_core::bases::Value::Null)
-                        .map(|v| v.text())
-                        .filter(|s| !s.is_empty());
-                    map.insert(column.display_name.clone(), json!(value));
-                }
-                map
-            })
-            .collect::<Vec<_>>();
-        return Ok(serde_json::to_string_pretty(&rows)? + "\n");
-    }
-    if matches!(format, Format::Paths) {
-        return Ok(result.rows.iter().map(|r| r.path.clone() + "\n").collect());
-    }
-    let mut out = String::new();
-    let data_rows = |rows: &[Row]| {
-        let mut data = vec![result
-            .columns
-            .iter()
-            .map(|c| c.display_name.clone())
-            .collect::<Vec<_>>()];
-        data.extend(rows.iter().map(|r| {
-            result
-                .columns
-                .iter()
-                .map(|c| {
-                    r.values
-                        .get(&c.property)
-                        .filter(|v| **v != crucible_core::bases::Value::Null)
-                        .map(|v| v.text())
-                        .unwrap_or_default()
-                })
-                .collect()
-        }));
-        data
+    let header = result
+        .columns
+        .iter()
+        .map(|c| c.display_name.clone())
+        .collect::<Vec<_>>();
+    let cells = |rows: &[Row]| {
+        rows.iter()
+            .map(|row| result.columns.iter().map(|c| cell(row, c)).collect())
+            .collect::<Vec<Vec<String>>>()
     };
-    let table = |rows: &[Row]| {
-        let data = data_rows(rows);
-        if matches!(format, Format::Table) && std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-            return crate::output::records_table(
-                &data[0].iter().map(String::as_str).collect::<Vec<_>>(),
-                &data[1..],
-            ) + "\n";
-        }
-        let separator = match format {
-            Format::Csv => ",",
-            Format::Md => " | ",
-            _ => "\t",
-        };
-        let escape = |s: &str| match format {
-            Format::Csv if s.contains([',', '"', '\n', '\r']) => {
-                format!("\"{}\"", s.replace('"', "\"\""))
-            }
-            Format::Csv => s.to_owned(),
-            Format::Md => s.replace('|', "\\|").replace('\n', "<br>"),
-            _ => s.replace(['\t', '\n', '\r'], " "),
-        };
-        if matches!(format, Format::Md) {
-            let data = data
+    Ok(match format {
+        Format::Data => serde_json::to_string_pretty(result)? + "\n",
+        Format::Json => {
+            let rows = result
+                .rows
                 .iter()
-                .map(|row| row.iter().map(|s| escape(s)).collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            let widths = (0..data[0].len())
-                .map(|i| {
-                    data.iter()
-                        .map(|r| r[i].chars().count())
-                        .max()
-                        .unwrap_or(3)
-                        .max(3)
+                .map(|row| {
+                    let mut map = serde_json::Map::new();
+                    map.insert("path".into(), json!(row.path));
+                    for column in &result.columns {
+                        let text = Some(cell(row, column)).filter(|s| !s.is_empty());
+                        map.insert(column.display_name.clone(), json!(text));
+                    }
+                    map
                 })
                 .collect::<Vec<_>>();
-            let line = |row: &[String], center: bool| {
-                format!(
-                    "| {} |",
-                    row.iter()
-                        .zip(&widths)
-                        .map(|(s, w)| {
-                            let padding = w.saturating_sub(s.chars().count());
-                            let left = if center { padding / 2 } else { 0 };
-                            format!("{}{}{}", " ".repeat(left), s, " ".repeat(padding - left))
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                )
-            };
-            let mut lines = vec![
-                line(&data[0], false),
-                format!(
-                    "| {} |",
-                    widths
-                        .iter()
-                        .map(|w| "-".repeat(*w))
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                ),
-            ];
-            lines.extend(data.iter().skip(1).map(|row| line(row, true)));
-            return lines.join("\n") + "\n";
+            serde_json::to_string_pretty(&rows)? + "\n"
         }
-        let mut lines = vec![];
-        for (i, row) in data.iter().enumerate() {
-            lines.push(
-                row.iter()
-                    .map(|s| escape(s))
-                    .collect::<Vec<_>>()
-                    .join(separator),
-            );
-            if i == 0 && matches!(format, Format::Md) {
-                lines.push(vec!["---"; row.len()].join(separator))
-            }
-        }
-        lines.join("\n") + "\n"
-    };
-    if matches!(format, Format::Table) && !result.groups.is_empty() {
-        for g in &result.groups {
-            out.push_str(&format!(
-                "{}\n{}\n",
-                if g.value.empty() {
+        Format::Paths => result.rows.iter().map(|r| r.path.clone() + "\n").collect(),
+        Format::Table if !result.groups.is_empty() => result
+            .groups
+            .iter()
+            .map(|g| {
+                let label = if g.value.empty() {
                     "No value".into()
                 } else {
                     g.value.text()
-                },
-                table(&g.rows)
-            ))
+                };
+                format!("{label}\n{}\n", table(&header, &cells(&g.rows), format))
+            })
+            .collect(),
+        _ => table(&header, &cells(&result.rows), format),
+    })
+}
+
+/// One table of `rows` under `header`, in a tabular `format`.
+fn table(header: &[String], rows: &[Vec<String>], format: Format) -> String {
+    let escape = |s: &str| match format {
+        Format::Csv if s.contains([',', '"', '\n', '\r']) => {
+            format!("\"{}\"", s.replace('"', "\"\""))
         }
-    } else {
-        out = table(&result.rows)
+        Format::Csv => s.to_owned(),
+        Format::Md => s.replace('|', "\\|").replace('\n', "<br>"),
+        _ => s.replace(['\t', '\n', '\r'], " "),
+    };
+    let escaped = std::iter::once(header)
+        .chain(rows.iter().map(Vec::as_slice))
+        .map(|row| row.iter().map(|s| escape(s)).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    match format {
+        Format::Table => {
+            crate::output::records_table(
+                &header.iter().map(String::as_str).collect::<Vec<_>>(),
+                rows,
+            ) + "\n"
+        }
+        Format::Md => markdown(&escaped),
+        _ => {
+            let separator = if matches!(format, Format::Csv) {
+                ","
+            } else {
+                "\t"
+            };
+            escaped
+                .iter()
+                .map(|row| row.join(separator) + "\n")
+                .collect()
+        }
     }
-    Ok(out)
+}
+
+/// A Markdown table with padded columns and centred body cells, as Obsidian
+/// copies it. `data` holds the header row first.
+fn markdown(data: &[Vec<String>]) -> String {
+    let widths = (0..data[0].len())
+        .map(|i| {
+            data.iter()
+                .map(|r| r[i].chars().count())
+                .max()
+                .unwrap_or(3)
+                .max(3)
+        })
+        .collect::<Vec<_>>();
+    let line = |row: &[String], center: bool| {
+        let cells = row
+            .iter()
+            .zip(&widths)
+            .map(|(s, w)| {
+                let padding = w.saturating_sub(s.chars().count());
+                let left = if center { padding / 2 } else { 0 };
+                format!("{}{}{}", " ".repeat(left), s, " ".repeat(padding - left))
+            })
+            .collect::<Vec<_>>();
+        format!("| {} |\n", cells.join(" | "))
+    };
+    let rule = widths.iter().map(|w| "-".repeat(*w)).collect::<Vec<_>>();
+    std::iter::once(line(&data[0], false))
+        .chain(std::iter::once(format!("| {} |\n", rule.join(" | "))))
+        .chain(data[1..].iter().map(|row| line(row, true)))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[tokio::test]
-    async fn bases_cli_formats_match_obsidian_reference() {
+    async fn bases_cli_render_matches_obsidian_reference_formats() {
         let corpus: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../assets/fixtures/bases/obsidian-1.14.2-queries.json"
         ))

@@ -10,15 +10,47 @@ use super::AgentManager;
 use crucible_core::config::components::permissions::{PermissionConfig, PermissionEngine};
 use tracing::warn;
 
+/// The mode of `session`. A session whose card names no mode runs `normal`.
+pub(crate) fn session_mode(session: &crucible_core::session::Session) -> &str {
+    session
+        .agent
+        .as_ref()
+        .and_then(|a| a.mode.as_deref())
+        .unwrap_or("normal")
+}
+
 impl AgentManager {
-    /// An unattended Bases edit uses the same card, mode and operator decision.
+    /// Where the note writes of `session` go now. A running turn fixed its
+    /// write mode when it started; between turns the session's mode decides.
+    pub(crate) fn write_mode_for(
+        &self,
+        session: &crucible_core::session::Session,
+    ) -> crate::tools::notes::TurnWriteMode {
+        let id = session.id.as_str();
+        if self.turn_running(id) {
+            return self.slot(id).write_mode().clone();
+        }
+        let mode = crate::tools::notes::TurnWriteMode::default();
+        mode.set(self.mode_writes(session_mode(session)));
+        mode
+    }
+
+    /// Decide a Bases write that a plugin makes for `session`.
+    ///
+    /// The card, the mode and the operator rules apply as they do to an agent
+    /// write. Nobody is prompted: inside a tool call that the gate already
+    /// allowed, that grant answers what only a person could decide, as it
+    /// does for the other writes the tool makes. Outside such a call the
+    /// write is unattended, so a write that needs a prompt is refused.
     pub(crate) async fn bases_write_permission(
         &self,
         session: &crucible_core::session::Session,
         path: &str,
         content: Option<&str>,
     ) -> Result<(), String> {
-        use super::messaging::gate_decision::{decide_permission, Decision, PermissionContext};
+        use super::messaging::gate_decision::{
+            decide_nested, decide_permission, Decision, PermissionContext,
+        };
         let engine = self.session_permission_engine(session.id.as_str());
         let slot = self.slot(session.id.as_str());
         let hooks = self.plugin_handlers();
@@ -36,18 +68,19 @@ impl AgentManager {
             patterns: None,
             slot: Some(&slot),
             hooks: hooks.as_ref(),
-            mode: session
-                .agent
-                .as_ref()
-                .and_then(|a| a.mode.as_deref())
-                .unwrap_or("normal"),
+            mode: session_mode(session),
             modes: &self.modes,
             mcp_read_only: &Default::default(),
             prompt: None,
         };
         let args = serde_json::json!({"path": path, "content": content});
         let call = crucible_core::types::CanonicalToolCall::crucible_tool("write_file", &args);
-        match decide_permission(&context, &call, &args).await {
+        let decision = if super::messaging::review_capture::call_allowed_in(session.id.as_str()) {
+            decide_nested(&context, &call, &args)
+        } else {
+            decide_permission(&context, &call, &args).await
+        };
+        match decision {
             Decision::Allow(_) | Decision::UserAllowed => Ok(()),
             Decision::Deny(reason) => Err(reason),
             Decision::NoAnswer => Err("Bases write needs approval".into()),

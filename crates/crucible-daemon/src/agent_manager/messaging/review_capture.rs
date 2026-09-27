@@ -4,17 +4,99 @@
 
 use super::super::{is_safe, StreamContext};
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 
-tokio::task_local! {
-    /// Only this future's capture may own a nested daemon write.
-    pub(crate) static CURRENT_CAPTURE: (String, std::cell::Cell<bool>);
+/// The tool call that this future runs, for a daemon write nested in it.
+///
+/// A task-local, so only work that the call itself awaits sees it: a write
+/// from another task of the same session is not part of the call.
+pub(crate) struct ToolCallScope {
+    session: String,
+    /// A review bracket of this call is open.
+    bracketed: std::cell::Cell<bool>,
+    /// The permission gate allowed this call.
+    allowed: std::cell::Cell<bool>,
 }
 
-pub(crate) fn captures_session(session: &str) -> bool {
-    CURRENT_CAPTURE
-        .try_with(|(id, active)| id == session && active.get())
+tokio::task_local! {
+    static CURRENT_CALL: ToolCallScope;
+}
+
+/// Run `call`, one tool call of `session`, so that the daemon writes nested in
+/// it can find its review bracket and its permission decision.
+pub(crate) async fn within_tool_call<F: std::future::Future>(session: &str, call: F) -> F::Output {
+    CURRENT_CALL
+        .scope(
+            ToolCallScope {
+                session: session.to_string(),
+                bracketed: std::cell::Cell::new(false),
+                allowed: std::cell::Cell::new(false),
+            },
+            call,
+        )
+        .await
+}
+
+fn current(session: &str, read: impl FnOnce(&ToolCallScope) -> bool) -> bool {
+    CURRENT_CALL
+        .try_with(|scope| scope.session == session && read(scope))
         .unwrap_or(false)
+}
+
+/// Whether an open bracket of the current tool call of `session` already
+/// records a nested write.
+pub(crate) fn captures_session(session: &str) -> bool {
+    current(session, |scope| scope.bracketed.get())
+}
+
+/// Whether the permission gate allowed the current tool call of `session`.
+pub(crate) fn call_allowed_in(session: &str) -> bool {
+    current(session, |scope| scope.allowed.get())
+}
+
+/// Record that the permission gate allowed the current tool call.
+pub(crate) fn mark_call_allowed() {
+    let _ = CURRENT_CALL.try_with(|scope| scope.allowed.set(true));
+}
+
+/// Attribute `write`, a daemon write for `session` made outside the session's
+/// tool calls, to its own interval of the session's review ledger.
+///
+/// A write nested in a bracketed tool call belongs to that call's interval,
+/// so it opens no second bracket: two open brackets on one root make both
+/// contested. Capture is best-effort, as for a tool call: a root the daemon
+/// cannot diff leaves the write unattributed, and a failed close is logged,
+/// because the write itself already happened.
+pub(crate) async fn attribute_write<T>(
+    review: &Arc<crate::review::ReviewLedgers>,
+    session: &str,
+    storage: &std::path::Path,
+    roots: &[std::path::PathBuf],
+    event_tx: &crate::EventBus,
+    label: &str,
+    write: impl std::future::Future<Output = T>,
+) -> T {
+    if captures_session(session) {
+        return write.await;
+    }
+    let bracket = match review.open_or_restore(session, storage, roots).await {
+        Ok(()) => review.open_bracket(session).await,
+        Err(e) => Err(e),
+    };
+    let bracket = bracket
+        .inspect_err(|e| {
+            debug!(session_id = %session, error = %e, "review bracket not opened; write left unattributed");
+        })
+        .ok();
+    let answer = write.await;
+    if let Some(bracket) = bracket {
+        let id = format!("{label}-{}", uuid::Uuid::new_v4());
+        if let Err(e) = review.close(session, bracket, &id, 0).await {
+            warn!(session_id = %session, error = %e, "review bracket close failed; write left unattributed");
+        }
+        crate::server::session::review::emit_review_changed(event_tx, session, label);
+    }
+    answer
 }
 
 /// Whether a tool call needs a review capture bracket around it (§5).
@@ -79,18 +161,26 @@ impl StreamContext {
         if !review.is_open(&self.session_id) {
             return None;
         }
-        match review.open_bracket(&self.session_id).await {
-            Ok(handle) => Some(handle),
-            Err(e) => {
+        let handle = review
+            .open_bracket(&self.session_id)
+            .await
+            .inspect_err(|e| {
                 debug!(
                     session_id = %self.session_id,
                     tool = %tool_name,
                     error = %e,
                     "review capture bracket not opened; call left unattributed"
                 );
-                None
+            })
+            .ok();
+        // Here, where the bracket opens, so that every path that brackets a
+        // call also lets the daemon writes nested in it join the bracket.
+        let _ = CURRENT_CALL.try_with(|scope| {
+            if scope.session == self.session_id {
+                scope.bracketed.set(handle.is_some());
             }
-        }
+        });
+        handle
     }
 
     /// Move an open bracket's baseline to now.

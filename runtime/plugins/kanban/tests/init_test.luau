@@ -10,22 +10,31 @@ local writes: { any } = {}
 local ensured: { any } = {}
 local rows: { any } = {}
 local groups: { any } = {}
+local pending: { any } = {}
+local queries = 0
+local answer: any = {status="proposed"}
 describe("native kanban", function()
 before_each(function()
-    writes, ensured, rows, groups = {}, {}, {}, {}
+    writes, ensured, rows, groups, pending, queries = {}, {}, {}, {}, {}, 0
+    answer = {status="proposed"}
     plugin.setup({folder="tickets",base="tickets.base",wip={},transitions={}})
     ;(cru.kiln :: any).query = function(kiln, options)
         expect.equal(kiln,"notes")
         expect.equal(options.source.path,"tickets.base")
+        queries += 1
         return {rows=rows,groups=groups}
+    end
+    ;(cru.kiln :: any).pending_writes = function(kiln, _options)
+        expect.equal(kiln,"notes")
+        return pending
     end
     ;(cru.kiln :: any).set_property = function(kiln, options)
         table.insert(writes, options)
-        return {ok=true,status="proposed"}
+        return answer
     end
     ;(cru.kiln :: any).ensure_base = function(kiln, options)
         table.insert(ensured, options)
-        return {ok=true,status="exists"}
+        return {status="unchanged"}
     end
 end)
     it("initializes through the absent-only daemon operation", function()
@@ -66,5 +75,33 @@ end)
         expect.equal(policy({},event),nil)
         event.path="other/a.md"
         expect.equal(policy({},event),nil)
+    end)
+    it("counts pending proposed moves against the WIP limit", function()
+        plugin.setup({wip={doing=1}})
+        local event={kiln="notes",path="tickets/b.md",old_properties={status="todo"},properties={status="doing"}}
+        pending={{path="tickets/a.md",proposal="p1",properties={status="doing"}}}
+        expect.equal(policy({},event).cancel,true)
+        -- A proposal for the ticket being moved, or outside the folder, takes no place.
+        pending={{path="tickets/b.md",proposal="p1",properties={status="doing"}},
+            {path="other/c.md",proposal="p2",properties={status="doing"}}}
+        expect.equal(policy({},event),nil)
+        -- A ticket that is in the column on disk and also proposed counts once.
+        plugin.setup({wip={doing=2}})
+        groups={{value={type="string",value="doing"},rows={{path="tickets/a.md"}}}}
+        pending={{path="tickets/a.md",proposal="p1",properties={status="doing"}}}
+        expect.equal(policy({},event),nil)
+    end)
+    it("uses a given ancestor without querying the board", function()
+        plugin.tools.kanban_move.fn({kiln="notes",file="a.md",to="doing",ancestor_hash="h9"},{session_id="s1"})
+        expect.equal(queries,0)
+        expect.equal(writes[1].ancestor_hash,"h9")
+    end)
+    it("fails the tool when the write is refused or stale", function()
+        answer={status="refused",reason="Bases policy refused: Ticket WIP limit reached"}
+        local ok, err = pcall(plugin.tools.kanban_move.fn,{kiln="notes",file="a.md",to="doing",ancestor_hash="h"},{session_id="s1"})
+        expect.equal(ok,false)
+        expect.equal(string.find(tostring(err),"WIP",1,true) ~= nil,true)
+        answer={status="stale",current_hash="h2"}
+        expect.equal(pcall(plugin.tools.kanban_move.fn,{kiln="notes",file="a.md",to="doing",ancestor_hash="h"},{session_id="s1"}),false)
     end)
 end)

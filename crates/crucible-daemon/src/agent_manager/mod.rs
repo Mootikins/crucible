@@ -1432,7 +1432,8 @@ impl AgentManager {
                 );
             }
 
-            Arc::new(DaemonToolDispatcher::new(providers)) as Arc<dyn ToolDispatcher>
+            Arc::new(DaemonToolDispatcher::new(providers).for_session(session_id.as_str()))
+                as Arc<dyn ToolDispatcher>
         };
 
         // Cache and return

@@ -44,12 +44,12 @@ async fn bases_cross_the_socket_and_write_the_same_note() {
         client
             .call("base.set_property", edit.clone())
             .await
-            .unwrap()["ok"],
-        true
+            .unwrap()["status"],
+        "applied"
     );
     assert_eq!(
-        client.call("base.set_property", edit).await.unwrap()["ok"],
-        false
+        client.call("base.set_property", edit).await.unwrap()["status"],
+        "stale"
     );
     assert!(client.call("base.query", params).await.unwrap()["rows"]
         .as_array()
@@ -67,7 +67,7 @@ async fn bases_cross_the_socket_and_write_the_same_note() {
         .await
         .unwrap();
     let moved=client.call("base.set_property",json!({"kiln":"kiln","path":"First.md","key":"file.folder","value":"archive","ancestor_hash":crucible_core::note_edit::disk_hash(&content)})).await.unwrap();
-    assert_eq!(moved["ok"], true);
+    assert_eq!(moved["status"], "applied", "{moved}");
     assert!(root.join("archive/First.md").exists());
     assert!(!root.join("First.md").exists());
     server.shutdown().await;

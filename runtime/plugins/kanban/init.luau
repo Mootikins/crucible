@@ -29,40 +29,62 @@ local function initialize(args: any, ctx: any): any
     assert(options.session, "Initialize tickets from a session")
     return cru.kiln.ensure_base(args.kiln, { session = options.session, path = config.base, yaml = definition() })
 end
+local function in_folder(path: any): boolean
+    return type(path) == "string" and path:sub(1, #config.folder + 1) == config.folder .. "/"
+end
 local function move(args: any, ctx: any): any
     local options = request(args, ctx)
     assert(options.session, "Move tickets from a session")
     assert(type(args.file) == "string" and not args.file:find("[/\\]"), "file must be a ticket filename")
     local path = config.folder .. "/" .. args.file
-    local rows = cru.kiln.query(args.kiln, options).rows
-    for _, row in rows do
-        if row.path == path then
-            return cru.kiln.set_property(args.kiln, { session = options.session, path = path, key = "status",
-                value = args.to, ancestor_hash = args.ancestor_hash or row.ancestor_hash })
+    local ancestor = args.ancestor_hash
+    if ancestor == nil then
+        for _, row in cru.kiln.query(args.kiln, options).rows do
+            if row.path == path then ancestor = row.ancestor_hash end
         end
     end
-    error("Ticket not found")
+    if ancestor == nil then error("Ticket not found") end
+    local result = cru.kiln.set_property(args.kiln, { session = options.session, path = path, key = "status",
+        value = args.to, ancestor_hash = ancestor })
+    if result.status == "refused" then error(result.reason) end
+    if result.status == "stale" then error("Ticket changed since it was read; query the board again") end
+    return result
+end
+-- Tickets in `target`: on disk, plus pending proposals that would move one there.
+local function occupancy(kiln: string, target: any, moving: string): number
+    local counted: { [string]: boolean } = {}
+    local count = 0
+    local result = cru.kiln.query(kiln, { source = { path = config.base }, view = "Board" })
+    for _, group in result.groups do
+        if group.value.value == target then
+            for _, row in group.rows do
+                counted[row.path] = true
+                count += 1
+            end
+        end
+    end
+    for _, write in cru.kiln.pending_writes(kiln, {}) do
+        local status = write.properties and write.properties.status
+        if in_folder(write.path) and write.path ~= moving and not counted[write.path] and status == target then
+            counted[write.path] = true
+            count += 1
+        end
+    end
+    return count
 end
 policy = function(_ctx: any, event: any): any
-    if type(event.path) ~= "string" or event.path:sub(1, #config.folder + 1) ~= config.folder .. "/" then return nil end
+    if not in_folder(event.path) then return nil end
     local target = event.properties and event.properties.status
     if target == nil then return nil end
     local old = event.old_properties and event.old_properties.status
-    if event.previous_path and event.previous_path:sub(1, #config.folder + 1) ~= config.folder .. "/" then old = nil end
+    if event.previous_path and not in_folder(event.previous_path) then old = nil end
     local allowed = config.transitions[old or ""]
     if allowed and old ~= target and not table.find(allowed, target) then
         return { cancel = true, reason = "Ticket transition is not allowed" }
     end
     local limit = config.wip[target]
-    if limit and old ~= target then
-        local result = cru.kiln.query(event.kiln, { source = { path = config.base }, view = "Board" })
-        local count = 0
-        for _, group in result.groups do
-            if group.value.value == target then count = #group.rows end
-        end
-        if count >= limit then
-            return { cancel = true, reason = "Ticket WIP limit reached" }
-        end
+    if limit and old ~= target and occupancy(event.kiln, target, event.path) >= limit then
+        return { cancel = true, reason = "Ticket WIP limit reached" }
     end
     return nil
 end

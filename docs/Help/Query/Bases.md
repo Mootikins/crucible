@@ -41,11 +41,18 @@ cru base set "tickets/First task.md" status '"done"' --kiln Work --ancestor-hash
 ```
 
 `query` supports `table`, `json`, `csv`, `tsv`, `md`, `paths` and `data`.
+Without `--format`, `query` writes a table to a terminal and TSV to a pipe.
 JSON follows Obsidian's display-row format. `--format data` returns the full
 typed daemon result (date-only values are `YYYY-MM-DD` calendar strings),
 including groups, summaries and each note's current `ancestor_hash`; use that hash for `set`. `--this Host.md` sets the host. A stale hash refuses the whole edit.
-`set --delete` removes a property. A value parses as JSON when possible,
-otherwise it is text.
+`set --delete` removes a property. `set` needs a value or `--delete`. A value
+parses as JSON when possible, otherwise it is text. The value `null` sets an
+empty property. The `--group` value of `create` follows the same rule.
+
+A write prints its outcome as JSON, with a `status` of `applied`, `unchanged`,
+`proposed`, `stale` or `refused`. When the status is `stale` or `refused`, the
+command prints the outcome to stderr and exits with a non-zero status. The note
+does not change.
 
 The terminal surface is `cru base`: the chat TUI does not yet have a note viewer
 in which to mount a base. Cards and lists render as tables there, and grouped
@@ -58,9 +65,15 @@ YAML editor. Table, cards, list and kanban have native presentations; a custom
 view type falls back to a table and keeps its original type and options.
 
 Embed a saved view with `![[Tasks.base#Board]]`, or put the YAML inside a `base`
-code fence. Reading view and live preview render it. `this` refers to the host
-note for an embed, or the base file when opened directly. With no host, `this`
-is null. Filesystem events invalidate the query cache.
+code fence. `![[Tasks.base]]` shows the first view of the base. Reading view and
+live preview render it. `this` refers to the host note for an embed, or the base
+file when opened directly. With no host, `this` is null. A file change in a kiln
+refreshes the open bases of that kiln once for each burst of changes.
+
+A legacy `kanban/board` block shows the saved base that its `base` parameter
+names, or `tickets.base`. The block uses its `view` parameter, or the first
+view. It uses the kiln of its `kiln` parameter, or the kiln of the note that
+shows it.
 
 **New item** creates a note from the base and view filters. New notes inherit
 literal property comparisons, tag and folder rules and displayed note
@@ -77,14 +90,43 @@ same daemon lock and writer as the editor. Errors remain visible in the view.
 
 The parser accepts Obsidian's property namespaces, arithmetic and boolean
 operators, filter trees, formulas, lists, objects and regular expressions.
-Formulas can reference each other; cycles are errors. List `map`, `filter` and
-`reduce` use `value`, `index` and `acc`. View filters combine with global filters;
-sort, grouping, limits and built-in/custom summaries run in the daemon.
+Formulas can reference each other; cycles are errors. Each formula runs once
+per row. List `map`, `filter` and `reduce` use `value`, `index` and `acc`. View
+filters combine with global filters; sort, grouping, limits and built-in/custom
+summaries run in the daemon.
+
+The daemon parses each expression once, when it loads the base. A filter or a
+custom summary that does not parse, or that calls an unknown function or gives
+the wrong number of arguments, stops the load. A formula with such an error
+loads, and each cell that uses it shows `Error: …`, as Obsidian does. An
+unknown summary name stops the load.
+
+An error in one cell does not stop the query. The cell holds an `error` value
+that shows as `Error: …`; sorting and grouping treat it as an empty value. A row
+whose filter fails is left out. A file that cannot be read or parsed, such as
+a note that is not UTF-8, is left out with a warning. An unreadable folder is
+also left out.
+
+Operators and functions follow JavaScript where the Obsidian captures do not
+decide: `&&` and `||` return an operand (`note.owner || "nobody"`), `<` and `>`
+compare two strings by UTF-16 code units and other pairs as numbers, string
+positions and `length` count UTF-16 code units, `toFixed` rounds half away from
+zero, a negative `split` limit keeps every part, `number()` reads JavaScript
+number text, and a regular expression `\d` or `\w` matches only ASCII.
+`replace` with a text pattern replaces every occurrence and expands `$&`, `$$`,
+`` $` `` and `$'`. `hasTag` ignores case. `file.folder` is `/` at the kiln root.
+`max()` and `min()` with no arguments give null. `date()` reads RFC 3339 text,
+`YYYY-MM-DD`, and a local date and time with `T` or a space, with or without
+seconds (`2024-01-15T14:30`), so it also reads the text of any date value.
+Moment's `\` makes the whole next token literal (`\YYYY` gives `YYYY`).
 
 File timestamps and sizes come from current filesystem metadata, not index
 update times. A filesystem without creation times reports null for `ctime`.
-Obsidian's `.obsidian/types.json` supplies date and list property types when
-present. Unknown document, property and view options round-trip as YAML values;
+Obsidian's `.obsidian/types.json` supplies property types when present:
+`date` and `datetime` text becomes a date, and `multitext`, `tags` and
+`aliases` make one value into a list. Text that does not read as a date stays
+text. Without `types.json`, `tags` and `aliases` are list types, as in
+Obsidian. Unknown document, property and view options round-trip as YAML values;
 comments and original YAML whitespace are not preserved by serialization.
 
 Card size, image fit/aspect ratio, kanban width/empty columns, list markers,
@@ -104,19 +146,40 @@ allocations remain limited. This is a tested corpus, not a claim that every
 possible ECMAScript or Moment expression is equivalent. HTML values are
 sanitized before rendering.
 
-Queries still scan files. Index/prefilter/cache optimization is deliberately
-out of scope for this compatibility pass.
+Queries still scan files. One query resolves each link once, builds the
+backlinks once, and hashes an attachment only when the query returns it.
+Index/prefilter/cache optimization of the file scan is out of scope for this
+compatibility pass.
+
+A query result tells a client how to move rows. Each row has `movable`, which
+is true when the view groups by `file.folder`, or by a note property and the
+row is a note. Each group has `write_value`, the exact `value` for
+`base.set_property` that puts a row into that group; null means delete the
+property. A date-only value stays `YYYY-MM-DD`, a date and time stays local
+text, and a link stays a wikilink with its path and display text. `options` always holds every view
+option with its default. A duration value carries its English `text`.
 
 ## Lua and ticket policy
 
-`cru.kiln.query(kiln, options)` uses the same query contract. For writes,
-`cru.kiln.set_property`, `create_entry` and `ensure_base` require an explicit
-`options.session` id. Plugin tools receive that id in their second argument,
-`ctx.session_id`. The daemon checks the attached kiln, current trust/isolation,
-containment and the session's card, mode and operator permissions. An
-unattended call cannot answer a permission prompt. Apply mode records changes
-in the session review ledger; propose mode records a proposal without changing
-disk. `ensure_base` creates a valid `.base` only when absent.
+`cru.kiln.query(kiln, options)` uses the same query contract. The writes are
+`cru.kiln.set_property`, `create_entry`, `reorder_groups` and `ensure_base`.
+Inside a plugin tool, command or session hook they act for the session of that
+call, and they refuse a different `options.session`. Outside a session they
+need an explicit `options.session`. The daemon checks the attached kiln,
+current trust/isolation, containment and the session's card, mode and operator
+permissions. A write inside a tool call that the permission gate allowed uses
+that call's grant; any other write cannot answer a prompt. Apply mode records
+changes in the session review ledger, inside the interval of the enclosing
+tool call when there is one. Propose mode records a proposal without changing
+disk. `ensure_base` creates a valid `.base` only when nothing holds the path.
+Each write answers a `status`: `applied`, `unchanged`, `proposed`, `stale` or
+`refused`. See [[Help/Extending/Creating Plugins]] for the fields.
+
+Property writes change only the lines of the one key; comments, quoting, other
+keys and the body keep their bytes. A write that changes nothing is not made.
+`value = null` writes an empty property; deleting needs `delete = true`.
+Saving a group order changes only the view's `groupOrder` key when the views
+are a block list. Other layouts rewrite only the `views` key.
 
 A synchronous `base:before_write` hook receives the kiln, final `path`,
 `previous_path` and proposed content. Request fields are not forwarded. Note

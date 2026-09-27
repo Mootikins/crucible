@@ -169,6 +169,23 @@ pub(crate) async fn decide_permission(
     })
 }
 
+/// Decide a write nested inside a tool call that this gate already allowed.
+///
+/// The enclosing call's grant answers what only a person could decide, so a
+/// write the tool makes does not ask twice. A card deny, an operator deny, a
+/// mode stance or a permission hook still refuses it.
+pub(crate) fn decide_nested(
+    ctx: &PermissionContext<'_>,
+    call: &CanonicalToolCall,
+    args: &serde_json::Value,
+) -> Decision {
+    match decide_unprompted(ctx, call, args) {
+        Unprompted::Allow(layer) => Decision::Allow(layer),
+        Unprompted::Deny(reason) => Decision::Deny(reason),
+        Unprompted::Ask(_) => Decision::Allow(Some("the enclosing tool call".into())),
+    }
+}
+
 /// Keep the grant `pattern` that the user gave for `call` at `scope`.
 ///
 /// A session grant lives in the session slot. A project or user grant goes

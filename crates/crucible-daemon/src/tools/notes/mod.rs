@@ -35,6 +35,7 @@ use rmcp::{model::CallToolResult, tool, tool_router};
 use std::path::Path;
 use std::sync::Arc;
 
+pub(crate) use propose::Disposition;
 pub use propose::{author_of, NoteWrites, TurnWriteMode};
 
 pub use params::{
@@ -78,12 +79,9 @@ impl NoteTools {
         self
     }
 
-    /// The proposal target of the current turn, or `None` when the write
-    /// applies to the disk.
-    fn proposing(&self) -> Option<&NoteWrites> {
-        self.writes
-            .as_ref()
-            .filter(|w| w.mode() == crucible_core::types::WriteMode::Propose)
+    /// Where this session's writes land now.
+    fn disposition(&self) -> propose::Disposition<'_> {
+        NoteWrites::disposition(self.writes.as_ref())
     }
 
     /// The root and the root-relative path that a proposal names for
@@ -206,7 +204,7 @@ impl NoteTools {
 
         // In `propose` mode the base is `Absent`: accept must not replace a
         // file that another writer created after this proposal.
-        if let Some(writes) = self.proposing() {
+        if let propose::Disposition::Propose(writes) = self.disposition() {
             return self.propose(
                 writes,
                 &path,
@@ -372,7 +370,7 @@ impl NoteTools {
         let full_path = resolve_note_write(&self.scope, &path)?;
         let _write = crate::file_write::lock(full_path.as_path()).await;
 
-        if let Some(writes) = self.proposing() {
+        if let propose::Disposition::Propose(writes) = self.disposition() {
             // The disk does not hold an earlier proposed write of this turn,
             // so the update builds on the proposed text when there is one.
             // The store keeps the base of the first write of the path, and
@@ -413,7 +411,7 @@ impl NoteTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         // A proposal holds new text, not a removal, so a delete cannot wait
         // for review.
-        if self.proposing().is_some() {
+        if let propose::Disposition::Propose(_) = self.disposition() {
             return Err(rmcp::ErrorData::invalid_request(
                 "delete_note is not available in propose mode; ask the user to delete the note",
                 None,

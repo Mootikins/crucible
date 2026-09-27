@@ -87,22 +87,37 @@ pub(super) fn serialize_frontmatter_to_yaml(
     Ok(format!("---\n{yaml_str}---\n"))
 }
 
-/// Extract content without frontmatter
+/// The note text after its frontmatter. A header that does not parse is
+/// still removed, because the caller writes a new header in its place. A note
+/// without a closed `---` header keeps all of its text.
 pub(super) fn extract_content_without_frontmatter(content: &str) -> String {
-    // Check if starts with ---
-    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
-        return content.to_string();
+    match crucible_core::note_frontmatter::split_fences(content) {
+        Ok(split) if split.header.is_some() => split.body.to_string(),
+        _ => content.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_content_without_frontmatter as body_of;
+
+    #[test]
+    fn body_follows_the_closing_fence() {
+        assert_eq!(body_of("---\na: 1\n---\n# Body\n"), "# Body\n");
+        assert_eq!(body_of("---\r\na: 1\r\n---\r\nBody\r\n"), "Body\r\n");
+        assert_eq!(body_of("\u{feff}---\na: 1\n...\nBody"), "Body");
+        assert_eq!(body_of("---\na: 1\n---"), "");
     }
 
-    // Find closing ---
-    let rest = &content[4..]; // Skip opening ---\n
-    if let Some(end_pos) = rest.find("\n---\n") {
-        // Return content after closing ---
-        rest[end_pos + 5..].to_string()
-    } else if let Some(end_pos) = rest.find("\r\n---\r\n") {
-        rest[end_pos + 7..].to_string()
-    } else {
-        // No closing delimiter found, return original
-        content.to_string()
+    #[test]
+    fn invalid_header_is_still_removed() {
+        assert_eq!(body_of("---\na: [\n---\nBody"), "Body");
+    }
+
+    #[test]
+    fn note_without_a_closed_header_keeps_all_text() {
+        for text in ["# Body\n---\n", "---\na: 1\nBody\n", "+++\na = 1\n+++\n"] {
+            assert_eq!(body_of(text), text);
+        }
     }
 }
