@@ -47,20 +47,8 @@ impl ProposalStore {
         files: &[ProposalFile],
         kilns: &[PathBuf],
     ) -> ProposalResult<Proposal> {
-        let (_reservation, proposal) = {
-            let mut reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
-            ensure_available(&reserved, id)?;
-            let selected = select_files(&self.get(id)?, paths, files)?;
-            let split = self.split_locked(id, &selected)?;
-            let proposal = self.get(&split)?;
-            let ids = if split == *id {
-                vec![*id]
-            } else {
-                vec![*id, split]
-            };
-            reserved.extend(ids.iter().copied());
-            (Reservation { store: self, ids }, proposal)
-        };
+        let (_reservation, selected) = self.reserve_selection(id, paths, files)?;
+        let proposal = self.get(&selected)?;
         self.write_all(proposal, kilns).await
     }
 
@@ -72,11 +60,32 @@ impl ProposalStore {
         files: &[ProposalFile],
         reason: Option<String>,
     ) -> ProposalResult<Proposal> {
-        let reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        let (_reservation, selected) = self.reserve_selection(id, paths, files)?;
+        self.settle_locked(&selected, ProposalState::Rejected { reason })
+    }
+
+    /// Hold `id`, split the selection into its own proposal, and hold that
+    /// proposal too. Returns the reservation and the id that holds the
+    /// selection: `id` itself for an empty or a whole selection.
+    ///
+    /// One lock covers the check, the split and the reservation, so no other
+    /// decision can take either half between them.
+    fn reserve_selection(
+        &self,
+        id: &ProposalId,
+        paths: &[String],
+        files: &[ProposalFile],
+    ) -> ProposalResult<(Reservation<'_>, ProposalId)> {
+        let mut reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
         ensure_available(&reserved, id)?;
         let selected = select_files(&self.get(id)?, paths, files)?;
         let split = self.split_locked(id, &selected)?;
-        self.settle_locked(&split, ProposalState::Rejected { reason })
+        let mut ids = vec![*id];
+        if split != *id {
+            ids.push(split);
+        }
+        reserved.held.extend(ids.iter().copied());
+        Ok((Reservation { store: self, ids }, split))
     }
 
     fn split_locked(&self, id: &ProposalId, files: &[ProposalFile]) -> ProposalResult<ProposalId> {
@@ -138,6 +147,38 @@ pub(super) fn select_files(
         }
     }
     let mut selected = files.to_vec();
+    named(proposal, paths, &mut selected)?;
+    // A move is one decision: its two halves go together.
+    let partners: Vec<ProposalFile> = selected
+        .iter()
+        .filter_map(|f| {
+            let write = proposal
+                .writes
+                .iter()
+                .find(|w| w.root == f.root && w.path == f.path)?;
+            proposal
+                .moved_from(write)
+                .or_else(|| proposal.moved_to(write))
+                .map(|w| ProposalFile {
+                    root: w.root.clone(),
+                    path: w.path.clone(),
+                })
+        })
+        .collect();
+    for partner in partners {
+        if !selected.contains(&partner) {
+            selected.push(partner);
+        }
+    }
+    Ok(selected)
+}
+
+/// Add the writes that `paths` name to `selected`.
+fn named(
+    proposal: &Proposal,
+    paths: &[String],
+    selected: &mut Vec<ProposalFile>,
+) -> ProposalResult<()> {
     for path in paths {
         let matches: Vec<_> = proposal.writes.iter().filter(|w| &w.path == path).collect();
         match matches.as_slice() {
@@ -158,7 +199,7 @@ pub(super) fn select_files(
             }
         }
     }
-    Ok(selected)
+    Ok(())
 }
 
 /// The states of the two parts of a split: the part that holds `paths`, and

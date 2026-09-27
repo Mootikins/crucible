@@ -220,14 +220,20 @@ fn decision_line(proposal: &Proposal) -> String {
 /// (an absent file, or a base known only by its hash) has no old side.
 pub(crate) fn proposal_diffset(proposal: &Proposal) -> (Diffset, Vec<Option<DiffFileText>>) {
     let source = DiffsetSource::Proposal { id: proposal.id };
-    let mut files = Vec::with_capacity(proposal.writes.len());
-    let mut texts = Vec::with_capacity(proposal.writes.len());
-    for write in &proposal.writes {
-        let base_text = match &write.base {
+    let mut files = Vec::new();
+    let mut texts = Vec::new();
+    for write in proposal.changes() {
+        // The new half of a move shows against the text the moved file held.
+        let old_side = proposal.moved_from(write).unwrap_or(write);
+        let base_text = match &old_side.base {
             ExpectedBase::Text { text, .. } => Some(text.clone()),
             ExpectedBase::Absent | ExpectedBase::Hash { .. } | ExpectedBase::Unchecked => None,
         };
         let status = match write.base {
+            _ if write.remove => FileStatus::Deleted,
+            _ if write.moved_from.is_some() => FileStatus::Renamed {
+                from: write.moved_from.clone().unwrap_or_default(),
+            },
             ExpectedBase::Absent => FileStatus::Added,
             ExpectedBase::Text { .. } | ExpectedBase::Hash { .. } | ExpectedBase::Unchecked => {
                 FileStatus::Modified
@@ -251,7 +257,7 @@ pub(crate) fn proposal_diffset(proposal: &Proposal) -> (Diffset, Vec<Option<Diff
         });
         texts.push((!too_large).then(|| DiffFileText {
             base_text,
-            current_text: Some(write.new_text.clone()),
+            current_text: (!write.remove).then(|| write.new_text.clone()),
         }));
     }
     let diffset = Diffset {
@@ -415,6 +421,8 @@ mod tests {
             path: path.into(),
             base,
             new_text: new_text.into(),
+            remove: false,
+            moved_from: None,
         }
     }
 
@@ -548,6 +556,37 @@ mod tests {
         assert_eq!(
             texts[1].as_ref().unwrap().current_text.as_deref(),
             Some("fresh\n")
+        );
+    }
+
+    #[test]
+    fn a_proposed_deletion_shows_as_deleted_with_no_new_side() {
+        let mut gone = write("old.md", base_text("one\n"), "");
+        gone.remove = true;
+        let (diffset, texts) = proposal_diffset(&proposal(ProposalState::Open, vec![gone]));
+        assert_eq!(diffset.files[0].status, FileStatus::Deleted);
+        assert_eq!((diffset.files[0].added, diffset.files[0].removed), (0, 1));
+        assert_eq!(texts[0].as_ref().unwrap().current_text, None);
+    }
+
+    #[test]
+    fn a_proposed_move_shows_as_one_rename_against_the_old_text() {
+        let mut gone = write("old.md", base_text("one\n"), "");
+        gone.remove = true;
+        let mut moved = write("new/old.md", ExpectedBase::Absent, "one\n");
+        moved.moved_from = Some("old.md".into());
+        let (diffset, texts) = proposal_diffset(&proposal(ProposalState::Open, vec![gone, moved]));
+        assert_eq!(diffset.files.len(), 1);
+        assert_eq!(
+            diffset.files[0].status,
+            FileStatus::Renamed {
+                from: "old.md".into()
+            }
+        );
+        assert_eq!((diffset.files[0].added, diffset.files[0].removed), (0, 0));
+        assert_eq!(
+            texts[0].as_ref().unwrap().base_text.as_deref(),
+            Some("one\n")
         );
     }
 

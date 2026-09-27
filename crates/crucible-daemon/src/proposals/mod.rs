@@ -77,7 +77,7 @@ pub struct ProposalStore {
     turns: Mutex<HashMap<String, ProposalId>>,
     /// One writer at a time. A write can change several files: the proposal
     /// of the turn and each older proposal that it supersedes.
-    write: Mutex<HashSet<ProposalId>>,
+    write: Mutex<Reservations>,
     /// The event bus of the daemon. The server sets it at bind. A store
     /// without a bus, as in a unit test, changes its files and sends nothing.
     events: OnceLock<crate::EventBus>,
@@ -89,7 +89,7 @@ impl ProposalStore {
         Self {
             files: store::ProposalFiles::new(dir),
             turns: Mutex::new(HashMap::new()),
-            write: Mutex::new(HashSet::new()),
+            write: Mutex::new(Reservations::default()),
             events: OnceLock::new(),
         }
     }
@@ -118,6 +118,14 @@ impl ProposalStore {
     ///
     /// A second write of the same path in one turn replaces the new text and
     /// keeps the first base, because the disk did not change between the two.
+    ///
+    /// A decision (an accept, a reject, a resolve) never makes a write fail.
+    /// When a decision holds the turn proposal, the write starts the next
+    /// proposal of the turn, so it never joins a proposal that the user
+    /// decided. That proposal keeps the first base of the path in the turn,
+    /// because the new text can build on the text of the held proposal. When
+    /// a decision holds an older proposal that the write supersedes, the
+    /// supersede waits for the decision: see [`Reservation`].
     pub fn record_write(
         &self,
         author: ProposalAuthor,
@@ -127,29 +135,58 @@ impl ProposalStore {
         base: ExpectedBase,
         new_text: String,
     ) -> ProposalResult<Proposal> {
-        let reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
-        let write = ProposedWrite {
-            root: root.clone(),
-            path: path.to_string(),
-            base,
-            new_text,
-        };
-        let turn = self.turn_proposal(session, &author)?;
-        if let Some(id) = turn {
-            ensure_available(&reserved, &id)?;
-        }
-        // Preflight every superseded proposal before recording anything.
-        for older in self.files.all()? {
-            if older.author == author && older.state.is_pending() && older.writes_path(&root, path)
-            {
-                ensure_available(&reserved, &older.id)?;
+        self.record_writes(
+            author,
+            session,
+            vec![ProposedWrite {
+                root,
+                path: path.to_string(),
+                base,
+                new_text,
+                remove: false,
+                moved_from: None,
+            }],
+        )
+    }
+
+    /// Record several proposed writes of `session` in one proposal, as
+    /// [`Self::record_write`] records one. A move is two of them: the
+    /// deletion of the old path and the creation of the new one.
+    pub fn record_writes(
+        &self,
+        author: ProposalAuthor,
+        session: &SessionId,
+        mut writes: Vec<ProposedWrite>,
+    ) -> ProposalResult<Proposal> {
+        let mut reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        let turn = match self.turn_proposal(session, &author)? {
+            Some(id) if reserved.held.contains(&id) => {
+                if let Some(held) = self.files.read(&id)? {
+                    for write in &mut writes {
+                        if let Some(first) = held
+                            .writes
+                            .iter()
+                            .find(|w| w.root == write.root && w.path == write.path)
+                        {
+                            write.base = first.base.clone();
+                        }
+                    }
+                }
+                None
             }
-        }
+            turn => turn,
+        };
+        let targets = writes
+            .iter()
+            .map(|w| (w.root.clone(), w.path.clone()))
+            .collect::<Vec<_>>();
         let proposal = match turn {
             Some(id) => self
                 .files
                 .update(&id, |proposal| {
-                    extend(proposal, write);
+                    for write in writes {
+                        extend(proposal, write);
+                    }
                     Ok(proposal.clone())
                 })?
                 .ok_or(ProposalError::NotFound(id))?,
@@ -164,7 +201,9 @@ impl ProposalStore {
                     state: ProposalState::Open,
                     writes: Vec::new(),
                 };
-                extend(&mut proposal, write);
+                for write in writes {
+                    extend(&mut proposal, write);
+                }
                 self.files.create(&proposal)?;
                 self.turns
                     .lock()
@@ -173,7 +212,13 @@ impl ProposalStore {
                 proposal
             }
         };
-        let superseded = self.supersede(&proposal, &root, path)?;
+        let mut superseded = Vec::new();
+        for (root, path) in &targets {
+            superseded.extend(self.supersede(&mut reserved, &proposal, root, path)?);
+        }
+        superseded.sort();
+        superseded.dedup();
+        drop(reserved);
         self.announce(proposal.id);
         for id in superseded {
             self.announce(id);
@@ -199,7 +244,7 @@ impl ProposalStore {
         Ok(self.files.read(&id)?.and_then(|p| {
             p.writes
                 .into_iter()
-                .find(|w| w.root == *root && w.path == path)
+                .find(|w| w.root == *root && w.path == path && !w.remove)
                 .map(|w| w.new_text)
         }))
     }
@@ -278,8 +323,11 @@ impl ProposalStore {
 
     /// Mark each older pending proposal of the same author that writes
     /// `root`/`path` as superseded by `newer`. Returns the ids that changed.
+    /// A proposal that a decision holds changes when the decision releases
+    /// it, and only when the decision left it pending.
     fn supersede(
         &self,
+        reserved: &mut Reservations,
         newer: &Proposal,
         root: &PhysicalRoot,
         path: &str,
@@ -291,6 +339,10 @@ impl ProposalStore {
                 || !older.state.is_pending()
                 || !older.writes_path(root, path)
             {
+                continue;
+            }
+            if reserved.held.contains(&older.id) {
+                reserved.superseded_on_release.insert(older.id, newer.id);
                 continue;
             }
             self.files.update(&older.id, |p| {
@@ -326,7 +378,22 @@ impl ProposalStore {
     }
 }
 
+/// The proposals that a decision holds, and the supersedes that wait for a
+/// decision to finish.
+#[derive(Debug, Default)]
+struct Reservations {
+    held: HashSet<ProposalId>,
+    /// Older id to newer id: a write superseded the older proposal while a
+    /// decision held it.
+    superseded_on_release: HashMap<ProposalId, ProposalId>,
+}
+
 /// Held across asynchronous file writes, without holding a blocking mutex.
+///
+/// The release applies each supersede that waited for this decision. A
+/// decision that accepted or rejected the proposal leaves nothing to
+/// supersede; a decision that left it pending (a conflict, a cancel) lets
+/// the newer write replace it, as if no decision held it.
 struct Reservation<'a> {
     store: &'a ProposalStore,
     ids: Vec<ProposalId>,
@@ -334,15 +401,40 @@ struct Reservation<'a> {
 
 impl Drop for Reservation<'_> {
     fn drop(&mut self) {
-        let mut reserved = self.store.write.lock().unwrap_or_else(|e| e.into_inner());
-        for id in &self.ids {
-            reserved.remove(id);
+        let mut changed = Vec::new();
+        {
+            let mut reserved = self.store.write.lock().unwrap_or_else(|e| e.into_inner());
+            for id in &self.ids {
+                reserved.held.remove(id);
+                let Some(newer) = reserved.superseded_on_release.remove(id) else {
+                    continue;
+                };
+                let updated = self.store.files.update(id, |proposal| {
+                    let pending = proposal.state.is_pending();
+                    if pending {
+                        proposal.state = ProposalState::Superseded { by: newer };
+                    }
+                    Ok(pending)
+                });
+                match updated {
+                    Ok(Some(true)) => changed.push(*id),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(
+                        proposal = %id,
+                        error = %format!("{e:#}"),
+                        "could not supersede a proposal after its decision"
+                    ),
+                }
+            }
+        }
+        for id in changed {
+            self.store.announce(id);
         }
     }
 }
 
-fn ensure_available(reserved: &HashSet<ProposalId>, id: &ProposalId) -> ProposalResult<()> {
-    if reserved.contains(id) {
+fn ensure_available(reserved: &Reservations, id: &ProposalId) -> ProposalResult<()> {
+    if reserved.held.contains(id) {
         Err(ProposalError::Busy(*id))
     } else {
         Ok(())
@@ -353,7 +445,7 @@ impl ProposalStore {
     fn reserve(&self, id: &ProposalId) -> ProposalResult<Reservation<'_>> {
         let mut reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
         ensure_available(&reserved, id)?;
-        reserved.insert(*id);
+        reserved.held.insert(*id);
         Ok(Reservation {
             store: self,
             ids: vec![*id],
@@ -369,13 +461,14 @@ fn extend(proposal: &mut Proposal, write: ProposedWrite) {
         .iter_mut()
         .find(|w| w.root == write.root && w.path == write.path)
     {
-        Some(earlier) => earlier.new_text = write.new_text,
+        Some(earlier) => {
+            earlier.new_text = write.new_text;
+            earlier.remove = write.remove;
+            earlier.moved_from = write.moved_from;
+        }
         None => proposal.writes.push(write),
     }
-    proposal.title = match proposal.writes.as_slice() {
-        [only] => format!("Change {}", only.path),
-        writes => format!("Change {} notes", writes.len()),
-    };
+    proposal.title = proposal.describe();
 }
 
 /// The wire name of a state, for a refusal.

@@ -106,6 +106,7 @@ pub struct AcceptProposalBody {
     responses(
         (status = 200, body = Proposal),
         (status = 422, description = "No proposal has the id, or the proposal is already settled"),
+        (status = 409, description = "Another decision holds the proposal; send the request again after it finishes"),
         (status = 502, description = "The daemon could not write the files"),
     )
 )]
@@ -151,6 +152,7 @@ pub struct RejectProposalBody {
     responses(
         (status = 200, body = Proposal),
         (status = 422, description = "No proposal has the id, or the proposal is already settled"),
+        (status = 409, description = "Another decision holds the proposal; send the request again after it finishes"),
         (status = 502, description = "The daemon could not store the decision"),
     )
 )]
@@ -177,6 +179,7 @@ async fn reject_proposal(
     responses(
         (status = 200, body = Proposal),
         (status = 422, description = "No proposal has the id, or the proposal is already settled"),
+        (status = 409, description = "Another decision holds the proposal; send the request again after it finishes"),
         (status = 502, description = "The daemon could not store the decision"),
     )
 )]
@@ -212,6 +215,7 @@ pub struct ResolveProposalBody {
     responses(
         (status = 200, body = Proposal),
         (status = 422, description = "No proposal has the id, or the file has no conflict"),
+        (status = 409, description = "Another decision holds the proposal; send the request again after it finishes"),
         (status = 502, description = "The daemon could not write the file"),
     )
 )]

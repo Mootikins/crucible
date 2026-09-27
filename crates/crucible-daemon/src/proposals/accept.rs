@@ -16,7 +16,7 @@ use crucible_core::proposal::{
 use serde_json::Value;
 
 use super::stale::{base_holds, read_disk, target, Disk};
-use super::{state_name, ProposalError, ProposalResult, ProposalStore};
+use super::{ProposalError, ProposalResult, ProposalStore};
 use crate::file_write::{write_many_for_roots, CheckedPut};
 
 impl ProposalStore {
@@ -26,12 +26,7 @@ impl ProposalStore {
     /// disk moved since its base merges. If a file conflicts, the daemon
     /// writes nothing, and the proposal becomes `Conflicted`.
     pub async fn accept(&self, id: &ProposalId, kilns: &[PathBuf]) -> ProposalResult<Proposal> {
-        let _reservation = self.reserve(id)?;
-        let proposal = self.get(id)?;
-        if !proposal.state.is_pending() {
-            return Err(ProposalError::Settled(*id, state_name(&proposal.state)));
-        }
-        self.write_all(proposal, kilns).await
+        self.accept_files(id, &[], &[], kilns).await
     }
 
     /// Write `text` for the conflicted file `path` of the proposal `id`.
@@ -89,11 +84,21 @@ impl ProposalStore {
             .iter_mut()
             .find(|w| w.root == settled.root && w.path == settled.path)
             .ok_or_else(|| ProposalError::NoConflict(*id, path.to_string()))?;
+        // The settled text keeps the file, also when the proposal deleted it.
+        // A move whose old file stays is a copy, not a move.
         write.new_text = text.to_string();
+        let kept = std::mem::take(&mut write.remove).then(|| write.path.clone());
         write.base = ExpectedBase::Text {
             hash: disk_hash(&settled.disk_text),
             text: settled.disk_text,
         };
+        if let Some(kept) = kept {
+            for other in proposal.writes.iter_mut() {
+                if other.root == settled.root && other.moved_from.as_deref() == Some(&kept) {
+                    other.moved_from = None;
+                }
+            }
+        }
         if remaining {
             // Another file still waits for the user. Keep the settled text,
             // and write nothing until every conflict has a settled text.
@@ -118,6 +123,7 @@ impl ProposalStore {
                 path: target(w).to_string_lossy().into_owned(),
                 content: w.new_text.clone(),
                 base: w.base.clone(),
+                remove: w.remove,
             })
             .collect();
         let answer = write_many_for_roots(puts, kilns, &[]).await;
@@ -182,6 +188,17 @@ fn conflict_of(write: &ProposedWrite) -> Option<FileConflict> {
         return None;
     }
     let disk = disk.unwrap_or_default();
+    if write.remove {
+        // A deletion does not merge with an edit: the person settles from the
+        // disk text, and a settled text keeps the file.
+        return Some(FileConflict {
+            root: write.root.clone(),
+            path: write.path.clone(),
+            merged_text: disk.clone(),
+            disk_text: disk,
+            regions: vec![],
+        });
+    }
     let (merge_base, always) = match &write.base {
         ExpectedBase::Text { text, .. } => (text.as_str(), false),
         // No base text to merge from: any file on disk is a conflict. A merge

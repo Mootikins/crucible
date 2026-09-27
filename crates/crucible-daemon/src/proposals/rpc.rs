@@ -3,11 +3,11 @@
 
 use std::path::PathBuf;
 
-use crucible_core::proposal::ProposalId;
+use crucible_core::proposal::{Proposal, ProposalId, ProposalState};
 use crucible_core::session::PhysicalRoot;
 
 use crate::kiln_manager::KilnManager;
-use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
+use crate::protocol::{Request, Response, BUSY, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::rpc_client::{
     ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
     ProposalResolveRequest,
@@ -34,7 +34,7 @@ fn answer<T: serde::Serialize>(req: &Request, result: ProposalResult<T>) -> Resp
             | ProposalError::Ambiguous(..)
             | ProposalError::MixedSelection),
         ) => Response::error(id, INVALID_PARAMS, e.to_string()),
-        Err(e @ ProposalError::Busy(_)) => Response::error(id, -32009, e.to_string()),
+        Err(e @ ProposalError::Busy(_)) => Response::error(id, BUSY, e.to_string()),
         Err(e @ ProposalError::WriteFailed(_)) => {
             Response::error(id, INTERNAL_ERROR, e.to_string())
         }
@@ -89,12 +89,40 @@ pub(crate) async fn handle_proposal_accept(
 ) -> Response {
     let params = params!(req, ProposalAcceptRequest);
     let kilns = write_roots(store, &params.id, km).await;
-    answer(
-        &req,
-        store
-            .accept_files(&params.id, &params.paths, &params.files, &kilns)
-            .await,
-    )
+    let decided = store
+        .accept_files(&params.id, &params.paths, &params.files, &kilns)
+        .await;
+    reindex_moves(km, &decided).await;
+    answer(&req, decided)
+}
+
+/// After a proposal lands, bring the index up to each move it holds, as an
+/// applied move does, so backlinks follow at once rather than at the next
+/// watcher pass.
+async fn reindex_moves(km: &KilnManager, decided: &ProposalResult<Proposal>) {
+    let Ok(proposal) = decided else { return };
+    if proposal.state != ProposalState::Accepted {
+        return;
+    }
+    for write in &proposal.writes {
+        let Some(from) = &write.moved_from else {
+            continue;
+        };
+        let rewritten = proposal
+            .writes
+            .iter()
+            .filter(|w| w.root == write.root && !w.remove && w.moved_from.is_none())
+            .map(|w| w.path.clone())
+            .collect::<Vec<_>>();
+        crate::server::note_refactor::reindex_rename(
+            km,
+            write.root.as_path(),
+            from,
+            &write.path,
+            &rewritten,
+        )
+        .await;
+    }
 }
 
 /// Handle `proposal.reject`. With `paths`, only those files.
@@ -120,18 +148,17 @@ pub(crate) async fn handle_proposal_resolve(
 ) -> Response {
     let params = params!(req, ProposalResolveRequest);
     let kilns = write_roots(store, &params.id, km).await;
-    answer(
-        &req,
-        store
-            .resolve_file(
-                &params.id,
-                &params.path,
-                params.root.as_ref(),
-                &params.text,
-                &kilns,
-            )
-            .await,
-    )
+    let decided = store
+        .resolve_file(
+            &params.id,
+            &params.path,
+            params.root.as_ref(),
+            &params.text,
+            &kilns,
+        )
+        .await;
+    reindex_moves(km, &decided).await;
+    answer(&req, decided)
 }
 
 #[cfg(test)]

@@ -115,7 +115,7 @@ impl ProposalStore {
             let reserved = self.write.lock().unwrap_or_else(|e| e.into_inner());
             let mut changed = Vec::new();
             for proposal in self.files.all()? {
-                if reserved.contains(&proposal.id)
+                if reserved.held.contains(&proposal.id)
                     || !select(&proposal)
                     || checked_state(&proposal).is_none()
                 {

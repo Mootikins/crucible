@@ -86,6 +86,8 @@ fn a_proposal_round_trips_through_its_file() {
             path: "notes/a.md".into(),
             base: ExpectedBase::Absent,
             new_text: "new text\n".into(),
+            remove: false,
+            moved_from: None,
         }]
     );
     assert_eq!(fx.reopened().list(false).unwrap(), vec![made]);
@@ -485,8 +487,13 @@ async fn cancelling_accept_releases_its_reservation() {
     assert!(!kiln.join("a.md").exists());
 }
 
+/// A partial accept holds both halves. A decision refuses a second decision
+/// on either half, but it never refuses a note write: the write of a newer
+/// pass succeeds, and its supersede of the held half waits for the release.
+/// This replaced a `Busy` answer to the write, which failed the tool call of
+/// an agent or a plugin only because the user was deciding at that moment.
 #[tokio::test]
-async fn partial_accept_reserves_both_halves_and_supersede_preflights() {
+async fn partial_accept_reserves_both_halves_and_a_supersede_waits_for_the_release() {
     let (fx, kiln, proposal) = pending_acceptance();
     fx.store
         .record_write(
@@ -501,7 +508,7 @@ async fn partial_accept_reserves_both_halves_and_supersede_preflights() {
     let guard = crate::file_write::lock(&kiln.join("a.md")).await;
     let roots = vec![kiln.clone()];
     let paths = vec!["a.md".to_string()];
-    {
+    let (before, newer) = {
         let accepting = fx.store.accept_paths(&proposal.id, &paths, &roots);
         tokio::pin!(accepting);
         assert!(futures::poll!(&mut accepting).is_pending());
@@ -517,25 +524,98 @@ async fn partial_accept_reserves_both_halves_and_supersede_preflights() {
                 Err(ProposalError::Busy(_))
             ));
         }
-        // A new turn would supersede the reserved split; no new proposal may
-        // be persisted before discovering that conflict.
         fx.store.end_turn(&session("aux-1"));
-        let result = fx.store.record_write(
-            plugin("reflection"),
-            &session("aux-2"),
-            PhysicalRoot::from_top_level(&kiln),
-            "a.md",
-            ExpectedBase::Absent,
-            "newer\n".into(),
-        );
-        assert!(matches!(result, Err(ProposalError::Busy(_))));
-        assert_eq!(fx.store.list(true).unwrap(), before);
-    }
+        let newer = fx
+            .store
+            .record_write(
+                plugin("reflection"),
+                &session("aux-2"),
+                PhysicalRoot::from_top_level(&kiln),
+                "a.md",
+                ExpectedBase::Absent,
+                "newer\n".into(),
+            )
+            .expect("a decision does not fail a note write");
+        // The held halves do not change while the decision holds them.
+        for p in &before {
+            assert_eq!(fx.store.get(&p.id).unwrap(), *p);
+        }
+        assert_eq!(fx.store.list(true).unwrap().len(), 3);
+        (before, newer)
+        // The accept drops here, before it wrote: a cancel.
+    };
+    let split = before
+        .iter()
+        .find(|p| p.id != proposal.id)
+        .expect("the selection moved into its own proposal");
+    assert_eq!(
+        fx.store.get(&split.id).unwrap().state,
+        ProposalState::Superseded { by: newer.id },
+        "the cancelled accept left the split pending, so the newer write superseded it"
+    );
+    assert_eq!(
+        fx.store.get(&proposal.id).unwrap().state,
+        ProposalState::Open
+    );
     for p in fx.store.list(true).unwrap() {
         fx.store.dismiss(&p.id).unwrap();
     }
     drop(guard);
     assert!(!kiln.join("a.md").exists());
+}
+
+/// A write of the same turn while the user accepts the turn proposal starts
+/// the next proposal of the turn. It never joins the proposal under decision,
+/// and it keeps the first base of its path, because an update builds on the
+/// text of the held proposal.
+#[tokio::test]
+async fn a_write_during_an_accept_of_its_turn_starts_the_next_proposal() {
+    let (fx, kiln, proposal) = pending_acceptance();
+    let guard = crate::file_write::lock(&kiln.join("a.md")).await;
+    let roots = vec![kiln.clone()];
+    let accepting = fx.store.accept(&proposal.id, &roots);
+    tokio::pin!(accepting);
+    assert!(futures::poll!(&mut accepting).is_pending());
+
+    let root = PhysicalRoot::from_top_level(&kiln);
+    let chained = fx
+        .store
+        .record_write(
+            plugin("reflection"),
+            &session("aux-1"),
+            root.clone(),
+            "a.md",
+            ExpectedBase::Unchecked,
+            "first\nsecond\n".into(),
+        )
+        .expect("a decision does not fail a note write");
+    assert_ne!(chained.id, proposal.id);
+    assert_eq!(chained.writes[0].base, ExpectedBase::Absent);
+    let other = fx
+        .store
+        .record_write(
+            plugin("reflection"),
+            &session("aux-1"),
+            root.clone(),
+            "b.md",
+            ExpectedBase::Absent,
+            "b\n".into(),
+        )
+        .unwrap();
+    assert_eq!(other.id, chained.id, "the next proposal is the turn now");
+    assert_eq!(fx.store.get(&proposal.id).unwrap(), proposal);
+
+    drop(guard);
+    let accepted = accepting.await.unwrap();
+    assert_eq!(accepted.state, ProposalState::Accepted);
+    assert_eq!(accepted.writes, proposal.writes);
+    assert_eq!(
+        std::fs::read_to_string(kiln.join("a.md")).unwrap(),
+        "first\n"
+    );
+    let next = fx.reopened().get(&chained.id).unwrap();
+    assert!(next.state.is_pending(), "{next:?}");
+    assert_eq!(next.writes.len(), 2);
 }
 
 #[tokio::test]

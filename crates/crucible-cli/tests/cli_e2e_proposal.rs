@@ -46,6 +46,8 @@ fn store_proposal(daemon: &TestDaemon, kiln: &Path, base: &str, new_text: &str) 
                 hash: disk_hash(base),
             },
             new_text: new_text.into(),
+            remove: false,
+            moved_from: None,
         }],
     };
     let dir = daemon.data_root().join("proposals");

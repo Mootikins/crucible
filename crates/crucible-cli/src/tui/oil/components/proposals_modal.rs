@@ -172,7 +172,7 @@ impl ProposalsModal {
                 format!(
                     "  {} · {} · +{added} −{removed}",
                     author_label(&proposal.author),
-                    count_noun(proposal.writes.len(), "file", "files")
+                    count_noun(diffset.files.len(), "file", "files")
                 ),
                 muted,
             ),
@@ -229,6 +229,8 @@ mod tests {
                     hash: String::new(),
                 },
                 new_text: "one\ntwo\n".into(),
+                remove: false,
+                moved_from: None,
             }],
         }
     }

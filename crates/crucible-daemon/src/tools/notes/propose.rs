@@ -8,7 +8,7 @@
 use std::sync::{Arc, RwLock};
 
 use crucible_core::file_write::ExpectedBase;
-use crucible_core::proposal::{Proposal, ProposalAuthor};
+use crucible_core::proposal::{Proposal, ProposalAuthor, ProposedWrite};
 use crucible_core::session::{PhysicalRoot, Session, SessionId, SessionType};
 use crucible_core::types::WriteMode;
 
@@ -91,6 +91,41 @@ impl NoteWrites {
                 base,
                 new_text,
             )
+            .map_err(|e| {
+                rmcp::ErrorData::internal_error(format!("Failed to record the proposal: {e}"), None)
+            })
+    }
+}
+
+/// Where the note writes of a session land now.
+///
+/// The one propose-or-apply decision. Agent note tools and Bases writes both
+/// ask it, so an agent edit and a plugin note write get the same review
+/// disposition.
+pub(crate) enum Disposition<'a> {
+    /// Record the writes as a proposal. The disk does not change.
+    Propose(&'a NoteWrites),
+    /// Write the disk through the checked write.
+    Apply,
+}
+
+impl NoteWrites {
+    /// The disposition of `writes`; no write target applies to the disk.
+    pub(crate) fn disposition(writes: Option<&Self>) -> Disposition<'_> {
+        match writes {
+            Some(writes) if writes.mode() == WriteMode::Propose => Disposition::Propose(writes),
+            _ => Disposition::Apply,
+        }
+    }
+
+    /// Record several proposed writes, a deletion among them, as one
+    /// proposal. The disk does not change.
+    pub(crate) fn propose_all(
+        &self,
+        writes: Vec<ProposedWrite>,
+    ) -> Result<Proposal, rmcp::ErrorData> {
+        self.proposals
+            .record_writes(self.author.clone(), &self.session, writes)
             .map_err(|e| {
                 rmcp::ErrorData::internal_error(format!("Failed to record the proposal: {e}"), None)
             })

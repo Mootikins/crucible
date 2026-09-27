@@ -36,8 +36,11 @@ fn failure(kind: &str, message: impl std::fmt::Display) -> Value {
 #[derive(Debug, Clone)]
 pub struct CheckedPut {
     pub path: String,
+    /// The whole text. Ignored when `remove` is set.
     pub content: String,
     pub base: ExpectedBase,
+    /// Delete the file instead of writing `content`.
+    pub remove: bool,
 }
 
 /// The change that `write_locked` applies after its base check.
@@ -45,6 +48,8 @@ pub struct CheckedPut {
 pub(crate) enum LockedChange {
     Put(String),
     Patch(Vec<AnchoredEdit>),
+    /// Delete the file. A deletion cannot merge, so a stale base conflicts.
+    Remove,
 }
 
 /// The innermost of `roots` that holds `path`, as its canonical form and its
@@ -104,7 +109,7 @@ fn nearest_existing(path: &Path) -> Option<&Path> {
 /// component when it exists, and check that the result stays in `root`. The
 /// answer is the target path in that resolved form, so that a symlink cannot
 /// take a read or a write out of its root.
-fn contain(path: &Path, root: &Path) -> Result<PathBuf, Value> {
+pub(crate) fn contain(path: &Path, root: &Path) -> Result<PathBuf, Value> {
     let Some(ancestor) = nearest_existing(path) else {
         return Err(failure("invalid", "Path has no parent"));
     };
@@ -225,8 +230,17 @@ pub async fn write_many_for_roots(
     for path in order {
         guards.push(lock(path).await);
     }
+    let answer = write_many_locked(&paths, requests).await;
+    drop(guards);
+    answer
+}
+
+/// Apply `requests` to `paths`, which are admitted and in the same order, as
+/// one set: when one fails, put back the kept bytes of every path touched.
+/// The caller holds the lock of every path.
+pub(crate) async fn write_many_locked(paths: &[PathBuf], requests: Vec<CheckedPut>) -> Value {
     let mut kept: Vec<Option<Vec<u8>>> = Vec::with_capacity(paths.len());
-    for path in &paths {
+    for path in paths {
         match tokio::fs::read(path).await {
             Ok(bytes) => kept.push(Some(bytes)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => kept.push(None),
@@ -235,7 +249,13 @@ pub async fn write_many_for_roots(
     }
     let mut answers = Vec::with_capacity(paths.len());
     for (index, (path, request)) in paths.iter().zip(requests).enumerate() {
-        let answer = write_locked(path, LockedChange::Put(request.content), request.base)
+        let path_text = request.path.clone();
+        let change = if request.remove {
+            LockedChange::Remove
+        } else {
+            LockedChange::Put(request.content)
+        };
+        let answer = write_locked(path, change, request.base)
             .await
             .unwrap_or_else(io_failure);
         if answer["ok"] != true {
@@ -243,12 +263,11 @@ pub async fn write_many_for_roots(
             // a write after it truncates the file.
             restore(&paths[..=index], &kept[..=index]).await;
             let mut answer = answer;
-            answer["path"] = json!(request.path);
+            answer["path"] = json!(path_text);
             return answer;
         }
         answers.push(answer);
     }
-    drop(guards);
     json!({"ok": true, "writes": answers})
 }
 
@@ -336,6 +355,24 @@ pub(crate) async fn write_locked(
             } else {
                 content
             }
+        }
+        LockedChange::Remove => {
+            let Some(disk) = original else {
+                return Ok(if stale {
+                    json!({"ok": false, "current_hash": current_hash, "stale_base": true})
+                } else {
+                    failure("not_found", "File not found")
+                });
+            };
+            if stale {
+                return Ok(json!({"ok": false, "current_hash": current_hash,
+                    "current_content": disk, "merged_content": disk, "regions": [],
+                    "stale_base": true}));
+            }
+            tokio::fs::remove_file(path).await?;
+            crate::kiln_manager::landed(path, crate::kiln_manager::Landed::Removed);
+            answer["removed"] = json!(true);
+            return Ok(answer);
         }
         LockedChange::Patch(edits) => {
             if edits.is_empty() {

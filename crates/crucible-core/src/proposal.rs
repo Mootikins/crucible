@@ -85,9 +85,10 @@ pub struct ProposalFile {
     pub path: String,
 }
 
-/// One file that a proposal creates or replaces.
+/// One file that a proposal creates, replaces or deletes.
 ///
-/// A proposal does not delete or rename a file.
+/// A proposal has no rename entry. A move is a deletion of the old path and
+/// a creation of the new path in one proposal, which accept writes as one set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProposedWrite {
@@ -98,8 +99,16 @@ pub struct ProposedWrite {
     pub path: String,
     /// The disk state that the writer read before it proposed the write.
     pub base: ExpectedBase,
-    /// The whole text that the write puts on disk.
+    /// The whole text that the write puts on disk. Empty for a deletion.
     pub new_text: String,
+    /// The write deletes the file.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remove: bool,
+    /// The path, in the same root, of a file that this proposal deletes and
+    /// that this file replaces: the two writes are one move. Accept and
+    /// reject keep the pair together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved_from: Option<String>,
 }
 
 /// A merge conflict in one file of a proposal.
@@ -192,6 +201,42 @@ impl Proposal {
         self.writes
             .iter()
             .any(|w| w.root == *root && w.path == path)
+    }
+
+    /// The write that moves `write` elsewhere, when `write` is the deletion
+    /// half of a move.
+    pub fn moved_to(&self, write: &ProposedWrite) -> Option<&ProposedWrite> {
+        write.remove.then_some(())?;
+        self.writes
+            .iter()
+            .find(|w| w.root == write.root && w.moved_from.as_deref() == Some(&write.path))
+    }
+
+    /// The deletion that `write` completes, when `write` is the new half of
+    /// a move.
+    pub fn moved_from(&self, write: &ProposedWrite) -> Option<&ProposedWrite> {
+        let from = write.moved_from.as_deref()?;
+        self.writes
+            .iter()
+            .find(|w| w.root == write.root && w.remove && w.path == from)
+    }
+
+    /// The writes a person reviews: a move is one change, its new half.
+    pub fn changes(&self) -> impl Iterator<Item = &ProposedWrite> {
+        self.writes.iter().filter(|w| self.moved_to(w).is_none())
+    }
+
+    /// The title that names what the writes do.
+    pub fn describe(&self) -> String {
+        let changes: Vec<_> = self.changes().collect();
+        match changes.as_slice() {
+            [only] => match &only.moved_from {
+                Some(from) => format!("Move {from} to {}", only.path),
+                None if only.remove => format!("Delete {}", only.path),
+                None => format!("Change {}", only.path),
+            },
+            changes => format!("Change {} notes", changes.len()),
+        }
     }
 }
 

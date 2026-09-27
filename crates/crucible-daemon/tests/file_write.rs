@@ -126,6 +126,7 @@ fn put(path: &std::path::Path, content: &str, base: ExpectedBase) -> CheckedPut 
         path: path.to_string_lossy().into_owned(),
         content: content.into(),
         base,
+        remove: false,
     }
 }
 

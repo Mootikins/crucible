@@ -539,6 +539,8 @@ pub fn mock_proposal_for(
             path: "notes/a.md".to_string(),
             base: ExpectedBase::Absent,
             new_text: "new\n".to_string(),
+            remove: false,
+            moved_from: None,
         }],
     }
 }

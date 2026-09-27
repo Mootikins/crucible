@@ -8,7 +8,7 @@
 use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus};
 use crucible_core::file_write::ExpectedBase;
 use crucible_core::note_edit::disk_hash;
-use crucible_core::proposal::{ProposalId, ProposedWrite};
+use crucible_core::proposal::{Proposal, ProposalId, ProposedWrite};
 use crucible_core::session::PhysicalRoot;
 use crucible_core::types::acp::MAX_DIFF_BYTES;
 
@@ -21,7 +21,7 @@ impl ProposalStore {
     /// their counts.
     pub(crate) fn diff_files(&self, id: &ProposalId) -> ProposalResult<Vec<DiffFileEntry>> {
         let proposal = self.get(id)?;
-        Ok(proposal.writes.iter().map(entry).collect())
+        Ok(proposal.changes().map(|w| entry(&proposal, w)).collect())
     }
 
     /// The two texts of the file `root`/`path` of the proposal `id`.
@@ -38,8 +38,10 @@ impl ProposalStore {
             .find(|w| w.root == *root && w.path == path)
             .ok_or_else(|| ProposalError::NoWrite(*id, path.to_string()))?;
         Ok(DiffFileText {
-            base_text: base_text(write).filter(|t| t.len() <= MAX_DIFF_BYTES),
-            current_text: Some(write.new_text.clone()).filter(|t| t.len() <= MAX_DIFF_BYTES),
+            base_text: old_text(&proposal, write).filter(|t| t.len() <= MAX_DIFF_BYTES),
+            current_text: (!write.remove)
+                .then(|| write.new_text.clone())
+                .filter(|t| t.len() <= MAX_DIFF_BYTES),
         })
     }
 }
@@ -61,9 +63,19 @@ fn base_text(write: &ProposedWrite) -> Option<String> {
     }
 }
 
-fn entry(write: &ProposedWrite) -> DiffFileEntry {
-    let base = base_text(write);
+/// The old side of `write`: for the new half of a move, the text that the
+/// moved file held.
+fn old_text(proposal: &Proposal, write: &ProposedWrite) -> Option<String> {
+    base_text(proposal.moved_from(write).unwrap_or(write))
+}
+
+fn entry(proposal: &Proposal, write: &ProposedWrite) -> DiffFileEntry {
+    let base = old_text(proposal, write);
     let status = match (&write.base, &base) {
+        _ if write.remove => FileStatus::Deleted,
+        _ if write.moved_from.is_some() => FileStatus::Renamed {
+            from: write.moved_from.clone().unwrap_or_default(),
+        },
         (ExpectedBase::Absent, _) | (ExpectedBase::Unchecked, None) => FileStatus::Added,
         _ => FileStatus::Modified,
     };
