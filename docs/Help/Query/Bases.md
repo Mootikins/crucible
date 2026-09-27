@@ -98,5 +98,7 @@ Bases writes are human edits; no new agent or plugin write API bypasses the
 session review disposition. Full conformance against a running Obsidian app has
 not been established.
 
+The follow-up work and acceptance criteria are in [[Meta/Bases Compatibility Plan]].
+
 Specification: [Bases syntax](https://obsidian.md/help/bases/syntax) and
 [Functions](https://obsidian.md/help/bases/functions).
