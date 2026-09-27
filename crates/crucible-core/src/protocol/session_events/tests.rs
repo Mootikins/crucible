@@ -173,7 +173,7 @@ event_payload! {
     #[serde(tag = "event", content = "data")]
     enum MetadataProbe {
         /// A name whose spelling cannot be inferred from its Rust identifier.
-        "probe:empty" => Empty {},
+        "probe:empty" as PROBE_EMPTY => Empty {},
         "probe.value" => Value { value: u64 },
         "probe_tuple" => Tuple(String),
     }
@@ -191,6 +191,10 @@ fn declared_metadata_matches_serde_for_struct_empty_and_tuple_variants() {
     ];
     let fixtures = ["probe:empty", "probe.value", "probe_tuple"];
     assert_eq!(MetadataProbe::WIRE_NAMES, fixtures);
+    // The optional const and the match come from the same literal.
+    assert_eq!(MetadataProbe::PROBE_EMPTY, "probe:empty");
+    assert!(fixtures.iter().all(|name| MetadataProbe::declares(name)));
+    assert!(!MetadataProbe::declares("probe"));
     for ((value, data), event) in cases.into_iter().zip(fixtures) {
         let fixture = serde_json::json!({"event":event,"data":data});
         assert_eq!(serde_json::to_value(&value).unwrap(), fixture);
@@ -199,52 +203,37 @@ fn declared_metadata_matches_serde_for_struct_empty_and_tuple_variants() {
     }
 }
 
-/// Each `SystemPayload` wire-name const must equal what serde writes.
+/// Every declared wire name, by group, against a checked-in list.
 ///
-/// `#[serde(rename = ...)]` takes a literal, so the name exists twice in
-/// `lifecycle.rs`: once in the attribute, once as the const another crate
-/// reads. This is the only tie available, and it is a behavioural one — it
-/// serializes the variant and reads the `event` field back, so no text scan
-/// can satisfy it and a changed rename fails here.
+/// A rename of a `"name" =>` literal changes what serde writes and what the
+/// daemon sends, and a recorded fixture holds only some names. This list holds
+/// all of them, so a rename is a visible diff of the list. A client decoder
+/// (the TUI, `crucible-web`, the browser) that names an event must change in
+/// the same diff.
 #[test]
-fn a_system_events_const_matches_its_serde_name() {
-    let cases: [(&str, SystemPayload); 3] = [
-        (
-            SystemPayload::SURFACE_CHANGED,
-            SystemPayload::SurfaceChanged {
-                plugin: "kanban".to_string(),
-                name: "board".to_string(),
-                version: 1,
-                session: None,
-                withdrawn: false,
-            },
-        ),
-        (
-            SystemPayload::PUBLICATION_CHANGED,
-            SystemPayload::PublicationChanged {
-                plugin: "kanban".to_string(),
-                key: "kanban:board".to_string(),
-            },
-        ),
-        (
-            SystemPayload::PROPOSAL_CHANGED,
-            SystemPayload::ProposalChanged {
-                id: crate::proposal::ProposalId::generate(),
-            },
-        ),
-    ];
-
-    for (declared, payload) in cases {
-        let wire = serde_json::to_value(&payload).expect("a payload serializes");
-        let serde_name = wire["event"]
-            .as_str()
-            .unwrap_or_else(|| panic!("no `event` field in {wire} — adjacent tagging changed"));
-        assert_eq!(
-            declared, serde_name,
-            "the const and the serde rename disagree; a crate reading the const \
-             would filter on a name the daemon never sends"
-        );
-    }
+fn every_wire_name_is_in_the_golden_list() {
+    use strum::IntoEnumIterator;
+    // Sorted within each group: the order of the declarations is not part of
+    // the wire, so a moved variant is no diff.
+    let actual: String = Group::iter()
+        .flat_map(|group| {
+            let mut names = group.wire_names().to_vec();
+            names.sort_unstable();
+            names
+                .into_iter()
+                .map(move |name| format!("{group:?}\t{name}\n"))
+        })
+        .collect();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/golden/session_event_wire_names.txt");
+    let golden = std::fs::read_to_string(&path).unwrap_or_default();
+    assert_eq!(
+        golden,
+        actual,
+        "the declared wire names differ from {}. A rename is a wire break: \
+         change each client that names the event, then write this list again",
+        path.display()
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -68,9 +68,10 @@ pub struct ReconnectingDaemon {
     broker: Arc<EventBroker>,
     /// Handle to the current event-router task, aborted and replaced on reconnect.
     router: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Serializes first subscribe with last-drop cleanup. Reconnect reads
-    /// receiver ownership from the broker while holding the daemon write lock.
-    subscription_changes: tokio::sync::Mutex<()>,
+    /// The daemon subscription of each session, changed one flight at a
+    /// time for each session. Reconnect reads receiver ownership from the
+    /// broker while holding the daemon write lock.
+    interest: event_stream::Interest,
 }
 
 impl ReconnectingDaemon {
@@ -87,15 +88,15 @@ impl ReconnectingDaemon {
             reconnect_socket: None,
             broker,
             router: std::sync::Mutex::new(Some(router)),
-            subscription_changes: tokio::sync::Mutex::new(()),
+            interest: event_stream::Interest::new(),
         }
     }
 
-    forward_rpc! { Safe BaseQuery => base_query(params: serde_json::Value) -> serde_json::Value = call("base.query", params); }
-    forward_rpc! { Safe BaseViews => base_views(params: serde_json::Value) -> serde_json::Value = call("base.views", params); }
-    forward_rpc! { Once BaseCreateEntry => base_create_entry(params: serde_json::Value) -> serde_json::Value = call("base.create_entry", params); }
-    forward_rpc! { Once BaseSetProperty => base_set_property(params: serde_json::Value) -> serde_json::Value = call("base.set_property", params); }
-    forward_rpc! { Once BaseReorderGroups => base_reorder_groups(params: serde_json::Value) -> serde_json::Value = call("base.reorder_groups", params); }
+    forward_rpc! { Safe BaseQuery => base_query(params: crucible_daemon::bases::QueryParams) -> crucible_daemon::bases::QueryResult = typed_call("base.query", params); }
+    forward_rpc! { Safe BaseViews => base_views(params: crucible_daemon::bases::ViewsParams) -> Vec<crucible_daemon::bases::ViewSummary> = typed_call("base.views", params); }
+    forward_rpc! { Once BaseCreateEntry => base_create_entry(params: crucible_daemon::bases::CreateEntryParams) -> crucible_daemon::bases::WriteOutcome = typed_call("base.create_entry", params); }
+    forward_rpc! { Once BaseSetProperty => base_set_property(params: crucible_daemon::bases::SetPropertyParams) -> crucible_daemon::bases::WriteOutcome = typed_call("base.set_property", params); }
+    forward_rpc! { Once BaseReorderGroups => base_reorder_groups(params: crucible_daemon::bases::ReorderGroupsParams) -> crucible_daemon::bases::WriteOutcome = typed_call("base.reorder_groups", params); }
 
     /// The daemon's cheapest RPC, for the readiness probe.
     ///
@@ -180,24 +181,41 @@ impl ReconnectingDaemon {
             new_daemon.session_subscribe(&borrowed).await?;
         }
         *daemon = new_daemon;
-        // HTTP streams survive a daemon reconnect. Their lost span is unknown
-        // (zero), so announce recovery before forwarding the new live tail.
+        self.rewire_events(event_rx).await;
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        tracing::warn!("Daemon reconnected; SSE fan-out rewired to the new event stream");
+        Ok(())
+    }
+
+    /// Move the SSE fan-out onto the event stream of a new connection.
+    ///
+    /// The router of the dead connection stops first, and this waits for it:
+    /// an event that it still held must not reach a browser after the gap.
+    /// HTTP streams survive a daemon reconnect. Their lost span is unknown
+    /// (zero), so the gap goes out before the new live tail. A chat stream
+    /// reads the gap as a new anchor, because a restarted daemon numbers its
+    /// events from the persisted log again.
+    async fn rewire_events(&self, event_rx: mpsc::UnboundedReceiver<SessionEvent>) {
+        let old = self
+            .router
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(old) = old {
+            old.abort();
+            let _ = old.await;
+        }
         self.broker
             .dispatch(event_stream::stream_gap(
                 crucible_daemon::subscription::WILDCARD_SESSION,
                 0,
             ))
             .await;
-        let new_router = spawn_event_router(event_rx, self.broker.clone());
-        if let Ok(mut guard) = self.router.lock() {
-            if let Some(old) = guard.replace(new_router) {
-                old.abort();
-            }
-        }
-
-        self.generation.fetch_add(1, Ordering::AcqRel);
-        tracing::warn!("Daemon reconnected; SSE fan-out rewired to the new event stream");
-        Ok(())
+        let router = spawn_event_router(event_rx, self.broker.clone());
+        *self
+            .router
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(router);
     }
 
     fn is_connection_error(err: &anyhow::Error) -> bool {

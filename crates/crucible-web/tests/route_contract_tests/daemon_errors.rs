@@ -208,3 +208,41 @@ async fn unscripted_methods_still_succeed_alongside_errors() {
 
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+/// A decision that another decision holds answers the daemon's `BUSY`. The
+/// route answers 409, a retry, not 502, which tells the browser the daemon
+/// broke.
+#[tokio::test]
+async fn a_busy_proposal_decision_maps_to_409() {
+    let errors: MockErrors = [(
+        "proposal.accept".to_string(),
+        (
+            i64::from(crucible_core::protocol::BUSY),
+            "proposal 0b8f4a0e-7c1d-4c55-9a39-5d1f0a2e6b11 is busy; retry after the current decision finishes"
+                .to_string(),
+        ),
+    )]
+    .into();
+    let (_mock, client) = start_mock_daemon_with_errors(errors).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/proposals/0b8f4a0e-7c1d-4c55-9a39-5d1f0a2e6b11/accept")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body = body_json(response).await;
+    assert_eq!(body["error"]["code"], 409);
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("busy"),
+        "{body}"
+    );
+}

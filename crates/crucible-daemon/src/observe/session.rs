@@ -54,8 +54,8 @@ pub async fn load_events(session_dir: impl AsRef<Path>) -> Result<Vec<LogEvent>,
 ///
 /// A line joins the tail only when it is a wire event carrying a seq: view
 /// lines (`init`, `user`, …) have no `event`/`data` fields to deserialize and
-/// fail on the envelope, and an unstamped wire line (the direct-send bypasses
-/// `no_production_code_bypasses_emit_event` allows) has no position to filter
+/// fail on the envelope, and an unstamped wire line (only an older daemon
+/// wrote one; `EventBus` stamps each event now) has no position to filter
 /// on — dropping it is the only answer that cannot misorder the tail.
 pub async fn events_after(
     session_dir: impl AsRef<Path>,

@@ -256,8 +256,9 @@ event_payload! {
         },
         "classification_required" => ClassificationRequired {
             /// The kiln's registry name, absent when no entry claims it. Never a
-            /// path — see the internal `SessionEvent` variant for why.
-            #[serde(default)]
+            /// path — see the internal `SessionEvent` variant for why. Absent
+            /// from the wire, not `null`, when no entry claims the kiln.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
             kiln: Option<crate::config::KilnName>,
         },
         /// One producer: `handle_kiln_open` (`crucible-daemon/src/server/kiln.rs`),
@@ -311,7 +312,7 @@ event_payload! {
         /// exists to retire — and a marker announcing lost data is a poor thing to
         /// leave unvalidated. Consumers should treat it as "your transcript has a hole
         /// here", not as session content.
-        "stream_gap" => StreamGap {
+        "stream_gap" as STREAM_GAP => StreamGap {
             /// Zero means the lost span is unknown, as after a connection restart.
             #[serde(default)]
             dropped: u64,
@@ -354,9 +355,9 @@ event_payload! {
         /// knows the two paths are the same note. The reindex underneath it is a
         /// delete followed by an insert, so `note:deleted` and `note:created` fire
         /// for the same operation; this is the event that says they were a move.
+        "note:renamed" => NoteRenamed { from: String, to: String },
         /// A Bases mutation has reached disk. Proposed writes do not emit this.
         "base:changed" => BaseChanged { path: String, change: Value },
-        "note:renamed" => NoteRenamed { from: String, to: String },
         "webhook:received" => WebhookReceived {
             #[serde(default)]
             name: String,
@@ -387,7 +388,7 @@ event_payload! {
         /// unbounded where an event is not, and two clients want it at different
         /// times, so the event says *what* moved and the client asks for the
         /// content. This is what makes the version on the surface worth having.
-        "surface_changed" => SurfaceChanged {
+        "surface_changed" as SURFACE_CHANGED => SurfaceChanged {
             #[serde(default)]
             plugin: String,
             #[serde(default)]
@@ -419,7 +420,7 @@ event_payload! {
         /// daemon events a plugin listens for, and this travels the other way —
         /// plugin to client. A hook here would offer a plugin a handler on its own
         /// writes, which is a loop waiting to happen.
-        "publication_changed" => PublicationChanged {
+        "publication_changed" as PUBLICATION_CHANGED => PublicationChanged {
             #[serde(default)]
             plugin: String,
             #[serde(default)]
@@ -431,7 +432,7 @@ event_payload! {
         /// The event carries only the id. A client reads the proposal again
         /// through `proposal.get`. A proposal belongs to no user session, so the
         /// daemon sends this event on the system session.
-        "proposal_changed" => ProposalChanged { id: crate::proposal::ProposalId },
+        "proposal_changed" as PROPOSAL_CHANGED => ProposalChanged { id: crate::proposal::ProposalId },
         /// A session ended, reported daemon-wide. See [`Self::SessionCreated`].
         "session:ended" => SessionEnded {
             #[serde(default)]
@@ -440,34 +441,4 @@ event_payload! {
             reason: String,
         },
     }
-}
-
-impl SystemPayload {
-    /// The wire name of [`Self::SurfaceChanged`].
-    ///
-    /// A crate that must NAME the event rather than build one reads it here.
-    /// `crucible-web` filters the daemon's system channel on the name and then
-    /// labels its own SSE frame with it, and the browser registers a listener
-    /// for the same string.
-    ///
-    /// **Why a const beside the rename.** A `#[serde(rename = ...)]` takes a
-    /// literal and nothing else, so the attribute cannot read this value. The
-    /// pair is proved equal by `a_system_events_const_matches_its_serde_name`,
-    /// which SERIALIZES each variant rather than reading the source text — so
-    /// the const cannot drift from the wire.
-    pub const SURFACE_CHANGED: &'static str = "surface_changed";
-
-    /// The wire name of [`Self::PublicationChanged`]. See
-    /// [`Self::SURFACE_CHANGED`] for why the const sits beside the rename.
-    ///
-    /// This one is a repair. A merge deleted
-    /// `crucible_daemon::event_map::PUBLICATION_CHANGED_EVENT` and replaced its
-    /// one cross-crate use with a fresh literal in `crucible-web`, so the name
-    /// was written twice with nothing holding the two together.
-    pub const PUBLICATION_CHANGED: &'static str = "publication_changed";
-
-    /// The wire name of [`Self::ProposalChanged`]. See
-    /// [`Self::SURFACE_CHANGED`] for the reason that the const is beside the
-    /// rename.
-    pub const PROPOSAL_CHANGED: &'static str = "proposal_changed";
 }

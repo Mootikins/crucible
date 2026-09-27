@@ -820,11 +820,7 @@ async fn cleanup_session_leaves_no_per_session_residue() {
         .set(session_id, vec!["read_file".to_string()]);
     // And one emitted event, so the session owns a sequence counter.
     let (event_tx, _event_rx) = crate::EventBus::channel(4);
-    event_tx.emit(SessionEventMessage::new(
-        session_id,
-        "test_event",
-        serde_json::json!({}),
-    ));
+    event_tx.emit(SessionEventMessage::text_delta(session_id, "counted"));
 
     assert!(
         !agent_manager
@@ -853,11 +849,7 @@ async fn ending_sessions_does_not_grow_the_seq_counter_map() {
 
     for i in 0..8 {
         let session_id = format!("seq-cycle-{i}");
-        event_tx.emit(SessionEventMessage::new(
-            &session_id,
-            "test_event",
-            serde_json::json!({}),
-        ));
+        event_tx.emit(SessionEventMessage::text_delta(&session_id, "counted"));
         assert!(
             event_tx.has_seq_counter(&session_id),
             "emitting must mint a counter, or this test proves nothing"

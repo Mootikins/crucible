@@ -107,10 +107,11 @@ impl AgentManager {
         self.session_manager
             .set_title(session_id, title.clone())
             .await?;
-        event_tx.emit(SessionEventMessage::new(
+        event_tx.emit(SessionEventMessage::typed(
             session_id,
-            "title_changed",
-            serde_json::json!({ "title": title }),
+            crucible_core::protocol::SettingsPayload::TitleChanged {
+                title: title.clone(),
+            },
         ));
         info!(session_id = %session_id, title = %title, "Session title generated");
         Ok(title)

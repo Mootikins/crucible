@@ -27,6 +27,7 @@
 
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
+use crucible_core::protocol::JobPayload;
 
 use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult};
 use dashmap::DashMap;
@@ -49,7 +50,7 @@ mod types;
 mod tests;
 
 pub use types::BackgroundError;
-use types::{events, BashError, RunningJob};
+use types::{BashError, RunningJob};
 
 pub struct BackgroundJobManager {
     running: Arc<DashMap<JobId, RunningJob>>,

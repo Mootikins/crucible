@@ -1,9 +1,8 @@
 //! The daemon's system session, served to the browser.
 //!
 //! `GET /api/events/system` forwards each system event that a browser acts
-//! on: `publication_changed` and `proposal_changed`. The older route
-//! `GET /api/plugins/events` stays as an alias that forwards the
-//! publications only. All projections also forward stream gap control frames.
+//! on: `publication_changed` and `proposal_changed`. All projections also
+//! forward stream gap control frames.
 //!
 //! `/api/fs/events` and `/api/surfaces/events` also read the system session.
 //! They keep their own routes, because their clients read other shapes.
@@ -15,7 +14,7 @@ use crate::{error::WebResultExt, WebError};
 use axum::extract::State;
 use axum::response::sse::{Event, KeepAlive, KeepAliveStream, Sse};
 use crucible_core::proposal::ProposalId;
-use crucible_core::protocol::{SessionEventPayload, SystemPayload};
+use crucible_core::protocol::SystemPayload;
 use crucible_daemon::SessionEvent;
 use futures::stream::BoxStream;
 use serde::Serialize;
@@ -69,12 +68,6 @@ impl SystemEvent {
             .or_else(|| ProposalChangedEvent::from_daemon_event(ev).map(Self::Proposal))
     }
 
-    /// Project a daemon event into a frame of the plugin alias. The alias
-    /// forwards the publications only.
-    pub fn publication_only(ev: &SessionEvent) -> Option<Self> {
-        PublicationChangedEvent::from_daemon_event(ev).map(Self::Publication)
-    }
-
     fn event_name(&self) -> &'static str {
         match self {
             Self::Publication(_) => PublicationChangedEvent::EVENT_NAME,
@@ -110,12 +103,11 @@ pub(crate) async fn system_stream(
 ) -> Result<SystemStream, WebError> {
     let live = state.daemon.subscribe_events("system").await.daemon_err()?;
 
+    // The gap is found by its name, not by a decode: the projections read
+    // their own fields, so no event of this stream needs a full decode.
     let stream =
         futures::stream::iter([Ok(stream_version_frame())]).chain(live.filter_map(move |event| {
-            if matches!(
-                event.payload(),
-                Ok(SessionEventPayload::System(SystemPayload::StreamGap { .. }))
-            ) {
+            if event.event == SystemPayload::STREAM_GAP {
                 Some(Ok(Event::default()
                     .event(event.event)
                     .data(event.data.to_string())))
@@ -175,7 +167,6 @@ mod tests {
             serde_json::to_value(&projected).unwrap(),
             serde_json::json!({ "id": id.to_string() })
         );
-        assert!(SystemEvent::publication_only(&ev).is_none());
     }
 
     /// A frame with no valid id names no proposal, so the stream drops it.

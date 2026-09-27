@@ -1,9 +1,7 @@
-//! The system stream (`GET /api/events/system`) and its plugin alias.
+//! The system stream (`GET /api/events/system`).
 //!
 //! The daemon sends `publication_changed` and `proposal_changed` on the
-//! system session. The general route forwards both. The alias
-//! `GET /api/plugins/events` forwards only the publications, because the
-//! client that reads it knows no other event.
+//! system session, and the route forwards both.
 
 use std::time::Duration;
 
@@ -88,20 +86,6 @@ async fn the_system_stream_carries_proposal_changed() {
     );
 }
 
-#[tokio::test]
-async fn the_plugin_alias_carries_only_publications() {
-    let text = stream_after_both_events("/api/plugins/events").await;
-
-    assert!(
-        text.contains("event: publication_changed"),
-        "no publication frame: {text}"
-    );
-    assert!(
-        !text.contains(SystemPayload::PROPOSAL_CHANGED),
-        "the alias forwarded a proposal: {text}"
-    );
-}
-
 async fn assert_gap_reaches_projection(uri: &str, event: &str, data: serde_json::Value) {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);
@@ -146,16 +130,6 @@ async fn assert_gap_reaches_projection(uri: &str, event: &str, data: serde_json:
 async fn system_projection_reports_gaps() {
     assert_gap_reaches_projection(
         "/api/events/system",
-        "publication_changed",
-        json!({"plugin":"gap-probe", "key":"rows"}),
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn plugin_alias_reports_gaps() {
-    assert_gap_reaches_projection(
-        "/api/plugins/events",
         "publication_changed",
         json!({"plugin":"gap-probe", "key":"rows"}),
     )

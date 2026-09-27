@@ -24,16 +24,19 @@
 //! | Group | Count | Module |
 //! |---|---|---|
 //! | [`TurnPayload`] | 15 | [`turn`] |
-//! | [`SetupPayload`] | 7 | [`setup`] |
-//! | [`SettingsPayload`] | 18 | [`settings`] |
+//! | [`SetupPayload`] | 8 | [`setup`] |
+//! | [`SettingsPayload`] | 9 | [`settings`] |
 //! | [`JobPayload`] | 7 | [`lifecycle`] |
-//! | [`ReviewPayload`] | 3 | [`lifecycle`] |
+//! | [`ReviewPayload`] | 2 | [`lifecycle`] |
 //! | [`NotificationPayload`] | 2 | [`lifecycle`] |
 //! | [`WorkflowPayload`] | 8 | [`lifecycle`] |
-//! | [`SystemPayload`] | 9 | [`lifecycle`] |
+//! | [`SystemPayload`] | 20 | [`lifecycle`] |
 //!
-//! Groups rather than one flat 70-variant enum because exhaustive matching over
-//! 70 variants in nine consumers is 630 arms — worse than the untyped code it
+//! `assets/fixtures/golden/session_event_wire_names.txt` lists each name by
+//! group, and a test compares it with the declarations.
+//!
+//! Groups rather than one flat 71-variant enum because exhaustive matching over
+//! 71 variants in nine consumers is 639 arms — worse than the untyped code it
 //! replaces. Grouping makes the *interesting* set exhaustive and the rest one
 //! arm.
 //!
@@ -57,7 +60,7 @@
 //! |---|---|---|
 //! | Serialization target | RPC socket, SSE, `session.jsonl`, `assets/fixtures/*.jsonl` | markdown session logs, Lua tables |
 //! | Back-compat constraint | recorded fixtures and persisted sessions on disk | `handlers/*.lua` in user kilns |
-//! | Vocabulary size | 69 | 14 wire-ish + 41 internal |
+//! | Vocabulary size | 71 (see the golden list) | 14 wire-ish + 41 internal |
 //! | `tool_call` is called | `tool_call` | `tool_called` |
 //! | `tool_result` is called | `tool_result` | `tool_completed` |
 //! | `message_complete` is called | `message_complete` | `agent_responded` |
@@ -75,15 +78,17 @@
 //! `inject_context` and `fork`, wire-envelope lines from the broadcast path.
 //! The asymmetry is correct, not debt.
 
-// Each wire name is written once: serde and routing metadata expand from
-// the same literal. Payload fields remain ordinary Rust/serde declarations.
+// Each wire name is written once: serde, routing and the optional name const
+// expand from the same literal. Payload fields remain ordinary Rust/serde
+// declarations. `"name" as CONST =>` also declares `Self::CONST` for a crate
+// that must name the event rather than build one.
 macro_rules! event_payload {
     (
         $(#[$enum_meta:meta])*
         $visibility:vis enum $name:ident {
             $(
                 $(#[$variant_meta:meta])*
-                $wire:literal => $variant:ident $fields:tt
+                $wire:literal $(as $const_name:ident)? => $variant:ident $fields:tt
             ),* $(,)?
         }
     ) => {
@@ -97,6 +102,13 @@ macro_rules! event_payload {
         }
         impl $name {
             pub const WIRE_NAMES: &'static [&'static str] = &[$($wire),*];
+            $($(pub const $const_name: &'static str = $wire;)?)*
+
+            /// Whether this enum declares `event`. A `match` on the literals,
+            /// so a decode does not scan the name list.
+            pub fn declares(event: &str) -> bool {
+                matches!(event, $($wire)|*)
+            }
         }
     };
 }
@@ -170,9 +182,24 @@ impl Group {
         }
     }
 
+    /// The group that declares `event`. Each group answers with a `match`
+    /// on its literals; see [`TurnPayload::declares`].
     pub fn of(event: &str) -> Option<Self> {
         use strum::IntoEnumIterator;
-        Self::iter().find(|group| group.wire_names().contains(&event))
+        Self::iter().find(|group| group.declares(event))
+    }
+
+    fn declares(self, event: &str) -> bool {
+        match self {
+            Self::Turn => TurnPayload::declares(event),
+            Self::Setup => SetupPayload::declares(event),
+            Self::Settings => SettingsPayload::declares(event),
+            Self::Job => JobPayload::declares(event),
+            Self::Review => ReviewPayload::declares(event),
+            Self::Notification => NotificationPayload::declares(event),
+            Self::Workflow => WorkflowPayload::declares(event),
+            Self::System => SystemPayload::declares(event),
+        }
     }
 }
 

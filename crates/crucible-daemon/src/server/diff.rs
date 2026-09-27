@@ -147,7 +147,8 @@ pub(crate) async fn branch_sides(
 }
 
 /// A proposal error as an RPC refusal. The caller can correct each variant
-/// except a store failure and a refused write.
+/// except a store failure and a refused write. A busy proposal is the
+/// caller's to send again, with the code that `proposal.*` answers.
 pub(crate) fn proposal_refusal(error: ProposalError) -> Refusal {
     match error {
         ProposalError::NotFound(_)
@@ -156,9 +157,8 @@ pub(crate) fn proposal_refusal(error: ProposalError) -> Refusal {
         | ProposalError::NoConflict(..)
         | ProposalError::Ambiguous(..)
         | ProposalError::MixedSelection => params_error(error.to_string()),
-        ProposalError::Busy(_) | ProposalError::WriteFailed(_) | ProposalError::Store(_) => {
-            internal_error(error)
-        }
+        ProposalError::Busy(_) => (crate::protocol::BUSY, error.to_string()),
+        ProposalError::WriteFailed(_) | ProposalError::Store(_) => internal_error(error),
     }
 }
 
@@ -354,6 +354,18 @@ mod tests {
     use serde_json::{json, Value};
     use std::fs;
     use tempfile::TempDir;
+
+    /// A busy proposal is a retry for the caller, not a daemon failure, so
+    /// the diff routes answer the code of `proposal.*`.
+    #[test]
+    fn a_busy_proposal_refusal_answers_the_busy_code() {
+        let id = crucible_core::proposal::ProposalId::generate();
+        let (code, message) = proposal_refusal(ProposalError::Busy(id));
+        assert_eq!(code, crate::protocol::BUSY);
+        assert!(message.contains(&id.to_string()), "{message}");
+        let (code, _) = proposal_refusal(ProposalError::WriteFailed("disk".into()));
+        assert_eq!(code, crate::protocol::INTERNAL_ERROR);
+    }
 
     /// The daemon state of one test: a project registry, a kiln manager and
     /// a session manager, each under a temp directory.

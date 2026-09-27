@@ -427,9 +427,11 @@ impl SessionLogLine {
 /// conversation content" — an ordinary outcome, not a parse failure, so
 /// callers must not warn on it.
 pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
-    // Events reaching the persist task via `emit_event` are stamped
-    // (`EventBus::emit`); historical direct sends are
-    // not, so `timestamp` is genuinely absent on some real lines.
+    // `EventBus` owns the only sender, and it stamps each event before the
+    // persist task sees it, so a line that this build wrote has a timestamp.
+    // A log that an older daemon wrote can hold a line with no timestamp:
+    // that daemon also sent some events past the stamp. Sessions are the
+    // user's plaintext data and have no rewrite pass, so the fallback stays.
     // `Utc::now()` is the fail-safe fallback: `handle_session_cleanup`
     // (`server/observe.rs`) deletes sessions whose newest event predates
     // a cutoff, so a fabricated-recent stamp keeps a session, where the

@@ -7,6 +7,7 @@
 use crucible_daemon::{BindWithPluginConfigParams, DaemonClient, Server};
 use crucible_web::services::daemon::{EventBroker, ReconnectingDaemon};
 use crucible_web::ChatEvent;
+use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -190,7 +191,8 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     };
 
     // Two independent web clients have live streams before one closes the
-    // notice. Hold the older snapshot to reproduce the browser's ordering.
+    // notice. Each holds the older snapshot, as a browser does, and opens its
+    // stream through the lease that a browser stream holds.
     let snapshot = json_of(
         app.clone()
             .oneshot(request(
@@ -206,10 +208,13 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     let mut connections = Vec::new();
     for _ in 0..2 {
         let (client, events) = DaemonClient::connect_to_with_events(&socket).await.unwrap();
-        client.session_subscribe(&[&sessions[0]]).await.unwrap();
-        let broker = Arc::new(EventBroker::new());
-        connections.push(ReconnectingDaemon::new(client, events, broker.clone()));
-        streams.push(broker.subscribe(&sessions[0]).await);
+        let daemon = Arc::new(ReconnectingDaemon::new(
+            client,
+            events,
+            Arc::new(EventBroker::new()),
+        ));
+        streams.push(daemon.subscribe_events(&sessions[0]).await.unwrap());
+        connections.push(daemon);
     }
 
     let closed = json_of(
@@ -228,20 +233,41 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     assert_eq!(closed["success"], true, "{closed}");
 
     for stream in &mut streams {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        let dismissed = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
-                let event = stream.recv().await.unwrap();
+                let event = stream.next().await.expect("the stream stays open");
                 if let ChatEvent::SessionEvent { event, data } =
                     ChatEvent::from_daemon_event(&event)
                 {
-                    if event == "notification_dismissed" && data["notification_id"] == shared_id {
-                        break;
+                    if event == "notification_dismissed" {
+                        break data["notification_id"].as_str().unwrap().to_string();
                     }
                 }
             }
         })
         .await
         .expect("both web clients receive the dismissal");
+        assert_eq!(dismissed, shared_id);
+
+        // The browser applies the event to its older snapshot. The result
+        // must be the list that a new read answers.
+        let mut reconciled = snapshot["notifications"].as_array().unwrap().clone();
+        reconciled.retain(|n| n["id"] != dismissed.as_str());
+        let current = json_of(
+            app.clone()
+                .oneshot(request(
+                    "GET",
+                    format!("/api/session/{}/notifications", sessions[0]),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(
+            &reconciled,
+            current["notifications"].as_array().unwrap(),
+            "the snapshot with the event applied differs from a new read"
+        );
     }
 
     for (session, expected) in [(&sessions[0], 0), (&sessions[1], 1)] {

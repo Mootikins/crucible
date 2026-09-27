@@ -212,8 +212,7 @@ impl Server {
         let (shutdown_tx, _) = broadcast::channel(1);
         // The persist task reads this journal, not the broadcast ring, so a
         // lag of the ring cannot lose a line of a session log.
-        let (event_tx, journal_waiter, journal) =
-            crate::EventBus::journaled_channel(EVENT_CHANNEL_CAPACITY);
+        let (event_tx, journal) = crate::EventBus::journaled_channel(EVENT_CHANNEL_CAPACITY);
 
         use tokio::sync::RwLock;
 
@@ -460,7 +459,7 @@ impl Server {
             .with_kiln_registry(kiln_registry.clone())
             .with_session_workspace_dir(Some(session_workspace_dir))
             .with_review_snapshot_root(review_snapshot_root.clone())
-            .with_journal(journal_waiter),
+            .with_event_bus(event_tx.clone()),
         );
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =

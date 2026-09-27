@@ -1,13 +1,6 @@
 use super::*;
 use thiserror::Error;
 
-pub(super) mod events {
-    pub const BASH_SPAWNED: &str = "bash_job_spawned";
-    pub const BASH_COMPLETED: &str = "bash_job_completed";
-    pub const BASH_FAILED: &str = "bash_job_failed";
-    pub const BACKGROUND_COMPLETED: &str = "background_job_completed";
-}
-
 #[derive(Error, Debug)]
 pub enum BackgroundError {
     #[error("Job error: {0}")]

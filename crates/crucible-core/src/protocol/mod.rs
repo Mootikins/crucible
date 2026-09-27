@@ -4,8 +4,8 @@ pub mod session_events;
 
 pub use lifecycle::{remove_socket, socket_path};
 pub use rpc::{
-    Request, RequestId, Response, RpcError, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS,
-    INVALID_REQUEST, METHOD_NOT_FOUND, PARSE_ERROR,
+    Request, RequestId, Response, RpcError, SessionEventMessage, BUSY, INTERNAL_ERROR,
+    INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, PARSE_ERROR,
 };
 pub use session_events::{
     ContextLimitResolvedPayload, ContextLimitSource, EventDecodeError, Group, JobPayload,

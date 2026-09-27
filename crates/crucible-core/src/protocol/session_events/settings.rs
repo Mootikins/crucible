@@ -1,4 +1,4 @@
-//! The twelve session-settings events.
+//! The session-settings events.
 //!
 //! Most of them are one-field acknowledgements routed through
 //! `AgentManager::update_agent_config_and_emit`; the field name in each variant
@@ -26,14 +26,14 @@ event_payload! {
             #[serde(default)]
             mode: String,
         },
+        /// The session's scope after a change: its kilns by registry name, and
+        /// its workspace (`null` for a session with no workspace).
         "scope_changed" => ScopeChanged {
             #[serde(default)]
-            workspace: PathBuf,
-            /// Always serialized, as `[]` when empty: the producer builds this with
-            /// `json!` from `Session::kilns`, which bypasses that field's own
-            /// `skip_serializing_if`.
+            workspace: Option<PathBuf>,
+            /// Always serialized, as `[]` when empty.
             #[serde(default)]
-            kilns: Vec<PathBuf>,
+            kilns: Vec<crate::config::KilnName>,
         },
         "title_changed" => TitleChanged {
             #[serde(default)]
@@ -50,6 +50,18 @@ event_payload! {
         "context_strategy_changed" => ContextStrategyChanged {
             #[serde(default)]
             context_strategy: String,
+        },
+        /// A plugin's approval knob changed. `approval` is the knob's own
+        /// spelling (`inherit`, `ask`, `stop`).
+        "plugin_approval_changed" => PluginApprovalChanged {
+            #[serde(default)]
+            plugin: String,
+            #[serde(default)]
+            approval: String,
+        },
+        "plugin_turn_limit_changed" => PluginTurnLimitChanged {
+            #[serde(default)]
+            limit: u32,
         },
     }
 }

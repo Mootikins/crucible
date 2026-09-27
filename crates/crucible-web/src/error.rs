@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use crucible_core::protocol::{BUSY, INVALID_PARAMS};
 use serde_json::json;
 
 pub type Result<T> = std::result::Result<T, WebError>;
@@ -38,6 +39,12 @@ pub enum WebError {
 
     #[error("Forbidden: {0}")]
     Forbidden(String),
+
+    /// Another operation holds the resource now. The request did nothing,
+    /// and the caller can send it again after that operation finishes. The
+    /// daemon says so with [`crucible_core::protocol::BUSY`].
+    #[error("Conflict: {0}")]
+    Conflict(String),
 
     #[error("Internal error: {0}")]
     Internal(String),
@@ -79,6 +86,7 @@ impl IntoResponse for WebError {
             WebError::NotFound(e) => (StatusCode::NOT_FOUND, e.clone()),
             WebError::UnsupportedMediaType(e) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, e.clone()),
             WebError::Forbidden(e) => (StatusCode::FORBIDDEN, e.clone()),
+            WebError::Conflict(e) => (StatusCode::CONFLICT, e.clone()),
             WebError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
             // Handled above, with its hash.
             WebError::StaleBase { .. } => (StatusCode::CONFLICT, self.to_string()),
@@ -117,8 +125,15 @@ impl<T, E: std::fmt::Display> WebResultExt<T> for std::result::Result<T, E> {
             // refusing `/` as a session kiln, a deliberate containment check,
             // reported as a gateway failure. One route mapped this correctly and
             // every other one did not, so it belongs here rather than per-route.
-            if code == Some(-32602) || (code.is_none() && raw.contains("-32602")) {
+            //
+            // `BUSY` is a retry, not a fault: another decision holds the
+            // resource, so the answer is 409 and the caller sends it again.
+            let invalid = i64::from(INVALID_PARAMS);
+            let busy = i64::from(BUSY);
+            if code == Some(invalid) || (code.is_none() && raw.contains(&invalid.to_string())) {
                 WebError::Validation(message)
+            } else if code == Some(busy) {
+                WebError::Conflict(message)
             } else {
                 WebError::Daemon(message)
             }
@@ -134,7 +149,7 @@ impl<T, E: std::fmt::Display> WebResultExt<T> for std::result::Result<T, E> {
 /// one plain sentence. The sentence is the part a person can act on, so it is
 /// what the response body carries; the code decides the status. Anything
 /// that is not that shape (a socket error, a plain string) passes unchanged.
-fn rpc_error_parts(raw: &str) -> (Option<i64>, String) {
+pub(crate) fn rpc_error_parts(raw: &str) -> (Option<i64>, String) {
     let Some(envelope) = raw.strip_prefix("RPC error: ") else {
         return (None, raw.to_string());
     };
@@ -205,6 +220,18 @@ mod tests {
             .unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["error"]["message"], "session.get exploded");
+    }
+
+    /// A busy daemon resource is a retry for the caller, not a gateway fault.
+    #[test]
+    fn a_busy_rpc_error_is_a_conflict() {
+        let busy: std::result::Result<(), String> = Err(format!(
+            r#"RPC error: {{"code":{BUSY},"message":"proposal p is busy; retry after the current decision finishes"}}"#
+        ));
+
+        let status = busy.daemon_err().unwrap_err().into_response().status();
+
+        assert_eq!(status, StatusCode::CONFLICT);
     }
 
     #[test]

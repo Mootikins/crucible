@@ -20,8 +20,9 @@ synchronous interception stages stay separate from broadcast observers.
 ## 1. Finish the system stream migration, then share gap recovery
 
 **Implemented:** publication blocks and proposal readers now share the system
-root and decoder. The system route owns publication invalidation; the server
-alias remains available. Connection sharing and publication routing regressions
+root and decoder. The system route owns publication invalidation. The server
+alias `GET /api/plugins/events` had no client after this change, so the
+September 27 fixes removed it. Connection sharing and publication routing regressions
 were observed failing before the change. All system projections now share subscription, handshake, keepalive and gap
 forwarding. Browser caches reconcile open/reopen and gaps; Chromium verifies
 native retry without a subsequent change event. Recovery cancels an initial
@@ -54,7 +55,7 @@ families; system events do not all have replayable history.
 
 **Gates:** two consumers open one source; overflow a small ring and observe
 reconciliation; disconnect during a change and recover without a subsequent
-change; preserve the legacy endpoint's publication-only contract. Native
+change. Native
 EventSource reconnect behavior must be tested: comments in `lib/api.ts` claim
 the plugin/system streams do not reconnect, but their implementations install
 no error handler that disables the browser's native retry.
@@ -198,6 +199,63 @@ guarantees likewise need a policy decision, not an unbounded queue by default.
 **Gates:** a slow handler and a tiny ring expose loss behavior; scoped end
 observers run once before cleanup; global end observers have a stated delivery
 contract; handler failure cannot deadlock session teardown.
+
+## September 27 review fixes
+
+A review of commits `9ba44bd2f..fbf10b08c` found these defects. Each fix
+has a regression test that failed before the fix.
+
+- **Seq after a restart.** The seq counters of `EventBus` started at 1 in a
+  new daemon process. A chat stream that kept its SSE connection across the
+  restart dropped each new event with a seq at or below its replay cursor.
+  `SessionManager::resume_session_from_storage` now waits for the journal,
+  reads the highest seq in the session log and seeds the counter with
+  `EventBus::seed_session`. A cleanup that retired the counter resumes in
+  the same way. Test: `a_resumed_session_continues_its_seq_above_the_log`.
+- **The web side of a restart.** A `stream_gap` now ends the replay filter
+  of `GET /api/chat/events/{session_id}`, because a restarted daemon numbers
+  events from its persisted log again. Test:
+  `a_cursor_does_not_hide_the_events_of_a_restarted_daemon`. An event that
+  the daemon streams and does not persist (a text delta) after the last
+  persisted event can take its seq again after a restart. The gap tells the
+  client to read the history again.
+- **Gap order.** A reconnect stops the router of the dead connection and
+  waits for it before it sends the gap. Before, an event of the dead
+  connection could reach a browser after the gap. Test:
+  `no_event_of_the_dead_connection_follows_the_reconnect_gap`.
+- **Subscription flights.** One lock held each subscribe and release through
+  its RPC, so each stream waited for a slow reconnect of another session.
+  Now the broker receiver count is the intent, and one flight for each
+  session makes the daemon subscription agree with it. A stream that drops
+  sends its release to a service task, so the release does not need a tokio
+  runtime on the thread that drops the stream. Tests:
+  `a_slow_subscription_of_one_session_does_not_block_another`,
+  `a_stream_dropped_outside_a_runtime_releases_its_interest`.
+- **`acp_resume_fallback`.** Section 3 changed this event from a raw send to
+  a stamped, journaled event, but the event had no payload type, so each
+  client took the unknown-event path. It is now
+  `SetupPayload::AcpResumeFallback`. It has a seq and goes to the journal. It
+  is not persisted in `session.jsonl`, as for the other setup notices. The
+  TUI shows nothing for it, as before.
+- **Wire names.** The claim of section 5 that a renamed tag breaks a wire
+  fixture was false: no fixture held ten of the names, and producers wrote
+  their own string constants. Each daemon producer now builds its event
+  with `SessionEventMessage::typed`. `EventBus` refuses an undeclared name
+  in a debug build. The refusal found `plugin_approval_changed` and
+  `plugin_turn_limit_changed`, which had no payload type; they are now
+  `SettingsPayload` variants. `scope_changed` now declares the shape that its
+  producer sends (kiln names, an optional workspace).
+  `assets/fixtures/golden/session_event_wire_names.txt` lists each name by
+  group, and `every_wire_name_is_in_the_golden_list` compares it with the
+  declarations. `Group::of` uses a generated `match`, not a scan of the name
+  lists. A `"name" as CONST =>` declaration generates the wire-name const
+  that another crate reads.
+- **System stream decode.** The system stream finds a gap by its name. It
+  does not decode each event.
+- **Observer order.** The scoped end observer tests now register a row of
+  the session from inside the observer and check that the stop removes it.
+  The check fails when the sweep of the session does not follow the
+  observers.
 
 ## Implementation order
 

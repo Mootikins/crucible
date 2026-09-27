@@ -8,6 +8,7 @@ use axum::{
     response::sse::{Event, Sse},
     Json,
 };
+use crucible_core::protocol::SystemPayload;
 use futures::stream::{iter, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
@@ -171,8 +172,19 @@ async fn event_stream(
     // Not fatal: the receiver stays usable after lagging, having been advanced to
     // the oldest surviving event, so the stream continues rather than ending the
     // SSE connection and provoking a reconnect that would lose more.
+    //
+    // A gap ends the filter. After a daemon reconnect the stream carries the
+    // events of a new daemon process, which numbers them from its persisted
+    // log, so a seq at or below the replayed tail can be a new event. The
+    // client refetches on the gap, and each later event goes through.
+    let mut floor = max_replayed;
     let live = live
-        .filter(move |event| futures::future::ready(event.seq.is_none_or(|seq| seq > max_replayed)))
+        .filter(move |event| {
+            if event.event == SystemPayload::STREAM_GAP {
+                floor = 0;
+            }
+            futures::future::ready(event.seq.is_none_or(|seq| seq > floor))
+        })
         .map(|event| to_sse(&event));
     let stream = iter([Ok(stream_version_frame())])
         .chain(iter(replayed).map(|event| to_sse(&event)))

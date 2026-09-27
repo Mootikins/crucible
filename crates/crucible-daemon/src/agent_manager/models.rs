@@ -1,4 +1,5 @@
 use super::*;
+use crucible_core::protocol::{ReviewPayload, SettingsPayload};
 
 /// Why undo cannot run on a session with this `agent_type`, or `None`.
 ///
@@ -483,8 +484,7 @@ impl AgentManager {
         session_id: &str,
         knob: crucible_core::types::SessionKnob,
         event_tx: Option<&crate::EventBus>,
-        event_type: &str,
-        event_payload: serde_json::Value,
+        payload: SettingsPayload,
         no_subscribers_debug: &str,
         mutator: Mutate,
         on_updated: OnUpdated,
@@ -533,11 +533,7 @@ impl AgentManager {
         on_updated();
 
         if let Some(tx) = event_tx {
-            if !tx.emit(SessionEventMessage::new(
-                session_id,
-                event_type,
-                event_payload,
-            )) {
+            if !tx.emit(SessionEventMessage::typed(session_id, payload)) {
                 tracing::debug!("{}", no_subscribers_debug);
             }
         }
@@ -580,8 +576,7 @@ impl AgentManager {
             session_id,
             crucible_core::types::SessionKnob::Precognition,
             event_tx,
-            "precognition_toggled",
-            serde_json::json!({ "enabled": enabled }),
+            SettingsPayload::PrecognitionToggled { enabled },
             "Failed to emit precognition_toggled event (no subscribers)",
             |agent_config| agent_config.precognition_enabled = enabled,
             || {
@@ -619,10 +614,12 @@ impl AgentManager {
             })
             .await?;
         if let Some(tx) = event_tx {
-            tx.emit(SessionEventMessage::new(
+            tx.emit(SessionEventMessage::typed(
                 session_id,
-                "plugin_approval_changed",
-                serde_json::json!({"plugin": plugin, "approval": approval.as_str()}),
+                SettingsPayload::PluginApprovalChanged {
+                    plugin: plugin.to_string(),
+                    approval: approval.as_str().to_string(),
+                },
             ));
             // The plugin-turn status item reads the knob, so it changes
             // with it.
@@ -656,10 +653,9 @@ impl AgentManager {
             })
             .await?;
         if let Some(tx) = event_tx {
-            tx.emit(SessionEventMessage::new(
+            tx.emit(SessionEventMessage::typed(
                 session_id,
-                "plugin_turn_limit_changed",
-                serde_json::json!({"limit": limit}),
+                SettingsPayload::PluginTurnLimitChanged { limit },
             ));
         }
         Ok(())
@@ -744,8 +740,9 @@ impl AgentManager {
             session_id,
             crucible_core::types::SessionKnob::ContextStrategy,
             event_tx,
-            "context_strategy_changed",
-            serde_json::json!({ "context_strategy": strategy_str }),
+            SettingsPayload::ContextStrategyChanged {
+                context_strategy: strategy_str.clone(),
+            },
             "Failed to emit context_strategy_changed event (no subscribers)",
             |agent_config| agent_config.context_strategy = strategy.clone(),
             || {
@@ -851,13 +848,12 @@ impl AgentManager {
 
             if let Some(tx) = event_tx {
                 let total_removed: usize = summaries.iter().map(|s| s.messages_removed).sum();
-                tx.emit(SessionEventMessage::new(
+                tx.emit(SessionEventMessage::typed(
                     session_id,
-                    "session_undo",
-                    serde_json::json!({
-                        "turns_undone": summaries.len(),
-                        "messages_removed": total_removed,
-                    }),
+                    ReviewPayload::SessionUndo {
+                        turns_undone: summaries.len(),
+                        messages_removed: total_removed,
+                    },
                 ));
             }
             info!(

@@ -1,5 +1,6 @@
 use super::*;
 use crucible_core::background::JobStatus;
+use crucible_core::protocol::SessionEventPayload;
 
 #[tokio::test]
 async fn spawn_bash_returns_job_id_immediately() {
@@ -294,7 +295,10 @@ async fn bash_events_are_broadcast() {
         .expect("failed to receive event");
 
     assert_eq!(event.session_id, "session-1");
-    assert_eq!(event.event, events::BASH_SPAWNED);
+    assert!(matches!(
+        event.payload(),
+        Ok(SessionEventPayload::Job(JobPayload::BashJobSpawned { .. }))
+    ));
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -304,10 +308,12 @@ async fn bash_events_are_broadcast() {
         .expect("failed to receive completion event");
 
     assert_eq!(completion_event.session_id, "session-1");
-    assert!(
-        completion_event.event == events::BASH_COMPLETED
-            || completion_event.event == events::BASH_FAILED
-    );
+    assert!(matches!(
+        completion_event.payload(),
+        Ok(SessionEventPayload::Job(
+            JobPayload::BashJobCompleted { .. } | JobPayload::BashJobFailed { .. }
+        ))
+    ));
 }
 
 #[tokio::test]

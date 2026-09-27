@@ -198,13 +198,12 @@ pub(crate) async fn inject_context_impl(
         .await
         .map_err(|e| e.to_string())?;
     drop(input);
-    let _ = event_tx.emit(SessionEventMessage::new(
+    let _ = event_tx.emit(SessionEventMessage::typed(
         session_id,
-        "context_injected",
-        serde_json::json!({
-            "role": role,
-            "content": content,
-        }),
+        crucible_core::protocol::TurnPayload::ContextInjected {
+            role: role.to_string(),
+            content: content.to_string(),
+        },
     ));
 
     Ok(())
@@ -401,14 +400,14 @@ pub(crate) async fn handle_session_test_interaction(
         }
         "permission" => {
             let action = params.action.as_deref().unwrap_or("rm -rf /tmp/test");
-
-            // PermRequest uses externally-tagged format for its inner Bash/Read/Write/Tool
-            serde_json::json!({
-                "kind": "permission",
-                "Bash": {
-                    "command": action
-                }
-            })
+            // The typed request, so a client decodes the shape a real
+            // permission prompt has.
+            match serde_json::to_value(crucible_core::interaction::InteractionRequest::Permission(
+                crucible_core::interaction::PermRequest::bash(action.split_whitespace()),
+            )) {
+                Ok(request) => request,
+                Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+            }
         }
         _ => {
             return Response::error(
@@ -422,13 +421,16 @@ pub(crate) async fn handle_session_test_interaction(
         }
     };
 
-    if !event_tx.emit(SessionEventMessage::new(
-        session_id.to_string(),
-        "interaction_requested",
-        serde_json::json!({
-            "request_id": request_id,
-            "request": request,
-        }),
+    let request = match serde_json::from_value(request) {
+        Ok(request) => request,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+    if !event_tx.emit(SessionEventMessage::typed(
+        session_id.as_str(),
+        crucible_core::protocol::TurnPayload::InteractionRequested {
+            request_id: request_id.clone(),
+            request,
+        },
     )) {
         tracing::debug!("Failed to emit interaction_requested event (no subscribers)");
     }
@@ -480,10 +482,16 @@ mod tests {
 
         let event = events.try_recv().expect("an interaction_requested event");
         assert_eq!(event.data["request"]["kind"], "permission");
-        assert_eq!(
-            event.data["request"]["Bash"]["command"],
-            "rm -rf /tmp/example"
-        );
+        let Ok(crucible_core::protocol::SessionEventPayload::Turn(
+            crucible_core::protocol::TurnPayload::InteractionRequested {
+                request: crucible_core::interaction::InteractionRequest::Permission(request),
+                ..
+            },
+        )) = event.payload()
+        else {
+            panic!("a typed permission request: {event:?}");
+        };
+        assert_eq!(request.tokens(), ["rm", "-rf", "/tmp/example"]);
     }
 
     /// The `ask` branch's own optional field, and the default that applies

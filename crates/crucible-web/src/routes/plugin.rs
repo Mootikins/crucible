@@ -31,9 +31,10 @@ const CALLER_HEADER_DOC: &str =
 /// Ungated, and each for a reason worth knowing before you "finish the job":
 /// `GET /api/plugins`, `/commands` and `/options` are enumerations the plugins
 /// panel needs and no route rewrites, so gating them buys nothing while a
-/// block can call itself `app`. `GET /api/plugins/events` **cannot** be gated
-/// this way at all: browsers open it with `EventSource`, which sets no
-/// headers. An identity for the push stream needs a different carrier.
+/// block can call itself `app`. The publication push stream,
+/// `GET /api/events/system`, **cannot** be gated this way at all: browsers
+/// open it with `EventSource`, which sets no headers. An identity for the push
+/// stream needs a different carrier.
 /// **No route here serves a plugin's own web assets, and adding one has a
 /// precondition.**
 ///
@@ -62,7 +63,6 @@ pub fn plugin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(list_commands))
         .routes(routes!(list_options))
         .routes(routes!(option_call))
-        .routes(routes!(publication_event_stream))
         .routes(routes!(run_command))
 }
 
@@ -563,47 +563,6 @@ impl PublicationChangedEvent {
             key: ev.data["key"].as_str()?.to_string(),
         })
     }
-}
-
-/// `GET /api/plugins/events` — a push when a plugin's published data changes.
-///
-/// This route is an alias of `GET /api/events/system` (`routes/events.rs`).
-/// It forwards publications and stream gap control frames.
-///
-/// The counterpart to `GET /api/plugins/publications`: that answers "what is
-/// true now", this says "read it again". A panel drawing a plugin's own state
-/// would otherwise poll on a timer and still show a stale value between ticks.
-///
-/// Same shape as the file-tree stream in `routes/fs.rs`, including the
-/// load-bearing ordering: subscribe the LOCAL broker channel before telling the
-/// daemon to forward, because `EventBroker::dispatch` drops events for a
-/// session id with no local subscriber and the window between the two calls
-/// would lose the first event.
-#[utoipa::path(
-    get,
-    path = "/api/plugins/events",
-    responses((
-        status = 200,
-        content_type = "text/event-stream",
-        body = PublicationChangedEvent,
-        headers((
-            "X-Crucible-Stream-Version" = u64,
-            description = "The stream protocol this build speaks (also the first \
-                           `stream_version` frame, for clients whose transport \
-                           cannot read headers)"
-        ))
-    ))
-)]
-async fn publication_event_stream(
-    State(state): State<AppState>,
-) -> Result<super::events::SystemStream, WebError> {
-    // An alias of `GET /api/events/system`. Its client knows only the
-    // publications, so the alias forwards nothing else.
-    super::events::system_stream(&state, |event| {
-        super::events::SystemEvent::publication_only(event)
-            .map(super::events::SystemEvent::into_frame)
-    })
-    .await
 }
 
 /// What `POST /api/plugins/command` answers.

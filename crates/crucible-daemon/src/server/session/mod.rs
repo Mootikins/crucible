@@ -4,7 +4,7 @@ use crucible_core::config::McpConfig;
 use crucible_core::protocol::session_events::{
     ContextLimitResolvedPayload, ContextLimitSource, KilnNotesIndexedPayload,
     McpServersReadyPayload, PluginsDiscoveredPayload, ProvidersListedPayload,
-    SessionInitializedPayload, WorkspaceIndexedPayload,
+    SessionInitializedPayload, SetupPayload, WorkspaceIndexedPayload,
 };
 
 mod approval;
@@ -65,22 +65,9 @@ pub(crate) use scope::{
 /// must not break session creation. "No subscribers" is normal at startup
 /// (the CLI subscribes slightly after `session.create` returns) and is
 /// logged at `debug`, not `warn`.
-fn emit_setup_event<P: serde::Serialize>(
-    event_tx: &crate::EventBus,
-    session_id: &str,
-    event_type: &str,
-    payload: P,
-) {
-    let data = match serde_json::to_value(payload) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!(event_type, error = %e, "failed to serialize setup event payload");
-            return;
-        }
-    };
-    let msg = SessionEventMessage::new(session_id.to_string(), event_type.to_string(), data);
-    if !event_tx.emit(msg) {
-        tracing::debug!(event_type, session_id, "no subscribers for setup event");
+fn emit_setup_event(event_tx: &crate::EventBus, session_id: &str, payload: SetupPayload) {
+    if !event_tx.emit(SessionEventMessage::typed(session_id, payload)) {
+        tracing::debug!(session_id, "no subscribers for setup event");
     }
 }
 
@@ -145,14 +132,13 @@ fn spawn_setup_task(
         emit_setup_event(
             &event_tx,
             &sid,
-            "session_initialized",
-            SessionInitializedPayload {
+            SetupPayload::SessionInitialized(SessionInitializedPayload {
                 model: model.clone(),
                 mode,
                 agent_name,
                 kilns: session_kilns,
                 workspace_path: workspace_path.clone(),
-            },
+            }),
         );
 
         // 2. Concurrent: workspace + kiln indexers.
@@ -174,8 +160,7 @@ fn spawn_setup_task(
             Ok(files) => emit_setup_event(
                 &event_tx,
                 &sid,
-                "workspace_indexed",
-                WorkspaceIndexedPayload { files },
+                SetupPayload::WorkspaceIndexed(WorkspaceIndexedPayload { files }),
             ),
             Err(e) => {
                 tracing::warn!(error = %e, "workspace indexer task failed; skipping event")
@@ -185,8 +170,7 @@ fn spawn_setup_task(
             Ok(notes) => emit_setup_event(
                 &event_tx,
                 &sid,
-                "kiln_notes_indexed",
-                KilnNotesIndexedPayload { notes },
+                SetupPayload::KilnNotesIndexed(KilnNotesIndexedPayload { notes }),
             ),
             Err(e) => {
                 tracing::warn!(error = %e, "kiln notes indexer task failed; skipping event")
@@ -206,8 +190,7 @@ fn spawn_setup_task(
             Ok(Ok(plugins)) => emit_setup_event(
                 &event_tx,
                 &sid,
-                "plugins_discovered",
-                PluginsDiscoveredPayload { plugins },
+                SetupPayload::PluginsDiscovered(PluginsDiscoveredPayload { plugins }),
             ),
             Ok(Err(e)) => tracing::warn!(error = %e, "plugin discovery failed; skipping event"),
             Err(e) => tracing::warn!(error = %e, "plugin discovery task panicked; skipping event"),
@@ -240,8 +223,7 @@ fn spawn_setup_task(
         emit_setup_event(
             &event_tx,
             &sid,
-            "mcp_servers_ready",
-            McpServersReadyPayload { servers },
+            SetupPayload::McpServersReady(McpServersReadyPayload { servers }),
         );
 
         // 3. LLM-specific: only for internal agents. ACP sessions have no
@@ -252,8 +234,7 @@ fn spawn_setup_task(
             emit_setup_event(
                 &event_tx,
                 &sid,
-                "providers_listed",
-                ProvidersListedPayload { providers },
+                SetupPayload::ProvidersListed(ProvidersListedPayload { providers }),
             );
 
             if let Some(endpoint) = endpoint {
@@ -279,11 +260,10 @@ fn spawn_setup_task(
                         emit_setup_event(
                             &event_tx,
                             &sid,
-                            "context_limit_resolved",
-                            ContextLimitResolvedPayload {
+                            SetupPayload::ContextLimitResolved(ContextLimitResolvedPayload {
                                 limit,
                                 source: ContextLimitSource::ProviderApi,
-                            },
+                            }),
                         );
                     }
                 }

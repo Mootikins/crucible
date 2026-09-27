@@ -19,6 +19,7 @@ use crate::session_lifecycle::{SessionLifecycle, StopCause};
 use crate::session_manager::SessionManager;
 use async_trait::async_trait;
 use crucible_core::background::{JobError, JobInfo, JobKind, JobResult};
+use crucible_core::protocol::JobPayload;
 use crucible_core::session::SessionAgent;
 use crucible_core::text::truncate_chars;
 use dashmap::DashMap;
@@ -26,15 +27,6 @@ use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
 use tokio::sync::{watch, Semaphore};
 use tracing::{debug, info, warn};
-
-/// Parent-facing lifecycle event names. `delegation_*` names are preserved
-/// from the pre-refactor system for subscriber compatibility; payloads now
-/// carry `child_session_id`.
-pub mod events {
-    pub const DELEGATION_SPAWNED: &str = "delegation_spawned";
-    pub const DELEGATION_COMPLETED: &str = "delegation_completed";
-    pub const DELEGATION_FAILED: &str = "delegation_failed";
-}
 
 /// A request to delegate work to a child session.
 #[derive(Debug, Clone)]
@@ -302,28 +294,27 @@ impl DelegationService {
         delegation_id: &str,
         result: &JobResult,
     ) {
-        let (event_type, data) = if result.is_success() {
-            (
-                events::DELEGATION_COMPLETED,
-                serde_json::json!({
-                    "delegation_id": delegation_id,
-                    "child_session_id": delegation_id,
-                    "result_summary": truncate_chars(result.output.as_deref().unwrap_or(""), 500, true),
-                    "parent_session_id": parent_id,
-                }),
-            )
+        // The parent-facing lifecycle events. `delegation_id` and
+        // `child_session_id` hold the same value; see `JobPayload`.
+        let payload = if result.is_success() {
+            JobPayload::DelegationCompleted {
+                delegation_id: delegation_id.to_string(),
+                child_session_id: delegation_id.to_string(),
+                result_summary: truncate_chars(result.output.as_deref().unwrap_or(""), 500, true),
+                parent_session_id: parent_id.to_string(),
+            }
         } else {
-            (
-                events::DELEGATION_FAILED,
-                serde_json::json!({
-                    "delegation_id": delegation_id,
-                    "child_session_id": delegation_id,
-                    "error": result.error.as_deref().unwrap_or("Unknown error"),
-                    "parent_session_id": parent_id,
-                }),
-            )
+            JobPayload::DelegationFailed {
+                delegation_id: delegation_id.to_string(),
+                child_session_id: delegation_id.to_string(),
+                error: result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string()),
+                parent_session_id: parent_id.to_string(),
+            }
         };
-        if !event_tx.emit(SessionEventMessage::new(parent_id, event_type, data)) {
+        if !event_tx.emit(SessionEventMessage::typed(parent_id, payload)) {
             debug!(
                 delegation_id,
                 "No subscribers for delegation completion event"
@@ -524,16 +515,15 @@ impl DelegationSpawner for DelegationService {
             },
         );
 
-        if !self.event_tx.emit(SessionEventMessage::new(
+        if !self.event_tx.emit(SessionEventMessage::typed(
             &parent.id,
-            events::DELEGATION_SPAWNED,
-            serde_json::json!({
-                "delegation_id": child.id,
-                "child_session_id": child.id,
-                "prompt": truncate_chars(&req.prompt, 100, true),
-                "target_agent": req.target_agent,
-                "parent_session_id": parent.id,
-            }),
+            JobPayload::DelegationSpawned {
+                delegation_id: child.id.to_string(),
+                child_session_id: child.id.to_string(),
+                prompt: truncate_chars(&req.prompt, 100, true),
+                target_agent: req.target_agent.clone(),
+                parent_session_id: parent.id.to_string(),
+            },
         )) {
             debug!("No subscribers for delegation_spawned event");
         }

@@ -852,3 +852,53 @@ async fn ending_a_session_outlasts_a_concurrent_last_activity_persist() {
 // is no way to build one out of a traversing string. The attack is only
 // expressible where the string still exists, at the RPC boundary, so the tests
 // for it live in `server/tests/session_id_boundary.rs`.
+
+/// A new daemon process has no seq counter. The resume of a session seeds
+/// the counter from its log, so the next event continues above the highest
+/// persisted seq. A cleanup that retired the counter resumes the same way.
+#[tokio::test]
+async fn a_resumed_session_continues_its_seq_above_the_log() {
+    let storage = temp_session_storage();
+    let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);
+    storage.save(&session).await.unwrap();
+    for seq in 1..=7u64 {
+        let mut line = crate::protocol::SessionEventMessage::text_delta(&session.id, "before");
+        line.seq = Some(seq);
+        storage
+            .append_event(&session, &serde_json::to_string(&line).unwrap())
+            .await
+            .unwrap();
+    }
+
+    // The restarted daemon: a new bus and a new manager over the same log.
+    let (bus, mut live) = crate::EventBus::channel(8);
+    let manager = SessionManager::with_storage(storage).with_event_bus(bus.clone());
+    manager
+        .resume_session_from_storage(&session.id)
+        .await
+        .unwrap();
+    bus.emit(crate::protocol::SessionEventMessage::text_delta(
+        &session.id,
+        "after restart",
+    ));
+    let stamped = live.try_recv().unwrap();
+    assert_eq!(stamped.seq, Some(8));
+    // The persist task of a daemon appends the stamped event.
+    manager
+        .storage
+        .append_event(&session, &serde_json::to_string(&stamped).unwrap())
+        .await
+        .unwrap();
+
+    // Cleanup retires the counter; a later resume seeds it again.
+    bus.forget_session(session.id.as_str());
+    manager
+        .resume_session_from_storage(&session.id)
+        .await
+        .unwrap();
+    bus.emit(crate::protocol::SessionEventMessage::text_delta(
+        &session.id,
+        "after cleanup",
+    ));
+    assert_eq!(live.try_recv().unwrap().seq, Some(9));
+}

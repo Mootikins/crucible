@@ -125,11 +125,11 @@ impl AgentManager {
 
     fn emit_scope_changed(&self, event_tx: Option<&crate::EventBus>, session: &Session) {
         if let Some(tx) = event_tx {
-            let data = serde_json::json!({
-                "kilns": session.kilns,
-                "workspace": session.workspace,
-            });
-            if !tx.emit(SessionEventMessage::new(&session.id, "scope_changed", data)) {
+            let payload = crucible_core::protocol::SettingsPayload::ScopeChanged {
+                workspace: session.workspace.clone(),
+                kilns: session.kilns.clone(),
+            };
+            if !tx.emit(SessionEventMessage::typed(&session.id, payload)) {
                 tracing::debug!("Failed to emit scope_changed event (no subscribers)");
             }
         }

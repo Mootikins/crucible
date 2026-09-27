@@ -1,7 +1,8 @@
-//! The seven session *setup* payloads, and the group enum over them.
+//! The session *setup* payloads, and the group enum over them.
 //!
-//! The daemon emits these during the setup task that runs immediately after
-//! `session.create`. See the parent module for how a group enum becomes the
+//! The daemon emits most of these during the setup task that runs immediately
+//! after `session.create`. `acp_resume_fallback` comes from the connection of
+//! an ACP agent. See the parent module for how a group enum becomes the
 //! `{event, data}` pair on the wire.
 //!
 //! # Forward compatibility across a version skew
@@ -47,6 +48,23 @@ event_payload! {
         "kiln_notes_indexed" => KilnNotesIndexed(KilnNotesIndexedPayload),
         "plugins_discovered" => PluginsDiscovered(PluginsDiscoveredPayload),
         "mcp_servers_ready" => McpServersReady(McpServersReadyPayload),
+        /// The ACP agent refused `session/resume`, so the daemon opened a new
+        /// agent session, and the agent does not have the earlier history.
+        ///
+        /// Live only: the EventBus gives it a seq and journals it, and
+        /// `is_persisted` keeps it out of `session.jsonl` as for the other
+        /// setup notices. The connection fact belongs to this daemon run, and
+        /// the next connection reports its own disposition.
+        "acp_resume_fallback" => AcpResumeFallback {
+            #[serde(default)]
+            agent: String,
+            #[serde(default)]
+            requested_session_id: Option<String>,
+            #[serde(default)]
+            new_session_id: String,
+            #[serde(default)]
+            reason: String,
+        },
     }
 }
 

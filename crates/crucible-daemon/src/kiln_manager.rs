@@ -691,18 +691,13 @@ impl KilnManager {
                 // `kiln` key at all — an unnamed kiln is one a client cannot
                 // ask the user about, and `""` would name the data root to
                 // every path helper that touched it.
-                let mut data = serde_json::Map::new();
-                if let Some(name) = self
+                let kiln = self
                     .kiln_registry
                     .as_ref()
-                    .and_then(|r| r.name_for(&canonical))
-                {
-                    data.insert("kiln".to_string(), serde_json::json!(name.as_str()));
-                }
-                let event = SessionEventMessage::new(
-                    "system",
-                    "classification_required",
-                    serde_json::Value::Object(data),
+                    .and_then(|r| r.name_for(&canonical));
+                let event = SessionEventMessage::typed(
+                    crate::event_map::SYSTEM_SESSION,
+                    crucible_core::protocol::SystemPayload::ClassificationRequired { kiln },
                 );
                 tx.emit(event);
             }

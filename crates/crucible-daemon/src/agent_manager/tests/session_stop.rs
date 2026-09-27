@@ -601,12 +601,19 @@ async fn an_rpc_resume_of_a_paused_session_gets_the_isolation_claim_back() {
     );
 }
 
+/// Stop a session whose start hook registered two scoped `session:ended`
+/// observers, and check the order: the observers run while their rows exist
+/// (a retired row never runs), and the sweep of the session comes after them,
+/// so a row that an observer registers does not outlive the stop.
 async fn scoped_observer_stop(first_body: &str, expected_second: bool) {
     let hooks = format!(
         r#"
 cru.on_session_start(function(session)
   cru.on("session:ended", {{ session = session.id, key = "first", timeout_ms = 10 }}, function()
     _G.first_observer = true
+    -- A registration of the session made while the observer runs. The sweep
+    -- takes it only when the sweep comes after the observer.
+    cru.on("turn:complete", {{ session = session.id, key = "late" }}, function() end)
     {first_body}
   end)
   cru.on("session:ended", {{ session = session.id, key = "second" }}, function()
@@ -632,6 +639,12 @@ end)
     assert_eq!(
         lua.globals().get::<Option<bool>>("first_observer").unwrap(),
         Some(true)
+    );
+    assert_eq!(
+        rig.scoped_handlers().await,
+        0,
+        "a registration that the observer made outlived the stop: the sweep \
+         of the session must come after the observers"
     );
     assert_eq!(
         lua.globals()

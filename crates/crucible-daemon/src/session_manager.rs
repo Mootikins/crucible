@@ -182,6 +182,10 @@ pub struct SessionManager {
     /// A reader of a log waits on it first, so that it sees each event that
     /// was already published. Empty for a manager without a daemon.
     journal: crate::lossless_queue::Waiter,
+    /// The bus that stamps each event of a session with its seq. A resume
+    /// seeds the counter of the session from its log. `None` for a manager
+    /// without a daemon, which stamps nothing.
+    events: Option<crate::EventBus>,
 }
 
 /// The one listing predicate, over the fields `Session` and `SessionSummary` share.
@@ -297,6 +301,7 @@ impl SessionManager {
             review_snapshot_root: None,
             session_locks: DashMap::new(),
             journal: crate::lossless_queue::Waiter::default(),
+            events: None,
             kiln_registry: Arc::new(crate::kiln_registry::KilnRegistry::empty(
                 crate::kiln_registry::KilnRegistryContext::new(
                     sessions_root.clone(),
@@ -307,10 +312,12 @@ impl SessionManager {
         }
     }
 
-    /// Let the log readers wait on `journal`. See [`Self::settle_history`].
+    /// Let the log readers wait on the journal of `events`, and let a resume
+    /// seed the seq counter of its session. See [`Self::settle_history`].
     #[must_use]
-    pub(crate) fn with_journal(mut self, journal: crate::lossless_queue::Waiter) -> Self {
-        self.journal = journal;
+    pub(crate) fn with_event_bus(mut self, events: crate::EventBus) -> Self {
+        self.journal = events.journal_waiter();
+        self.events = Some(events);
         self
     }
 
@@ -543,6 +550,7 @@ impl SessionManager {
     ) -> Result<Session, SessionError> {
         // Load from storage
         let mut session = self.storage.load(session_id).await?;
+        self.seed_seq(session_id).await?;
 
         // Always-resumable: a session loaded from storage becomes live
         // regardless of its persisted lifecycle state. `Session::resume()`
@@ -559,6 +567,30 @@ impl SessionManager {
 
         info!(session_id = %session_id, "Session resumed from storage");
         Ok(session_clone)
+    }
+
+    /// Continue the seq of `session_id` above the highest seq in its log.
+    ///
+    /// A daemon restart, or the cleanup of an ended session, drops the
+    /// counter. A client cursor and `session.events_after` compare seqs, so a
+    /// counter that started at 1 again would hide each new event from a
+    /// client that already read the log. The journal settles first, so the
+    /// log holds each event that this process already stamped.
+    async fn seed_seq(&self, session_id: &SessionId) -> Result<(), SessionError> {
+        let Some(events) = &self.events else {
+            return Ok(());
+        };
+        self.settle_history().await;
+        let persisted = self
+            .storage
+            .load_events(session_id, None, None)
+            .await?
+            .iter()
+            .filter_map(|line| line.get("seq").and_then(serde_json::Value::as_u64))
+            .max()
+            .unwrap_or(0);
+        events.seed_session(session_id.as_str(), persisted);
+        Ok(())
     }
 
     /// Load events from storage with pagination.
@@ -1078,10 +1110,11 @@ impl SessionManager {
                     continue;
                 }
             }
-            event_tx.emit(SessionEventMessage::new(
+            event_tx.emit(SessionEventMessage::typed(
                 &summary.id,
-                "title_changed",
-                serde_json::json!({ "title": title }),
+                crucible_core::protocol::SettingsPayload::TitleChanged {
+                    title: title.clone(),
+                },
             ));
             info!(session_id = %summary.id, title = %title, "Catch-up title applied");
             titled += 1;

@@ -390,7 +390,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
     }
 }
 
-/// The seven setup payloads used to be decoded one at a time, each with its own
+/// The setup payloads used to be decoded one at a time, each with its own
 /// warn-and-drop block. One decode, one exhaustive match.
 fn setup_msgs(setup: SetupPayload) -> Vec<ChatAppMsg> {
     match setup {
@@ -408,6 +408,9 @@ fn setup_msgs(setup: SetupPayload) -> Vec<ChatAppMsg> {
                 p.servers.into_iter().map(McpServerDisplay::from).collect();
             vec![ChatAppMsg::McpServersReady(servers)]
         }
+        // The TUI showed nothing for this event when it had no type, and it
+        // shows nothing now. The typed payload changes the decode, not the view.
+        SetupPayload::AcpResumeFallback { .. } => vec![],
     }
 }
 

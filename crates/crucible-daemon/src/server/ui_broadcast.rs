@@ -15,13 +15,10 @@
 //! by itself — every comparable statusline implementation needs an explicit
 //! redraw signal for exactly this reason.
 
-use crucible_core::protocol::SessionEventMessage;
+use crucible_core::protocol::{SessionEventMessage, SystemPayload};
 use tracing::debug;
 
 use crate::agent_manager::AgentManager;
-
-/// The event name clients match on.
-pub const UI_STYLE_CHANGED: &str = "ui_style_changed";
 
 /// Session id for changes that are not session-specific.
 ///
@@ -53,7 +50,7 @@ pub fn broadcast_exprs_changed(
     session_id: &str,
 ) {
     let payload = crate::rpc::ui::expr_payload(agents, session_id);
-    let msg = SessionEventMessage::new(session_id, UI_STYLE_CHANGED, payload);
+    let msg = SessionEventMessage::typed(session_id, SystemPayload::UiStyleChanged(payload));
     if !event_tx.emit(msg) {
         debug!("statusline value change had no subscribers");
     }
@@ -65,7 +62,7 @@ pub fn broadcast_style_changed(
     session_id: &str,
 ) {
     let payload = crate::rpc::ui::style_payload(agents, session_id);
-    let msg = SessionEventMessage::new(session_id, UI_STYLE_CHANGED, payload);
+    let msg = SessionEventMessage::typed(session_id, SystemPayload::UiStyleChanged(payload));
     if !event_tx.emit(msg) {
         debug!("ui style change had no subscribers");
     }

@@ -83,6 +83,10 @@ pub const INVALID_REQUEST: i32 = -32600;
 pub const METHOD_NOT_FOUND: i32 = -32601;
 pub const INVALID_PARAMS: i32 = -32602;
 pub const INTERNAL_ERROR: i32 = -32603;
+/// Another operation holds the resource now. The request did nothing, and the
+/// caller can send it again after that operation finishes. A web client
+/// answers it as HTTP 409. In the JSON-RPC server-error range.
+pub const BUSY: i32 = -32009;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionEventMessage {

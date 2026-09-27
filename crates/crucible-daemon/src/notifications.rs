@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use crucible_core::config::KilnName;
+use crucible_core::protocol::NotificationPayload;
 use crucible_core::session::{Session, SessionState};
 use crucible_core::types::{Notification, NotificationScope};
 use crucible_lua::{NotificationSink, NotifyRequest};
@@ -332,10 +333,11 @@ impl NotificationHub {
 
     /// Tell the clients of `session_id` that the notification `id` closed.
     fn announce_dismissed(&self, session_id: &str, id: &str) {
-        self.event_tx.emit(SessionEventMessage::new(
+        self.event_tx.emit(SessionEventMessage::typed(
             session_id,
-            "notification_dismissed",
-            serde_json::json!({ "notification_id": id }),
+            NotificationPayload::NotificationDismissed {
+                notification_id: id.to_string(),
+            },
         ));
     }
 
@@ -380,24 +382,21 @@ impl NotificationHub {
     /// store, so a session does not get a notification that it hid.
     fn fan_out(&self, notification: &Notification, hidden: &BTreeMap<String, BTreeSet<String>>) {
         let none = BTreeSet::new();
-        let data = serde_json::json!({
-            "notification_id": notification.id,
-            "notification": notification,
-        });
+        let added = |session_id: &str| {
+            SessionEventMessage::typed(
+                session_id,
+                NotificationPayload::NotificationAdded {
+                    notification_id: notification.id.clone(),
+                    notification: Some(notification.clone()),
+                },
+            )
+        };
         if let Some(session_id) = &notification.scope.session {
-            self.event_tx.emit(SessionEventMessage::new(
-                session_id.as_str(),
-                "notification_added",
-                data,
-            ));
+            self.event_tx.emit(added(session_id.as_str()));
             return;
         }
         if notification.scope.is_global() {
-            self.event_tx.emit(SessionEventMessage::new(
-                WILDCARD_SESSION,
-                "notification_added",
-                data,
-            ));
+            self.event_tx.emit(added(WILDCARD_SESSION));
             return;
         }
         for session in self.sessions.list_sessions() {
@@ -413,11 +412,7 @@ impl NotificationHub {
             ) {
                 continue;
             }
-            self.event_tx.emit(SessionEventMessage::new(
-                session.id.as_str(),
-                "notification_added",
-                data.clone(),
-            ));
+            self.event_tx.emit(added(session.id.as_str()));
         }
     }
 

@@ -80,15 +80,14 @@ impl BackgroundJobManager {
                     .start(crate::activity::WorkKind::BackgroundJob),
             },
         );
-        if !self.event_tx.emit(SessionEventMessage::new(
+        if !self.event_tx.emit(SessionEventMessage::typed(
             session_id,
-            events::BASH_SPAWNED,
-            serde_json::json!({
-                "job_id": job_id,
-                "command": command,
-            }),
+            JobPayload::BashJobSpawned {
+                job_id: job_id.clone(),
+                command,
+            },
         )) {
-            tracing::debug!("Failed to emit BASH_SPAWNED event (no subscribers)");
+            tracing::debug!("Failed to emit bash_job_spawned event (no subscribers)");
         }
         let _ = registered_tx.send(());
 
@@ -125,29 +124,25 @@ impl BackgroundJobManager {
         job_id: &JobId,
         result: &JobResult,
     ) {
-        let (event_type, event_data) = if result.is_success() {
+        let payload = if result.is_success() {
             let output = result.output.as_deref().unwrap_or("");
-            (
-                events::BASH_COMPLETED,
-                serde_json::json!({
-                    "job_id": job_id,
-                    "output": crucible_core::text::truncate_chars(output, 1000, true),
-                    "exit_code": result.exit_code,
-                }),
-            )
+            JobPayload::BashJobCompleted {
+                job_id: job_id.clone(),
+                output: crucible_core::text::truncate_chars(output, 1000, true),
+                exit_code: result.exit_code,
+            }
         } else {
-            let error = result.error.as_deref().unwrap_or("Unknown error");
-            (
-                events::BASH_FAILED,
-                serde_json::json!({
-                    "job_id": job_id,
-                    "error": error,
-                    "exit_code": result.exit_code,
-                }),
-            )
+            JobPayload::BashJobFailed {
+                job_id: job_id.clone(),
+                error: result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string()),
+                exit_code: result.exit_code,
+            }
         };
 
-        if !event_tx.emit(SessionEventMessage::new(session_id, event_type, event_data)) {
+        if !event_tx.emit(SessionEventMessage::typed(session_id, payload)) {
             warn!(job_id = %job_id, "No subscribers for bash completion event");
         }
         Self::emit_background_completed(event_tx, session_id, job_id, result, "bash");
@@ -170,14 +165,13 @@ impl BackgroundJobManager {
             summary
         };
 
-        if !event_tx.emit(SessionEventMessage::new(
+        if !event_tx.emit(SessionEventMessage::typed(
             session_id,
-            events::BACKGROUND_COMPLETED,
-            serde_json::json!({
-                "job_id": job_id,
-                "kind": kind,
-                "summary": summary,
-            }),
+            JobPayload::BackgroundJobCompleted {
+                job_id: job_id.clone(),
+                kind: kind.to_string(),
+                summary,
+            },
         )) {
             warn!(job_id = %job_id, kind = %kind, "No subscribers for background completion event");
         }

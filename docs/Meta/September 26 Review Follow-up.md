@@ -17,9 +17,23 @@ The daemon now reserves each proposal under its short writer mutex before
 reading the settlement snapshot. Every competing mutation checks that same
 reservation. Accept/resolve keep the reservation through checked file writes
 and persistence; cancellation and errors release it. Partial acceptance reserves
-both halves before leaving the mutex. Record preflights every proposal it would
-supersede before persisting any replacement. Busy returns RPC code `-32009` with
-a retryable message; decision clients send once and surface the refusal.
+both halves before leaving the mutex. Busy returns RPC code `BUSY` (`-32009`,
+`crucible_core::protocol::BUSY`) with a retryable message; decision clients
+send once and surface the refusal. The web server answers `BUSY` as HTTP 409,
+and the diff routes answer a busy proposal with `BUSY`, not an internal error.
+
+A decision never makes a note write fail. When a decision holds the turn
+proposal, the write starts the next proposal of the turn. That proposal keeps
+the first base of the path in the turn, because an update builds on the text
+of the held proposal. When a decision holds an older proposal that the write
+supersedes, the supersede waits: the release of the reservation supersedes
+the older proposal when the decision left it pending (a conflict or a
+cancel). Before the September 27 fix, the write answered `Busy`, and the note
+tool of an agent or a plugin failed with an internal error. Tests:
+`a_write_during_an_accept_of_its_turn_starts_the_next_proposal`,
+`partial_accept_reserves_both_halves_and_a_supersede_waits_for_the_release`.
+Accept, partial accept and partial reject share one reservation path,
+`reserve_selection`.
 
 This avoids holding a blocking mutex across an await or waiting while a note
 tool holds the file lock acceptance needs. Watcher stale checks skip reserved
@@ -28,7 +42,8 @@ persisting an intermediate Stale state.
 
 Regression coverage pauses at real participating file locks with explicit
 future polling: concurrent record/reject, cancellation, partial accept,
-supersede preflight, resolve versus reject, and release after write refusal.
+a supersede that waits for a decision, resolve versus reject, and release
+after write refusal.
 
 ## Proposal file identity across kilns
 
@@ -59,9 +74,10 @@ owner, while shared notices retain their other session origins.
 The real ChatProvider regression delays a snapshot until after a streamed
 dismissal. Additional stream tests cover newer additions, shared panes,
 reconnection, missed dismissals, old responses, detach, gaps, two sessions and
-failed reads. The real daemon/web bridge test verifies that two independent
-connections receive the dismissal while an older snapshot still contains the
-notice.
+failed reads. The real daemon/web bridge test opens two independent
+connections through the stream lease of a browser stream. Each receives the
+dismissal, applies it to the older snapshot, and gets the list that a new read
+answers.
 
 ## Validation
 

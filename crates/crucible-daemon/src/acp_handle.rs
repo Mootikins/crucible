@@ -282,21 +282,21 @@ impl AcpAgentHandle {
                 "session/resume unsupported; started a fresh agent session"
             );
             if let (Some(tx), Some(daemon_session_id)) = (event_tx.as_ref(), parent_session_id) {
-                let _ = tx.emit(
-                    crate::protocol::SessionEventMessage::new(
-                        daemon_session_id,
-                        "acp_resume_fallback",
-                        serde_json::json!({
-                            "agent": agent_name,
-                            "requested_session_id": resume_acp_session_id,
-                            "new_session_id": session_id,
-                            "reason": "the agent does not support session/resume; \
-                                       a new agent session started without the \
-                                       previous agent-side history",
-                        }),
-                    )
-                    .with_timestamp(),
-                );
+                // Typed, stamped and journaled like each other event of the
+                // session, so a client decodes it and a reconnect cursor
+                // counts it. Live only; see `SetupPayload::AcpResumeFallback`.
+                let _ = tx.emit(crate::protocol::SessionEventMessage::typed(
+                    daemon_session_id,
+                    crucible_core::protocol::SetupPayload::AcpResumeFallback {
+                        agent: agent_name.to_string(),
+                        requested_session_id: resume_acp_session_id.clone(),
+                        new_session_id: session_id.clone(),
+                        reason: "the agent does not support session/resume; \
+                                 a new agent session started without the \
+                                 previous agent-side history"
+                            .to_string(),
+                    },
+                ));
             }
         }
 

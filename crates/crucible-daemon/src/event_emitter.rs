@@ -26,7 +26,7 @@ impl EventBus {
     /// A live bus without a persistence consumer, for detached runtimes/fixtures.
     /// The journal reader is dropped, so publications cannot accumulate there.
     pub fn channel(capacity: usize) -> (Self, broadcast::Receiver<SessionEventMessage>) {
-        let (bus, _waiter, _journal) = Self::journaled_channel(capacity);
+        let (bus, _journal) = Self::journaled_channel(capacity);
         let receiver = bus.subscribe();
         (bus, receiver)
     }
@@ -35,20 +35,21 @@ impl EventBus {
     /// together. No global lookup or later journal attachment is required.
     pub(crate) fn journaled_channel(
         capacity: usize,
-    ) -> (
-        Self,
-        crate::lossless_queue::Waiter,
-        crate::lossless_queue::Receiver<SessionEventMessage>,
-    ) {
+    ) -> (Self, crate::lossless_queue::Receiver<SessionEventMessage>) {
         let (live, _) = broadcast::channel(capacity);
         let (journal, reader) = crate::lossless_queue::channel();
-        let waiter = journal.waiter();
         let bus = Self(Arc::new(Inner {
             live,
             journal,
             sequences: Mutex::new(HashMap::new()),
         }));
-        (bus, waiter, reader)
+        (bus, reader)
+    }
+
+    /// A wait for the consumer of the journal. See
+    /// [`crate::session_manager::SessionManager::settle_history`].
+    pub(crate) fn journal_waiter(&self) -> crate::lossless_queue::Waiter {
+        self.0.journal.waiter()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<SessionEventMessage> {
@@ -77,6 +78,13 @@ impl EventBus {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         if stamp {
+            // A name that no payload enum declares decodes as `UnknownEvent`
+            // in every client. Build events with `SessionEventMessage::typed`.
+            debug_assert!(
+                crucible_core::protocol::Group::of(&event.event).is_some(),
+                "the EventBus refuses the undeclared event name `{}`",
+                event.event
+            );
             let counter = sequences.entry(event.session_id.clone()).or_default();
             event = stamp_event(event, counter);
         }
@@ -84,6 +92,21 @@ impl EventBus {
         let received = self.0.live.send(event).is_ok();
         drop(sequences);
         received
+    }
+
+    /// Continue the seq of `session_id` above `persisted`, the highest seq in
+    /// its log. A new daemon process, or a session that cleanup retired,
+    /// starts with no counter. Without this seed its next event would take a
+    /// seq that the log and a client cursor already hold, and a client would
+    /// drop the event as a duplicate. The seed never lowers a live counter.
+    pub(crate) fn seed_session(&self, session_id: &str, persisted: u64) {
+        let mut sequences = self
+            .0
+            .sequences
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let counter = sequences.entry(session_id.to_owned()).or_default();
+        *counter = (*counter).max(persisted);
     }
 
     /// Retire last in session cleanup. A late emitter may start a counter again
@@ -129,7 +152,7 @@ mod tests {
     }
     #[test]
     fn concurrent_publications_have_one_journal_and_live_order() {
-        let (bus, _waiter, mut journal) = EventBus::journaled_channel(512);
+        let (bus, mut journal) = EventBus::journaled_channel(512);
         let mut live = bus.subscribe();
         let start = std::sync::Barrier::new(4);
         std::thread::scope(|scope| {
@@ -162,7 +185,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_journal_outlives_live_readers_and_preserves_recorded_metadata() {
-        let (bus, waiter, mut journal) = EventBus::journaled_channel(1);
+        let (bus, mut journal) = EventBus::journaled_channel(1);
+        let waiter = bus.journal_waiter();
         assert!(!bus.emit(SessionEventMessage::text_delta("stored", "first")));
         let first = journal.try_recv().expect("journal with no live readers");
         assert_eq!(first.seq, Some(1));
@@ -199,5 +223,31 @@ mod tests {
         clone.emit(SessionEventMessage::text_delta("live", "after"));
         let seqs: Vec<_> = (0..4).map(|_| events.try_recv().unwrap().seq).collect();
         assert_eq!(seqs, [Some(1), Some(1), Some(1), Some(2)]);
+    }
+
+    #[test]
+    fn a_seed_continues_above_the_log_and_never_lowers_a_live_counter() {
+        let (bus, mut events) = EventBus::channel(8);
+        bus.seed_session("restarted", 41);
+        bus.emit(SessionEventMessage::text_delta(
+            "restarted",
+            "after restart",
+        ));
+        assert_eq!(events.try_recv().unwrap().seq, Some(42));
+        bus.seed_session("restarted", 7);
+        bus.emit(SessionEventMessage::text_delta("restarted", "later"));
+        assert_eq!(events.try_recv().unwrap().seq, Some(43));
+    }
+
+    #[test]
+    #[should_panic(expected = "undeclared event name")]
+    #[cfg(debug_assertions)]
+    fn an_undeclared_event_name_is_refused() {
+        let (bus, _events) = EventBus::channel(8);
+        bus.emit(SessionEventMessage::new(
+            "s",
+            "an_event_no_payload_declares",
+            serde_json::json!({}),
+        ));
     }
 }

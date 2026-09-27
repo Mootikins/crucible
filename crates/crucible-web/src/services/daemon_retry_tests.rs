@@ -82,7 +82,9 @@ impl Peer {
                             active.remove(id.as_str().unwrap());
                         }
                     }
-                    let result = if request["method"] == "plugin.commands" {
+                    let result = if request["method"] == "plugin.commands"
+                        || request["method"] == "session.events_after"
+                    {
                         json!([])
                     } else {
                         json!({})
@@ -97,11 +99,15 @@ impl Peer {
                             let event = if id == "system" {
                                 SessionEvent::new(id, "file_changed", json!({}))
                             } else {
-                                SessionEvent::new(
+                                // A restarted daemon numbers the session from
+                                // its log again, so the seq can be low.
+                                let mut event = SessionEvent::new(
                                     id,
                                     "text_delta",
                                     json!({"content": "after reconnect"}),
-                                )
+                                );
+                                event.seq = Some(1);
+                                event
                             };
                             write
                                 .write_all(
@@ -216,6 +222,10 @@ async fn replay_safe_reads_reconnect_once_and_restore_active_events() {
 }
 
 async fn browser_stream(peer: &Peer, session: &str) -> axum::body::Body {
+    browser_stream_at(peer, &format!("/api/chat/events/{session}")).await
+}
+
+async fn browser_stream_at(peer: &Peer, uri: &str) -> axum::body::Body {
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
     let state = AppState {
@@ -229,12 +239,7 @@ async fn browser_stream(peer: &Peer, session: &str) -> axum::body::Body {
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
     let response = crate::test_support::build_test_app(state)
-        .oneshot(
-            Request::builder()
-                .uri(format!("/api/chat/events/{session}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(response.status(), 200);
@@ -412,9 +417,113 @@ async fn simultaneous_last_readers_unsubscribe_upstream_once() {
         streams.push(peer.daemon.subscribe_events("chat").await.unwrap());
     }
     drop(streams);
-    tokio::task::yield_now().await;
-    let _settled = peer.daemon.subscription_changes.lock().await;
+    timeout(Duration::from_secs(2), async {
+        while !peer.daemon.broker.sessions.read().await.is_empty()
+            || peer.unsubscriptions.load(Ordering::SeqCst) == 0
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the last reader releases the upstream interest");
+    // Each release settles through the flight of the session.
+    peer.daemon.reconcile("chat").await.unwrap();
     assert_eq!(peer.unsubscriptions.load(Ordering::SeqCst), 1);
+}
+
+/// A browser that reconnected with a cursor must not lose the events of a
+/// restarted daemon. That daemon numbers them from its persisted log, so a
+/// new event can have a seq at or below the cursor. The reconnect gap ends
+/// the replay filter.
+#[tokio::test]
+async fn a_cursor_does_not_hide_the_events_of_a_restarted_daemon() {
+    let peer = Peer::losing_first_reply("plugin.commands").await;
+    let mut body = browser_stream_at(&peer, "/api/chat/events/chat?after=5").await;
+    peer.daemon.plugin_commands().await.unwrap();
+    let text = browser_frame(&mut body, "after reconnect").await;
+    assert!(text.contains("stream_gap"), "{text}");
+    assert!(
+        text.contains("id: 1"),
+        "the new event keeps its seq: {text}"
+    );
+}
+
+/// The router of a dead connection stops before the reconnect gap goes out,
+/// so no event of that connection reaches a browser after the gap.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_event_of_the_dead_connection_follows_the_reconnect_gap() {
+    use futures::StreamExt;
+    let peer = Peer::losing_first_reply("never").await;
+    let (stale, stale_rx) = mpsc::unbounded_channel();
+    peer.daemon.rewire_events(stale_rx).await;
+    let mut events = peer.daemon.subscribe_events("chat").await.unwrap();
+    let feeder = std::thread::spawn(move || {
+        let event = SessionEvent::new("chat", "text_delta", json!({"content": "stale"}));
+        for _ in 0..200_000 {
+            if stale.send(event.clone()).is_err() {
+                break;
+            }
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    let (_fresh, fresh_rx) = mpsc::unbounded_channel();
+    peer.daemon.rewire_events(fresh_rx).await;
+    feeder.join().unwrap();
+
+    let mut after_gap = Vec::new();
+    let mut gap_seen = false;
+    while let Ok(Some(event)) = timeout(Duration::from_millis(200), events.next()).await {
+        let reconnect_gap = event.event == "stream_gap" && event.data["dropped"] == 0;
+        if reconnect_gap {
+            gap_seen = true;
+            after_gap.clear();
+        } else if gap_seen {
+            after_gap.push(event);
+        }
+    }
+    assert!(gap_seen, "the reconnect gap reached the stream");
+    assert!(
+        after_gap.iter().all(|event| event.event == "stream_gap"),
+        "{} stale events followed the gap",
+        after_gap.len()
+    );
+}
+
+/// A slow flight of one session does not delay a stream of another.
+#[tokio::test]
+async fn a_slow_subscription_of_one_session_does_not_block_another() {
+    let peer = Peer::losing_first_reply("never").await;
+    let slow = peer.daemon.interest_flight_for_tests("slow");
+    let _held = slow.lock().await;
+    let other = timeout(
+        Duration::from_secs(2),
+        peer.daemon.subscribe_events("other"),
+    )
+    .await
+    .expect("another session subscribes while the slow flight runs");
+    assert!(other.is_ok());
+}
+
+/// A stream that drops with no tokio runtime on its thread still releases
+/// the upstream interest.
+#[tokio::test]
+async fn a_stream_dropped_outside_a_runtime_releases_its_interest() {
+    let peer = Peer::losing_first_reply("never").await;
+    let stream = peer.daemon.subscribe_events("chat").await.unwrap();
+    std::thread::spawn(move || {
+        assert!(tokio::runtime::Handle::try_current().is_err());
+        drop(stream);
+    })
+    .join()
+    .unwrap();
+    timeout(Duration::from_secs(2), async {
+        while peer.unsubscriptions.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the release reached the daemon");
+    assert!(peer.daemon.broker.sessions.read().await.is_empty());
 }
 
 #[tokio::test]

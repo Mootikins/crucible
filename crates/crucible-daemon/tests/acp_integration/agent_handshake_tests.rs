@@ -274,6 +274,18 @@ async fn resume_fallback_is_announced_in_the_event_stream() {
     assert_ne!(new_id, "mock-session-stale");
 
     let event = event_rx.try_recv().expect("the fallback was announced");
+    // A typed payload, so a client decodes it rather than taking the
+    // unknown-event path; stamped and journaled like each other event.
+    let Ok(crucible_core::protocol::SessionEventPayload::Setup(
+        crucible_core::protocol::SetupPayload::AcpResumeFallback {
+            requested_session_id,
+            ..
+        },
+    )) = event.payload()
+    else {
+        panic!("acp_resume_fallback decodes as its typed payload: {event:?}");
+    };
+    assert_eq!(requested_session_id.as_deref(), Some("mock-session-stale"));
     assert_eq!(event.event, "acp_resume_fallback");
     assert_eq!(event.seq, Some(1));
     assert!(event.timestamp.is_some());

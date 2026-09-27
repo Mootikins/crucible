@@ -49,16 +49,15 @@ pub(crate) async fn handle_kiln_open(
     if process {
         match km.open_and_process(kiln_path, force).await {
             Ok((discovered, processed, skipped, errors)) => {
-                if !event_tx.emit(SessionEventMessage::new(
+                if !event_tx.emit(SessionEventMessage::typed(
                     "process",
-                    "process_complete",
-                    serde_json::json!({
-                        "kiln": params.path,
-                        "discovered": discovered,
-                        "processed": processed,
-                        "skipped": skipped,
-                        "errors": errors.len()
-                    }),
+                    crucible_core::protocol::SystemPayload::ProcessComplete {
+                        kiln: params.path.clone(),
+                        discovered,
+                        processed,
+                        skipped,
+                        errors: errors.len(),
+                    },
                 )) {
                     tracing::debug!("process_complete event had no subscribers");
                 }
