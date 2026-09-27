@@ -18,11 +18,19 @@
 //! Resolution precedence (first match wins), total and deterministic:
 //! 1. exact extension-less path (`[[notes/async]]` → `notes/async.md`)
 //! 2. unique title match
-//! 3. unique file-stem match
-//! 4. ambiguous stem (≥2 notes): deterministic winner (shortest path, then
+//! 3. unique path-suffix match: the file stem (`[[async]]`) or a partial
+//!    path (`[[sub/note]]` → `a/sub/note.md`)
+//! 4. ambiguous suffix (≥2 notes): deterministic winner (shortest path, then
 //!    lexicographic) with `is_ambiguous = 1` — backlinks stay coherent, but
 //!    rewrites skip the row and surface a warning
 //! 5. no match → `resolved_target IS NULL` (dangling; never rewritten)
+//!
+//! Matching ignores Unicode case. Among exact path matches, a path with the
+//! written case wins, so `a.md` and `A.md` stay distinct.
+//!
+//! `note_link_keys` holds every key a note can satisfy, folded in Rust
+//! (SQLite `lower()` folds only ASCII). Resolution reads candidates by key
+//! through its index instead of scanning `notes`.
 
 use crucible_core::storage::{GraphLink, InboundLink, LinkOccurrence};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -45,6 +53,17 @@ CREATE TABLE IF NOT EXISTS note_links (
 );
 CREATE INDEX IF NOT EXISTS note_links_resolved_idx ON note_links(resolved_target);
 CREATE INDEX IF NOT EXISTS note_links_key_idx ON note_links(target_key);
+"#;
+
+/// Folded identity keys per note (see [`note_keys`]). Derived from `notes`.
+pub(crate) const NOTE_LINK_KEYS_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS note_link_keys (
+    key   TEXT NOT NULL,
+    path  TEXT NOT NULL,
+    PRIMARY KEY (key, path),
+    FOREIGN KEY (path) REFERENCES notes(path) ON DELETE CASCADE
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS note_link_keys_path_idx ON note_link_keys(path);
 "#;
 
 /// Idempotent migration: detect a v1 `note_links` (no `target_key` column),
@@ -87,6 +106,7 @@ pub(crate) fn ensure_note_links_v2(conn: &Connection) -> rusqlite::Result<bool> 
     }
 
     conn.execute_batch(NOTE_LINKS_V2_SCHEMA)?;
+    ensure_note_link_keys(conn)?;
     let has_fragment = conn
         .query_row(
             "SELECT 1 FROM pragma_table_info('note_links') WHERE name='heading_ref'",
@@ -116,6 +136,48 @@ pub(crate) fn ensure_note_links_v2(conn: &Connection) -> rusqlite::Result<bool> 
     Ok(needs_relink)
 }
 
+/// Creates `note_link_keys` and fills it from `notes` when it is new.
+/// Idempotent: an existing table is kept.
+fn ensure_note_link_keys(conn: &Connection) -> rusqlite::Result<()> {
+    let exists = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'note_link_keys'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    conn.execute_batch(NOTE_LINK_KEYS_SCHEMA)?;
+    if !exists {
+        let notes: Vec<(String, String)> = conn
+            .prepare("SELECT path, title FROM notes")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        for (path, title) in notes {
+            write_note_keys(conn, &path, &title)?;
+        }
+    }
+    Ok(())
+}
+
+/// Replaces the stored keys of one note. Call it after the `notes` upsert.
+pub(crate) fn write_note_keys(conn: &Connection, path: &str, title: &str) -> rusqlite::Result<()> {
+    delete_note_keys(conn, path)?;
+    let mut insert =
+        conn.prepare_cached("INSERT OR IGNORE INTO note_link_keys (key, path) VALUES (?1, ?2)")?;
+    for key in note_keys(path, title) {
+        insert.execute(params![key, path])?;
+    }
+    Ok(())
+}
+
+/// Removes the stored keys of one note. The FK cascade does the same only
+/// when the connection enables `foreign_keys`.
+pub(crate) fn delete_note_keys(conn: &Connection, path: &str) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM note_link_keys WHERE path = ?1", [path])?;
+    Ok(())
+}
+
 /// The resolution of one raw wikilink target against current vault state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LinkResolution {
@@ -132,27 +194,14 @@ pub(crate) fn target_key(raw: &str) -> String {
     base.to_lowercase()
 }
 
-/// Escape SQL LIKE metacharacters (used with `ESCAPE '\'`).
-fn like_escape(s: &str) -> String {
-    s.replace('\\', r"\\")
-        .replace('%', r"\%")
-        .replace('_', r"\_")
-}
-
 /// Resolve one raw target. Pure function of the `notes` table.
 pub(crate) fn resolve_raw_target(conn: &Connection, raw: &str) -> rusqlite::Result<LinkResolution> {
-    let key = target_key(raw);
-    let mut stmt = conn.prepare(
-        r"SELECT path, title FROM notes
-          WHERE lower(path) = ?1 || '.md' OR lower(path) = ?1 OR lower(title) = ?1
-             OR lower(path) LIKE '%/' || ?2 || '.md' ESCAPE '\'
-             OR lower(path) LIKE '%/' || ?2 ESCAPE '\'
-             OR path GLOB '*[^ -~]*' OR title GLOB '*[^ -~]*'",
+    let mut stmt = conn.prepare_cached(
+        "SELECT n.path, n.title FROM note_link_keys k JOIN notes n ON n.path = k.path
+         WHERE k.key = ?1",
     )?;
-    // SQLite lower() folds ASCII only. Keep non-ASCII candidates for the
-    // shared Unicode normalization policy rather than discarding them here.
     let candidates = stmt
-        .query_map(params![key, like_escape(&key)], |row| {
+        .query_map([target_key(raw)], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -169,10 +218,12 @@ pub(crate) fn resolve_candidates<'a>(
     candidates: impl Iterator<Item = (&'a str, &'a str)>,
 ) -> LinkResolution {
     let key = target_key(raw);
+    let written = raw.split('#').next().unwrap_or(raw).trim();
     let mut exact = vec![];
     let mut titles = vec![];
-    let mut stems = vec![];
+    let mut suffixes = vec![];
     if !key.is_empty() {
+        let tail = format!("/{key}");
         for (path, title) in candidates {
             let normalized = path.to_lowercase();
             let extless = normalized.strip_suffix(".md").unwrap_or(&normalized);
@@ -182,19 +233,24 @@ pub(crate) fn resolve_candidates<'a>(
             if title.to_lowercase() == key {
                 titles.push(path);
             }
-            if extless.rsplit('/').next() == Some(key.as_str())
-                || normalized.rsplit('/').next() == Some(key.as_str())
-            {
-                stems.push(path);
+            if extless.ends_with(&tail) || normalized.ends_with(&tail) {
+                suffixes.push(path);
             }
         }
     }
-    let mut choices = if !exact.is_empty() {
+    // The written case names one file even when another differs only in case.
+    let cased = exact
+        .iter()
+        .copied()
+        .find(|p| *p == written || p.strip_suffix(".md") == Some(written));
+    let mut choices = if let Some(path) = cased {
+        vec![path]
+    } else if !exact.is_empty() {
         exact
     } else if titles.len() == 1 {
         titles
     } else {
-        stems
+        suffixes
     };
     choices.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
     LinkResolution {
@@ -261,20 +317,23 @@ pub(crate) fn write_links(
 }
 
 /// The keys a note at `path` (with `title`) can satisfy — the rows to
-/// re-resolve when that note appears, disappears, or changes title.
+/// re-resolve when that note appears, disappears, or changes title. Every
+/// `/`-bounded path suffix (with and without `.md`) and the title, folded.
 pub(crate) fn note_keys(path: &str, title: &str) -> Vec<String> {
-    let mut keys = Vec::with_capacity(3);
-    let extless = path.strip_suffix(".md").unwrap_or(path).to_lowercase();
-    if let Some(stem) = extless.rsplit('/').next() {
-        keys.push(stem.to_string());
+    let normalized = path.to_lowercase();
+    let mut keys = vec![];
+    let mut push = |key: &str| {
+        if !key.is_empty() && !keys.iter().any(|k| k == key) {
+            keys.push(key.to_owned());
+        }
+    };
+    let starts = std::iter::once(0).chain(normalized.match_indices('/').map(|(i, _)| i + 1));
+    for start in starts {
+        let suffix = &normalized[start..];
+        push(suffix.strip_suffix(".md").unwrap_or(suffix));
+        push(suffix);
     }
-    if !keys.contains(&extless) {
-        keys.push(extless);
-    }
-    let t = title.to_lowercase();
-    if !t.is_empty() && !keys.contains(&t) {
-        keys.push(t);
-    }
+    push(&title.to_lowercase());
     keys
 }
 
@@ -399,6 +458,7 @@ mod tests {
         )
         .unwrap();
         conn.execute_batch(NOTE_LINKS_V2_SCHEMA).unwrap();
+        conn.execute_batch(NOTE_LINK_KEYS_SCHEMA).unwrap();
         conn
     }
 
@@ -408,6 +468,13 @@ mod tests {
             params![path, title],
         )
         .unwrap();
+        write_note_keys(conn, path, title).unwrap();
+    }
+
+    fn remove_note(conn: &Connection, path: &str) {
+        conn.execute("DELETE FROM notes WHERE path = ?1", [path])
+            .unwrap();
+        delete_note_keys(conn, path).unwrap();
     }
 
     fn occ(raw: &str, start: usize) -> LinkOccurrence {
@@ -425,13 +492,109 @@ mod tests {
         let conn = mem_db();
         add_note(&conn, "notes/Été.md", "Été");
         for path in ["notes/Été.md", "archive/Été.md"] {
-            conn.execute("UPDATE notes SET path = ?1", [path]).unwrap();
+            let old: String = conn
+                .query_row("SELECT path FROM notes", [], |r| r.get(0))
+                .unwrap();
+            remove_note(&conn, &old);
+            add_note(&conn, path, "Été");
             let scanned = resolve_candidates("été", std::iter::once((path, "Été")));
             let stored = resolve_raw_target(&conn, "été").unwrap();
             assert_eq!(scanned.resolved_target.as_deref(), Some(path));
             assert_eq!(stored.resolved_target, scanned.resolved_target);
             assert_eq!(stored.is_ambiguous, scanned.is_ambiguous);
         }
+    }
+
+    #[test]
+    fn partial_paths_resolve_by_suffix_and_follow_case() {
+        let conn = mem_db();
+        add_note(&conn, "a/sub/note.md", "");
+        add_note(&conn, "other.md", "");
+        for written in ["sub/note", "Sub/Note.md", "a/sub/note", "note"] {
+            let stored = resolve_raw_target(&conn, written).unwrap();
+            assert_eq!(
+                stored.resolved_target.as_deref(),
+                Some("a/sub/note.md"),
+                "[[{written}]]"
+            );
+            assert!(!stored.is_ambiguous);
+        }
+        assert_eq!(
+            resolve_raw_target(&conn, "ub/note")
+                .unwrap()
+                .resolved_target,
+            None
+        );
+        add_note(&conn, "b/sub/note.md", "");
+        let r = resolve_raw_target(&conn, "sub/note").unwrap();
+        assert!(r.is_ambiguous, "two partial-path matches");
+        add_note(&conn, "A.md", "");
+        add_note(&conn, "a.md", "");
+        for (written, expected) in [("a", "a.md"), ("A", "A.md"), ("a.md", "a.md")] {
+            let r = resolve_raw_target(&conn, written).unwrap();
+            assert_eq!(r.resolved_target.as_deref(), Some(expected), "{written}");
+            assert!(!r.is_ambiguous, "{written}");
+        }
+    }
+
+    #[test]
+    fn non_ascii_candidates_come_from_the_key_index() {
+        let conn = mem_db();
+        add_note(&conn, "notes/Été.md", "Résumé");
+        for i in 0..50 {
+            add_note(&conn, &format!("ünïcode/{i}.md"), "");
+        }
+        let plan: Vec<String> = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT n.path, n.title FROM note_link_keys k
+                 JOIN notes n ON n.path = k.path WHERE k.key = ?1",
+            )
+            .unwrap()
+            .query_map(["été"], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            plan.iter().all(|step| !step.starts_with("SCAN")),
+            "{plan:?}"
+        );
+        assert_eq!(
+            resolve_raw_target(&conn, "ÉTÉ")
+                .unwrap()
+                .resolved_target
+                .as_deref(),
+            Some("notes/Été.md")
+        );
+        assert_eq!(
+            resolve_raw_target(&conn, "résumé")
+                .unwrap()
+                .resolved_target
+                .as_deref(),
+            Some("notes/Été.md")
+        );
+    }
+
+    #[test]
+    fn key_table_is_backfilled_once_from_existing_notes() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE notes (path TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '');
+             INSERT INTO notes (path, title) VALUES ('x/Été.md', 'Summer');",
+        )
+        .unwrap();
+        ensure_note_links_v2(&conn).unwrap();
+        assert_eq!(
+            resolve_raw_target(&conn, "été")
+                .unwrap()
+                .resolved_target
+                .as_deref(),
+            Some("x/Été.md")
+        );
+        ensure_note_links_v2(&conn).unwrap();
+        let keys: i64 = conn
+            .query_row("SELECT COUNT(*) FROM note_link_keys", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(keys as usize, note_keys("x/Été.md", "Summer").len());
     }
 
     #[test]
@@ -587,8 +750,7 @@ mod tests {
         );
 
         // Simulate the move: root file disappears, same stem appears deeper.
-        conn.execute("DELETE FROM notes WHERE path = 'target.md'", [])
-            .unwrap();
+        remove_note(&conn, "target.md");
         add_note(&conn, "archive/target.md", "");
         let changed = reresolve_keys(&conn, &note_keys("archive/target.md", "")).unwrap();
         assert_eq!(changed, 1);
@@ -616,8 +778,7 @@ mod tests {
         assert_eq!(inbound.len(), 1, "deterministic winner keeps a/note.md");
         assert!(inbound[0].is_ambiguous, "now flagged — rewrites must skip");
 
-        conn.execute("DELETE FROM notes WHERE path = 'b/note.md'", [])
-            .unwrap();
+        remove_note(&conn, "b/note.md");
         reresolve_keys(&conn, &note_keys("b/note.md", "")).unwrap();
         assert!(!inbound_links(&conn, "a/note.md").unwrap()[0].is_ambiguous);
     }

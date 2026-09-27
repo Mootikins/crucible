@@ -391,6 +391,7 @@ impl NoteStore for SqliteNoteStore {
                 )
                 .sql()?;
 
+                super::link_index::write_note_keys(conn, &note.path, &note.title).sql()?;
                 // Rebuild this note's rows in the resolved-link index, then
                 // re-resolve every row this note's identity could satisfy —
                 // the convergence step that keeps links correct when notes
@@ -513,6 +514,7 @@ impl NoteStore for SqliteNoteStore {
 
                 conn.execute("DELETE FROM notes WHERE path = ?1", [&path_str])
                     .sql()?;
+                super::link_index::delete_note_keys(conn, &path_str).sql()?;
                 // Explicit (FK cascade needs pragma foreign_keys, which the
                 // pool may not enable): drop this note's outbound rows.
                 conn.execute("DELETE FROM note_links WHERE source_path = ?1", [&path_str])

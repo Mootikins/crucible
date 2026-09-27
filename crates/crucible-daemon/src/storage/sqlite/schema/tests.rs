@@ -556,12 +556,13 @@ fn a_migration_step_can_alter_notes_on_an_existing_database() {
 fn derived_tables_each_appear_in_exactly_one_ddl_constant() {
     use crate::storage::sqlite::block_store::NOTE_BLOCKS_SCHEMA;
     use crate::storage::sqlite::fts::NOTES_FTS_SCHEMA;
-    use crate::storage::sqlite::link_index::NOTE_LINKS_V2_SCHEMA;
+    use crate::storage::sqlite::link_index::{NOTE_LINKS_V2_SCHEMA, NOTE_LINK_KEYS_SCHEMA};
     use crate::storage::sqlite::note_store::NOTES_SCHEMA;
 
     let ddl = [
         ("NOTES_SCHEMA", NOTES_SCHEMA),
         ("NOTE_LINKS_V2_SCHEMA", NOTE_LINKS_V2_SCHEMA),
+        ("NOTE_LINK_KEYS_SCHEMA", NOTE_LINK_KEYS_SCHEMA),
         ("NOTES_FTS_SCHEMA", NOTES_FTS_SCHEMA),
         ("NOTE_BLOCKS_SCHEMA", NOTE_BLOCKS_SCHEMA),
     ];

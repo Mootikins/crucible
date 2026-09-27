@@ -1,0 +1,214 @@
+{
+  "node": "v22.22.2",
+  "cases": [
+    {
+      "id": "ToFixedTie",
+      "expression": "(2.5).toFixed(0)",
+      "js": "(2.5).toFixed(0)",
+      "expected": "3"
+    },
+    {
+      "id": "ToFixedQuarter",
+      "expression": "(0.25).toFixed(1)",
+      "js": "(0.25).toFixed(1)",
+      "expected": "0.3"
+    },
+    {
+      "id": "ToFixedNegativeTie",
+      "expression": "(-2.5).toFixed(0)",
+      "js": "(-2.5).toFixed(0)",
+      "expected": "-3"
+    },
+    {
+      "id": "ToFixedBinary",
+      "expression": "(1.005).toFixed(2)",
+      "js": "(1.005).toFixed(2)",
+      "expected": "1.00"
+    },
+    {
+      "id": "ToFixedCarry",
+      "expression": "(9.995).toFixed(2)",
+      "js": "(9.995).toFixed(2)",
+      "expected": "9.99"
+    },
+    {
+      "id": "ToFixedNegativeZero",
+      "expression": "(-0.0001).toFixed(2)",
+      "js": "(-0.0001).toFixed(2)",
+      "expected": "-0.00"
+    },
+    {
+      "id": "StringLengthUtf16",
+      "expression": "'😀a'.length",
+      "js": "'😀a'.length",
+      "expected": 3
+    },
+    {
+      "id": "SliceUtf16",
+      "expression": "'😀a'.slice(2)",
+      "js": "'😀a'.slice(2)",
+      "expected": "a"
+    },
+    {
+      "id": "SliceUtf16Negative",
+      "expression": "'a😀b'.slice(-1)",
+      "js": "'a😀b'.slice(-1)",
+      "expected": "b"
+    },
+    {
+      "id": "OrReturnsOperand",
+      "expression": "null || 'default'",
+      "js": "null || 'default'",
+      "expected": "default"
+    },
+    {
+      "id": "OrKeepsTruthyOperand",
+      "expression": "'x' || 'default'",
+      "js": "'x' || 'default'",
+      "expected": "x"
+    },
+    {
+      "id": "AndReturnsOperand",
+      "expression": "'a' && 'b'",
+      "js": "'a' && 'b'",
+      "expected": "b"
+    },
+    {
+      "id": "AndKeepsFalsyOperand",
+      "expression": "0 && 'b'",
+      "js": "0 && 'b'",
+      "expected": 0
+    },
+    {
+      "id": "MixedCompareNumeric",
+      "expression": "'10' > 9",
+      "js": "'10' > 9",
+      "expected": true
+    },
+    {
+      "id": "StringCompareUtf16",
+      "expression": "'｡' < '😀'",
+      "js": "'\\uFF61' < '😀'",
+      "expected": false
+    },
+    {
+      "id": "NaNCompare",
+      "expression": "'x' < 1 || 'x' >= 1",
+      "js": "'x' < 1 || 'x' >= 1",
+      "expected": false
+    },
+    {
+      "id": "NumberInfText",
+      "expression": "number('inf')",
+      "js": "Number('inf')",
+      "expected": "NaN"
+    },
+    {
+      "id": "NumberInfinity",
+      "expression": "number('-Infinity')",
+      "js": "Number('-Infinity')",
+      "expected": "-Infinity"
+    },
+    {
+      "id": "NumberHex",
+      "expression": "number('0x1F')",
+      "js": "Number('0x1F')",
+      "expected": 31
+    },
+    {
+      "id": "NumberExponentText",
+      "expression": "(1e21).toString()",
+      "js": "String(1e21)",
+      "expected": "1e+21"
+    },
+    {
+      "id": "NumberNegativeZeroText",
+      "expression": "(-0).toString()",
+      "js": "String(-0)",
+      "expected": "0"
+    },
+    {
+      "id": "NumberInfinityText",
+      "expression": "number('Infinity').toString()",
+      "js": "String(Number('Infinity'))",
+      "expected": "Infinity"
+    },
+    {
+      "id": "NumberSmallText",
+      "expression": "(0.0000001).toString()",
+      "js": "String(0.0000001)",
+      "expected": "1e-7"
+    },
+    {
+      "id": "SplitNegativeLimit",
+      "expression": "'a:b:c'.split(':', -1)",
+      "js": "'a:b:c'.split(':', -1)",
+      "expected": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "id": "SplitZeroLimit",
+      "expression": "'a:b:c'.split(':', 0)",
+      "js": "'a:b:c'.split(':', 0)",
+      "expected": []
+    },
+    {
+      "id": "ReplaceStringMatch",
+      "expression": "'abc'.replace('b', '[$&]')",
+      "js": "'abc'.replace('b', '[$&]')",
+      "expected": "a[b]c"
+    },
+    {
+      "id": "ReplaceStringContext",
+      "expression": "'abc'.replace('b', \"$`|$'|$$\")",
+      "js": "'abc'.replace('b', \"$`|$'|$$\")",
+      "expected": "aa|c|$c"
+    },
+    {
+      "id": "ReplaceStringNoGroups",
+      "expression": "'abc'.replace('b', '$1')",
+      "js": "'abc'.replace('b', '$1')",
+      "expected": "a$1c"
+    },
+    {
+      "id": "ReplaceStringEvery",
+      "expression": "'a:b:c'.replace(':', '-')",
+      "js": "'a:b:c'.replaceAll(':', '-')",
+      "source": "Obsidian Help, Bases functions, string.replace: a string pattern replaces all occurrences (\"a,b,c,d\".replace(\",\", \"-\") returns \"a-b-c-d\").",
+      "expected": "a-b-c"
+    },
+    {
+      "id": "ReplaceStringRegexChars",
+      "expression": "'a.b.c'.replace('.', '*')",
+      "js": "'a.b.c'.replaceAll('.', '*')",
+      "expected": "a*b*c"
+    },
+    {
+      "id": "RegexDigitAscii",
+      "expression": "/\\d/u.matches('٣')",
+      "js": "/\\d/u.test('٣')",
+      "expected": false
+    },
+    {
+      "id": "RegexWordAscii",
+      "expression": "/\\w/.matches('é')",
+      "js": "/\\w/.test('é')",
+      "expected": false
+    },
+    {
+      "id": "RegexNamedReplacement",
+      "expression": "'abc'.replace(/(?<é>b)/, '[$<é>X]')",
+      "js": "'abc'.replace(/(?<é>b)/, '[$<é>X]')",
+      "expected": "a[bX]c"
+    },
+    {
+      "id": "HasTagIgnoresCase",
+      "expression": "file.hasTag('WORK')",
+      "source": "Obsidian Help, Tags: tags are case-insensitive (#tag and #TAG are the same tag).",
+      "expected": true
+    }
+  ]
+}

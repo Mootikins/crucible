@@ -16,7 +16,7 @@ impl Pattern {
                 .all(|c| "dgimsuy".contains(c) && seen.insert(c)),
             "Invalid or duplicate regular expression flags"
         );
-        let regex = RegexBuilder::new(pattern)
+        let regex = RegexBuilder::new(&ascii_classes(pattern))
             .case_insensitive(flags.contains('i'))
             .multi_line(flags.contains('m'))
             .dot_matches_new_line(flags.contains('s'))
@@ -88,68 +88,116 @@ impl Pattern {
         Ok(out)
     }
 }
-fn expand(out: &mut String, text: &str, captures: &Captures<'_>, replacement: &str, named: bool) {
-    let m = captures.get(0).expect("full match");
-    let mut chars = replacement.chars().peekable();
+/// JavaScript `\d` and `\w` (and their negations) are ASCII, with or
+/// without the `u` flag. The Rust engine reads them as Unicode classes, so
+/// they become the engine's ASCII classes.
+fn ascii_classes(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut class = false;
+    let mut chars = pattern.chars();
     while let Some(c) = chars.next() {
-        if c != '$' {
-            out.push(c);
-            continue;
-        }
-        match chars.peek().copied() {
-            Some('$') => {
-                chars.next();
-                out.push('$');
-            }
-            Some('&') => {
-                chars.next();
-                out.push_str(m.as_str());
-            }
-            Some('`') => {
-                chars.next();
-                out.push_str(&text[..m.start()]);
-            }
-            Some('\'') => {
-                chars.next();
-                out.push_str(&text[m.end()..]);
-            }
-            Some(c @ '0'..='9') => {
-                let mut index = c.to_digit(10).unwrap() as usize;
-                let mut digits = 1;
-                let next = chars.clone().nth(1).and_then(|c| c.to_digit(10));
-                if let Some(next) = next {
-                    let two = index * 10 + next as usize;
-                    if two > 0 && two < captures.len() {
-                        index = two;
-                        digits = 2;
+        match c {
+            '\\' => match chars.next() {
+                Some(e @ ('d' | 'D' | 'w' | 'W')) => {
+                    let name = match e {
+                        'd' => ":digit:",
+                        'D' => ":^digit:",
+                        'w' => ":word:",
+                        _ => ":^word:",
+                    };
+                    if class {
+                        out.push_str(&format!("[{name}]"));
+                    } else {
+                        out.push_str(&format!("[[{name}]]"));
                     }
                 }
+                Some(e) => {
+                    out.push('\\');
+                    out.push(e);
+                }
+                None => out.push('\\'),
+            },
+            '[' if !class => {
+                class = true;
+                out.push(c);
+            }
+            ']' if class => {
+                class = false;
+                out.push(c);
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+/// Expands a JavaScript replacement template: `$$`, `$&`, `` $` ``, `$'`,
+/// `$n`, `$nn` and `$<name>`.
+fn expand(out: &mut String, text: &str, captures: &Captures<'_>, replacement: &str, named: bool) {
+    let m = captures.get(0).expect("full match");
+    let bytes = replacement.as_bytes();
+    let mut i = 0;
+    while i < replacement.len() {
+        let rest = &replacement[i..];
+        if !rest.starts_with('$') {
+            let c = rest.chars().next().expect("non-empty rest");
+            out.push(c);
+            i += c.len_utf8();
+            continue;
+        }
+        match bytes.get(i + 1) {
+            Some(b'$') => {
+                out.push('$');
+                i += 2;
+            }
+            Some(b'&') => {
+                out.push_str(m.as_str());
+                i += 2;
+            }
+            Some(b'`') => {
+                out.push_str(&text[..m.start()]);
+                i += 2;
+            }
+            Some(b'\'') => {
+                out.push_str(&text[m.end()..]);
+                i += 2;
+            }
+            Some(d @ b'0'..=b'9') => {
+                let one = usize::from(d - b'0');
+                let two = bytes
+                    .get(i + 2)
+                    .filter(|b| b.is_ascii_digit())
+                    .map(|b| one * 10 + usize::from(b - b'0'))
+                    .filter(|n| *n > 0 && *n < captures.len());
+                let (index, digits) = match two {
+                    Some(n) => (n, 2),
+                    None => (one, 1),
+                };
                 if index == 0 || index >= captures.len() {
                     out.push('$');
+                    i += 1;
                     continue;
-                }
-                for _ in 0..digits {
-                    chars.next();
                 }
                 if let Some(group) = captures.get(index) {
                     out.push_str(group.as_str());
                 }
+                i += 1 + digits;
             }
-            Some('<') if named => {
-                let tail = chars.clone().collect::<String>();
-                if let Some(close) = tail.find('>') {
-                    let name = &tail[1..close];
-                    if let Some(group) = captures.name(name) {
+            Some(b'<') if named => match rest.find('>') {
+                Some(close) => {
+                    if let Some(group) = captures.name(&rest[2..close]) {
                         out.push_str(group.as_str());
                     }
-                    for _ in 0..=close {
-                        chars.next();
-                    }
-                    continue;
+                    i += close + 1;
                 }
+                None => {
+                    out.push('$');
+                    i += 1;
+                }
+            },
+            _ => {
                 out.push('$');
+                i += 1;
             }
-            _ => out.push('$'),
         }
     }
 }
@@ -157,6 +205,34 @@ fn expand(out: &mut String, text: &str, captures: &Captures<'_>, replacement: &s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bases_named_replacement_reads_the_name_by_bytes() {
+        let pattern = Pattern::new("(?<é>b)", "").unwrap();
+        assert_eq!(pattern.replace("abc", "[$<é>X]").unwrap(), "a[bX]c");
+        assert_eq!(pattern.replace("abc", "$&$$$`$'").unwrap(), "ab$acc");
+    }
+
+    #[test]
+    fn bases_digit_and_word_classes_are_ascii() {
+        for (source, text, matches) in [
+            (r"^\d$", "٣", false),
+            (r"^\d$", "7", true),
+            (r"^\w$", "é", false),
+            (r"^[\w.]+$", "a.b_1", true),
+            (r"^[\d]$", "٣", false),
+            (r"^\W$", "é", true),
+            (r"^\D$", "٣", true),
+        ] {
+            for flags in ["", "u"] {
+                assert_eq!(
+                    Pattern::new(source, flags).unwrap().matches(text).unwrap(),
+                    matches,
+                    "{source} /{flags} {text}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn bases_regex_stops_adversarial_backtracking() {

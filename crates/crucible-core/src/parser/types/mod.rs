@@ -116,4 +116,23 @@ mod tests {
         assert!(all_tags.contains(&"rust".to_string()));
         assert!(all_tags.contains(&"project".to_string()));
     }
+
+    #[test]
+    fn test_parsed_note_all_tags_reads_scalar_and_hash_prefixed_frontmatter() {
+        let mut doc = ParsedNote::new(PathBuf::from("test.md"));
+        doc.tags = vec![Tag::new("work", 0)];
+        doc.frontmatter = Some(Frontmatter::new(
+            "tags: '#work'".to_string(),
+            FrontmatterFormat::Yaml,
+        ));
+        assert_eq!(doc.all_tags(), vec!["work".to_string()]);
+        doc.frontmatter = Some(Frontmatter::new(
+            "tags: ['#a/b', c]".to_string(),
+            FrontmatterFormat::Yaml,
+        ));
+        assert_eq!(
+            doc.all_tags(),
+            vec!["a/b".to_string(), "c".to_string(), "work".to_string()]
+        );
+    }
 }

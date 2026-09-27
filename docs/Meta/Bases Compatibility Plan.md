@@ -36,9 +36,13 @@ compatible; `cru base query --format data` retains Crucible's typed API result.
 ## Canonical links and source identity
 
 SQLite and Bases now share the daemon link resolver's normalization,
-exact/title/stem precedence and ambiguity handling, including Unicode case matching
-before and after rename. Bases supplies fresh file
-candidates without introducing an index prefilter. A bare saved-base reference
+exact/title/path-suffix precedence and ambiguity handling, including Unicode
+case matching before and after rename. A partial path such as `[[sub/note]]`
+resolves by path suffix, and an exact path in the written case wins over a
+path that differs only in case. The `note_link_keys` table stores each note's
+folded keys, so SQLite reads candidates by key instead of scanning every
+non-ASCII note. Bases builds the same keys once per query from fresh file
+candidates, without an index prefilter. A bare saved-base reference
 can resolve into a subfolder; an ambiguous source is refused. Resolved source
 identity is returned with query results and used for subsequent mutations.
 Containment remains mandatory after resolution.
@@ -58,8 +62,16 @@ locale week-year boundaries and typed durations/relative dates; missing/empty
 view defaults; property labels; multi-value creation inference; explicit
 content precedence; and built-in summary/empty-set behavior.
 
+JavaScript semantics that the Obsidian captures do not reach are pinned by
+`js-semantics.json` and `js-reference.json`. Node evaluates the JavaScript
+form of each case through `scripts/capture-bases-js-reference.mjs`, and an
+offline gate compares Crucible with it. Cases that Obsidian documents
+differently, such as `replace` with a text pattern, cite their source.
+
 Regex execution has a backtracking budget and a compiled-pattern size limit.
-Expression work, nesting and allocation limits remain. The corpus is evidence
+Expression work, nesting and allocation limits remain. The parser measures
+nesting as the evaluator does, so a long left-associative chain such as
+`a + b + …` is one level; parse and evaluation accept the same expressions. The corpus is evidence
 for the pinned cases, not proof that all ECMAScript regex or Moment locale
 behavior is equivalent. Unknown plugin view types are preserved and displayed
 with the documented table fallback.
@@ -106,12 +118,12 @@ web embeds route to the native base. General `cru.fs` cleanup is separate.
 
 ## Deferred: index optimization
 
-Do not add this work to the compatibility pass:
+Do not add this work to the compatibility pass. Expressions already parse once
+per base load, and a query hashes an attachment only when it returns it.
 
 - Persist filesystem mtime, ctime and size with migration/backfill and watcher
   reconciliation. Index timestamps must never replace filesystem times.
 - Add only SQL prefilters proven equivalent to full expression evaluation.
-- Parse expressions once per query and avoid hashing every attachment on reads.
 - Scope cache invalidation to affected kilns while retaining gap reconciliation.
 - Compare indexed and scanning results over the same corpus, then benchmark
   cold rebuilds and large-kiln latency, work and memory.

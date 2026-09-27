@@ -43,6 +43,14 @@ resulting file bytes for scalar, empty, list, missing-list and boolean groups.
 The tests compare frontmatter values and exact body bytes, allowing YAML
 serializer formatting differences as with creation.
 
+`js-semantics.json` holds JavaScript-semantics cases that the Obsidian capture
+does not reach: `toFixed` ties, UTF-16 string positions, `&&`/`||` operands,
+mixed comparisons, number text, `split` limits, text `replace` templates and
+ASCII regex classes. To regenerate `js-reference.json`, run
+`node scripts/capture-bases-js-reference.mjs`; it records the Node version. A
+case without a `js` form cites its `source` and gives `expected` itself.
+`bases_matches_javascript_reference_semantics` compares them offline.
+
 The expression comparison pins the captured `TZ` with `EnvVarGuard` in its
 isolated nextest process. Epoch, offset and daylight-saving cases therefore
 run against the recorded zone even when the build machine uses another zone.

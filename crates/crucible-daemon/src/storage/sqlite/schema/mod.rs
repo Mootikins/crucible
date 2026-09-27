@@ -33,7 +33,13 @@ const SCHEMA_VERSION: i32 = 8;
 /// *truncate*: it carries `embedding`, `embedding_model` and
 /// `embedding_dimensions`, which are recoverable only by re-paying an
 /// embedding provider.
-pub(crate) const DERIVED_TABLES: &[&str] = &["notes", "notes_fts", "note_links", "note_blocks"];
+pub(crate) const DERIVED_TABLES: &[&str] = &[
+    "notes",
+    "notes_fts",
+    "note_links",
+    "note_link_keys",
+    "note_blocks",
+];
 
 /// What a migration run needs to tell its caller. Grows only when a migration
 /// genuinely cannot finish its own job.

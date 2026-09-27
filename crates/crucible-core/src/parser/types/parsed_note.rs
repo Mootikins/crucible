@@ -133,16 +133,28 @@ impl ParsedNote {
             })
     }
 
-    /// Get all frontmatter tags combined with inline tags
+    /// Inline tags and frontmatter `tags`, without a leading `#`, sorted and deduplicated.
+    ///
+    /// Frontmatter `tags` can be a list or one scalar (`tags: work`).
     pub fn all_tags(&self) -> Vec<String> {
-        let mut all_tags = self.tags.iter().map(|t| t.name.clone()).collect::<Vec<_>>();
-
-        if let Some(fm) = &self.frontmatter {
-            if let Some(fm_tags) = fm.get_array("tags") {
-                all_tags.extend(fm_tags);
-            }
-        }
-
+        let frontmatter = self
+            .frontmatter
+            .as_ref()
+            .and_then(|fm| fm.properties().get("tags").cloned());
+        let frontmatter = match frontmatter {
+            Some(serde_json::Value::Array(values)) => values,
+            Some(value) => vec![value],
+            None => vec![],
+        };
+        let mut all_tags = self
+            .tags
+            .iter()
+            .map(|t| t.name.as_str())
+            .chain(frontmatter.iter().filter_map(serde_json::Value::as_str))
+            .map(|tag| tag.trim().trim_start_matches('#'))
+            .filter(|tag| !tag.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
         all_tags.sort();
         all_tags.dedup();
         all_tags

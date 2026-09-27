@@ -2,6 +2,17 @@ use super::*;
 use serde_json::json;
 use tempfile::TempDir;
 
+/// Run one Bases operation as a person at a client would.
+async fn run(op: BaseOperation, root: &Path, params: serde_json::Value) -> serde_json::Value {
+    let root = root.canonicalize().unwrap();
+    operation::execute(op, &root, params, &disposition::Writer::default())
+        .await
+        .unwrap()
+}
+fn applied(answer: &serde_json::Value) -> bool {
+    matches!(answer["status"].as_str(), Some("applied" | "unchanged"))
+}
+
 fn request(yaml: &str) -> Query {
     Query {
         kiln: "test".into(),
@@ -34,9 +45,12 @@ async fn bases_query_filters_formulas_groups_sorts_limits_and_attachments() {
     let result = query(root, &request(yaml)).await.unwrap();
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.rows[0].path, "a.md");
-    assert_eq!(result.rows[0].values["formula.double"], Value::Number(4.0));
+    assert_eq!(
+        result.rows[0].values["formula.double"],
+        BaseValue::Number(4.0)
+    );
     assert_eq!(result.groups.len(), 2);
-    assert_eq!(result.summaries["formula.double"], Value::Number(4.0));
+    assert_eq!(result.summaries["formula.double"], BaseValue::Number(4.0));
     let mut r =
         request("filters: 'file.hasLink(this.file)'\nviews: [{type: table, name: Backlinks}]");
     r.host = Some("b.md".into());
@@ -52,15 +66,15 @@ async fn bases_property_writes_refuse_stale_and_preserve_body() {
     let text = "---\r\nstatus: [todo]\r\nother: 42\r\n---\r\n# Body\r\n\r\n";
     tokio::fs::write(&path, text).await.unwrap();
     let params = json!({"path":"a.md","key":"note.status","value":"done","ancestor_hash":crucible_core::note_edit::disk_hash(text)});
-    let result = write::set_property(root, &params).await.unwrap();
-    assert_eq!(result["ok"], true);
+    let result = run(BaseOperation::SetProperty, root, params.clone()).await;
+    assert!(applied(&result));
     let changed = tokio::fs::read_to_string(&path).await.unwrap();
     assert!(changed.ends_with("# Body\r\n\r\n"));
     assert!(changed.contains("- done"));
     assert!(changed.contains("other: 42"));
     assert_eq!(
-        write::set_property(root, &params).await.unwrap()["ok"],
-        false
+        run(BaseOperation::SetProperty, root, params.clone()).await["status"],
+        "stale"
     );
     assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), changed);
 }
@@ -71,8 +85,8 @@ async fn bases_create_derives_properties_and_never_overwrites() {
     tokio::fs::create_dir(root.join("tickets")).await.unwrap();
     let yaml="filters:\n  and:\n    - 'file.inFolder(\"tickets\")'\n    - 'status == \"todo\"'\n    - 'file.hasTag(\"work\")'\nviews: [{type: table, name: Tasks, order: [file.name, note.owner]}]";
     let p = json!({"source":{"yaml":yaml},"name":"Task","content":"Body"});
-    let a = write::create_entry(root, &p).await.unwrap();
-    let b = write::create_entry(root, &p).await.unwrap();
+    let a = run(BaseOperation::CreateEntry, root, p.clone()).await;
+    let b = run(BaseOperation::CreateEntry, root, p.clone()).await;
     assert_eq!(a["path"], "tickets/Task.md");
     assert_eq!(b["path"], "tickets/Task 1.md");
     assert_eq!(query(root, &request(yaml)).await.unwrap().rows.len(), 2);
@@ -100,122 +114,6 @@ async fn bases_containment_rejects_traversal_and_symlink() {
     }
     assert!(contained(root, "../secret.base").is_err());
 }
-#[test]
-fn bases_expression_examples() {
-    let entry = Entry::default();
-    let formulas = BTreeMap::from([
-        ("a".into(), "formula.b".into()),
-        ("b".into(), "formula.a".into()),
-    ]);
-    let mut eval = Eval::new(&[], &entry, None, &formulas, 0);
-    for (source, expected) in [
-        ("1 + 2 * 3", Value::Number(7.0)),
-        (
-            "[1,2,3,4].filter(value > 2).map(value * 2).reduce(acc + value, 0)",
-            Value::Number(14.0),
-        ),
-        ("if(false, number('bad'), 'ok')", Value::String("ok".into())),
-        ("'a:b:c'.replace(':', '-')", Value::String("a-b-c".into())),
-        ("/abc/i.matches('ABC')", Value::Boolean(true)),
-        (
-            "(date('2024-12-01') + '1M').format('YYYY-MM-DD')",
-            Value::String("2025-01-01".into()),
-        ),
-    ] {
-        assert_eq!(
-            eval.eval(&Expr::parse(source).unwrap()).unwrap(),
-            expected,
-            "{source}"
-        );
-    }
-    assert!(eval.eval(&Expr::parse("formula.a").unwrap()).is_err());
-}
-
-#[test]
-fn bases_every_declared_function_has_a_working_example() {
-    use eval::Function::*;
-    use strum::IntoEnumIterator;
-    let entry = Entry {
-        path: "notes/a.md".into(),
-        tags: vec!["work/deep".into()],
-        properties: BTreeMap::from([("status".into(), Value::String("todo".into()))]),
-        links: vec!["notes/a.md".into()],
-        ..Entry::default()
-    };
-    let entries = [entry.clone()];
-    let formulas = BTreeMap::new();
-    let mut eval = Eval::new(&entries, &entries[0], None, &formulas, 0);
-    for function in eval::Function::iter() {
-        // Exhaustive on purpose: a newly advertised function needs an executable example.
-        let expression = match function {
-            Date => "date('2025-01-01').year == 2025",
-            Duration => "duration('1h') == duration('60m')",
-            File => "file('notes/a.md').path == 'notes/a.md'",
-            Link => "link('notes/a.md') == file",
-            List => "list('one').length == 1",
-            Image => "image('a.png').isType('image')",
-            Icon => "icon('plus').isType('string')",
-            Html => "html('<b>x</b>').isType('html')",
-            EscapeHTML => "escapeHTML('<a>') == '&lt;a&gt;'",
-            If => "if(true, 1, 0) == 1",
-            Max => "max(1,4,2) == 4",
-            Min => "min(1,4,2) == 1",
-            Now => "now().isType('date')",
-            Today => "today().hour == 0",
-            Number => "number('4.2') == 4.2",
-            Random => "random() >= 0 && random() < 1",
-            IsTruthy => "1.isTruthy()",
-            IsType => "true.isType('boolean')",
-            ToString => "123.toString() == '123'",
-            Format => "date('2025-01-01').format('YYYY-MM-DD') == '2025-01-01'",
-            Time => "date('2025-01-01 12:34:56').time() == '12:34:56'",
-            Relative => "now().relative().toString().contains('ago')",
-            IsEmpty => "null.isEmpty()",
-            Contains => "[1,2].contains(2)",
-            ContainsAll => "'hello'.containsAll('h','e')",
-            ContainsAny => "[1,2].containsAny(9,2)",
-            StartsWith => "'hello'.startsWith('he')",
-            EndsWith => "'hello'.endsWith('lo')",
-            Lower => "'ABC'.lower() == 'abc'",
-            Title => "'hello world'.title() == 'Hello World'",
-            Trim => "' hi '.trim() == 'hi'",
-            Replace => "'a:b:c'.replace(/:/g,'-') == 'a-b-c'",
-            Repeat => "'ab'.repeat(2) == 'abab'",
-            Reverse => "[1,2].reverse()[0] == 2",
-            Slice => "'hello'.slice(1,-1) == 'ell'",
-            Split => "'a,b,c'.split(',',2).length == 2",
-            Abs => "(-5).abs() == 5",
-            Ceil => "2.1.ceil() == 3",
-            Floor => "2.9.floor() == 2",
-            Round => "(-2.5).round() == -2",
-            ToFixed => "3.14159.toFixed(2) == '3.14'",
-            Filter => "[1,2,3].filter(value > 1).length == 2",
-            Map => "[1,2].map(value + index)[1] == 3",
-            Reduce => "[1,2,3].reduce(acc + value,0) == 6",
-            Flat => "[1,[2,3]].flat().length == 3",
-            Join => "[1,2].join('-') == '1-2'",
-            Sort => "[10,2,1].sort()[0] == 1",
-            Unique => "[1,1,2].unique().length == 2",
-            AsFile => "link('notes/a.md').asFile() == file",
-            LinksTo => "link('notes/a.md').linksTo(file)",
-            AsLink => "file.asLink('A') == file",
-            HasLink => "file.hasLink('notes/a.md')",
-            HasProperty => "file.hasProperty('status')",
-            HasTag => "file.hasTag('work')",
-            InFolder => "file.inFolder('notes')",
-            Keys => "{a:1,b:2}.keys().length == 2",
-            Values => "{a:1,b:2}.values().contains(2)",
-            Matches => "/abc/i.matches('ABC')",
-            Mean => "[1,2,3].mean() == 2",
-        };
-        assert_eq!(
-            eval.eval(&Expr::parse(expression).unwrap()).unwrap(),
-            Value::Boolean(true),
-            "{function:?}: {expression}"
-        );
-    }
-}
-
 #[tokio::test]
 async fn bases_saved_column_order_roundtrips_unknown_options_and_refuses_stale() {
     let dir = TempDir::new().unwrap();
@@ -224,10 +122,9 @@ async fn bases_saved_column_order_roundtrips_unknown_options_and_refuses_stale()
     let yaml="custom: {keep: yes}\nviews:\n  - type: kanban\n    name: Board\n    columnWidth: 300\n    groupBy: {property: note.status, direction: ASC}\n";
     tokio::fs::write(&path, yaml).await.unwrap();
     let params = json!({"source":{"path":"Board.base"},"view":"Board","ancestor_hash":crucible_core::note_edit::disk_hash(yaml),"group_order":["doing","todo"]});
-    assert_eq!(
-        write::reorder_groups(root, &params).await.unwrap()["ok"],
-        true
-    );
+    assert!(applied(
+        &run(BaseOperation::ReorderGroups, root, params.clone()).await
+    ));
     let base = load(
         root,
         &Source::Path {
@@ -243,8 +140,8 @@ async fn bases_saved_column_order_roundtrips_unknown_options_and_refuses_stale()
     assert!(base.extra.contains_key("custom"));
     assert_eq!(base.views[0].extra["columnWidth"].as_i64(), Some(300));
     assert_eq!(
-        write::reorder_groups(root, &params).await.unwrap()["ok"],
-        false
+        run(BaseOperation::ReorderGroups, root, params.clone()).await["status"],
+        "stale"
     );
 }
 
@@ -265,80 +162,6 @@ async fn bases_named_embed_resolves_a_subfolder_source() {
         path: "Tasks.base".into(),
     };
     assert!(query(dir.path(), &request).await.is_ok());
-}
-
-#[test]
-fn bases_matches_captured_obsidian_expressions() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../assets/fixtures/bases/obsidian-1.14.2-expressions.json"
-    ))
-    .unwrap();
-    // Local date parsing deliberately reads TZ; nextest isolates this test.
-    let _timezone = crucible_core::test_support::EnvVarGuard::set(
-        "TZ",
-        corpus["timezone"].as_str().unwrap().into(),
-    );
-    let entry = Entry {
-        path: "notes/a.md".into(),
-        tags: vec!["work/deep".into()],
-        properties: BTreeMap::from([
-            ("status".into(), Value::String("todo".into())),
-            (
-                "tags".into(),
-                Value::List(vec![Value::String("#work/deep".into())]),
-            ),
-        ]),
-        links: vec!["notes/a.md".into()],
-        ..Entry::default()
-    };
-    let entries = [entry];
-    let formulas = BTreeMap::new();
-    let mut failures = vec![];
-    for case in corpus["cases"].as_array().unwrap() {
-        let expression = case["expression"].as_str().unwrap();
-        let mut eval = Eval::new(
-            &entries,
-            &entries[0],
-            None,
-            &formulas,
-            chrono::Local::now().timestamp_millis(),
-        );
-        let result = Expr::parse(expression).and_then(|e| eval.eval(&e));
-        if case.get("error").is_some() {
-            if result.is_ok() {
-                failures.push(format!(
-                    "{}: expected reference error, got {result:?}",
-                    case["id"]
-                ));
-            }
-            continue;
-        }
-        let expected_error = case["output"][0]["result"]
-            .as_str()
-            .is_some_and(|s| s.starts_with("Error: "));
-        if expected_error {
-            if result.is_ok() {
-                failures.push(format!(
-                    "{}: expected an evaluation error, got {result:?}",
-                    case["id"]
-                ));
-            }
-            continue;
-        }
-        let actual = result
-            .ok()
-            .filter(|v| !matches!(v, Value::Null))
-            .map(|v| v.text())
-            .filter(|s| !s.is_empty());
-        let expected = case["output"][0]["result"].as_str().map(str::to_owned);
-        if actual != expected {
-            failures.push(format!(
-                "{}: expected {expected:?}, got {actual:?}",
-                case["id"]
-            ));
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
@@ -371,70 +194,76 @@ async fn bases_inline_column_order_preserves_host_bytes_and_checks_host_ancestor
         Some(crucible_core::note_edit::disk_hash(&text).as_str())
     );
     let params = json!({"source":{"yaml":yaml},"this":"host.md","view":"Board","group_order":["done","todo"],"ancestor_hash":result.source_hash});
-    assert_eq!(
-        write::reorder_groups(dir.path(), &params).await.unwrap()["ok"],
-        true
-    );
+    assert!(applied(
+        &run(BaseOperation::ReorderGroups, dir.path(), params.clone()).await
+    ));
     let changed = std::fs::read_to_string(&path).unwrap();
     assert!(changed.starts_with("---\r\ntitle: Host\r\n---\r\nBefore 🦀\r\n\r\n```base\r\n"));
     assert!(changed.ends_with("```\r\n\r\nAfter\r\n"));
     assert!(changed.contains("groupOrder:"));
     assert_eq!(
-        write::reorder_groups(dir.path(), &params).await.unwrap()["ok"],
-        false
+        run(BaseOperation::ReorderGroups, dir.path(), params.clone()).await["status"],
+        "stale"
     );
     assert_eq!(std::fs::read_to_string(path).unwrap(), changed);
 }
 
+/// Rows compare in the CLI capture's order. A grouped view's capture lists
+/// its rows group by group, so the concatenated groups must give that order.
 #[tokio::test]
 async fn bases_matches_captured_obsidian_queries() {
     let corpus: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../assets/fixtures/bases/obsidian-1.14.2-queries.json"
     ))
     .unwrap();
-    let dir = TempDir::new().unwrap();
-    for (path, text) in corpus["files"].as_object().unwrap() {
-        let path = dir.path().join(path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, text.as_str().unwrap()).unwrap();
-    }
+    let dir = super::engine_tests::kiln(&corpus["files"]);
     let mut failures = vec![];
     for case in corpus["cases"].as_array().unwrap() {
         // CLI evaluation supplies no embedding host. Native saved views separately
         // test the documented main-pane `this` context.
         let yaml = serde_yaml::to_string(&case["base"]).unwrap();
-        let result = query(dir.path(), &request(&yaml)).await;
+        let result = match query(dir.path(), &request(&yaml)).await {
+            Ok(result) => result,
+            Err(e) => {
+                failures.push(format!("{}: {e:#}", case["id"]));
+                continue;
+            }
+        };
         let expected: serde_json::Value =
             serde_json::from_str(case["formats"]["json"]["output"].as_str().unwrap()).unwrap();
-        match result {
-            Ok(result) => {
-                let rows = result
-                    .rows
-                    .iter()
-                    .map(|row| {
-                        let mut map = serde_json::Map::new();
-                        map.insert("path".into(), json!(row.path));
-                        for column in &result.columns {
-                            let text = row
-                                .values
-                                .get(&column.property)
-                                .filter(|v| **v != Value::Null)
-                                .map(Value::text)
-                                .filter(|s| !s.is_empty());
-                            map.insert(column.display_name.clone(), json!(text));
-                        }
-                        serde_json::Value::Object(map)
-                    })
-                    .collect::<Vec<_>>();
-                if json!(rows) != expected {
-                    failures.push(format!(
-                        "{}: expected {expected}, got {}",
-                        case["id"],
-                        json!(rows)
-                    ));
-                }
+        let shown = |rows: &[Row]| {
+            rows.iter()
+                .map(|row| {
+                    let mut map = serde_json::Map::new();
+                    map.insert("path".into(), json!(row.path));
+                    for column in &result.columns {
+                        let text = row
+                            .values
+                            .get(&column.property)
+                            .filter(|v| !v.empty())
+                            .map(BaseValue::text);
+                        map.insert(column.display_name.clone(), json!(text));
+                    }
+                    serde_json::Value::Object(map)
+                })
+                .collect::<Vec<_>>()
+        };
+        if json!(shown(&result.rows)) != expected {
+            failures.push(format!(
+                "{}: expected {expected}, got {}",
+                case["id"],
+                json!(shown(&result.rows))
+            ));
+        }
+        if result.group_property.is_some() {
+            let grouped: Vec<Row> = result.groups.iter().flat_map(|g| g.rows.clone()).collect();
+            if json!(shown(&grouped)) != expected {
+                failures.push(format!(
+                    "{} groups: expected {expected}, got {}",
+                    case["id"],
+                    json!(shown(&grouped))
+                ));
             }
-            Err(e) => failures.push(format!("{}: {e:#}", case["id"])),
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -456,7 +285,7 @@ async fn bases_creation_matches_obsidian_frontmatter_and_body() {
             std::fs::write(path, text.as_str().unwrap()).unwrap();
         }
         let params = json!({"source":{"yaml":case["base"].to_string()},"view":"Case","name":format!("Oracle-{}",case["id"].as_str().unwrap()),"content":"Body\n"});
-        let result = write::create_entry(dir.path(), &params).await.unwrap();
+        let result = run(BaseOperation::CreateEntry, dir.path(), params.clone()).await;
         let actual =
             std::fs::read_to_string(dir.path().join(result["path"].as_str().unwrap())).unwrap();
         let expected = case["bytes"].as_str().unwrap();
@@ -483,6 +312,7 @@ async fn bases_creation_matches_obsidian_frontmatter_and_body() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Every captured group must exist with its value, and no other group may appear.
 #[tokio::test]
 async fn bases_summaries_match_native_obsidian_groups_and_empty_sets() {
     let queries: serde_json::Value = serde_json::from_str(include_str!(
@@ -493,40 +323,38 @@ async fn bases_summaries_match_native_obsidian_groups_and_empty_sets() {
         "../../../../assets/fixtures/bases/obsidian-1.14.2-summaries.json"
     ))
     .unwrap();
-    let dir = TempDir::new().unwrap();
-    for (path, text) in queries["files"].as_object().unwrap() {
-        let path = dir.path().join(path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, text.as_str().unwrap()).unwrap();
-    }
+    let dir = super::engine_tests::kiln(&queries["files"]);
     let mut failures = vec![];
     for case in corpus["summaries"].as_array().unwrap() {
+        let name = &case["name"];
         let mut base = corpus["base"].clone();
         let property = case["property"].as_str().unwrap();
-        base["views"][0]["summaries"] = json!({property:case["name"]});
+        base["views"][0]["summaries"] = json!({property:name});
         let result = query(dir.path(), &request(&base.to_string()))
             .await
             .unwrap();
         let actual = result.summaries[property].text();
         if actual != case["all"].as_str().unwrap() {
-            failures.push(format!("{}: {actual} != {}", case["name"], case["all"]));
+            failures.push(format!("{name}: {actual} != {}", case["all"]));
         }
-        for group in &result.groups {
-            let expected = case["groups"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|g| g["group"] == group.value.text())
-                .unwrap();
-            if group.summaries[property].text() != expected["value"].as_str().unwrap() {
-                failures.push(format!(
-                    "{} group {}: {} != {}",
-                    case["name"],
-                    group.value.text(),
-                    group.summaries[property].text(),
-                    expected["value"]
-                ));
-            }
+        let actual: Vec<(String, String)> = result
+            .groups
+            .iter()
+            .map(|g| (g.value.text(), g.summaries[property].text()))
+            .collect();
+        let expected: Vec<(String, String)> = case["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| {
+                (
+                    g["group"].as_str().unwrap().to_owned(),
+                    g["value"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        if actual != expected {
+            failures.push(format!("{name} groups: {actual:?} != {expected:?}"));
         }
         base["filters"] = json!("false");
         let result = query(dir.path(), &request(&base.to_string()))
@@ -534,8 +362,7 @@ async fn bases_summaries_match_native_obsidian_groups_and_empty_sets() {
             .unwrap();
         if result.summaries[property].text() != case["empty"].as_str().unwrap() {
             failures.push(format!(
-                "{} empty: {} != {}",
-                case["name"],
+                "{name} empty: {} != {}",
                 result.summaries[property].text(),
                 case["empty"]
             ));
@@ -562,8 +389,8 @@ async fn bases_property_moves_match_native_obsidian_file_outcomes() {
     for case in corpus["cases"].as_array().unwrap() {
         let before = case["before"].as_str().unwrap();
         std::fs::write(&path, before).unwrap();
-        let result = write::set_property(dir.path(), &json!({"path":"item.md","key":case["key"],"value":case["value"],"delete":case["value"].is_null(),"ancestor_hash":crucible_core::note_edit::disk_hash(before)})).await.unwrap();
-        assert_eq!(result["ok"], true, "{}", case["id"]);
+        let result = run(BaseOperation::SetProperty, dir.path(), json!({"path":"item.md","key":case["key"],"value":case["value"],"delete":case["value"].is_null(),"ancestor_hash":crucible_core::note_edit::disk_hash(before)})).await;
+        assert!(applied(&result), "{} {result}", case["id"]);
         let actual = std::fs::read_to_string(&path).unwrap();
         let expected = case["after"].as_str().unwrap();
         let a = parser.parse_content(&actual, &path).await.unwrap();

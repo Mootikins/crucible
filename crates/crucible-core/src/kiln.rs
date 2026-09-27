@@ -5,6 +5,13 @@ use std::path::Path;
 /// Directories to exclude from file discovery and watching
 pub const EXCLUDED_DIRS: &[&str] = &[".crucible", ".git", ".obsidian", "node_modules", ".trash"];
 
+/// Whether a kiln walk skips an entry with this name: a hidden name, or one of
+/// [`EXCLUDED_DIRS`].
+pub fn is_excluded_name(name: &std::ffi::OsStr) -> bool {
+    let name = name.to_string_lossy();
+    name.starts_with('.') || EXCLUDED_DIRS.contains(&name.as_ref())
+}
+
 /// What a file inside a kiln *is*, for discovery, watching, and indexing.
 ///
 /// Before this existed, "is this a file the kiln cares about" was spelled
