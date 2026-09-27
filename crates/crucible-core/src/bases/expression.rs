@@ -67,7 +67,7 @@ pub enum BaseValue {
     Number(f64),
     String(String),
     Date(i64),
-    DateOnly(i64),
+    DateOnly(chrono::NaiveDate),
     Duration(#[cfg_attr(feature = "openapi", schema(inline))] DurationValue),
     RelativeDate(i64),
     List(Vec<BaseValue>),
@@ -154,14 +154,11 @@ impl BaseValue {
                 Some(display) => format!("[[{path}|{display}]]"),
                 None => format!("[[{path}]]"),
             },
-            Self::Date(t) | Self::DateOnly(t) => chrono::DateTime::from_timestamp_millis(*t)
+            Self::DateOnly(date) => date.to_string(),
+            Self::Date(t) => chrono::DateTime::from_timestamp_millis(*t)
                 .map(|t| {
                     t.with_timezone(&chrono::Local)
-                        .format(if matches!(self, Self::DateOnly(_)) {
-                            "%Y-%m-%d"
-                        } else {
-                            "%Y-%m-%dT%H:%M:%S"
-                        })
+                        .format("%Y-%m-%dT%H:%M:%S")
                         .to_string()
                 })
                 .unwrap_or_default(),

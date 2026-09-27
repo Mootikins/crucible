@@ -45,14 +45,16 @@ local function move(args: any, ctx: any): any
 end
 policy = function(_ctx: any, event: any): any
     if type(event.path) ~= "string" or event.path:sub(1, #config.folder + 1) ~= config.folder .. "/" then return nil end
-    local target = if event.key == "status" or event.key == "note.status" then event.value else event.group
+    local target = event.properties and event.properties.status
     if target == nil then return nil end
-    local allowed = config.transitions[event.old_value or ""]
-    if allowed and event.old_value ~= target and not table.find(allowed, target) then
+    local old = event.old_properties and event.old_properties.status
+    if event.previous_path and event.previous_path:sub(1, #config.folder + 1) ~= config.folder .. "/" then old = nil end
+    local allowed = config.transitions[old or ""]
+    if allowed and old ~= target and not table.find(allowed, target) then
         return { cancel = true, reason = "Ticket transition is not allowed" }
     end
     local limit = config.wip[target]
-    if limit and event.old_value ~= target then
+    if limit and old ~= target then
         local result = cru.kiln.query(event.kiln, { source = { path = config.base }, view = "Board" })
         local count = 0
         for _, group in result.groups do

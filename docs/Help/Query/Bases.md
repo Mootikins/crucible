@@ -42,8 +42,8 @@ cru base set "tickets/First task.md" status '"done"' --kiln Work --ancestor-hash
 
 `query` supports `table`, `json`, `csv`, `tsv`, `md`, `paths` and `data`.
 JSON follows Obsidian's display-row format. `--format data` returns the full
-typed daemon result, including groups, summaries and each note's current
-`ancestor_hash`; use that hash for `set`. `--this Host.md` sets the host. A stale hash refuses the whole edit.
+typed daemon result (date-only values are `YYYY-MM-DD` calendar strings),
+including groups, summaries and each note's current `ancestor_hash`; use that hash for `set`. `--this Host.md` sets the host. A stale hash refuses the whole edit.
 `set --delete` removes a property. A value parses as JSON when possible,
 otherwise it is text.
 
@@ -118,8 +118,11 @@ unattended call cannot answer a permission prompt. Apply mode records changes
 in the session review ledger; propose mode records a proposal without changing
 disk. `ensure_base` creates a valid `.base` only when absent.
 
-A synchronous `base:before_write` hook receives the mutation, kiln, path and
-proposed content; property edits also include `old_value`. Return nil to permit
+A synchronous `base:before_write` hook receives the kiln, final `path`,
+`previous_path` and proposed content. Request fields are not forwarded. Note
+writes include parsed `properties` and `old_properties`; `previous_path` equals
+`path` except during folder moves. Policies see the final properties, including
+values inferred from filters or templates. Return nil to permit
 or `{cancel=true, reason="..."}` to refuse. Errors and timeouts refuse the
 write. `base:changed` broadcasts only after a change reaches disk. Both hooks
 are owned by their registering Lua source and cleared on reload.

@@ -98,16 +98,6 @@ pub(super) async fn set_property_with(
     let text = writer.proposed_text(root, &path)?.unwrap_or(text);
     let types = property_types(root).await?;
     let value = value.map(|v| normalize_property(key, v, &types));
-    let mut params = params.clone();
-    let parsed = crucible_core::parser::CrucibleParser::new()
-        .parse_content(&text, &path)
-        .await?;
-    params["old_value"] = parsed
-        .frontmatter
-        .as_ref()
-        .and_then(|f| f.properties().get(key))
-        .cloned()
-        .unwrap_or(Json::Null);
     let content = property_text(&text, key, value)?;
     writer
         .put(
@@ -115,7 +105,6 @@ pub(super) async fn set_property_with(
             &path,
             content,
             ExpectedBase::Hash { hash: hash.into() },
-            &params,
         )
         .await
 }
@@ -333,7 +322,7 @@ pub(super) async fn create_entry_with(
             continue;
         }
         let result = writer
-            .put(root, &path, body.clone(), ExpectedBase::Absent, params)
+            .put(root, &path, body.clone(), ExpectedBase::Absent)
             .await?;
         ensure!(result["ok"] == true, "Entry creation refused: {result}");
         let mut result = result;
@@ -421,7 +410,6 @@ pub(super) async fn reorder_groups_with(
             &path,
             content,
             ExpectedBase::Hash { hash: hash.into() },
-            params,
         )
         .await
 }
@@ -466,7 +454,12 @@ pub(super) async fn move_entry(
         return Ok(json!({"ok":true,"path":from.strip_prefix(root)?.to_string_lossy()}));
     }
     let _order = lock(&root.join(".crucible-bases-writes")).await;
-    let payload = writer.before(root, &from, params).await?;
+    let content = if crucible_core::kiln::is_note_file(&from) {
+        Some(tokio::fs::read_to_string(&from).await?)
+    } else {
+        None
+    };
+    let payload = writer.before(root, &to, &from, content.as_deref()).await?;
     let from_rel = from.strip_prefix(root)?.to_string_lossy();
     let to_rel = to.strip_prefix(root)?.to_string_lossy();
     if crucible_core::kiln::is_indexable_file(&from) {

@@ -2274,8 +2274,8 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "dateonly";
-            /** Format: int64 */
-            value: number;
+            /** Format: date */
+            value: string;
         } | {
             /** @enum {string} */
             type: "duration";

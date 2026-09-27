@@ -61,18 +61,51 @@ impl Writer<'_> {
         Ok(())
     }
 
-    pub async fn before(&self, root: &Path, path: &Path, params: &Json) -> Result<Json> {
+    pub async fn before(
+        &self,
+        root: &Path,
+        path: &Path,
+        previous: &Path,
+        content: Option<&str>,
+    ) -> Result<Json> {
         let relative = path.strip_prefix(root)?.to_string_lossy().to_string();
         let session = self.session.as_ref().map(|s| s.id.as_str());
-        let mut payload = params.clone();
-        payload["path"] = json!(relative);
+        let mut payload = json!({
+            "path": relative,
+            "previous_path": previous.strip_prefix(root)?.to_string_lossy(),
+            "content": content,
+        });
         if let Some(ctx) = self.ctx {
             payload["kiln"] = json!(ctx.kiln_registry.name_for(root));
             if let Some(s) = &self.session {
+                ctx.agents
+                    .bases_write_permission(s, &relative, content)
+                    .await
+                    .map_err(anyhow::Error::msg)?;
                 let scope = super::plugin_api::scope(ctx, s, root);
                 scope
                     .resolve_for_write(&relative)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            }
+            if crucible_core::kiln::is_note_file(path) {
+                if let Some(content) = content {
+                    let old = match self.proposed_text(root, previous)? {
+                        Some(text) => text,
+                        None => match tokio::fs::read_to_string(previous).await {
+                            Ok(text) => text,
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+                            Err(e) => return Err(e.into()),
+                        },
+                    };
+                    let parser = crucible_core::parser::CrucibleParser::new();
+                    for (key, text) in [("properties", content), ("old_properties", old.as_str())] {
+                        let parsed = parser.parse_content(text, path).await?;
+                        payload[key] = json!(parsed
+                            .frontmatter
+                            .map(|f| f.properties().clone())
+                            .unwrap_or_default());
+                    }
+                }
             }
             super::policy::before(ctx.agents.plugin_handlers(), session, payload.clone()).await?;
         }
@@ -84,13 +117,10 @@ impl Writer<'_> {
         path: &Path,
         content: String,
         base: ExpectedBase,
-        params: &Json,
     ) -> Result<Json> {
         let _order = crate::file_write::lock(&root.join(".crucible-bases-writes")).await;
         let relative = path.strip_prefix(root)?.to_string_lossy().to_string();
-        let mut payload = params.clone();
-        payload["content"] = json!(content);
-        let payload = self.before(root, path, &payload).await?;
+        let payload = self.before(root, path, path, Some(&content)).await?;
         if let (Some(ctx), Some(s)) = (self.ctx, &self.session) {
             let writes = self.writes().expect("session write target");
             if writes.mode() == WriteMode::Propose {

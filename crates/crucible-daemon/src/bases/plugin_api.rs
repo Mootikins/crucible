@@ -88,10 +88,6 @@ async fn execute(
         )?);
     }
     let session = session.ok_or_else(|| anyhow::anyhow!("Bases writes require options.session"))?;
-    ctx.agents
-        .bases_write_permission(&session, &params)
-        .await
-        .map_err(anyhow::Error::msg)?;
     let writer = super::disposition::Writer {
         ctx: Some(ctx),
         session: Some(session),
@@ -126,7 +122,6 @@ async fn execute(
                     path.as_path(),
                     yaml.into(),
                     crucible_core::file_write::ExpectedBase::Absent,
-                    &params,
                 )
                 .await
         }

@@ -425,7 +425,8 @@ impl<'a> Eval<'a> {
                     _ => e.properties.get(&key).cloned().unwrap_or(Value::Null),
                 }
             }
-            Value::Date(t) | Value::DateOnly(t) | Value::RelativeDate(t) => {
+            v @ (Value::Date(_) | Value::DateOnly(_) | Value::RelativeDate(_)) => {
+                let t = date_num(&v)?;
                 let d = Local
                     .timestamp_millis_opt(t)
                     .single()
@@ -461,13 +462,11 @@ impl<'a> Eval<'a> {
                 })
             }
             "+" | "-" if matches!(a, Date(_) | DateOnly(_) | RelativeDate(_)) => {
-                let (Date(t) | DateOnly(t) | RelativeDate(t)) = a else {
-                    unreachable!()
-                };
+                let t = date_num(&a)?;
                 let sign = if op == "+" { 1 } else { -1 };
                 match b {
-                    Date(u) | DateOnly(u) | RelativeDate(u) if op == "-" => {
-                        Duration(DurationValue::millis((t - u) as f64))
+                    Date(_) | DateOnly(_) | RelativeDate(_) if op == "-" => {
+                        Duration(DurationValue::millis((t - date_num(&b)?) as f64))
                     }
                     String(s) => Date(offset_date(t, &s, sign)?),
                     Duration(d) => Date(offset_duration(t, d, sign)?),
@@ -571,16 +570,16 @@ impl<'a> Eval<'a> {
                 v => Value::List(vec![v.clone()]),
             },
             Now => Value::Date(self.now),
-            Today => Value::DateOnly(midnight(self.now)?),
+            Today => Value::DateOnly(calendar_date(self.now)?),
             Random => Value::Number(rand::random::<f64>()),
             Date => {
                 if receiver.is_some() {
-                    Value::DateOnly(midnight(date_num(recv)?)?)
+                    Value::DateOnly(calendar_date(date_num(recv)?)?)
                 } else {
                     let text = arg(0)?.text();
                     let time = parse_date(&text)?;
                     if text.len() == 10 {
-                        Value::DateOnly(time)
+                        Value::DateOnly(calendar_date(time)?)
                     } else {
                         Value::Date(time)
                     }
@@ -851,9 +850,9 @@ pub fn compare(a: &Value, b: &Value) -> std::cmp::Ordering {
         (_, Value::Null) => std::cmp::Ordering::Greater,
         (Value::Number(a), Value::Number(b)) => a.total_cmp(b),
         (
-            Value::Date(a) | Value::DateOnly(a) | Value::RelativeDate(a),
-            Value::Date(b) | Value::DateOnly(b) | Value::RelativeDate(b),
-        ) => a.cmp(b),
+            Value::Date(_) | Value::DateOnly(_) | Value::RelativeDate(_),
+            Value::Date(_) | Value::DateOnly(_) | Value::RelativeDate(_),
+        ) => date_num(a).ok().cmp(&date_num(b).ok()),
         _ => a.text().cmp(&b.text()),
     }
 }
@@ -861,15 +860,17 @@ fn num(v: &Value) -> Result<f64> {
     match v {
         Value::Number(n) => Ok(*n),
         Value::Duration(n) => Ok(n.approximate_millis()),
-        Value::Date(n) | Value::DateOnly(n) | Value::RelativeDate(n) => Ok(*n as f64),
+        Value::Date(_) | Value::DateOnly(_) | Value::RelativeDate(_) => Ok(date_num(v)? as f64),
         _ => bail!("Expected number, got {}", type_name(v)),
     }
 }
-fn date_num(v: &Value) -> Result<i64> {
-    if let Value::Date(t) | Value::DateOnly(t) | Value::RelativeDate(t) = v {
-        Ok(*t)
-    } else {
-        bail!("Expected date")
+pub(super) fn date_num(v: &Value) -> Result<i64> {
+    match v {
+        Value::Date(t) | Value::RelativeDate(t) => Ok(*t),
+        Value::DateOnly(date) => {
+            local_timestamp(date.and_hms_opt(0, 0, 0).expect("valid midnight"))
+        }
+        _ => bail!("Expected date"),
     }
 }
 fn index(n: f64, len: usize) -> usize {
@@ -926,12 +927,12 @@ fn local_timestamp(date: NaiveDateTime) -> Result<i64> {
         }
     }
 }
-fn midnight(t: i64) -> Result<i64> {
+pub(super) fn calendar_date(t: i64) -> Result<NaiveDate> {
     let d = Local
         .timestamp_millis_opt(t)
         .single()
         .ok_or_else(|| anyhow::anyhow!("Invalid date"))?;
-    parse_date(&d.format("%Y-%m-%d").to_string())
+    Ok(d.date_naive())
 }
 fn duration_parts(s: &str) -> Result<(f64, &str)> {
     let s = s.trim();

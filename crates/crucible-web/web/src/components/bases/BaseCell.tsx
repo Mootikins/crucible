@@ -1,6 +1,7 @@
 import { For, type Component, type JSX } from 'solid-js';
 import { sanitizeDocHtml } from '@/lib/markdown';
 import { rawFileUrl } from '@/lib/paths';
+import { openFileInEditor } from '@/lib/file-actions';
 import { openNoteInEditor } from '@/lib/note-actions';
 import { baseText, type BaseValue } from '@/lib/query/bases';
 import { BaseIcon } from './BaseIcon';
@@ -17,7 +18,7 @@ export const BaseCell: Component<{ value?: BaseValue; root: string }> = props =>
     if (value.type === 'link' || value.type === 'file') {
       const link = value.type === 'file' ? { path: value.value, display_value: undefined } : value.value;
       if (/^https?:\/\//i.test(link.path)) return <a href={link.path} target="_blank" rel="noopener noreferrer">{link.display_value ? <BaseCell value={link.display_value} root={props.root} /> : link.display ?? link.path}</a>;
-      return <a href="#" class="wikilink text-primary" data-note={link.path} onClick={event => { event.preventDefault(); event.stopPropagation(); void openNoteInEditor(link.path, props.root); }}>{link.display_value ? <BaseCell value={link.display_value} root={props.root} /> : link.display ?? link.path}</a>;
+      return <a href="#" class="wikilink text-primary" data-note={link.path} onClick={event => { event.preventDefault(); event.stopPropagation(); if (value.type === 'file') openFileInEditor(`${props.root}/${link.path}`); else void openNoteInEditor(link.path, props.root); }}>{link.display_value ? <BaseCell value={link.display_value} root={props.root} /> : link.display ?? link.path}</a>;
     }
     return baseText(value);
   };

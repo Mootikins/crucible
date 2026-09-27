@@ -32,7 +32,7 @@ export function baseText(value: BaseValue | undefined): string {
     const text = durationText(delta);
     return delta > 0 ? `in ${text}` : `${text} ago`;
   }
-  if (value.type === 'dateonly') return new Date(value.value).toLocaleDateString();
+  if (value.type === 'dateonly') return value.value;
   if (value.type === 'date') return new Date(value.value as number).toLocaleString();
   if (value.type === 'object') return JSON.stringify(value.value);
   return String(value.value ?? '');
@@ -41,10 +41,6 @@ export function baseJson(value: BaseValue): unknown {
   if (value.type === 'null') return null;
   if (value.type === 'list') return (value.value as BaseValue[]).map(baseJson);
   if (value.type === 'link') return `[[${value.value.path}${value.value.display == null ? '' : `|${value.value.display}`}]]`;
-  if (value.type === 'dateonly') {
-    const date = new Date(value.value);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  }
   if (value.type === 'date' || value.type === 'relativedate') return new Date(value.value).toISOString();
   return value.value;
 }

@@ -15,7 +15,8 @@ impl AgentManager {
     pub(crate) async fn bases_write_permission(
         &self,
         session: &crucible_core::session::Session,
-        args: &serde_json::Value,
+        path: &str,
+        content: Option<&str>,
     ) -> Result<(), String> {
         use super::messaging::gate_decision::{decide_permission, Decision, PermissionContext};
         let engine = self.session_permission_engine(session.id.as_str());
@@ -44,8 +45,9 @@ impl AgentManager {
             mcp_read_only: &Default::default(),
             prompt: None,
         };
-        let call = crucible_core::types::CanonicalToolCall::crucible_tool("write_file", args);
-        match decide_permission(&context, &call, args).await {
+        let args = serde_json::json!({"path": path, "content": content});
+        let call = crucible_core::types::CanonicalToolCall::crucible_tool("write_file", &args);
+        match decide_permission(&context, &call, &args).await {
             Decision::Allow(_) | Decision::UserAllowed => Ok(()),
             Decision::Deny(reason) => Err(reason),
             Decision::NoAnswer => Err("Bases write needs approval".into()),

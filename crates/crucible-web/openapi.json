@@ -4888,8 +4888,8 @@
             ],
             "properties": {
               "value": {
-                "type": "integer",
-                "format": "int64"
+                "type": "string",
+                "format": "date"
               },
               "type": {
                 "type": "string",

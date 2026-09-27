@@ -296,7 +296,7 @@ async fn entries_scoped(
                 ) {
                     if let Value::String(text) = value {
                         *value = if types.get(key).is_some_and(|t| t == "date") {
-                            Value::DateOnly(eval::parse_date(text)?)
+                            Value::DateOnly(eval::calendar_date(eval::parse_date(text)?)?)
                         } else {
                             Value::Date(eval::parse_date(text)?)
                         };
@@ -626,7 +626,7 @@ fn summaries(
                 .iter()
                 .filter_map(|v| match v {
                     Value::Number(n) => Some(*n),
-                    Value::Date(t) | Value::DateOnly(t) => Some(*t as f64),
+                    Value::Date(_) | Value::DateOnly(_) => eval::date_num(v).ok().map(|t| t as f64),
                     _ => None,
                 })
                 .collect();

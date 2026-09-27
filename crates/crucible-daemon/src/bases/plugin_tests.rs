@@ -23,6 +23,19 @@ async fn rig_with_permission(
     mode: WriteMode,
     permission: PermissionMode,
 ) -> (TempDir, Arc<RpcContext>, DaemonPluginLoader, Session) {
+    rig_with_rules(
+        mode,
+        PermissionConfig {
+            default: permission,
+            ..Default::default()
+        },
+    )
+    .await
+}
+async fn rig_with_rules(
+    mode: WriteMode,
+    permission: PermissionConfig,
+) -> (TempDir, Arc<RpcContext>, DaemonPluginLoader, Session) {
     let dir = TempDir::new().unwrap();
     let root = dir.path().join("kiln");
     std::fs::create_dir(&root).unwrap();
@@ -46,10 +59,7 @@ async fn rig_with_permission(
             llm_config: None,
             acp_config: None,
             context_config: None,
-            permission_config: Some(PermissionConfig {
-                default: permission,
-                ..Default::default()
-            }),
+            permission_config: Some(permission),
             plugin_loader: None,
             source_roots: Default::default(),
             review_snapshot_root: dir.path().join("snapshots"),
@@ -339,7 +349,7 @@ async fn bases_nested_tool_write_retains_outer_review_attribution() {
 
 #[tokio::test]
 async fn bases_shipped_kanban_initializes_moves_and_enforces_policy() {
-    let (dir, _, loader, _) = rig(WriteMode::Apply).await;
+    let (dir, ctx, loader, _) = rig(WriteMode::Apply).await;
     let root = dir.path().join("kiln");
     std::fs::create_dir(root.join("tickets")).unwrap();
     std::fs::write(root.join("tickets/a.md"), "---\nstatus: todo\n---\nBody\n").unwrap();
@@ -364,7 +374,51 @@ async fn bases_shipped_kanban_initializes_moves_and_enforces_policy() {
         .unwrap();
     assert!(call(&loader, r#"return kanban.tools.kanban_move.fn({kiln='notes',file='a.md',to='doing'}, {session_id=sid})"#).await.unwrap_err().to_string().contains("WIP"));
     call(&loader, r#"return kanban.tools.kanban_move.fn({kiln='notes',file='a.md',to='done'}, {session_id=sid})"#).await.unwrap();
+    std::fs::write(root.join("template.md"), "---\nstatus: doing\n---\nBody").unwrap();
+    for options in [
+        "source={yaml='newItemFolder: tickets\\nfilters: note.status == \"doing\"\\nviews: []'}",
+        "source={yaml='newItemFolder: tickets\\nnewItemTemplate: template.md\\nviews: []'}",
+        "source={yaml='newItemFolder: tickets\\nviews: []'},content='---\\nstatus: doing\\n---\\nBody'",
+    ] {
+        let body = format!("return cru.kiln.create_entry('notes', {{session=sid,name='blocked',{options}}})");
+        assert!(call(&loader, &body).await.unwrap_err().to_string().contains("WIP"));
+        assert!(!root.join("tickets/blocked.md").exists());
+    }
+    let text = "---\nstatus: doing\n---\nOutside";
+    std::fs::write(root.join("outside.md"), text).unwrap();
+    assert!(write::move_entry(&root, &json!({"path":"outside.md","value":"tickets","ancestor_hash":crucible_core::note_edit::disk_hash(text)}), &ctx.kiln, &disposition::Writer {ctx: Some(&ctx), session: None}).await.unwrap_err().to_string().contains("WIP"));
+    assert!(root.join("outside.md").exists());
+    assert!(!root.join("tickets/outside.md").exists());
     assert!(std::fs::read_to_string(root.join("tickets/a.md"))
         .unwrap()
         .contains("status: done"));
+}
+
+#[tokio::test]
+async fn bases_lua_checks_the_resolved_creation_destination() {
+    for mode in [WriteMode::Apply, WriteMode::Propose] {
+        let (dir, _, loader, _) = rig_with_rules(
+            mode,
+            PermissionConfig {
+                default: PermissionMode::Allow,
+                deny: vec!["edit:secrets/**".into(), "edit:Ticket 1.md".into()],
+                ..Default::default()
+            },
+        )
+        .await;
+        let root = dir.path().join("kiln");
+        std::fs::create_dir(root.join("secrets")).unwrap();
+        std::fs::write(root.join("Ticket.md"), "existing").unwrap();
+        for yaml in ["newItemFolder: secrets\nviews: []", "views: []"] {
+            loader
+                .executor()
+                .lua()
+                .globals()
+                .set("definition", yaml)
+                .unwrap();
+            assert!(call(&loader, r#"return cru.kiln.create_entry('notes', {session=sid,name='Ticket',source={yaml=definition},file_path='public.md'})"#).await.is_err());
+        }
+        assert!(!root.join("secrets/Ticket.md").exists());
+        assert!(!root.join("Ticket 1.md").exists());
+    }
 }

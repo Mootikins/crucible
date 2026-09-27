@@ -36,7 +36,7 @@ async fn bases_http_queries_and_refuses_stale_edits_through_real_daemon() {
     std::fs::create_dir(&kiln).unwrap();
     std::fs::create_dir(kiln.join("boards")).unwrap();
     std::fs::write(kiln.join("Host.md"), "![[Tasks.base#Tasks]]").unwrap();
-    std::fs::write(kiln.join("boards/Tasks.base"), "filters: 'file.ext == \"md\"'\nviews: [{type: table, name: Tasks, order: [file.name, note.status]}]").unwrap();
+    std::fs::write(kiln.join("boards/Tasks.base"), "filters: 'file.ext == \"md\"'\nformulas: {day: \"date('2026-09-27')\"}\nviews: [{type: table, name: Tasks, order: [file.name, note.status, formula.day]}]").unwrap();
     let socket = home.path().join("daemon.sock");
     let server = Server::bind_with_data_home_and_kilns(
         &socket,
@@ -59,6 +59,10 @@ async fn bases_http_queries_and_refuses_stale_edits_through_real_daemon() {
     assert_eq!(
         result["rows"][0]["values"]["file.name"],
         json!({"type":"string","value":"First"})
+    );
+    assert_eq!(
+        result["rows"][0]["values"]["formula.day"],
+        json!({"type":"dateonly", "value":"2026-09-27"})
     );
     assert_eq!(result["source_path"], "boards/Tasks.base");
     assert_eq!(result["options"]["row_height"], "");

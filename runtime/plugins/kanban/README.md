@@ -20,6 +20,7 @@ operator rules; proposals enter the Inbox instead of changing disk.
 Optional setup keys: `folder` (default `tickets`), `base` (default
 `tickets.base`), `wip` (status -> maximum count), and `transitions` (old status
 -> allowed new statuses). The `base:before_write` policy applies to human
-Bases edits as well as plugin edits. Policy errors and timeouts refuse writes.
+Bases edits as well as plugin edits, using final note properties for creations,
+property edits and folder moves. Policy errors and timeouts refuse writes.
 Reload removes the old source's policy callback before activation registers it
 again. Post-commit observers use `base:changed`; proposed writes do not emit it.

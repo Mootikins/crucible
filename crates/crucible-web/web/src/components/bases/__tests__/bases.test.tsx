@@ -31,6 +31,13 @@ describe('Bases', () => {
     expect(mocks.note).toHaveBeenCalledWith('Target', '/kiln');
     expect(mocks.open).not.toHaveBeenCalled();
   });
+  it('opens file-valued attachments directly', () => {
+    mocks.query.mockReturnValue({ data: { ...answer(), rows: [{ ...row, values: { 'file.name': { type: 'file', value: 'cover.png' } } }] } });
+    render(() => <BaseView filePath="/kiln/Tasks.base" />);
+    fireEvent.click(screen.getByText('cover.png'));
+    expect(mocks.open).toHaveBeenCalledWith('/kiln/cover.png');
+    expect(mocks.note).not.toHaveBeenCalled();
+  });
   it('WS-251: an inline base retains its embedding note as this', () => {
     mocks.query.mockReturnValue({ data: answer() });
     render(() => <BaseView yaml="views: []" host="/kiln/Host.md" />);
@@ -56,6 +63,17 @@ describe('Bases', () => {
     fireEvent.drop(empty);
     await waitFor(() => expect(mocks.set).toHaveBeenCalledWith({ kiln: 'Work', path: 'a.md', key: 'note.status', value: null, delete: true, ancestor_hash: 'h1' }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Entry changed'));
+  });
+  it('preserves calendar dates when displaying and moving into a date group', async () => {
+    mocks.query.mockReturnValue({ data: { ...answer(), view_type: 'kanban', group_property: 'note.due', groups: [
+      { value: { type: 'dateonly', value: '2026-09-27' }, rows: [] },
+      { value: { type: 'null' }, rows: [row] },
+    ] } });
+    mocks.set.mockResolvedValue({ ok: true });
+    const { container } = render(() => <BaseView filePath="/kiln/Tasks.base" />);
+    fireEvent.dragStart(container.querySelector('article')!);
+    fireEvent.drop(screen.getByRole('heading', { name: '2026-09-27 0' }).parentElement!);
+    await waitFor(() => expect(mocks.set).toHaveBeenCalledWith(expect.objectContaining({ key: 'note.due', value: '2026-09-27' })));
   });
   it('honors card image options and renders typed fields instead of stringifying them', () => {
     mocks.query.mockReturnValue({ data: { ...answer(), view_type: 'cards', options: { card_size: 310, image: 'note.cover', image_fit: 'contain', image_aspect_ratio: 1.5 }, rows: [{ ...row, values: { ...row.values, 'note.cover': { type: 'string', value: 'cover.png' } } }] } });
@@ -89,11 +107,10 @@ describe('Bases', () => {
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('!<span');
   });
-  it('renders a typed link label and serializes date groups as frontmatter dates', () => {
+  it('renders a typed link label', () => {
     mocks.query.mockReturnValue({ data: { ...answer(), rows: [{ ...row, values: { ...row.values, 'file.name': { type: 'link', value: { path: 'a.md', display: 'true', display_value: { type: 'boolean', value: true } } } } }] } });
     const { container } = render(() => <BaseView filePath="/kiln/Tasks.base" />);
     expect(container.querySelector('a input[type="checkbox"]')).toBeTruthy();
-    expect(baseJson({ type: 'dateonly', value: new Date(2024, 0, 3).getTime() })).toBe('2024-01-03');
   });
   it('formats lists and preserves the typed empty group for deletion', () => {
     expect(baseText({ type: 'list', value: [{ type: 'number', value: 3 }, { type: 'boolean', value: false }] })).toBe('3, false');

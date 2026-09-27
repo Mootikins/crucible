@@ -51,18 +51,18 @@ end)
     end)
     it("enforces a zero WIP limit even before a group has entries", function()
         plugin.setup({wip={doing=0}})
-        local event={kiln="notes",path="tickets/a.md",key="status",old_value="todo",value="doing"}
+        local event={kiln="notes",path="tickets/a.md",old_properties={status="todo"},properties={status="doing"}}
         expect.equal(policy({},event).cancel,true)
     end)
     it("uses native groups to enforce WIP and transition rules", function()
         plugin.setup({wip={doing=1},transitions={todo={"doing"}}})
         groups={{value={type="string",value="doing"},rows={{path="tickets/other.md"}}}}
-        local event={kiln="notes",path="tickets/a.md",key="status",old_value="todo",value="doing"}
+        local event={kiln="notes",path="tickets/a.md",old_properties={status="todo"},properties={status="doing"}}
         expect.equal(policy({},event).cancel,true)
-        event.value="done"
+        event.properties.status="done"
         expect.equal(policy({},event).cancel,true)
         groups={}
-        event.value="doing"
+        event.properties.status="doing"
         expect.equal(policy({},event),nil)
         event.path="other/a.md"
         expect.equal(policy({},event),nil)
