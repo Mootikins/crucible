@@ -10,12 +10,15 @@ import { PluginBlock } from './PluginBlock';
  * div carrying three data attributes, and this puts a real component inside it
  * after the HTML lands and after DOMPurify has run.
  *
+ * `notePath` and `kiln` name the note that shows the blocks. A block that
+ * reads a note of that kiln (the kanban board) needs them.
+ *
  * Returns a disposer that tears every island down. A caller that re-renders
  * the document MUST call it — these Solid roots are not owned by the calling
  * component's lifecycle, so dropping the reference leaks the effect, its
  * pending fetches and its event-stream subscription.
  */
-export function mountPluginBlocks(host: HTMLElement): () => void {
+export function mountPluginBlocks(host: HTMLElement, notePath?: string, kiln?: string): () => void {
   const disposers: Array<() => void> = [];
 
   for (const el of host.querySelectorAll<HTMLElement>('.plugin-mount')) {
@@ -36,7 +39,7 @@ export function mountPluginBlocks(host: HTMLElement): () => void {
     }
 
     el.dataset.pluginMounted = 'true';
-    disposers.push(render(() => PluginBlock({ plugin, block, params }), el));
+    disposers.push(render(() => PluginBlock({ plugin, block, params, host: notePath, kiln }), el));
   }
 
   return () => {

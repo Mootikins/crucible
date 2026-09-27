@@ -1195,10 +1195,9 @@ mod tests {
     /// from cannot see it. That is why a fresh literal for one of these two
     /// names passed review.
     ///
-    /// Each name comes from the compiled const, which
-    /// `a_system_events_const_matches_its_serde_name` ties to the daemon's own
-    /// serde rename. So the chain is: rename → core const → route const →
-    /// browser listener, with a test on every link.
+    /// Each name comes from the compiled const, which `event_payload!`
+    /// expands from the same literal as the daemon's serde rename. So the
+    /// chain is: rename and core const → route const → browser listener.
     #[test]
     fn every_side_channel_event_name_has_a_frontend_listener() {
         let sources = frontend_sources();
@@ -1213,12 +1212,29 @@ mod tests {
             crate::routes::ProposalChangedEvent::EVENT_NAME,
         ];
 
-        for name in declared {
-            let call = format!("addEventListener('{name}'");
-            assert!(
-                sources.iter().any(|(_, body)| body.contains(&call)),
-                "the daemon sends `{name}` and no frontend file listens for it"
-            );
-        }
+        // `SIDE_CHANNEL_EVENTS` in `lib/api.ts` types each listener table as
+        // `Record<name, listener>`, so tsc proves a listener for each name in
+        // the table. This test proves the table holds exactly the names the
+        // routes send.
+        let api = sources
+            .iter()
+            .find(|(name, _)| name == "lib/api.ts")
+            .map(|(_, body)| body.as_str())
+            .expect("web/src/lib/api.ts is missing — the path moved, fix this test");
+        let start = api
+            .find("const SIDE_CHANNEL_EVENTS = {")
+            .expect("lib/api.ts declares no SIDE_CHANNEL_EVENTS table");
+        let table = &api[start..];
+        let table = &table[..table
+            .find("} as const;")
+            .expect("SIDE_CHANNEL_EVENTS does not end with `} as const;`")];
+        let listed: std::collections::BTreeSet<&str> =
+            table.split('\'').skip(1).step_by(2).collect();
+        let declared: std::collections::BTreeSet<&str> = declared.into_iter().collect();
+        assert_eq!(
+            listed, declared,
+            "SIDE_CHANNEL_EVENTS in web/src/lib/api.ts must name exactly the \
+             side-channel events that the daemon sends"
+        );
     }
 }

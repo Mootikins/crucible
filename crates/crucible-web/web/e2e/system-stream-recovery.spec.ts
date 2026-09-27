@@ -1,21 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 
-test('native system EventSource retry reconciles a missed change without another event', async ({ page }) => {
-  await setupBasicMocks(page);
-  let connections = 0;
-  await page.route('**/api/events/system', route => {
-    connections++;
-    return route.fulfill({
-      status: 200,
-      contentType: 'text/event-stream',
-      // EOF deliberately drops the connection. Chromium, not a fake source,
-      // retries it. No publication/proposal event ever arrives.
-      body: 'retry: 50\nevent: stream_version\ndata: {"version":1}\n\n',
-    });
-  });
+/**
+ * Opens the system stream in the page and waits until the Inbox list was made
+ * stale twice: at the first open, and at a reopen after the connection ended.
+ * No publication or proposal event ever arrives.
+ */
+async function reconcilesTwice(page: import('@playwright/test').Page): Promise<number> {
   await page.goto('/editor-harness.html');
-  const result = await page.evaluate(async () => {
+  return page.evaluate(async () => {
     // @ts-expect-error Vite serves the source module in this browser tier.
     const { systemEvents, resetSseForTests } = await import('/src/lib/query/sse.ts');
     // @ts-expect-error Vite source import.
@@ -30,7 +23,7 @@ test('native system EventSource retry reconciles a missed change without another
     let finish!: (count: number) => void;
     let fail!: (error: Error) => void;
     const recovered = new Promise<number>((resolve, reject) => { finish = resolve; fail = reject; });
-    const deadline = setTimeout(() => fail(new Error('no native retry reconciliation')), 5000);
+    const deadline = setTimeout(() => fail(new Error('no reconnect reconciliation')), 8000);
     const key = keys.proposals();
     const stopCache = client.getQueryCache().subscribe((event: { type: string; action?: { type: string }; query: { queryKey: unknown } }) => {
       if (event.type === 'updated' && event.action?.type === 'invalidate'
@@ -53,6 +46,37 @@ test('native system EventSource retry reconciles a missed change without another
       resetSseForTests();
     }
   });
-  expect(result).toBeGreaterThanOrEqual(2);
+}
+
+/** One open of the system stream that ends at once, so the client must reopen it. */
+const endedStream = {
+  status: 200,
+  contentType: 'text/event-stream',
+  body: 'retry: 50\nevent: stream_version\ndata: {"version":1}\n\n',
+};
+
+test('a dropped system stream reopens and reconciles a missed change without another event', async ({ page }) => {
+  await setupBasicMocks(page);
+  let connections = 0;
+  await page.route('**/api/events/system', route => {
+    connections++;
+    // EOF deliberately drops the connection.
+    return route.fulfill(endedStream);
+  });
+  expect(await reconcilesTwice(page)).toBeGreaterThanOrEqual(2);
+  expect(connections).toBeGreaterThanOrEqual(2);
+});
+
+test('a system stream that the server refuses with a 502 opens again', async ({ page }) => {
+  // A non-2xx answer leaves a browser EventSource CLOSED, and the browser
+  // never retries it. The client must open a new source itself.
+  await setupBasicMocks(page);
+  let connections = 0;
+  await page.route('**/api/events/system', route => {
+    connections++;
+    if (connections === 1) return route.fulfill({ status: 502, contentType: 'text/plain', body: 'bad gateway' });
+    return route.fulfill(endedStream);
+  });
+  expect(await reconcilesTwice(page)).toBeGreaterThanOrEqual(2);
   expect(connections).toBeGreaterThanOrEqual(2);
 });

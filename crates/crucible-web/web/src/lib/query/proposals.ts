@@ -61,10 +61,10 @@ export function useProposal(id: Accessor<string>): UseQueryResult<Proposal, Erro
   }, getQueryClient);
 }
 
-/** One decision of the diff pane. No paths means every file. */
+/** One decision of the diff pane. No files means every file. */
 export type ProposalDecision =
-  | { kind: 'accept'; paths?: string[]; files?: ProposalFile[] }
-  | { kind: 'reject'; paths?: string[]; files?: ProposalFile[] }
+  | { kind: 'accept'; files?: ProposalFile[] }
+  | { kind: 'reject'; files?: ProposalFile[] }
   | { kind: 'resolve'; path: string; root?: string; text: string };
 
 /**
@@ -80,9 +80,9 @@ export function useProposalDecision(
         const value = id();
         switch (decision.kind) {
           case 'accept':
-            return acceptProposal(value, decision.paths, decision.files);
+            return acceptProposal(value, decision.files);
           case 'reject':
-            return rejectProposal(value, { paths: decision.paths, files: decision.files });
+            return rejectProposal(value, { files: decision.files });
           case 'resolve':
             return resolveProposal(value, decision.path, decision.text, decision.root);
         }

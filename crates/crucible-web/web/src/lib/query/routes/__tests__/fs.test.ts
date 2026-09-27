@@ -52,7 +52,7 @@ describe('the fs event route', () => {
 
     source.emit('fs_changed', { type: 'changed', path: '/kiln/notes/a.md', kind: 'modified' });
 
-    expect(invalidated).toEqual([keys.bases(), keys.fsFile('/kiln/notes/a.md'), keys.fsDir('/kiln/notes')]);
+    expect(invalidated).toEqual([keys.fsFile('/kiln/notes/a.md'), keys.fsDir('/kiln/notes')]);
   });
 
   // A created file is the same two keys: the folder gained a row, and a reader
@@ -62,7 +62,7 @@ describe('the fs event route', () => {
 
     source.emit('fs_changed', { type: 'changed', path: '/kiln/notes/new.md', kind: 'created' });
 
-    expect(invalidated).toEqual([keys.bases(), keys.fsFile('/kiln/notes/new.md'), keys.fsDir('/kiln/notes')]);
+    expect(invalidated).toEqual([keys.fsFile('/kiln/notes/new.md'), keys.fsDir('/kiln/notes')]);
   });
 
   it('invalidates the file and its folder when a file is deleted', () => {
@@ -70,7 +70,7 @@ describe('the fs event route', () => {
 
     source.emit('fs_deleted', { type: 'deleted', path: '/kiln/notes/gone.md' });
 
-    expect(invalidated).toEqual([keys.bases(), keys.fsFile('/kiln/notes/gone.md'), keys.fsDir('/kiln/notes')]);
+    expect(invalidated).toEqual([keys.fsFile('/kiln/notes/gone.md'), keys.fsDir('/kiln/notes')]);
   });
 
   // A move names both ends, and both folders lost or gained a row by it.
@@ -84,7 +84,6 @@ describe('the fs event route', () => {
     });
 
     expect(invalidated).toEqual([
-      keys.bases(),
       keys.fsFile('/kiln/notes/a.md'),
       keys.fsFile('/kiln/archive/a.md'),
       keys.fsDir('/kiln/notes'),
@@ -100,7 +99,6 @@ describe('the fs event route', () => {
     source.emit('fs_moved', { type: 'moved', from: '/kiln/notes/a.md', to: '/kiln/notes/b.md' });
 
     expect(invalidated).toEqual([
-      keys.bases(),
       keys.fsFile('/kiln/notes/a.md'),
       keys.fsFile('/kiln/notes/b.md'),
       keys.fsDir('/kiln/notes'),
@@ -114,7 +112,7 @@ describe('the fs event route', () => {
 
     source.emit('fs_changed', { type: 'changed', path: '/a.md', kind: 'modified' });
 
-    expect(invalidated).toEqual([keys.bases(), keys.fsFile('/a.md'), keys.fsDir('/')]);
+    expect(invalidated).toEqual([keys.fsFile('/a.md'), keys.fsDir('/')]);
   });
 
   it('writes nothing for a frame it cannot read', () => {

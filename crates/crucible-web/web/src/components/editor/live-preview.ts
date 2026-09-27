@@ -1,6 +1,4 @@
-import { isBasePath } from '@/lib/markdown-path';
-import { render } from 'solid-js/web';
-import { BaseView } from '@/components/bases/BaseView';
+import { mountBaseView } from '@/components/bases/mount';
 /**
  * Obsidian-style live preview for markdown buffers.
  *
@@ -46,6 +44,7 @@ import {
   rawImageUrl,
   sanitizeDocHtml,
   renderMermaidDiagram,
+  wholeBaseEmbed,
 } from '@/lib/markdown';
 import { renderMath as renderKatex } from '@/lib/math';
 import { extractFrontmatterBlock, renderFrontmatterCard } from '@/lib/frontmatter';
@@ -109,7 +108,10 @@ const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
  * per-editor by {@link livePreview} so images load the same way the reading
  * view does (through the raw project-file endpoint). */
 const baseHostFacet = Facet.define<string, string>({ combine: values => values[0] ?? '' });
-const baseKilnFacet = Facet.define<string, string>({ combine: values => values[0] ?? '' });
+/** Reads the kiln of the buffer. An accessor, because a buffer can get its kiln after the editor starts. */
+type KilnAccessor = () => string | undefined;
+const noKiln: KilnAccessor = () => undefined;
+const baseKilnFacet = Facet.define<KilnAccessor, KilnAccessor>({ combine: values => values[0] ?? noKiln });
 
 const baseDirFacet = Facet.define<string, string>({
   combine: (values) => values[0] ?? '',
@@ -242,12 +244,12 @@ class MathWidget extends WidgetType {
 /** A daemon-backed base island, disposed when its source is revealed. */
 class BaseWidget extends WidgetType {
   private dispose?: () => void;
-  constructor(readonly yaml: string, readonly host: string, readonly kiln: string, readonly file?: string, readonly baseView?: string) { super(); }
+  constructor(readonly yaml: string, readonly host: string, readonly kiln: KilnAccessor, readonly file?: string, readonly baseView?: string) { super(); }
   eq(other: BaseWidget) { return this.yaml === other.yaml && this.host === other.host && this.kiln === other.kiln && this.file === other.file && this.baseView === other.baseView; }
   toDOM(view: EditorView): HTMLElement {
     const node = document.createElement('div');
     node.className = 'cm-lp-base';
-    this.dispose = render(() => BaseView({ yaml: this.file ? undefined : this.yaml, filePath: this.file, view: this.baseView, host: this.host, kiln: this.kiln || undefined }), node);
+    this.dispose = mountBaseView(node, { yaml: this.file ? undefined : this.yaml, filePath: this.file, view: this.baseView, host: this.host, kiln: this.kiln });
     const observer = new ResizeObserver(() => view.requestMeasure());
     observer.observe(node);
     const dispose = this.dispose;
@@ -938,9 +940,9 @@ function buildBlockWidgets(state: EditorState): DecorationSet {
       // ```mermaid fence → a diagram block widget (unless the cursor is inside,
       // which reveals the source, or diagrams are disabled in the editor).
       if (nodeRef.name === 'Paragraph' && !selectionTouches(state, nodeRef.from, nodeRef.to)) {
-        const embed = /^!\[\[([^\]#|]+)(?:#([^\]|]+))?(?:\|[^\]]+)?\]\]$/.exec(state.doc.sliceString(nodeRef.from,nodeRef.to));
-        if (embed && isBasePath(embed[1])) {
-          decorations.push(Decoration.replace({ widget: new BaseWidget('', state.facet(baseHostFacet), state.facet(baseKilnFacet), embed[1], embed[2]), block: true }).range(nodeRef.from,nodeRef.to));
+        const embed = wholeBaseEmbed(state.doc.sliceString(nodeRef.from, nodeRef.to));
+        if (embed) {
+          decorations.push(Decoration.replace({ widget: new BaseWidget('', state.facet(baseHostFacet), state.facet(baseKilnFacet), embed.path, embed.view), block: true }).range(nodeRef.from,nodeRef.to));
           return false;
         }
       }
@@ -1393,11 +1395,18 @@ const livePreviewTheme = EditorView.baseTheme({
   },
 });
 
+/** One accessor for a fixed kiln, a kiln accessor, or no kiln. */
+function kilnAccessor(kiln: string | KilnAccessor | undefined): KilnAccessor {
+  if (typeof kiln === 'function') return kiln;
+  return kiln ? () => kiln : noKiln;
+}
+
 export function livePreview(opts?: {
   maxLineWidth?: number;
   baseDir?: string;
   path?: string;
-  kiln?: string;
+  /** The kiln of the buffer, read each time a base mounts. */
+  kiln?: string | KilnAccessor;
   renderMath?: boolean;
   renderDiagrams?: boolean;
   hideFrontmatterGap?: boolean;
@@ -1410,7 +1419,7 @@ export function livePreview(opts?: {
     // The document's directory, for resolving relative image srcs.
     baseDirFacet.of(opts?.baseDir ?? ''),
     baseHostFacet.of(opts?.path ?? ''),
-    baseKilnFacet.of(opts?.kiln ?? ''),
+    baseKilnFacet.of(kilnAccessor(opts?.kiln)),
     renderMathFacet.of(opts?.renderMath ?? true),
     renderDiagramsFacet.of(opts?.renderDiagrams ?? true),
     hideFrontmatterGapFacet.of(opts?.hideFrontmatterGap ?? true),

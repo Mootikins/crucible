@@ -214,7 +214,7 @@ export function invalidateResolvedNotes(): Promise<void> {
 }
 
 /** Whether one absolute path lies inside one kiln root. */
-function isUnder(path: string, kiln: string): boolean {
+export function isUnder(path: string, kiln: string): boolean {
   const root = kiln.replace(/\/+$/, '');
   // The separator is part of the test. Without it `/kiln-archive/a.md` reads
   // as a file inside `/kiln`, and writing in one vault would drop what is held

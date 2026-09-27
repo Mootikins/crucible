@@ -3,7 +3,7 @@
  *
  * A proposal is a set of note writes that waits for the user. The daemon owns
  * every decision. These calls only name the proposal and, for a decision on
- * some of its files, the paths.
+ * some of its files, those files, each with its root.
  */
 import { client, decode } from './api-client';
 import type { components } from './api-schema';
@@ -77,6 +77,18 @@ export function authorLabel(proposal: Proposal): string {
   }
 }
 
+/**
+ * The writes that a person reviews. A move is two writes, the deletion of the
+ * old path and the new file that names it in `moved_from`; it counts once,
+ * as the new file.
+ */
+export function reviewedWrites(proposal: Proposal): ProposedWrite[] {
+  const moved = (write: ProposedWrite) =>
+    write.remove === true &&
+    proposal.writes.some((w) => w.root === write.root && w.moved_from === write.path);
+  return proposal.writes.filter((write) => !moved(write));
+}
+
 /** The absolute path of one write: its kiln root and its relative path. */
 export function writePath(write: ProposedWrite): string {
   return `${write.root.replace(/\/+$/, '')}/${write.path.replace(/^\/+/, '')}`;
@@ -99,32 +111,32 @@ export async function getProposal(id: string): Promise<Proposal> {
 }
 
 /**
- * Write the files of a proposal. With `paths`, only those files: the daemon
+ * Write the files of a proposal. With `files`, only those files: the daemon
  * moves them into a new proposal, and the reply is that proposal.
  */
-export async function acceptProposal(id: string, paths: string[] = [], files: ProposalFile[] = []): Promise<Proposal> {
+export async function acceptProposal(id: string, files: ProposalFile[] = []): Promise<Proposal> {
   return decode(
     await client.POST('/api/proposals/{id}/accept', {
       params: { path: { id } },
-      body: { ...(paths.length > 0 ? { paths } : {}), ...(files.length > 0 ? { files } : {}) },
+      body: files.length > 0 ? { files } : {},
     }),
     'Failed to accept the proposal',
   );
 }
 
 /**
- * Reject the files of a proposal. With `paths`, only those files: the daemon
+ * Reject the files of a proposal. With `files`, only those files: the daemon
  * moves them into a new proposal, and the reply is that proposal.
  */
 export async function rejectProposal(
   id: string,
-  options: { paths?: string[]; files?: ProposalFile[]; reason?: string } = {},
+  options: { files?: ProposalFile[]; reason?: string } = {},
 ): Promise<Proposal> {
-  const { paths = [], files = [], reason } = options;
+  const { files = [], reason } = options;
   return decode(
     await client.POST('/api/proposals/{id}/reject', {
       params: { path: { id } },
-      body: { ...(paths.length > 0 ? { paths } : {}), ...(files.length > 0 ? { files } : {}), ...(reason ? { reason } : {}) },
+      body: { ...(files.length > 0 ? { files } : {}), ...(reason ? { reason } : {}) },
     }),
     'Failed to reject the proposal',
   );

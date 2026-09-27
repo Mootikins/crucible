@@ -162,6 +162,16 @@ describe('DiffPanel', () => {
     expect(sent.query.has('base')).toBe(false);
   });
 
+  it('names a renamed file by its old and new path', async () => {
+    serve([entry('archive/a.md', { status: { kind: 'renamed', from: 'notes/a.md' } })]);
+    render(() => <DiffPanel source={source} />);
+
+    await waitFor(() => expect(section('archive/a.md')).toBeInTheDocument());
+    const header = within(section('archive/a.md')).getByTestId('diff-file-toggle');
+    expect(header.textContent).toContain('notes/a.md → archive/a.md');
+    expect(within(section('archive/a.md')).getByLabelText('renamed')).toBeInTheDocument();
+  });
+
   it('writes the source in the UI font, and only the branch name in mono', async () => {
     serve([entry('src/a.rs')]);
     render(() => <DiffPanel source={source} />);

@@ -9,6 +9,10 @@ export type DaemonNotification = { id?: string; kind?: unknown; message?: string
  * The sessions that show each open daemon notification, by notification id.
  * A global notification reaches every session that the browser shows, and
  * the browser shows it once, so a close must reach each of those sessions.
+ *
+ * An entry stays while the daemon holds the notification open. The timer of
+ * a toast hides the toast and leaves the entry, so a later snapshot of the
+ * same notification (a reconnect or a gap) does not show the toast again.
  */
 const shownIn = new Map<string, Set<string>>();
 
@@ -25,12 +29,14 @@ export function showDaemonNotification(n: DaemonNotification, sessionId: string)
     notificationActions.addNotification(type, n.message);
     return;
   }
-  let sessions = shownIn.get(id);
-  if (!sessions) {
-    sessions = new Set();
-    shownIn.set(id, sessions);
+  const sessions = shownIn.get(id);
+  if (sessions) {
+    // The browser shows this notification already, or showed it until its
+    // timer hid it. The session joins the set that a close must reach.
+    sessions.add(sessionId);
+    return;
   }
-  sessions.add(sessionId);
+  shownIn.set(id, new Set([sessionId]));
   notificationActions.addNotification(type, n.message, undefined, {
     key: id,
     close: () => closeInDaemon(id),
@@ -103,8 +109,15 @@ export function sessionNotifications(sessionId: string) {
   }
 
   return {
-    refresh,
+    /**
+     * Reads one event of the session stream. An open of the stream and a gap
+     * read the snapshot again, because either one can hide a change.
+     */
     event(event: ChatEvent): void {
+      if (event.type === 'connection') {
+        if (event.status === 'connected') refresh();
+        return;
+      }
       if (event.type !== 'session_event') return;
       if (event.event === 'stream_gap') {
         refresh();

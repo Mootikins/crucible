@@ -1,4 +1,3 @@
-import { reconcileQueries } from '../recovery';
 /**
  * The route of the filesystem stream: one event, one cache write.
  *
@@ -21,10 +20,12 @@ import type { FsEvent } from '@/lib/types';
 // a panel that never refreshes and a test that still passes.
 import { folderOf } from '../fs';
 import { keys } from '../keys';
+import { refreshQueries } from '../recovery';
 // Same reasoning as `folderOf` above: the rule for which entries a written
 // note makes wrong belongs beside those entries, not in a second copy here.
 import { invalidateNotesUnder } from '../notes';
-import { setFsEventRoute, type SseRouteContext } from '../sse';
+import { invalidateBasesUnder } from '../bases';
+import { setEventRoute, type SseRouteContext } from '../sse';
 
 /** The paths one event names: one for a change or a delete, two for a move. */
 function pathsOf(event: FsEvent): string[] {
@@ -42,7 +43,8 @@ function pathsOf(event: FsEvent): string[] {
 /** Turns one filesystem event into the cache writes it owes every reader. */
 function routeFsEvent(event: FsEvent, { client }: SseRouteContext): void {
   const paths = pathsOf(event);
-  if (paths.length) void client.invalidateQueries({ queryKey: keys.bases() });
+  // Only the bases of the changed file's kiln, and once per burst.
+  invalidateBasesUnder(client, paths);
   for (const path of paths) {
     void client.invalidateQueries({ queryKey: keys.fsFile(path) });
   }
@@ -73,9 +75,9 @@ function routeFsEvent(event: FsEvent, { client }: SseRouteContext): void {
  * `resetSseForTests` forgets it.
  */
 export function installFsEventRoute(): void {
-  setFsEventRoute(routeFsEvent, ({ client }) => {
+  setEventRoute('fs', routeFsEvent, ({ client }) => {
     // A first open closes the snapshot/subscription window; a later open or
     // gap recovers missed changes even if no further event follows.
-    void reconcileQueries(client, [keys.fsFamily(), keys.notesFamily(), keys.bases()]);
+    void refreshQueries(client, [keys.fsFamily(), keys.notesFamily(), keys.bases()]);
   });
 }

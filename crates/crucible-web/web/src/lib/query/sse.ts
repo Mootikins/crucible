@@ -82,41 +82,58 @@ export interface SessionRouteContext extends SseRouteContext {
   sessionId: string;
 }
 
-export type SessionEventRoute = (event: ChatEvent, context: SessionRouteContext) => void;
-export type SurfaceEventRoute = (event: SurfaceChangedEvent, context: SseRouteContext) => void;
-export type FsEventRoute = (event: FsEvent, context: SseRouteContext) => void;
-export type SystemEventRoute = (event: SystemEvent, context: SseRouteContext) => void;
-
-let sessionRoute: SessionEventRoute | null = null;
-let surfaceRoute: SurfaceEventRoute | null = null;
-let fsRoute: FsEventRoute | null = null;
-let systemRoute: SystemEventRoute | null = null;
-type Reconcile = (context: SseRouteContext) => void;
-let surfaceReconcile: Reconcile | null = null;
-let fsReconcile: Reconcile | null = null;
-let systemReconcile: Reconcile | null = null;
-
-/** Names the route of the chat stream. `null` removes the one that is there. */
-export function setSessionEventRoute(route: SessionEventRoute | null): void {
-  sessionRoute = route;
+/** The event and the route context of each stream, by the name of the stream. */
+interface StreamRouteTypes {
+  session: { event: ChatEvent; context: SessionRouteContext };
+  surface: { event: SurfaceChangedEvent; context: SseRouteContext };
+  fs: { event: FsEvent; context: SseRouteContext };
+  system: { event: SystemEvent; context: SseRouteContext };
 }
 
-/** Names the route of the surface stream. */
-export function setSurfaceEventRoute(route: SurfaceEventRoute | null, reconcile: Reconcile | null = null): void {
-  surfaceRoute = route;
-  surfaceReconcile = reconcile;
+/** The name of one of the four streams. */
+export type StreamName = keyof StreamRouteTypes;
+
+/** Turns one event of the stream `S` into cache writes or bus messages. */
+export type EventRoute<S extends StreamName> = (
+  event: StreamRouteTypes[S]['event'],
+  context: StreamRouteTypes[S]['context'],
+) => void;
+
+/**
+ * Recovers what the stream could have missed. It runs at each open and at
+ * each gap, before the open reaches a subscriber.
+ */
+export type Reconcile = (context: SseRouteContext) => void;
+
+/** The two hooks of one stream. */
+interface StreamHooks<S extends StreamName> {
+  route: EventRoute<S> | null;
+  reconcile: Reconcile | null;
 }
 
-/** Names the route of the filesystem stream. */
-export function setFsEventRoute(route: FsEventRoute | null, reconcile: Reconcile | null = null): void {
-  fsRoute = route;
-  fsReconcile = reconcile;
+type HookTable = { [S in StreamName]: StreamHooks<S> };
+
+function emptyHooks(): HookTable {
+  return {
+    session: { route: null, reconcile: null },
+    surface: { route: null, reconcile: null },
+    fs: { route: null, reconcile: null },
+    system: { route: null, reconcile: null },
+  };
 }
 
-/** Names the route of the system stream. */
-export function setSystemEventRoute(route: SystemEventRoute | null, reconcile: Reconcile | null = null): void {
-  systemRoute = route;
-  systemReconcile = reconcile;
+let hooks: HookTable = emptyHooks();
+
+/**
+ * Names the route and the reconcile of one stream. `null` removes the one
+ * that is there.
+ */
+export function setEventRoute<S extends StreamName>(
+  stream: S,
+  route: EventRoute<S> | null,
+  reconcile: Reconcile | null = null,
+): void {
+  (hooks as { [K in StreamName]: StreamHooks<K> })[stream] = { route, reconcile } as HookTable[S];
 }
 
 /** The two stores as they are now. A route reads the injected client in a test. */
@@ -129,12 +146,13 @@ function routeContext(): SseRouteContext {
  * a broken translation of one event type would otherwise end the chat stream
  * of a running turn.
  */
-function runRoute<E, C>(
+function runRoute<S extends StreamName>(
   name: string,
-  route: ((event: E, context: C) => void) | null,
-  event: E,
-  context: C,
+  stream: S,
+  event: StreamRouteTypes[S]['event'],
+  context: StreamRouteTypes[S]['context'],
 ): void {
+  const route = (hooks as { [K in StreamName]: StreamHooks<K> })[stream].route;
   if (!route) return;
   try {
     route(event, context);
@@ -314,10 +332,18 @@ function rootFor<E>(
 // The four streams
 // =============================================================================
 
-const sessionRoots = new Map<string, SseStream<SequencedChatEvent>>();
-const surfaceRoots = new Map<string, SseStream<SurfaceChangedEvent>>();
-const fsRoots = new Map<string, SseStream<FsEvent>>();
-const systemRoots = new Map<string, SseStream<SystemEvent>>();
+/** The open roots of each stream, by key. */
+const roots = {
+  session: new Map<string, SseStream<SequencedChatEvent>>(),
+  surface: new Map<string, SseStream<SurfaceChangedEvent>>(),
+  fs: new Map<string, SseStream<FsEvent>>(),
+  system: new Map<string, SseStream<SystemEvent>>(),
+} as const satisfies Record<StreamName, Map<string, unknown>>;
+
+/** Runs the reconcile of one stream with the stores as they are now. */
+function reconcileStream(stream: StreamName): void {
+  hooks[stream].reconcile?.(routeContext());
+}
 
 /** The key of a stream the whole app shares, which has no id to key on. */
 const GLOBAL = 'global';
@@ -357,27 +383,28 @@ export function advanceSessionCursor(sessionId: string, seq: number): void {
  * another session opens its own.
  */
 export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> {
-  return rootFor(sessionRoots, sessionId, {
-    name: `chat events ${sessionId}`,
-    connect: (onEvent, onOpen) => {
+  const name = `chat events ${sessionId}`;
+  return rootFor(roots.session, sessionId, {
+    name,
+    // The open reaches the root only through the `connection` event and
+    // `openState` below, so one open is announced once.
+    connect: (onEvent) => {
+      // The stream owns the snapshot of its notifications. The notifications
+      // read the `connection` and `stream_gap` events themselves, so the
+      // snapshot comes after the subscription opens, and a reopen or a gap
+      // reads it again.
       const notifications = sessionNotifications(sessionId);
-      // Fetch only after subscription opens; otherwise a dismissal can fall
-      // between the snapshot and the stream. Reopens also reconcile gaps.
       const close = subscribeToEvents(sessionId, (event) => {
-        if (event.type === 'connection' && event.status === 'connected') notifications.refresh();
         notifications.event(event);
         onEvent(event);
-      }, onOpen, () => sessionCursor(sessionId));
+      }, () => sessionCursor(sessionId));
       return () => {
         close();
         notifications.dispose();
       };
     },
-    route: (event) =>
-      runRoute(`chat events ${sessionId}`, sessionRoute, event, {
-        ...routeContext(),
-        sessionId,
-      }),
+    reconcile: () => reconcileStream('session'),
+    route: (event) => runRoute(name, 'session', event, { ...routeContext(), sessionId }),
     // `subscribeToEvents` reports the transport through this event: it sends
     // `reconnecting` from its error handler and `connected` from its open
     // handler. Without reading it the stream would look open through a drop.
@@ -387,21 +414,21 @@ export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> 
 
 /** The surface changes of every plugin (`GET /api/surfaces/events`). */
 export function surfaceEvents(): SseStream<SurfaceChangedEvent> {
-  return rootFor(surfaceRoots, GLOBAL, {
+  return rootFor(roots.surface, GLOBAL, {
     name: 'surface events',
     connect: subscribeToSurfaceEvents,
-    reconcile: () => surfaceReconcile?.(routeContext()),
-    route: (event) => runRoute('surface events', surfaceRoute, event, routeContext()),
+    reconcile: () => reconcileStream('surface'),
+    route: (event) => runRoute('surface events', 'surface', event, routeContext()),
   });
 }
 
 /** The filesystem changes of every watched root (`GET /api/fs/events`). */
 export function fsEvents(): SseStream<FsEvent> {
-  return rootFor(fsRoots, GLOBAL, {
+  return rootFor(roots.fs, GLOBAL, {
     name: 'fs events',
     connect: subscribeToFsEvents,
-    reconcile: () => fsReconcile?.(routeContext()),
-    route: (event) => runRoute('fs events', fsRoute, event, routeContext()),
+    reconcile: () => reconcileStream('fs'),
+    route: (event) => runRoute('fs events', 'fs', event, routeContext()),
   });
 }
 
@@ -411,11 +438,11 @@ export function fsEvents(): SseStream<FsEvent> {
  * stream carries it.
  */
 export function systemEvents(): SseStream<SystemEvent> {
-  return rootFor(systemRoots, GLOBAL, {
+  return rootFor(roots.system, GLOBAL, {
     name: 'system events',
     connect: subscribeToSystemEvents,
-    reconcile: () => systemReconcile?.(routeContext()),
-    route: (event) => runRoute('system events', systemRoute, event, routeContext()),
+    reconcile: () => reconcileStream('system'),
+    route: (event) => runRoute('system events', 'system', event, routeContext()),
   });
 }
 
@@ -432,16 +459,7 @@ export function systemEvents(): SseStream<SystemEvent> {
 export function resetSseForTests(): void {
   for (const dispose of [...liveRoots]) dispose();
   liveRoots.clear();
-  sessionRoots.clear();
-  surfaceRoots.clear();
-  fsRoots.clear();
-  systemRoots.clear();
+  for (const perKey of Object.values(roots)) perKey.clear();
   sessionCursors.clear();
-  sessionRoute = null;
-  surfaceRoute = null;
-  fsRoute = null;
-  systemRoute = null;
-  surfaceReconcile = null;
-  fsReconcile = null;
-  systemReconcile = null;
+  hooks = emptyHooks();
 }

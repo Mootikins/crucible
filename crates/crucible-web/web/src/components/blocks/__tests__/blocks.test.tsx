@@ -7,6 +7,7 @@ import { KanbanBlock } from '../KanbanBlock';
 import { lookupBlock, registerBlock } from '../registry';
 import { createTestQueryClient } from '@/test-utils/query';
 import { setQueryClientForTests } from '@/lib/query/client';
+import { baseOptions } from '@/test-utils/bases';
 
 // EventSource does not exist in jsdom, and usePublication opens one. A stub is
 // enough: these tests exercise the first read and the render, not the push.
@@ -132,18 +133,37 @@ describe('GenericBlock', () => {
 });
 
 describe('KanbanBlock', () => {
-  it('routes legacy embeds to the native saved base', async () => {
+  /** Answers the kiln roster and each base query; `seen` holds each query URL. */
+  function daemon(seen: URL[]) {
     vi.stubGlobal('fetch', vi.fn(async (request: Request) => {
       if (request.url.includes('/api/kilns')) return Response.json({ kilns: [{name: 'Work', path: '/kiln', registered:true}], default_kiln:'Work' });
       if (request.url.includes('/api/bases/query')) {
-        const url = new URL(request.url);
-        expect(url.searchParams.get('view')).toBe('Board');
-        return Response.json({root:'/kiln',view:'Board',view_type:'kanban',columns:[],rows:[],groups:[],summaries:{},views:[{name:'Board',type:'kanban'}]});
+        seen.push(new URL(request.url));
+        return Response.json({root:'/kiln',view:'Board',view_type:'kanban',columns:[],rows:[],groups:[],summaries:{},options:baseOptions(),views:[{name:'Board',type:'kanban'}]});
       }
       throw new Error(`Unexpected legacy publication request: ${request.url}`);
     }));
-    const {container} = render(() => <KanbanBlock plugin="kanban" block="board" params={{kiln:'Work'}} />);
+  }
+
+  it('routes a legacy embed with no kiln to the ticket base of the note that shows it', async () => {
+    const seen: URL[] = [];
+    daemon(seen);
+    const {container} = render(() => <KanbanBlock plugin="kanban" block="board" params={{}} host="/kiln/notes/Plan.md" />);
     await waitFor(() => expect(container.querySelector('.base-view select')).toBeTruthy());
+    expect(seen[0]!.searchParams.get('kiln')).toBe('Work');
+    expect(seen[0]!.searchParams.get('path')).toBe('tickets.base');
+    // No view is named, so the daemon answers the first view of the base.
+    expect(seen[0]!.searchParams.has('view')).toBe(false);
+    expect(seen[0]!.searchParams.get('this')).toBe('/kiln/notes/Plan.md');
+  });
+
+  it('honors the base, view and kiln of the block', async () => {
+    const seen: URL[] = [];
+    daemon(seen);
+    const {container} = render(() => <KanbanBlock plugin="kanban" block="board" params={{kiln:'Work', base:'work.base', view:'Sprint'}} />);
+    await waitFor(() => expect(container.querySelector('.base-view select')).toBeTruthy());
+    expect(seen[0]!.searchParams.get('path')).toBe('work.base');
+    expect(seen[0]!.searchParams.get('view')).toBe('Sprint');
   });
 });
 

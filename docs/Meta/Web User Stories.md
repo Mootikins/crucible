@@ -547,7 +547,9 @@ An attached session owns one notification stream and snapshot, shared by its
 panes. The stream opens before the snapshot is read. Live additions and
 dismissals received while the snapshot is pending win over its older entries.
 Reconnection and stream gaps reconcile again; an old response after detach or a
-newer read has no effect. Closing a shared notice in one session leaves it
+newer read has no effect. A reconcile shows a toast only for a notification that
+the browser did not show before: a toast that its timer hid does not come back
+at each reconnect or gap. Closing a shared notice in one session leaves it
 visible for another session that still holds it.
 
 Proof: `ChatContext.notifications.test.tsx`, `session-notifications.test.ts`, and
@@ -563,12 +565,19 @@ reconnects, and their data becomes current again.
 **Acceptance:** browser readers of one session share upstream interest. Reconnecting
 the daemon restores every active interest without a page reload; closing the last
 reader releases it. Filesystem, surface, publication and proposal caches refresh
-on open and after a reported gap, even when no later change occurs. A chat gap
+on open and after a reported gap, even when no later change occurs. The browser
+opens a new source after each error, with a backoff from 1 to 30 seconds,
+because a browser leaves an `EventSource` closed for good after a non-2xx answer.
+A reconcile waits for a first fetch in flight and then refreshes: it does not
+cancel that fetch, so a folder that loads at start still expands. The system
+stream refreshes proposal diffsets only, not branch or working-tree diffs. A
+proposal change during a first load reads the proposal again. A chat gap
 still warns that its transcript may be incomplete; an unknown lost count is not
 presented as zero lost events.
 
-**Tests:** W1 `stream-recovery.test.ts` and the chat gap reducer; W2 native
-Chromium EventSource retry in `system-stream-recovery.spec.ts`. Rust socket/SSE
+**Tests:** W1 `stream-recovery.test.ts`, `proposal-cache.test.ts` and the chat
+gap reducer; W2 `system-stream-recovery.spec.ts` (a dropped stream, and a stream
+that the server refuses with a 502). Rust socket/SSE
 tests cover reconnect with open HTTP bodies, cancellation, failed restoration,
 last-reader cleanup and lag in each system projection. This is web transport
 behavior; the TUI does not use the web broker.
@@ -585,16 +594,26 @@ Proof: `components/bases/__tests__/bases.test.tsx`.
 
 As a note author, I use a `base` fence or `![[Tasks.base#Board]]` in reading view
 and live preview. The host note supplies `this`; embedded YAML containing markup
-is data and does not execute as HTML.
+is data and does not execute as HTML. An embed without a view name
+(`![[Tasks.base]]`) shows the first view. A live-preview base uses the kiln that
+the buffer has now, also when the buffer gets its kiln after the editor opens.
+A legacy `kanban/board` block without a `kiln` parameter uses the kiln of the
+note that shows it, and its first view when it names no view.
 
-Proof: `components/bases/__tests__/bases.test.tsx` (reading mounts and host context).
-CodeMirror mounting and cursor reveal are covered by `components/editor/__tests__/live-preview.test.ts`.
+Proof: `components/bases/__tests__/bases.test.tsx` (reading mounts, host context,
+and the embed with no view name). CodeMirror mounting and cursor reveal are
+covered by `components/editor/__tests__/live-preview.test.ts`; the late kiln by
+`live-preview-bases.test.tsx`; the legacy block by `blocks.test.tsx` (`KanbanBlock`).
 
 ### WS-252: Create and move entries without losing outside edits
 
 As a board user, I create entries and move cards between note-property columns.
 A stale ancestor hash refuses a move and the error stays visible. The daemon
-preserves the note body and uses its shared write lock.
+preserves the note body and uses its shared write lock. The daemon says which
+cards can move (`movable`) and what each column writes (`write_value`); the
+browser sends that value unchanged, so a local date-time stays local. A stale
+write (409) or a missing note (404) refreshes the view and says so; a proposed
+write says that it waits in the Inbox.
 
 Proof: daemon `bases::tests`, `rpc_integration::bases`, and the web refusal test
 in `components/bases/__tests__/bases.test.tsx`.
@@ -606,7 +625,14 @@ sizing, and kanban column width/empty-group settings to follow the saved base.
 Typed links, booleans, lists, icons, images and sanitized HTML retain their
 meaning across layouts; each group's summaries appear beside that group.
 
-T1: components/bases/__tests__/bases.test.tsx covers options and typed cells.
+The daemon sends every option with its default, and removes empty columns when
+the view hides them; the browser adds no default of its own. A column heading
+dragged to the right lands after its target, so a column can reach the last
+position. A regular expression value shows as `/pattern/flags`.
+
+T1: components/bases/__tests__/bases.test.tsx covers options, typed cells and
+the column order. `lib/query/__tests__/bases.test.ts` covers the refresh of only
+the changed kiln's bases, once for each burst of file events.
 T2: e2e/bases.spec.ts checks actual CSS, icon loading, sanitization and narrow
 layouts while switching native views. The CLI remains the terminal surface;
 a TUI note viewer does not exist yet.

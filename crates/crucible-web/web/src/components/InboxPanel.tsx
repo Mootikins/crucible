@@ -12,7 +12,7 @@ import { SessionStatusDot } from '@/components/shell/SessionStatusDot';
 import type { InteractionResponse, Session, SessionState } from '@/lib/types';
 import { useDismissProposal, useProposals } from '@/lib/query/proposals';
 import { useDiffset } from '@/lib/query/diff';
-import { authorLabel, type Proposal, type ProposalState } from '@/lib/proposal-api';
+import { authorLabel, reviewedWrites, type Proposal, type ProposalState } from '@/lib/proposal-api';
 import { openDiff } from '@/lib/panel-actions';
 import { notificationActions } from '@/stores/notificationStore';
 
@@ -96,7 +96,7 @@ const ProposalRow: Component<{ proposal: Proposal }> = (props) => {
   const diffset = useDiffset(() => ({ kind: 'proposal', id: id() }));
   const dismiss = useDismissProposal();
   const marker = () => proposalMarker(props.proposal.state);
-  const files = () => props.proposal.writes.length;
+  const files = () => reviewedWrites(props.proposal).length;
   const lines = () => {
     const entries = diffset.data?.files;
     if (!entries) return null;

@@ -20,7 +20,7 @@ import type { ChatEvent } from '@/lib/types';
 import type { SessionHistoryResponse } from '@/lib/types';
 import { keys } from '../keys';
 import { diffsetKey } from '@/lib/diffset';
-import { setSessionEventRoute, type SessionRouteContext } from '../sse';
+import { setEventRoute, type SessionRouteContext } from '../sse';
 
 /**
  * How long the route waits before it re-lists a session record.
@@ -223,5 +223,5 @@ function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void
  * `resetSseForTests` forgets it.
  */
 export function installSessionEventRoute(): void {
-  setSessionEventRoute(routeSessionEvent);
+  setEventRoute('session', routeSessionEvent);
 }

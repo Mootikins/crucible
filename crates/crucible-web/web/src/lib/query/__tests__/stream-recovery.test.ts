@@ -93,6 +93,58 @@ describe('stream recovery', () => {
     expect(opened).toHaveBeenCalledTimes(1);
   });
 
+  it.each(cases)('$name opens a new source after an error answer, with a growing backoff', async row => {
+    // A 5xx or a wrong content type fires `error` and leaves the browser's
+    // source CLOSED for good: only a new source brings the stream back.
+    const opened = vi.fn();
+    row.stream().subscribe(() => {}, opened);
+    const refused = onlyEventSource();
+    refused.onerror?.(new Event('error'));
+    expect(refused.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeEventSource.instances).toHaveLength(2);
+
+    FakeEventSource.instances[1]!.onerror?.(new Event('error'));
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeEventSource.instances).toHaveLength(3);
+
+    FakeEventSource.instances[2]!.open();
+    expect(opened).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(cases)('$name reconciliation leaves a first fetchQuery in flight to finish', async row => {
+    // A cancel of a query with no data fails each `fetchQuery` that waits on
+    // it; a folder then does not expand at app load.
+    let release!: (value: string[]) => void;
+    const first = new Promise<string[]>(resolve => { release = resolve; });
+    let reads = 0;
+    const fetched = env.client.fetchQuery({
+      queryKey: row.keys[0],
+      queryFn: () => ++reads === 1 ? first : Promise.resolve(['current']),
+    });
+    row.stream().subscribe(() => {});
+    onlyEventSource().open();
+    onlyEventSource().emit('stream_gap', { dropped: 1 });
+    release(['first']);
+    await expect(fetched).resolves.toEqual(['first']);
+    await vi.waitFor(() => expect(env.client.getQueryState(row.keys[0])?.isInvalidated).toBe(true));
+  });
+
+  it('system reconciliation leaves branch and working-tree diffs alone', async () => {
+    const branch = keys.diffset('branch:/repo:main..');
+    const comments = keys.diffComments('session-s1');
+    for (const key of [branch, comments, keys.diffset('proposal-p')]) env.client.setQueryData(key, []);
+    systemEvents().subscribe(() => {});
+    onlyEventSource().open();
+    await vi.waitFor(() => expect(env.client.getQueryState(keys.diffset('proposal-p'))?.isInvalidated).toBe(true));
+    expect(env.client.getQueryState(branch)?.isInvalidated).toBe(false);
+    expect(env.client.getQueryState(comments)?.isInvalidated).toBe(false);
+  });
+
   it.each(cases)('$name stops announcing open after a protocol refusal', row => {
     row.stream().subscribe(() => {});
     const source = onlyEventSource();

@@ -82,7 +82,7 @@ export const MarkdownPreview: Component<{
     disposeBlocks?.();
     disposeBlocks = undefined;
     if (rendered === undefined || !proseHost) return;
-    const plugins = mountPluginBlocks(proseHost);
+    const plugins = mountPluginBlocks(proseHost, props.path, props.kiln);
     const bases = mountBases(proseHost, props.path, props.kiln);
     disposeBlocks = () => { plugins(); bases(); };
   });

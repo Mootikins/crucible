@@ -356,6 +356,11 @@ covered by the card-backed query in `oneshot_precognition_query_e2e.rs`.
 **Acceptance:** the TUI makes up no session id; the Lua session of the chat opens after `session.create`, under the id the daemon returned; the TUI makes no folder under `<data_home>/sessions/`; saved shell output goes to `<data_home>/shell/`, which the TUI owns; `:export` asks the daemon (US-901). The TUI used to make an id `chat-%Y%m%d-%H%M%S` for its Lua session and for a scratch folder in the session store, and the daemon listing then warned "Session not found" once for each start.
 **Tests:** T4 `tests/tui_e2e_tests/session_store.rs::cru_chat_makes_no_session_identity_of_its_own` spawns the real binary against its own daemon. It asks that daemon over its socket for the Lua session under the daemon's id, then quits and finds no folder without `meta.json`. RED-verify each half: open the Lua session under a new id, then make the old scratch folder again.
 
+### US-914: Bases stay in the terminal CLI, not in the chat TUI
+**As a user**, I query and edit an Obsidian base from a terminal with `cru base`. The chat TUI does not show a base.
+**Why not in the TUI:** a base is a view of notes, and the chat TUI has no note viewer in which to put one (see [[Help/Query/Bases]]). The web shows bases in its note views (WS-250 to WS-253). `cru base query` prints table, cards and list views as tables, with one table for each group; `cru base set` writes a property with the ancestor hash.
+**Tests:** none in the TUI tiers, because the TUI has no Bases surface. The CLI and the daemon hold the proof: `rpc_integration::bases` and the daemon `bases::tests`.
+
 ### US-HERO: One session, many consoles (cross-surface)
 **As a user**, work I start in the terminal is fully continuable in the browser and back again — the session lives in the daemon (the "hypervisor"), the TUI and web are stateless consoles, and kiln files are a shared buffer.
 **Acceptance:** a session created + advanced in `cru chat` resumes in `cru web` with turn 1 hydrated both sides; a note the terminal wrote via the shell modal opens in the web editor; the browser's edit to that note is visible from a later `cru chat --resume` via `!cat`; both consoles see the same 3-turn history and the same bytes on disk.

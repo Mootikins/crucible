@@ -1,3 +1,6 @@
+import type { InvalidateQueryFilters, QueryKey } from '@tanstack/solid-query';
+import { diffsetKey } from '@/lib/diffset';
+
 /**
  * One key factory for every server entity, from the plan's Part F.
  *
@@ -96,3 +99,41 @@ export const keys = {
   proposals: () => ['proposals'] as const,
   recents: () => ['recents'] as const,
 } as const;
+
+/** The text that starts the diffset key of each proposal. */
+const PROPOSAL_DIFFSET_PREFIX = diffsetKey({ kind: 'proposal', id: '' });
+
+/**
+ * Every proposal diffset, and nothing else under `diff`. A branch diff, a
+ * working-tree diff and their comments share that family, and a proposal
+ * change says nothing about them.
+ */
+const proposalDiffsets: InvalidateQueryFilters = {
+  queryKey: keys.diffFamily(),
+  predicate: query => {
+    const key = query.queryKey[1];
+    return typeof key === 'string' && key.startsWith(PROPOSAL_DIFFSET_PREFIX);
+  },
+};
+
+/**
+ * What a proposal change makes stale: the Inbox list, the proposal and its
+ * diffset. Without ids it names every proposal and every proposal diffset.
+ * The system route reconciles the family; a decision and an event name ids.
+ */
+export function proposalRefreshTargets(ids?: readonly string[]): (QueryKey | InvalidateQueryFilters)[] {
+  if (ids === undefined) return [keys.proposals(), keys.proposalFamily(), proposalDiffsets];
+  return [
+    keys.proposals(),
+    ...ids.flatMap(id => [keys.proposal(id), keys.diffset(diffsetKey({ kind: 'proposal', id }))]),
+  ];
+}
+
+/**
+ * What the system stream reconciles at each open and each gap: every
+ * proposal and every plugin publication, which are the two kinds of change
+ * that the stream carries.
+ */
+export function systemReconcileTargets(): (QueryKey | InvalidateQueryFilters)[] {
+  return [...proposalRefreshTargets(), keys.publicationsFamily()];
+}

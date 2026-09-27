@@ -3,7 +3,7 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { installFakeEventSource, FakeEventSource } from '@/test-utils/sse';
 import { notificationActions, notificationStore } from '@/stores/notificationStore';
 import { resetDaemonNotificationsForTests } from '../daemon-notification';
-import { sessionEvents } from '../sse';
+import { sessionEvents, setEventRoute } from '../sse';
 
 let env: TestQueryEnv;
 afterEach(() => {
@@ -116,4 +116,47 @@ it('a failed snapshot reports the error and live warning/toast events still work
   expect(notificationStore.notifications.find((n) => n.message === 'saved')?.type).toBe('info');
   dismissed(source, 'warning');
   expect(visible()).not.toContain('warning');
+});
+
+it('a notification that its timer hid does not show again on a reconnect or a gap', async () => {
+  installFakeEventSource();
+  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': { body: { notifications: [notice('old')] } } });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const { source } = attach();
+    await vi.waitFor(() => expect(visible()).toContain('old'));
+    // The toast's own timer takes it down; the daemon still holds it open.
+    vi.advanceTimersByTime(60_000);
+    expect(visible()).not.toContain('old');
+
+    source.open();
+    await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(2));
+    source.emit('session_event', { type: 'session_event', event: 'stream_gap', data: { dropped: 1 } });
+    source.open();
+    await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(4));
+    vi.useRealTimers();
+    // The last snapshot resolves after its fetch; let it apply.
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(visible()).not.toContain('old');
+    expect(notificationStore.notifications.filter((n) => n.message === 'old')).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('one open of the chat stream runs its reconcile once', () => {
+  installFakeEventSource();
+  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': { body: { notifications: [] } } });
+  const reconcile = vi.fn();
+  setEventRoute('session', null, reconcile);
+  const opened = vi.fn();
+  sessionEvents('s1').subscribe(() => {}, opened);
+  const source = FakeEventSource.instances.at(-1)!;
+  source.open();
+  expect(reconcile).toHaveBeenCalledTimes(1);
+  expect(opened).toHaveBeenCalledTimes(1);
+  source.open();
+  expect(reconcile).toHaveBeenCalledTimes(2);
+  expect(opened).toHaveBeenCalledTimes(1);
 });

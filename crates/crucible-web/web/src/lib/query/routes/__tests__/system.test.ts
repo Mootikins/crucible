@@ -10,6 +10,9 @@ let env: TestQueryEnv;
 let invalidated: QueryKey[];
 let stop: (() => void) | null = null;
 
+/** Lets a batched refresh run. It waits on each fetch in flight, a few microtasks. */
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
 /** Opens the system stream and answers the source the route reads. */
 function openStream() {
   stop = systemEvents().subscribe(() => {});
@@ -41,7 +44,7 @@ describe('the system event route', () => {
     const source = openStream();
 
     source.emit('proposal_changed', { id: 'p-1' });
-    await Promise.resolve();
+    await settle();
 
     expect(invalidated).toEqual([
       keys.proposals(),
@@ -63,7 +66,7 @@ describe('the system event route', () => {
     source.emit('proposal_changed', { id: 'p-1' });
     source.emit('proposal_changed', { id: 'p-1' });
     source.emit('proposal_changed', { id: 'p-2' });
-    await Promise.resolve();
+    await settle();
     expect(invalidated.filter(key => key[0] === 'proposals')).toHaveLength(1);
     expect(invalidated.filter(key => key[0] === 'proposal')).toEqual([
       keys.proposal('p-1'), keys.proposal('p-2'),
@@ -71,7 +74,7 @@ describe('the system event route', () => {
 
     invalidated.length = 0;
     source.emit('proposal_changed', { id: 'p-1' });
-    await Promise.resolve();
+    await settle();
     expect(invalidated).toContainEqual(keys.proposal('p-1'));
   });
 

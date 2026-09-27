@@ -265,6 +265,39 @@ describe('InboxPanel — proposals', () => {
   const STALE = '7a1c2f3e-0000-4000-8000-000000000002';
   const NEWER = '7a1c2f3e-0000-4000-8000-000000000003';
 
+  it('counts a proposed move as one file', async () => {
+    const moved = proposalFixture(
+      OPEN,
+      { kind: 'open' },
+      {
+        title: 'Move notes/a.md to archive/a.md',
+        writes: [
+          {
+            root: '/kiln',
+            path: 'notes/a.md',
+            base: { kind: 'hash', hash: 'h0' },
+            new_text: '',
+            remove: true,
+          },
+          {
+            root: '/kiln',
+            path: 'archive/a.md',
+            base: { kind: 'absent' },
+            new_text: 'a\n',
+            moved_from: 'notes/a.md',
+          },
+        ],
+      },
+    );
+    serve(proposalRoutes([moved]));
+    const { getByTestId } = render(() => <InboxPanel />);
+
+    const row = await waitFor(() => getByTestId(`inbox-proposal-${OPEN}`));
+    expect(row.textContent).toContain('Move notes/a.md to archive/a.md');
+    expect(row.textContent).toContain('1 file');
+    expect(row.textContent).not.toContain('2 files');
+  });
+
   it('lists an open proposal', async () => {
     serve(
       proposalRoutes([

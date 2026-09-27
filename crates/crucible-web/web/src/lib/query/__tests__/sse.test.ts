@@ -4,11 +4,8 @@ import {
   sessionEvents,
   surfaceEvents,
   fsEvents,
-  setSessionEventRoute,
-  setSurfaceEventRoute,
-  setFsEventRoute,
+  setEventRoute,
   systemEvents,
-  setSystemEventRoute,
   resetSseForTests,
   advanceSessionCursor,
   sessionCursor,
@@ -226,7 +223,7 @@ describe('sessionEvents', () => {
 
   it('gives each event to the route, with the session id and the two stores', () => {
     const route = vi.fn();
-    setSessionEventRoute(route);
+    setEventRoute('session', route);
     sessionEvents('s1').subscribe(vi.fn());
 
     onlySource().emit('token', { type: 'token', content: 'hi' });
@@ -238,7 +235,7 @@ describe('sessionEvents', () => {
   });
 
   it('keeps the handlers running when the route throws', () => {
-    setSessionEventRoute(() => {
+    setEventRoute('session', () => {
       throw new Error('route is broken');
     });
     const handler = vi.fn();
@@ -251,7 +248,7 @@ describe('sessionEvents', () => {
 
   it('holds no route after the reset', () => {
     const route = vi.fn();
-    setSessionEventRoute(route);
+    setEventRoute('session', route);
     resetSseForTests();
 
     sessionEvents('s1').subscribe(vi.fn());
@@ -358,7 +355,7 @@ describe('surfaceEvents', () => {
 
   it('gives each event to the route', () => {
     const route = vi.fn();
-    setSurfaceEventRoute(route);
+    setEventRoute('surface', route);
     surfaceEvents().subscribe(vi.fn());
 
     onlySource().emit('surface_changed', {
@@ -401,7 +398,7 @@ describe('fsEvents', () => {
 
   it('gives each event to the route', () => {
     const route = vi.fn();
-    setFsEventRoute(route);
+    setEventRoute('fs', route);
     fsEvents().subscribe(vi.fn());
 
     onlySource().emit('fs_deleted', { type: 'deleted', path: '/k/a.md' });
@@ -417,7 +414,7 @@ describe('systemEvents', () => {
   it('reads the system route and carries both events', () => {
     const handler = vi.fn();
     const route = vi.fn();
-    setSystemEventRoute(route);
+    setEventRoute('system', route);
     systemEvents().subscribe(handler);
 
     expect(onlySource().url).toBe('/api/events/system');
@@ -474,7 +471,7 @@ describe('systemEvents', () => {
 
   it('gives each event to the route', () => {
     const route = vi.fn();
-    setSystemEventRoute(route);
+    setEventRoute('system', route);
     systemEvents().subscribe(vi.fn());
 
     onlySource().emit('publication_changed', { plugin: 'board', key: 'rows' });
@@ -536,7 +533,7 @@ describe('reconnect', () => {
 
   it('keeps the route on the new source', () => {
     const route = vi.fn();
-    setSessionEventRoute(route);
+    setEventRoute('session', route);
     const stream = sessionEvents('s1');
     stream.subscribe(vi.fn());
 

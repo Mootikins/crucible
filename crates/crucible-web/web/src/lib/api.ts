@@ -5,6 +5,7 @@ import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import type { CommentRef } from './diffset';
 import { rawFileUrl } from './paths';
 import { assertStreamVersion } from './stream-version';
+import type { BaseRequest, BaseResult, CreateEntryParams, ReorderGroupsParams, SetPropertyParams, WriteOutcome } from './query/bases';
 import type {
   AgentProfileEntry,
   AnchoredEdit,
@@ -315,26 +316,139 @@ function isChatEvent(payload: object): boolean {
 }
 
 /**
+ * The event names of the two side-channel streams, by stream.
+ *
+ * The listener table of each stream has the type `Record<name, listener>`
+ * over its row, so tsc refuses a table that misses a name or adds one. The
+ * Rust test `every_side_channel_event_name_has_a_frontend_listener`
+ * (`crucible-web/src/events.rs`) compares this table with the event names
+ * that the routes compile, in both directions.
+ */
+const SIDE_CHANNEL_EVENTS = {
+  surface: ['surface_changed'],
+  system: ['publication_changed', 'proposal_changed'],
+} as const;
+
+/** One listener for each event name of the side-channel stream `S`. */
+type SideChannelListeners<S extends keyof typeof SIDE_CHANNEL_EVENTS> = Record<
+  (typeof SIDE_CHANNEL_EVENTS)[S][number],
+  (event: MessageEvent) => void
+>;
+
+/** The first retry of a dropped stream waits this long. */
+const RECONNECT_BASE_MS = 1000;
+/** Each further retry doubles the wait, up to this cap. */
+const RECONNECT_CAP_MS = 30_000;
+
+/** What a reconnecting source tells its owner about the transport. */
+interface ReconnectingSourceHooks {
+  /** Runs at each open: the first open and each reopen. */
+  onOpen?: () => void;
+  /**
+   * Runs when the server says that it dropped frames (`stream_gap`). A stream
+   * that carries its gap as data (the chat stream) leaves it out.
+   */
+  onGap?: () => void;
+  /** Runs when the transport drops. A retry is then on its timer. */
+  onDisconnect?: () => void;
+  /** Runs when the version gate refuses the protocol. No retry follows. */
+  onRefused?: () => void;
+}
+
+/**
+ * Opens one `EventSource` that the client itself reopens after each error.
+ *
+ * The browser's own retry is not enough. It retries a network drop, but a
+ * non-2xx answer or a wrong content type puts the source in the CLOSED
+ * state, and the browser never tries it again. Thus each error closes the
+ * source here and opens a new one after an exponential backoff. An open sets
+ * the backoff back to its first step.
+ *
+ * `url` is read at each (re)connect, so the chat stream can state its
+ * current resume cursor. The answer closes the source and stops the retries.
+ */
+function openReconnectingSource(
+  url: () => string,
+  streamName: string,
+  listeners: Readonly<Record<string, (event: MessageEvent) => void>>,
+  hooks: ReconnectingSourceHooks = {},
+): () => void {
+  let source: EventSource | null = null;
+  let attempts = 0;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+
+  function stop(): void {
+    closed = true;
+    if (retry) clearTimeout(retry);
+    retry = null;
+    source?.close();
+    source = null;
+  }
+
+  function connect(): void {
+    retry = null;
+    if (closed) return;
+    const current = new EventSource(url());
+    source = current;
+    guardStreamVersion(streamName, current, () => {
+      stop();
+      hooks.onRefused?.();
+    });
+    for (const [name, listener] of Object.entries(listeners)) {
+      current.addEventListener(name, listener);
+    }
+    const onGap = hooks.onGap;
+    if (onGap) {
+      current.addEventListener('stream_gap', (event: MessageEvent) => {
+        try {
+          decodeEvent<{ dropped: number }>(streamName, 'stream_gap', event.data,
+            payload => 'dropped' in payload && typeof payload.dropped === 'number' && payload.dropped >= 0);
+        } catch {
+          console.warn('Failed to parse stream gap:', event.data);
+          return;
+        }
+        onGap();
+      });
+    }
+    current.onopen = () => {
+      attempts = 0;
+      hooks.onOpen?.();
+    };
+    current.onerror = () => {
+      // An error of a source that this function replaced or closed is old news.
+      if (closed || source !== current) return;
+      current.close();
+      source = null;
+      attempts++;
+      const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempts - 1), RECONNECT_CAP_MS);
+      console.warn(`The ${streamName} stream disconnected. Reconnect in ${delay}ms (attempt ${attempts}).`);
+      hooks.onDisconnect?.();
+      retry = setTimeout(connect, delay);
+    };
+  }
+
+  connect();
+  return stop;
+}
+
+/**
  * Subscribe to SSE events for a session.
  * Returns a cleanup function that closes the EventSource.
  *
  * Call this BEFORE sending a message so no events are missed.
  * Automatically reconnects on disconnect with exponential backoff. Each
  * (re)connect states the caller's cursor — the last seq it APPLIED — as
- * `?after=`, and the server replays the persisted events past it; the
- * browser's own retry of one source sends the same number as
- * `Last-Event-ID`, which the route honours too.
+ * `?after=`, and the server replays the persisted events past it.
+ *
+ * The transport state travels as a client-minted `connection` event:
+ * `connected` at each open, `reconnecting` at each drop. The server
+ * subscribes the daemon session before it returns the stream headers, so
+ * `connected` means that no event will be dropped.
  */
 export function subscribeToEvents(
   sessionId: string,
   onEvent: (event: SequencedChatEvent) => void,
-  /**
-   * Fires once, when the stream is first open. The server subscribes the
-   * daemon session before returning stream headers, so "open" means events
-   * will not be dropped — senders that must not lose the first tokens
-   * (lazy-created sessions auto-sending their first message) wait for this.
-   */
-  onOpen?: () => void,
   /**
    * Reads the resume cursor: the last seq APPLIED for this session. Polled at
    * every (re)connect, because a reconnect must name the position the store
@@ -346,78 +460,35 @@ export function subscribeToEvents(
   // EventSource cannot set headers; the HttpOnly session cookie (set by
   // login()) authenticates the stream for non-localhost clients.
   const base = `/api/chat/events/${encodeURIComponent(sessionId)}`;
-  let source: EventSource | null = null;
-  let reconnectAttempts = 0;
-  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-  let closed = false;
-  let opened = false;
-
-  function connect() {
-    if (closed) return;
-
-    const after = cursor?.();
-    const url = after === undefined ? base : `${base}?after=${after}`;
-    source = new EventSource(url);
-    guardStreamVersion('chat', source, () => {
-      closed = true;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
+  const listeners: Record<string, (event: MessageEvent) => void> = {};
+  for (const eventType of SSE_EVENT_TYPES) {
+    listeners[eventType] = (e: MessageEvent) => {
+      try {
+        const event = decodeEvent<ChatEvent>('chat', eventType, e.data, isChatEvent);
+        // The seq the route stamped as the frame's `id:` — absent when the
+        // frame carried none, and then the event travels without one.
+        const seq = readSeq(e.lastEventId);
+        onEvent(seq === undefined ? event : { ...event, seq });
+      } catch {
+        console.warn(`Failed to parse SSE event (${eventType}):`, e.data);
       }
-    });
-
-    for (const eventType of SSE_EVENT_TYPES) {
-      source.addEventListener(eventType, (e: MessageEvent) => {
-        reconnectAttempts = 0;
-        try {
-          const event = decodeEvent<ChatEvent>('chat', eventType, e.data, isChatEvent);
-          // The seq the route stamped as the frame's `id:` — absent when the
-          // frame carried none, and then the event travels without one.
-          const seq = readSeq(e.lastEventId);
-          onEvent(seq === undefined ? event : { ...event, seq });
-        } catch {
-          console.warn(`Failed to parse SSE event (${eventType}):`, e.data);
-        }
-      });
-    }
-
-    source.onerror = () => {
-      if (closed) return;
-
-      source?.close();
-      source = null;
-
-      reconnectAttempts++;
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
-
-      console.warn(`SSE disconnected, reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
-      // Transient transport status — NOT a daemon 'error' (that path overwrites
-      // the streaming message and nulls the streaming id, permanently losing
-      // the in-flight turn on a routine idle reconnect).
-      onEvent({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' });
-
-      reconnectTimeout = setTimeout(connect, delay);
-    };
-
-    source.onopen = () => {
-      reconnectAttempts = 0;
-      if (!opened) {
-        opened = true;
-        onOpen?.();
-      }
-      onEvent({ type: 'connection', status: 'connected' });
     };
   }
-
-  connect();
-
-  return () => {
-    closed = true;
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
-    }
-    source?.close();
-  };
+  return openReconnectingSource(
+    () => {
+      const after = cursor?.();
+      return after === undefined ? base : `${base}?after=${after}`;
+    },
+    'chat',
+    listeners,
+    {
+      onOpen: () => onEvent({ type: 'connection', status: 'connected' }),
+      // Transient transport status — NOT a daemon 'error' (that path
+      // overwrites the streaming message and nulls the streaming id,
+      // permanently losing the in-flight turn on a routine idle reconnect).
+      onDisconnect: () => onEvent({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' }),
+    },
+  );
 }
 
 /** The seq off a frame's `id:` field, or undefined when the frame sent none. */
@@ -1291,28 +1362,10 @@ export async function getSurfaces(): Promise<Surface[]> {
   return decode(await client.GET('/api/surfaces'), 'Failed to list plugin surfaces').surfaces;
 }
 
-/** Recovery controls are shared by every projection of the system session. */
-function observeStreamRecovery(
-  source: EventSource,
-  onOpen: () => void,
-  onGap: () => void,
-): void {
-  source.onopen = onOpen;
-  source.addEventListener('stream_gap', (event: MessageEvent) => {
-    try {
-      decodeEvent<{ dropped: number }>('system', 'stream_gap', event.data,
-        payload => 'dropped' in payload && typeof payload.dropped === 'number' && payload.dropped >= 0);
-      onGap();
-    } catch {
-      console.warn('Failed to parse stream gap:', event.data);
-    }
-  });
-}
-
 /**
- * Subscribe to surface changes (`GET /api/surfaces/events`). Mirrors
- * `subscribeToFsEvents`: one `EventSource` with exponential-backoff reconnect.
- * Returns a cleanup function that closes the stream.
+ * Subscribe to surface changes (`GET /api/surfaces/events`): one
+ * `EventSource` with exponential-backoff reconnect. Returns a cleanup
+ * function that closes the stream.
  */
 export function subscribeToSurfaceEvents(
   onEvent: (event: SurfaceChangedEvent) => void,
@@ -1320,27 +1373,8 @@ export function subscribeToSurfaceEvents(
   onGap: () => void = () => {},
   onDisconnect: () => void = () => {},
 ): () => void {
-  const url = '/api/surfaces/events';
-  let source: EventSource | null = null;
-  let reconnectAttempts = 0;
-  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-  let closed = false;
-
-  function connect() {
-    if (closed) return;
-    source = new EventSource(url);
-    observeStreamRecovery(source, onOpen, onGap);
-    guardStreamVersion('surface', source, () => {
-      onDisconnect();
-      closed = true;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
-      }
-    });
-
-    source.addEventListener('surface_changed', (e: MessageEvent) => {
-      reconnectAttempts = 0;
+  const listeners: SideChannelListeners<'surface'> = {
+    surface_changed: (e: MessageEvent) => {
       try {
         // The payload carries no tag of its own — the stream has one event
         // name — so the check is the three fields the document requires.
@@ -1361,26 +1395,10 @@ export function subscribeToSurfaceEvents(
       } catch {
         console.warn('Failed to parse surface SSE event:', e.data);
       }
-    });
-
-    source.onerror = () => {
-      if (closed) return;
-      onDisconnect();
-      source?.close();
-      source = null;
-      reconnectAttempts++;
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
-      reconnectTimeout = setTimeout(connect, delay);
-    };
-  }
-
-  connect();
-
-  return () => {
-    closed = true;
-    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    source?.close();
+    },
   };
+  return openReconnectingSource(() => '/api/surfaces/events', 'surface', listeners,
+    { onOpen, onGap, onDisconnect, onRefused: onDisconnect });
 }
 
 /**
@@ -1991,10 +2009,10 @@ void _FS_EVENT_TAGS_ARE_COMPLETE;
 const FS_EVENT_TAG_SET = new Set<string>(FS_EVENT_TAGS);
 
 /**
- * Subscribe to live filesystem-change events (`GET /api/fs/events`). Mirrors
- * `subscribeToEvents`: one `EventSource`, exponential-backoff reconnect, cookie
- * auth. In Phase 1 only watched kiln directories emit these. Returns a cleanup
- * function that closes the stream.
+ * Subscribe to live filesystem-change events (`GET /api/fs/events`): one
+ * `EventSource`, exponential-backoff reconnect, cookie auth. In Phase 1 only
+ * watched kiln directories emit these. Returns a cleanup function that closes
+ * the stream.
  */
 export function subscribeToFsEvents(
   onEvent: (event: FsEvent) => void,
@@ -2002,65 +2020,28 @@ export function subscribeToFsEvents(
   onGap: () => void = () => {},
   onDisconnect: () => void = () => {},
 ): () => void {
-  const url = '/api/fs/events';
-  let source: EventSource | null = null;
-  let reconnectAttempts = 0;
-  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-  let closed = false;
-
-  function connect() {
-    if (closed) return;
-
-    source = new EventSource(url);
-    observeStreamRecovery(source, onOpen, onGap);
-    guardStreamVersion('file-system', source, () => {
-      onDisconnect();
-      closed = true;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
+  const listeners: Record<string, (event: MessageEvent) => void> = {};
+  for (const eventType of FS_SSE_EVENT_TYPES) {
+    listeners[eventType] = (e: MessageEvent) => {
+      try {
+        onEvent(
+          decodeEvent<FsEvent>(
+            'file-system',
+            eventType,
+            e.data,
+            (payload) =>
+              'type' in payload &&
+              typeof payload.type === 'string' &&
+              FS_EVENT_TAG_SET.has(payload.type),
+          ),
+        );
+      } catch {
+        console.warn(`Failed to parse FS SSE event (${eventType}):`, e.data);
       }
-    });
-
-    for (const eventType of FS_SSE_EVENT_TYPES) {
-      source.addEventListener(eventType, (e: MessageEvent) => {
-        reconnectAttempts = 0;
-        try {
-          onEvent(
-            decodeEvent<FsEvent>(
-              'file-system',
-              eventType,
-              e.data,
-              (payload) =>
-                'type' in payload &&
-                typeof payload.type === 'string' &&
-                FS_EVENT_TAG_SET.has(payload.type),
-            ),
-          );
-        } catch {
-          console.warn(`Failed to parse FS SSE event (${eventType}):`, e.data);
-        }
-      });
-    }
-
-    source.onerror = () => {
-      if (closed) return;
-      onDisconnect();
-      source?.close();
-      source = null;
-      reconnectAttempts++;
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
-      reconnectTimeout = setTimeout(connect, delay);
     };
   }
-
-  connect();
-
-  return () => {
-    closed = true;
-    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    source?.close();
-  };
+  return openReconnectingSource(() => '/api/fs/events', 'file-system', listeners,
+    { onOpen, onGap, onDisconnect, onRefused: onDisconnect });
 }
 
 /**
@@ -2074,9 +2055,10 @@ export type SystemEvent =
 /**
  * Subscribe to the daemon's system session (`GET /api/events/system`).
  *
- * The stream carries `publication_changed` and `proposal_changed`. Native
- * EventSource retry reopens a dropped connection. Cleanup closes it and stops
- * retries; the shared root can also explicitly reconnect.
+ * The stream carries `publication_changed` and `proposal_changed`. The source
+ * reopens itself after each error with a backoff, as the other streams do.
+ * Cleanup closes it and stops the retries; the shared root can also
+ * reconnect it by hand.
  */
 export function subscribeToSystemEvents(
   onEvent: (event: SystemEvent) => void,
@@ -2086,38 +2068,37 @@ export function subscribeToSystemEvents(
 ): () => void {
   // EventSource cannot set headers; the HttpOnly session cookie (set by
   // login()) authenticates the stream for non-localhost clients.
-  const source = new EventSource('/api/events/system');
-  guardStreamVersion('system', source, onDisconnect);
-  source.addEventListener('publication_changed', (e: MessageEvent) => {
-    try {
-      const payload = decodeEvent<{ plugin: string; key: string }>(
-        'system',
-        'publication_changed',
-        e.data,
-        (p) =>
-          'plugin' in p && typeof p.plugin === 'string' && 'key' in p && typeof p.key === 'string',
-      );
-      onEvent({ event: 'publication_changed', plugin: payload.plugin, key: payload.key });
-    } catch {
-      console.warn('Failed to parse system SSE event:', e.data);
-    }
-  });
-  source.addEventListener('proposal_changed', (e: MessageEvent) => {
-    try {
-      const payload = decodeEvent<{ id: string }>(
-        'system',
-        'proposal_changed',
-        e.data,
-        (p) => 'id' in p && typeof p.id === 'string',
-      );
-      onEvent({ event: 'proposal_changed', id: payload.id });
-    } catch {
-      console.warn('Failed to parse system SSE event:', e.data);
-    }
-  });
-  observeStreamRecovery(source, onOpen, onGap);
-  source.onerror = () => onDisconnect();
-  return () => source.close();
+  const listeners: SideChannelListeners<'system'> = {
+    publication_changed: (e: MessageEvent) => {
+      try {
+        const payload = decodeEvent<{ plugin: string; key: string }>(
+          'system',
+          'publication_changed',
+          e.data,
+          (p) =>
+            'plugin' in p && typeof p.plugin === 'string' && 'key' in p && typeof p.key === 'string',
+        );
+        onEvent({ event: 'publication_changed', plugin: payload.plugin, key: payload.key });
+      } catch {
+        console.warn('Failed to parse system SSE event:', e.data);
+      }
+    },
+    proposal_changed: (e: MessageEvent) => {
+      try {
+        const payload = decodeEvent<{ id: string }>(
+          'system',
+          'proposal_changed',
+          e.data,
+          (p) => 'id' in p && typeof p.id === 'string',
+        );
+        onEvent({ event: 'proposal_changed', id: payload.id });
+      } catch {
+        console.warn('Failed to parse system SSE event:', e.data);
+      }
+    },
+  };
+  return openReconnectingSource(() => '/api/events/system', 'system', listeners,
+    { onOpen, onGap, onDisconnect, onRefused: onDisconnect });
 }
 
 // ===========================================================================
@@ -2164,16 +2145,15 @@ export async function fetchRawFile(path: string): Promise<Blob> {
 }
 
 /** Bases expressions are evaluated by the daemon. */
-export async function queryBase(request: import('./query/bases').BaseRequest): Promise<Schemas['QueryResult']> {
+export async function queryBase(request: BaseRequest): Promise<BaseResult> {
   return decode(await client.GET('/api/bases/query', { params: { query: { kiln: request.kiln, ...request.source, view: request.view, this: request.this } } }), 'Could not query base');
 }
-export async function writeBaseProperty(request: Record<string, unknown>): Promise<unknown> {
+export async function writeBaseProperty(request: SetPropertyParams): Promise<WriteOutcome> {
   return decode(await client.PUT('/api/bases/property', { body: request }), 'Base write refused');
 }
-export async function createBaseEntry(request: Record<string, unknown>): Promise<unknown> {
+export async function createBaseEntry(request: CreateEntryParams): Promise<WriteOutcome> {
   return decode(await client.POST('/api/bases/entries', { body: request }), 'Base write refused');
 }
-
-export async function reorderBaseGroups(request: Record<string, unknown>): Promise<unknown> {
+export async function reorderBaseGroups(request: ReorderGroupsParams): Promise<WriteOutcome> {
   return decode(await client.PUT('/api/bases/group-order', { body: request }), 'Could not reorder groups');
 }

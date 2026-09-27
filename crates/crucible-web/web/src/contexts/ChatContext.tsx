@@ -327,7 +327,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         if (target?.toolCall) {
           target.toolCall = mergeToolCallUpdate(target.toolCall, data);
         }
-      } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
+      } else if (evt.event === 'tool_result') {
         const callId = String(data.call_id ?? '');
         const target = findToolMessage(callId);
         if (target?.toolCall) {
@@ -336,15 +336,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           const body = (
             data.result !== null && typeof data.result === 'object' ? data.result : {}
           ) as Record<string, unknown>;
-          const failed = evt.event === 'tool_result_error' || typeof body.error === 'string';
-          const raw =
-            evt.event === 'tool_result_error'
-              ? data.error
-              : failed
-                ? body.error
-                : 'result' in body
-                  ? body.result
-                  : data.result;
+          // The daemon has no `tool_result_error` session event: a failure is
+          // a `tool_result` whose envelope carries `error`.
+          const failed = typeof body.error === 'string';
+          const raw = failed ? body.error : 'result' in body ? body.result : data.result;
           target.toolCall = {
             ...withResultRender(target.toolCall, body.render),
             status: failed ? 'error' : 'complete',

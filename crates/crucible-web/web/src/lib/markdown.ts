@@ -28,14 +28,40 @@ const WIKILINK_PATTERN = wikilinkRe();
  * files panel, the tab, a backlink row — shows. An explicit alias is the
  * author's own words, so it is never stemmed.
  */
-export function parseWikilinkInner(inner: string): { target: string; display: string } {
+export function parseWikilinkInner(inner: string): { target: string; display: string; fragment: string } {
   const [rawTarget, ...aliasParts] = inner.split('|');
   const hash = rawTarget.indexOf('#');
   const target = (hash < 0 ? rawTarget : rawTarget.slice(0, hash)).trim();
-  const fragment = hash < 0 ? '' : rawTarget.slice(hash).trim();
+  const fragment = hash < 0 ? '' : rawTarget.slice(hash + 1).trim();
   const display =
-    aliasParts.length > 0 ? aliasParts.join('|').trim() : `${noteStem(target)}${fragment}`;
-  return { target, display };
+    aliasParts.length > 0
+      ? aliasParts.join('|').trim()
+      : `${noteStem(target)}${hash < 0 ? '' : `#${fragment}`}`;
+  return { target, display, fragment };
+}
+
+/** A `![[x.base#view|…]]` embed: the base path, and the view name when the embed names one. */
+export interface BaseEmbed {
+  path: string;
+  view?: string;
+}
+
+/** The base embed of one wikilink inner text, or null when the target is not a base. */
+function baseEmbedOf(inner: string): BaseEmbed | null {
+  const { target, fragment } = parseWikilinkInner(inner);
+  if (!isBasePath(target)) return null;
+  return { path: target, view: fragment || undefined };
+}
+
+/**
+ * The base embed that is the whole of `text`, as in a paragraph that holds
+ * only `![[Tasks.base#Board]]`. Null for any other text.
+ */
+export function wholeBaseEmbed(text: string): BaseEmbed | null {
+  if (!text.startsWith('!')) return null;
+  const match = wikilinkRe().exec(text);
+  if (!match || match.index !== 1 || match[0].length !== text.length - 1) return null;
+  return baseEmbedOf(match[1]);
 }
 /**
  * Escape user-authored text and turn `[[wikilinks]]` into `.wikilink` anchors,
@@ -337,8 +363,8 @@ function wikilinkPlugin(md: MarkdownIt): void {
 
         while (match) {
           const [fullMatch, noteName] = match;
-          const isBaseEmbed = match.index > 0 && text[match.index - 1] === '!' && isBasePath(parseWikilinkInner(noteName).target);
-          const start = match.index - (isBaseEmbed ? 1 : 0);
+          const embed = match.index > 0 && text[match.index - 1] === '!' ? baseEmbedOf(noteName) : null;
+          const start = match.index - (embed ? 1 : 0);
           const end = match.index + fullMatch.length;
 
           if (start > lastIndex) {
@@ -352,9 +378,9 @@ function wikilinkPlugin(md: MarkdownIt): void {
           const safeAttr = escapeHtml(target);
           const linkToken = new state.Token('html_inline', '', 0);
           linkToken.content = `<a class="wikilink" href="#" data-note="${safeAttr}">${safeText}</a>`;
-          if (isBaseEmbed) {
-            const view = noteName.split('|')[0].split('#').slice(1).join('#');
-            linkToken.content = `<span class="base-mount" data-base-path="${safeAttr}" data-base-view="${escapeHtml(view)}"></span>`;
+          if (embed) {
+            const view = embed.view === undefined ? '' : ` data-base-view="${escapeHtml(embed.view)}"`;
+            linkToken.content = `<span class="base-mount" data-base-path="${safeAttr}"${view}></span>`;
           }
           nextChildren.push(linkToken);
 

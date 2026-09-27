@@ -237,7 +237,9 @@ export const CodeMirrorEditor: Component<{
         livePreview({
           maxLineWidth: props.lineWidth,
           path: props.path,
-          kiln: props.kiln,
+          // Read lazily, as the completion above does: a buffer that gains a
+          // kiln shows its bases against that kiln without a rebuild.
+          kiln: () => props.kiln,
           baseDir: props.path.replace(/\/[^/]*$/, ''),
           renderMath: props.renderMath ?? true,
           renderDiagrams: props.renderDiagrams ?? true,

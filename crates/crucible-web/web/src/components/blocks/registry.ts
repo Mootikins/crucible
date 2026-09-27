@@ -26,6 +26,10 @@ export interface BlockProps {
   block: string;
   /** Whatever JSON followed the first line. The plugin's own vocabulary. */
   params: Record<string, unknown>;
+  /** The note that shows the block, when a note shows it. */
+  host?: string;
+  /** The kiln of that note, when it is known. */
+  kiln?: string;
 }
 
 const registry = new Map<string, Component<BlockProps>>();

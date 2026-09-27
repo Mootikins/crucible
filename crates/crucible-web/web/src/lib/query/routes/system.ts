@@ -1,4 +1,3 @@
-import { reconcileQueries } from '../recovery';
 /**
  * The route of the system stream: one event, the cache writes it owes.
  *
@@ -16,8 +15,9 @@ import { reconcileQueries } from '../recovery';
  */
 import { invalidateProposal } from '../proposal-cache';
 import type { SystemEvent } from '@/lib/api';
-import { keys } from '../keys';
-import { setSystemEventRoute, type SseRouteContext } from '../sse';
+import { keys, systemReconcileTargets } from '../keys';
+import { refreshQueries } from '../recovery';
+import { setEventRoute, type SseRouteContext } from '../sse';
 
 /** Turns one system event into its cache writes. */
 function routeSystemEvent(event: SystemEvent, { client }: SseRouteContext): void {
@@ -40,9 +40,9 @@ function routeSystemEvent(event: SystemEvent, { client }: SseRouteContext): void
  * after `resetSseForTests` forgets it.
  */
 export function installSystemEventRoute(): void {
-  setSystemEventRoute(routeSystemEvent, ({ client }) => {
+  setEventRoute('system', routeSystemEvent, ({ client }) => {
     // A first open closes the snapshot/subscription window; a later open or
     // gap recovers missed changes even if no further event follows.
-    void reconcileQueries(client, [keys.proposals(), keys.proposalFamily(), keys.publicationsFamily(), keys.diffFamily()]);
+    void refreshQueries(client, systemReconcileTargets());
   });
 }
