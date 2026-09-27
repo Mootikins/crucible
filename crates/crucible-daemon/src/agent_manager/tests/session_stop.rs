@@ -600,3 +600,61 @@ async fn an_rpc_resume_of_a_paused_session_gets_the_isolation_claim_back() {
         "session.resume made a paused session live with no isolation claim"
     );
 }
+
+async fn scoped_observer_stop(first_body: &str, expected_second: bool) {
+    let hooks = format!(
+        r#"
+cru.on_session_start(function(session)
+  cru.on("session:ended", {{ session = session.id, key = "first", timeout_ms = 10 }}, function()
+    _G.first_observer = true
+    {first_body}
+  end)
+  cru.on("session:ended", {{ session = session.id, key = "second" }}, function()
+    _G.second_observer = true
+  end)
+end)
+"#
+    );
+    let mut rig = Rig::with_hooks(Some(&hooks)).await;
+    assert_eq!(
+        rig.scoped_handlers().await,
+        3,
+        "both observers and the turn handler registered"
+    );
+    let response = tokio::time::timeout(
+        Duration::from_secs(10),
+        rig.daemon.rpc("session.end", json!({"session_id": rig.id})),
+    )
+    .await
+    .expect("a failed observer must not deadlock teardown");
+    assert!(response.error.is_none(), "{:?}", response.error);
+    let lua = rig.daemon.lua();
+    assert_eq!(
+        lua.globals().get::<Option<bool>>("first_observer").unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        lua.globals()
+            .get::<Option<bool>>("second_observer")
+            .unwrap()
+            .unwrap_or(false),
+        expected_second
+    );
+    rig.assert_stopped("observer", "ended").await;
+    rig.assert_released("observer");
+}
+
+#[tokio::test]
+async fn a_scoped_end_observer_error_continues_before_cleanup() {
+    scoped_observer_stop("error('observer failed')", true).await;
+}
+
+#[tokio::test]
+async fn a_scoped_end_observer_timeout_continues_before_cleanup() {
+    scoped_observer_stop("while true do end", true).await;
+}
+
+#[tokio::test]
+async fn a_scoped_end_observer_cancel_stops_only_the_chain() {
+    scoped_observer_stop("return { cancel = true, reason = 'done' }", false).await;
+}

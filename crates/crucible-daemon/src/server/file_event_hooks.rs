@@ -32,7 +32,8 @@ use crate::event_map::{self, HookedEvent};
 ///
 /// Fail-open throughout: a handler that errors is logged and the next one still
 /// runs. Nothing here is a gate, so a broken handler must not stop the watcher
-/// or the rest of the daemon.
+/// or the rest of the daemon. The bounded ring can lose even one-off events;
+/// scoped end observers instead run before cleanup through `run_handlers`.
 pub fn spawn_file_event_hooks(
     mut rx: broadcast::Receiver<SessionEventMessage>,
     handlers: Arc<crucible_lua::LuaScriptHandlerRegistry>,
@@ -42,11 +43,13 @@ pub fn spawn_file_event_hooks(
         loop {
             let msg = match rx.recv().await {
                 Ok(msg) => msg,
-                // A slow consumer misses events rather than stalling the bus.
-                // Dropping is correct here: these are triggers, not a ledger,
-                // and the next change re-triggers anyway.
+                // All global observers are best effort, including one-off
+                // webhook and lifecycle events. There is no replay here.
                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                    debug!("file event hooks lagged {n} events");
+                    warn!(
+                        dropped = n,
+                        "daemon event observers lost broadcasts; continuing without replay"
+                    );
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
@@ -362,5 +365,80 @@ mod tests {
                 "the constant must be the name the registry matches on"
             );
         }
+    }
+    #[tokio::test]
+    async fn best_effort_observers_drop_overflow_and_continue() {
+        let lua = Arc::new(mlua::Lua::new());
+        let registry = Arc::new(LuaScriptHandlerRegistry::new());
+        crucible_lua::register_cru_on_api(&lua, (*registry).clone()).unwrap();
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let finished = Arc::new(tokio::sync::Notify::new());
+        let gate = lua
+            .create_async_function({
+                let entered = entered.clone();
+                let release = release.clone();
+                move |_, ()| {
+                    let entered = entered.clone();
+                    let release = release.clone();
+                    async move {
+                        entered.notify_one();
+                        release.notified().await;
+                        Ok(())
+                    }
+                }
+            })
+            .unwrap();
+        lua.globals().set("gate", gate).unwrap();
+        lua.globals()
+            .set(
+                "finish",
+                lua.create_function({
+                    let finished = finished.clone();
+                    move |_, ()| {
+                        finished.notify_one();
+                        Ok(())
+                    }
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        lua.load(
+            r#"
+            seen = ""
+            cru.on("webhook:received", { timeout_ms = 10000 }, function(_, event)
+                if event.name == "blocked" then gate() end
+                seen ..= event.name .. ","
+                if event.name == "survivor" then finish() end
+            end)
+            cru.on("session:ended", function() ended = true end)
+        "#,
+        )
+        .exec()
+        .unwrap();
+        let (tx, rx) = broadcast::channel(1);
+        spawn_file_event_hooks(rx, registry, lua.clone());
+        let webhook = |name: &str| {
+            event_map::webhook_received(name.into(), serde_json::Map::new(), "{}".into())
+        };
+        tx.send(webhook("blocked")).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), entered.notified())
+            .await
+            .unwrap();
+        // Both one-off lifecycle and webhook deliveries can be lost. There is
+        // no retry queue; the dispatcher continues with the surviving event.
+        tx.send(event_map::session_ended("session", "ended"))
+            .unwrap();
+        tx.send(webhook("lost")).unwrap();
+        tx.send(webhook("survivor")).unwrap();
+        release.notify_one();
+        tokio::time::timeout(std::time::Duration::from_secs(5), finished.notified())
+            .await
+            .unwrap();
+        assert_eq!(
+            lua.globals().get::<String>("seen").unwrap(),
+            "blocked,survivor,"
+        );
+        assert_eq!(lua.globals().get::<Option<bool>>("ended").unwrap(), None);
     }
 }

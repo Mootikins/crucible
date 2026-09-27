@@ -2,14 +2,14 @@
 title: Event Bus Simplification Review
 description: Concrete opportunities to consolidate event ownership, routing, and recovery
 tags: [meta, architecture, review]
-status: in-progress
+status: completed
 ---
 
 # Event Bus Simplification Review
 
 Reviewed the September 26 working tree, including the three fixes in
-[[Meta/September 26 Review Follow-up]]. These are code-inspection findings and
-proposed refactors, not newly reproduced runtime failures. Ownership follows
+[[Meta/September 26 Review Follow-up]]. The six findings below are implemented. Each section retains its original
+review rationale beneath the implementation status. Ownership follows
 [[Meta/Architecture/Index]] and [[Meta/CONTEXT]].
 
 The useful direction is one publication contract and explicit subscriber
@@ -177,6 +177,12 @@ forward-compatible path; malformed known events remain distinguishable.
 
 ## 6. Make observer delivery policy explicit before broadening the bus
 
+**Implemented:** global observers explicitly remain best effort on the bounded
+ring, including one-off webhook and lifecycle messages. Loss is warned about;
+there is no retry promise. Scoped end observers retain their completion barrier
+before registration cleanup, with errors/timeouts continuing and cancel stopping
+only the observer chain. Actual Lua tests cover overflow and teardown outcomes.
+
 `server/file_event_hooks.rs:48` drops lagged events on the rationale that the
 next change will retrigger the observer. Its dispatch table now also contains
 webhooks and session lifecycle events, which need not recur.
@@ -193,7 +199,7 @@ guarantees likewise need a policy decision, not an unbounded queue by default.
 observers run once before cleanup; global end observers have a stated delivery
 contract; handler failure cannot deadlock session teardown.
 
-## Suggested order
+## Implementation order
 
 1. Move publications onto the existing system root and share proposal
    invalidation rules. These are the smallest reviewable reductions.

@@ -130,7 +130,7 @@ Their identifiers, for `opts.pattern`:
 | `webhook:received` | the webhook name |
 | `session:created`, `session:ended` | *none* — see below |
 
-`session:ended` fires once for each stop that takes a session out of service.
+`session:ended` is emitted once for each stop that takes a session out of service.
 `event.reason` is `paused`, `ended`, `archived`, `auto_archived`, `deleted`,
 `refused` or `child_done`. An archive or a delete of a session that already
 ended sends no second event. The daemon sends the event after the plugin end
@@ -213,6 +213,21 @@ for that session's end while it is still running. The daemon runs such a
 handler inside the stop, once, before it removes the handlers of the session.
 The daemon-wide `session:ended` handlers get the event from the bus after the
 stop.
+
+Daemon-wide file, note, webhook and session observers share a bounded broadcast
+ring. Delivery is best effort: a slow handler can make this dispatcher miss
+older events, including a one-off webhook or lifecycle event. The daemon logs
+the lost count and continues with surviving events; it does not retry them.
+Use file and note notifications to refresh authoritative state, rather than as
+a complete history of changes. A verified webhook response acknowledges ingress,
+not successful execution of every observer.
+
+Session-scoped `session:ended` handlers instead run inside the stop operation,
+before their registrations are removed. The stop waits for that chain. Each
+handler has its normal execution budget (`timeout_ms` may override it); an
+error or timeout is logged and the next handler runs. Returning `cancel` stops
+later handlers in that chain, but does not cancel teardown. These observers do
+not replace synchronous permission or session lifecycle hooks.
 
 Every other event carries one. `session:created` and `session:ended` name the
 session they are about, and `search:rerank` names one when the search came
