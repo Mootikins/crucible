@@ -87,7 +87,7 @@ This subsystem must not own:
 | `crates/crucible-cli/src/tui/oil/chat_app/defaults.rs` | 70 | `impl Default for OilChatApp` — the one constructor. |
 | `crates/crucible-cli/src/tui/oil/chat_app/input_handling.rs` | 387 | Key-event dispatch, ordered by which modal or mode owns the screen. |
 | `crates/crucible-cli/src/tui/oil/chat_app/transcript.rs` | 311 | Draws the transcript that the daemon folds: `load_transcript` for the snapshot of a resumed session, `apply_transcript` for the ops of each live event. It maps each item to a node of `container_list`: a user turn claims the message that the TUI drew at send time, a segment becomes an `AssistantResponse`, a tool card joins a `ToolGroup`. It decides nothing about turns, segments or tool status. |
-| `crates/crucible-cli/src/tui/oil/chat_app/message_handlers.rs` | 576 | The four `on_message` sub-dispatchers: stream, config, delegation, UI. |
+| `crates/crucible-cli/src/tui/oil/chat_app/message_handlers.rs` | 431 | The three `on_message` sub-dispatchers: stream, config, UI. |
 | `crates/crucible-cli/src/tui/oil/chat_app/messages.rs` | 528 | `ChatAppMsg` and `MsgCategory` — the wire vocabulary. |
 | `crates/crucible-cli/src/tui/oil/chat_app/mod.rs` | 1123 | The `OilChatApp` struct; `view()`/`frame_view()`/`compose()`/`chrome()`, `update()`, `on_message()`; module root. |
 | `crates/crucible-cli/src/tui/oil/chat_app/model_state.rs` | 65 | `ModelListState`, `SessionChoice`, `SessionListState`, `McpServerDisplay`, `KilnSummary`; re-exports `PluginStatusEntry`. |
@@ -116,18 +116,21 @@ This subsystem must not own:
   is created to fill, or read from, one of these fields.
 - **`ChatAppMsg` / `MsgCategory`** (`messages.rs`). One enum for both
   directions of traffic: outbound intents (`UserMessage`, `SwitchModel`,
-  `ConfigSet`) and inbound daemon events (`TextDelta`, `ToolCall`,
-  `StreamComplete`); around 85 variants in all, most added long before this
+  `ConfigSet`) and inbound daemon events (`Transcript`,
+  `StreamComplete`); around 75 variants in all, most added long before this
   slice. `OilChatApp::update`'s handlers construct it as
   `Action::Send(ChatAppMsg::…)`; `chat_runner` (outside this page) is the
-  sole producer of the inbound variants. `ChatAppMsg::category()` has five
-  values, not four: `on_message` (`mod.rs`) handles `MsgCategory::User`
-  inline by calling `submit_user_message`, and routes the other four
-  categories (`Stream`, `Config`, `Delegation`, `Ui`) to the matching
-  `message_handlers.rs` function. Two former events, `ToolCallDiffUpdate`
-  and `ToolCallArgsUpdate`, are gone: one `ToolCallUpdate{call_id, args,
-  diffs, render, auto_approved}` carries any subset of them, each field
-  `None` when that update did not change it. `ModesLoaded` carries
+  sole producer of the inbound variants. `ChatAppMsg::category()` has four
+  values: `on_message` (`mod.rs`) handles `MsgCategory::User`
+  inline by calling `submit_user_message`, and routes the other three
+  categories (`Stream`, `Config`, `Ui`) to the matching
+  `message_handlers.rs` function. Transcript items have one path. The
+  `Transcript` and `TranscriptLoaded` messages carry the ops and the
+  snapshot of the daemon fold, and `chat_app/transcript.rs` draws them.
+  The enum has no message for a text delta, a tool call, a tool result, a
+  delegation or a precognition result. A test sends wire events through
+  `EventFeed` (`fullscreen/fixtures.rs`), which runs the core fold and the
+  runner converter. `ModesLoaded` carries
   `Vec<ModeDescriptor>` (id, name, description, icon, color, `writes`), not
   bare ids, because a mode's `writes: WriteMode` (`Apply`/`Propose`) must
   reach the TUI to badge the mode and gate `:proposals`.
@@ -252,7 +255,7 @@ flowchart LR
     E --> F["chat_runner: daemon RPC<br/>(outside this page)"]
     F --> G["OilChatApp::on_message<br/>(mod.rs)"]
     G --> H["ChatAppMsg::category()<br/>(messages.rs)"]
-    H --> I["message_handlers.rs<br/>(stream/config/delegation/ui)"]
+    H --> I["message_handlers.rs<br/>(stream/config/ui)"]
     I --> J["ContainerList / CachedToolCall<br/>(containers.rs, viewport_cache.rs)"]
     J --> K["OilChatApp::view / frame_view<br/>next frame"]
 ```
@@ -275,8 +278,8 @@ flowchart LR
    `on_message`.
 5. `on_message` (`mod.rs`) reads `ChatAppMsg::category()` (`messages.rs`)
    and calls one of `handle_stream_msg`/`handle_config_msg`/
-   `handle_delegation_msg`/`handle_ui_msg` (`message_handlers.rs`). Beyond
-   the transcript cache, these four dispatchers also carry notifications,
+   `handle_ui_msg` (`message_handlers.rs`). Beyond
+   the transcript cache, these three dispatchers also carry notifications,
    proposals, the session list and the diff view into their matching
    `OilChatApp` fields.
 6. Those handlers create or update `CachedToolCall`/`CachedSubagent`/
@@ -442,14 +445,10 @@ forward a real daemon event, but can never reach the daemon itself.
   and a later repaint cannot reach it. `split_slow_tools` enforces it by
   moving a slow tool's live copy into `ContainerList.background` and
   freezing its transcript card (`backgrounded = true`) rather than mutating
-  it further; `update_tool`'s search filters out `backgrounded` cards so a
-  frozen card cannot be found and rewritten by accident.
-  `update_tool_by_call_id` is the one path built to reach past that filter
-  on purpose: it checks `self.background` first, so a late
-  `ChatAppMsg::ToolCallUpdate` — for example the result's render, which
-  arrives after a tool has already split off the transcript — still reaches
-  the frozen card and shows up on its finish row, rather than being
-  silently dropped.
+  it further. `update_tool_by_call_id` checks `self.background` first, and
+  its search of the groups skips a `backgrounded` card. So a late update of
+  a split tool, for example the render of its result, goes to the live
+  copy and shows on its finish row. The frozen card does not change.
 - **Client keys never anticipate the daemon.** `command_handling.rs`'s
   `dispatch_set_key` sends every key it does not recognize as client-local
   straight to `Action::Send(ChatAppMsg::ConfigSet)`, with no local write —

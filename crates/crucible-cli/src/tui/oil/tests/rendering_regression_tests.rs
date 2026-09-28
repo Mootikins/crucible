@@ -4,6 +4,7 @@
 //! that are hard to catch with unit tests alone.
 
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 use crucible_oil::ansi::strip_ansi;
 
 use super::vt100_runtime::Vt100TestRuntime;
@@ -13,20 +14,18 @@ use super::vt100_runtime::Vt100TestRuntime;
 #[test]
 fn cancelled_stream_keeps_all_containers() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Start a turn with text + pending tool
-    app.on_message(ChatAppMsg::TextDelta("Let me check...".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "test.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.text("Let me check..."));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "test.rs"}"#,
         render: Some("test.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
 
     // Cancel mid-stream
     app.on_message(ChatAppMsg::StreamCancelled);
@@ -58,10 +57,11 @@ fn cancelled_stream_keeps_all_containers() {
 #[test]
 fn cancelled_during_thinking_keeps_the_node() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Start thinking, no text yet
-    app.on_message(ChatAppMsg::ThinkingDelta("analyzing the problem".into()));
+    app.send_msgs(feed.thinking("analyzing the problem"));
     app.on_message(ChatAppMsg::StreamCancelled);
     vt.render_frame(&mut app);
 
@@ -81,11 +81,10 @@ fn cancelled_during_thinking_keeps_the_node() {
 #[test]
 fn thinking_not_duplicated_between_chrome_and_content() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
     // Only thinking, no text yet — chrome shows thinking indicator
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "deep analysis of the problem ".into(),
-    ));
+    app.send_msgs(feed.thinking("deep analysis of the problem "));
 
     // Render viewport (not graduated yet)
     let output = super::helpers::vt_render(&mut app);
@@ -104,11 +103,10 @@ fn thinking_not_duplicated_between_chrome_and_content() {
 #[test]
 fn thinking_transitions_to_collapsed_on_text_start() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "reasoning about the answer ".into(),
-    ));
-    app.on_message(ChatAppMsg::TextDelta("Here is my answer.".into()));
+    app.send_msgs(feed.thinking("reasoning about the answer "));
+    app.send_msgs(feed.text("Here is my answer."));
 
     let output = super::helpers::vt_render(&mut app);
 
@@ -180,59 +178,38 @@ use super::helpers::assert_no_triple_blanks;
 #[test]
 fn no_triple_blanks_tool_heavy_conversation() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 30);
 
     // User asks, assistant uses multiple tools
-    app.on_message(ChatAppMsg::UserMessage("Fix the bug".into()));
+    app.send_msgs(feed.user("Fix the bug"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Let me investigate.".into()));
+    app.send_msgs(feed.text("Let me investigate."));
 
     // Tool 1
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "src/main.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "src/main.rs"}"#,
         render: Some("src/main.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultDelta {
-        name: "read_file".into(),
-        delta: "fn main() {}\n".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", "fn main() {}\n"));
 
     // Tool 2
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "cargo test"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c2",
+        args: r#"{"command": "cargo test"}"#,
         render: Some("cargo test".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultDelta {
-        name: "bash".into(),
-        delta: "test result: ok".into(),
-        call_id: Some("c2".into()),
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c2".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("bash", "c2", "test result: ok"));
 
     // Continuation text
-    app.on_message(ChatAppMsg::TextDelta("The tests pass now.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("The tests pass now."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -243,36 +220,27 @@ fn no_triple_blanks_tool_heavy_conversation() {
 #[test]
 fn no_triple_blanks_thinking_then_tools_then_text() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 30);
 
-    app.on_message(ChatAppMsg::UserMessage("Plan this".into()));
+    app.send_msgs(feed.user("Plan this"));
     vt.render_frame(&mut app);
 
     // Thinking → text → tool → continuation
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "I should check the file first.".into(),
-    ));
-    app.on_message(ChatAppMsg::TextDelta("Let me check.".into()));
+    app.send_msgs(feed.thinking("I should check the file first."));
+    app.send_msgs(feed.text("Let me check."));
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "config.toml"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "config.toml"}"#,
         render: Some("config.toml".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", ""));
 
-    app.on_message(ChatAppMsg::TextDelta(
-        "Based on the config, here is the plan.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Based on the config, here is the plan."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -285,23 +253,24 @@ fn no_triple_blanks_thinking_then_tools_then_text() {
 #[test]
 fn graduation_across_multiple_frames_consistent() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Frame 1: user message (graduates immediately)
-    app.on_message(ChatAppMsg::UserMessage("Question 1".into()));
+    app.send_msgs(feed.user("Question 1"));
     vt.render_frame(&mut app);
 
     // Frame 2: assistant response (graduates on complete)
-    app.on_message(ChatAppMsg::TextDelta("Answer 1".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Answer 1"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Frame 3: second turn
-    app.on_message(ChatAppMsg::UserMessage("Question 2".into()));
+    app.send_msgs(feed.user("Question 2"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Answer 2".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Answer 2"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -321,10 +290,11 @@ fn graduation_across_multiple_frames_consistent() {
 #[test]
 fn empty_text_delta_does_not_create_visible_artifact() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
     // Empty delta should not create visible content
-    app.on_message(ChatAppMsg::TextDelta("".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text(""));
+    app.send_msgs(feed.complete());
 
     let mut vt = Vt100TestRuntime::new(80, 24);
     vt.render_frame(&mut app);
@@ -346,11 +316,12 @@ fn empty_text_delta_does_not_create_visible_artifact() {
 #[test]
 fn thinking_only_no_text_renders_cleanly() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Only thinking, then stream complete (no text delta)
-    app.on_message(ChatAppMsg::ThinkingDelta("I am thinking about this".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.thinking("I am thinking about this"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -373,31 +344,20 @@ fn thinking_only_no_text_renders_cleanly() {
 #[test]
 fn multiple_thinking_blocks_render_without_duplication() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 30);
 
     // First thinking → text → tool → second thinking → more text
-    app.on_message(ChatAppMsg::ThinkingDelta("first analysis".into()));
-    app.on_message(ChatAppMsg::TextDelta("First part.".into()));
+    app.send_msgs(feed.thinking("first analysis"));
+    app.send_msgs(feed.text("First part."));
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: "{}".into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
+    app.send_msgs(feed.tool_call("bash", "c1", "{}"));
+    app.send_msgs(feed.tool_result("bash", "c1", ""));
 
     // Second thinking block after tool
-    app.on_message(ChatAppMsg::ThinkingDelta("second analysis".into()));
-    app.on_message(ChatAppMsg::TextDelta("Second part.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.thinking("second analysis"));
+    app.send_msgs(feed.text("Second part."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -430,26 +390,15 @@ fn multiple_thinking_blocks_render_without_duplication() {
 #[test]
 fn continuation_after_tool_has_no_bullet() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Text → tool → continuation text
-    app.on_message(ChatAppMsg::TextDelta("Let me check.".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: "{}".into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::TextDelta("Here is the answer.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Let me check."));
+    app.send_msgs(feed.tool_call("read_file", "c1", "{}"));
+    app.send_msgs(feed.tool_result("read_file", "c1", ""));
+    app.send_msgs(feed.text("Here is the answer."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();

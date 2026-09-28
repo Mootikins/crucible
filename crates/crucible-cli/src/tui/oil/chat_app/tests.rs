@@ -4,6 +4,7 @@
 //! `tui/oil/tests/` as snapshot and interaction tests.
 
 use super::*;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 
 #[test]
 fn mode_cycles_through_the_daemon_s_list_including_a_lua_declared_one() {
@@ -330,22 +331,25 @@ fn inserting_shell_output_fills_the_composer_and_the_transcript() {
 fn precognition_result_lists_one_note_per_line_with_a_two_digit_score() {
     use crucible_core::traits::chat::PrecognitionNoteInfo;
 
+    let notes = vec![
+        PrecognitionNoteInfo {
+            title: "Kilns".into(),
+            kiln: Some("docs".parse().unwrap()),
+            score: 0.912_345_678_9,
+        },
+        PrecognitionNoteInfo {
+            title: "Wikilinks".into(),
+            kiln: None,
+            score: 0.715_000_1,
+        },
+    ];
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::PrecognitionResult {
-        notes_count: 2,
-        notes: vec![
-            PrecognitionNoteInfo {
-                title: "Kilns".into(),
-                kiln: Some("docs".parse().unwrap()),
-                score: 0.912_345_678_9,
-            },
-            PrecognitionNoteInfo {
-                title: "Wikilinks".into(),
-                kiln: None,
-                score: 0.715_000_1,
-            },
-        ],
-    });
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("what are kilns?"));
+    app.send_msgs(feed.msgs(
+        "precognition_complete",
+        serde_json::json!({ "notes_count": 2, "query_summary": "kilns", "notes": notes }),
+    ));
 
     let rendered = last_node_text(&app, 120);
     let lines: Vec<&str> = rendered.lines().map(str::trim_end).collect();
@@ -370,11 +374,13 @@ fn precognition_result_lists_one_note_per_line_with_a_two_digit_score() {
 #[test]
 fn an_empty_precognition_result_adds_nothing() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("what are kilns?"));
     let before = app.container_list().nodes().len();
-    app.on_message(ChatAppMsg::PrecognitionResult {
-        notes_count: 0,
-        notes: vec![],
-    });
+    app.send_msgs(feed.msgs(
+        "precognition_complete",
+        serde_json::json!({ "notes_count": 0, "query_summary": "kilns", "notes": [] }),
+    ));
     assert_eq!(app.container_list().nodes().len(), before);
 }
 
@@ -445,24 +451,17 @@ fn one_kiln_reads_as_one() {
 
 // ─── Frame clock ────────────────────────────────────────────────────────────
 
-fn running_tool_call() -> ChatAppMsg {
-    ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: "{}".into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    }
+/// A user turn, then a tool call that does not finish.
+fn start_a_running_tool(app: &mut OilChatApp) {
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("run it"));
+    app.send_msgs(feed.tool_call("bash", "c1", "{}"));
 }
 
 #[test]
 fn a_slow_tool_split_follows_the_frame_clock() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("run it".into()));
-    app.on_message(running_tool_call());
+    start_a_running_tool(&mut app);
     let start = app.frame_time();
 
     assert!(!app.split_slow_tools(), "no time passed on the frame clock");
@@ -484,8 +483,7 @@ fn a_slow_tool_split_follows_the_frame_clock() {
 #[test]
 fn the_wall_clock_alone_never_splits_a_tool() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("run it".into()));
-    app.on_message(running_tool_call());
+    start_a_running_tool(&mut app);
 
     std::thread::sleep(BACKGROUND_TOOL_SPLIT_THRESHOLD + std::time::Duration::from_millis(50));
 

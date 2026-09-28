@@ -5,6 +5,7 @@
 //! where a message is categorized as one type but handled in another.
 
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 
 // ─── Error routing ─────────────────────────────────────────────────────────
 
@@ -22,7 +23,8 @@ fn error_message_creates_notification() {
 #[test]
 fn error_during_streaming_creates_notification() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta("partial response".into()));
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text("partial response"));
     app.on_message(ChatAppMsg::Error("LLM connection lost".into()));
 
     assert!(
@@ -96,26 +98,29 @@ fn mode_changed_updates_mode() {
 #[test]
 fn text_delta_starts_streaming() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     assert!(!app.is_streaming());
 
-    app.on_message(ChatAppMsg::TextDelta("hello".into()));
+    app.send_msgs(feed.text("hello"));
     assert!(app.is_streaming());
 }
 
 #[test]
 fn stream_complete_ends_streaming() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta("hello".into()));
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text("hello"));
     assert!(app.is_streaming());
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     assert!(!app.is_streaming());
 }
 
 #[test]
 fn stream_cancelled_ends_streaming() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta("partial".into()));
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text("partial"));
     assert!(app.is_streaming());
 
     app.on_message(ChatAppMsg::StreamCancelled);
@@ -127,11 +132,8 @@ fn stream_cancelled_ends_streaming() {
 #[test]
 fn subagent_spawned_creates_container() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::DelegationSpawned {
-        id: "agent-1".into(),
-        prompt: "analyze code".into(),
-        target_agent: None,
-    });
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.msgs("delegation_spawned", serde_json::json!({ "delegation_id": "agent-1", "prompt": "analyze code", "target_agent": null })));
 
     assert_eq!(app.container_list.len(), 1);
 }
@@ -139,15 +141,12 @@ fn subagent_spawned_creates_container() {
 #[test]
 fn subagent_completed_marks_container_complete() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::DelegationSpawned {
-        id: "agent-1".into(),
-        prompt: "analyze code".into(),
-        target_agent: None,
-    });
-    app.on_message(ChatAppMsg::DelegationCompleted {
-        id: "agent-1".into(),
-        summary: "done".into(),
-    });
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.msgs("delegation_spawned", serde_json::json!({ "delegation_id": "agent-1", "prompt": "analyze code", "target_agent": null })));
+    app.send_msgs(feed.msgs(
+        "delegation_completed",
+        serde_json::json!({ "delegation_id": "agent-1", "result_summary": "done" }),
+    ));
 
     let node = &app.container_list.nodes()[0];
     assert!(
@@ -161,16 +160,14 @@ fn subagent_completed_marks_container_complete() {
 #[test]
 fn tool_call_creates_tool_group() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "main.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "main.rs"}"#,
         render: Some("main.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
 
     assert_eq!(app.container_list.len(), 1);
 }
@@ -180,38 +177,36 @@ fn tool_call_update_replaces_empty_diffs_with_late_content() {
     use crucible_core::types::acp::FileDiff;
 
     // Simulates the ACP late-diff flow (Claude Code): the daemon
-    // first emits a ToolCall with empty diffs, then a follow-up
-    // ToolCallUpdate carries the diff content.
+    // first emits a `tool_call` with empty diffs, then a follow-up
+    // `tool_call_update` carries the diff content.
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "edit_file".into(),
-        args: r#"{"path": "src/late.rs"}"#.into(),
-        call_id: Some("late-1".into()),
-        description: None,
-        source: None,
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "edit_file",
+        call_id: "late-1",
+        args: r#"{"path": "src/late.rs"}"#,
         render: Some("src/late.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
 
     let diffs = vec![FileDiff::from_contents(
         "src/late.rs",
         Some("fn old() {}\n".to_string()),
         "fn new() {}\n",
     )];
-    app.on_message(ChatAppMsg::ToolCallUpdate {
-        call_id: "late-1".into(),
-        args: None,
-        diffs: Some(diffs.clone()),
-        render: None,
-        auto_approved: None,
-    });
+    app.send_msgs(feed.msgs(
+        "tool_call_update",
+        serde_json::json!({
+            "call_id": "late-1",
+            "display": { "kind": "edit", "tool": "edit_file", "diffs": diffs },
+        }),
+    ));
 
     let nodes = app.container_list.nodes();
     if let crate::tui::oil::containers::ChatNode::ToolGroup { tools } = &nodes[0] {
         assert_eq!(
             tools[0].diffs, diffs,
-            "late ToolCallUpdate must populate diffs on the matching tool"
+            "a late tool_call_update must populate diffs on the matching tool"
         );
     } else {
         panic!("expected ToolGroup node");
@@ -223,19 +218,20 @@ fn tool_call_update_for_unknown_call_id_is_a_noop() {
     use crucible_core::types::acp::FileDiff;
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let diffs = vec![FileDiff::from_contents(
         "src/orphan.rs",
         None,
         "fn anything() {}\n",
     )];
     // No prior ToolCall — should silently skip without panicking.
-    app.on_message(ChatAppMsg::ToolCallUpdate {
-        call_id: "ghost".into(),
-        args: None,
-        diffs: Some(diffs),
-        render: None,
-        auto_approved: None,
-    });
+    app.send_msgs(feed.msgs(
+        "tool_call_update",
+        serde_json::json!({
+            "call_id": "ghost",
+            "display": { "kind": "edit", "tool": "edit_file", "diffs": diffs },
+        }),
+    ));
     assert_eq!(
         app.container_list.len(),
         0,
@@ -246,21 +242,9 @@ fn tool_call_update_for_unknown_call_id_is_a_noop() {
 #[test]
 fn tool_result_error_sets_error_on_tool() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: "{}".into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultError {
-        name: "bash".into(),
-        error: "command not found".into(),
-        call_id: Some("c1".into()),
-    });
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.tool_call("bash", "c1", "{}"));
+    app.send_msgs(feed.tool_error("bash", "c1", "command not found"));
 
     let nodes = app.container_list.nodes();
     if let crate::tui::oil::containers::ChatNode::ToolGroup { tools } = &nodes[0] {
@@ -333,8 +317,8 @@ fn no_message_silently_dropped() {
             Box::new(|app| app.available_models().len() == 1),
         ),
         (
-            "TextDelta",
-            ChatAppMsg::TextDelta("hello".into()),
+            "Transcript",
+            EventFeed::default().text("hello").remove(0),
             Box::new(|app| app.is_streaming()),
         ),
     ];

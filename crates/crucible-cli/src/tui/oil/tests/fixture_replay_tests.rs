@@ -4,6 +4,7 @@
 //! checking rendering invariants frame-by-frame. Also captures styled
 //! (ANSI color) snapshots to verify color correctness.
 
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 use std::path::Path;
 
 use crate::tui::oil::chat_app::OilChatApp;
@@ -150,18 +151,15 @@ fn force_colors() -> crucible_core::test_support::EnvVarGuard {
 fn styled_snapshot_basic_conversation() {
     let _colors = force_colors();
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
-        "What is Rust?".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ThinkingDelta(
-        "simple question about programming languages".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::TextDelta(
-        "Rust is a systems programming language focused on safety and performance.".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("What is Rust?"));
+    app.send_msgs(feed.thinking("simple question about programming languages"));
+    app.send_msgs(
+        feed.text("Rust is a systems programming language focused on safety and performance."),
+    );
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Capture styled output with ANSI codes — this verifies colors
@@ -179,45 +177,32 @@ fn styled_snapshot_basic_conversation() {
 fn styled_snapshot_tool_call() {
     let _colors = force_colors();
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
-        "Read a file".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolCall {
-        name: "Read File".into(),
-        args: r#"{"path": "src/main.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("Read a file"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Read File",
+        call_id: "c1",
+        args: r#"{"path": "src/main.rs"}"#,
         render: Some("src/main.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultDelta {
-        name: "Read File".into(),
-        delta: "fn main() {\n    println!(\"Hello\");\n}".into(),
-        call_id: Some("c1".into()),
-    });
-    // The render of the finished read, as the daemon sends it.
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolCallUpdate {
-        call_id: "c1".into(),
-        args: None,
-        diffs: None,
-        render: Some(crucible_core::types::ToolRender {
-            summary: Some("3 lines".into()),
-            .."src/main.rs".into()
+        ..Default::default()
+    }));
+    // The result carries the render of the finished read, as the daemon
+    // sends it.
+    app.send_msgs(feed.msgs(
+        "tool_result",
+        serde_json::json!({
+            "call_id": "c1",
+            "tool": "Read File",
+            "result": {
+                "result": "fn main() {\n    println!(\"Hello\");\n}",
+                "render": { "line": "src/main.rs", "summary": "3 lines" },
+            },
         }),
-        auto_approved: None,
-    });
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultComplete {
-        name: "Read File".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::TextDelta(
-        "The file contains a simple hello world program.".into(),
     ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("The file contains a simple hello world program."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let styled = vt.screen_contents_styled();
@@ -234,34 +219,20 @@ fn styled_snapshot_tool_call() {
 fn styled_snapshot_tool_call_with_body() {
     let _colors = force_colors();
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
-        "Show me the file".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "cat src/main.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("Show me the file"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "cat src/main.rs"}"#,
         render: Some("cat src/main.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultDelta {
-        name: "bash".into(),
-        delta: "fn main() {\n    println!(\"Hello\");\n}".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::TextDelta(
-        "The file contains a simple hello world program.".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("bash", "c1", "fn main() {\n    println!(\"Hello\");\n}"));
+    app.send_msgs(feed.text("The file contains a simple hello world program."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let styled = vt.screen_contents_styled();
@@ -273,19 +244,16 @@ fn styled_snapshot_thinking_collapsed() {
     let _colors = force_colors();
     // show_thinking=off: graduated thinking collapses to "◇ Thought (~N tokens)".
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     app.set_show_thinking(false);
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
-        "Think about this".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ThinkingDelta(
-        "Deep analysis of the question at hand with multiple considerations".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::TextDelta(
-        "Here is my conclusion.".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("Think about this"));
+    app.send_msgs(
+        feed.thinking("Deep analysis of the question at hand with multiple considerations"),
+    );
+    app.send_msgs(feed.text("Here is my conclusion."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let styled = vt.screen_contents_styled();
@@ -297,19 +265,16 @@ fn styled_snapshot_thinking_expanded_after_graduation() {
     let _colors = force_colors();
     // show_thinking=on: graduated thinking keeps the expanded content.
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     app.set_show_thinking(true);
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
-        "Think about this".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::ThinkingDelta(
-        "Deep analysis of the question at hand with multiple considerations".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::TextDelta(
-        "Here is my conclusion.".into(),
-    ));
-    app.on_message(crate::tui::oil::chat_app::ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("Think about this"));
+    app.send_msgs(
+        feed.thinking("Deep analysis of the question at hand with multiple considerations"),
+    );
+    app.send_msgs(feed.text("Here is my conclusion."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let styled = vt.screen_contents_styled();

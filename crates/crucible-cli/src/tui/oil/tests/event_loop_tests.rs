@@ -1,6 +1,7 @@
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 use crossterm::event::EventStream;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::Node;
@@ -75,12 +76,13 @@ async fn render_loop_completes_many_iterations() {
 async fn render_with_messages_does_not_accumulate() {
     let mut terminal = Terminal::with_size(80, 24);
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
     for i in 0..20 {
-        app.on_message(ChatAppMsg::UserMessage(format!("Message {}", i)));
-        app.on_message(ChatAppMsg::TextDelta(format!("Response chunk {} ", i)));
+        app.send_msgs(feed.user(&format!("Message {}", i)));
+        app.send_msgs(feed.text(&format!("Response chunk {} ", i)));
     }
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
 
     let start = Instant::now();
 

@@ -2,6 +2,7 @@
 //! cache tests. They need no daemon.
 
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 
 /// A user question for exchange `i`.
 pub fn user_text(i: usize) -> String {
@@ -41,11 +42,17 @@ pub fn assistant_text(i: usize) -> String {
     s
 }
 
-/// Add one finished exchange to `app`.
+/// Add one finished exchange to `app`. The turn id comes from `i`, so a
+/// feed for each exchange gives each turn its own items.
 pub fn push_exchange(app: &mut OilChatApp, i: usize) {
+    let mut feed = EventFeed::default();
     app.on_message(ChatAppMsg::UserMessage(user_text(i)));
-    app.on_message(ChatAppMsg::TextDelta(assistant_text(i)));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.msgs(
+        "user_message",
+        serde_json::json!({ "message_id": format!("exchange-{i}"), "content": user_text(i) }),
+    ));
+    app.send_msgs(feed.text(&assistant_text(i)));
+    app.send_msgs(feed.complete());
 }
 
 /// An app that holds `exchanges` finished exchanges.

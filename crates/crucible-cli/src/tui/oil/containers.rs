@@ -413,41 +413,6 @@ impl ContainerList {
         }
     }
 
-    /// Ensure there's an AssistantResponse at the end. Creates one if needed.
-    pub fn start_assistant_response(&mut self) {
-        if !matches!(self.nodes.last(), Some(ChatNode::AssistantResponse { .. })) {
-            self.push(ChatNode::AssistantResponse {
-                text: String::new(),
-                thinking: Vec::new(),
-                complete: false,
-            });
-        }
-    }
-
-    /// Append text to the current AssistantResponse. Creates one if needed.
-    pub fn append_text(&mut self, delta: &str) {
-        self.start_assistant_response();
-        if let Some(ChatNode::AssistantResponse { text, .. }) = self.last_mut() {
-            text.push_str(delta);
-        }
-    }
-
-    /// Append thinking content.
-    ///
-    /// Always lands inside an AssistantResponse (creating an empty one if
-    /// none exists yet) so the thinking renders inline as it streams. The
-    /// AR's empty `text` won't graduate on its own — graduation only fires
-    /// once the AR is complete or another node lands after it.
-    pub fn append_thinking(&mut self, delta: &str) {
-        self.start_assistant_response();
-        if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.last_mut() {
-            if thinking.is_empty() {
-                thinking.push(ThinkingComponent::new(String::new()));
-            }
-            thinking.last_mut().unwrap().append(delta);
-        }
-    }
-
     /// Add a tool call. Groups into an existing trailing ToolGroup if present,
     /// otherwise creates a new one.
     pub fn add_tool_call(&mut self, tool: CachedToolCall) {
@@ -517,35 +482,6 @@ impl ContainerList {
         froze
     }
 
-    /// Apply an update to a split tool, if this call belongs to one.
-    ///
-    /// Returns whether the update was handled here. A split tool is no longer
-    /// in any group, so the normal `update_tool` path would miss it.
-    pub fn update_background_tool(
-        &mut self,
-        name: &str,
-        call_id: Option<&str>,
-        f: impl FnOnce(&mut CachedToolCall),
-    ) -> bool {
-        let found = match call_id {
-            Some(cid) => self
-                .background
-                .iter_mut()
-                .rev()
-                .find(|t| t.call_id.as_deref() == Some(cid)),
-            None => self
-                .background
-                .iter_mut()
-                .rev()
-                .find(|t| t.name.as_ref() == name),
-        };
-        let Some(tool) = found else {
-            return false;
-        };
-        f(tool);
-        true
-    }
-
     /// Write the finish node for a split tool and drop its live copy.
     ///
     /// `now` is the frame clock; the finish node records the run time from it.
@@ -584,44 +520,6 @@ impl ContainerList {
         self.background.len()
     }
 
-    /// Update a tool within the most recent ToolGroup by name and optional call_id.
-    pub fn update_tool(
-        &mut self,
-        name: &str,
-        call_id: Option<&str>,
-        f: impl FnOnce(&mut CachedToolCall),
-    ) {
-        // Search backwards for a ToolGroup containing this tool
-        for (node, revision) in self.entries_mut().rev() {
-            if let ChatNode::ToolGroup { tools } = node {
-                // Match by call_id first, then by name
-                // A frozen card never changes again. Its live copy is in
-                // `self.background`, which `update_background_tool` reaches.
-                let found = if let Some(cid) = call_id {
-                    tools
-                        .iter_mut()
-                        .rev()
-                        .find(|t| !t.backgrounded && t.call_id.as_deref() == Some(cid))
-                } else {
-                    tools
-                        .iter_mut()
-                        .rev()
-                        .find(|t| !t.backgrounded && t.name.as_ref() == name)
-                };
-                if let Some(tool) = found {
-                    *revision = next_revision();
-                    f(tool);
-                    return;
-                }
-            }
-        }
-        tracing::warn!(
-            name = %name,
-            call_id = ?call_id,
-            "tool update missed all live ToolGroups — tool already graduated to scrollback, or its call was never received"
-        );
-    }
-
     /// Update the most recent tool with the given call_id (without
     /// requiring the tool name). Used for ACP `tool_call_update`
     /// events that key only on call_id.
@@ -649,10 +547,6 @@ impl ContainerList {
             call_id = %call_id,
             "tool update by call_id missed all live ToolGroups — tool already graduated to scrollback, or its call was never received"
         );
-    }
-
-    pub fn add_agent_task(&mut self, agent: CachedSubagent) {
-        self.push(ChatNode::SubagentTask { agent });
     }
 
     pub fn update_agent_task(&mut self, agent_id: &str, f: impl FnOnce(&mut CachedSubagent)) {
@@ -740,6 +634,37 @@ mod tests {
             .join("\n")
     }
 
+    /// Append an open answer with `text` and `thinking`, as the transcript
+    /// applier does for a new segment.
+    fn push_answer(list: &mut ContainerList, text: &str, thinking: &str) {
+        let thinking = if thinking.is_empty() {
+            Vec::new()
+        } else {
+            vec![ThinkingComponent::new(thinking.to_string())]
+        };
+        list.push(ChatNode::AssistantResponse {
+            text: text.to_string(),
+            thinking,
+            complete: false,
+        });
+    }
+
+    /// Append `delta` to the text of the last answer.
+    fn append_answer_text(list: &mut ContainerList, delta: &str) {
+        let last = list.len() - 1;
+        list.update_node(last, |node| {
+            if let ChatNode::AssistantResponse { text, .. } = node {
+                text.push_str(delta);
+            }
+        });
+    }
+
+    fn finished_tool(id: &str, name: &str) -> CachedToolCall {
+        let mut tool = CachedToolCall::new(id, name, "{}");
+        tool.mark_complete();
+        tool
+    }
+
     fn render_lines(list: &ContainerList) -> Vec<String> {
         render_list(list, false)
             .lines()
@@ -763,11 +688,11 @@ mod tests {
 
         let mut list = ContainerList::new();
         list.mark_turn_active();
-        list.start_assistant_response();
+        push_answer(&mut list, "", "");
 
         let mut previous: Vec<String> = Vec::new();
         for delta in deltas {
-            list.append_text(delta);
+            append_answer_text(&mut list, delta);
             let lines = render_lines(&list);
             assert!(
                 lines.starts_with(previous.as_slice()),
@@ -799,7 +724,7 @@ mod tests {
         let mut list = ContainerList::new();
         list.add_user_message("hi".into());
         list.mark_turn_active();
-        list.append_thinking("Working it out");
+        push_answer(&mut list, "", "Working it out");
         let plain = render_list(&list, true);
         assert!(
             plain.contains("Working it out"),
@@ -815,8 +740,7 @@ mod tests {
         let mut list = ContainerList::new();
         list.add_user_message("hi".into());
         list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_thinking("Reasoning about the question");
+        push_answer(&mut list, "", "Reasoning about the question");
         let plain = render_list(&list, true);
         assert!(
             plain.contains("Reasoning about the question"),
@@ -832,8 +756,7 @@ mod tests {
         let mut list = ContainerList::new();
         list.add_user_message("hi".into());
         list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_thinking("alpha beta gamma");
+        push_answer(&mut list, "", "alpha beta gamma");
         let plain = render_list(&list, false);
         assert!(
             plain.contains("Thinking"),
@@ -846,8 +769,7 @@ mod tests {
     fn add_tool_call_marks_trailing_assistant_complete() {
         let mut list = ContainerList::new();
         list.mark_turn_active();
-        list.start_assistant_response();
-        list.append_text("let me use a tool");
+        push_answer(&mut list, "let me use a tool", "");
 
         // Adding tool should mark the assistant complete
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
@@ -861,15 +783,14 @@ mod tests {
     #[test]
     fn user_then_thinking_then_tool_call_preserves_thinking() {
         // Sequence: user message → thinking delta arrives → tool call lands.
-        // The append_thinking call creates an AR that holds the thinking
-        // content. add_tool_call marks the AR complete and creates a fresh
+        // The AR holds the thinking content. add_tool_call marks the AR complete and creates a fresh
         // ToolGroup. Both nodes must render meaningful content; the AR is
         // not empty (it carries the thinking) so it must NOT be silently
         // swallowed by render-time Node::Empty short-circuiting.
         let mut list = ContainerList::new();
         list.add_user_message("question".into());
         list.mark_turn_active();
-        list.append_thinking("considering options");
+        push_answer(&mut list, "", "considering options");
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
 
         let nodes = list.nodes();
@@ -933,10 +854,8 @@ mod tests {
         let mut list = ContainerList::new();
         list.add_user_message("do the thing".into());
         list.mark_turn_active();
-        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
-        list.update_tool("read_file", None, |t| t.mark_complete());
-        list.start_assistant_response();
-        list.append_text("done");
+        list.add_tool_call(finished_tool("t1", "read_file"));
+        push_answer(&mut list, "done", "");
         list.complete_response();
 
         assert_eq!(
@@ -958,8 +877,7 @@ mod tests {
         for turn in 0..3 {
             list.add_user_message(format!("question {turn}"));
             list.mark_turn_active();
-            list.start_assistant_response();
-            list.append_text("answer");
+            push_answer(&mut list, "answer", "");
             list.complete_response();
         }
 
@@ -979,8 +897,7 @@ mod tests {
     fn a_fast_tool_is_never_split() {
         let mut list = ContainerList::new();
         list.mark_turn_active();
-        list.add_tool_call(CachedToolCall::new("t1", "read_file", "{}"));
-        list.update_tool("read_file", None, |t| t.mark_complete());
+        list.add_tool_call(finished_tool("t1", "read_file"));
 
         assert!(!list.split_slow_tools(Instant::now(), Duration::from_millis(500)));
         assert_eq!(list.len(), 1, "the tool stays one grouped node");
@@ -1043,8 +960,7 @@ mod tests {
         list.add_user_message("run it".into());
         list.mark_turn_active();
         list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
-        list.start_assistant_response();
-        list.append_text("the answer");
+        push_answer(&mut list, "the answer", "");
 
         let before: Vec<String> = render_list(&list, false)
             .lines()
@@ -1099,11 +1015,14 @@ mod tests {
     fn a_split_tool_keeps_taking_output_off_the_transcript() {
         let mut list = ContainerList::new();
         list.mark_turn_active();
-        list.add_tool_call(CachedToolCall::new("t1", "bash", "{}"));
+        let mut call = CachedToolCall::new("t1", "bash", "{}");
+        call.call_id = Some("t1".into());
+        list.add_tool_call(call);
         list.split_slow_tools(Instant::now(), Duration::ZERO);
 
-        // Output arriving after the freeze must not reach the frozen card.
-        assert!(list.update_background_tool("bash", None, |t| t.append_output("line\n")));
+        // Output arriving after the freeze goes to the live copy, not to the
+        // frozen card.
+        list.update_tool_by_call_id("t1", |t| t.append_output("line\n"));
         assert_eq!(list.len(), 1, "no node was added by output alone");
         let ChatNode::ToolGroup { tools } = &list.nodes()[0] else {
             panic!("the card must stay in its group");
@@ -1112,15 +1031,9 @@ mod tests {
             tools[0].output_tail.is_empty(),
             "the frozen card must take no output"
         );
-
-        // The normal update path must also miss it.
-        list.update_tool("bash", None, |t| t.append_output("other\n"));
-        let ChatNode::ToolGroup { tools } = &list.nodes()[0] else {
-            unreachable!()
-        };
         assert!(
-            tools[0].output_tail.is_empty(),
-            "update_tool must skip a frozen card"
+            !list.background[0].output_tail.is_empty(),
+            "the live copy takes the output"
         );
     }
 
@@ -1173,8 +1086,7 @@ mod tests {
         list.add_tool_call(tool);
 
         // Start a new assistant response after the tool group
-        list.start_assistant_response();
-        list.append_text("continuation text");
+        push_answer(&mut list, "continuation text", "");
         list.complete_response();
 
         // Verify continuation is derived at render time

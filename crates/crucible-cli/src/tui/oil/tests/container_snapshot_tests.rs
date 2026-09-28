@@ -14,6 +14,7 @@
 use super::helpers::vt_render;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::containers::ChatNode;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 
 // ─── Structural state-assertion tests (DECLARED coverage-type change) ──────
 //
@@ -45,9 +46,10 @@ fn assistant_text_creates_response_container() {
     // Formerly `snapshot_assistant_text`.
     // Visual class now outside coverage: assistant markdown bullet (`● ` prefix).
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Hello".into()));
-    app.on_message(ChatAppMsg::TextDelta("The answer is 42.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("Hello"));
+    app.send_msgs(feed.text("The answer is 42."));
+    app.send_msgs(feed.complete());
 
     let nodes = app.container_list.nodes();
     assert_eq!(nodes.len(), 2, "user + assistant should be 2 containers");
@@ -72,22 +74,17 @@ fn tool_complete_creates_tool_group() {
     // Formerly `snapshot_tool_complete`.
     // Visual class now outside coverage: completed-tool checkmark (`✓ ToolName arg`).
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Read a file".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "src/main.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("Read a file"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "src/main.rs"}"#,
         render: Some("src/main.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", ""));
+    app.send_msgs(feed.complete());
 
     let nodes = app.container_list.nodes();
     assert_eq!(nodes.len(), 2, "user + tool group should be 2 containers");
@@ -111,31 +108,24 @@ fn multi_turn_creates_containers_in_order() {
     // Visual class now outside coverage: thinking-block collapse formatting,
     // continuation-text indentation, tool checkmark row.
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
     // Turn 1: user → thinking → text → tool → continuation text
-    app.on_message(ChatAppMsg::UserMessage("Analyze this code".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta("Reviewing the structure".into()));
-    app.on_message(ChatAppMsg::TextDelta("I see a few issues.".into()));
+    app.send_msgs(feed.user("Analyze this code"));
+    app.send_msgs(feed.thinking("Reviewing the structure"));
+    app.send_msgs(feed.text("I see a few issues."));
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "lib.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "lib.rs"}"#,
         render: Some("lib.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", ""));
 
-    app.on_message(ChatAppMsg::TextDelta(
-        "After reading the file, here are my findings.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("After reading the file, here are my findings."));
+    app.send_msgs(feed.complete());
 
     let nodes = app.container_list.nodes();
     // user → AssistantResponse(thinking+text, marked complete by ToolCall) →
@@ -180,12 +170,13 @@ fn user_assistant_exchange_creates_two_containers() {
     // Formerly `snapshot_user_and_assistant_exchange`.
     // Visual class now outside coverage: user-message box, assistant bullet prefix.
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::UserMessage("What is Rust?".into()));
-    app.on_message(ChatAppMsg::TextDelta(
-        "Rust is a systems programming language focused on safety and performance.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("What is Rust?"));
+    app.send_msgs(
+        feed.text("Rust is a systems programming language focused on safety and performance."),
+    );
+    app.send_msgs(feed.complete());
 
     let nodes = app.container_list.nodes();
     assert_eq!(nodes.len(), 2);
@@ -212,18 +203,16 @@ fn user_assistant_exchange_creates_two_containers() {
 fn snapshot_tool_pending() {
     // Visual indicator: pending-tool spinner frame (`◐` braille).
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Run a command".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "ls"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("Run a command"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "ls"}"#,
         render: Some("ls".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    // Tool is still pending (no ToolResultComplete)
+        ..Default::default()
+    }));
+    // Tool is still pending (no tool_result)
 
     let output = vt_render(&mut app);
     insta::assert_snapshot!(output);
@@ -233,14 +222,15 @@ fn snapshot_tool_pending() {
 fn snapshot_context_indicator_after_usage() {
     // Visual rendering: statusline token-count format ("Nk tok").
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::UserMessage("Hi".into()));
-    app.on_message(ChatAppMsg::TextDelta("Hello!".into()));
+    app.send_msgs(feed.user("Hi"));
+    app.send_msgs(feed.text("Hello!"));
     app.on_message(ChatAppMsg::ContextUsage {
         used: 2555,
         total: 0,
     });
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
 
     let output = vt_render(&mut app);
     // Statusline should show token count (no total → "Nk tok" format)
@@ -255,14 +245,15 @@ fn snapshot_context_indicator_after_usage() {
 fn snapshot_context_indicator_with_percentage() {
     // Visual rendering: statusline context-percentage format ("N% ctx").
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::UserMessage("Hi".into()));
-    app.on_message(ChatAppMsg::TextDelta("Hello!".into()));
+    app.send_msgs(feed.user("Hi"));
+    app.send_msgs(feed.text("Hello!"));
     app.on_message(ChatAppMsg::ContextUsage {
         used: 4096,
         total: 131072,
     });
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
 
     let output = vt_render(&mut app);
     // Statusline should show percentage (has total → "N% ctx" format)
@@ -280,27 +271,23 @@ fn show_diffs_off_omits_diff_body() {
     use crucible_core::types::acp::FileDiff;
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     app.set_show_diffs(false);
-    app.on_message(ChatAppMsg::UserMessage("edit a file".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "edit_file".into(),
-        args: r#"{"path": "src/lib.rs"}"#.into(),
-        call_id: Some("e1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("edit a file"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "edit_file",
+        call_id: "e1",
+        args: r#"{"path": "src/lib.rs"}"#,
         render: Some("src/lib.rs".into()),
         diffs: vec![FileDiff::from_contents(
             "src/lib.rs",
             Some("fn old() {}\n".to_string()),
             "fn new() {}\n",
         )],
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "edit_file".into(),
-        call_id: Some("e1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("edit_file", "e1", ""));
+    app.send_msgs(feed.complete());
 
     let output = vt_render(&mut app);
     // With show_diffs off, the rendered diff body must not appear.
@@ -316,27 +303,23 @@ fn show_diffs_on_includes_diff_body() {
     use crucible_core::types::acp::FileDiff;
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     app.set_show_diffs(true);
-    app.on_message(ChatAppMsg::UserMessage("edit a file".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "edit_file".into(),
-        args: r#"{"path": "src/lib.rs"}"#.into(),
-        call_id: Some("e1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("edit a file"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "edit_file",
+        call_id: "e1",
+        args: r#"{"path": "src/lib.rs"}"#,
         render: Some("src/lib.rs".into()),
         diffs: vec![FileDiff::from_contents(
             "src/lib.rs",
             Some("fn old() {}\n".to_string()),
             "fn new() {}\n",
         )],
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "edit_file".into(),
-        call_id: Some("e1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("edit_file", "e1", ""));
+    app.send_msgs(feed.complete());
 
     let output = vt_render(&mut app);
     assert!(

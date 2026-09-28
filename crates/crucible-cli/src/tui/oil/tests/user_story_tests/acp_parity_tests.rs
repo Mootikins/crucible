@@ -185,13 +185,10 @@ fn without_the_provenance_badge(frame: &str) -> String {
 /// - `description` — the internal fixture carries the registry text, the
 ///   delegated one has none. The TUI does render descriptions when it has one:
 ///   `render_description` paints a dimmed indented line and `CachedToolCall`
-///   keeps the field. What breaks the chain is a single hard-coded
-///   `let description = None` in `session_event_to_chat_msgs`
-///   (`chat_runner/commands.rs`: "not shown during live streaming … omit on
-///   resume for consistency"), and that converter is the only producer of
-///   `ChatAppMsg::ToolCall`. So the asymmetry costs no pixels *today*; wire
-///   the daemon's description through for one arm only and this test fails,
-///   which is the point of leaving it in the fixtures.
+///   keeps the field. The transcript fold keeps no description, and
+///   `chat_app/transcript.rs` gives each card `description: None`. So the
+///   asymmetry costs no pixels *today*. If a change sends the description
+///   for one arm only, this test fails. That is why the fixtures keep it.
 /// - `auto_approved` — absent from both, because it is not a property of the
 ///   *behaviour*. An interactively approved call earns no `[auto]` marker.
 ///   Baking it into the internal side alone would assert a difference this

@@ -4,6 +4,7 @@
 use super::vt100_runtime::Vt100TestRuntime;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::containers::ChatNode;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 use crucible_oil::ansi::strip_ansi;
 
 /// Simulates the exact scenario from user testing:
@@ -11,96 +12,81 @@ use crucible_oil::ansi::strip_ansi;
 #[test]
 fn e2e_full_conversation_render() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(124, 40);
 
     // Step 1: User message
-    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    app.send_msgs(feed.user("tell me about this repo"));
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 1: After user message ===\n============================================================");
     eprintln!("{}", out);
 
     // Step 2: Thinking starts
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "I need to explore the repository structure to understand what this project is about. Let me start by looking at the files and reading the README."
-            .into(),
-    ));
+    app.send_msgs(feed.thinking("I need to explore the repository structure to understand what this project is about. Let me start by looking at the files and reading the README."));
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 2: After thinking delta ===\n============================================================");
     eprintln!("{}", out);
 
     // Step 3: Text starts (thinking should finalize)
-    app.on_message(ChatAppMsg::TextDelta(
-        "I'll explore this repository to understand its structure and purpose.".into(),
-    ));
+    app.send_msgs(
+        feed.text("I'll explore this repository to understand its structure and purpose."),
+    );
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 3: After text delta ===\n============================================================");
     eprintln!("{}", out);
 
     // Step 4: Tool calls
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: r#"{"command": "ls -la"}"#.into(),
-        call_id: Some("call-1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Bash",
+        call_id: "call-1",
+        args: r#"{"command": "ls -la"}"#,
         render: Some("ls -la".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 4: After tool call (pending) ===\n============================================================");
     eprintln!("{}", out);
 
     // Step 5: Tool complete
-    app.on_message(ChatAppMsg::ToolResultDelta {
-        name: "Bash".into(),
-        delta: "total 42\ndrwxr-xr-x 1 user user 100 Jan 1 00:00 src\n".into(),
-        call_id: Some("call-1".into()),
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("call-1".into()),
-    });
+    app.send_msgs(feed.tool_result(
+        "Bash",
+        "call-1",
+        "total 42\ndrwxr-xr-x 1 user user 100 Jan 1 00:00 src\n",
+    ));
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 5: After tool complete ===\n============================================================");
     eprintln!("{}", out);
 
     // Step 6: Second tool
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Glob".into(),
-        args: r#"{"pattern": "README*"}"#.into(),
-        call_id: Some("call-2".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Glob",
+        call_id: "call-2",
+        args: r#"{"pattern": "README*"}"#,
         render: Some("README*".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Glob".into(),
-        call_id: Some("call-2".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("Glob", "call-2", ""));
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 6: After second tool ===\n============================================================");
     eprintln!("{}", out);
 
     // Step 7: Continuation text after tools
-    app.on_message(ChatAppMsg::TextDelta(
-        "Based on my analysis, this is a Rust workspace project called Crucible.".into(),
-    ));
+    app.send_msgs(
+        feed.text("Based on my analysis, this is a Rust workspace project called Crucible."),
+    );
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 7: After continuation text ===\n============================================================");
     eprintln!("{}", out);
 
     // Step 8: Stream complete (everything graduates)
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
     let out = strip_ansi(&vt.full_history());
     eprintln!("\n============================================================\n=== STEP 8: After stream complete (all graduated) ===\n============================================================");
@@ -136,24 +122,13 @@ fn e2e_full_conversation_render() {
 #[test]
 fn debug_continuation_flag() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
-    app.on_message(ChatAppMsg::TextDelta("first text".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: "{}".into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::TextDelta("continuation text".into()));
+    app.send_msgs(feed.thinking("thinking..."));
+    app.send_msgs(feed.text("first text"));
+    app.send_msgs(feed.tool_call("Bash", "c1", "{}"));
+    app.send_msgs(feed.tool_result("Bash", "c1", ""));
+    app.send_msgs(feed.text("continuation text"));
 
     let nodes = app.container_list().nodes();
     for (i, node) in nodes.iter().enumerate() {
@@ -185,26 +160,13 @@ fn debug_continuation_rendering() {
     use crucible_oil::render::render_to_plain_text;
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
-    app.on_message(ChatAppMsg::TextDelta("first text".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: "{}".into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::TextDelta(
-        "continuation text after tools".into(),
-    ));
+    app.send_msgs(feed.thinking("thinking..."));
+    app.send_msgs(feed.text("first text"));
+    app.send_msgs(feed.tool_call("Bash", "c1", "{}"));
+    app.send_msgs(feed.tool_result("Bash", "c1", ""));
+    app.send_msgs(feed.text("continuation text after tools"));
 
     let focus = FocusContext::default();
     let ctx = crate::tui::oil::ViewContext::new(&focus);
@@ -242,27 +204,14 @@ fn debug_full_view_rendering() {
     use super::helpers::vt_render;
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
-    app.on_message(ChatAppMsg::TextDelta("first text".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: "{}".into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::TextDelta(
-        "continuation text after tools".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.thinking("thinking..."));
+    app.send_msgs(feed.text("first text"));
+    app.send_msgs(feed.tool_call("Bash", "c1", "{}"));
+    app.send_msgs(feed.tool_result("Bash", "c1", ""));
+    app.send_msgs(feed.text("continuation text after tools"));
+    app.send_msgs(feed.complete());
 
     let output = vt_render(&mut app);
     eprintln!("Full rendered output:");
@@ -282,12 +231,13 @@ fn debug_full_view_rendering() {
 #[test]
 fn after_stream_complete_tui_is_responsive() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // First turn
-    app.on_message(ChatAppMsg::UserMessage("first".into()));
-    app.on_message(ChatAppMsg::TextDelta("response one".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("first"));
+    app.send_msgs(feed.text("response one"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     assert!(
@@ -296,11 +246,11 @@ fn after_stream_complete_tui_is_responsive() {
     );
 
     // Second turn should work
-    app.on_message(ChatAppMsg::UserMessage("second".into()));
-    app.on_message(ChatAppMsg::TextDelta("response two".into()));
+    app.send_msgs(feed.user("second"));
+    app.send_msgs(feed.text("response two"));
     assert!(app.is_streaming(), "Should be streaming during second turn");
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     assert!(
@@ -321,14 +271,13 @@ fn only_one_spinner_visible_during_thinking() {
     use crucible_oil::node::SPINNER_FRAMES;
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("think hard".into()));
+    app.send_msgs(feed.user("think hard"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "deep thoughts about the universe".into(),
-    ));
+    app.send_msgs(feed.thinking("deep thoughts about the universe"));
     vt.render_frame(&mut app);
 
     let screen = strip_ansi(&vt.screen_contents());
@@ -351,11 +300,12 @@ fn only_one_spinner_visible_during_thinking() {
 #[test]
 fn user_message_matches_input_style() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("hello world".into()));
-    app.on_message(ChatAppMsg::TextDelta("response".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("hello world"));
+    app.send_msgs(feed.text("response"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let screen = strip_ansi(&vt.screen_contents());
@@ -401,59 +351,43 @@ fn user_message_matches_input_style() {
 #[test]
 fn e2e_multi_turn_graduation() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(100, 24);
 
     // === Turn 1 ===
-    app.on_message(ChatAppMsg::UserMessage("first question".into()));
+    app.send_msgs(feed.user("first question"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "Let me think about this carefully.".into(),
-    ));
+    app.send_msgs(feed.thinking("Let me think about this carefully."));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Here is my initial analysis.".into()));
+    app.send_msgs(feed.text("Here is my initial analysis."));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: r#"{"command": "ls"}"#.into(),
-        call_id: Some("t1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Bash",
+        call_id: "t1",
+        args: r#"{"command": "ls"}"#,
         render: Some("ls".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolResultDelta {
-        name: "Bash".into(),
-        delta: "file1.rs\nfile2.rs\n".into(),
-        call_id: Some("t1".into()),
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("t1".into()),
-    });
+    app.send_msgs(feed.tool_result("Bash", "t1", "file1.rs\nfile2.rs\n"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta(
-        "After analyzing the files, here is the conclusion.".into(),
-    ));
+    app.send_msgs(feed.text("After analyzing the files, here is the conclusion."));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // === Turn 2 ===
-    app.on_message(ChatAppMsg::UserMessage("follow up question".into()));
+    app.send_msgs(feed.user("follow up question"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta(
-        "Here is the follow up answer.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Here is the follow up answer."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Verify: Turn 1 content is in scrollback after turn 2 completes
@@ -497,21 +431,23 @@ fn e2e_multi_turn_graduation() {
 fn e2e_history_replay_matches_live() {
     // Live streaming path
     let mut live_app = OilChatApp::default();
+    let mut live_feed = EventFeed::default();
     let mut live_vt = Vt100TestRuntime::new(80, 24);
 
-    live_app.on_message(ChatAppMsg::UserMessage("hello".into()));
-    live_app.on_message(ChatAppMsg::TextDelta("world response".into()));
-    live_app.on_message(ChatAppMsg::StreamComplete);
+    live_app.send_msgs(live_feed.user("hello"));
+    live_app.send_msgs(live_feed.text("world response"));
+    live_app.send_msgs(live_feed.complete());
     live_vt.render_frame(&mut live_app);
     let live_output = strip_ansi(&live_vt.full_history());
 
     // Replay path: same events applied without render between each
     let mut replay_app = OilChatApp::default();
+    let mut replay_feed = EventFeed::default();
     let mut replay_vt = Vt100TestRuntime::new(80, 24);
 
-    replay_app.on_message(ChatAppMsg::UserMessage("hello".into()));
-    replay_app.on_message(ChatAppMsg::TextDelta("world response".into()));
-    replay_app.on_message(ChatAppMsg::StreamComplete);
+    replay_app.send_msgs(replay_feed.user("hello"));
+    replay_app.send_msgs(replay_feed.text("world response"));
+    replay_app.send_msgs(replay_feed.complete());
     replay_vt.render_frame(&mut replay_app);
     let replay_output = strip_ansi(&replay_vt.full_history());
 
@@ -542,29 +478,19 @@ fn e2e_history_replay_matches_live() {
 #[test]
 fn e2e_tool_multiline_output() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("run ls".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: r#"{"command": "ls -la"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("run ls"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Bash",
+        call_id: "c1",
+        args: r#"{"command": "ls -la"}"#,
         render: Some("ls -la".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultDelta {
-        name: "Bash".into(),
-        delta: "line one\nline two\nline three\n".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("Bash", "c1", "line one\nline two\nline three\n"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let output = strip_ansi(&vt.full_history());
@@ -591,25 +517,19 @@ fn e2e_tool_multiline_output() {
 #[test]
 fn e2e_tool_error_rendering() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("do something".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: r#"{"command": "fail"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("do something"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Bash",
+        call_id: "c1",
+        args: r#"{"command": "fail"}"#,
         render: Some("fail".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultError {
-        name: "Bash".into(),
-        error: "command not found: fail".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_error("Bash", "c1", "command not found: fail"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let output = strip_ansi(&vt.full_history());
@@ -635,13 +555,14 @@ fn e2e_tool_error_rendering() {
 #[test]
 fn e2e_multiple_thinking_blocks() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::UserMessage("think hard".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta("first line of thought".into()));
-    app.on_message(ChatAppMsg::TextDelta("intermediate text".into()));
+    app.send_msgs(feed.user("think hard"));
+    app.send_msgs(feed.thinking("first line of thought"));
+    app.send_msgs(feed.text("intermediate text"));
     // Second thinking block after text (new thinking component should be created
     // since the previous one gets graduated when text starts)
-    app.on_message(ChatAppMsg::ThinkingDelta("second line of thought".into()));
+    app.send_msgs(feed.thinking("second line of thought"));
 
     let nodes = app.container_list().nodes();
     // Find the assistant response(s) and check thinking content
@@ -672,12 +593,13 @@ fn e2e_multiple_thinking_blocks() {
 #[test]
 fn e2e_empty_text_deltas_ignored() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
-    app.on_message(ChatAppMsg::UserMessage("test".into()));
-    app.on_message(ChatAppMsg::TextDelta("".into()));
-    app.on_message(ChatAppMsg::TextDelta("".into()));
-    app.on_message(ChatAppMsg::TextDelta("actual text".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("test"));
+    app.send_msgs(feed.text(""));
+    app.send_msgs(feed.text(""));
+    app.send_msgs(feed.text("actual text"));
+    app.send_msgs(feed.complete());
 
     let nodes = app.container_list().nodes();
 
@@ -709,29 +631,18 @@ fn e2e_empty_text_deltas_ignored() {
 #[test]
 fn e2e_rapid_tool_calls_group() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("do three things".into()));
-    app.on_message(ChatAppMsg::TextDelta("I will run three tools.".into()));
+    app.send_msgs(feed.user("do three things"));
+    app.send_msgs(feed.text("I will run three tools."));
 
     // Three rapid tool calls
     for i in 0..3 {
         let call_id = format!("call-{}", i);
         let name = format!("Tool{}", i);
-        app.on_message(ChatAppMsg::ToolCall {
-            name: name.clone(),
-            args: "{}".into(),
-            call_id: Some(call_id.clone()),
-            description: None,
-            source: None,
-            render: None,
-            diffs: Vec::new(),
-            auto_approved: None,
-        });
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name,
-            call_id: Some(call_id),
-        });
+        app.send_msgs(feed.tool_call(&name, &call_id, "{}"));
+        app.send_msgs(feed.tool_result(&name, &call_id, ""));
     }
 
     // Check nodes BEFORE graduation (before StreamComplete + render)
@@ -759,7 +670,7 @@ fn e2e_rapid_tool_calls_group() {
         }
     }
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Verify rendered output has all tool names
@@ -775,14 +686,13 @@ fn e2e_rapid_tool_calls_group() {
 #[test]
 fn e2e_terminal_resize_during_streaming() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
     // Start at 80x24
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("tell me a story".into()));
-    app.on_message(ChatAppMsg::TextDelta(
-        "Once upon a time in a land far far away there lived a great wizard.".into(),
-    ));
+    app.send_msgs(feed.user("tell me a story"));
+    app.send_msgs(feed.text("Once upon a time in a land far far away there lived a great wizard."));
     vt.render_frame(&mut app);
 
     let narrow_output = strip_ansi(&vt.screen_contents());
@@ -806,8 +716,8 @@ fn e2e_terminal_resize_during_streaming() {
     );
 
     // Continue streaming
-    app.on_message(ChatAppMsg::TextDelta(" He cast many spells.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text(" He cast many spells."));
+    app.send_msgs(feed.complete());
     wide_vt.render_frame(&mut app);
 
     let final_output = strip_ansi(&wide_vt.full_history());
@@ -829,11 +739,12 @@ fn e2e_modal_doesnt_corrupt_content() {
     };
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Set up some content
-    app.on_message(ChatAppMsg::UserMessage("hello".into()));
-    app.on_message(ChatAppMsg::TextDelta("response text here".into()));
+    app.send_msgs(feed.user("hello"));
+    app.send_msgs(feed.text("response text here"));
     vt.render_frame(&mut app);
 
     let before_modal = strip_ansi(&vt.screen_contents());
@@ -876,20 +787,18 @@ fn e2e_modal_doesnt_corrupt_content() {
 #[test]
 fn e2e_cancel_during_tool_execution() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("do something".into()));
-    app.on_message(ChatAppMsg::TextDelta("Starting work...".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: r#"{"command": "sleep 100"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("do something"));
+    app.send_msgs(feed.text("Starting work..."));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Bash",
+        call_id: "c1",
+        args: r#"{"command": "sleep 100"}"#,
         render: Some("sleep 100".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
     // Cancel while tool is pending
@@ -916,9 +825,9 @@ fn e2e_cancel_during_tool_execution() {
     vt.assert_no_spinners_in_scrollback();
 
     // Should be able to start new turn
-    app.on_message(ChatAppMsg::UserMessage("try again".into()));
-    app.on_message(ChatAppMsg::TextDelta("Sure, trying again.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("try again"));
+    app.send_msgs(feed.text("Sure, trying again."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let final_output = strip_ansi(&vt.full_history());
@@ -929,21 +838,18 @@ fn e2e_cancel_during_tool_execution() {
     );
 }
 
-/// Test 11: DelegationSpawned + DelegationCompleted rendering.
+/// Test 11: `delegation_spawned` + `delegation_completed` rendering.
 #[test]
 fn e2e_subagent_lifecycle() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("delegate this".into()));
+    app.send_msgs(feed.user("delegate this"));
     vt.render_frame(&mut app);
 
     // Subagent spawned
-    app.on_message(ChatAppMsg::DelegationSpawned {
-        id: "agent-1".into(),
-        prompt: "Analyze the code".into(),
-        target_agent: None,
-    });
+    app.send_msgs(feed.msgs("delegation_spawned", serde_json::json!({ "delegation_id": "agent-1", "prompt": "Analyze the code", "target_agent": null })));
     vt.render_frame(&mut app);
 
     let during = strip_ansi(&vt.screen_contents());
@@ -958,11 +864,8 @@ fn e2e_subagent_lifecycle() {
     );
 
     // Subagent completed
-    app.on_message(ChatAppMsg::DelegationCompleted {
-        id: "agent-1".into(),
-        summary: "Analysis complete: found 3 issues".into(),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.msgs("delegation_completed", serde_json::json!({ "delegation_id": "agent-1", "result_summary": "Analysis complete: found 3 issues" })));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let after = strip_ansi(&vt.full_history());
@@ -979,19 +882,22 @@ fn e2e_user_message_wrapping() {
     let long_msg = "This is a very long user message that should definitely wrap at narrow terminal widths because it contains more than one hundred characters in total length for testing purposes";
 
     let mut app40 = OilChatApp::default();
-    app40.on_message(ChatAppMsg::UserMessage(long_msg.into()));
-    app40.on_message(ChatAppMsg::TextDelta("ok".into()));
-    app40.on_message(ChatAppMsg::StreamComplete);
+    let mut feed40 = EventFeed::default();
+    app40.send_msgs(feed40.user(long_msg));
+    app40.send_msgs(feed40.text("ok"));
+    app40.send_msgs(feed40.complete());
 
     let mut app80 = OilChatApp::default();
-    app80.on_message(ChatAppMsg::UserMessage(long_msg.into()));
-    app80.on_message(ChatAppMsg::TextDelta("ok".into()));
-    app80.on_message(ChatAppMsg::StreamComplete);
+    let mut feed80 = EventFeed::default();
+    app80.send_msgs(feed80.user(long_msg));
+    app80.send_msgs(feed80.text("ok"));
+    app80.send_msgs(feed80.complete());
 
     let mut app120 = OilChatApp::default();
-    app120.on_message(ChatAppMsg::UserMessage(long_msg.into()));
-    app120.on_message(ChatAppMsg::TextDelta("ok".into()));
-    app120.on_message(ChatAppMsg::StreamComplete);
+    let mut feed120 = EventFeed::default();
+    app120.send_msgs(feed120.user(long_msg));
+    app120.send_msgs(feed120.text("ok"));
+    app120.send_msgs(feed120.complete());
 
     // Render at 40 width
     let mut vt40 = Vt100TestRuntime::new(40, 30);
@@ -1035,13 +941,14 @@ fn e2e_user_message_wrapping() {
 #[test]
 fn e2e_stress_many_containers() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // 50 turns: user + assistant alternating
     for i in 0..50 {
-        app.on_message(ChatAppMsg::UserMessage(format!("question {}", i)));
-        app.on_message(ChatAppMsg::TextDelta(format!("answer {}", i)));
-        app.on_message(ChatAppMsg::StreamComplete);
+        app.send_msgs(feed.user(&format!("question {}", i)));
+        app.send_msgs(feed.text(&format!("answer {}", i)));
+        app.send_msgs(feed.complete());
         vt.render_frame(&mut app);
     }
 
@@ -1074,15 +981,14 @@ fn e2e_stress_many_containers() {
 #[test]
 fn thinking_not_duplicated_in_content_and_chrome() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("think hard".into()));
+    app.send_msgs(feed.user("think hard"));
     vt.render_frame(&mut app);
 
     // Thinking starts — only chrome should show thinking indicator
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "deep analysis of the problem with many words to count".into(),
-    ));
+    app.send_msgs(feed.thinking("deep analysis of the problem with many words to count"));
     vt.render_frame(&mut app);
 
     let screen = strip_ansi(&vt.screen_contents());
@@ -1110,7 +1016,7 @@ fn thinking_not_duplicated_in_content_and_chrome() {
     );
 
     // Now text starts — thinking should become "◇ Thought" in content
-    app.on_message(ChatAppMsg::TextDelta("Here is my answer.".into()));
+    app.send_msgs(feed.text("Here is my answer."));
     vt.render_frame(&mut app);
 
     let screen2 = strip_ansi(&vt.screen_contents());
@@ -1167,12 +1073,13 @@ fn close_interaction_closes_modal() {
 #[test]
 fn thinking_indicator_appears_at_most_once_on_screen() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("think".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "deep analysis of many things with lots of words to count accurately".into(),
-    ));
+    app.send_msgs(feed.user("think"));
+    app.send_msgs(
+        feed.thinking("deep analysis of many things with lots of words to count accurately"),
+    );
     vt.render_frame(&mut app);
 
     let screen = strip_ansi(&vt.screen_contents());
@@ -1197,11 +1104,12 @@ fn thinking_indicator_appears_at_most_once_on_screen() {
 #[test]
 fn thinking_transitions_to_thought_when_text_starts() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("think then respond".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta("reasoning about it".into()));
-    app.on_message(ChatAppMsg::TextDelta("Here is my answer.".into()));
+    app.send_msgs(feed.user("think then respond"));
+    app.send_msgs(feed.thinking("reasoning about it"));
+    app.send_msgs(feed.text("Here is my answer."));
     vt.render_frame(&mut app);
 
     let screen = strip_ansi(&vt.screen_contents());
@@ -1227,11 +1135,12 @@ fn spinners_only_in_chrome_area() {
     use crucible_oil::node::{BRAILLE_SPINNER_FRAMES, SPINNER_FRAMES};
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Streaming with text (turn active = spinner in chrome)
-    app.on_message(ChatAppMsg::UserMessage("do things".into()));
-    app.on_message(ChatAppMsg::TextDelta("working on it".into()));
+    app.send_msgs(feed.user("do things"));
+    app.send_msgs(feed.text("working on it"));
     vt.render_frame(&mut app);
 
     let screen = strip_ansi(&vt.screen_contents());
@@ -1267,26 +1176,21 @@ fn all_container_types_render_at_all_widths() {
     use crucible_oil::render::render_to_plain_text;
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
 
     // Create various node types
-    app.on_message(ChatAppMsg::UserMessage("test message".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta("some thinking".into()));
-    app.on_message(ChatAppMsg::TextDelta("response text here".into()));
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "Bash".into(),
-        args: r#"{"command": "echo hello"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.user("test message"));
+    app.send_msgs(feed.thinking("some thinking"));
+    app.send_msgs(feed.text("response text here"));
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "Bash",
+        call_id: "c1",
+        args: r#"{"command": "echo hello"}"#,
         render: Some("echo hello".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("Bash", "c1", ""));
+    app.send_msgs(feed.complete());
 
     let focus = FocusContext::default();
 

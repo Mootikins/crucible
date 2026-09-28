@@ -27,8 +27,7 @@ mod tests;
 
 pub use commands::session_event_to_chat_msgs;
 pub use render::render_frame;
-#[cfg(test)]
-pub(crate) use stream::event_msgs;
+pub use stream::event_msgs;
 pub use stream::SessionEventStream;
 pub(crate) use stream::{live_session_event_consumer, session_event_consumer};
 

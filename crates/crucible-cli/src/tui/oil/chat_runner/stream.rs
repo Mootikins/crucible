@@ -74,7 +74,7 @@ impl Default for SessionEventStream {
 /// The messages of one event: the transcript ops that it carries, then the
 /// rest. The ops come first, so that the end of a turn that the same event
 /// carries seals the segment that the ops just wrote.
-pub(crate) fn event_msgs(
+pub fn event_msgs(
     stream: &mut SessionEventStream,
     event: &crucible_daemon::SessionEvent,
 ) -> Vec<ChatAppMsg> {

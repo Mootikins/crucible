@@ -9,7 +9,7 @@
 //!    - Flow: User input → `process_action()` → RPC call to daemon
 //!
 //! 2. **Events (daemon → TUI)**: Responses from the daemon that update display state
-//!    - Examples: `TextDelta`, `StreamComplete`, `ModelsLoaded`
+//!    - Examples: `Transcript`, `StreamComplete`, `ModelsLoaded`
 //!    - Flow: Daemon event → `msg_tx` channel → `process_action()` → `app.on_message()`
 //!
 //! 3. **Dual-Duty**: Variants that serve both roles
@@ -34,7 +34,7 @@
 //! - Many variants are processed TWICE: once for side effects, once for state updates
 //! - The enum is NOT split into separate Command/Event types (would require explicit
 //!   conversion after processing, plus 18 test file updates)
-//! - Variants are grouped by domain (stream, config, delegation, ui) in `on_message()`
+//! - Variants are grouped by domain (stream, config, ui) in `on_message()`
 //!
 //! ## Variant Classification
 //!
@@ -48,9 +48,7 @@ use std::path::PathBuf;
 
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
 use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
-use crucible_core::traits::chat::PrecognitionNoteInfo;
-use crucible_core::types::acp::FileDiff;
-use crucible_core::types::{ProviderInfo, ToolRender};
+use crucible_core::types::ProviderInfo;
 
 use super::{McpServerDisplay, PluginStatusEntry};
 
@@ -59,70 +57,6 @@ pub enum ChatAppMsg {
     // --- Outbound Commands (TUI → daemon) ---
     /// **Command** (TUI → daemon): User typed a message and pressed Enter.
     UserMessage(String),
-    /// **Event** (daemon → TUI): Streaming text delta from LLM response.
-    TextDelta(String),
-    /// **Event** (daemon → TUI): Streaming thinking/reasoning delta from LLM.
-    ThinkingDelta(String),
-    /// **Event** (daemon → TUI): LLM initiated a tool call.
-    ToolCall {
-        name: String,
-        args: String,
-        /// LLM-assigned call ID for correlating results with the correct tool
-        call_id: Option<String>,
-        /// Human-readable description of what the tool does (from registry).
-        description: Option<String>,
-        /// Source provenance string (e.g. "Core", "Crucible", "Mcp:github").
-        source: Option<String>,
-        /// The render that the daemon sent with the call.
-        render: Option<ToolRender>,
-        /// File modification previews when the daemon can derive them
-        /// (ACP `ToolCallContent::Diff` or args-based synthesis). Empty
-        /// when the tool does not produce diffs or the daemon hasn't
-        /// computed them yet.
-        diffs: Vec<FileDiff>,
-        /// Which layer granted permission without asking, if any. Carried on
-        /// this event rather than a follow-up so the marker renders with the
-        /// row instead of appearing after it.
-        auto_approved: Option<String>,
-    },
-    /// **Event** (daemon → TUI): A new canonical form of an
-    /// already-announced tool call. An ACP agent can send the arguments or
-    /// the diff of a call in a later frame. The TUI updates the existing
-    /// `CachedToolCall` keyed by `call_id`.
-    ToolCallUpdate {
-        call_id: String,
-        /// JSON-serialized arguments, same representation as
-        /// [`Self::ToolCall`]'s `args`. `None` keeps the args of the card.
-        args: Option<String>,
-        /// The diffs of the new canonical call. `None` when the update has
-        /// no canonical call: a transcript line from before the field.
-        diffs: Option<Vec<FileDiff>>,
-        /// The new render: of a later frame, or of the result. `None` keeps
-        /// the render of the card.
-        render: Option<ToolRender>,
-        /// Which layer granted the call without asking.
-        auto_approved: Option<String>,
-    },
-    /// **Event** (daemon → TUI): Streaming delta of tool result output.
-    ToolResultDelta {
-        name: String,
-        delta: String,
-        /// LLM-assigned call ID for correlating results with the correct tool
-        call_id: Option<String>,
-    },
-    /// **Event** (daemon → TUI): Tool result streaming completed.
-    ToolResultComplete {
-        name: String,
-        /// LLM-assigned call ID for correlating results with the correct tool
-        call_id: Option<String>,
-    },
-    /// **Event** (daemon → TUI): Tool execution failed with error.
-    ToolResultError {
-        name: String,
-        error: String,
-        /// LLM-assigned call ID for correlating results with the correct tool
-        call_id: Option<String>,
-    },
     /// **Event** (daemon → TUI): LLM response streaming completed.
     StreamComplete,
     /// **Event** (daemon → TUI): LLM response streaming was cancelled by user.
@@ -220,17 +154,6 @@ pub enum ChatAppMsg {
     /// `message_complete`. `None` indicates "no cache data this turn".
     /// Drives the optional `cache_hit_rate` statusline component.
     CacheHitRate(Option<f64>),
-    // --- Delegation Events (daemon → TUI) ---
-    /// **Event** (daemon → TUI): Delegation spawned (cross-agent task started).
-    DelegationSpawned {
-        id: String,
-        prompt: String,
-        target_agent: Option<String>,
-    },
-    /// **Event** (daemon → TUI): Delegation completed successfully.
-    DelegationCompleted { id: String, summary: String },
-    /// **Event** (daemon → TUI): Delegation failed with error.
-    DelegationFailed { id: String, error: String },
     // --- UI State & Interaction Events ---
     /// **Event** (daemon → TUI): Open interaction popup (user input required).
     OpenInteraction {
@@ -391,11 +314,6 @@ pub enum ChatAppMsg {
     ClearContext,
     /// **Command** (TUI → daemon): Export session to markdown file.
     ExportSession(PathBuf),
-    /// **Event** (daemon → TUI): Precognition result (auto-injected context notes).
-    PrecognitionResult {
-        notes_count: usize,
-        notes: Vec<PrecognitionNoteInfo>,
-    },
     /// **Command** (TUI → daemon): Undo the last N agent turns.
     Undo(usize),
     /// **Event** (daemon → TUI): Undo completed, with count of turns reverted.
@@ -437,12 +355,10 @@ pub enum ChatAppMsg {
 pub(crate) enum MsgCategory {
     /// User-submitted chat input (`UserMessage`).
     User,
-    /// Streaming events from the LLM response.
+    /// Turn state and the transcript that the daemon folds.
     Stream,
     /// Model/provider configuration changes.
     Config,
-    /// Subagent and delegation lifecycle events.
-    Delegation,
     /// UI state, interaction modals, and miscellaneous events.
     Ui,
 }
@@ -453,14 +369,7 @@ impl ChatAppMsg {
         match self {
             Self::UserMessage(_) => MsgCategory::User,
 
-            Self::TextDelta(_)
-            | Self::ThinkingDelta(_)
-            | Self::ToolCall { .. }
-            | Self::ToolCallUpdate { .. }
-            | Self::ToolResultDelta { .. }
-            | Self::ToolResultComplete { .. }
-            | Self::ToolResultError { .. }
-            | Self::StreamComplete
+            Self::StreamComplete
             | Self::StreamCancelled
             | Self::Transcript { .. }
             | Self::TranscriptLoaded(_) => MsgCategory::Stream,
@@ -481,10 +390,6 @@ impl ChatAppMsg {
             | Self::PluginStatusLoaded(_)
             | Self::StatusItemsLoaded(_) => MsgCategory::Config,
 
-            Self::DelegationSpawned { .. }
-            | Self::DelegationCompleted { .. }
-            | Self::DelegationFailed { .. } => MsgCategory::Delegation,
-
             Self::Error(_)
             | Self::Status(_)
             | Self::Notification(_)
@@ -499,7 +404,6 @@ impl ChatAppMsg {
             | Self::OpenInteraction { .. }
             | Self::CloseInteraction { .. }
             | Self::InteractionEnded { .. }
-            | Self::PrecognitionResult { .. }
             | Self::ExecuteSlashCommand(_)
             | Self::SearchSessions(_)
             | Self::ClearContext

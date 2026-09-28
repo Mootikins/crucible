@@ -2,19 +2,21 @@
 //! scrollback or remain on screen after content graduates.
 
 use super::*;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 
 /// Graduated thinking must NOT contain spinner characters.
 #[test]
 fn graduated_thinking_has_no_spinner() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Do something".into()));
+    app.send_msgs(feed.user("Do something"));
     vt.render_frame(&mut app);
 
-    think(&mut app, "Planning the command.");
-    app.on_message(ChatAppMsg::TextDelta("Here is the plan.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    think(&mut app, &mut feed, "Planning the command.");
+    app.send_msgs(feed.text("Here is the plan."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Everything graduated — check scrollback for spinners
@@ -33,15 +35,17 @@ fn graduated_thinking_has_no_spinner() {
 #[test]
 fn vt100_spinner_does_not_leak_to_scrollback() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     // User message
-    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    app.send_msgs(feed.user("tell me about this repo"));
     vt.render_frame(&mut app);
 
     // Thinking arrives
     think(
         &mut app,
+        &mut feed,
         "I'll explore the repository to give you an overview of what it contains.",
     );
 
@@ -51,7 +55,7 @@ fn vt100_spinner_does_not_leak_to_scrollback() {
     }
 
     // Tool 1: Get Kiln Info (no permission needed)
-    tool(&mut app, "get_kiln_info", "c1");
+    tool(&mut app, &mut feed, "get_kiln_info", "c1");
 
     // Render with completed tool + turn spinner showing
     for _ in 0..3 {
@@ -59,27 +63,25 @@ fn vt100_spinner_does_not_leak_to_scrollback() {
     }
 
     // Tool 2: Bash (would normally need permission, but we skip the modal)
-    tool(&mut app, "bash", "c2");
+    tool(&mut app, &mut feed, "bash", "c2");
     vt.render_frame(&mut app);
 
     // Tool 3: Bash find
-    tool(&mut app, "bash", "c3");
+    tool(&mut app, &mut feed, "bash", "c3");
     vt.render_frame(&mut app);
 
     // Second thought block
-    think(&mut app, "Let me check more details.");
+    think(&mut app, &mut feed, "Let me check more details.");
 
     // More tools
-    tool(&mut app, "read_file", "c4");
-    tool(&mut app, "read_file", "c5");
+    tool(&mut app, &mut feed, "read_file", "c4");
+    tool(&mut app, &mut feed, "read_file", "c5");
     vt.render_frame(&mut app);
 
     // Third thought + final text
-    think(&mut app, "Now I have enough context.");
-    app.on_message(ChatAppMsg::TextDelta(
-        "Crucible is a knowledge-grounded agent runtime.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    think(&mut app, &mut feed, "Now I have enough context.");
+    app.send_msgs(feed.text("Crucible is a knowledge-grounded agent runtime."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Check the combined output for spinner characters in scrollback
@@ -116,6 +118,7 @@ fn vt100_spinner_does_not_leak_to_scrollback() {
 #[test]
 fn vt100_no_spinner_in_any_graduated_content() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     let spinner_chars = [
@@ -131,18 +134,18 @@ fn vt100_no_spinner_in_any_graduated_content() {
     // Track all screen states to find where spinner appears
     let mut screen_history: Vec<(String, String)> = vec![]; // (phase, screen)
 
-    app.on_message(ChatAppMsg::UserMessage("go".into()));
+    app.send_msgs(feed.user("go"));
     vt.render_frame(&mut app);
     screen_history.push(("after_user_msg".into(), vt.screen_contents()));
 
-    think(&mut app, "Planning the approach carefully.");
+    think(&mut app, &mut feed, "Planning the approach carefully.");
     for i in 0..5 {
         vt.render_frame(&mut app);
         screen_history.push((format!("thinking_frame_{}", i), vt.screen_contents()));
     }
 
     // Tool 1 arrives and completes
-    tool(&mut app, "get_kiln_info", "c1");
+    tool(&mut app, &mut feed, "get_kiln_info", "c1");
     vt.render_frame(&mut app);
     screen_history.push(("after_tool1".into(), vt.screen_contents()));
 
@@ -153,13 +156,13 @@ fn vt100_no_spinner_in_any_graduated_content() {
     }
 
     // Tool 2
-    tool(&mut app, "bash", "c2");
+    tool(&mut app, &mut feed, "bash", "c2");
     vt.render_frame(&mut app);
     screen_history.push(("after_tool2".into(), vt.screen_contents()));
 
     // Complete
-    app.on_message(ChatAppMsg::TextDelta("Done.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Done."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
     screen_history.push(("after_complete".into(), vt.screen_contents()));
 
@@ -214,6 +217,7 @@ fn vt100_no_spinner_in_any_graduated_content() {
 #[test]
 fn vt100_small_terminal_spinner_no_leak_on_scroll() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     // Very small terminal — 10 rows. Viewport + graduation will exceed this.
     let mut vt = Vt100TestRuntime::new(80, 10);
 
@@ -227,14 +231,14 @@ fn vt100_small_terminal_spinner_no_leak_on_scroll() {
             && trimmed.chars().any(|c| spinner_chars.contains(&c))
     };
 
-    app.on_message(ChatAppMsg::UserMessage("go".into()));
+    app.send_msgs(feed.user("go"));
     vt.render_frame(&mut app);
 
-    think(&mut app, "Planning.");
+    think(&mut app, &mut feed, "Planning.");
     vt.render_frame(&mut app); // spinner shows in viewport
 
     // Tool completes — thinking + tool graduate on next frame
-    tool(&mut app, "bash", "c1");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app); // graduation write — may scroll in 10-row terminal
 
     // More renders to stabilize
@@ -243,10 +247,10 @@ fn vt100_small_terminal_spinner_no_leak_on_scroll() {
     }
 
     // Second tool
-    tool(&mut app, "read_file", "c2");
+    tool(&mut app, &mut feed, "read_file", "c2");
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Check graduated content
@@ -287,12 +291,13 @@ fn vt100_small_terminal_spinner_no_leak_on_scroll() {
 #[test]
 fn vt100_screen_no_spinner_after_graduation() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
-    app.on_message(ChatAppMsg::UserMessage("go".into()));
+    app.send_msgs(feed.user("go"));
     vt.render_frame(&mut app);
 
-    think(&mut app, "Planning the approach.");
+    think(&mut app, &mut feed, "Planning the approach.");
 
     // Render several frames so spinner appears in viewport
     for _ in 0..5 {
@@ -300,7 +305,7 @@ fn vt100_screen_no_spinner_after_graduation() {
     }
 
     // Tool arrives and completes — thinking can graduate
-    tool(&mut app, "bash", "c1");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app);
 
     // Render a few more frames with completed tool + turn spinner
@@ -309,10 +314,10 @@ fn vt100_screen_no_spinner_after_graduation() {
     }
 
     // Second tool
-    tool(&mut app, "read_file", "c2");
+    tool(&mut app, &mut feed, "read_file", "c2");
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Check the vt100 SCREEN (not stdout buffer) for spinners
@@ -345,56 +350,45 @@ fn vt100_screen_no_spinner_after_graduation() {
 #[test]
 fn vt100_spinner_no_leak_tick_per_event() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
-    app.on_message(ChatAppMsg::UserMessage("go".into()));
+    app.send_msgs(feed.user("go"));
     vt.render_frame(&mut app);
 
-    think(&mut app, "Planning.");
+    think(&mut app, &mut feed, "Planning.");
     vt.render_frame(&mut app);
 
     // Tool arrives — creates ToolGroup, thinking becomes graduatable
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"cmd": "ls"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"cmd": "ls"}"#,
         render: Some("ls".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app); // thinking + tool in viewport, spinner may show
 
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
+    app.send_msgs(feed.tool_result("bash", "c1", ""));
     vt.render_frame(&mut app); // tool complete, turn spinner shows
 
     // Another tool
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "README.md"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c2",
+        args: r#"{"path": "README.md"}"#,
         render: Some("README.md".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c2".into()),
-    });
+    app.send_msgs(feed.tool_result("read_file", "c2", ""));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Done.".into()));
+    app.send_msgs(feed.text("Done."));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let stdout = vt.inner().stdout_content();
@@ -434,14 +428,15 @@ fn vt100_scrollback_no_spinner_after_permission_graduation() {
     use crucible_core::interaction::{InteractionRequest, PermRequest};
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // User message
-    app.on_message(ChatAppMsg::UserMessage("Do something risky".into()));
+    app.send_msgs(feed.user("Do something risky"));
     vt.render_frame(&mut app);
 
     // Thinking arrives
-    think(&mut app, "I need to run a dangerous command.");
+    think(&mut app, &mut feed, "I need to run a dangerous command.");
 
     // Render with spinner in viewport
     for _ in 0..3 {
@@ -458,25 +453,19 @@ fn vt100_scrollback_no_spinner_after_permission_graduation() {
     vt.render_frame(&mut app);
 
     // Tool call arrives (simulating user approval)
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"cmd": "rm -rf /tmp/test"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"cmd": "rm -rf /tmp/test"}"#,
         render: Some("rm -rf /tmp/test".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
+    app.send_msgs(feed.tool_result("bash", "c1", ""));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Inspect scrollback via vt100 — the actual terminal scrollback
@@ -488,21 +477,22 @@ fn vt100_scrollback_no_spinner_after_permission_graduation() {
 #[test]
 fn vt100_rapid_sequential_graduations_clean_scrollback() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Do many things".into()));
+    app.send_msgs(feed.user("Do many things"));
     vt.render_frame(&mut app);
 
     // 5 rapid tool cycles — each graduates the previous content
     for i in 0..5 {
         let id = format!("c{}", i);
-        think(&mut app, &format!("Step {}.", i));
-        tool(&mut app, "bash", &id);
+        think(&mut app, &mut feed, &format!("Step {}.", i));
+        tool(&mut app, &mut feed, "bash", &id);
         vt.render_frame(&mut app); // graduation happens here
     }
 
-    app.on_message(ChatAppMsg::TextDelta("All done.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("All done."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Inspect scrollback for spinner leak
@@ -519,15 +509,16 @@ fn vt100_rapid_sequential_graduations_clean_scrollback() {
 #[test]
 fn vt100_graduation_bytes_inside_sync_update() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("go".into()));
+    app.send_msgs(feed.user("go"));
     vt.render_frame(&mut app);
 
     // This frame will trigger graduation (user message graduates
     // because thinking + tool follow it)
-    think(&mut app, "Planning.");
-    tool(&mut app, "bash", "c1");
+    think(&mut app, &mut feed, "Planning.");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app);
 
     // Get raw bytes from this graduation frame
@@ -610,6 +601,7 @@ fn reproduce_permission_modal_spinner_leak() {
         .collect();
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     // Helper: check scrollback for spinners after each phase.
@@ -654,16 +646,20 @@ fn reproduce_permission_modal_spinner_leak() {
     };
 
     // ── Turn 1: User message ──
-    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    app.send_msgs(feed.user("tell me about this repo"));
     vt.render_frame(&mut app);
 
     // ── Thinking arrives (spinner shows in viewport) ──
-    think(&mut app, "I'll explore the repository structure.");
+    think(
+        &mut app,
+        &mut feed,
+        "I'll explore the repository structure.",
+    );
     vt.render_frame(&mut app);
     vt.render_frame(&mut app); // spinner ticks
 
     // ── Tool 1: get_kiln_info (no permission needed) ──
-    tool(&mut app, "get_kiln_info", "c1");
+    tool(&mut app, &mut feed, "get_kiln_info", "c1");
     vt.render_frame(&mut app);
 
     // Idle frames — turn spinner shows (tool complete, waiting for next)
@@ -679,22 +675,16 @@ fn reproduce_permission_modal_spinner_leak() {
     vt.render_frame(&mut app); // thinking graduates, modal + turn spinner
 
     // User approves (simulated — just send the tool call)
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"cmd": "ls -la"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c2",
+        args: r#"{"cmd": "ls -la"}"#,
         render: Some("ls -la".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c2".into()),
-    });
+    app.send_msgs(feed.tool_result("bash", "c2", ""));
     vt.render_frame(&mut app);
 
     check(&mut vt, "after_first_permission_tool");
@@ -717,28 +707,22 @@ fn reproduce_permission_modal_spinner_leak() {
     });
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"cmd": "find . -maxdepth 2 -name README*"}"#.into(),
-        call_id: Some("c3".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c3",
+        args: r#"{"cmd": "find . -maxdepth 2 -name README*"}"#,
         render: Some("find . -maxdepth 2 -name README*".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c3".into()),
-    });
+    app.send_msgs(feed.tool_result("bash", "c3", ""));
     vt.render_frame(&mut app);
 
     check(&mut vt, "after_second_permission_tool");
 
     // ── Second thinking block ──
-    think(&mut app, "Let me check the crate structure.");
+    think(&mut app, &mut feed, "Let me check the crate structure.");
     vt.render_frame(&mut app);
     vt.render_frame(&mut app);
 
@@ -749,32 +733,24 @@ fn reproduce_permission_modal_spinner_leak() {
     });
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"cmd": "ls -la crates/"}"#.into(),
-        call_id: Some("c4".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c4",
+        args: r#"{"cmd": "ls -la crates/"}"#,
         render: Some("ls -la crates/".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c4".into()),
-    });
+    app.send_msgs(feed.tool_result("bash", "c4", ""));
     vt.render_frame(&mut app);
 
     check(&mut vt, "after_third_permission_tool");
 
     // ── Final response ──
-    think(&mut app, "Now I have enough context.");
-    app.on_message(ChatAppMsg::TextDelta(
-        "Crucible is a knowledge-grounded agent runtime.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    think(&mut app, &mut feed, "Now I have enough context.");
+    app.send_msgs(feed.text("Crucible is a knowledge-grounded agent runtime."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     check(&mut vt, "final");

@@ -1,10 +1,9 @@
 //! Message dispatch handlers for OilChatApp.
 
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::tui::oil::app::Action;
-use crate::tui::oil::viewport_cache::{CachedSubagent, CachedToolCall, ToolSourceDisplay};
+use crate::tui::oil::viewport_cache::ToolSourceDisplay;
 
 use super::messages::ChatAppMsg;
 use super::model_state::ModelListState;
@@ -34,124 +33,9 @@ pub(super) fn parse_tool_source(s: &str) -> Option<ToolSourceDisplay> {
 }
 
 impl OilChatApp {
-    /// Handle streaming events (TextDelta, ThinkingDelta, ToolCall, etc.)
+    /// Handle turn state and the ops of the transcript that the daemon folds.
     pub(super) fn handle_stream_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
-            ChatAppMsg::TextDelta(delta) => {
-                if !self.container_list.is_streaming() {
-                    self.container_list.mark_turn_active();
-                }
-                self.container_list.append_text(&delta);
-            }
-            ChatAppMsg::ThinkingDelta(delta) => {
-                if !self.container_list.is_streaming() {
-                    self.container_list.mark_turn_active();
-                }
-                self.container_list.append_thinking(&delta);
-            }
-            ChatAppMsg::ToolCall {
-                name,
-                args,
-                call_id,
-                description,
-                source,
-                render,
-                diffs,
-                auto_approved,
-            } => {
-                let tool = CachedToolCall {
-                    id: call_id.as_deref().map_or_else(
-                        || format!("tool-{}", name),
-                        |cid| format!("tool-{}-{}", name, cid),
-                    ),
-                    name: Arc::from(name.as_str()),
-                    args: Arc::from(args.as_str()),
-                    call_id,
-                    output_tail: VecDeque::new(),
-                    output_path: None,
-                    output_total_bytes: 0,
-                    error: None,
-                    started_at: self.frame_time(),
-                    complete: false,
-                    superseded: false,
-                    description: description.map(|d| Arc::from(d.as_str())),
-                    source: source.as_deref().and_then(parse_tool_source),
-                    render: render.map(Arc::new),
-                    diffs,
-                    auto_approved,
-                    backgrounded: false,
-                };
-                self.container_list.add_tool_call(tool);
-            }
-            ChatAppMsg::ToolCallUpdate {
-                call_id,
-                args,
-                diffs,
-                render,
-                auto_approved,
-            } => {
-                self.container_list.update_tool_by_call_id(&call_id, |t| {
-                    if auto_approved.is_some() {
-                        t.auto_approved = auto_approved;
-                    }
-                    if let Some(args) = args {
-                        t.set_args(&args);
-                    }
-                    if let Some(render) = render {
-                        t.render = Some(Arc::new(render));
-                    }
-                    if let Some(diffs) = diffs {
-                        t.set_diffs(diffs);
-                    }
-                });
-            }
-            ChatAppMsg::ToolResultDelta {
-                name,
-                delta,
-                call_id,
-            } => {
-                // A split tool is no longer in any group; its live copy lives
-                // off the transcript.
-                if !self
-                    .container_list
-                    .update_background_tool(&name, call_id.as_deref(), |t| t.append_output(&delta))
-                {
-                    self.container_list
-                        .update_tool(&name, call_id.as_deref(), |t| t.append_output(&delta));
-                }
-            }
-            ChatAppMsg::ToolResultComplete { name, call_id } => {
-                // Finishing a split tool writes its second immutable node.
-                if !self.container_list.finish_background_tool(
-                    &name,
-                    call_id.as_deref(),
-                    self.frame_time(),
-                ) {
-                    self.container_list
-                        .update_tool(&name, call_id.as_deref(), |t| t.mark_complete());
-                }
-            }
-            ChatAppMsg::ToolResultError {
-                name,
-                error,
-                call_id,
-            } => {
-                if self
-                    .container_list
-                    .update_background_tool(&name, call_id.as_deref(), |t| {
-                        t.set_error(error.clone())
-                    })
-                {
-                    self.container_list.finish_background_tool(
-                        &name,
-                        call_id.as_deref(),
-                        self.frame_time(),
-                    );
-                } else {
-                    self.container_list
-                        .update_tool(&name, call_id.as_deref(), |t| t.set_error(error.clone()));
-                }
-            }
             ChatAppMsg::StreamComplete => {
                 self.container_list.complete_response();
                 self.finalize_streaming();
@@ -238,37 +122,6 @@ impl OilChatApp {
             ChatAppMsg::SetPluginTurnLimit(_) | ChatAppMsg::PluginApproval { .. } => {}
             _ => {
                 tracing::warn!("unhandled config msg: {:?}", msg.category());
-            }
-        }
-        Action::Continue
-    }
-
-    /// Handle delegation events
-    pub(super) fn handle_delegation_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
-        match msg {
-            ChatAppMsg::DelegationSpawned {
-                id,
-                prompt,
-                target_agent,
-            } => {
-                // If this delegation supersedes a pending tool, mark it
-                if self.pending_delegate_supersessions.contains(&id) {
-                    self.pending_delegate_supersessions.remove(&id);
-                }
-                let mut agent = CachedSubagent::new(&id, prompt, "delegation", self.frame_time());
-                agent.target_agent = target_agent;
-                self.container_list.add_agent_task(agent);
-            }
-            ChatAppMsg::DelegationCompleted { id, summary } => {
-                self.container_list
-                    .update_agent_task(&id, |s| s.mark_completed(&summary));
-            }
-            ChatAppMsg::DelegationFailed { id, error } => {
-                self.container_list
-                    .update_agent_task(&id, |s| s.mark_failed(&error));
-            }
-            _ => {
-                tracing::trace!("[stub] delegation msg: {:?}", msg.category());
             }
         }
         Action::Continue
@@ -376,14 +229,6 @@ impl OilChatApp {
             }
             ChatAppMsg::CacheHitRate(rate) => {
                 self.cache_hit_rate = rate;
-            }
-            // Injected context is part of the visible transcript: the notes
-            // that grounded an answer are the product's core value, so they
-            // render as a dim system line above the response (title + score).
-            ChatAppMsg::PrecognitionResult { notes_count, notes } => {
-                if notes_count > 0 {
-                    self.add_system_message(precognition_notice(notes_count, &notes));
-                }
             }
             ChatAppMsg::UndoComplete {
                 turns,

@@ -14,6 +14,7 @@ use super::transcript_fixtures as fixtures;
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::render_frame;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 use crate::tui::oil::theme;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_core::types::acp::FileDiff;
@@ -102,17 +103,19 @@ fn key(app: &mut OilChatApp, code: KeyCode, modifiers: KeyModifiers) {
     )));
 }
 
-fn tool_call(name: &str, call_id: &str, diffs: Vec<FileDiff>) -> ChatAppMsg {
-    ChatAppMsg::ToolCall {
-        name: name.to_string(),
-        args: r#"{"path":"src/lib.rs"}"#.to_string(),
-        call_id: Some(call_id.to_string()),
-        description: None,
-        source: None,
-        render: None,
+fn tool_call(
+    feed: &mut EventFeed,
+    name: &str,
+    call_id: &str,
+    diffs: Vec<FileDiff>,
+) -> Vec<ChatAppMsg> {
+    feed.tool(ToolCallEvent {
+        tool: name,
+        call_id,
+        args: r#"{"path":"src/lib.rs"}"#,
         diffs,
-        auto_approved: None,
-    }
+        ..ToolCallEvent::default()
+    })
 }
 
 fn edit_diff() -> FileDiff {
@@ -126,18 +129,19 @@ fn edit_diff() -> FileDiff {
 #[test]
 fn streaming_a_new_answer_and_finishing_it_match_a_fresh_layout() {
     let mut app = fixtures::app_with_exchanges(3);
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
     twin.frame(&mut app);
 
-    app.on_message(ChatAppMsg::UserMessage(fixtures::user_text(3)));
+    app.send_msgs(feed.user(&fixtures::user_text(3)));
     twin.frame(&mut app);
-    app.on_message(ChatAppMsg::ThinkingDelta("Consider the rows.".into()));
+    app.send_msgs(feed.thinking("Consider the rows."));
     twin.frame(&mut app);
     for delta in fixtures::stream_deltas(3).into_iter().take(40) {
-        app.on_message(ChatAppMsg::TextDelta(delta));
+        app.send_msgs(feed.text(&delta));
         twin.frame(&mut app);
     }
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     let screen = twin.frame(&mut app);
     assert!(screen.contains("Thought"), "the finished thinking header");
 
@@ -148,68 +152,51 @@ fn streaming_a_new_answer_and_finishing_it_match_a_fresh_layout() {
 #[test]
 fn a_tool_card_that_runs_gets_output_and_finishes_matches_a_fresh_layout() {
     let mut app = fixtures::app_with_exchanges(2);
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
-    app.on_message(ChatAppMsg::UserMessage("edit it".into()));
-    app.on_message(ChatAppMsg::TextDelta("I will edit the file.".into()));
+    app.send_msgs(feed.user("edit it"));
+    app.send_msgs(feed.text("I will edit the file."));
     twin.frame(&mut app);
 
-    app.on_message(tool_call("Read", "read-1", Vec::new()));
+    app.send_msgs(tool_call(&mut feed, "Read", "read-1", Vec::new()));
     twin.frame(&mut app);
-    app.on_message(ChatAppMsg::ToolResultDelta {
-        name: "Read".into(),
-        delta: "line one\nline two\n".into(),
-        call_id: Some("read-1".into()),
-    });
-    twin.frame(&mut app);
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Read".into(),
-        call_id: Some("read-1".into()),
-    });
+    app.send_msgs(feed.tool_result("Read", "read-1", "line one\nline two\n"));
     twin.frame(&mut app);
 
     // The edit card is finished before its diff arrives; the late diff
     // expands the card.
-    app.on_message(tool_call("Edit", "edit-1", Vec::new()));
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Edit".into(),
-        call_id: Some("edit-1".into()),
-    });
+    app.send_msgs(tool_call(&mut feed, "Edit", "edit-1", Vec::new()));
+    app.send_msgs(feed.tool_result("Edit", "edit-1", ""));
     let before = twin.frame(&mut app);
-    app.on_message(ChatAppMsg::ToolCallUpdate {
-        call_id: "edit-1".into(),
-        args: None,
-        diffs: Some(vec![edit_diff()]),
-        render: None,
-        auto_approved: None,
-    });
+    app.send_msgs(feed.msgs(
+        "tool_call_update",
+        serde_json::json!({
+            "call_id": "edit-1",
+            "display": { "kind": "edit", "tool": "Edit", "diffs": [edit_diff()] },
+        }),
+    ));
     let after = twin.frame(&mut app);
     assert!(
         !before.contains("fn new()") && after.contains("fn new()"),
         "the late diff must show in the finished card"
     );
 
-    app.on_message(ChatAppMsg::ToolResultError {
-        name: "Read".into(),
-        error: "gone".into(),
-        call_id: Some("read-1".into()),
-    });
+    app.send_msgs(feed.tool_error("Read", "read-1", "gone"));
     twin.frame(&mut app);
-    app.on_message(ChatAppMsg::TextDelta("Done.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Done."));
+    app.send_msgs(feed.complete());
     twin.frame(&mut app);
 }
 
 #[test]
 fn toggling_the_diff_body_of_a_finished_tool_card_matches_a_fresh_layout() {
     let mut app = fixtures::app_with_exchanges(1);
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
-    app.on_message(ChatAppMsg::UserMessage("edit it".into()));
-    app.on_message(tool_call("Edit", "edit-1", vec![edit_diff()]));
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Edit".into(),
-        call_id: Some("edit-1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("edit it"));
+    app.send_msgs(tool_call(&mut feed, "Edit", "edit-1", vec![edit_diff()]));
+    app.send_msgs(feed.tool_result("Edit", "edit-1", ""));
+    app.send_msgs(feed.complete());
     let shown = twin.frame(&mut app);
     assert!(shown.contains("fn new()"));
 
@@ -225,13 +212,12 @@ fn toggling_the_diff_body_of_a_finished_tool_card_matches_a_fresh_layout() {
 #[test]
 fn toggling_show_thinking_matches_a_fresh_layout() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
-    app.on_message(ChatAppMsg::UserMessage("think".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "A long private line of reasoning.".into(),
-    ));
-    app.on_message(ChatAppMsg::TextDelta("The answer.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("think"));
+    app.send_msgs(feed.thinking("A long private line of reasoning."));
+    app.send_msgs(feed.text("The answer."));
+    app.send_msgs(feed.complete());
     let expanded = twin.frame(&mut app);
     assert!(expanded.contains("private line"));
 
@@ -280,15 +266,16 @@ fn a_theme_change_matches_a_fresh_layout() {
 #[test]
 fn a_cleared_transcript_does_not_reuse_rows_by_position() {
     let mut app = fixtures::app_with_exchanges(2);
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
     twin.frame(&mut app);
 
     // No frame between the clear and the new nodes, so the new nodes take
     // the old positions before the cache sees the list shrink.
     app.on_message(ChatAppMsg::ClearHistory);
-    app.on_message(ChatAppMsg::UserMessage("a new first question".into()));
-    app.on_message(ChatAppMsg::TextDelta("a new first answer".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("a new first question"));
+    app.send_msgs(feed.text("a new first answer"));
+    app.send_msgs(feed.complete());
     let screen = twin.frame(&mut app);
     assert!(screen.contains("a new first answer"));
     assert!(!screen.contains("Answer 0"), "old rows must not come back");
@@ -297,20 +284,18 @@ fn a_cleared_transcript_does_not_reuse_rows_by_position() {
 #[test]
 fn a_slow_tool_that_moves_to_the_background_matches_a_fresh_layout() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
     let start = Instant::now();
     app.set_frame_time(start);
-    app.on_message(ChatAppMsg::UserMessage("run it".into()));
-    app.on_message(tool_call("Bash", "bash-1", Vec::new()));
+    app.send_msgs(feed.user("run it"));
+    app.send_msgs(tool_call(&mut feed, "Bash", "bash-1", Vec::new()));
     twin.frame(&mut app);
     for step in 1..=8 {
         app.set_frame_time(start + Duration::from_millis(150 * step));
         twin.frame(&mut app);
     }
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "Bash".into(),
-        call_id: Some("bash-1".into()),
-    });
+    app.send_msgs(feed.tool_result("Bash", "bash-1", ""));
     let screen = twin.frame(&mut app);
     assert!(screen.contains("finished after"), "the finish node");
 }
@@ -318,15 +303,12 @@ fn a_slow_tool_that_moves_to_the_background_matches_a_fresh_layout() {
 #[test]
 fn a_running_subagent_animates_and_matches_a_fresh_layout() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
     let start = Instant::now();
     app.set_frame_time(start);
-    app.on_message(ChatAppMsg::UserMessage("delegate it".into()));
-    app.on_message(ChatAppMsg::DelegationSpawned {
-        id: "agent-1".into(),
-        prompt: "look around".into(),
-        target_agent: None,
-    });
+    app.send_msgs(feed.user("delegate it"));
+    app.send_msgs(feed.msgs("delegation_spawned", serde_json::json!({ "delegation_id": "agent-1", "prompt": "look around", "target_agent": null })));
     let mut screens = Vec::new();
     for step in 0..4 {
         app.set_frame_time(start + Duration::from_millis(1100 * step));
@@ -335,10 +317,10 @@ fn a_running_subagent_animates_and_matches_a_fresh_layout() {
     screens.dedup();
     assert_eq!(screens.len(), 4, "the running agent changes on each frame");
 
-    app.on_message(ChatAppMsg::DelegationCompleted {
-        id: "agent-1".into(),
-        summary: "found it".into(),
-    });
+    app.send_msgs(feed.msgs(
+        "delegation_completed",
+        serde_json::json!({ "delegation_id": "agent-1", "result_summary": "found it" }),
+    ));
     let screen = twin.frame(&mut app);
     assert!(screen.contains("found it"));
 }
@@ -348,6 +330,7 @@ fn a_transcript_taller_than_the_layout_cap_matches_a_fresh_layout() {
     // The layout gives taffy at most 500 rows of height; the transcript
     // must keep every row past it in both paths.
     let mut app = fixtures::app_with_exchanges(20);
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(120, 40);
     let screen = twin.frame(&mut app);
     assert!(
@@ -355,8 +338,8 @@ fn a_transcript_taller_than_the_layout_cap_matches_a_fresh_layout() {
         "{} rows",
         screen.lines().count()
     );
-    app.on_message(ChatAppMsg::UserMessage(fixtures::user_text(20)));
-    app.on_message(ChatAppMsg::TextDelta(fixtures::assistant_text(20)));
+    app.send_msgs(feed.user(&fixtures::user_text(20)));
+    app.send_msgs(feed.text(&fixtures::assistant_text(20)));
     twin.frame(&mut app);
 }
 
@@ -385,6 +368,7 @@ fn recorded_sessions_match_a_fresh_layout_on_every_frame() {
 #[test]
 fn finished_messages_are_laid_out_once() {
     let mut app = fixtures::app_with_exchanges(3);
+    let mut feed = EventFeed::default();
     let mut twin = Twin::new(100, 30);
     twin.frame(&mut app);
     let first = app.transcript_layouts();
@@ -397,8 +381,8 @@ fn finished_messages_are_laid_out_once() {
         "an idle frame lays out nothing"
     );
 
-    app.on_message(ChatAppMsg::UserMessage(fixtures::user_text(3)));
-    app.on_message(ChatAppMsg::TextDelta("partial".into()));
+    app.send_msgs(feed.user(&fixtures::user_text(3)));
+    app.send_msgs(feed.text("partial"));
     twin.frame(&mut app);
     // The new question is finished and laid out once; the answer streams and
     // is never kept.

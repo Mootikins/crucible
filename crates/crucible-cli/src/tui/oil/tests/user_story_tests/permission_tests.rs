@@ -9,8 +9,6 @@
 //! Written against the intent-vocabulary layer (`vocab.rs`) and the
 //! `expect_frame` eventual-state helper, as an exemplar for new stories.
 
-use crate::tui::oil::chat_app::ChatAppMsg;
-
 use super::support::StoryRuntime;
 use super::vocab::{approve_permission, deny_permission, open_permission, open_tool_permission};
 
@@ -52,27 +50,30 @@ fn deny_emits_deny_and_turn_continues_with_error() {
     let mut story = StoryRuntime::new(80, 24);
 
     // A tool call is announced, then permission is requested for it.
-    story.send(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command":"rm -rf /"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: Some("Core".into()),
-        render: Some("rm -rf /".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+    story.event(
+        "tool_call",
+        serde_json::json!({
+            "call_id": "c1", "tool": "bash", "args": { "command": "rm -rf /" },
+            "source": "Core",
+            "display": { "kind": "command", "tool": "bash", "render": { "line": "rm -rf /" } },
+        }),
+    );
     let _ = open_permission(&mut story, "req-1", &["rm", "-rf", "/"]);
 
     assert_eq!(deny_permission(&mut story), Some(false), "`n` must deny");
 
     // The daemon reports the tool as errored and the turn continues.
-    story.send(ChatAppMsg::ToolResultError {
-        name: "bash".into(),
-        error: "Permission denied by user".into(),
-        call_id: Some("c1".into()),
-    });
-    story.send(ChatAppMsg::StreamComplete);
+    story.event(
+        "tool_result",
+        serde_json::json!({
+            "call_id": "c1", "tool": "bash",
+            "result": { "error": "Permission denied by user" },
+        }),
+    );
+    story.event(
+        "message_complete",
+        serde_json::json!({ "full_response": "" }),
+    );
 
     story.expect_frame(|f| f.contains("Permission denied"), 8);
     assert!(

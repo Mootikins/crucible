@@ -11,8 +11,9 @@
 //! ```
 
 use super::transcript_fixtures as fixtures;
-use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::render_frame;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 use crucible_oil::focus::FocusContext;
 use crucible_oil::TestRuntime;
 use std::time::{Duration, Instant};
@@ -59,6 +60,7 @@ fn timed_frame(
 #[ignore = "requires: manual inspection — a timing measurement; run it with an optimized build, see the module doc"]
 fn frame_time_while_streaming_5k_rows() {
     let mut app = fixtures::app_with_exchanges(EXCHANGES);
+    let mut feed = EventFeed::default();
     let mut runtime = TestRuntime::new(WIDTH, HEIGHT);
     let focus = FocusContext::new();
     // The first frame lays out the whole transcript; the samples are the
@@ -69,14 +71,14 @@ fn frame_time_while_streaming_5k_rows() {
         runtime.viewport_content().lines().count()
     );
 
-    app.on_message(ChatAppMsg::UserMessage(fixtures::user_text(EXCHANGES)));
+    app.send_msgs(feed.user(&fixtures::user_text(EXCHANGES)));
     let (mut times, mut bytes) = (Vec::new(), Vec::new());
     for delta in fixtures::stream_deltas(EXCHANGES)
         .into_iter()
         .cycle()
         .take(FRAMES)
     {
-        app.on_message(ChatAppMsg::TextDelta(delta));
+        app.send_msgs(feed.text(&delta));
         let (time, written) = timed_frame(&mut app, &mut runtime, &focus);
         times.push(time);
         bytes.push(written);

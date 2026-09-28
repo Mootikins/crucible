@@ -7,6 +7,7 @@
 //! down the screen.
 
 use super::support::StoryRuntime;
+use super::vocab::stream_assistant_reply;
 use crate::tui::oil::chat_app::{ChatAppMsg, KilnSummary};
 use crossterm::event::KeyCode;
 
@@ -20,8 +21,8 @@ fn short_session() -> StoryRuntime {
     }]);
     story
         .send(ChatAppMsg::UserMessage("question".into()))
-        .send(ChatAppMsg::TextDelta("answer".into()))
-        .send(ChatAppMsg::StreamComplete);
+        .event("user_message", serde_json::json!({ "content": "question" }));
+    stream_assistant_reply(&mut story, "answer");
     story
 }
 

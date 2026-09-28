@@ -13,7 +13,6 @@ use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRe
 use crucible_oil::node::*;
 use crucible_oil::style::Gap;
 use std::cell::Cell;
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 const POPUP_HEIGHT: usize = 10;
@@ -135,7 +134,6 @@ pub struct OilChatApp {
     permission: PermissionState,
     /// Message queue state (deferred messages, counter, Ctrl-C tracking)
     message_queue: MessageQueueState,
-    pending_delegate_supersessions: HashSet<String>,
     /// The `seq` of the transcript snapshot this TUI drew. An op of an
     /// event at or below it is already in the snapshot.
     transcript_as_of: u64,
@@ -383,7 +381,6 @@ impl OilChatApp {
             }
             MsgCategory::Stream => self.handle_stream_msg(msg),
             MsgCategory::Config => self.handle_config_msg(msg),
-            MsgCategory::Delegation => self.handle_delegation_msg(msg),
             MsgCategory::Ui => self.handle_ui_msg(msg),
         }
     }
@@ -1122,7 +1119,6 @@ impl OilChatApp {
         self.context_total = 0;
         self.status = "Ready".to_string();
         self.notification_area.clear();
-        self.pending_delegate_supersessions.clear();
         self.needs_full_redraw = true;
     }
 }

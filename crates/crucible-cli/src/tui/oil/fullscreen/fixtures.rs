@@ -47,11 +47,30 @@ pub fn assistant_text(i: usize) -> String {
     s
 }
 
-/// Add one finished exchange to `app`.
+/// Add one finished exchange to `app`. The turn id comes from `i`, so a
+/// feed for each exchange gives each turn its own items.
 pub fn push_exchange(app: &mut OilChatApp, i: usize) {
+    let mut feed = EventFeed::default();
     app.on_message(ChatAppMsg::UserMessage(user_text(i)));
-    app.on_message(ChatAppMsg::TextDelta(assistant_text(i)));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let events = [
+        (
+            "user_message",
+            serde_json::json!({ "message_id": format!("exchange-{i}"), "content": user_text(i) }),
+        ),
+        (
+            "text_delta",
+            serde_json::json!({ "content": assistant_text(i) }),
+        ),
+        (
+            "message_complete",
+            serde_json::json!({ "full_response": "" }),
+        ),
+    ];
+    for (name, data) in events {
+        for msg in feed.msgs(name, data) {
+            app.on_message(msg);
+        }
+    }
 }
 
 /// An app that holds `exchanges` finished exchanges.
@@ -69,4 +88,32 @@ pub fn stream_deltas(i: usize) -> Vec<String> {
     let text = assistant_text(i);
     let words: Vec<&str> = text.split_inclusive(' ').collect();
     words.chunks(3).map(|chunk| chunk.concat()).collect()
+}
+
+/// The path of a live session, for fake events: the daemon's event bus
+/// folds each event and puts the ops on it, and the TUI consumer turns the
+/// event into messages. A raw event carries no ops, so the caller needs the
+/// fold. One feed keeps one fold, as one session does.
+#[derive(Default)]
+pub struct EventFeed {
+    fold: crucible_core::transcript::TranscriptFold,
+    stream: crate::tui::oil::chat_runner::SessionEventStream,
+}
+
+impl EventFeed {
+    /// The app messages of the event `name` with `data`.
+    pub fn msgs(&mut self, name: &str, data: serde_json::Value) -> Vec<ChatAppMsg> {
+        self.event(crucible_core::protocol::SessionEventMessage::new(
+            "test", name, data,
+        ))
+    }
+
+    /// The app messages of `event`.
+    pub fn event(
+        &mut self,
+        mut event: crucible_core::protocol::SessionEventMessage,
+    ) -> Vec<ChatAppMsg> {
+        event.transcript = self.fold.apply(&event);
+        crate::tui::oil::chat_runner::event_msgs(&mut self.stream, &event)
+    }
 }

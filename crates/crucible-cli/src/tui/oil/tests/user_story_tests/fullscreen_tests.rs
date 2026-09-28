@@ -10,6 +10,7 @@ use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crate::tui::oil::fullscreen::shell::{ChatPane, FullscreenShell, ShellAction};
 use crate::tui::oil::fullscreen::{FullscreenView, ViewAction};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 use crate::tui::oil::tests::vt100_runtime::Vt100TestRuntime;
 use crate::tui::oil::theme;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -85,8 +86,9 @@ fn a_drag_highlights_and_copies_only_the_text_under_the_pointer() {
                      three rows at sixty columns, so that the drag crosses \
                      two wraps before it reaches the END.";
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta(format!("{paragraph}\n\nAfter it.")));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text(&format!("{paragraph}\n\nAfter it.")));
+    app.send_msgs(feed.complete());
     let mut shell = shell_with(app);
     let focus = FocusContext::new();
     let mut vt = Vt100TestRuntime::new(WIDTH, HEIGHT);
@@ -144,6 +146,7 @@ fn a_drag_highlights_and_copies_only_the_text_under_the_pointer() {
 #[test]
 fn page_up_holds_the_reader_while_an_answer_streams() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     for i in 0..40 {
         app.add_system_message(format!("line {i}"));
     }
@@ -162,9 +165,9 @@ fn page_up_holds_the_reader_while_an_answer_streams() {
     let held = screen_rows(&vt)[0].clone();
     assert!(vt.screen_contents().contains("rows below"));
 
-    app.on_message(ChatAppMsg::UserMessage("more".into()));
+    app.send_msgs(feed.user("more"));
     for word in ["streamed ", "words ", "arrive ", "below"] {
-        app.on_message(ChatAppMsg::TextDelta(word.into()));
+        app.send_msgs(feed.text(word));
         vt.present_fullscreen(&view.frame(&mut app, &ctx_for(&focus)));
         assert_eq!(
             screen_rows(&vt)[0],

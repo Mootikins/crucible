@@ -82,7 +82,7 @@ the client.
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/stream_gap.rs` | 127 | Proves the daemon's broadcast-lag marker survives the per-session filter because it is wildcard-addressed. |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/surface_refresh.rs` | 124 | US-908: distinguishes a withdrawn surface (`Ok(None)`) from a failed refetch (`Err`). |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/system_channel.rs` | 52 | Proves the daemon's system-session events (for example `proposal_changed`) cross the per-session stream filter, which previously accepted only the session's own id and the broadcast-lag wildcard. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/translate.rs` | 533 | The largest translator test file; covers the merged `ToolCallUpdate` shape, the render/summary fields, structured tool results, and notification translation. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/translate.rs` | 456 | The largest translator test file. It covers the setup and notification messages. Its last section sends wire events through `EventFeed` and reads the tool cards that the app draws: the late update, the render and summary fields, and structured tool results. |
 
 ### `crates/crucible-cli/src/tui/oil/commands/`
 
@@ -226,10 +226,9 @@ the client.
   `crate::tui::oil::chat_app`/`app`/`component` (outside this page, owned by
   [[TUI Chat App]]). Every component and the whole event loop in this page
   consumes them: `Component::view(&self, ctx: &ViewContext<'_>) -> Node` is the
-  one method every file under `components/` implements. `ChatAppMsg` no
-  longer has separate `ToolCallDiffUpdate`/`ToolCallArgsUpdate` variants; one
-  merged `ToolCallUpdate { call_id, args, diffs, render, auto_approved }`
-  carries both.
+  one method every file under `components/` implements. `ChatAppMsg` has no
+  message for one tool call or one text delta. The `Transcript` message
+  carries the ops of the daemon fold, and those ops draw each tool card.
 - **`SetCommand`, `SetEffect`, `KeyHome`, `SetRpcAction`, `PLUGIN_APPROVAL`** (`crates/crucible-cli/src/tui/oil/commands/set.rs`)
   — `SetCommand::parse` turns raw `:set` text into a typed command;
   `classify_set_value`/`classify_key_without_value` are the single classifier

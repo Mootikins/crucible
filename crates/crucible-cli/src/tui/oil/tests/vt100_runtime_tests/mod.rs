@@ -6,6 +6,7 @@ mod spinner_leak;
 
 use super::vt100_runtime::Vt100TestRuntime;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 
 /// Count blank lines between two content patterns in screen text.
 fn blank_lines_between(screen: &str, before: &str, after: &str) -> Option<usize> {
@@ -24,25 +25,13 @@ fn blank_lines_between(screen: &str, before: &str, after: &str) -> Option<usize>
 
 use super::helpers::assert_no_triple_blanks;
 
-fn think(app: &mut OilChatApp, content: &str) {
-    app.on_message(ChatAppMsg::ThinkingDelta(content.into()));
+fn think(app: &mut OilChatApp, feed: &mut EventFeed, content: &str) {
+    app.send_msgs(feed.thinking(content));
 }
 
-fn tool(app: &mut OilChatApp, name: &str, call_id: &str) {
-    app.on_message(ChatAppMsg::ToolCall {
-        name: name.into(),
-        args: format!(r#"{{"path": "{call_id}.rs"}}"#),
-        call_id: Some(call_id.into()),
-        description: None,
-        source: None,
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: name.into(),
-        call_id: Some(call_id.into()),
-    });
+fn tool(app: &mut OilChatApp, feed: &mut EventFeed, name: &str, call_id: &str) {
+    app.send_msgs(feed.tool_call(name, call_id, &format!(r#"{{"path": "{call_id}.rs"}}"#)));
+    app.send_msgs(feed.tool_result(name, call_id, ""));
 }
 
 // ─── Bug 1: Spacing between graduated content and viewport ────────

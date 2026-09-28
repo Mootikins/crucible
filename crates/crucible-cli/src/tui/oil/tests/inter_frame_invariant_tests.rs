@@ -6,6 +6,7 @@
 //! appear during transitions (graduation boundaries, streaming, etc).
 
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 use crucible_oil::ansi::strip_ansi;
 
 use super::vt100_runtime::Vt100TestRuntime;
@@ -337,8 +338,8 @@ impl FrameChecker {
         }
     }
 
-    fn send(&mut self, msg: ChatAppMsg) {
-        self.app.on_message(msg);
+    fn send_msgs(&mut self, msgs: Vec<ChatAppMsg>) {
+        self.app.send_msgs(msgs);
     }
 
     fn render_and_check(&mut self) {
@@ -384,87 +385,71 @@ impl FrameChecker {
 #[test]
 fn invariant_multi_tool_turn() {
     let mut fc = FrameChecker::new(120, 50);
+    let mut feed = EventFeed::default();
 
     // User message
-    fc.send(ChatAppMsg::UserMessage("analyze the codebase".into()));
+    fc.send_msgs(feed.user("analyze the codebase"));
     fc.render_and_check();
 
     // Thinking starts
     for word in "I need to explore the repository structure first to understand the codebase"
         .split_whitespace()
     {
-        fc.send(ChatAppMsg::ThinkingDelta(format!("{} ", word)));
+        fc.send_msgs(feed.thinking(&format!("{} ", word)));
     }
     fc.render_and_check();
 
     // Text starts
-    fc.send(ChatAppMsg::TextDelta("I'll explore the repository.".into()));
+    fc.send_msgs(feed.text("I'll explore the repository."));
     fc.render_and_check();
 
     // Tool calls
-    fc.send(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "ls -la"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: Some("Core".into()),
+    fc.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "ls -la"}"#,
         render: Some("ls -la".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        source: Some("Core"),
+        ..Default::default()
+    }));
     fc.render_and_check();
 
-    fc.send(ChatAppMsg::ToolResultDelta {
-        name: "bash".into(),
-        delta: "total 42\ndrwxr-xr-x 5 user user 160 Jan 1 src/\n".into(),
-        call_id: Some("c1".into()),
-    });
-    fc.send(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
+    fc.send_msgs(feed.tool_result(
+        "bash",
+        "c1",
+        "total 42\ndrwxr-xr-x 5 user user 160 Jan 1 src/\n",
+    ));
     fc.render_and_check();
 
     // Second batch of tools
-    fc.send(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "README.md"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: Some("Core".into()),
+    fc.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c2",
+        args: r#"{"path": "README.md"}"#,
         render: Some("README.md".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    fc.send(ChatAppMsg::ToolResultDelta {
-        name: "read_file".into(),
-        delta: "# Project\n\nA cool project.\n".into(),
-        call_id: Some("c2".into()),
-    });
-    fc.send(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c2".into()),
-    });
+        source: Some("Core"),
+        ..Default::default()
+    }));
+    fc.send_msgs(feed.tool_result("read_file", "c2", "# Project\n\nA cool project.\n"));
     fc.render_and_check();
 
     // Second thinking block (after tools)
     for word in "Now I have enough context to describe the project".split_whitespace() {
-        fc.send(ChatAppMsg::ThinkingDelta(format!("{} ", word)));
+        fc.send_msgs(feed.thinking(&format!("{} ", word)));
     }
     fc.render_and_check();
 
     // Continuation text
-    fc.send(ChatAppMsg::TextDelta(
+    fc.send_msgs(feed.text(
         "This is a Rust project with the following structure:\n\n\
          - `src/` contains the main source code\n\
          - `README.md` describes the project\n\n\
-         The project is well-organized."
-            .into(),
+         The project is well-organized.",
     ));
     fc.render_and_check();
 
     // Stream complete
-    fc.send(ChatAppMsg::StreamComplete);
+    fc.send_msgs(feed.complete());
     fc.render_and_check();
 
     // Final check: the graduated output should have no duplicates
@@ -477,92 +462,70 @@ fn invariant_multi_tool_turn() {
 #[test]
 fn invariant_reproduce_cast_pattern() {
     let mut fc = FrameChecker::new(124, 59);
+    let mut feed = EventFeed::default();
 
-    fc.send(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    fc.send_msgs(feed.user("tell me about this repo"));
     fc.render_and_check();
 
     // First thinking burst
-    fc.send(ChatAppMsg::ThinkingDelta(
-        "The user wants to know about this repository. I should explore the structure first. "
-            .into(),
+    fc.send_msgs(feed.thinking(
+        "The user wants to know about this repository. I should explore the structure first. ",
     ));
     fc.render_and_check();
 
     // Text
-    fc.send(ChatAppMsg::TextDelta(
-        "I'll explore this repository to understand what it's about.".into(),
-    ));
+    fc.send_msgs(feed.text("I'll explore this repository to understand what it's about."));
     fc.render_and_check();
 
     // First tool batch
-    fc.send(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "ls -la"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: Some("Core".into()),
+    fc.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "ls -la"}"#,
         render: Some("ls -la".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    fc.send(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
-    fc.send(ChatAppMsg::ToolCall {
-        name: "glob".into(),
-        args: r#"{"pattern": "README*"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: Some("Core".into()),
+        source: Some("Core"),
+        ..Default::default()
+    }));
+    fc.send_msgs(feed.tool_result("bash", "c1", ""));
+    fc.send_msgs(feed.tool(ToolCallEvent {
+        tool: "glob",
+        call_id: "c2",
+        args: r#"{"pattern": "README*"}"#,
         render: Some("README*".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    fc.send(ChatAppMsg::ToolResultComplete {
-        name: "glob".into(),
-        call_id: Some("c2".into()),
-    });
+        source: Some("Core"),
+        ..Default::default()
+    }));
+    fc.send_msgs(feed.tool_result("glob", "c2", ""));
     fc.render_and_check();
 
     // Second thinking after tools
-    fc.send(ChatAppMsg::ThinkingDelta(
-        "Good, I can see the structure. Let me read the key files. ".into(),
-    ));
+    fc.send_msgs(feed.thinking("Good, I can see the structure. Let me read the key files. "));
     fc.render_and_check();
 
     // Second tool batch
-    fc.send(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "README.md"}"#.into(),
-        call_id: Some("c3".into()),
-        description: None,
-        source: Some("Core".into()),
+    fc.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c3",
+        args: r#"{"path": "README.md"}"#,
         render: Some("README.md".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    fc.send(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c3".into()),
-    });
+        source: Some("Core"),
+        ..Default::default()
+    }));
+    fc.send_msgs(feed.tool_result("read_file", "c3", ""));
     fc.render_and_check();
 
     // Third thinking
-    fc.send(ChatAppMsg::ThinkingDelta(
-        "Now I have enough context. Let me write the summary. ".into(),
-    ));
+    fc.send_msgs(feed.thinking("Now I have enough context. Let me write the summary. "));
     fc.render_and_check();
 
     // Long continuation text
-    fc.send(ChatAppMsg::TextDelta(
+    fc.send_msgs(feed.text(
         "This is **Crucible** — a knowledge-grounded AI agent runtime.\n\n\
-         It helps AI agents make better decisions by drawing from a knowledge graph."
-            .into(),
+         It helps AI agents make better decisions by drawing from a knowledge graph.",
     ));
     fc.render_and_check();
 
-    fc.send(ChatAppMsg::StreamComplete);
+    fc.send_msgs(feed.complete());
     fc.render_and_check();
 
     // Verify final output
@@ -576,8 +539,9 @@ fn invariant_reproduce_cast_pattern() {
 #[test]
 fn invariant_streaming_text_stable_chrome() {
     let mut fc = FrameChecker::new(80, 24);
+    let mut feed = EventFeed::default();
 
-    fc.send(ChatAppMsg::UserMessage("explain".into()));
+    fc.send_msgs(feed.user("explain"));
     fc.render_and_check();
 
     // Stream text word by word, checking invariants at every frame
@@ -592,11 +556,11 @@ fn invariant_streaming_text_stable_chrome() {
             accumulated.push(' ');
         }
         accumulated.push_str(word);
-        fc.send(ChatAppMsg::TextDelta(format!("{} ", word)));
+        fc.send_msgs(feed.text(&format!("{} ", word)));
         fc.render_and_check();
     }
 
-    fc.send(ChatAppMsg::StreamComplete);
+    fc.send_msgs(feed.complete());
     fc.render_and_check();
 }
 
@@ -605,23 +569,13 @@ fn invariant_streaming_text_stable_chrome() {
 fn invariant_demo_fixture() {
     let path = super::helpers::fixture_path("demo.jsonl");
 
-    use crate::tui::oil::chat_runner::SessionEventStream;
-
     let content = std::fs::read_to_string(&path).unwrap();
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 50);
     let mut frame = 0;
-    // The production converter, not a copy of it, so this replay matches what a
-    // live console renders.
-    //
-    // It is *not* the thing that guards reasoning-replay suppression: the only
-    // thought check here, `check_no_duplicate_thought_lines`, fires on two
-    // adjacent identical collapsed headers, so a replay appended into an
-    // existing thinking node is invisible to it — this test stays green with
-    // the suppression removed. The count assertions in
-    // `session_event_stream_tests::recorded_fixtures_render_exactly_their_non_replayed_thoughts`
-    // are what pin that.
-    let mut stream = SessionEventStream::new();
+    // The path of a live session: the daemon fold, then the production
+    // converter, so this replay matches what a live console renders.
+    let mut feed = EventFeed::default();
 
     for line in content.lines() {
         if line.trim().is_empty() {
@@ -639,9 +593,7 @@ fn invariant_demo_fixture() {
             None => continue,
         };
         let data = value.get("data").cloned().unwrap_or_default();
-        for msg in stream.translate(event_type, &data) {
-            app.on_message(msg);
-        }
+        app.send_msgs(feed.msgs(event_type, data));
 
         // Render and check every 50 events (full check is too slow)
         frame += 1;
@@ -695,8 +647,6 @@ fn soft_check<F: FnOnce()>(f: F) -> Option<String> {
 /// this replays what a live console would render.
 #[test]
 fn invariant_acp_parity_fixtures_every_frame() {
-    use crate::tui::oil::chat_runner::SessionEventStream;
-
     for fixture in [
         "acp_parity_internal.jsonl",
         "acp_parity_delegated.jsonl",
@@ -706,7 +656,7 @@ fn invariant_acp_parity_fixtures_every_frame() {
         let content = super::helpers::read_fixture(fixture);
         let mut app = OilChatApp::default();
         let mut vt = Vt100TestRuntime::new(80, 24);
-        let mut stream = SessionEventStream::new();
+        let mut feed = EventFeed::default();
         let mut frame = 0usize;
 
         for line in content.lines() {
@@ -718,9 +668,7 @@ fn invariant_acp_parity_fixtures_every_frame() {
                 continue;
             };
             let data = value.get("data").cloned().unwrap_or_default();
-            for msg in stream.translate(event_type, &data) {
-                app.on_message(msg);
-            }
+            app.send_msgs(feed.msgs(event_type, data));
 
             vt.render_frame(&mut app);
             frame += 1;
@@ -758,8 +706,6 @@ fn invariant_acp_parity_fixtures_every_frame() {
 /// Terminal size matches the original recording: 124 cols × 59 rows.
 #[test]
 fn invariant_reproduce_jsonl_every_frame() {
-    use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
-
     let path = super::helpers::fixture_path("reproduce.jsonl");
 
     let content = std::fs::read_to_string(&path).unwrap();
@@ -768,7 +714,8 @@ fn invariant_reproduce_jsonl_every_frame() {
     app.set_show_thinking(false);
     let mut vt = Vt100TestRuntime::new(124, 59);
     let mut frame: usize = 0;
-    let mut saw_text_delta = false;
+    // The path of a live session: the daemon fold, then the converter.
+    let mut feed = EventFeed::default();
     let mut violations: Vec<String> = Vec::new();
 
     for line in content.lines() {
@@ -786,21 +733,6 @@ fn invariant_reproduce_jsonl_every_frame() {
             Some(e) => e,
             None => continue,
         };
-        if event_type == "text_delta" {
-            saw_text_delta = true;
-        } else if event_type == "user_message" {
-            saw_text_delta = false;
-        }
-        // This one deliberately feeds the *un-deduped* worst case: raw
-        // `session_event_to_chat_msgs` with no reasoning-replay suppression, so
-        // every thinking event in the recording reaches the app including the
-        // end-of-stream replays. The layout invariants below must hold on that
-        // input too — a console is not allowed to break its geometry just
-        // because it was handed more thoughts than a deduped stream would send.
-        // (The suppression itself is pinned in `session_event_stream_tests`.)
-        // The only thing skipped here is `message_complete`'s full_response
-        // text, which would double-count what already streamed as text_delta.
-
         // Skip non-rendering events
         if event_type == "precognition_complete"
             || event_type == "interaction_requested"
@@ -811,15 +743,7 @@ fn invariant_reproduce_jsonl_every_frame() {
         }
 
         let data = value.get("data").cloned().unwrap_or_default();
-        for msg in session_event_to_chat_msgs(event_type, &data) {
-            if saw_text_delta
-                && event_type == "message_complete"
-                && matches!(&msg, ChatAppMsg::TextDelta(_))
-            {
-                continue;
-            }
-            app.on_message(msg);
-        }
+        app.send_msgs(feed.msgs(event_type, data));
 
         // Render after EVERY event
         vt.render_frame(&mut app);

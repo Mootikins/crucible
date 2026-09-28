@@ -8,24 +8,24 @@
 
 use super::vt100_runtime::Vt100TestRuntime;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 
 // ─── No spinners in scrollback ─────────────────────────────────────────────
 
 #[test]
 fn no_spinners_in_scrollback() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Test".into()));
+    app.send_msgs(feed.user("Test"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "reasoning about the problem".into(),
-    ));
+    app.send_msgs(feed.thinking("reasoning about the problem"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Answer".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Answer"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     vt.assert_no_spinners_in_scrollback();
@@ -34,31 +34,26 @@ fn no_spinners_in_scrollback() {
 #[test]
 fn no_spinners_in_scrollback_after_tool_use() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Use a tool".into()));
+    app.send_msgs(feed.user("Use a tool"));
     vt.render_frame(&mut app);
 
     // Tool call with pending state (renders spinner in viewport)
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "echo hello"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "echo hello"}"#,
         render: Some("echo hello".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
     // Complete the tool and stream
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::TextDelta("Done.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.tool_result("bash", "c1", ""));
+    app.send_msgs(feed.text("Done."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     vt.assert_no_spinners_in_scrollback();
@@ -67,34 +62,23 @@ fn no_spinners_in_scrollback_after_tool_use() {
 #[test]
 fn no_spinners_after_multi_tool_graduation() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Multi-tool".into()));
+    app.send_msgs(feed.user("Multi-tool"));
     vt.render_frame(&mut app);
 
     // Multiple tools with renders between
     for i in 0..3 {
         let id = format!("c{}", i);
-        app.on_message(ChatAppMsg::ToolCall {
-            name: "read_file".into(),
-            args: format!(r#"{{"path": "file{}.rs"}}"#, i),
-            call_id: Some(id.clone()),
-            description: None,
-            source: None,
-            render: None,
-            diffs: Vec::new(),
-            auto_approved: None,
-        });
+        app.send_msgs(feed.tool_call("read_file", &id, &format!(r#"{{"path": "file{}.rs"}}"#, i)));
         vt.render_frame(&mut app); // spinner visible during pending
 
-        app.on_message(ChatAppMsg::ToolResultComplete {
-            name: "read_file".into(),
-            call_id: Some(id),
-        });
+        app.send_msgs(feed.tool_result("read_file", &id, ""));
         vt.render_frame(&mut app);
     }
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     vt.assert_no_spinners_in_scrollback();
@@ -105,14 +89,17 @@ fn no_spinners_after_multi_tool_graduation() {
 #[test]
 fn graduated_thinking_is_collapsed() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Think deeply".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "This is a long chain of reasoning that should be collapsed after graduation".into(),
-    ));
-    app.on_message(ChatAppMsg::TextDelta("Final answer.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("Think deeply"));
+    app.send_msgs(
+        feed.thinking(
+            "This is a long chain of reasoning that should be collapsed after graduation",
+        ),
+    );
+    app.send_msgs(feed.text("Final answer."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let scrollback = vt.scrollback_contents();
@@ -146,15 +133,14 @@ fn graduated_thinking_is_collapsed() {
 #[test]
 fn graduation_preserves_content() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Explain Rust".into()));
+    app.send_msgs(feed.user("Explain Rust"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta(
-        "Rust is a systems programming language.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Rust is a systems programming language."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -175,31 +161,21 @@ fn graduation_preserves_content() {
 #[test]
 fn graduation_preserves_tool_results() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Check files".into()));
+    app.send_msgs(feed.user("Check files"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "Cargo.toml"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "Cargo.toml"}"#,
         render: Some("Cargo.toml".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultDelta {
-        name: "read_file".into(),
-        delta: "[package]\nname = \"test\"".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", "[package]\nname = \"test\""));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -217,21 +193,22 @@ fn graduation_preserves_tool_results() {
 #[test]
 fn turn_indicator_not_in_scrollback() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Send a message and let it stream (turn indicator should be active)
-    app.on_message(ChatAppMsg::UserMessage("Test question".into()));
-    app.on_message(ChatAppMsg::TextDelta("Streaming response".into()));
+    app.send_msgs(feed.user("Test question"));
+    app.send_msgs(feed.text("Streaming response"));
     vt.render_frame(&mut app); // renders with active turn indicator
 
     // Complete the stream
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Start a new turn to push previous content to scrollback
-    app.on_message(ChatAppMsg::UserMessage("Follow up".into()));
-    app.on_message(ChatAppMsg::TextDelta("Second response".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.user("Follow up"));
+    app.send_msgs(feed.text("Second response"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Check scrollback has no spinner characters
@@ -260,10 +237,11 @@ fn empty_stream_complete_does_not_crash() {
 #[test]
 fn cancelled_stream_graduates_cleanly() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Start something".into()));
-    app.on_message(ChatAppMsg::TextDelta("Partial respon".into()));
+    app.send_msgs(feed.user("Start something"));
+    app.send_msgs(feed.text("Partial respon"));
     vt.render_frame(&mut app);
 
     app.on_message(ChatAppMsg::StreamCancelled);

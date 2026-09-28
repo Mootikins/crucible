@@ -139,35 +139,134 @@ pub fn assert_no_triple_blanks(screen: &str, context: &str) {
     }
 }
 
-/// The path of a live session, for a test that feeds raw events: the
-/// daemon's event bus folds each event and puts the ops on it, and the TUI
-/// consumer turns the event into messages. A raw event carries no ops, so
-/// the test needs the fold. One feed keeps one fold, as one session does.
-#[derive(Default)]
-pub struct EventFeed {
-    fold: crucible_core::transcript::TranscriptFold,
-    stream: crate::tui::oil::chat_runner::SessionEventStream,
-}
+// `EventFeed` lives with the fixtures, because the `fullscreen_demo` example
+// includes that file and feeds its fake sessions through the same path.
+pub use crate::tui::oil::fullscreen::fixtures::EventFeed;
 
+/// The wire events of a turn, for a test. Each method gives the messages
+/// that the event makes on the live path. Send them to the app with
+/// [`SendMsgs::send_msgs`].
 impl EventFeed {
-    /// The app messages of the event `name` with `data`.
-    pub fn msgs(
-        &mut self,
-        name: &str,
-        data: serde_json::Value,
-    ) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
-        self.event(crucible_core::protocol::SessionEventMessage::new(
-            "test", name, data,
-        ))
+    /// The submit of `content` in this TUI, then the echo of the daemon.
+    pub fn user(&mut self, content: &str) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        let mut msgs = vec![crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
+            content.to_string(),
+        )];
+        msgs.extend(self.msgs("user_message", serde_json::json!({ "content": content })));
+        msgs
     }
 
-    /// The app messages of `event`.
-    pub fn event(
+    pub fn text(&mut self, content: &str) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        self.msgs("text_delta", serde_json::json!({ "content": content }))
+    }
+
+    pub fn thinking(&mut self, content: &str) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        self.msgs("thinking", serde_json::json!({ "content": content }))
+    }
+
+    /// The end of the answer. The streamed deltas hold its text.
+    pub fn complete(&mut self) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        self.msgs(
+            "message_complete",
+            serde_json::json!({ "full_response": "" }),
+        )
+    }
+
+    /// A tool call with JSON `args` and no display.
+    pub fn tool_call(
         &mut self,
-        mut event: crucible_core::protocol::SessionEventMessage,
+        tool: &str,
+        call_id: &str,
+        args: &str,
     ) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
-        event.transcript = self.fold.apply(&event);
-        crate::tui::oil::chat_runner::event_msgs(&mut self.stream, &event)
+        self.tool(ToolCallEvent {
+            tool,
+            call_id,
+            args,
+            ..ToolCallEvent::default()
+        })
+    }
+
+    pub fn tool(&mut self, call: ToolCallEvent<'_>) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        let args: serde_json::Value = serde_json::from_str(call.args)
+            .unwrap_or_else(|_| serde_json::Value::String(call.args.to_string()));
+        let mut data = serde_json::json!({
+            "call_id": call.call_id,
+            "tool": call.tool,
+            "args": args,
+        });
+        if call.render.is_some() || !call.diffs.is_empty() {
+            data["display"] = serde_json::json!({
+                "kind": "other",
+                "tool": call.tool,
+                "render": call.render,
+                "diffs": call.diffs,
+            });
+        }
+        if let Some(source) = call.source {
+            data["source"] = source.into();
+        }
+        if let Some(auto_approved) = call.auto_approved {
+            data["auto_approved"] = auto_approved.into();
+        }
+        self.msgs("tool_call", data)
+    }
+
+    /// The result of the call `call_id`, with the whole `output`.
+    pub fn tool_result(
+        &mut self,
+        tool: &str,
+        call_id: &str,
+        output: &str,
+    ) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        self.msgs(
+            "tool_result",
+            serde_json::json!({
+                "call_id": call_id, "tool": tool, "result": { "result": output },
+            }),
+        )
+    }
+
+    /// The call `call_id` failed with `error`.
+    pub fn tool_error(
+        &mut self,
+        tool: &str,
+        call_id: &str,
+        error: &str,
+    ) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        self.msgs(
+            "tool_result",
+            serde_json::json!({
+                "call_id": call_id, "tool": tool, "result": { "error": error },
+            }),
+        )
+    }
+}
+
+/// The fields of a `tool_call` event. The display goes on the wire only
+/// when `render` or `diffs` has a value.
+#[derive(Default)]
+pub struct ToolCallEvent<'a> {
+    pub tool: &'a str,
+    pub call_id: &'a str,
+    /// JSON text. Other text goes on the wire as a JSON string.
+    pub args: &'a str,
+    pub render: Option<crucible_core::types::ToolRender>,
+    pub diffs: Vec<crucible_core::types::acp::FileDiff>,
+    pub source: Option<&'a str>,
+    pub auto_approved: Option<&'a str>,
+}
+
+/// Send each message to the app, through `on_message`.
+pub trait SendMsgs {
+    fn send_msgs(&mut self, msgs: Vec<crate::tui::oil::chat_app::ChatAppMsg>);
+}
+
+impl SendMsgs for OilChatApp {
+    fn send_msgs(&mut self, msgs: Vec<crate::tui::oil::chat_app::ChatAppMsg>) {
+        for msg in msgs {
+            self.on_message(msg);
+        }
     }
 }
 

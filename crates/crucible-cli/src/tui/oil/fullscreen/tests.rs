@@ -1,5 +1,6 @@
 use super::*;
 use crate::tui::oil::chat_app::ChatAppMsg;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 use crate::tui::oil::theme;
 use crossterm::event::{KeyModifiers, MouseEvent};
 use crucible_oil::focus::FocusContext;
@@ -91,6 +92,7 @@ fn a_short_transcript_starts_at_the_top() {
 #[test]
 fn page_up_holds_the_reader_while_text_streams() {
     let mut app = fixtures::app_with_exchanges(5);
+    let mut feed = EventFeed::default();
     let mut view = FullscreenView::new();
     frame_at(&mut view, &mut app, 100, 30);
 
@@ -102,9 +104,9 @@ fn page_up_holds_the_reader_while_text_streams() {
     let held = top_text(&view);
     assert!(!view.scroll().follows());
 
-    app.on_message(ChatAppMsg::UserMessage("more".into()));
+    app.send_msgs(feed.user("more"));
     for delta in fixtures::stream_deltas(9).into_iter().take(40) {
-        app.on_message(ChatAppMsg::TextDelta(delta));
+        app.send_msgs(feed.text(&delta));
         frame_at(&mut view, &mut app, 100, 30);
     }
     assert_eq!(
@@ -143,6 +145,7 @@ fn a_scrolled_view_shows_how_many_rows_are_below() {
 #[test]
 fn a_resize_while_text_streams_keeps_the_reader_at_the_same_text() {
     let mut app = fixtures::app_with_exchanges(12);
+    let mut feed = EventFeed::default();
     let mut view = FullscreenView::new();
     frame_at(&mut view, &mut app, 160, 40);
     for _ in 0..8 {
@@ -151,10 +154,10 @@ fn a_resize_while_text_streams_keeps_the_reader_at_the_same_text() {
     frame_at(&mut view, &mut app, 160, 40);
     let held = top_text(&view);
 
-    app.on_message(ChatAppMsg::UserMessage("stream while resizing".into()));
+    app.send_msgs(feed.user("stream while resizing"));
     let deltas = fixtures::stream_deltas(20);
     for (i, delta) in deltas.into_iter().enumerate() {
-        app.on_message(ChatAppMsg::TextDelta(delta));
+        app.send_msgs(feed.text(&delta));
         // A drag of the window edge: many sizes, one after another.
         let width = [160, 140, 120, 100, 90, 120, 160][i % 7];
         let rows = screen_text(&frame_at(&mut view, &mut app, width, 40));
@@ -183,10 +186,11 @@ fn a_resize_while_text_streams_keeps_the_reader_at_the_same_text() {
 #[test]
 fn a_resize_at_the_bottom_stays_at_the_bottom() {
     let mut app = fixtures::app_with_exchanges(4);
+    let mut feed = EventFeed::default();
     let mut view = FullscreenView::new();
     frame_at(&mut view, &mut app, 160, 40);
-    app.on_message(ChatAppMsg::UserMessage("q".into()));
-    app.on_message(ChatAppMsg::TextDelta("streaming tail".into()));
+    app.send_msgs(feed.user("q"));
+    app.send_msgs(feed.text("streaming tail"));
     let rows = screen_text(&frame_at(&mut view, &mut app, 90, 40));
     assert!(view.scroll().follows());
     assert!(
@@ -201,6 +205,7 @@ fn a_resize_at_the_bottom_stays_at_the_bottom() {
 fn streamed_frames_are_single_synchronized_updates_without_a_clear() {
     use crucible_oil::screen::ScreenDiff;
     let mut app = fixtures::app_with_exchanges(6);
+    let mut feed = EventFeed::default();
     let mut view = FullscreenView::new();
     let mut diff = ScreenDiff::new();
     let mut parser = vt100::Parser::new(40, 120, 0);
@@ -210,10 +215,10 @@ fn streamed_frames_are_single_synchronized_updates_without_a_clear() {
     diff.present(&mut out, &first.grid, first.cursor).unwrap();
     parser.process(&out);
 
-    app.on_message(ChatAppMsg::UserMessage("stream".into()));
+    app.send_msgs(feed.user("stream"));
     let mut row_counts = Vec::new();
     for delta in fixtures::stream_deltas(7).into_iter().take(60) {
-        app.on_message(ChatAppMsg::TextDelta(delta));
+        app.send_msgs(feed.text(&delta));
         let frame = frame_at(&mut view, &mut app, 120, 40);
         out.clear();
         let stats = diff.present(&mut out, &frame.grid, frame.cursor).unwrap();
@@ -283,8 +288,9 @@ fn a_drag_over_a_wrapped_paragraph_copies_the_source_text() {
                      \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} emoji, long enough to wrap \
                      over several rows at forty columns, until the END.";
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta(paragraph.into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text(paragraph));
+    app.send_msgs(feed.complete());
     let mut view = FullscreenView::new();
     let frame = frame_at(&mut view, &mut app, 40, 30);
 
@@ -347,10 +353,9 @@ fn a_plain_click_selects_and_copies_nothing() {
 fn a_double_and_a_triple_click_copy_a_word_and_a_line() {
     use crossterm::event::MouseButton;
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta(
-        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda"));
+    app.send_msgs(feed.complete());
     let mut view = FullscreenView::new();
     let frame = frame_at(&mut view, &mut app, 30, 20);
     let (col, row) = find_on_screen(&frame, "gamma");
@@ -378,8 +383,9 @@ fn a_double_and_a_triple_click_copy_a_word_and_a_line() {
 #[test]
 fn the_dump_key_prints_finished_entries_once() {
     let mut app = fixtures::app_with_exchanges(2);
-    app.on_message(ChatAppMsg::UserMessage("q".into()));
-    app.on_message(ChatAppMsg::TextDelta("still streaming".into()));
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("q"));
+    app.send_msgs(feed.text("still streaming"));
     let mut view = FullscreenView::new();
     frame_at(&mut view, &mut app, 80, 30);
 
@@ -491,8 +497,9 @@ fn the_highlight_covers_only_the_text_not_the_gutter() {
     let first = "First paragraph that is long enough to wrap over two rows at forty.";
     let second = "Second paragraph, short.";
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta(format!("{first}\n\n{second}")));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text(&format!("{first}\n\n{second}")));
+    app.send_msgs(feed.complete());
     let mut view = FullscreenView::new();
     let frame = frame_at(&mut view, &mut app, 40, 30);
     let (start_col, start_row) = find_on_screen(&frame, "First");
@@ -531,10 +538,9 @@ fn the_highlight_covers_only_the_text_not_the_gutter() {
 #[test]
 fn a_drag_from_and_to_the_gutter_snaps_to_the_text() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::TextDelta(
-        "alpha row\n\nbeta row\n\ngamma row".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.text("alpha row\n\nbeta row\n\ngamma row"));
+    app.send_msgs(feed.complete());
     let mut view = FullscreenView::new();
     let frame = frame_at(&mut view, &mut app, 40, 30);
     let (_, alpha) = find_on_screen(&frame, "alpha");

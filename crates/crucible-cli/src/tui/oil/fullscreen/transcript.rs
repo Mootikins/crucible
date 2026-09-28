@@ -299,6 +299,7 @@ fn height(entry: &Slot) -> usize {
 mod tests {
     use super::*;
     use crate::tui::oil::fullscreen::fixtures;
+    use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
     use crate::tui::oil::theme;
     use crucible_oil::ansi::strip_ansi;
     use crucible_oil::focus::FocusContext;
@@ -387,8 +388,9 @@ mod tests {
     #[test]
     fn a_streaming_node_is_not_finished() {
         let mut app = fixtures::app_with_exchanges(2);
-        app.on_message(crate::tui::oil::ChatAppMsg::UserMessage("next".into()));
-        app.on_message(crate::tui::oil::ChatAppMsg::TextDelta("partial".into()));
+        let mut feed = EventFeed::default();
+        app.send_msgs(feed.user("next"));
+        app.send_msgs(feed.text("partial"));
         let mut transcript = Transcript::new();
         sync(&mut transcript, &mut app, 100);
         assert_eq!(transcript.entry_count(), 6);
@@ -420,9 +422,10 @@ mod tests {
         // `NATURAL_HEIGHT` gives taffy a finite ceiling; a long answer must
         // still keep all of its rows.
         let mut app = OilChatApp::default();
+        let mut feed = EventFeed::default();
         let long: String = (0..800).map(|i| format!("line {i}\n\n")).collect();
-        app.on_message(crate::tui::oil::ChatAppMsg::TextDelta(long));
-        app.on_message(crate::tui::oil::ChatAppMsg::StreamComplete);
+        app.send_msgs(feed.text(&long));
+        app.send_msgs(feed.complete());
         let mut transcript = Transcript::new();
         sync(&mut transcript, &mut app, 80);
 

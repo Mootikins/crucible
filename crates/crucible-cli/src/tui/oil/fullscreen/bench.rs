@@ -12,7 +12,8 @@
 use super::fixtures;
 use super::FullscreenView;
 use crate::tui::oil::app::ViewContext;
-use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::chat_app::OilChatApp;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs};
 use crate::tui::oil::theme;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::screen::ScreenDiff;
@@ -66,6 +67,7 @@ fn settle(app: &mut OilChatApp, view: &mut FullscreenView) -> Duration {
 /// Stream one more answer into `app` and time each frame: build plus the row
 /// diff into a byte buffer.
 fn stream_frames(app: &mut OilChatApp, view: &mut FullscreenView) -> Vec<Sample> {
+    let mut feed = EventFeed::default();
     let focus = FocusContext::new();
     let mut diff = ScreenDiff::new();
     let mut out: Vec<u8> = Vec::new();
@@ -78,14 +80,14 @@ fn stream_frames(app: &mut OilChatApp, view: &mut FullscreenView) -> Vec<Sample>
     let first = view.frame(app, &ctx);
     diff.present(&mut out, &first.grid, first.cursor).unwrap();
 
-    app.on_message(ChatAppMsg::UserMessage(fixtures::user_text(EXCHANGES)));
+    app.send_msgs(feed.user(&fixtures::user_text(EXCHANGES)));
     let mut samples = Vec::new();
     for delta in fixtures::stream_deltas(EXCHANGES)
         .into_iter()
         .cycle()
         .take(FRAMES)
     {
-        app.on_message(ChatAppMsg::TextDelta(delta));
+        app.send_msgs(feed.text(&delta));
         app.set_frame_time(Instant::now());
         out.clear();
         let start = Instant::now();

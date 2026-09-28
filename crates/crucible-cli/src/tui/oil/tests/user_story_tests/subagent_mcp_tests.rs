@@ -14,11 +14,14 @@ use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay};
 fn subagent_spawn_shows_prompt_preview() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate this".into()));
-    story.send(ChatAppMsg::DelegationSpawned {
-        id: "s1".into(),
-        prompt: "Analyze the auth module".into(),
-        target_agent: None,
-    });
+    story.event(
+        "user_message",
+        serde_json::json!({ "content": "delegate this" }),
+    );
+    story.event(
+        "delegation_spawned",
+        serde_json::json!({ "delegation_id": "s1", "prompt": "Analyze the auth module", "target_agent": null }),
+    );
 
     let screen = story.screen();
     assert!(
@@ -31,15 +34,18 @@ fn subagent_spawn_shows_prompt_preview() {
 fn subagent_completion_shows_summary() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate this".into()));
-    story.send(ChatAppMsg::DelegationSpawned {
-        id: "s1".into(),
-        prompt: "Analyze the auth module".into(),
-        target_agent: None,
-    });
-    story.send(ChatAppMsg::DelegationCompleted {
-        id: "s1".into(),
-        summary: "Found three issues".into(),
-    });
+    story.event(
+        "user_message",
+        serde_json::json!({ "content": "delegate this" }),
+    );
+    story.event(
+        "delegation_spawned",
+        serde_json::json!({ "delegation_id": "s1", "prompt": "Analyze the auth module", "target_agent": null }),
+    );
+    story.event(
+        "delegation_completed",
+        serde_json::json!({ "delegation_id": "s1", "result_summary": "Found three issues" }),
+    );
 
     let screen = story.screen();
     assert!(
@@ -52,15 +58,18 @@ fn subagent_completion_shows_summary() {
 fn subagent_failure_shows_error() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate this".into()));
-    story.send(ChatAppMsg::DelegationSpawned {
-        id: "s1".into(),
-        prompt: "Analyze the auth module".into(),
-        target_agent: None,
-    });
-    story.send(ChatAppMsg::DelegationFailed {
-        id: "s1".into(),
-        error: "subagent timed out".into(),
-    });
+    story.event(
+        "user_message",
+        serde_json::json!({ "content": "delegate this" }),
+    );
+    story.event(
+        "delegation_spawned",
+        serde_json::json!({ "delegation_id": "s1", "prompt": "Analyze the auth module", "target_agent": null }),
+    );
+    story.event(
+        "delegation_failed",
+        serde_json::json!({ "delegation_id": "s1", "error": "subagent timed out" }),
+    );
 
     let screen = story.screen();
     assert!(
@@ -73,16 +82,18 @@ fn subagent_failure_shows_error() {
 fn concurrent_subagents_render_as_separate_rows() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate two things".into()));
-    story.send(ChatAppMsg::DelegationSpawned {
-        id: "s1".into(),
-        prompt: "First parallel task".into(),
-        target_agent: None,
-    });
-    story.send(ChatAppMsg::DelegationSpawned {
-        id: "s2".into(),
-        prompt: "Second parallel task".into(),
-        target_agent: None,
-    });
+    story.event(
+        "user_message",
+        serde_json::json!({ "content": "delegate two things" }),
+    );
+    story.event(
+        "delegation_spawned",
+        serde_json::json!({ "delegation_id": "s1", "prompt": "First parallel task", "target_agent": null }),
+    );
+    story.event(
+        "delegation_spawned",
+        serde_json::json!({ "delegation_id": "s2", "prompt": "Second parallel task", "target_agent": null }),
+    );
 
     let screen = story.screen();
     assert!(
@@ -95,11 +106,14 @@ fn concurrent_subagents_render_as_separate_rows() {
 fn delegation_shows_target_agent() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate to claude".into()));
-    story.send(ChatAppMsg::DelegationSpawned {
-        id: "d1".into(),
-        prompt: "Refactor the parser".into(),
-        target_agent: Some("claude".into()),
-    });
+    story.event(
+        "user_message",
+        serde_json::json!({ "content": "delegate to claude" }),
+    );
+    story.event(
+        "delegation_spawned",
+        serde_json::json!({ "delegation_id": "d1", "prompt": "Refactor the parser", "target_agent": "claude" }),
+    );
 
     let screen = story.screen();
     assert!(

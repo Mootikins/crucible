@@ -6,6 +6,7 @@
 //! the daemon clears and re-emits the surviving history.
 
 use super::support::StoryRuntime;
+use super::vocab::stream_assistant_reply;
 use crate::tui::oil::chat_app::ChatAppMsg;
 
 /// Frame-sequence snapshot: two completed turns, then the daemon reverts
@@ -23,8 +24,11 @@ fn undo_flow_frame_sequence() {
     });
     story.send(ChatAppMsg::ClearHistory);
     story.send(ChatAppMsg::UserMessage("What is 2 plus 2?".into()));
-    story.send(ChatAppMsg::TextDelta("2 plus 2 equals 4.".into()));
-    story.send(ChatAppMsg::StreamComplete);
+    story.event(
+        "user_message",
+        serde_json::json!({ "content": "What is 2 plus 2?" }),
+    );
+    stream_assistant_reply(&mut story, "2 plus 2 equals 4.");
     story.capture("after undo (survivor turn only)");
 
     insta::assert_snapshot!("undo_flow_frame_sequence", story.sequence());
@@ -83,8 +87,11 @@ fn undo_truncates_viewport_when_daemon_reverts() {
     });
     story.send(ChatAppMsg::ClearHistory);
     story.send(ChatAppMsg::UserMessage("What is 2 plus 2?".into()));
-    story.send(ChatAppMsg::TextDelta("2 plus 2 equals 4.".into()));
-    story.send(ChatAppMsg::StreamComplete);
+    story.event(
+        "user_message",
+        serde_json::json!({ "content": "What is 2 plus 2?" }),
+    );
+    stream_assistant_reply(&mut story, "2 plus 2 equals 4.");
 
     // Render the post-revert state fresh (as a real terminal's full redraw
     // would), so we assert against the live container list, not vt100

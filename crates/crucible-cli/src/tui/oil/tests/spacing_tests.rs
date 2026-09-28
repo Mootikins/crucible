@@ -9,45 +9,35 @@
 
 use super::helpers::{assert_no_triple_blanks, vt_render};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 
 #[test]
 fn adjacent_tools_no_gap() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Do two things".into()));
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("Do two things"));
 
     // Tool 1
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "a.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "a.rs"}"#,
         render: Some("a.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", ""));
 
     // Tool 2 (should group with tool 1 — zero gap)
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "write_file".into(),
-        args: r#"{"path": "b.rs"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "write_file",
+        call_id: "c2",
+        args: r#"{"path": "b.rs"}"#,
         render: Some("b.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "write_file".into(),
-        call_id: Some("c2".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("write_file", "c2", ""));
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
 
     let output = vt_render(&mut app);
 
@@ -85,29 +75,22 @@ fn adjacent_tools_no_gap() {
 #[test]
 fn tool_then_text_one_blank_line() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Check and explain".into()));
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("Check and explain"));
 
     // Tool call
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "main.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "main.rs"}"#,
         render: Some("main.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", ""));
 
     // Continuation text after tool
-    app.on_message(ChatAppMsg::TextDelta(
-        "Based on the file contents here is the explanation.".into(),
-    ));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Based on the file contents here is the explanation."));
+    app.send_msgs(feed.complete());
 
     // Render through vt100 for full graduation
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 30);
@@ -136,9 +119,10 @@ fn tool_then_text_one_blank_line() {
 #[test]
 fn user_then_assistant_one_blank_line() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Hello there".into()));
-    app.on_message(ChatAppMsg::TextDelta("General Kenobi".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("Hello there"));
+    app.send_msgs(feed.text("General Kenobi"));
+    app.send_msgs(feed.complete());
 
     // Render through vt100 to trigger graduation
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
@@ -164,29 +148,22 @@ fn user_then_assistant_one_blank_line() {
 #[test]
 fn thinking_then_tools_one_blank_line() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::UserMessage("Plan and execute".into()));
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "I need to check the codebase first".into(),
-    ));
-    app.on_message(ChatAppMsg::TextDelta("Let me check.".into()));
+    let mut feed = EventFeed::default();
+    app.send_msgs(feed.user("Plan and execute"));
+    app.send_msgs(feed.thinking("I need to check the codebase first"));
+    app.send_msgs(feed.text("Let me check."));
 
     // Tool follows thinking+text
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "ls src/"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "ls src/"}"#,
         render: Some("ls src/".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("bash", "c1", ""));
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
 
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 30);
     vt.render_frame(&mut app);
@@ -212,22 +189,23 @@ fn thinking_then_tools_one_blank_line() {
 #[test]
 fn no_triple_blanks_in_multi_turn_conversation() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
 
     // Turn 1
-    app.on_message(ChatAppMsg::UserMessage("First question".into()));
+    app.send_msgs(feed.user("First question"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("First answer".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("First answer"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Turn 2
-    app.on_message(ChatAppMsg::UserMessage("Second question".into()));
+    app.send_msgs(feed.user("Second question"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Second answer".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Second answer"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -243,17 +221,16 @@ fn no_triple_blanks_in_multi_turn_conversation() {
 #[test]
 fn permission_modal_does_not_cause_double_blanks() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(124, 59);
 
-    app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
+    app.send_msgs(feed.user("tell me about this repo"));
     vt.render_frame(&mut app);
 
     // Thinking + text
-    app.on_message(ChatAppMsg::ThinkingDelta(
-        "I need to explore the repo structure".into(),
-    ));
+    app.send_msgs(feed.thinking("I need to explore the repo structure"));
     vt.render_frame(&mut app);
-    app.on_message(ChatAppMsg::TextDelta("I'll explore the repository.".into()));
+    app.send_msgs(feed.text("I'll explore the repository."));
     vt.render_frame(&mut app);
 
     // Permission modal opens (like interaction_requested)
@@ -276,23 +253,17 @@ fn permission_modal_does_not_cause_double_blanks() {
     vt.render_frame(&mut app);
 
     // Tool arrives
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "ls -la"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "ls -la"}"#,
         render: Some("ls -la".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.tool_result("bash", "c1", ""));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();
@@ -327,27 +298,22 @@ fn permission_modal_does_not_cause_double_blanks() {
 #[test]
 fn tools_across_graduation_batches_no_gap() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
 
     // User message
-    app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
+    app.send_msgs(feed.user("Do stuff"));
     vt.render_frame(&mut app); // UserMessage graduates
 
     // First tool
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "echo hi"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "echo hi"}"#,
         render: Some("echo hi".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("bash", "c1", ""));
     vt.render_frame(&mut app); // Frame between tools
 
     // Text before tools (like the fixture: thinking + text, then tools)
@@ -360,58 +326,47 @@ fn tools_across_graduation_batches_no_gap() {
     // thinking → text → tool1 → tool1_result → tool2 → tool2_result
     // with render_frame after EACH event
     let mut app2 = OilChatApp::default();
+    let mut feed2 = EventFeed::default();
     let mut vt2 = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
 
-    app2.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
+    app2.send_msgs(feed2.user("Do stuff"));
     vt2.render_frame(&mut app2);
 
-    app2.on_message(ChatAppMsg::ThinkingDelta("planning".into()));
+    app2.send_msgs(feed2.thinking("planning"));
     vt2.render_frame(&mut app2);
 
-    app2.on_message(ChatAppMsg::TextDelta("I'll check.".into()));
+    app2.send_msgs(feed2.text("I'll check."));
     vt2.render_frame(&mut app2);
 
-    app2.on_message(ChatAppMsg::ToolCall {
-        name: "bash".into(),
-        args: r#"{"command": "echo hi"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app2.send_msgs(feed2.tool(ToolCallEvent {
+        tool: "bash",
+        call_id: "c1",
+        args: r#"{"command": "echo hi"}"#,
         render: Some("echo hi".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt2.render_frame(&mut app2);
 
-    app2.on_message(ChatAppMsg::ToolResultComplete {
-        name: "bash".into(),
-        call_id: Some("c1".into()),
-    });
+    app2.send_msgs(feed2.tool_result("bash", "c1", ""));
     vt2.render_frame(&mut app2);
 
     // Extra frames (interaction events)
     vt2.render_frame(&mut app2);
     vt2.render_frame(&mut app2);
 
-    app2.on_message(ChatAppMsg::ToolCall {
-        name: "glob".into(),
-        args: r#"{"pattern": "*.rs"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: None,
+    app2.send_msgs(feed2.tool(ToolCallEvent {
+        tool: "glob",
+        call_id: "c2",
+        args: r#"{"pattern": "*.rs"}"#,
         render: Some("*.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+        ..Default::default()
+    }));
     vt2.render_frame(&mut app2);
 
-    app2.on_message(ChatAppMsg::ToolResultComplete {
-        name: "glob".into(),
-        call_id: Some("c2".into()),
-    });
+    app2.send_msgs(feed2.tool_result("glob", "c2", ""));
     vt2.render_frame(&mut app2);
 
-    app2.on_message(ChatAppMsg::StreamComplete);
+    app2.send_msgs(feed2.complete());
     vt2.render_frame(&mut app2);
 
     let full2 = vt2.full_history();
@@ -440,21 +395,15 @@ fn tools_across_graduation_batches_no_gap() {
         }
     }
 
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "glob".into(),
-        args: r#"{"pattern": "*.rs"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "glob",
+        call_id: "c2",
+        args: r#"{"pattern": "*.rs"}"#,
         render: Some("*.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "glob".into(),
-        call_id: Some("c2".into()),
-    });
-    app.on_message(ChatAppMsg::StreamComplete);
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("glob", "c2", ""));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let full = vt.full_history();

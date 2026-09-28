@@ -19,7 +19,7 @@ use crucible_cli::tui::oil::fullscreen::shell::{
     ChatPane, FullscreenShell, PluginBuffer, ShellAction,
 };
 use crucible_cli::tui::oil::fullscreen::{FullscreenView, ViewAction, IDLE_BUDGET};
-use crucible_cli::tui::oil::{theme, ChatAppMsg, Event, FocusContext, ViewContext};
+use crucible_cli::tui::oil::{theme, Event, FocusContext, ViewContext};
 use crucible_oil::terminal::{ScreenMode, Terminal};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -78,15 +78,24 @@ fn run(terminal: &mut Terminal) -> std::io::Result<(Vec<String>, String)> {
     let mut copier = Copier::default();
     // Deltas still to stream, per chat pane.
     let mut pending: Vec<VecDeque<String>> = vec![VecDeque::new(); shell.chats.len()];
+    // The fake daemon of each pane folds its events, as a session does.
+    let mut feeds: Vec<fixtures::EventFeed> =
+        shell.chats.iter().map(|_| Default::default()).collect();
     let mut answer = 1000;
     let (mut times, mut bytes) = (Vec::new(), Vec::new());
 
     loop {
         for (i, queue) in pending.iter_mut().enumerate() {
             if let Some(delta) = queue.pop_front() {
-                shell.chats[i].app.on_message(ChatAppMsg::TextDelta(delta));
+                let mut msgs = feeds[i].msgs("text_delta", serde_json::json!({ "content": delta }));
                 if queue.is_empty() {
-                    shell.chats[i].app.on_message(ChatAppMsg::StreamComplete);
+                    msgs.extend(feeds[i].msgs(
+                        "message_complete",
+                        serde_json::json!({ "full_response": "" }),
+                    ));
+                }
+                for msg in msgs {
+                    shell.chats[i].app.on_message(msg);
                 }
             }
         }
@@ -128,7 +137,13 @@ fn run(terminal: &mut Terminal) -> std::io::Result<(Vec<String>, String)> {
         };
         match shell.handle_event(&event) {
             ShellAction::Quit => break,
-            ShellAction::Sent { pane, .. } => {
+            ShellAction::Sent { pane, message } => {
+                // The daemon echoes the message and opens the turn.
+                let echo =
+                    feeds[pane].msgs("user_message", serde_json::json!({ "content": message }));
+                for msg in echo {
+                    shell.chats[pane].app.on_message(msg);
+                }
                 answer += 1;
                 pending[pane] = fixtures::stream_deltas(answer).into();
             }

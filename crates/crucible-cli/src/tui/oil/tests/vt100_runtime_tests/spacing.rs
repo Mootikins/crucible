@@ -2,6 +2,7 @@
 //! open/close behavior at the rendered-screen level.
 
 use super::*;
+use crate::tui::oil::tests::helpers::{EventFeed, SendMsgs, ToolCallEvent};
 
 #[test]
 fn vt100_runtime_renders_viewport_content() {
@@ -22,14 +23,15 @@ fn vt100_runtime_renders_viewport_content() {
 #[test]
 fn vt100_runtime_shows_graduated_content_in_scrollback() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // User message + assistant response (will graduate)
-    app.on_message(ChatAppMsg::UserMessage("Question".into()));
+    app.send_msgs(feed.user("Question"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Answer text".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Answer text"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Both should be visible (in scrollback or screen)
@@ -49,24 +51,25 @@ fn vt100_runtime_shows_graduated_content_in_scrollback() {
 #[test]
 fn vt100_multi_frame_graduation_spacing() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Frame 1: user message graduates
-    app.on_message(ChatAppMsg::UserMessage("First question".into()));
+    app.send_msgs(feed.user("First question"));
     vt.render_frame(&mut app);
 
     // Frame 2: assistant graduates
-    app.on_message(ChatAppMsg::TextDelta("First answer".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("First answer"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Frame 3: second user
-    app.on_message(ChatAppMsg::UserMessage("Second question".into()));
+    app.send_msgs(feed.user("Second question"));
     vt.render_frame(&mut app);
 
     // Frame 4: second assistant
-    app.on_message(ChatAppMsg::TextDelta("Second answer".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Second answer"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let screen = vt.screen_contents();
@@ -79,14 +82,15 @@ fn vt100_multi_frame_graduation_spacing() {
 #[test]
 fn vt100_cleanup_viewport_positions_cursor_below_content() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Render some content so the viewport has lines
-    app.on_message(ChatAppMsg::UserMessage("Hello".into()));
+    app.send_msgs(feed.user("Hello"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("World".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("World"));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Simulate what exit() does: cleanup_viewport then write a message
@@ -106,46 +110,35 @@ fn vt100_cleanup_viewport_positions_cursor_below_content() {
 #[test]
 fn vt100_runtime_consecutive_tools_no_phantom_blank() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
+    app.send_msgs(feed.user("Do stuff"));
     vt.render_frame(&mut app);
 
     // Tool 1
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "a.rs"}"#.into(),
-        call_id: Some("c1".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c1",
+        args: r#"{"path": "a.rs"}"#,
         render: Some("a.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c1".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c1", ""));
     vt.render_frame(&mut app);
 
     // Tool 2 (separate frame — this is where the phantom blank line appeared)
-    app.on_message(ChatAppMsg::ToolCall {
-        name: "read_file".into(),
-        args: r#"{"path": "b.rs"}"#.into(),
-        call_id: Some("c2".into()),
-        description: None,
-        source: None,
+    app.send_msgs(feed.tool(ToolCallEvent {
+        tool: "read_file",
+        call_id: "c2",
+        args: r#"{"path": "b.rs"}"#,
         render: Some("b.rs".into()),
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
-    app.on_message(ChatAppMsg::ToolResultComplete {
-        name: "read_file".into(),
-        call_id: Some("c2".into()),
-    });
+        ..Default::default()
+    }));
+    app.send_msgs(feed.tool_result("read_file", "c2", ""));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let screen = vt.screen_contents();
@@ -186,16 +179,17 @@ fn vt100_runtime_consecutive_tools_no_phantom_blank() {
 #[test]
 fn vt100_user_then_thought_one_blank_line() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
-    app.on_message(ChatAppMsg::UserMessage("Hello".into()));
+    app.send_msgs(feed.user("Hello"));
     vt.render_frame(&mut app); // user graduates
 
-    think(&mut app, "Let me think about this.");
+    think(&mut app, &mut feed, "Let me think about this.");
     vt.render_frame(&mut app);
 
     // Complete so thought graduates
-    tool(&mut app, "bash", "c1");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app);
 
     let combined = format!(
@@ -220,15 +214,16 @@ fn vt100_user_then_thought_one_blank_line() {
 #[test]
 fn vt100_user_then_tool_one_blank_line() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
-    app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
+    app.send_msgs(feed.user("Do stuff"));
     vt.render_frame(&mut app);
 
-    tool(&mut app, "bash", "c1");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let combined = format!(
@@ -251,18 +246,19 @@ fn vt100_user_then_tool_one_blank_line() {
 #[test]
 fn vt100_tool_then_thought_cross_frame_one_blank() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
-    app.on_message(ChatAppMsg::UserMessage("Go".into()));
+    app.send_msgs(feed.user("Go"));
     vt.render_frame(&mut app);
 
-    tool(&mut app, "bash", "c1");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app);
 
     // Thought in next frame (cross-frame)
-    think(&mut app, "Interesting results.");
-    app.on_message(ChatAppMsg::TextDelta("Done.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    think(&mut app, &mut feed, "Interesting results.");
+    app.send_msgs(feed.text("Done."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let combined = format!(
@@ -286,28 +282,29 @@ fn vt100_tool_then_thought_cross_frame_one_blank() {
 #[test]
 fn vt100_full_conversation_no_triple_blanks() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
     // Turn 1
-    app.on_message(ChatAppMsg::UserMessage("Question 1".into()));
+    app.send_msgs(feed.user("Question 1"));
     vt.render_frame(&mut app);
 
-    think(&mut app, "Thinking about question 1.");
-    tool(&mut app, "bash", "c1");
-    tool(&mut app, "read_file", "c2");
+    think(&mut app, &mut feed, "Thinking about question 1.");
+    tool(&mut app, &mut feed, "bash", "c1");
+    tool(&mut app, &mut feed, "read_file", "c2");
     vt.render_frame(&mut app);
 
-    think(&mut app, "Got the results.");
-    app.on_message(ChatAppMsg::TextDelta("Answer 1.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    think(&mut app, &mut feed, "Got the results.");
+    app.send_msgs(feed.text("Answer 1."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     // Turn 2
-    app.on_message(ChatAppMsg::UserMessage("Question 2".into()));
+    app.send_msgs(feed.user("Question 2"));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("Answer 2.".into()));
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.text("Answer 2."));
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let combined = format!(
@@ -324,30 +321,31 @@ fn vt100_full_conversation_no_triple_blanks() {
 #[test]
 fn vt100_tick_per_event_no_triple_blanks() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
-    app.on_message(ChatAppMsg::UserMessage("Go".into()));
+    app.send_msgs(feed.user("Go"));
     vt.render_frame(&mut app);
 
-    think(&mut app, "Let me check.");
+    think(&mut app, &mut feed, "Let me check.");
     vt.render_frame(&mut app);
 
-    tool(&mut app, "bash", "c1");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app);
 
-    tool(&mut app, "read_file", "c2");
+    tool(&mut app, &mut feed, "read_file", "c2");
     vt.render_frame(&mut app);
 
-    think(&mut app, "Almost done.");
+    think(&mut app, &mut feed, "Almost done.");
     vt.render_frame(&mut app);
 
-    tool(&mut app, "glob", "c3");
+    tool(&mut app, &mut feed, "glob", "c3");
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::TextDelta("All done.".into()));
+    app.send_msgs(feed.text("All done."));
     vt.render_frame(&mut app);
 
-    app.on_message(ChatAppMsg::StreamComplete);
+    app.send_msgs(feed.complete());
     vt.render_frame(&mut app);
 
     let combined = format!(
@@ -373,10 +371,11 @@ fn permission_modal_opens_without_corruption() {
     use crucible_core::interaction::{InteractionRequest, PermRequest};
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Do something".into()));
-    think(&mut app, "Let me run a dangerous command.");
+    app.send_msgs(feed.user("Do something"));
+    think(&mut app, &mut feed, "Let me run a dangerous command.");
     vt.render_frame(&mut app);
 
     // Permission request arrives — modal should open
@@ -403,10 +402,11 @@ fn ask_interaction_opens_without_crash() {
     use crucible_core::interaction::{AskRequest, InteractionRequest};
 
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("Question".into()));
-    think(&mut app, "I need to ask something.");
+    app.send_msgs(feed.user("Question"));
+    think(&mut app, &mut feed, "I need to ask something.");
     vt.render_frame(&mut app);
 
     // Ask interaction (not permission)
@@ -489,23 +489,24 @@ fn model_popup_bg_matches_command_prompt_bg() {
 #[test]
 fn graduated_thinking_scrolls_off_top_row_during_long_stream() {
     let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
-    app.on_message(ChatAppMsg::UserMessage("go".into()));
+    app.send_msgs(feed.user("go"));
     vt.render_frame(&mut app);
 
     // Thinking with a distinctive tail so we can spot the frozen line.
-    think(&mut app, "planning the approach zz-marker-tail");
+    think(&mut app, &mut feed, "planning the approach zz-marker-tail");
     vt.render_frame(&mut app);
 
     // Tool arrives → the thinking AR graduates; from here the leading
     // ToolGroup blocks all further graduation until the turn ends.
-    tool(&mut app, "bash", "c1");
+    tool(&mut app, &mut feed, "bash", "c1");
     vt.render_frame(&mut app);
 
     // Stream a response far taller than the 24-row terminal.
     for i in 0..60 {
-        app.on_message(ChatAppMsg::TextDelta(format!("response line {i:02}\n")));
+        app.send_msgs(feed.text(&format!("response line {i:02}\n")));
         vt.render_frame(&mut app);
     }
 
