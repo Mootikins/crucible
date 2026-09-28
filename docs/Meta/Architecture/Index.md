@@ -87,6 +87,9 @@ individual section as shipped. The chosen third-party web isolation design and
 the canvas and Oil-in-documents rendering designs are working notes in the same
 untracked tree.
 
+[[Simplification Plan]] is a proposal. It orders the steps that delete
+duplicate layers and copies, so that each concept has one obvious owner.
+
 ## Historical audits
 
 [[Expected]], [[Actual]] and [[Gaps]] began as the **2026-08-22** comparison at
