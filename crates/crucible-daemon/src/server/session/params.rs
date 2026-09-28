@@ -1,47 +1,20 @@
 use super::super::*;
-use crate::{optional_param, require_param};
+use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{
+    SessionIdRequest, SessionPluginTurnLimitRequest, SessionSetContextStrategyRequest,
+    SessionSetModeRequest, SessionSetPrecognitionRequest, SessionUndoRequest,
+};
 
 use crucible_core::session::ContextStrategy;
 
-// The session config-knob handlers are token-identical except for the knob's
-// wire field name, the `AgentManager` method, and how the value is extracted.
-// These two macros generate one handler per knob from a one-line declaration.
+// Each handler deserializes the request type that `DaemonClient` serializes,
+// from `crucible_core::protocol::requests`. The client and the server thus
+// share one set of field names, and the compiler checks it.
 //
-// Wire-contract invariant (the project's known RPC-parity failure mode is a
-// client/server field-name mismatch): the literal JSON field name is always an
-// explicit `$field` argument at the declaration site — never derived by
-// concatenation — so every wire name stays greppable in this file. The value
-// extracted from the request (`$extract`) is echoed back verbatim under that
-// same field, preserving the exact request/response shape of the old handlers.
-
-/// Generate a `session.set_*` handler `(Request, &AgentManager, &Sender) -> Response`.
-///
-/// `$req` is threaded through as an explicit identifier so the caller-supplied
-/// `$extract` (which uses `require_param!`/`optional_param!` and may early-return
-/// on a missing/invalid param) shares hygiene with the generated `req` binding.
-macro_rules! session_config_setter {
-    ($fn_name:ident, $req:ident, $method:ident, $field:tt, $extract:expr $(,)?) => {
-        pub(crate) async fn $fn_name(
-            $req: Request,
-            am: &Arc<AgentManager>,
-            event_tx: &crate::EventBus,
-        ) -> Response {
-            let session_id = require_param!($req, "session_id", as_str);
-            let value = $extract;
-
-            match am.$method(session_id, value, Some(event_tx)).await {
-                Ok(()) => Response::success(
-                    $req.id,
-                    serde_json::json!({
-                        "session_id": session_id,
-                        $field: value,
-                    }),
-                ),
-                Err(e) => agent_error_to_response($req.id, e),
-            }
-        }
-    };
-}
+// The getters are token-identical except for the knob's result field name and
+// the `AgentManager` method, so one macro generates them. The literal JSON
+// result name is always an explicit `$field` argument, never a concatenation,
+// so every wire name stays greppable in this file.
 
 /// Generate a `session.get_*` handler `(Request, &AgentManager) -> Response`.
 ///
@@ -50,37 +23,25 @@ macro_rules! session_config_setter {
 /// exposed over the wire as their string spelling).
 macro_rules! session_config_getter {
     ($fn_name:ident, $method:ident, $field:tt $(,)?) => {
-        pub(crate) async fn $fn_name(req: Request, am: &Arc<AgentManager>) -> Response {
-            let session_id = require_param!(req, "session_id", as_str);
-
-            match am.$method(session_id) {
-                Ok(value) => Response::success(
-                    req.id,
-                    serde_json::json!({
-                        "session_id": session_id,
-                        $field: value,
-                    }),
-                ),
-                Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-                    session_not_found(req.id, &id)
-                }
-                Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-                    agent_not_configured(req.id, &id)
-                }
-                Err(e) => internal_error(req.id, e),
-            }
-        }
+        session_config_getter!(@impl $fn_name, $method, $field, |value| value);
     };
     ($fn_name:ident, $method:ident, $field:tt, display $(,)?) => {
+        session_config_getter!(@impl $fn_name, $method, $field, |value| value.to_string());
+    };
+    (@impl $fn_name:ident, $method:ident, $field:tt, |$value:ident| $render:expr) => {
         pub(crate) async fn $fn_name(req: Request, am: &Arc<AgentManager>) -> Response {
-            let session_id = require_param!(req, "session_id", as_str);
+            let params = match typed_params::<SessionIdRequest>(&req) {
+                Ok(p) => p,
+                Err(response) => return *response,
+            };
+            let session_id = params.session_id.as_str();
 
             match am.$method(session_id) {
-                Ok(value) => Response::success(
+                Ok($value) => Response::success(
                     req.id,
                     serde_json::json!({
                         "session_id": session_id,
-                        $field: value.to_string(),
+                        $field: $render,
                     }),
                 ),
                 Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
@@ -95,15 +56,19 @@ macro_rules! session_config_getter {
     };
 }
 
-// ── Setters (uniform shape: extract → set → echo the value back) ────────────
+// ── Setters ─────────────────────────────────────────────────────────────────
 
 pub(crate) async fn handle_session_set_mode(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let mode_id = require_param!(req, "mode_id", as_str);
+    let params = match typed_params::<SessionSetModeRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let mode_id = params.mode_id.as_str();
 
     match am.set_mode(session_id, mode_id, Some(event_tx)).await {
         Ok(()) => Response::success(
@@ -127,26 +92,45 @@ pub(crate) async fn handle_session_set_mode(
     }
 }
 
-session_config_setter!(
-    handle_session_set_precognition,
-    req,
-    set_precognition,
-    "precognition_enabled",
-    optional_param!(req, "precognition_enabled", as_bool).unwrap_or(true)
-);
+pub(crate) async fn handle_session_set_precognition(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &crate::EventBus,
+) -> Response {
+    let params = match typed_params::<SessionSetPrecognitionRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let enabled = params.precognition_enabled;
+
+    match am
+        .set_precognition(session_id, enabled, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "precognition_enabled": enabled,
+            }),
+        ),
+        Err(e) => agent_error_to_response(req.id, e),
+    }
+}
 
 pub(crate) async fn handle_session_set_plugin_turn_limit(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let limit = require_param!(req, "limit", as_u64);
-    let Ok(limit) = u32::try_from(limit) else {
-        return Response::error(req.id, INVALID_PARAMS, "limit must fit in u32");
+    let params = match typed_params::<SessionPluginTurnLimitRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
     };
+    let limit = params.limit;
     match am
-        .set_plugin_turn_limit(session_id, limit, Some(event_tx))
+        .set_plugin_turn_limit(&params.session_id, limit, Some(event_tx))
         .await
     {
         Ok(()) => Response::success(req.id, serde_json::json!({"limit": limit})),
@@ -154,7 +138,6 @@ pub(crate) async fn handle_session_set_plugin_turn_limit(
     }
 }
 
-// timeout_secs can be null to clear the timeout, so we use optional.
 // ── Getters (uniform shape: fetch → echo, sync `AgentManager` accessors) ─────
 
 session_config_getter!(
@@ -177,21 +160,24 @@ session_config_getter!(
 
 // ── Hand-written handlers (deviate from the uniform macro shape) ────────────
 //
-// This knob can't be macro-generated: `set_context_strategy`
-// parses-and-validates the incoming string and short-circuits with
-// INVALID_PARAMS on a bad value.
+// `set_context_strategy` parses and validates the incoming string, and
+// answers INVALID_PARAMS for a bad value.
 //
-// The A1 field-name parity gate in `tests/architecture_tests.rs` covers these
-// alongside the macro-generated knobs — it reads each handler's wire field
-// names from whichever form (fn body or macro invocation) the knob uses.
+// The A1 result-name parity gate in `tests/architecture_tests.rs` reads each
+// getter's result field from whichever form (fn body or macro invocation) the
+// knob uses. The shared request type covers the request direction.
 
 pub(crate) async fn handle_session_set_context_strategy(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let strategy_str = require_param!(req, "context_strategy", as_str);
+    let params = match typed_params::<SessionSetContextStrategyRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let strategy_str = params.context_strategy.as_str();
 
     let strategy = match strategy_str.parse::<ContextStrategy>() {
         Ok(s) => s,
@@ -218,8 +204,12 @@ pub(crate) async fn handle_session_undo(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let count = optional_param!(req, "count", as_u64).unwrap_or(1) as usize;
+    let params = match typed_params::<SessionUndoRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let count = params.count.unwrap_or(1);
 
     match am.undo(session_id, count, Some(event_tx)).await {
         Ok(summaries) => Response::success(
@@ -248,7 +238,11 @@ pub(crate) async fn handle_session_undo(
 }
 
 pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
 
     match am.can_undo(session_id).await {
         Ok(can_undo) => Response::success(
@@ -269,7 +263,11 @@ pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>
 }
 
 pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
 
     match am.undo_depth(session_id).await {
         Ok(depth) => Response::success(
@@ -293,7 +291,11 @@ pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManage
 /// `hit_rate` is `null` until at least one completion has reported cache
 /// fields, distinguishing "never had a cache event" from "0%".
 pub(crate) async fn handle_session_cache_stats(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
     let stats = am.get_cache_stats(session_id);
     Response::success(
         req.id,

@@ -155,7 +155,7 @@ async fn test_search_vectors_rpc_success_and_missing_vector_error() {
 }
 
 #[tokio::test]
-async fn test_session_list_rpc_returns_shape_and_accepts_invalid_filters() {
+async fn test_session_list_rpc_returns_shape_and_ignores_unknown_filter_values() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
     let _session_id = create_chat_session(&mut client, TestServer::KILN, 20).await;
@@ -177,11 +177,35 @@ async fn test_session_list_rpc_returns_shape_and_accepts_invalid_filters() {
     assert!(ok_response["result"]["sessions"].is_array());
     assert!(ok_response["result"]["total"].as_u64().unwrap_or(0) >= 1);
 
-    let invalid_filters_response = rpc_call(
+    // A `type` or a `state` that the daemon does not know is ignored.
+    let unknown_values_response = rpc_call(
         &mut client,
         json!({
             "jsonrpc": "2.0",
             "id": 22,
+            "method": "session.list",
+            "params": {
+                "type": "no-such-type",
+                "state": "no-such-state"
+            }
+        }),
+    )
+    .await;
+    assert!(
+        unknown_values_response["error"].is_null(),
+        "session.list should ignore unknown filter values: {unknown_values_response:?}"
+    );
+    assert!(unknown_values_response["result"]["sessions"].is_array());
+
+    // A filter of the wrong JSON type does not parse as `SessionListRequest`.
+    // The handler read it as absent before it read the typed request, and an
+    // absent `kiln` widens the listing to every session. It now answers
+    // INVALID_PARAMS, as `{"kilns": [7]}` already did.
+    let wrong_types_response = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 23,
             "method": "session.list",
             "params": {
                 "type": 123,
@@ -191,11 +215,12 @@ async fn test_session_list_rpc_returns_shape_and_accepts_invalid_filters() {
         }),
     )
     .await;
-    assert!(
-        invalid_filters_response["error"].is_null(),
-        "session.list should ignore invalid optional filters: {invalid_filters_response:?}"
+    assert_eq!(
+        wrong_types_response["error"]["code"].as_i64(),
+        Some(crate::protocol::INVALID_PARAMS as i64),
+        "{wrong_types_response:?}"
     );
-    assert!(invalid_filters_response["result"]["sessions"].is_array());
+    assert!(wrong_types_response["result"].is_null());
 
     server.shutdown().await;
 }

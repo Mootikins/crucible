@@ -52,11 +52,11 @@ pub struct LlmRegisterProviderRequest {
 ///
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetNoteByNameRequest {
     pub kiln: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 
@@ -64,11 +64,11 @@ pub struct GetNoteByNameRequest {
 ///
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GetBacklinksRequest {
     pub kiln: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 
@@ -76,10 +76,10 @@ pub struct GetBacklinksRequest {
 ///
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct KilnGraphRequest {
     pub kiln: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 
@@ -87,16 +87,19 @@ pub struct KilnGraphRequest {
 ///
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SuggestLinksRequest {
     pub kiln: String,
     pub text: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `note.upsert`.
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// `note` stays a `Value`: the handler answers a distinct
+/// `Invalid note record: {e}` for a `note` that is not a `NoteRecord`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NoteUpsertRequest {
     pub kiln: String,
     pub note: serde_json::Value,
@@ -104,10 +107,10 @@ pub struct NoteUpsertRequest {
 
 /// Request for `note.list`. `scope` is the request authority; absent →
 /// server defaults to `Scope::Workspace { path: kiln }`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NoteListRequest {
     pub kiln: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 
@@ -117,16 +120,16 @@ pub struct NoteListRequest {
 /// When absent, the server defaults to `Scope::Workspace { path: kiln }`
 /// (workspace-scoped read, which is the safest default for legacy callers
 /// without a session context). `note.delete` ignores `scope`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NotePathRequest {
     pub kiln: String,
     pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `process_batch`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProcessBatchRequest {
     pub kiln: String,
     pub paths: Vec<String>,
@@ -252,15 +255,16 @@ mod first_per_note_tests {
 }
 
 /// Request for `search_text`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchTextRequest {
     pub kiln: String,
     pub query: String,
+    #[serde(default = "default_search_limit")]
     pub limit: usize,
 }
 
 /// Request for `embed.query`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EmbedQueryRequest {
     pub kiln: String,
     pub text: String,
@@ -286,12 +290,8 @@ pub struct GrepSearchRequest {
     #[serde(default = "default_grep_limit")]
     pub limit: usize,
     /// Defaults to `true`, which is what the handler's `optional_param!` did.
-    #[serde(default = "default_true")]
+    #[serde(default = "super::common::default_true")]
     pub case_insensitive: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// Request for `fs.list_dir`.
@@ -453,12 +453,12 @@ pub struct ProcessFileRequest {
 ///
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ListNotesRequest {
     pub kiln: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_filter: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 

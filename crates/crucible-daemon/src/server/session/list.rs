@@ -1,8 +1,9 @@
 use super::super::*;
 use super::scope::caller_kiln_scope;
 use crate::rpc_helpers::typed_params;
-use crate::{optional_param, require_param};
-use crucible_core::protocol::requests::SessionIdRequest;
+use crucible_core::protocol::requests::{
+    SessionIdRequest, SessionListRequest, SessionSearchRequest,
+};
 
 use crucible_core::session::{SessionState, SessionSummary, SessionType};
 
@@ -24,25 +25,30 @@ pub(crate) async fn handle_session_list(
     km: &Arc<KilnManager>,
     data_home: &std::path::Path,
 ) -> Response {
-    // Parse optional filters
-    let scope = match caller_kiln_scope(&req, sm.kiln_registry()) {
+    let params = match typed_params::<SessionListRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let scope = match caller_kiln_scope(&params.kilns, sm.kiln_registry()) {
         Ok(scope) => scope,
         Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
     };
-    let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
-    let session_type =
-        optional_param!(req, "type", as_str).and_then(|s| s.parse::<SessionType>().ok());
-    let state = optional_param!(req, "state", as_str).and_then(|s| match s {
+    let workspace = params.workspace.as_deref().map(PathBuf::from);
+    let session_type = params
+        .session_type
+        .as_deref()
+        .and_then(|s| s.parse::<SessionType>().ok());
+    let state = params.state.as_deref().and_then(|s| match s {
         "active" => Some(SessionState::Active),
         "paused" => Some(SessionState::Paused),
         "compacting" => Some(SessionState::Compacting),
         "ended" => Some(SessionState::Ended),
         _ => None,
     });
-    let include_archived = optional_param!(req, "include_archived", as_bool).unwrap_or(false);
+    let include_archived = params.include_archived.unwrap_or(false);
     // Delegated child sessions are hidden by default: full sessions in
     // behavior, but not first-class in visibility.
-    let include_children = optional_param!(req, "include_children", as_bool).unwrap_or(false);
+    let include_children = params.include_children.unwrap_or(false);
 
     let mut sessions = if !scope.is_empty() {
         // Same overlap rule as `session.search`: the caller's whole set, not
@@ -196,10 +202,14 @@ pub(crate) async fn handle_session_list(
 /// standing in for the rest) tests a fraction of the caller's reach: a caller
 /// on `[A, B]` would miss every session that shares only `B`.
 pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let query = require_param!(req, "query", as_str);
-    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
+    let params = match typed_params::<SessionSearchRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let query = params.query.as_str();
+    let limit = params.limit.unwrap_or(20);
 
-    let scope = match caller_kiln_scope(&req, sm.kiln_registry()) {
+    let scope = match caller_kiln_scope(&params.kilns, sm.kiln_registry()) {
         Ok(scope) => scope,
         Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
     };

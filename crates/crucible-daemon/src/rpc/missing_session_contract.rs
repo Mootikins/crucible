@@ -178,7 +178,7 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ("session.undo", json!({}), not_found()),
         ("session.can_undo", json!({}), not_found()),
         ("session.undo_depth", json!({}), not_found()),
-        // the pinned `require_param!` setters and every generated config knob
+        // the typed setters and every generated config getter
         ("session.set_mode", json!({"mode_id": "ask"}), not_found()),
         ("session.get_mode", json!({}), not_found()),
         (

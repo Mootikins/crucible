@@ -20,48 +20,54 @@ pub struct SessionSwitchModelRequest {
 }
 
 /// Request for `session.set_mode`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSetModeRequest {
     pub session_id: String,
     pub mode_id: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+/// Request for `session.set_plugin_approval`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionPluginApprovalRequest {
     pub session_id: String,
     pub plugin: String,
     pub approval: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+/// Request for `session.get_plugin_approval`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionPluginRequest {
     pub session_id: String,
     pub plugin: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+/// Request for `session.set_plugin_turn_limit`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionPluginTurnLimitRequest {
     pub session_id: String,
     pub limit: u32,
 }
 
 /// Request for `session.set_precognition`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSetPrecognitionRequest {
     pub session_id: String,
+    /// An absent value turns precognition on. The handler did the same
+    /// before it read this type.
+    #[serde(default = "super::common::default_true")]
     pub precognition_enabled: bool,
 }
 
-/// Request for `session.undo`.
-#[derive(Debug, Clone, serde::Serialize)]
+/// Request for `session.undo`. An absent `count` undoes one turn.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionUndoRequest {
     pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<usize>,
 }
 
 /// Request for `session.set_context_strategy`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSetContextStrategyRequest {
     pub session_id: String,
     pub context_strategy: String,
@@ -162,7 +168,7 @@ pub struct ListProvidersRequest {
 }
 
 /// Request for `session.connect_kiln` / `session.disconnect_kiln`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionKilnRequest {
     pub session_id: String,
     /// The kiln's registry NAME. It was `kiln_path` — a directory the caller
@@ -178,9 +184,9 @@ pub struct SessionKilnRequest {
 }
 
 /// Request for `session.set_workspace`. `workspace: None` detaches.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSetWorkspaceRequest {
     pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
 }

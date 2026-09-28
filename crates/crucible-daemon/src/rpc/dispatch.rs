@@ -21,7 +21,9 @@ use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
 use crucible_core::config::ConfigSource;
-use crucible_core::protocol::requests::{SessionIdRequest, SessionSetTitleRequest};
+use crucible_core::protocol::requests::{
+    SessionCreateRequest, SessionIdRequest, SessionSetTitleRequest,
+};
 use crucible_core::protocol::{RpcMethod, METHODS};
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
@@ -1349,16 +1351,17 @@ impl RpcDispatcher {
     /// asked for is the workspace-axis version of a session that quietly ran on
     /// the host when a container was asked for.
     async fn resolve_workspace_target(&self, req: &Request) -> RpcResult<Request> {
-        let Some(spec) = req
-            .params
-            .get("workspace_target")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
+        // A request that does not parse goes on untouched: the create handler
+        // parses the same type and refuses it with INVALID_PARAMS.
+        let Some(create) = crate::rpc::params::parse_params::<SessionCreateRequest>(req).ok()
         else {
             return Ok(req.clone());
         };
+        let Some(spec) = create.workspace_target.as_deref().filter(|s| !s.is_empty()) else {
+            return Ok(req.clone());
+        };
 
-        let workspace = req.params.get("workspace").and_then(|v| v.as_str());
+        let workspace = create.workspace.as_deref();
         let targets = crate::workspace_targets::WorkspaceTargets::new(std::sync::Arc::clone(
             &self.ctx.plugin_loader,
         ));
@@ -1399,10 +1402,9 @@ impl RpcDispatcher {
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .or_else(|| {
-                req.params
-                    .get("session_id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
+                crate::rpc::params::parse_params::<SessionIdRequest>(req)
+                    .ok()
+                    .map(|p| p.session_id)
             });
         let Some(session_id) = session_id else {
             return mapped;

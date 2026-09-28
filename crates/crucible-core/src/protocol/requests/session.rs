@@ -24,6 +24,11 @@ pub struct SessionCreateRequest {
     pub kilns: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    /// A workspace that a plugin provides, for example `worktree:feat/x`. The
+    /// daemon resolves it before the create and writes the path to
+    /// `workspace`. A target that no plugin resolves refuses the create.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_target: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -163,20 +168,30 @@ pub struct SessionAgentSpec {
 }
 
 /// Request for `session.list`.
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// The daemon ignores a `type` or a `state` that it does not know. It does
+/// not refuse the listing.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SessionListRequest {
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub session_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kiln: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The caller's whole kiln set. A session is listed when its own set
+    /// overlaps it. An empty set lists what the daemon can see.
+    #[serde(
+        default,
+        alias = "kiln",
+        deserialize_with = "super::common::kiln_set",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub kilns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_archived: Option<bool>,
     /// Include delegated child sessions (hidden by default).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_children: Option<bool>,
 }
 
@@ -237,16 +252,23 @@ pub struct SessionEventsAfterRequest {
 }
 
 /// Request for `session.send_message`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSendMessageRequest {
     pub session_id: String,
     pub content: String,
+    /// An absent value means an interactive turn.
+    #[serde(default = "super::common::default_true")]
     pub is_interactive: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The daemon ignores a mode that it does not know.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<String>,
     /// The stored review comments that the message attaches. The daemon
-    /// resolves each one into a context block.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// resolves each one into a context block. `null` reads as no comments.
+    #[serde(
+        default,
+        deserialize_with = "super::common::null_as_default",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub comments: Vec<crate::diff::CommentRef>,
 }
 
@@ -314,14 +336,16 @@ pub struct SessionSetTitleRequest {
 }
 
 /// Request for `session.search`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSearchRequest {
     pub query: String,
     /// The caller's whole kiln set — results are the sessions overlapping it.
     /// Always sent, empty included: an empty scope overlaps nothing, which is
     /// the fail-closed answer a kiln-less session should get.
+    #[serde(default, alias = "kiln", deserialize_with = "super::common::kiln_set")]
     pub kilns: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// An absent value returns at most 20 matches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
 
@@ -330,12 +354,15 @@ pub struct SessionSearchRequest {
 /// `kilns` is the caller's whole kiln set, not directories to scan: the daemon
 /// returns the sessions whose own set overlaps it — the same predicate
 /// `session.search` and `session.cleanup` answer to.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionListPersistedRequest {
+    #[serde(default, alias = "kiln", deserialize_with = "super::common::kiln_set")]
     pub kilns: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The daemon ignores a type that it does not know.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// An absent value returns at most 50 sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
 
@@ -369,11 +396,14 @@ pub struct SessionExportToFileRequest {
 /// overlapping it. `all_kilns` widens that to every session on the machine and
 /// has to be set deliberately — sessions live in one flat root now, so an
 /// unscoped sweep is not recoverable.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionCleanupRequest {
+    #[serde(default, alias = "kiln", deserialize_with = "super::common::kiln_set")]
     pub kilns: Vec<String>,
     pub older_than_days: u64,
+    #[serde(default)]
     pub dry_run: bool,
+    #[serde(default)]
     pub all_kilns: bool,
 }
 

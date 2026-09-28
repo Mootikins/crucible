@@ -244,6 +244,127 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "SessionIdRequest",
         "crates/crucible-daemon/src/rpc/dispatch.rs",
     ),
+    // Step 6, part 4 of the simplification plan: the handlers that read
+    // their fields by hand with `require_param!` now deserialize these.
+    ("PathRequest", "crates/crucible-daemon/src/server/kiln.rs"),
+    (
+        "SearchTextRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "EmbedQueryRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "ListNotesRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "GetNoteByNameRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "GetBacklinksRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "KilnGraphRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "NoteUpsertRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "NotePathRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "NoteListRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "ProcessBatchRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "SuggestLinksRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "SessionListPersistedRequest",
+        "crates/crucible-daemon/src/server/observe.rs",
+    ),
+    (
+        "SessionCleanupRequest",
+        "crates/crucible-daemon/src/server/observe.rs",
+    ),
+    (
+        "SessionPluginApprovalRequest",
+        "crates/crucible-daemon/src/server/session/approval.rs",
+    ),
+    (
+        "SessionPluginRequest",
+        "crates/crucible-daemon/src/server/session/approval.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/approval.rs",
+    ),
+    (
+        "SessionListRequest",
+        "crates/crucible-daemon/src/server/session/list.rs",
+    ),
+    (
+        "SessionSearchRequest",
+        "crates/crucible-daemon/src/server/session/list.rs",
+    ),
+    (
+        "SessionSendMessageRequest",
+        "crates/crucible-daemon/src/server/session/messaging.rs",
+    ),
+    (
+        "SessionAddNotificationRequest",
+        "crates/crucible-daemon/src/server/session/notifications.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/params.rs",
+    ),
+    (
+        "SessionSetModeRequest",
+        "crates/crucible-daemon/src/server/session/params.rs",
+    ),
+    (
+        "SessionSetPrecognitionRequest",
+        "crates/crucible-daemon/src/server/session/params.rs",
+    ),
+    (
+        "SessionPluginTurnLimitRequest",
+        "crates/crucible-daemon/src/server/session/params.rs",
+    ),
+    (
+        "SessionSetContextStrategyRequest",
+        "crates/crucible-daemon/src/server/session/params.rs",
+    ),
+    (
+        "SessionUndoRequest",
+        "crates/crucible-daemon/src/server/session/params.rs",
+    ),
+    (
+        "SessionKilnRequest",
+        "crates/crucible-daemon/src/server/session/scope.rs",
+    ),
+    (
+        "SessionSetWorkspaceRequest",
+        "crates/crucible-daemon/src/server/session/scope.rs",
+    ),
+    // `resolve_workspace_target` reads `workspace_target` before the create
+    // handler runs, with `parse_params::<T>` on the `RpcResult` path.
+    (
+        "SessionCreateRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
 ];
 
 /// Handlers that still hand-pluck their fields. REMOVE rows; never add.
@@ -291,8 +412,7 @@ fn wire_request_types_are_deserialized_not_hand_plucked() {
         if !deserializes && !ledgered {
             failures.push(format!(
                 "{server_file} does not deserialize {struct_name} — replace the \
-                 hand-plucked `require_param!`/`optional_param!` reads with \
-                 `serde_json::from_value::<{struct_name}>(req.params.clone())`, \
+                 field reads by hand with `typed_params::<{struct_name}>(&req)`, \
                  or (temporarily) add `{struct_name}` to HAND_PLUCKED_LEDGER \
                  with a reason"
             ));

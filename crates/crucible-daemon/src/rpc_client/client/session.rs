@@ -32,6 +32,9 @@ pub(super) fn build_create_request(
             Some(params.kilns.iter().map(KilnName::to_string).collect())
         },
         workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
+        // No Rust client names a workspace target. The plugin bridge and raw
+        // JSON callers do.
+        workspace_target: None,
         recording_mode: params.recording_mode,
         recording_path: params
             .recording_path
@@ -118,7 +121,7 @@ impl DaemonClient {
             RpcMethod::SessionList,
             SessionListRequest {
                 session_type: session_type.map(|t| t.to_string()),
-                kiln: kiln.map(KilnName::to_string),
+                kilns: kiln.map(KilnName::to_string).into_iter().collect(),
                 workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
                 state: state.map(|s| s.to_string()),
                 include_archived,

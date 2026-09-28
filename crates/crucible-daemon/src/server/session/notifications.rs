@@ -1,7 +1,8 @@
 use super::super::*;
-use crate::require_param;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::{SessionDismissNotificationRequest, SessionIdRequest};
+use crucible_core::protocol::requests::{
+    SessionAddNotificationRequest, SessionDismissNotificationRequest, SessionIdRequest,
+};
 
 /// The session, live or in storage, or the refusal when it is neither. A
 /// session in storage only, after a restart, has notifications too.
@@ -23,15 +24,12 @@ pub(crate) async fn handle_session_add_notification(
     sessions: &Arc<crate::session_manager::SessionManager>,
     hub: &Arc<crate::notifications::NotificationHub>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let notification_obj = require_param!(req, "notification", as_object);
-
-    let notification = match serde_json::from_value::<crucible_core::types::Notification>(
-        serde_json::Value::Object(notification_obj.clone()),
-    ) {
-        Ok(n) => n,
-        Err(e) => return Response::error(req.id, -32602, format!("Invalid notification: {}", e)),
+    let params = match typed_params::<SessionAddNotificationRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
     };
+    let session_id = params.session_id.as_str();
+    let notification = params.notification;
 
     if let Err(response) = stored(sessions, session_id, req.id.clone()).await {
         return *response;

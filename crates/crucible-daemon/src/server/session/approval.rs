@@ -1,5 +1,8 @@
 use super::super::*;
-use crate::require_param;
+use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{
+    SessionIdRequest, SessionPluginApprovalRequest, SessionPluginRequest,
+};
 use crucible_core::session::PluginApproval;
 
 pub(crate) async fn handle_session_set_plugin_approval(
@@ -7,9 +10,13 @@ pub(crate) async fn handle_session_set_plugin_approval(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let plugin = require_param!(req, "plugin", as_str);
-    let value = require_param!(req, "approval", as_str);
+    let params = match typed_params::<SessionPluginApprovalRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let plugin = params.plugin.as_str();
+    let value = params.approval.as_str();
     let approval = match value {
         "inherit" => PluginApproval::Inherit,
         "ask" => PluginApproval::Ask,
@@ -38,8 +45,12 @@ pub(crate) async fn handle_session_get_plugin_approval(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let plugin = require_param!(req, "plugin", as_str);
+    let params = match typed_params::<SessionPluginRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let plugin = params.plugin.as_str();
     match am.get_plugin_approval(session_id, plugin).await {
         Ok(approval) => Response::success(
             req.id,
@@ -53,8 +64,11 @@ pub(crate) async fn handle_session_list_plugin_approvals(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    match am.list_plugin_approvals(session_id).await {
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    match am.list_plugin_approvals(&params.session_id).await {
         Ok(approvals) => Response::success(req.id, serde_json::json!({"approvals": approvals})),
         Err(e) => agent_error_to_response(req.id, e),
     }

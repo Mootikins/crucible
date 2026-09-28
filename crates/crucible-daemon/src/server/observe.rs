@@ -3,8 +3,8 @@ use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::server::session::scope::caller_kiln_scope;
 use crate::session_manager::{KilnFilter, KilnScope};
 use crucible_core::protocol::requests::{
-    SessionEventsAfterRequest, SessionExportToFileRequest, SessionIdRequest,
-    SessionRenderMarkdownRequest,
+    SessionCleanupRequest, SessionEventsAfterRequest, SessionExportToFileRequest, SessionIdRequest,
+    SessionListPersistedRequest, SessionRenderMarkdownRequest,
 };
 use crucible_core::session::SessionSummary;
 
@@ -118,11 +118,17 @@ pub(crate) async fn handle_session_list_persisted(
     req: Request,
     sm: &Arc<SessionManager>,
 ) -> Response {
-    let session_type_filter = optional_param!(req, "session_type", as_str)
+    let params = match typed_params::<SessionListPersistedRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_type_filter = params
+        .session_type
+        .as_deref()
         .and_then(|t| t.parse::<crate::observe::SessionType>().ok());
-    let limit = optional_param!(req, "limit", as_u64).unwrap_or(50) as usize;
+    let limit = params.limit.unwrap_or(50);
 
-    let scope = match caller_kiln_scope(&req, sm.kiln_registry()) {
+    let scope = match caller_kiln_scope(&params.kilns, sm.kiln_registry()) {
         Ok(scope) => scope,
         Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
     };
@@ -388,10 +394,14 @@ pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &
 /// by name. `all_kilns` is also the only way a kiln-less session — a legitimate
 /// state per §4.1 — is ever collected, since it overlaps nothing.
 pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let older_than_days = require_param!(req, "older_than_days", as_u64);
-    let dry_run = optional_param!(req, "dry_run", as_bool).unwrap_or(false);
-    let all_kilns = optional_param!(req, "all_kilns", as_bool).unwrap_or(false);
-    let requested = match caller_kiln_scope(&req, sm.kiln_registry()) {
+    let params = match typed_params::<SessionCleanupRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let older_than_days = params.older_than_days;
+    let dry_run = params.dry_run;
+    let all_kilns = params.all_kilns;
+    let requested = match caller_kiln_scope(&params.kilns, sm.kiln_registry()) {
         Ok(scope) => scope,
         Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
     };

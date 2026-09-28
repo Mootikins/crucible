@@ -25,3 +25,52 @@ pub use session::*;
 pub use storage::*;
 pub use subscription::*;
 pub use workflow::*;
+
+/// The payloads below are the ones that the daemon handlers accepted when
+/// they read each field by hand. The handlers now deserialize these types, so
+/// the serde defaults on the types keep those payloads valid.
+#[cfg(test)]
+mod old_payloads {
+    use super::*;
+    use serde_json::json;
+
+    fn parse<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
+        serde_json::from_value(value).expect("an old payload must still parse")
+    }
+
+    #[test]
+    fn absent_optional_fields_take_the_old_handler_defaults() {
+        let search: SearchTextRequest = parse(json!({"kiln": "k", "query": "q"}));
+        assert_eq!(search.limit, 20);
+
+        let send: SessionSendMessageRequest = parse(json!({"session_id": "s", "content": "c"}));
+        assert!(send.is_interactive);
+        assert!(send.comments.is_empty());
+
+        let send: SessionSendMessageRequest =
+            parse(json!({"session_id": "s", "content": "c", "comments": null}));
+        assert!(send.comments.is_empty());
+
+        let precognition: SessionSetPrecognitionRequest = parse(json!({"session_id": "s"}));
+        assert!(precognition.precognition_enabled);
+
+        let cleanup: SessionCleanupRequest = parse(json!({"older_than_days": 3}));
+        assert!(!cleanup.dry_run && !cleanup.all_kilns && cleanup.kilns.is_empty());
+
+        let undo: SessionUndoRequest = parse(json!({"session_id": "s"}));
+        assert_eq!(undo.count, None);
+
+        let listed: SessionListRequest = parse(json!({}));
+        assert!(listed.kilns.is_empty());
+    }
+
+    #[test]
+    fn the_single_kiln_spelling_still_names_the_kiln_set() {
+        let listed: SessionListRequest = parse(json!({"kiln": "docs"}));
+        assert_eq!(listed.kilns, ["docs"]);
+        let persisted: SessionListPersistedRequest = parse(json!({"kiln": "docs"}));
+        assert_eq!(persisted.kilns, ["docs"]);
+        let search: SessionSearchRequest = parse(json!({"query": "q", "kiln": "docs"}));
+        assert_eq!(search.kilns, ["docs"]);
+    }
+}

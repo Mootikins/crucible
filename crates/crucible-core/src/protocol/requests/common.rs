@@ -115,3 +115,84 @@ impl VersionCheck {
         matches!(self, Self::Match)
     }
 }
+
+/// The value that an absent `bool` field with a `true` default gets.
+pub(super) fn default_true() -> bool {
+    true
+}
+
+/// Read a `null` field as the default value of its type.
+///
+/// `#[serde(default)]` covers an absent field only. Some callers send an
+/// explicit `null`, and the handler read that as "absent" before it read a
+/// typed request. This keeps both spellings valid.
+pub(super) fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + serde::Deserialize<'de>,
+{
+    use serde::Deserialize;
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
+/// Read the caller's kiln set from `kilns` (an array) or `kiln` (one string).
+///
+/// The four methods that span the session backlog take a kiln set. Callers
+/// from before the kiln flatten send one kiln as `kiln`. The `kiln` alias and
+/// the form with one string keep them valid. A `null` reads as the empty set.
+pub(super) fn kiln_set<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    Ok(match Option::<OneOrMany>::deserialize(deserializer)? {
+        None => Vec::new(),
+        Some(OneOrMany::One(kiln)) => vec![kiln],
+        Some(OneOrMany::Many(kilns)) => kilns,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[derive(Debug, serde::Deserialize)]
+    struct Scoped {
+        #[serde(default, alias = "kiln", deserialize_with = "kiln_set")]
+        kilns: Vec<String>,
+    }
+
+    fn kilns(value: serde_json::Value) -> Result<Vec<String>, serde_json::Error> {
+        serde_json::from_value::<Scoped>(value).map(|s| s.kilns)
+    }
+
+    #[test]
+    fn a_kiln_set_reads_every_spelling_that_callers_send() {
+        assert_eq!(kilns(json!({})).unwrap(), Vec::<String>::new());
+        assert_eq!(
+            kilns(json!({ "kilns": null })).unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(kilns(json!({ "kilns": [] })).unwrap(), Vec::<String>::new());
+        assert_eq!(kilns(json!({ "kilns": ["a", "b"] })).unwrap(), ["a", "b"]);
+        assert_eq!(kilns(json!({ "kiln": "a" })).unwrap(), ["a"]);
+    }
+
+    /// A member that is not a string names no kiln. The parse refuses it. It
+    /// must not read as an empty set, because an empty set widens
+    /// `session.list` to every session.
+    #[test]
+    fn a_kiln_set_with_a_member_that_is_not_a_string_is_refused() {
+        assert!(kilns(json!({ "kilns": [7] })).is_err());
+        assert!(kilns(json!({ "kiln": 7 })).is_err());
+    }
+}

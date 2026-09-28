@@ -16,6 +16,16 @@ pub struct NotificationListRequest {
     pub all: bool,
 }
 
+/// Request for `session.add_notification`.
+///
+/// `notification` is the whole [`Notification`], so a malformed one answers
+/// `INVALID_PARAMS` with the reason from its own deserializer.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionAddNotificationRequest {
+    pub session_id: String,
+    pub notification: Notification,
+}
+
 /// Request for `notification.dismiss`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NotificationDismissRequest {

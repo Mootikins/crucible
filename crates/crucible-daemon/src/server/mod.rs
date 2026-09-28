@@ -15,7 +15,6 @@ use crate::protocol::{
 use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
 use crate::rpc::{DeferredShutdown, RpcContext, RpcContextParams, RpcDispatcher};
-use crate::rpc_helpers::{optional_param, require_param};
 use crate::session_manager::{KilnFilter, SessionManager};
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};

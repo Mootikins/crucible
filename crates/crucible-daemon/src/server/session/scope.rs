@@ -1,15 +1,17 @@
 use super::super::*;
 
 use crate::agent_manager::AgentError;
+use crate::rpc_helpers::typed_params;
 use crate::session_manager::KilnScope;
 use crucible_core::config::{KilnName, RegistrationOrigin};
+use crucible_core::protocol::requests::{SessionKilnRequest, SessionSetWorkspaceRequest};
 use crucible_core::Session;
 
 /// The caller's kiln set, as the four backlog-spanning handlers receive it.
 ///
-/// `kilns` is the spelling; `kiln` is the single-member one every pre-flatten
-/// caller sends, folded in rather than rejected — the same courtesy `Session`'s
-/// deserializer extends to a pre-flatten `meta.json`.
+/// `kilns` is the request field of each of the four request types. The
+/// request type reads `kiln`, the spelling with one member that callers from
+/// before the flatten send, into the same field.
 ///
 /// Parsing lives here, next to the other scope gate, so that
 /// `session.search`, `session.list`, `session.list_persisted` and
@@ -38,35 +40,19 @@ use crucible_core::Session;
 /// remainder still narrows. Only the all-dropped case can widen, and that is
 /// the case this refuses.
 pub(crate) fn caller_kiln_scope(
-    req: &Request,
+    raw: &[String],
     registry: &crate::kiln_registry::KilnRegistry,
 ) -> Result<KilnScope, String> {
-    // Every element is kept, including the ones that are not strings. The
-    // obvious spelling — `filter_map(as_str)` — drops a `7` on the floor, and
-    // `{"kilns": [7]}` then arrives here as an empty vector: a request that
-    // named a kiln, read as one that named none, and therefore *widened*. A
-    // non-string is refused by name below like any other unusable element.
-    let raw: Vec<String> = if let Some(kilns) = req.params.get("kilns").and_then(|v| v.as_array()) {
-        kilns
-            .iter()
-            .map(|v| match v.as_str() {
-                Some(s) => s.to_string(),
-                None => v.to_string(),
-            })
-            .collect()
-    } else {
-        optional_param!(req, "kiln", as_str)
-            .map(str::to_string)
-            .into_iter()
-            .collect()
-    };
+    // A member that is not a string never arrives here: the request type
+    // refuses `{"kilns": [7]}` with INVALID_PARAMS. Read as an empty set, it
+    // would name no kiln and so *widen* the scope.
     if raw.is_empty() {
         return Ok(KilnScope::default());
     }
 
     let mut names = Vec::new();
     let mut refused = Vec::new();
-    for value in &raw {
+    for value in raw {
         match KilnName::parse(value) {
             Ok(name) if registry.resolve(&name).registered().is_some() => {
                 if !names.contains(&name) {
@@ -205,9 +191,12 @@ pub(crate) async fn handle_session_connect_kiln(
     kiln_state: &Arc<crate::kiln_state::KilnStateStore>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str).to_string();
-    let kiln = require_param!(req, "kiln", as_str).to_string();
-    let kiln = match resolve_scope_kiln(&kiln, sm.kiln_registry()) {
+    let params = match typed_params::<SessionKilnRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id;
+    let kiln = match resolve_scope_kiln(params.kiln.as_str(), sm.kiln_registry()) {
         Ok(kiln) => kiln,
         Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
     };
@@ -257,15 +246,15 @@ pub(crate) async fn handle_session_disconnect_kiln(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str).to_string();
+    let params = match typed_params::<SessionKilnRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id;
     // Detach does not go through the registry: shrinking scope can never leak,
     // and a name whose entry has since been removed is exactly the one a user
     // most needs to be able to drop.
-    let kiln = require_param!(req, "kiln", as_str).to_string();
-    let name = match parse_scope_kiln(&kiln) {
-        Ok(name) => name,
-        Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
-    };
+    let name = params.kiln;
 
     match am.disconnect_kiln(&session_id, &name, Some(event_tx)).await {
         Ok(session) => scope_response(req.id, &session),
@@ -279,8 +268,12 @@ pub(crate) async fn handle_session_disconnect_kiln(
 /// leave a side effect behind a refusal. The `workspace` the client sent is
 /// read for the trace only, so the wire shape stays what the client sends.
 pub(crate) async fn handle_session_set_workspace(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str).to_string();
-    let requested = optional_param!(req, "workspace", as_str).map(PathBuf::from);
+    let params = match typed_params::<SessionSetWorkspaceRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id;
+    let requested = params.workspace.map(PathBuf::from);
     tracing::info!(
         session_id = %session_id,
         requested = ?requested,

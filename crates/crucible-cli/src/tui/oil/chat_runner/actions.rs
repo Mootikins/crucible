@@ -1380,18 +1380,22 @@ async fn fetch_resumable_sessions(
     current: Option<&str>,
 ) -> anyhow::Result<Vec<crate::tui::oil::chat_app::model_state::SessionChoice>> {
     let client = crucible_daemon::DaemonClient::connect().await?;
-    let mut params = serde_json::json!({ "type": "chat" });
+    let mut request = crucible_core::protocol::requests::SessionListRequest {
+        session_type: Some("chat".to_string()),
+        ..Default::default()
+    };
     if let Some(current) = current {
         let session = client.session_get(current).await?;
-        params["kilns"] = session
+        request.kilns = session
             .get("kilns")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!([]));
-        if let Some(workspace) = session.get("workspace").filter(|w| !w.is_null()) {
-            params["workspace"] = workspace.clone();
-        }
+            .and_then(|kilns| serde_json::from_value(kilns.clone()).ok())
+            .unwrap_or_default();
+        request.workspace = session
+            .get("workspace")
+            .and_then(|w| w.as_str())
+            .map(str::to_string);
     }
-    let listed = client.call(RpcMethod::SessionList, params).await?;
+    let listed: serde_json::Value = client.typed_call(RpcMethod::SessionList, request).await?;
     Ok(resumable_sessions(
         current.unwrap_or_default(),
         &listed,

@@ -1,10 +1,9 @@
 use super::super::*;
 use crate::agent_manager::commands::SlashRoute;
-use crate::require_param;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
     SessionConfigureAgentRequest, SessionIdRequest, SessionInjectContextRequest,
-    SessionInteractionRespondRequest, SessionTestInteractionRequest,
+    SessionInteractionRespondRequest, SessionSendMessageRequest, SessionTestInteractionRequest,
 };
 use crucible_core::types::SendOutcome;
 
@@ -58,21 +57,17 @@ pub(crate) async fn handle_session_send_message(
     event_tx: &crate::EventBus,
     admission: crate::server::diff::Admission<'_>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let content = require_param!(req, "content", as_str);
-    let is_interactive = req
-        .params
-        .get("is_interactive")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-    let permission_override = req
-        .params
-        .get("permission_mode")
-        .and_then(|v| v.as_str())
-        .and_then(|s| {
-            s.parse::<crucible_core::config::components::permissions::PermissionMode>()
-                .ok()
-        });
+    let params = match typed_params::<SessionSendMessageRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let content = params.content.as_str();
+    let is_interactive = params.is_interactive;
+    let permission_override = params.permission_mode.as_deref().and_then(|s| {
+        s.parse::<crucible_core::config::components::permissions::PermissionMode>()
+            .ok()
+    });
 
     // A `/name` message that names a daemon command runs it. A mode switch
     // or a skill still starts a turn when there is text for one.
@@ -105,15 +100,7 @@ pub(crate) async fn handle_session_send_message(
         Err(e) => return agent_error_to_response(req.id, e),
     }
 
-    let comments: Vec<crucible_core::diff::CommentRef> = match req.params.get("comments") {
-        None | Some(serde_json::Value::Null) => Vec::new(),
-        Some(value) => match serde_json::from_value(value.clone()) {
-            Ok(comments) => comments,
-            Err(e) => {
-                return Response::error(req.id, INVALID_PARAMS, format!("Invalid comments: {e}"))
-            }
-        },
-    };
+    let comments = &params.comments;
     // The client sends references only. The daemon builds the block of each
     // comment, and refuses the message when a reference names no open comment.
     let review_context = if comments.is_empty()
@@ -132,7 +119,7 @@ pub(crate) async fn handle_session_send_message(
             &admission,
             session_id,
             workspace.as_deref(),
-            &comments,
+            comments,
             content,
         )
         .await

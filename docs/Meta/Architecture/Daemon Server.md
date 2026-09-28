@@ -40,7 +40,12 @@ session state), `crate::kiln_manager`/`crate::kiln_registry` (kiln identity),
 `crate::daemon_plugins::DaemonPluginLoader` (plugin activation),
 `crate::session_lifecycle::SessionLifecycle` (the one session-stop owner) —
 the `server::*` handler modules are consistently thin wrappers that parse
-params, call one of those owners, and shape the reply. There is no longer a
+params, call one of those owners, and shape the reply. Each handler
+deserializes the request type that `DaemonClient` serializes, from
+`crucible_core::protocol::requests`. It calls `typed_params::<T>(&req)`, or
+`parse_params::<T>(req)` on the `RpcResult` path. No handler reads a request
+field by hand, so the client and the server cannot use two names for one
+field. There is no longer a
 deliberate RPC-layer-only invariant of the kind this page once named: the
 former isolation-vs-agent-switch check in
 `handle_session_configure_agent` in `crates/crucible-daemon/src/rpc/dispatch.rs`
@@ -70,7 +75,7 @@ Directory `crates/crucible-daemon/src/` (top-level files):
 | `crates/crucible-daemon/src/lossless_queue.rs` | 193 | An unbounded, single-consumer queue that drops no item, with a `Waiter` for "every item sent so far is finished" — backs `EventBus`'s journal and the kiln index's own queue. |
 | `crates/crucible-daemon/src/notifications.rs` | 934 | `NotificationHub`: the daemon-owned `cru.log.notify` sink, ring store, per-session hidden-id set, and session-scoped/global fan-out. |
 | `crates/crucible-daemon/src/protocol.rs` | 4 | Re-export shim for the canonical JSON-RPC wire types in `crucible_core::protocol` (now including the `BUSY` error code). |
-| `crates/crucible-daemon/src/rpc_helpers.rs` | 523 | `require_param!`/`optional_param!`/`typed_params` — the shared RPC parameter-extraction helpers. |
+| `crates/crucible-daemon/src/rpc_helpers.rs` | 99 | `typed_params` (deserialize the request type, or answer `INVALID_PARAMS`) and `session_id_field`. The `require_param!`/`optional_param!` macros are gone. |
 | `crates/crucible-daemon/src/storage.rs` | 6 | Module root re-exporting the SQLite note/property/FTS store. |
 | `crates/crucible-daemon/src/subscription.rs` | 497 | `SubscriptionManager`: which connected clients want which session's events. |
 | `crates/crucible-daemon/src/test_fixtures.rs` | 101 | `#[cfg(test)]` builders for `LlmConfig`/`SessionAgent`/`AgentManager` shared across this crate's unit tests. |
@@ -92,8 +97,8 @@ Directory `crates/crucible-daemon/src/rpc/` (dispatch layer):
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-daemon/src/rpc/context.rs` | 482 | `RpcContext`, `RpcContextParams`, `DeferredShutdown`: the shared state every handler dispatches against; builds `SessionLifecycle`, binds it to delegation, and binds the notification hub to `AgentManager`. |
-| `crates/crucible-daemon/src/rpc/dispatch.rs` | 4041 | `RpcDispatcher::dispatch`: the exhaustive match over `RpcMethod` (declared in core), and cross-cutting session/config/plugin logic, including the `diff.*`/`proposal.*`/`base.*`/`fs.read` families (no `review.*` methods remain) and `session.commands`. |
-| `crates/crucible-daemon/src/rpc/missing_session_contract.rs` | 383 | `#[cfg(test)]` pinned table of every session-taking method's answer for a missing session — seven distinct answers now that the review family (an eighth) is gone. |
+| `crates/crucible-daemon/src/rpc/dispatch.rs` | 4044 | `RpcDispatcher::dispatch`: the exhaustive match over `RpcMethod` (declared in core), and cross-cutting session/config/plugin logic, including the `diff.*`/`proposal.*`/`base.*`/`fs.read` families (no `review.*` methods remain) and `session.commands`. |
+| `crates/crucible-daemon/src/rpc/missing_session_contract.rs` | 384 | `#[cfg(test)]` pinned table of every session-taking method's answer for a missing session — seven distinct answers now that the review family (an eighth) is gone. |
 | `crates/crucible-daemon/src/rpc/mod.rs` | 19 | Module root; re-exports the RPC public surface. |
 | `crates/crucible-daemon/src/rpc/params.rs` | 65 | `parse_params`: the one typed-params chokepoint. |
 | `crates/crucible-daemon/src/rpc/ui.rs` | 174 | `ui.config`/`ui.set_theme` handlers; the theme/statusline snapshot builder `style_payload`; theme resolution now reads `SourceRoots` (runtimepath and every active plugin's directory). |
@@ -113,14 +118,14 @@ Directory `crates/crucible-daemon/src/server/` (connection lifecycle and top-lev
 | `crates/crucible-daemon/src/server/file_event_hooks.rs` | 444 | Dispatches broadcast events into Lua `cru.on(...)` handlers; `run_handlers` is shared with `SessionLifecycle::stop`'s scoped end-observer pass. |
 | `crates/crucible-daemon/src/server/grep.rs` | 447 | `search_grep`/`fs.grep`: contained ripgrep-based content search. |
 | `crates/crucible-daemon/src/server/idle.rs` | 293 | `IdleTimer`/`IdleSnapshot`: the idle-shutdown policy for an auto-spawned daemon. |
-| `crates/crucible-daemon/src/server/kiln.rs` | 2092 | Every `kiln.*`, vector/text search, and `note.*`/`process_*` RPC handler; `kiln.list` rows carry a `git` field, and `note.upsert`/`note.delete` route through `KilnManager`'s index owner. |
+| `crates/crucible-daemon/src/server/kiln.rs` | 2140 | Every `kiln.*`, vector/text search, and `note.*`/`process_*` RPC handler; `kiln.list` rows carry a `git` field, and `note.upsert`/`note.delete` route through `KilnManager`'s index owner. |
 | `crates/crucible-daemon/src/server/llm.rs` | 428 | `llm.register_provider`, `embeddings.models`. |
 | `crates/crucible-daemon/src/server/lua.rs` | 539 | `lua.init_session`/`shutdown_session`/`discover_plugins`/`plugin_health`/`generate_stubs`/`register_commands`; `fire_session_end_hooks_once` is the shared, deadlock-safe end-hook helper. |
 | `crates/crucible-daemon/src/server/lua_plugin_suite.rs` | 1172 | `lua.run_plugin_tests`; CI gates that run/typecheck every shipped plugin's suite. |
-| `crates/crucible-daemon/src/server/mod.rs` | 1607 | `Server`: bind, boot sequence, accept loop, background tasks, shutdown against one shared deadline. |
+| `crates/crucible-daemon/src/server/mod.rs` | 1606 | `Server`: bind, boot sequence, accept loop, background tasks, shutdown against one shared deadline. |
 | `crates/crucible-daemon/src/server/note_refactor.rs` | 1128 | `note.rename`/`note.move`: link-rewriting note/canvas rename; its `plan_rename`/`apply_rename` split is what `crates/crucible-daemon/src/bases/write.rs` reuses, and its `reindex_rename` step is what `crates/crucible-daemon/src/proposals/rpc.rs` reuses. |
 | `crates/crucible-daemon/src/server/notifications.rs` | 43 | `notification.list`/`notification.dismiss` handlers over the global ring. |
-| `crates/crucible-daemon/src/server/observe.rs` | 492 | `session.load_events`/`events_after`/`list_persisted`/`render_markdown`/`export_to_file`/`cleanup`. |
+| `crates/crucible-daemon/src/server/observe.rs` | 502 | `session.load_events`/`events_after`/`list_persisted`/`render_markdown`/`export_to_file`/`cleanup`. |
 | `crates/crucible-daemon/src/server/platform.rs` | 468 | `mcp.*`, `skills.*`, `agents.list_profiles`/`list_cards`/`resolve_profile`; skill/card discovery now takes an explicit `workspace` and every attached kiln. |
 | `crates/crucible-daemon/src/server/plugin_install.rs` | 391 | `plugin.install`/`plugin.remove`, each holding the plugin-loader task-local marker while its Lua runs. |
 | `crates/crucible-daemon/src/server/plugins.rs` | 1482 | Plugin lifecycle/surfaces/publications/options/commands, `project.*`, `scm.clone`, plugin file watcher; `session.status` now answers `AgentManager::status_items`'s typed `StatusDisplayItem` list. |
@@ -147,17 +152,17 @@ Directory `crates/crucible-daemon/src/server/session/` (session RPC surface):
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-daemon/src/server/session/approval.rs` | 61 | `session.set_plugin_approval`/`get_plugin_approval`/`list_plugin_approvals`: per-session, per-plugin approval overrides. |
+| `crates/crucible-daemon/src/server/session/approval.rs` | 75 | `session.set_plugin_approval`/`get_plugin_approval`/`list_plugin_approvals`: per-session, per-plugin approval overrides. |
 | `crates/crucible-daemon/src/server/session/create.rs` | 836 | `session.create`: kiln/workspace/agent admission (SSRF check, then one shared trust gate) before persisting. |
 | `crates/crucible-daemon/src/server/session/lifecycle.rs` | 319 | pause/resume/resume_from_storage/history/end/delete/archive/unarchive/replay/compact, with pause/end/delete/archive funneling through `SessionLifecycle::stop`. |
-| `crates/crucible-daemon/src/server/session/list.rs` | 762 | `session.list`/`search`/`get` (the `get` reply now includes `plugin_approvals`/`plugin_turn_limit`). |
-| `crates/crucible-daemon/src/server/session/messaging.rs` | 610 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. `handle_session_send_message` reads `content` through `AgentManager::slash_route` first — a mode, a plugin command or a skill is routed there, and the reply is a `SendOutcome`, not a bare `message_id`. |
+| `crates/crucible-daemon/src/server/session/list.rs` | 772 | `session.list`/`search`/`get` (the `get` reply now includes `plugin_approvals`/`plugin_turn_limit`). |
+| `crates/crucible-daemon/src/server/session/messaging.rs` | 597 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. `handle_session_send_message` reads `content` through `AgentManager::slash_route` first — a mode, a plugin command or a skill is routed there, and the reply is a `SendOutcome`, not a bare `message_id`. |
 | `crates/crucible-daemon/src/server/session/mod.rs` | 273 | Module aggregator plus the post-create background `spawn_setup_task` (typed `SetupPayload` events). |
 | `crates/crucible-daemon/src/server/session/models.rs` | 200 | `switch_model`/`list_models`/`models.list`/`providers.list`/`fork` (fork now refuses an ACP-run parent by name). |
 | `crates/crucible-daemon/src/server/session/modes.rs` | 456 | `list_modes`/`list_knobs`/`list_agent_options`/`set_agent_option`; each mode descriptor now carries a `writes: WriteMode` (`Apply`/`Propose`). `handle_session_commands` answers `session.commands` by calling `AgentManager::session_commands`. |
-| `crates/crucible-daemon/src/server/session/notifications.rs` | 98 | `add_notification`/`list_notifications`/`dismiss_notification`, reading/writing `NotificationHub` directly for a live-or-stored session. |
-| `crates/crucible-daemon/src/server/session/params.rs` | 311 | `set_mode`/`set_precognition`/`get_*`/`undo`/`can_undo`/`undo_depth`/`cache_stats`/`set_plugin_turn_limit`/`get_plugin_turn_limit`. |
-| `crates/crucible-daemon/src/server/session/scope.rs` | 351 | `caller_kiln_scope`, `connect_kiln`/`disconnect_kiln`/`set_workspace`, `connect_kiln` now gated by the one shared trust gate. |
+| `crates/crucible-daemon/src/server/session/notifications.rs` | 96 | `add_notification`/`list_notifications`/`dismiss_notification`, reading/writing `NotificationHub` directly for a live-or-stored session. |
+| `crates/crucible-daemon/src/server/session/params.rs` | 313 | `set_mode`/`set_precognition`/`get_*`/`undo`/`can_undo`/`undo_depth`/`cache_stats`/`set_plugin_turn_limit`/`get_plugin_turn_limit`. Each handler deserializes its core request type. The `session_config_getter!` macro generates the getters. |
+| `crates/crucible-daemon/src/server/session/scope.rs` | 344 | `caller_kiln_scope`, `connect_kiln`/`disconnect_kiln`/`set_workspace`, `connect_kiln` now gated by the one shared trust gate. |
 
 Directory `crates/crucible-daemon/src/server/tests/` (integration tests, in-process daemon):
 
@@ -180,7 +185,7 @@ Directory `crates/crucible-daemon/src/server/tests/` (integration tests, in-proc
 | `crates/crucible-daemon/src/server/tests/persisted_session.rs` | 875 | Read/export/cleanup RPCs, traversal and symlink refusal. |
 | `crates/crucible-daemon/src/server/tests/plugin_boot.rs` | 462 | Plugin boot merge/activate ordering, operator disable, setup failure isolation, plugin-sourced skills. |
 | `crates/crucible-daemon/src/server/tests/review_watch.rs` | 105 | External-change coalescing and bracketed-write suppression. |
-| `crates/crucible-daemon/src/server/tests/rpc_basic.rs` | 482 | Ping, error codes, kiln/session basics, kiln-in-sessions-root refusal. |
+| `crates/crucible-daemon/src/server/tests/rpc_basic.rs` | 507 | Ping, error codes, kiln/session basics, kiln-in-sessions-root refusal. |
 | `crates/crucible-daemon/src/server/tests/session_id_boundary.rs` | 248 | Session-id traversal rejection across every session-taking method. |
 | `crates/crucible-daemon/src/server/tests/session_journal.rs` | 117 | `session.jsonl` persistence and `session.events_after` sourced from the lossless journal, not the broadcast ring. |
 | `crates/crucible-daemon/src/server/tests/session_log_capture.rs` | 109 | Wire-format regression: captured `session.jsonl` vs. a committed fixture. |
@@ -585,9 +590,13 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
   aborts startup on a squatted daemon-owned fallback directory rather than
   `chmod`/`unlink`ing a predictable path; it never touches an operator-chosen
   directory beyond `create_dir_all`.
-- **Said-nothing vs. said-something-unresolvable.** `caller_kiln_scope`
-  (`crates/crucible-daemon/src/server/session/scope.rs`) is the one parse
-  site distinguishing an absent scope (permissive for `session.list`, closed
+- **Said-nothing vs. said-something-unresolvable.** The four request types
+  read the caller's kiln set with one deserializer, `kiln_set` in
+  `crates/crucible-core/src/protocol/requests/common.rs`. It accepts `kilns`
+  or the older `kiln`, and it refuses a member that is not a string.
+  `caller_kiln_scope`
+  (`crates/crucible-daemon/src/server/session/scope.rs`) is the one site
+  distinguishing an absent scope (permissive for `session.list`, closed
   for `session.search`) from a non-empty scope that resolves to nothing
   (always refused) — called directly by
   `crates/crucible-daemon/src/server/session/list.rs` and by
@@ -685,6 +694,12 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
   and `#[deny(clippy::match_wildcard_for_single_variants)]` fail the build if
   the arm is missing. See [[Consolidation Plan#Extension seams]] for the
   request/response/error/session-lifecycle behavior a new method must prove.
+  Put its request type in `crates/crucible-core/src/protocol/requests/`. The
+  client builds that type, and the handler deserializes it with
+  `typed_params::<T>(&req)`. Add a `WIRE_REQUEST_TYPES` row in
+  `crates/crucible-daemon/tests/architecture_tests/wire_types.rs`. To keep an
+  old caller valid, give a field a serde default. Do not read the field by
+  hand.
 - **A new session knob** needs an arm in
   `rpc_set_method` in `crates/crucible-core/src/protocol/rpc/method.rs`, whose own
   `#[deny]`s make a missing arm a compile error.
@@ -789,11 +804,12 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
   of through this shim — two spellings of one import path coexist in the
   same crate. Not a behavior bug, but exactly the kind of duplication AGENTS.md
   asks to avoid.
-- `crates/crucible-daemon/src/server/session/params.rs` carries an orphaned
-  doc comment ("`timeout_secs` can be null to clear the timeout, so we use
-  optional") with no matching `timeout_secs` getter/setter in the file —
-  either stale documentation or code that moved elsewhere without the comment
-  following it.
+- Two helpers deserialize a request type. `typed_params` in
+  `crates/crucible-daemon/src/rpc_helpers.rs` returns a boxed `Response`, and
+  `parse_params` in `crates/crucible-daemon/src/rpc/params.rs` returns an
+  `RpcError`. Their error texts differ in case ("invalid params" and
+  "Invalid params"). One helper can replace the two when the server handlers
+  return `RpcResult`.
 - `crates/crucible-daemon/src/server/storage.rs` exposes four `storage.*` RPC
   methods that unconditionally reply `"not_implemented"`. This is
   functionally dead surface area, not flagged with a `TODO` in the source.

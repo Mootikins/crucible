@@ -9,8 +9,10 @@ use super::*;
 use crate::kiln_manager::request_scope;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    KilnOpenRequest, KilnRegisterRequest, NameRequest, ProcessFileRequest, SearchVectorsRequest,
-    VectorHit,
+    EmbedQueryRequest, GetBacklinksRequest, GetNoteByNameRequest, KilnGraphRequest,
+    KilnOpenRequest, KilnRegisterRequest, ListNotesRequest, NameRequest, NoteListRequest,
+    NotePathRequest, NoteUpsertRequest, PathRequest, ProcessBatchRequest, ProcessFileRequest,
+    SearchTextRequest, SearchVectorsRequest, SuggestLinksRequest, VectorHit,
 };
 use crucible_core::storage::Scope;
 
@@ -96,9 +98,12 @@ pub(crate) async fn handle_kiln_open(
 }
 
 pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
-    let path = require_param!(req, "path", as_str);
+    let params = match typed_params::<PathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
-    match km.close(Path::new(path)).await {
+    match km.close(Path::new(&params.path)).await {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
         Err(e) => internal_error(req.id, e),
     }
@@ -624,9 +629,13 @@ pub(crate) async fn handle_search_vectors(
 /// answers "which note says this word", which is what `cru search` needs and
 /// what listing notes and matching their filenames never could.
 pub(crate) async fn handle_search_text(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let query = require_param!(req, "query", as_str);
-    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
+    let params = match typed_params::<SearchTextRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let query = params.query.as_str();
+    let limit = params.limit;
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -647,8 +656,12 @@ pub(crate) async fn handle_search_text(req: Request, km: &Arc<KilnManager>) -> R
 }
 
 pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let text = require_param!(req, "text", as_str);
+    let params = match typed_params::<EmbedQueryRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let text = params.text.as_str();
 
     // Open the kiln first, so an unknown path is refused before any embed.
     if let Err(e) = km.get_or_open(Path::new(kiln_path)).await {
@@ -665,8 +678,12 @@ pub(crate) async fn handle_embed_query(req: Request, km: &Arc<KilnManager>) -> R
 }
 
 pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let path_filter = optional_param!(req, "path_filter", as_str);
+    let params = match typed_params::<ListNotesRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let path_filter = params.path_filter.as_deref();
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -699,8 +716,12 @@ pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Re
 }
 
 pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let name = require_param!(req, "name", as_str);
+    let params = match typed_params::<GetNoteByNameRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let name = params.name.as_str();
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -731,8 +752,12 @@ pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
 }
 
 pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let name = require_param!(req, "name", as_str);
+    let params = match typed_params::<GetBacklinksRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let name = params.name.as_str();
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -773,7 +798,11 @@ pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) ->
 }
 
 pub(crate) async fn handle_kiln_graph(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
+    let params = match typed_params::<KilnGraphRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -850,14 +879,13 @@ pub(crate) async fn handle_kiln_graph(req: Request, km: &Arc<KilnManager>) -> Re
 pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteRecord;
 
-    let kiln_path = require_param!(req, "kiln", as_str);
-
-    let note_json = match req.params.get("note") {
-        Some(n) => n,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'note' parameter"),
+    let params = match typed_params::<NoteUpsertRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
     };
+    let kiln_path = params.kiln.as_str();
 
-    let mut note: NoteRecord = match serde_json::from_value(note_json.clone()) {
+    let mut note: NoteRecord = match serde_json::from_value(params.note.clone()) {
         Ok(n) => n,
         Err(e) => {
             return Response::error(
@@ -924,8 +952,12 @@ pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
 }
 
 pub(crate) async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let path = require_param!(req, "path", as_str);
+    let params = match typed_params::<NotePathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let path = params.path.as_str();
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -946,8 +978,12 @@ pub(crate) async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Resp
 }
 
 pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let path = require_param!(req, "path", as_str);
+    let params = match typed_params::<NotePathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let path = params.path.as_str();
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -976,7 +1012,11 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
 }
 
 pub(crate) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
+    let params = match typed_params::<NoteListRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -1039,13 +1079,13 @@ pub(crate) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> 
 /// throttled and addressed to `WILDCARD_SESSION` so both surfaces can receive
 /// it — not here.
 pub(crate) async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
+    let params = match typed_params::<ProcessBatchRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let request_id = req.id.clone();
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let paths_arr = require_param!(req, "paths", as_array);
-    let paths: Vec<std::path::PathBuf> = paths_arr
-        .iter()
-        .filter_map(|v: &serde_json::Value| v.as_str().map(std::path::PathBuf::from))
-        .collect();
+    let kiln_path = params.kiln.as_str();
+    let paths: Vec<std::path::PathBuf> = params.paths.iter().map(PathBuf::from).collect();
 
     let mut processed = 0usize;
     let mut skipped = 0usize;
@@ -1078,8 +1118,12 @@ pub(crate) async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) ->
 }
 
 pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) -> Response {
-    let text = require_param!(req, "text", as_str);
-    let kiln_path = require_param!(req, "kiln", as_str);
+    let params = match typed_params::<SuggestLinksRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let text = params.text.as_str();
+    let kiln_path = params.kiln.as_str();
 
     let scope = request_scope(Path::new(kiln_path));
 
