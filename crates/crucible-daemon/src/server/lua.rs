@@ -1,12 +1,16 @@
 use super::*;
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{
+    LuaDiscoverPluginsRequest, LuaGenerateStubsRequest, LuaInitSessionRequest,
+    LuaPluginHealthRequest, LuaRegisterCommandsRequest, LuaShutdownSessionRequest,
+};
 
 pub(crate) async fn handle_lua_init_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::LuaInitSessionRequest>(&req) {
+    let params = match typed_params::<LuaInitSessionRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -147,7 +151,7 @@ pub(crate) async fn handle_lua_shutdown_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::LuaShutdownSessionRequest>(&req) {
+    let params = match typed_params::<LuaShutdownSessionRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -182,7 +186,7 @@ pub(crate) async fn handle_lua_shutdown_session(
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
-    let params = match typed_params::<crate::rpc_client::LuaDiscoverPluginsRequest>(&req) {
+    let params = match typed_params::<LuaDiscoverPluginsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -235,7 +239,7 @@ pub(crate) fn discover_available_plugins(
 }
 
 pub(crate) async fn handle_lua_plugin_health(req: Request) -> Response {
-    let params = match typed_params::<crate::rpc_client::LuaPluginHealthRequest>(&req) {
+    let params = match typed_params::<LuaPluginHealthRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -386,7 +390,7 @@ pub(crate) async fn handle_lua_generate_stubs(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::LuaGenerateStubsRequest>(&req) {
+    let params = match typed_params::<LuaGenerateStubsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -439,7 +443,7 @@ pub(crate) async fn handle_lua_register_commands(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::LuaRegisterCommandsRequest>(&req) {
+    let params = match typed_params::<LuaRegisterCommandsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

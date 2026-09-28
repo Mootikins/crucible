@@ -1,4 +1,5 @@
 pub mod lifecycle;
+pub mod requests;
 pub mod rpc;
 pub mod session_events;
 

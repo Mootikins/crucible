@@ -19,9 +19,8 @@
 
 use super::*;
 use crate::tools::grep_engine::{grep_search, GrepSearchError};
+use crucible_core::protocol::requests::GrepSearchRequest;
 
-/// Default hit cap when the caller omits `limit`.
-pub(crate) const GREP_DEFAULT_LIMIT: usize = 100;
 /// Hard cap on hits regardless of the caller's `limit`.
 const GREP_MAX_LIMIT: usize = 500;
 
@@ -32,11 +31,10 @@ pub(crate) async fn handle_search_grep(
     km: &Arc<KilnManager>,
     sessions: &Arc<crate::session_manager::SessionManager>,
 ) -> Response {
-    let params =
-        match crate::rpc_helpers::typed_params::<crate::rpc_client::GrepSearchRequest>(&req) {
-            Ok(p) => p,
-            Err(response) => return *response,
-        };
+    let params = match crate::rpc_helpers::typed_params::<GrepSearchRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let root = params.root.as_str();
     let query = params.query.as_str();
     let regex = params.regex;

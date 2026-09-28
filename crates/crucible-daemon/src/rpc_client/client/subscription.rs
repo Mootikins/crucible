@@ -3,15 +3,10 @@
 //! Methods for subscribing to session events and managing event streams.
 
 use anyhow::Result;
+use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 
 use super::DaemonClient;
-
-/// Shared request for `session.subscribe` and `session.unsubscribe`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionSubscribeRequest {
-    pub session_ids: Vec<String>,
-}
 
 impl DaemonClient {
     pub async fn session_subscribe(&self, session_ids: &[&str]) -> Result<serde_json::Value> {

@@ -2,6 +2,10 @@ use super::*;
 use crate::empty_providers::EmptyEmbeddingProvider;
 use crate::rpc_helpers::typed_params;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::protocol::requests::{
+    AgentsListCardsRequest, McpStartRequest, NameRequest, SkillsGetRequest, SkillsListRequest,
+    SkillsSearchRequest,
+};
 
 /// One skill in a `skills.list` or `skills.search` answer.
 ///
@@ -92,7 +96,7 @@ pub(crate) async fn handle_mcp_start(
     // The client's own request type is the contract (gate A6): it derives
     // `Deserialize`, the client serializes it, and re-deriving its five field
     // names here is what let `LuaInitSessionRequest.config` drift.
-    let params = match typed_params::<crate::rpc_client::McpStartRequest>(&req) {
+    let params = match typed_params::<McpStartRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -172,7 +176,7 @@ pub(crate) async fn handle_skills_list(
     req: Request,
     roots: &crate::runtime_path::SourceRoots,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::SkillsListRequest>(&req) {
+    let params = match typed_params::<SkillsListRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -211,7 +215,7 @@ pub(crate) async fn handle_skills_get(
     req: Request,
     roots: &crate::runtime_path::SourceRoots,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::SkillsGetRequest>(&req) {
+    let params = match typed_params::<SkillsGetRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -251,7 +255,7 @@ pub(crate) async fn handle_skills_search(
     req: Request,
     roots: &crate::runtime_path::SourceRoots,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::SkillsSearchRequest>(&req) {
+    let params = match typed_params::<SkillsSearchRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -324,7 +328,7 @@ pub(crate) async fn handle_agents_list_cards(
     req: Request,
     agent_manager: &Arc<AgentManager>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::AgentsListCardsRequest>(&req) {
+    let params = match typed_params::<AgentsListCardsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -358,7 +362,7 @@ pub(crate) async fn handle_agents_resolve_profile(
     req: Request,
     agent_manager: &Arc<AgentManager>,
 ) -> Response {
-    let name = match typed_params::<crate::rpc_client::NameRequest>(&req) {
+    let name = match typed_params::<NameRequest>(&req) {
         Ok(p) => p.name,
         Err(response) => return *response,
     };

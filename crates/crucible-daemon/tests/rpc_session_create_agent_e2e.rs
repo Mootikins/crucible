@@ -24,8 +24,8 @@ mod common;
 
 use anyhow::Result;
 use common::{InProcessDaemon, InProcessDaemonBuilder};
+use crucible_core::protocol::requests::{SessionAgentSpec, SessionCreateParams};
 use crucible_core::protocol::RpcMethod;
-use crucible_daemon::rpc_client::{SessionAgentSpec, SessionCreateParams};
 use crucible_daemon::DaemonClient;
 
 /// Two registered kilns: `kiln`, the one a card fixture goes under

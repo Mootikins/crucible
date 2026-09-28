@@ -1,7 +1,10 @@
 use super::super::*;
-use crate::rpc_client::{SessionHistoryRequest, SessionIdRequest, SessionResumeFromStorageRequest};
 use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::session_lifecycle::{SessionLifecycle, StopCause, StopError, Stopped};
+use crucible_core::protocol::requests::SessionReplayRequest;
+use crucible_core::protocol::requests::{
+    SessionHistoryRequest, SessionIdRequest, SessionResumeFromStorageRequest,
+};
 
 pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecycle) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
@@ -262,7 +265,7 @@ pub(crate) async fn handle_session_replay(
     sm: &Arc<SessionManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::SessionReplayRequest>(&req) {
+    let params = match typed_params::<SessionReplayRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

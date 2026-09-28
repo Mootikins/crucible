@@ -1,6 +1,7 @@
 use crate::rpc_client::client::session::build_create_request;
 use crate::rpc_client::client::*;
 use crate::Server;
+use crucible_core::protocol::requests::LuaInitSessionRequest;
 use crucible_core::protocol::RpcMethod;
 use tempfile::TempDir;
 
@@ -149,7 +150,7 @@ fn session_create_request_without_type_defaults_to_chat() {
 fn lua_init_session_request_without_kiln_path_deserializes_as_none() {
     // Absent means "fall back to the daemon's data root", which is what the
     // handler does. A required `String` would reject this payload.
-    let req: crate::rpc_client::LuaInitSessionRequest =
+    let req: LuaInitSessionRequest =
         serde_json::from_value(serde_json::json!({ "session_id": "s1" })).unwrap();
     assert_eq!(req.session_id, "s1");
     assert_eq!(req.kiln_path, None);
@@ -160,7 +161,7 @@ fn lua_init_session_request_accepts_the_kiln_alias() {
     // The handler read `kiln_path` OR `kiln`. No in-tree caller sends `kiln`,
     // but the method is public RPC, so dropping the second spelling would be
     // a silent break for anyone who used it.
-    let req: crate::rpc_client::LuaInitSessionRequest = serde_json::from_value(serde_json::json!({
+    let req: LuaInitSessionRequest = serde_json::from_value(serde_json::json!({
         "session_id": "s1",
         "kiln": "/tmp/kiln",
     }))
@@ -170,7 +171,7 @@ fn lua_init_session_request_accepts_the_kiln_alias() {
 
 #[test]
 fn lua_init_session_request_omits_an_absent_kiln_path() {
-    let req = crate::rpc_client::LuaInitSessionRequest {
+    let req = LuaInitSessionRequest {
         session_id: "s1".to_string(),
         kiln_path: None,
     };

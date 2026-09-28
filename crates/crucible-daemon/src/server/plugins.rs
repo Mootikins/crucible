@@ -1,6 +1,11 @@
 use super::*;
 use crate::daemon_plugins::PluginServiceFn;
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{
+    NameRequest, PathRequest, PluginOptionCallRequest, PluginOptionsRequest,
+    PluginPublicationsRequest, PluginRunCommandRequest, PluginSpecRow, ScmCloneRequest,
+    SessionIdRequest, SurfaceRequest,
+};
 
 /// Drain extracted service functions, spawn each, and record the handle
 /// against its owning plugin so reload/disable/remove can abort it. The
@@ -29,7 +34,7 @@ pub(crate) async fn handle_plugin_reload(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::NameRequest>(&req) {
+    let params = match typed_params::<NameRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -101,10 +106,10 @@ pub(crate) async fn handle_plugin_list(
 }
 
 /// The merged spec as `plugin.list` rows, in name order.
-fn spec_rows(loader: &DaemonPluginLoader) -> Vec<crate::rpc_client::PluginSpecRow> {
+fn spec_rows(loader: &DaemonPluginLoader) -> Vec<PluginSpecRow> {
     let spec = crucible_lua::spec_of(loader.lua());
     spec.iter()
-        .map(|entry| crate::rpc_client::PluginSpecRow {
+        .map(|entry| PluginSpecRow {
             rank: spec
                 .rank_of(&entry.name)
                 .unwrap_or(crucible_core::config::SpecRank::PluginFragment),
@@ -133,7 +138,7 @@ pub(crate) async fn handle_session_status(
     req: Request,
     agents: &Arc<crate::agent_manager::AgentManager>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::SessionIdRequest>(&req) {
+    let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -192,7 +197,7 @@ pub(crate) async fn handle_surface_list(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::SurfaceRequest>(&req) {
+    let params = match typed_params::<SurfaceRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -220,7 +225,7 @@ pub(crate) async fn handle_surface_get(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::SurfaceRequest>(&req) {
+    let params = match typed_params::<SurfaceRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -253,7 +258,7 @@ pub(crate) async fn handle_plugin_publications(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::PluginPublicationsRequest>(&req) {
+    let params = match typed_params::<PluginPublicationsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -284,7 +289,7 @@ pub(crate) async fn handle_plugin_options(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::PluginOptionsRequest>(&req) {
+    let params = match typed_params::<PluginOptionsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -339,7 +344,7 @@ pub(crate) async fn handle_plugin_option_call(
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
     action: OptionAction,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::PluginOptionCallRequest>(&req) {
+    let params = match typed_params::<PluginOptionCallRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -416,7 +421,7 @@ pub(crate) async fn handle_plugin_run_command(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::PluginRunCommandRequest>(&req) {
+    let params = match typed_params::<PluginRunCommandRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -457,7 +462,7 @@ pub(crate) async fn handle_plugin_run_command(
 // --- Project handlers ---
 
 pub(crate) async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+    let params = match typed_params::<PathRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -472,7 +477,7 @@ pub(crate) async fn handle_project_register(req: Request, pm: &Arc<ProjectManage
 }
 
 pub(crate) async fn handle_project_unregister(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+    let params = match typed_params::<PathRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -602,7 +607,7 @@ pub(crate) async fn handle_project_registry_list(
 }
 
 pub(crate) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+    let params = match typed_params::<PathRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -637,7 +642,7 @@ pub(crate) async fn handle_project_open_kilns(
     km: &Arc<crate::kiln_manager::KilnManager>,
     registry: &Arc<crate::kiln_registry::KilnRegistry>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+    let params = match typed_params::<PathRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -716,7 +721,7 @@ pub(crate) async fn handle_scm_clone(
     pm: &Arc<ProjectManager>,
     root_dir: Option<&str>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::ScmCloneRequest>(&req) {
+    let params = match typed_params::<ScmCloneRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

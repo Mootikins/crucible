@@ -1,6 +1,11 @@
 use super::forwarding::ReplayPolicy;
 use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
+use crucible_core::protocol::requests::{
+    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffDeleteCommentReply,
+    DiffFileRequest, DiffResolveCommentReply, NoteListRow, SessionAgentSpec, SessionCreateParams,
+    VectorHit,
+};
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
 use futures::future::BoxFuture;
@@ -259,7 +264,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe ListNotes =>
         list_notes(kiln_path: &Path, path_filter: Option<&str> => path_filter.map(str::to_owned))
-        -> Vec<crucible_daemon::rpc_client::NoteListRow> = list_notes(&kiln_path, path_filter.as_deref(), None);
+        -> Vec<NoteListRow> = list_notes(&kiln_path, path_filter.as_deref(), None);
     }
 
     forward_rpc! {
@@ -289,7 +294,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe SearchVectors =>
         search_vectors(kiln_path: &Path, vector: &[f32], limit: usize)
-        -> Vec<crucible_daemon::VectorHit> = search_vectors(&kiln_path, &vector, limit, None);
+        -> Vec<VectorHit> = search_vectors(&kiln_path, &vector, limit, None);
     }
 
     forward_rpc! {
@@ -344,8 +349,8 @@ impl ReconnectingDaemon {
         /// owns default resolution, so the web never builds its own copy.
         Once SessionCreate =>
         session_create_with_agent(
-            params: crucible_daemon::rpc_client::SessionCreateParams,
-            agent: crucible_daemon::rpc_client::SessionAgentSpec,
+            params: SessionCreateParams,
+            agent: SessionAgentSpec,
         )
         -> serde_json::Value = session_create_with_agent(params, agent);
     }
@@ -713,34 +718,34 @@ impl ReconnectingDaemon {
 
     forward_rpc! {
         Safe DiffFile =>
-        diff_file_request(request: &crucible_daemon::rpc_client::DiffFileRequest)
+        diff_file_request(request: &DiffFileRequest)
         -> crucible_core::diff::DiffFileText = diff_file_request(request.clone());
     }
 
     forward_rpc! {
         Once DiffComment =>
-        diff_comment(request: &crucible_daemon::rpc_client::DiffCommentRequest)
-        -> crucible_daemon::rpc_client::DiffCommentReply = diff_comment(request.clone());
+        diff_comment(request: &DiffCommentRequest)
+        -> DiffCommentReply = diff_comment(request.clone());
     }
 
     forward_rpc! {
         Once DiffResolveComment =>
         diff_resolve_comment(source: &crucible_core::diff::DiffsetSource, comment_id: &str)
-        -> crucible_daemon::rpc_client::DiffResolveCommentReply
+        -> DiffResolveCommentReply
         = diff_resolve_comment(&source, &comment_id);
     }
 
     forward_rpc! {
         Once DiffDeleteComment =>
         diff_delete_comment(source: &crucible_core::diff::DiffsetSource, comment_id: &str)
-        -> crucible_daemon::rpc_client::DiffDeleteCommentReply
+        -> DiffDeleteCommentReply
         = diff_delete_comment(&source, &comment_id);
     }
 
     forward_rpc! {
         Safe DiffComments =>
         diff_comments(source: &crucible_core::diff::DiffsetSource)
-        -> crucible_daemon::rpc_client::DiffCommentsReply = diff_comments(&source);
+        -> DiffCommentsReply = diff_comments(&source);
     }
 
     forward_rpc! {

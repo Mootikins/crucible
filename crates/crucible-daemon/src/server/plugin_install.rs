@@ -7,6 +7,7 @@
 
 use super::plugins::spawn_plugin_services;
 use super::*;
+use crucible_core::protocol::requests::{PluginInstallRequest, PluginRemoveRequest};
 
 /// What one install's activation reported: whether the plugin came up, and
 /// the counts `plugin.install` answers.
@@ -100,11 +101,10 @@ pub(crate) async fn handle_plugin_install(
     ctx: &Arc<crate::rpc::RpcContext>,
 ) -> Response {
     let plugin_loader = &ctx.plugin_loader;
-    let params =
-        match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginInstallRequest>(&req) {
-            Ok(p) => p,
-            Err(response) => return *response,
-        };
+    let params = match crate::rpc_helpers::typed_params::<PluginInstallRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
     let entry = crate::plugin_ops::InstalledEntry::new(params.url, params.branch, params.pin);
 
@@ -229,11 +229,10 @@ pub(crate) async fn handle_plugin_remove(
     ctx: &Arc<crate::rpc::RpcContext>,
 ) -> Response {
     let plugin_loader = &ctx.plugin_loader;
-    let params =
-        match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginRemoveRequest>(&req) {
-            Ok(p) => p,
-            Err(response) => return *response,
-        };
+    let params = match crate::rpc_helpers::typed_params::<PluginRemoveRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let name = params.name;
     let purge = params.purge;
 

@@ -8,7 +8,7 @@ use crucible_core::session::PhysicalRoot;
 
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{Request, Response, BUSY, INTERNAL_ERROR, INVALID_PARAMS};
-use crate::rpc_client::{
+use crucible_core::protocol::requests::{
     ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
     ProposalResolveRequest,
 };

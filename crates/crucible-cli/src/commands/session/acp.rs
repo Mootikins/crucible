@@ -1,6 +1,7 @@
 use crate::config::CliAppConfig;
 use anyhow::{anyhow, bail, Result};
 use crucible_core::config::BackendType;
+use crucible_core::protocol::requests::{SessionAgentSpec, SessionCreateParams};
 use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
 use crucible_core::turn::TurnStatus;
 use crucible_daemon::DaemonClient;
@@ -274,7 +275,7 @@ pub(super) mod rpc {
         // internal defaults (or resolves the named ACP profile / agent card) and
         // configures the session's agent as part of create. An unknown profile
         // or card fails here with no session created.
-        let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
+        let agent_spec = SessionAgentSpec {
             agent_name: params.acp.map(str::to_string),
             agent_card: params.agent.map(str::to_string),
             ..Default::default()
@@ -282,7 +283,7 @@ pub(super) mod rpc {
 
         let result = client
             .session_create_with_agent(
-                crucible_daemon::rpc_client::SessionCreateParams {
+                SessionCreateParams {
                     session_type: params.session_type.to_string(),
                     kilns: config.session_kiln_name().into_iter().collect(),
                     workspace: params.workspace.map(|p| p.to_path_buf()),

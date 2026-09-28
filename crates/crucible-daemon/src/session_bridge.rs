@@ -7,6 +7,7 @@ use crate::agent_manager::AgentManager;
 use crate::protocol::{Request, Response};
 use crate::rpc::RpcContext;
 use crate::session_manager::SessionManager;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::protocol::RpcMethod;
 use crucible_core::traits::context_ops::Range;
 use crucible_lua::{DaemonSessionApi, DiffOp, ProposalDecision, ResponsePart};
@@ -300,9 +301,8 @@ impl DaemonSessionApi for DaemonSessionBridge {
             return self.create_delegation(params);
         }
         bridge_async!(self.ctx, |ctx| async move {
-            let request: crate::rpc_client::SessionCreateRequest =
-                serde_json::from_value(params)
-                    .map_err(|e| format!("Invalid create options: {e}"))?;
+            let request: SessionCreateRequest = serde_json::from_value(params)
+                .map_err(|e| format!("Invalid create options: {e}"))?;
             let session = ctx
                 .create_session_resolved(&request)
                 .await

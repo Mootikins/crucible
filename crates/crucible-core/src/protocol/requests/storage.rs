@@ -1,8 +1,5 @@
-//! Wire request types for the storage and kiln RPC methods.
-//!
-//! Split out of `storage.rs` because both sides of the wire now use them: the
-//! client serializes each struct and the daemon's handler deserializes THE SAME
-//! struct (gate A6), so these are the contract, not client-side plumbing.
+//! Wire types of the `storage` RPC methods. The client serializes each type,
+//! and the daemon handler deserializes the same type.
 
 /// Request for `kiln.open`.
 ///
@@ -60,7 +57,7 @@ pub struct GetNoteByNameRequest {
     pub kiln: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `get_backlinks`.
@@ -72,7 +69,7 @@ pub struct GetBacklinksRequest {
     pub kiln: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `kiln.graph`.
@@ -83,7 +80,7 @@ pub struct GetBacklinksRequest {
 pub struct KilnGraphRequest {
     pub kiln: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `suggest_links`.
@@ -95,7 +92,7 @@ pub struct SuggestLinksRequest {
     pub kiln: String,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `note.upsert`.
@@ -111,7 +108,7 @@ pub struct NoteUpsertRequest {
 pub struct NoteListRequest {
     pub kiln: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `note.get` and `note.delete`.
@@ -125,7 +122,7 @@ pub struct NotePathRequest {
     pub kiln: String,
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `process_batch`.
@@ -184,7 +181,7 @@ pub struct SearchVectorsRequest {
     #[serde(default = "default_search_limit")]
     pub limit: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
 }
 
 /// What an omitted `limit` means to `search_vectors`, kept where the field is
@@ -204,7 +201,7 @@ pub struct VectorHit {
     pub document_id: String,
     pub score: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub block: Option<crucible_core::types::database::BlockRef>,
+    pub block: Option<crate::types::database::BlockRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
 }
@@ -229,7 +226,7 @@ mod first_per_note_tests {
         VectorHit {
             document_id: document_id.to_string(),
             score: 1.0 - span_start as f64 / 100.0,
-            block: Some(crucible_core::types::database::BlockRef {
+            block: Some(crate::types::database::BlockRef {
                 span_start,
                 span_end: span_start + 10,
                 kind: "paragraph".to_string(),
@@ -293,12 +290,6 @@ pub struct GrepSearchRequest {
     pub case_insensitive: bool,
 }
 
-/// The `limit` an omitted field means — the handler's own constant, not a
-/// copy of it, and the handler still clamps the value it gets.
-fn default_grep_limit() -> usize {
-    crate::server::grep::GREP_DEFAULT_LIMIT
-}
-
 fn default_true() -> bool {
     true
 }
@@ -320,13 +311,13 @@ pub struct FsListDirRequest {
 /// branch. The reply then names the branch that the daemon used.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DiffGetRequest {
-    pub source: crucible_core::diff::DiffsetSource,
+    pub source: crate::diff::DiffsetSource,
 }
 
 /// Request for `diff.file`: one file of the diffset of `source`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DiffFileRequest {
-    pub source: crucible_core::diff::DiffsetSource,
+    pub source: crate::diff::DiffsetSource,
     /// The path relative to the root, on the current side.
     pub path: String,
     /// The old path of a renamed file. The base text comes from this path.
@@ -336,18 +327,18 @@ pub struct DiffFileRequest {
     /// can have more than one root. A branch source names its own root, so
     /// a branch request omits it or repeats the root of the source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub root: Option<crucible_core::session::PhysicalRoot>,
+    pub root: Option<crate::session::PhysicalRoot>,
 }
 
 /// Request for `diff.comment`: anchor a comment to a line range of one file
 /// of the diffset of `source`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffCommentRequest {
-    pub source: crucible_core::diff::DiffsetSource,
+    pub source: crate::diff::DiffsetSource,
     /// The root of the file. A session record needs it, as in
     /// [`DiffFileRequest::root`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub root: Option<crucible_core::session::PhysicalRoot>,
+    pub root: Option<crate::session::PhysicalRoot>,
     /// The path relative to the root, on the current side.
     pub path: String,
     /// The old path of a renamed file. A comment on the base side quotes
@@ -355,7 +346,7 @@ pub struct DiffCommentRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
     /// The side that the line numbers count on.
-    pub side: crucible_core::session::CommentSide,
+    pub side: crate::session::CommentSide,
     /// The first line, 1-based.
     pub line_start: u32,
     /// One past the last line. Absent means `line_start + 1`: one line.
@@ -364,28 +355,28 @@ pub struct DiffCommentRequest {
     pub body: String,
     /// Absent means a human wrote the comment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub author: Option<crucible_core::session::CommentAuthor>,
+    pub author: Option<crate::session::CommentAuthor>,
 }
 
 /// What `diff.comment` answers: the stored comment and its diffset.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffCommentReply {
-    pub diffset: crucible_core::diff::DiffsetId,
-    pub comment: crucible_core::session::Comment,
+    pub diffset: crate::diff::DiffsetId,
+    pub comment: crate::session::Comment,
 }
 
 /// Request for `diff.resolve_comment`: mark one comment of the diffset of
 /// `source` resolved.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffResolveCommentRequest {
-    pub source: crucible_core::diff::DiffsetSource,
+    pub source: crate::diff::DiffsetSource,
     pub comment_id: String,
 }
 
 /// What `diff.resolve_comment` answers.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffResolveCommentReply {
-    pub diffset: crucible_core::diff::DiffsetId,
+    pub diffset: crate::diff::DiffsetId,
     pub comment_id: String,
     pub resolved: bool,
 }
@@ -394,14 +385,14 @@ pub struct DiffResolveCommentReply {
 /// `source` from the store.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffDeleteCommentRequest {
-    pub source: crucible_core::diff::DiffsetSource,
+    pub source: crate::diff::DiffsetSource,
     pub comment_id: String,
 }
 
 /// What `diff.delete_comment` answers.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffDeleteCommentReply {
-    pub diffset: crucible_core::diff::DiffsetId,
+    pub diffset: crate::diff::DiffsetId,
     pub comment_id: String,
     pub deleted: bool,
 }
@@ -409,15 +400,7 @@ pub struct DiffDeleteCommentReply {
 /// Request for `diff.comments`: the comments of the diffset of `source`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffCommentsRequest {
-    pub source: crucible_core::diff::DiffsetSource,
-}
-
-/// What `diff.comments` answers: each comment, oldest first, with its range
-/// projected onto the current text of its side.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DiffCommentsReply {
-    pub diffset: crucible_core::diff::DiffsetId,
-    pub comments: Vec<crate::diff::comments::ListedComment>,
+    pub source: crate::diff::DiffsetSource,
 }
 
 /// Request for `fs.move`.
@@ -476,5 +459,52 @@ pub struct ListNotesRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path_filter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crucible_core::storage::Scope>,
+    pub scope: Option<crate::storage::Scope>,
+}
+
+/// One row of `list_notes`, as it crosses the RPC wire.
+///
+/// A struct rather than a tuple: it grew a sixth field, and a six-tuple at
+/// three call sites is a puzzle rather than a type.
+#[derive(Debug, Clone, Default)]
+pub struct NoteListRow {
+    pub name: String,
+    pub path: String,
+    pub title: Option<String>,
+    pub tags: Vec<String>,
+    pub updated_at: Option<String>,
+    pub properties: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl NoteListRow {
+    /// The legacy five-field view, for callers that want no properties.
+    pub fn into_parts(self) -> (String, String, Option<String>, Vec<String>, Option<String>) {
+        (self.name, self.path, self.title, self.tags, self.updated_at)
+    }
+}
+
+/// What `diff.comments` answers: each comment, oldest first, with its range
+/// projected onto the current text of its side.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffCommentsReply {
+    pub diffset: crate::diff::DiffsetId,
+    pub comments: Vec<ListedComment>,
+}
+
+/// A comment as the daemon lists it: its range follows its text.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ListedComment {
+    /// The stored comment. When its text moved, `line_range` is the new range.
+    pub comment: crate::session::Comment,
+    /// The current text of the side does not contain the quoted text.
+    /// The pane shows an outdated comment at the end of its file.
+    pub outdated: bool,
+}
+
+/// The hit cap of `search_grep` when the caller omits `limit`.
+pub const GREP_DEFAULT_LIMIT: usize = 100;
+
+/// The `limit` an omitted field means. The handler still clamps the value.
+fn default_grep_limit() -> usize {
+    GREP_DEFAULT_LIMIT
 }

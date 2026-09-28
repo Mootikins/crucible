@@ -7,6 +7,7 @@
 //! the session listing. Only a spawned binary and a real daemon show that, so
 //! this is a PTY test.
 
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::protocol::RpcMethod;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -132,7 +133,7 @@ fn create_session_beside(home: &Path, beside: &str) -> String {
             serde_json::from_value(open["kilns"].clone()).expect("kilns");
         let workspace = open["workspace"].as_str().map(PathBuf::from);
         let created = client
-            .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            .session_create(SessionCreateParams {
                 session_type: "chat".into(),
                 kilns,
                 workspace,

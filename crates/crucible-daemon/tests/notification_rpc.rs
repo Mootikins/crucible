@@ -323,7 +323,8 @@ async fn test_daemon_notification_list_and_dismiss_contract() {
 /// Send the first message of two kiln-less sessions in one workspace, with
 /// Precognition on. Returns the no-kiln notices in the ring.
 async fn no_kiln_notices(daemon: &TestDaemon) -> Vec<serde_json::Value> {
-    use crucible_daemon::rpc_client::{DaemonClient, SessionCreateParams};
+    use crucible_core::protocol::requests::SessionCreateParams;
+    use crucible_daemon::rpc_client::DaemonClient;
     let client = DaemonClient::connect_to(&daemon.socket_path).await.unwrap();
     let workspace = daemon.home().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();

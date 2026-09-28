@@ -51,6 +51,7 @@ use crate::project_manager::ProjectManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::session_manager::SessionManager;
 use crate::tools::containment::reject_non_normal;
+use crucible_core::protocol::requests::{FsListDirRequest, FsMoveRequest, FsPathRequest};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -180,8 +181,7 @@ pub(crate) async fn handle_fs_list_dir(
     pm: &Arc<ProjectManager>,
     sessions: &Arc<SessionManager>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsListDirRequest>(&req)
-    {
+    let params = match crate::rpc_helpers::typed_params::<FsListDirRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -374,7 +374,7 @@ pub(crate) async fn handle_fs_move(
     km: &Arc<KilnManager>,
     sessions: &Arc<SessionManager>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsMoveRequest>(&req) {
+    let params = match crate::rpc_helpers::typed_params::<FsMoveRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -531,7 +531,7 @@ pub(crate) async fn handle_fs_mkdir(
     km: &Arc<KilnManager>,
     sessions: &Arc<SessionManager>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsPathRequest>(&req) {
+    let params = match crate::rpc_helpers::typed_params::<FsPathRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -588,7 +588,7 @@ pub(crate) async fn handle_fs_trash(
     km: &Arc<KilnManager>,
     sessions: &Arc<SessionManager>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsPathRequest>(&req) {
+    let params = match crate::rpc_helpers::typed_params::<FsPathRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

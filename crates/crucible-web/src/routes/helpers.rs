@@ -5,6 +5,7 @@
 //! Path containment is not here: the daemon's `fs.read` and `fs.write` own it.
 
 use crate::WebError;
+use crucible_core::protocol::requests::NoteListRow;
 
 /// Response for model listings — the session-scoped `list_models` and the
 /// session-less `list_all_models` return the same `{ models: [...] }` shape.
@@ -58,7 +59,7 @@ pub(crate) fn versioned<S>(
 // =========================================================================
 
 /// Tuple returned by [`crate::services::daemon::DaemonService::list_notes`].
-pub(crate) type NoteListItem = crucible_daemon::rpc_client::NoteListRow;
+pub(crate) type NoteListItem = NoteListRow;
 
 /// Map a note list item to full metadata JSON.
 ///

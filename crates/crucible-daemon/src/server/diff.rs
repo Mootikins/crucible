@@ -27,12 +27,12 @@ use crate::project_manager::ProjectManager;
 use crate::proposals::{ProposalError, ProposalStore};
 use crate::protocol::{Request, RequestId, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::review::{ReviewError, ReviewLedgers};
-use crate::rpc_client::{DiffFileRequest, DiffGetRequest};
 use crate::scm::{run_git, GitOpts};
 use crate::server::fs::project_root;
 use crate::server::session::review::ensure_record_loaded;
 use crate::session_manager::SessionManager;
 use crate::tools::containment::reject_non_normal;
+use crucible_core::protocol::requests::{DiffFileRequest, DiffGetRequest};
 
 /// The refusal for a root that no admission names.
 pub(crate) const DIFF_ROOT_NOT_ADMITTED: &str =

@@ -1,0 +1,186 @@
+//! Wire types of the `agent` RPC methods. The client serializes each type,
+//! and the daemon handler deserializes the same type.
+
+/// Request for `session.configure_agent`.
+///
+/// `agent` stays a `Value` on purpose: the handler answers a distinct
+/// `Invalid agent config: {e}` for an `agent` that is not a `SessionAgent`,
+/// and typing the field here would fold that into the generic params error.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionConfigureAgentRequest {
+    pub session_id: String,
+    pub agent: serde_json::Value,
+}
+
+/// Request for `session.switch_model`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionSwitchModelRequest {
+    pub session_id: String,
+    pub model_id: String,
+}
+
+/// Request for `session.set_mode`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetModeRequest {
+    pub session_id: String,
+    pub mode_id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionPluginApprovalRequest {
+    pub session_id: String,
+    pub plugin: String,
+    pub approval: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionPluginRequest {
+    pub session_id: String,
+    pub plugin: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionPluginTurnLimitRequest {
+    pub session_id: String,
+    pub limit: u32,
+}
+
+/// Request for `session.set_precognition`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetPrecognitionRequest {
+    pub session_id: String,
+    pub precognition_enabled: bool,
+}
+
+/// Request for `session.undo`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionUndoRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<usize>,
+}
+
+/// Request for `session.set_context_strategy`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetContextStrategyRequest {
+    pub session_id: String,
+    pub context_strategy: String,
+}
+
+/// Request for `models.list` (no active session required).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ListAllModelsRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kiln_path: Option<String>,
+}
+
+/// Request for `embeddings.models`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingModelsRequest {
+    /// A name to resolve through the catalog, in any form the catalog accepts.
+    ///
+    /// The answer carries the canonical form as `resolved`, and an unknown
+    /// name is an error that names the near entries. The caller therefore
+    /// holds no matcher of its own, so no second matcher can drift from the
+    /// catalog's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+
+    /// Fetch `model` into the cache before the daemon answers.
+    ///
+    /// One method, two questions, because the answer to the second is the
+    /// first asked again: after a download the caller wants the row, and the
+    /// row is what says where the files are.
+    #[serde(default)]
+    pub download: bool,
+}
+
+/// One local embedding model, as `embeddings.models` reports it.
+///
+/// The daemon owns the catalog because it links fastembed and holds the model
+/// cache. This struct is the projection the CLI renders; it carries no
+/// fastembed type, so a build without that feature still compiles.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingModelRow {
+    /// The name to write in the config file.
+    pub name: String,
+    /// The width of the vector.
+    pub dimensions: usize,
+    /// The parameter count in millions, or `None` for a model Crucible does
+    /// not curate.
+    pub parameter_millions: Option<u32>,
+    /// The longest input the model accepts, or `None` for a model Crucible
+    /// does not curate.
+    pub max_input_tokens: Option<u32>,
+    /// The MTEB v1 English retrieval score, or `None` when nobody published
+    /// one. Never a guess.
+    pub retrieval_score: Option<f32>,
+    /// Whether Crucible curates this model, so `download` can fetch it.
+    pub curated: bool,
+    /// One sentence on why to pick this model, or why not.
+    pub note: String,
+    /// Whether the files are already in the cache.
+    pub downloaded: bool,
+}
+
+/// The answer to `embeddings.models`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingCatalog {
+    /// Every model the daemon can run, ordered by name. Empty when the daemon
+    /// was built without the `fastembed` feature.
+    #[serde(default)]
+    pub models: Vec<EmbeddingModelRow>,
+    /// The model the daemon's own config names, when it names one.
+    #[serde(default)]
+    pub configured: Option<String>,
+    /// The directory the daemon reads and writes models in.
+    #[serde(default)]
+    pub cache_dir: Option<String>,
+    /// The canonical catalog name of the model the request named.
+    #[serde(default)]
+    pub resolved: Option<String>,
+    /// The directory the requested download landed in.
+    #[serde(default)]
+    pub downloaded_to: Option<String>,
+    /// The bytes that download occupies.
+    ///
+    /// Only for the model just fetched. Every row carried this once, which
+    /// cost a directory walk per model on a listing that never prints it.
+    #[serde(default)]
+    pub downloaded_bytes: Option<u64>,
+}
+
+/// Request for `providers.list` (no active session required).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ListProvidersRequest {
+    #[serde(default)]
+    pub kiln_path: Option<String>,
+    /// `false` skips per-provider model discovery (which dials endpoints).
+    /// Omitted means `true` for backward compatibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_models: Option<bool>,
+}
+
+/// Request for `session.connect_kiln` / `session.disconnect_kiln`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionKilnRequest {
+    pub session_id: String,
+    /// The kiln's registry NAME. It was `kiln_path` — a directory the caller
+    /// chose — and that is the door the registration floor now stands in front
+    /// of: a path here would attach a kiln nobody registered.
+    ///
+    /// Typed, not a `String`: both callers already hold a validated
+    /// [`KilnName`] and were widening it back with `to_string()` for one hop.
+    /// `KilnName` serializes as its inner string, so the wire is unchanged.
+    ///
+    /// [`KilnName`]: crate::config::KilnName
+    pub kiln: crate::config::KilnName,
+}
+
+/// Request for `session.set_workspace`. `workspace: None` detaches.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionSetWorkspaceRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+}

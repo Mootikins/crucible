@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::require_param;
-use crate::rpc_client::{SessionDismissNotificationRequest, SessionIdRequest};
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{SessionDismissNotificationRequest, SessionIdRequest};
 
 /// The session, live or in storage, or the refusal when it is neither. A
 /// session in storage only, after a restart, has notifications too.

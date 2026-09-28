@@ -1,6 +1,9 @@
 use super::super::*;
-use crate::rpc_client::{SessionForkRequest, SessionIdRequest, SessionSwitchModelRequest};
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{ListAllModelsRequest, ListProvidersRequest};
+use crucible_core::protocol::requests::{
+    SessionForkRequest, SessionIdRequest, SessionSwitchModelRequest,
+};
 
 pub(crate) async fn handle_session_switch_model(
     req: Request,
@@ -116,7 +119,7 @@ pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManag
 ///
 /// Accepts an optional `kiln_path` parameter. When provided, the handler
 pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
-    let params = match typed_params::<crate::rpc_client::ListAllModelsRequest>(&req) {
+    let params = match typed_params::<ListAllModelsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -142,7 +145,7 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
 /// can hang on a dead provider); the CLI's chat preflight uses it to answer
 /// "are there any providers at all?" quickly.
 pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) -> Response {
-    let params = match typed_params::<crate::rpc_client::ListProvidersRequest>(&req) {
+    let params = match typed_params::<ListProvidersRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

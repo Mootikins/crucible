@@ -8,6 +8,7 @@
 //! atomic rename. Thus two writers cannot lose a comment, and a reader
 //! without the lock sees a complete file.
 
+use crucible_core::protocol::requests::ListedComment;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
@@ -70,16 +71,6 @@ fn source_of_id(id: &str) -> Option<DiffsetSource> {
         .parse::<ProposalId>()
         .ok()
         .map(|id| DiffsetSource::Proposal { id })
-}
-
-/// A comment as the daemon lists it: its range follows its text.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ListedComment {
-    /// The stored comment. When its text moved, `line_range` is the new range.
-    pub comment: Comment,
-    /// The current text of the side does not contain the quoted text.
-    /// The pane shows an outdated comment at the end of its file.
-    pub outdated: bool,
 }
 
 /// The comments of every diffset.

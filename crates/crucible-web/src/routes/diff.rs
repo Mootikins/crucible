@@ -18,8 +18,8 @@ use axum::{
 };
 use crucible_core::diff::{DiffFileText, Diffset, DiffsetId, DiffsetSource};
 use crucible_core::proposal::ProposalId;
+use crucible_core::protocol::requests::{DiffCommentRequest, DiffFileRequest};
 use crucible_core::session::{PhysicalRoot, SessionId};
-use crucible_daemon::rpc_client::{DiffCommentRequest, DiffFileRequest};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};

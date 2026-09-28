@@ -26,7 +26,7 @@
 mod common;
 
 use common::{InProcessDaemon, InProcessDaemonBuilder};
-use crucible_daemon::rpc_client::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_daemon::DaemonClient;
 
 /// One registered kiln, so the scope mutations below have a NAME to attach.

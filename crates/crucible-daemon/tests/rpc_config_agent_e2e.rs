@@ -6,6 +6,7 @@
 mod common;
 
 use crucible_core::config::BackendType;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::session::SessionAgent;
 use crucible_daemon::DaemonClient;
 
@@ -29,7 +30,7 @@ async fn setup_session_with_agent(server: &common::InProcessDaemon) -> (String, 
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -130,7 +131,7 @@ async fn test_configure_agent_sets_agent() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,

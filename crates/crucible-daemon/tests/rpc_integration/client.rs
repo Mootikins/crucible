@@ -1,5 +1,6 @@
 //! Client basic tests: ping, shutdown, sequential, concurrent, errors.
 
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::DaemonClient;
 use std::path::PathBuf;
@@ -37,7 +38,7 @@ async fn test_interaction_event_flows_to_receiver() {
     let client = std::sync::Arc::new(client);
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,

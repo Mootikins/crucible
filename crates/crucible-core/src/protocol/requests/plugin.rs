@@ -1,9 +1,5 @@
-//! Wire request types for the `plugin.*` and `project.*` RPC methods.
-//!
-//! Both sides of the wire use them: the client serializes the struct and the
-//! daemon's handler deserializes THE SAME struct (gate A6). They used to be
-//! `#[derive(Serialize)] struct …Params` declared inside the client function,
-//! with the server naming the fields again in `require_param!`.
+//! Wire types of the `plugin` RPC methods. The client serializes each type,
+//! and the daemon handler deserializes the same type.
 
 /// Request for `plugin.publications`. An absent `key` asks for every key.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -89,8 +85,8 @@ pub struct PluginInstallRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PluginSpecRow {
     #[serde(flatten)]
-    pub entry: crucible_core::config::SpecEntry,
-    pub rank: crucible_core::config::SpecRank,
+    pub entry: crate::config::SpecEntry,
+    pub rank: crate::config::SpecRank,
     pub declared: bool,
 }
 

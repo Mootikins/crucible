@@ -24,8 +24,9 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use common::TestDaemon;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::session::SessionAgent;
-use crucible_daemon::rpc_client::{DaemonClient, SessionCreateParams};
+use crucible_daemon::rpc_client::DaemonClient;
 use crucible_daemon::SessionEvent;
 
 #[path = "acp_support/mock_agent.rs"]

@@ -281,7 +281,7 @@ fn wire_request_types_are_deserialized_not_hand_plucked() {
         // no change here. An annotated binding would let the type drift out of
         // view of a source scan, which is why every call site turbofishes.
         let turbofish = Regex::new(&format!(
-            r"::<\s*(?:crate::rpc_client::)?{}\s*>",
+            r"::<\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*{}\s*,?\s*>",
             regex::escape(struct_name)
         ))
         .unwrap();

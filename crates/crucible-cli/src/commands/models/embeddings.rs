@@ -24,8 +24,8 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use crucible_core::protocol::requests::{EmbeddingCatalog, EmbeddingModelRow};
 use crucible_core::protocol::RpcMethod;
-use crucible_daemon::rpc_client::{EmbeddingCatalog, EmbeddingModelRow};
 
 use crate::common::daemon_client;
 use crate::formatting::OutputFormat;

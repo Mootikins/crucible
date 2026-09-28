@@ -29,8 +29,8 @@ use agent_client_protocol::{
 };
 use crucible_core::config::CliAppConfig;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::types::SendOutcome;
-use crucible_daemon::rpc_client::SessionCreateParams;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info, warn};

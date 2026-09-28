@@ -54,23 +54,21 @@ must not construct a second agent configuration or write pipeline."
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-daemon/src/rpc_client/mod.rs` | 53 | Public façade: declares the `client`, `error_ext`, `lifecycle`, `storage` submodules and re-exports the client's whole contract (`DaemonClient`, request/response DTOs, `ChatResultExt`, `rpc_error_message`, `socket_path`). |
+| `crates/crucible-daemon/src/rpc_client/mod.rs` | 26 | Public façade: declares the `client`, `error_ext`, `lifecycle`, `storage` submodules and re-exports `DaemonClient`, `SessionEvent`, `decode_status_items`, `ChatResultExt`, `rpc_error_message`, `FtsResult`, `DaemonNoteStore`, `DaemonStorageClient`, and `socket_path`. It no longer re-exports a request or reply type; a caller outside `crucible-daemon` names one through `crucible_core::protocol::requests`. |
 | `crates/crucible-daemon/src/rpc_client/error_ext.rs` | 59 | `ChatResultExt` trait (one method, `chat_comm`, that folds any displayable error into `ChatError::Communication`) and `rpc_error_message`, a free function that strips the `RPC error: {json}` envelope down to the daemon's own message. |
 | `crates/crucible-daemon/src/rpc_client/lifecycle.rs` | 183 | Synchronous daemon-process utilities: socket path, log path, log rotation on spawn, log tail read, `is_daemon_running`. |
 | `crates/crucible-daemon/src/rpc_client/storage.rs` | 621 | `DaemonStorageClient` (`KnowledgeRepository` impl) and `DaemonNoteStore` (`NoteStore` impl): adapt canonical storage traits onto `DaemonClient` RPC calls. |
-| `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1185 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/surface/notification-adjacent RPC methods that have no dedicated submodule. |
-| `crates/crucible-daemon/src/rpc_client/client/types.rs` | 134 | Wire types and helpers shared by two or more submodules: `SessionEvent` alias, `DaemonCapabilities`, `VersionCheck`, small param structs, `extract_string_array`. |
-| `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 708 | `DaemonClient` methods and DTOs for `session.*` agent/model/mode RPCs, `models.list`, `providers.list`, `embeddings.models`, `skills.*`, `agents.*`, and the plugin-approval/plugin-turn-limit `session.*` RPCs. |
-| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 956 | `DaemonClient` methods and DTOs for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications. |
-| `crates/crucible-daemon/src/rpc_client/client/storage.rs` | 986 | `DaemonClient` methods for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, webhook ingress, project and filesystem RPCs (including `fs.read`), and `diff.*` RPCs (get/file/comment/resolve_comment/delete_comment/comments) over branch, session-record and proposal diffset sources. |
-| `crates/crucible-daemon/src/rpc_client/client/storage_requests.rs` | 480 | Wire-type module backing `storage.rs`'s methods, shared verbatim with the daemon's handlers; also `first_per_note`, the block-to-note dedup helper, and the `Diff*` request/reply DTOs. |
-| `crates/crucible-daemon/src/rpc_client/client/proposals.rs` | 184 | `DaemonClient` methods and DTOs for `proposal.*` RPCs: list, get, accept, reject, dismiss, resolve — the decision surface for propose-mode writes. |
-| `crates/crucible-daemon/src/rpc_client/client/subscription.rs` | 35 | `DaemonClient` methods for `session.subscribe`/`session.unsubscribe`. |
-| `crates/crucible-daemon/src/rpc_client/client/workflow.rs` | 62 | `DaemonClient` methods and DTOs for `workflow.start`/`approve_gate`/`status`/`cancel`. |
-| `crates/crucible-daemon/src/rpc_client/client/lua.rs` | 183 | `DaemonClient` methods and DTOs for `lua.*` plugin-lifecycle RPCs: init/shutdown session, discover, health check, generate stubs, run plugin tests. |
-| `crates/crucible-daemon/src/rpc_client/client/plugin_requests.rs` | 103 | Wire-type module (no methods) for `plugin.*`/`project.*`/`surface.*` request shapes, shared with the daemon's handlers. |
-| `crates/crucible-daemon/src/rpc_client/client/notifications.rs` | 70 | `DaemonClient` methods for `notification.list`/`notification.dismiss`. |
-| `crates/crucible-daemon/src/rpc_client/client/tests.rs` | 920 | The test module for the whole `client` submodule: unit tests, wire-format round-trips, live in-process server integration tests, response-correlation tests, and signal-reaper tests. |
+| `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1168 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/surface/notification-adjacent RPC methods that have no dedicated submodule. It declares every `client` submodule and imports each request type through `crucible_core::protocol::requests::*`. |
+| `crates/crucible-daemon/src/rpc_client/client/types.rs` | 28 | What is left after the request and reply types moved to core: the `SessionEvent` alias and the `extract_string_array` helper, shared by two or more submodules. `DaemonCapabilities` and `VersionCheck` now live in `crucible_core::protocol::requests::common`. |
+| `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 547 | `DaemonClient` methods for `session.*` agent/model/mode RPCs, `models.list`, `providers.list`, `embeddings.models`, `skills.*`, `agents.*`, and the plugin-approval/plugin-turn-limit `session.*` RPCs. The request and reply types live in `crucible_core::protocol::requests::agent`. |
+| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 564 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `build_create_request` and `decode_status_items`. The request and reply types live in `crucible_core::protocol::requests::session`. |
+| `crates/crucible-daemon/src/rpc_client/client/storage.rs` | 971 | `DaemonClient` methods for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, webhook ingress, project and filesystem RPCs (including `fs.read`), and `diff.*` RPCs (get/file/comment/resolve_comment/delete_comment/comments) over branch, session-record and proposal diffset sources. The request and reply types, `first_per_note`, and the `Diff*` DTOs live in `crucible_core::protocol::requests::storage`. |
+| `crates/crucible-daemon/src/rpc_client/client/proposals.rs` | 132 | `DaemonClient` methods for `proposal.*` RPCs: list, get, accept, reject, dismiss, resolve — the decision surface for propose-mode writes. The request types live in `crucible_core::protocol::requests::proposals`. |
+| `crates/crucible-daemon/src/rpc_client/client/subscription.rs` | 31 | `DaemonClient` methods for `session.subscribe`/`session.unsubscribe`. The request type lives in `crucible_core::protocol::requests::subscription`. |
+| `crates/crucible-daemon/src/rpc_client/client/workflow.rs` | 48 | `DaemonClient` methods for `workflow.start`/`approve_gate`/`status`/`cancel`. The request types live in `crucible_core::protocol::requests::workflow`. |
+| `crates/crucible-daemon/src/rpc_client/client/lua.rs` | 61 | `DaemonClient` methods for `lua.*` plugin-lifecycle RPCs: init/shutdown session, discover, health check, generate stubs, run plugin tests. The request and reply types live in `crucible_core::protocol::requests::lua`. |
+| `crates/crucible-daemon/src/rpc_client/client/notifications.rs` | 42 | `DaemonClient` methods for `notification.list`/`notification.dismiss`. The request and reply types live in `crucible_core::protocol::requests::notifications`. |
+| `crates/crucible-daemon/src/rpc_client/client/tests.rs` | 933 | The test module for the whole `client` submodule: unit tests, wire-format round-trips, live in-process server integration tests, response-correlation tests, and signal-reaper tests. |
 
 ## Key types and traits
 
@@ -107,34 +105,44 @@ must not construct a second agent configuration or write pipeline."
   every trait method into an RPC call. Created by
   `crucible-cli/src/factories/storage.rs`.
 - **`SessionCreateRequest` / `SessionCreateParams` / `SessionAgentSpec`**
-  (`crates/crucible-daemon/src/rpc_client/client/session.rs`). The
-  session-creation wire shape and its two logical halves: `SessionCreateParams`
+  (`crates/crucible-core/src/protocol/requests/session.rs`, built by
+  `build_create_request` in `crates/crucible-daemon/src/rpc_client/client/session.rs`).
+  The session-creation wire shape and its two logical halves: `SessionCreateParams`
   (session_type, kilns, workspace, recording, isolation) and the optional
-  `SessionAgentSpec` (agent identity, provider, model, prompt). `build_create_request`
-  merges them and derives `configure_agent` from whether an agent spec was
-  given.
+  `SessionAgentSpec` (agent identity, provider, model, prompt).
+  `build_create_request` merges them and derives `configure_agent` from
+  whether an agent spec was given.
 - **`ProposalListRequest` / `ProposalIdRequest` / `ProposalAcceptRequest` /
   `ProposalRejectRequest` / `ProposalResolveRequest`**
-  (`crates/crucible-daemon/src/rpc_client/client/proposals.rs`). The request
+  (`crates/crucible-core/src/protocol/requests/proposals.rs`, called from
+  `crates/crucible-daemon/src/rpc_client/client/proposals.rs`). The request
   DTOs behind every `proposal.*` RPC, all built around
   `crucible_core::proposal::{Proposal, ProposalFile, ProposalId}`. `paths`
   (legacy bare path strings) and `files` (root-qualified `ProposalFile`
   identities) are mutually exclusive on accept and reject; an empty `paths`
   and an empty `files` together means every file of the proposal.
-- **Wire-shared request types** (`crates/crucible-daemon/src/rpc_client/client/plugin_requests.rs`,
-  `storage_requests.rs`, and similar structs inline in `agent.rs`/`session.rs`/`lua.rs`).
-  Structs that derive both `Serialize` and `Deserialize` so the client
-  serializes and the daemon's own handler deserializes the identical type —
-  called "gate A6" in the code's own comments. This is the module's version
-  of AGENTS.md's "closed sets need one exhaustive table," applied to wire
-  contracts: one struct, not independently typed ends. The ten `Diff*`
-  request/reply types (`DiffGetRequest`, `DiffFileRequest`,
-  `DiffCommentRequest`/`Reply`, `DiffResolveCommentRequest`/`Reply`,
-  `DiffDeleteCommentRequest`/`Reply`, `DiffCommentsRequest`/`Reply`) in
-  `storage_requests.rs` are the newest instance of this pattern, shared with
-  the daemon's `diff.*` handlers.
-- **`VersionCheck`** (`client/types.rs`): `Match` or `Mismatch { client,
-  daemon }`. Drives `verify_or_restart` in `client/mod.rs`.
+- **Wire-shared request types** (`crates/crucible-core/src/protocol/requests/`:
+  `agent.rs`, `common.rs`, `lua.rs`, `notifications.rs`, `plugin.rs`,
+  `proposals.rs`, `session.rs`, `storage.rs`, `subscription.rs`,
+  `workflow.rs`, glob re-exported from `mod.rs`). Structs that derive both
+  `Serialize` and `Deserialize` so the client serializes and the daemon's
+  own handler deserializes the identical type — called "gate A6" in the
+  code's own comments. This is the module's version of AGENTS.md's "closed
+  sets need one exhaustive table," applied to wire contracts: one struct,
+  not independently typed ends, and now one crate, so no client needs the
+  daemon crate to name a request type. The ten `Diff*` request/reply types
+  (`DiffGetRequest`, `DiffFileRequest`, `DiffCommentRequest`/`Reply`,
+  `DiffResolveCommentRequest`/`Reply`, `DiffDeleteCommentRequest`/`Reply`,
+  `DiffCommentsRequest`/`Reply`) in `requests/storage.rs` are the newest
+  instance of this pattern, shared with the daemon's `diff.*` handlers.
+  `requests/storage.rs` also carries `ListedComment` (moved from
+  `crates/crucible-daemon/src/diff/comments.rs`) and `GREP_DEFAULT_LIMIT`
+  (moved from `crates/crucible-daemon/src/server/grep.rs`), for the same
+  reason: both a client and the daemon's `diff.rs`/`grep.rs` handler need
+  the identical type or constant.
+- **`VersionCheck`** (`crucible_core::protocol::requests::common`): `Match`
+  or `Mismatch { client, daemon }`. Drives `verify_or_restart` in
+  `client/mod.rs`.
 
 ## Flows
 
@@ -280,12 +288,11 @@ non-idempotent-write reason as `proposal.*` below.
 
 ## Boundaries and invariants
 
-- **Gate A6 (wire-type sharing).** Request DTOs in `plugin_requests.rs`,
-  `storage_requests.rs`, and inline in `agent.rs`/`session.rs`/`lua.rs`
-  derive both `Serialize` and `Deserialize` so the client's struct and the
-  daemon handler's struct are the same type; a field rename here changes
-  what the daemon accepts. `client/tests.rs` pins several of these
-  round-trips.
+- **Gate A6 (wire-type sharing).** Request DTOs in
+  `crates/crucible-core/src/protocol/requests/` derive both `Serialize` and
+  `Deserialize` so the client's struct and the daemon handler's struct are
+  the same type; a field rename there changes what the daemon accepts.
+  `client/tests.rs` pins several of these round-trips.
 - **At-most-once writes.** `proposals.rs`'s decision writes
   (`proposal_accept`/`_paths`/`_files`, `proposal_reject`/`_paths`/`_files`,
   `proposal_dismiss`, `proposal_resolve`/`_file`) and `storage.rs`'s
@@ -317,8 +324,10 @@ non-idempotent-write reason as `proposal.*` below.
 A new `session.*`/`storage.*`/etc. RPC method's client-side wrapper lands in
 the matching submodule (`client/agent.rs` for agent/model RPCs,
 `client/storage.rs` for storage RPCs, and so on), paired with a request
-struct in that file or in `storage_requests.rs`/`plugin_requests.rs` if it
-also needs to be gate-A6-shared with the daemon's handler. The method itself
+struct in the matching file of `crates/crucible-core/src/protocol/requests/`
+(`agent.rs`, `session.rs`, `storage.rs`, `lua.rs`, `plugin.rs`, and so on),
+since every request and reply type is gate-A6-shared with the daemon's
+handler. The method itself
 goes through `typed_call`/`typed_call_with_retry`/`call` from `client/mod.rs`;
 a write with a non-idempotent side effect should follow `proposals.rs`'s
 pattern of a plain `typed_call`/`call` — never `typed_call_with_retry`/
@@ -354,7 +363,7 @@ never implements them.
   proves `DaemonNoteStore` link/backlink/search behavior against it,
   including that `search` answers each note once despite multiple block
   hits (`first_per_note` end-to-end).
-- `crates/crucible-daemon/src/rpc_client/client/storage_requests.rs` has a
+- `crates/crucible-core/src/protocol/requests/storage.rs` has a
   `first_per_note_tests` module: a pure function test with no server.
 - `crates/crucible-daemon/src/rpc_client/lifecycle.rs` has an inline
   `#[cfg(test)]` module covering socket-path detection and log rotation
@@ -372,11 +381,11 @@ either; they are exercised, if at all, outside this page's file set.
 
 ## Findings
 
-- `crates/crucible-daemon/src/rpc_client/client/lua.rs` defines
-  `LuaRegisterCommandsRequest` and exports it from `mod.rs`, but no
-  `impl DaemonClient` method in `lua.rs` builds or sends it — the type is
-  unused from this client's own methods (it may be built ad hoc by a caller
-  elsewhere; not confirmed in this file set).
+- `crates/crucible-core/src/protocol/requests/lua.rs` defines
+  `LuaRegisterCommandsRequest`, but no `impl DaemonClient` method in
+  `crates/crucible-daemon/src/rpc_client/client/lua.rs` builds or sends it —
+  the type is unused from this client's own methods (it may be built ad hoc
+  by a caller elsewhere; not confirmed in this file set).
 - `crates/crucible-daemon/src/rpc_client/client/notifications.rs`'s
   `notification_list` always sends `kilns: Vec::new()` even though
   `NotificationListRequest` has a `kilns` field; there is no public method

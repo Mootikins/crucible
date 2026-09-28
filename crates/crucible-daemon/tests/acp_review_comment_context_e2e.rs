@@ -32,8 +32,8 @@ use std::time::Duration;
 
 use crucible_core::config::{AcpConfig, BackendType};
 use crucible_core::diff::{CommentRef, DiffsetSource};
+use crucible_core::protocol::requests::{DiffCommentRequest, SessionCreateParams};
 use crucible_core::session::{CommentSide, PhysicalRoot, SessionAgent};
-use crucible_daemon::rpc_client::{DiffCommentRequest, SessionCreateParams};
 use crucible_daemon::test_support::{git, init_repo, kiln_name};
 use crucible_daemon::{BindWithPluginConfigParams, DaemonClient, Server, SessionEvent};
 use tempfile::TempDir;

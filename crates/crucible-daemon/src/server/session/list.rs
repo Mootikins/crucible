@@ -1,8 +1,8 @@
 use super::super::*;
 use super::scope::caller_kiln_scope;
-use crate::rpc_client::SessionIdRequest;
 use crate::rpc_helpers::typed_params;
 use crate::{optional_param, require_param};
+use crucible_core::protocol::requests::SessionIdRequest;
 
 use crucible_core::session::{SessionState, SessionSummary, SessionType};
 

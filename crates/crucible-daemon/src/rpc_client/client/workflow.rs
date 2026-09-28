@@ -6,26 +6,11 @@
 //! `workflow.gate_reached`, etc.
 
 use anyhow::Result;
+use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 
-use super::session::SessionIdRequest;
 use super::DaemonClient;
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowStartRequest {
-    pub session_id: String,
-    /// Full markdown source of the workflow note (frontmatter + body).
-    pub source: String,
-    /// Optional path used for title fallback / error messages.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowApproveGateRequest {
-    pub session_id: String,
-    pub gate_id: String,
-}
+use crucible_core::protocol::requests::SessionIdRequest;
 
 impl DaemonClient {
     pub async fn workflow_start(&self, req: WorkflowStartRequest) -> Result<serde_json::Value> {

@@ -1,6 +1,7 @@
 use super::super::*;
 use crate::rpc::RpcContext;
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::SessionCreateRequest;
 
 use super::spawn_setup_task;
 use crate::kiln_registry::refuse_forbidden_scope;
@@ -34,7 +35,7 @@ pub(crate) async fn handle_session_create(req: Request, ctx: &RpcContext) -> Res
     //
     // Unknown fields are tolerated on purpose (no `deny_unknown_fields`): a
     // newer client must be able to talk to an older daemon.
-    let params = match typed_params::<crate::rpc_client::SessionCreateRequest>(&req) {
+    let params = match typed_params::<SessionCreateRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -77,7 +78,7 @@ impl RpcContext {
     /// deadlock on the plugin-loader mutex.
     pub(crate) async fn create_session_resolved(
         &self,
-        params: &crate::rpc_client::SessionCreateRequest,
+        params: &SessionCreateRequest,
     ) -> Result<Session, SessionCreateError> {
         // Contradictory agent selection, refused rather than resolved by
         // precedence: on an internal session the two fields mean the same
@@ -366,7 +367,7 @@ impl RpcContext {
     /// and the source roots come off `self` instead of seven positional arguments.
     fn resolve_create_agent(
         &self,
-        params: &crate::rpc_client::SessionCreateRequest,
+        params: &SessionCreateRequest,
         agent_type: &str,
         workspace: &std::path::Path,
         kilns: &[PathBuf],
@@ -484,7 +485,7 @@ fn name_list(names: impl Iterator<Item = String>) -> String {
 /// endpoint/key; an explicit provider override must not silently borrow the
 /// default provider's endpoint.
 fn build_default_internal_agent(
-    params: &crate::rpc_client::SessionCreateRequest,
+    params: &SessionCreateRequest,
     llm_config: &Option<LlmConfig>,
     mcp_config: Option<&McpConfig>,
 ) -> Result<crucible_core::session::SessionAgent, String> {
@@ -532,8 +533,8 @@ fn build_default_internal_agent(
 #[cfg(test)]
 mod tests {
     use super::build_default_internal_agent;
-    use crate::rpc_client::SessionCreateRequest;
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
+    use crucible_core::protocol::requests::SessionCreateRequest;
 
     /// A config whose default provider is `local`, an Ollama at a custom
     /// endpoint with its own model.

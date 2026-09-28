@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_daemon::{rpc_client::SessionCreateParams, DaemonClient};
+use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_daemon::DaemonClient;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 

@@ -5,6 +5,9 @@
 //! storage in a layer that must not have any and buried a machine-written
 //! answer inside a hand-written file.
 
+use crucible_core::protocol::requests::{
+    EmbeddingCatalog, EmbeddingModelRow, EmbeddingModelsRequest, LlmRegisterProviderRequest,
+};
 use std::sync::Arc;
 
 #[cfg(feature = "fastembed")]
@@ -31,7 +34,7 @@ pub(crate) async fn handle_llm_register_provider(
     state: &Arc<crate::llm_state::LlmStateStore>,
     live: &crate::llm_state::LiveLlmConfig,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::LlmRegisterProviderRequest>(&req) {
+    let params = match typed_params::<LlmRegisterProviderRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -124,7 +127,7 @@ pub(crate) async fn handle_embedding_models(
     req: Request,
     effective_config: Option<&serde_json::Value>,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::EmbeddingModelsRequest>(&req) {
+    let params = match typed_params::<EmbeddingModelsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -147,7 +150,7 @@ fn configured_provider(effective_config: Option<&serde_json::Value>) -> Embeddin
 #[cfg(feature = "fastembed")]
 async fn embedding_catalog(
     req: Request,
-    params: crate::rpc_client::EmbeddingModelsRequest,
+    params: EmbeddingModelsRequest,
     effective_config: Option<&serde_json::Value>,
 ) -> Response {
     use crate::llm::embeddings::catalog;
@@ -213,9 +216,9 @@ async fn embedding_catalog(
     {
         rows.push(entry);
     }
-    let models: Vec<crate::rpc_client::EmbeddingModelRow> = rows
+    let models: Vec<EmbeddingModelRow> = rows
         .into_iter()
-        .map(|entry| crate::rpc_client::EmbeddingModelRow {
+        .map(|entry| EmbeddingModelRow {
             name: entry.canonical_name.clone(),
             dimensions: entry.dimensions,
             parameter_millions: entry.parameter_millions,
@@ -229,7 +232,7 @@ async fn embedding_catalog(
 
     Response::success(
         req.id,
-        serde_json::json!(crate::rpc_client::EmbeddingCatalog {
+        serde_json::json!(EmbeddingCatalog {
             models,
             configured,
             cache_dir: Some(cache_dir.display().to_string()),
@@ -247,13 +250,10 @@ async fn embedding_catalog(
 #[cfg(not(feature = "fastembed"))]
 async fn embedding_catalog(
     req: Request,
-    _params: crate::rpc_client::EmbeddingModelsRequest,
+    _params: EmbeddingModelsRequest,
     _effective_config: Option<&serde_json::Value>,
 ) -> Response {
-    Response::success(
-        req.id,
-        serde_json::json!(crate::rpc_client::EmbeddingCatalog::default()),
-    )
+    Response::success(req.id, serde_json::json!(EmbeddingCatalog::default()))
 }
 
 #[cfg(test)]

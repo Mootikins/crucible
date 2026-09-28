@@ -1,6 +1,7 @@
 //! Session RPC tests: create/list/subscribe/configure/send/cancel.
 
 use crucible_core::config::BackendType;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;
@@ -15,7 +16,7 @@ async fn test_session_create_and_list() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -70,7 +71,7 @@ async fn test_session_subscribe_and_unsubscribe() {
     let client = std::sync::Arc::new(client);
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -114,7 +115,7 @@ async fn test_session_configure_agent() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -172,7 +173,7 @@ async fn test_session_send_message_returns_message_id() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -225,7 +226,7 @@ async fn test_send_message_with_is_interactive_false_accepted() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -273,7 +274,7 @@ async fn test_send_message_with_permission_override_accepted() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -326,7 +327,7 @@ async fn test_session_cancel() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -365,7 +366,7 @@ async fn session_clear_is_the_users_clear() {
         .await
         .unwrap();
     let created = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".into(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,

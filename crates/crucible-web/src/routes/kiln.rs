@@ -654,7 +654,7 @@ mod tests {
     use crate::test_support::{request_json_in_kilns, shape, shape_in_kilns, survives};
     use crucible_core::config::ProjectFileAccess;
     use crucible_core::note_edit::disk_hash;
-    use crucible_daemon::rpc_client::NoteListRow;
+    use crucible_core::protocol::requests::NoteListRow;
     use tempfile::TempDir;
 
     // =====================================================================

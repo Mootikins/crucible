@@ -18,21 +18,22 @@ use crucible_core::session::{
 };
 
 use crate::diff::branch;
-use crate::diff::comments::{quoted_lines, ListedComment};
+use crate::diff::comments::quoted_lines;
 use crate::proposals::{ProposalError, ProposalStore};
 use crate::protocol::{Request, Response};
 use crate::review::{ReviewError, ReviewLedgers, ReviewResult};
-use crate::rpc_client::{
-    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
-    DiffDeleteCommentReply, DiffDeleteCommentRequest, DiffResolveCommentReply,
-    DiffResolveCommentRequest,
-};
 use crate::rpc_helpers::typed_params;
 use crate::server::diff::{
     answer, branch_file_text, branch_sides, check_contained, check_path, internal_error,
     params_error, proposal_file_root, proposal_refusal, Admission, BranchSides, Refusal,
 };
 use crate::server::session::review::emit_review_changed;
+use crucible_core::protocol::requests::ListedComment;
+use crucible_core::protocol::requests::{
+    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
+    DiffDeleteCommentReply, DiffDeleteCommentRequest, DiffResolveCommentReply,
+    DiffResolveCommentRequest,
+};
 
 /// A review error as an RPC refusal.
 ///

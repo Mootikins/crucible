@@ -267,7 +267,10 @@ Types defined inside `crates/crucible-daemon/src/diff/`:
   rename). Sits beside `<data_home>/review-snapshots`
   (`root_beside_snapshots`), not inside it. `list_projected` applies
   `crucible_core::diff::project` to every comment before returning it.
-- **`ListedComment`** (`comment`, `outdated`) — a comment after projection.
+- **`ListedComment`** (`comment`, `outdated`,
+  `crates/crucible-core/src/protocol/requests/storage.rs`) — a comment
+  after projection. It moved from `crates/crucible-daemon/src/diff/comments.rs`
+  so a client can name it without the daemon crate.
 - **`CommentBlock`** — the resolved inputs of one message's comment
   injection, from `crates/crucible-daemon/src/diff/context.rs`. Its
   `message()` function builds an `AttachedContext { kind, source:

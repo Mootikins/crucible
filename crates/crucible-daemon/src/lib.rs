@@ -128,15 +128,8 @@ pub use observe::{
 pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use recording::{RecordedEvent, RecordingFooter, RecordingHeader};
-pub use rpc_client::{
-    first_per_note, DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest,
-    LuaDiscoverPluginsResponse, LuaGenerateStubsRequest, LuaGenerateStubsResponse,
-    LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
-    LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
-    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionEvent, VectorHit,
-    VersionCheck,
-};
 pub use rpc_client::{rpc_error_message, ChatResultExt, DaemonNoteStore, DaemonStorageClient};
+pub use rpc_client::{DaemonClient, SessionEvent};
 pub use scm::ScmCloneResponse;
 // The wire shapes of the `fs.*` RPCs. The web file-tree routes forward them
 // verbatim, so they read the type rather than keeping a second copy of it.

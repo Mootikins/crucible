@@ -14,34 +14,7 @@ mod error_ext;
 pub mod lifecycle;
 mod storage;
 
-pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
-pub use client::NoteListRow;
-pub use client::{
-    decode_status_items, first_per_note, AgentsListCardsRequest, DaemonCapabilities, DaemonClient,
-    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
-    DiffDeleteCommentReply, DiffDeleteCommentRequest, DiffFileRequest, DiffGetRequest,
-    DiffResolveCommentReply, DiffResolveCommentRequest, EmbeddingCatalog, EmbeddingModelRow,
-    EmbeddingModelsRequest, FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest,
-    KilnOpenRequest, KilnRegisterRequest, ListAllModelsRequest, ListProvidersRequest,
-    LlmRegisterProviderRequest, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
-    LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
-    LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
-    LuaRegisterCommandsRequest, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
-    LuaShutdownSessionRequest, LuaShutdownSessionResponse, McpStartRequest, NameRequest,
-    NoteRenameRequest, NotificationDismissRequest, NotificationListRequest, PathRequest,
-    PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
-    PluginRemoveRequest, PluginRunCommandRequest, PluginSpecRow, PluginTestFailure,
-    PluginTestLoadFailure, ProcessFileRequest, ProposalAcceptRequest, ProposalIdRequest,
-    ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest, ScmCloneRequest,
-    SearchVectorsRequest, SessionAgentSpec, SessionConfigureAgentRequest, SessionCreateParams,
-    SessionCreateRequest, SessionDismissNotificationRequest, SessionEvent,
-    SessionEventsAfterRequest, SessionExportToFileRequest, SessionForkRequest,
-    SessionHistoryRequest, SessionIdRequest, SessionInjectContextRequest,
-    SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
-    SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionSwitchModelRequest,
-    SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
-    SurfaceRequest, VectorHit, VersionCheck,
-};
+pub use client::{decode_status_items, DaemonClient, SessionEvent};
 pub use error_ext::{rpc_error_message, ChatResultExt};
 // `DaemonClient::fts_search` returns this type, so callers of the client
 // must name it without a path into the storage module.

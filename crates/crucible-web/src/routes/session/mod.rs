@@ -12,6 +12,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use crucible_core::protocol::requests::{SessionAgentSpec, SessionCreateParams};
 use crucible_core::session::SessionSearchResponse;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -467,7 +468,7 @@ async fn create_session(
     // the resolved model in `agent_model`. The web no longer keeps its own copy
     // of "what is the default agent". Kilns are forwarded verbatim, empty set
     // included — see `CreateSessionRequest::kilns`.
-    let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
+    let agent_spec = SessionAgentSpec {
         agent_name: req.agent_name.clone(),
         agent_card: req.agent_card.clone(),
         provider: req.provider.clone(),
@@ -477,7 +478,7 @@ async fn create_session(
         ..Default::default()
     };
 
-    let params = crucible_daemon::rpc_client::SessionCreateParams {
+    let params = SessionCreateParams {
         session_type: req.session_type.clone(),
         kilns: req.kilns.clone(),
         workspace: req.workspace.clone(),

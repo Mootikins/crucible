@@ -3,12 +3,16 @@
 // dev-depends on itself with that feature, so they compile in every test
 // build without CI feature flags. Do NOT fork a second copy: the two copies
 // this replaced drifted (different resume_from_storage shapes).
-#[cfg(any(test, feature = "test-utils"))]
 use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 #[cfg(any(test, feature = "test-utils"))]
 use axum::Router;
 #[cfg(any(test, feature = "test-utils"))]
 use crucible_core::config::CliAppConfig;
+#[cfg(any(test, feature = "test-utils"))]
+use crucible_core::protocol::requests::{
+    DiffCommentReply, DiffCommentRequest, DiffCommentsRequest, DiffDeleteCommentRequest,
+    DiffFileRequest, DiffGetRequest, DiffResolveCommentRequest,
+};
 #[cfg(any(test, feature = "test-utils"))]
 use crucible_daemon::DaemonClient;
 #[cfg(any(test, feature = "test-utils"))]
@@ -465,9 +469,7 @@ pub fn mock_diffset_for(
 ///
 /// The base text is the old path, or else the root. The current text is the
 /// path. Thus a route test sees the paths that the route sent.
-pub fn mock_diff_file_text_for(
-    request: &crucible_daemon::rpc_client::DiffFileRequest,
-) -> crucible_core::diff::DiffFileText {
+pub fn mock_diff_file_text_for(request: &DiffFileRequest) -> crucible_core::diff::DiffFileText {
     crucible_core::diff::DiffFileText {
         base_text: request
             .from
@@ -482,9 +484,7 @@ pub fn mock_diff_file_text_for(
 ///
 /// The mock echoes the request into the comment, so a route test sees the
 /// source, the side, the range and the author that the route sent.
-pub fn mock_diff_comment_for(
-    request: &crucible_daemon::rpc_client::DiffCommentRequest,
-) -> crucible_daemon::rpc_client::DiffCommentReply {
+pub fn mock_diff_comment_for(request: &DiffCommentRequest) -> DiffCommentReply {
     use crucible_core::session::{Comment, CommentAnchor, CommentAuthor, LineRange, PhysicalRoot};
     let diffset = request.source.id();
     let comment = Comment::new(
@@ -504,7 +504,7 @@ pub fn mock_diff_comment_for(
         request.body.clone(),
         request.author.unwrap_or(CommentAuthor::Human),
     );
-    crucible_daemon::rpc_client::DiffCommentReply { diffset, comment }
+    DiffCommentReply { diffset, comment }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -553,7 +553,7 @@ pub fn mock_proposal_for(
 /// decision on some of the files.
 fn mock_proposal_response(method: &str, params: &Value) -> Value {
     use crucible_core::proposal::ProposalState;
-    use crucible_daemon::rpc_client::{
+    use crucible_core::protocol::requests::{
         ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
         ProposalResolveRequest,
     };
@@ -1040,22 +1040,22 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }
         "project.list" => as_rpc_result(vec![mock_project()]),
         "diff.get" => {
-            let request: crucible_daemon::rpc_client::DiffGetRequest =
+            let request: DiffGetRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.get params");
             as_rpc_result(mock_diffset_for(request.source))
         }
         "diff.file" => {
-            let request: crucible_daemon::rpc_client::DiffFileRequest =
+            let request: DiffFileRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.file params");
             as_rpc_result(mock_diff_file_text_for(&request))
         }
         "diff.comment" => {
-            let request: crucible_daemon::rpc_client::DiffCommentRequest =
+            let request: DiffCommentRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.comment params");
             as_rpc_result(mock_diff_comment_for(&request))
         }
         "diff.resolve_comment" => {
-            let request: crucible_daemon::rpc_client::DiffResolveCommentRequest =
+            let request: DiffResolveCommentRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.resolve_comment params");
             json!({
                 "diffset": request.source.id(),
@@ -1064,7 +1064,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             })
         }
         "diff.delete_comment" => {
-            let request: crucible_daemon::rpc_client::DiffDeleteCommentRequest =
+            let request: DiffDeleteCommentRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.delete_comment params");
             json!({
                 "diffset": request.source.id(),
@@ -1075,7 +1075,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // One comment whose quoted text is gone: the `outdated` flag reaches
         // the browser only if the route keeps it.
         "diff.comments" => {
-            let request: crucible_daemon::rpc_client::DiffCommentsRequest =
+            let request: DiffCommentsRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.comments params");
             json!({
                 "diffset": request.source.id(),

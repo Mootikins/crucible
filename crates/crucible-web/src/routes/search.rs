@@ -1,4 +1,5 @@
 use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
+use crucible_core::protocol::requests::VectorHit;
 // The daemon owns the grep request shape. The copy that used to live in
 // this file had the same six fields and its own `default_grep_limit`
 // hardcoded at 100, while the daemon's reads `GREP_DEFAULT_LIMIT` — so a
@@ -11,8 +12,8 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use crucible_core::protocol::requests::GrepSearchRequest;
 use crucible_core::types::database::BlockRef;
-use crucible_daemon::rpc_client::GrepSearchRequest;
 use crucible_daemon::GrepSearchResponse;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -874,7 +875,7 @@ async fn search_semantic(
 
 /// Keep the first hit of each note. Hits arrive best first, so the first
 /// block of a note is its best block.
-fn one_row_per_note(hits: Vec<crucible_daemon::VectorHit>) -> Vec<crucible_daemon::VectorHit> {
+fn one_row_per_note(hits: Vec<VectorHit>) -> Vec<VectorHit> {
     let mut seen = std::collections::HashSet::new();
     hits.into_iter()
         .filter(|hit| seen.insert(hit.document_id.clone()))
@@ -936,9 +937,9 @@ mod tests {
         arb_safe_path, arb_traversal_path, request_json, shape, shape_in_kilns, survives,
         MOCK_DAEMON_KILN_PATH,
     };
-    use crucible_daemon::rpc_client::NoteListRow;
+    use crucible_core::protocol::requests::NoteListRow;
+    use crucible_core::protocol::requests::VectorHit;
     use crucible_daemon::tools::autolink::LinkSuggestion;
-    use crucible_daemon::VectorHit;
     use proptest::prelude::*;
     use tempfile::TempDir;
 

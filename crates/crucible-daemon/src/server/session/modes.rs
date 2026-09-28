@@ -1,6 +1,6 @@
 use super::super::*;
-use crate::rpc_client::SessionIdRequest;
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::SessionIdRequest;
 
 /// The modes a session can be in, and which one it is in now.
 ///

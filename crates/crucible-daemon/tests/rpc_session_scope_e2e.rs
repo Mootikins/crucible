@@ -4,6 +4,7 @@
 mod common;
 
 use common::InProcessDaemonBuilder;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_daemon::DaemonClient;
 
 /// The three registered kilns this suite needs: the one every session is
@@ -39,7 +40,7 @@ fn kiln_name(name: &str) -> crucible_core::config::KilnName {
 
 async fn create_session(client: &DaemonClient) -> String {
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -143,7 +144,7 @@ async fn set_workspace_is_refused_and_the_session_keeps_its_workspace() {
         .await
         .expect("Failed to connect");
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: Some(created_in.path().to_path_buf()),

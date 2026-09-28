@@ -34,11 +34,11 @@ use crate::protocol::{RpcError, SessionEventMessage, INTERNAL_ERROR, INVALID_PAR
 use crate::rpc::context::RpcContext;
 use crate::rpc::dispatch::RpcResult;
 use crate::rpc::params::parse_params;
-use crate::rpc_client::SessionIdRequest;
 use crate::workflow_handlers::DaemonInlineHandler;
 use crate::workflow_registry::{ExecutionHandle, WorkflowStatusSnapshot};
 use crucible_core::config::components::permissions::PermissionEngine;
 use crucible_core::parser::types::{extract_yaml_frontmatter, ParsedNote, WorkflowDoc};
+use crucible_core::protocol::requests::SessionIdRequest;
 use crucible_core::protocol::Request;
 use crucible_core::workflow::{
     DefaultHandler, DispatchTable, GateHandler, WorkflowEvent, WorkflowExecution, WorkflowSnapshot,

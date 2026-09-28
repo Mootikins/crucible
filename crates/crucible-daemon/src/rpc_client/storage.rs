@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::parser::{BlockHash, ParsedNote};
+use crucible_core::protocol::requests::first_per_note;
 use crucible_core::storage::{
     GraphLink, InboundLink, LinkOccurrence, NoteRecord, NoteStore,
     SearchResult as StorageSearchResult, StorageError, StorageResult, StorageResultExt,
@@ -415,7 +416,7 @@ impl NoteStore for DaemonNoteStore {
         // The reply is one row per block. This store answers in notes, so a
         // note with several blocks near the query is one hit, at its first
         // row's rank.
-        let results = crate::rpc_client::first_per_note(results);
+        let results = first_per_note(results);
         let mut hits = Vec::with_capacity(results.len());
         for hit in results {
             if let Ok(Some(note)) = self.get(&hit.document_id, &hydration_authority).await {

@@ -9,6 +9,7 @@
 //! `crucible_core::enrichment::eval`, and retrieval is the daemon's existing
 //! search surface. This file only orchestrates and renders.
 
+use crucible_core::protocol::requests::{first_per_note, VectorHit};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -20,7 +21,6 @@ use crucible_core::enrichment::eval::{
     hit_rate_at_k, mrr, normalize_stem, rank_of, GoldenQuery, GoldenSet, NamedGoldenSet,
 };
 use crucible_core::parser::CrucibleParser;
-use crucible_daemon::VectorHit;
 
 /// One scored query, rendered as a row.
 #[derive(Clone, serde::Serialize)]
@@ -235,7 +235,7 @@ const OVER_FETCH: usize = 4;
 /// answer one rank, not several. `rank_of` matches by stem, so the corpus
 /// layout does not have to match the fixture.
 fn rank_among_notes(hits: Vec<VectorHit>, expect_note: &str) -> Option<usize> {
-    let titles: Vec<String> = crucible_daemon::first_per_note(hits)
+    let titles: Vec<String> = first_per_note(hits)
         .into_iter()
         .map(|hit| hit.document_id)
         .collect();
@@ -652,8 +652,8 @@ mod tests {
         assert!((recall10 - 0.5).abs() < 1e-9);
     }
 
-    fn block_row(document_id: &str, span_start: usize) -> crucible_daemon::VectorHit {
-        crucible_daemon::VectorHit {
+    fn block_row(document_id: &str, span_start: usize) -> VectorHit {
+        VectorHit {
             document_id: document_id.to_string(),
             score: 0.9,
             block: Some(crucible_core::types::database::BlockRef {

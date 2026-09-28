@@ -4,6 +4,8 @@
 //! Supports both request/response RPC calls and asynchronous event streaming.
 
 use anyhow::{Context, Result};
+use crucible_core::protocol::requests::SurfaceRequest;
+use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 use std::collections::HashMap;
 use std::os::unix::net::SocketAddr;
@@ -143,12 +145,9 @@ impl Drop for SpawnedDaemon {
 pub mod agent;
 pub mod lua;
 pub mod notifications;
-pub mod plugin_requests;
 pub mod proposals;
 pub mod session;
 pub mod storage;
-pub use storage::NoteListRow;
-pub mod storage_requests;
 pub mod subscription;
 pub mod types;
 pub mod workflow;
@@ -157,51 +156,15 @@ pub mod workflow;
 // still resolve after the split. Only types the parent `rpc_client` module
 // re-exports externally need to land here; the rest remain reachable at
 // `client::<submodule>::<Type>` if needed internally.
-pub use lua::{
-    LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse, LuaGenerateStubsRequest,
-    LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
-    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterCommandsRequest,
-    LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
-    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure,
-};
 // `SessionCreateRequest` is exported (it was `#[cfg(test)]`-only, for the
 // wire-format tests below) because the daemon's own `handle_session_create`
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
-pub use agent::{
-    EmbeddingCatalog, EmbeddingModelRow, EmbeddingModelsRequest, ListAllModelsRequest,
-    ListProvidersRequest, SessionConfigureAgentRequest, SessionSwitchModelRequest,
-};
-pub use notifications::{NotificationDismissRequest, NotificationListRequest};
-pub use plugin_requests::{
-    PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
-    PluginRemoveRequest, PluginRunCommandRequest, PluginSpecRow, SurfaceRequest,
-};
-pub use proposals::{
-    ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
-    ProposalResolveRequest,
-};
-pub use session::{
-    decode_status_items, SessionAgentSpec, SessionCreateParams, SessionCreateRequest,
-    SessionDismissNotificationRequest, SessionEventsAfterRequest, SessionExportToFileRequest,
-    SessionForkRequest, SessionHistoryRequest, SessionIdRequest, SessionInjectContextRequest,
-    SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
-    SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionTestInteractionRequest,
-};
-pub use storage_requests::{
-    first_per_note, DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
-    DiffDeleteCommentReply, DiffDeleteCommentRequest, DiffFileRequest, DiffGetRequest,
-    DiffResolveCommentReply, DiffResolveCommentRequest, FsListDirRequest, FsMoveRequest,
-    FsPathRequest, GrepSearchRequest, KilnOpenRequest, KilnRegisterRequest,
-    LlmRegisterProviderRequest, McpStartRequest, NoteRenameRequest, ProcessFileRequest,
-    ScmCloneRequest, SearchVectorsRequest, VectorHit,
-};
-pub use types::{
-    AgentsListCardsRequest, DaemonCapabilities, NameRequest, PathRequest, SessionEvent,
-    SkillsGetRequest, SkillsListRequest, SkillsSearchRequest, VersionCheck,
-};
+pub use session::decode_status_items;
+pub use types::SessionEvent;
 
-use types::{extract_string_array, EmptyParams};
+use crucible_core::protocol::requests::EmptyParams;
+use types::extract_string_array;
 
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
 
@@ -992,7 +955,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::PluginPublications,
-                plugin_requests::PluginPublicationsRequest {
+                PluginPublicationsRequest {
                     key: key.map(str::to_string),
                 },
             )
@@ -1010,10 +973,7 @@ impl DaemonClient {
     /// first. The registry's row cap is what keeps the response bounded.
     pub async fn surface_list(&self) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
-            .typed_call(
-                RpcMethod::SurfaceList,
-                crate::rpc_client::SurfaceRequest::default(),
-            )
+            .typed_call(RpcMethod::SurfaceList, SurfaceRequest::default())
             .await?;
         Ok(result
             .get("surfaces")
@@ -1026,7 +986,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::SurfaceGet,
-                crate::rpc_client::SurfaceRequest {
+                SurfaceRequest {
                     plugin: None,
                     name: Some(name.to_string()),
                 },
@@ -1048,7 +1008,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::PluginOptions,
-                plugin_requests::PluginOptionsRequest {
+                PluginOptionsRequest {
                     ui: Some(ui.to_string()),
                     plugin: None,
                 },
@@ -1070,7 +1030,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::PluginOptionGet,
-                plugin_requests::PluginOptionCallRequest {
+                PluginOptionCallRequest {
                     plugin: plugin.to_string(),
                     path: path.to_vec(),
                     ui: Some(ui.to_string()),
@@ -1095,7 +1055,7 @@ impl DaemonClient {
         let _: serde_json::Value = self
             .typed_call(
                 RpcMethod::PluginOptionSet,
-                plugin_requests::PluginOptionCallRequest {
+                PluginOptionCallRequest {
                     plugin: plugin.to_string(),
                     path: path.to_vec(),
                     ui: Some(ui.to_string()),
@@ -1116,7 +1076,7 @@ impl DaemonClient {
         let _: serde_json::Value = self
             .typed_call(
                 RpcMethod::PluginOptionExecute,
-                plugin_requests::PluginOptionCallRequest {
+                PluginOptionCallRequest {
                     plugin: plugin.to_string(),
                     path: path.to_vec(),
                     ui: Some(ui.to_string()),
@@ -1160,7 +1120,7 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::PluginRunCommand,
-            plugin_requests::PluginRunCommandRequest {
+            PluginRunCommandRequest {
                 name: name.to_string(),
                 args,
                 session_id: session.map(str::to_string),
@@ -1179,7 +1139,7 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::PluginInstall,
-            plugin_requests::PluginInstallRequest {
+            PluginInstallRequest {
                 url: url.to_string(),
                 branch: branch.map(str::to_string),
                 pin: pin.map(str::to_string),
@@ -1193,7 +1153,7 @@ impl DaemonClient {
     pub async fn plugin_remove(&self, name: &str, purge: bool) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::PluginRemove,
-            plugin_requests::PluginRemoveRequest {
+            PluginRemoveRequest {
                 name: name.to_string(),
                 purge,
             },

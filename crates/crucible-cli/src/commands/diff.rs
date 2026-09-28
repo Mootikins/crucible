@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use crucible_core::diff::{quickfix_line, DiffFileText, Diffset, DiffsetSource};
+use crucible_core::protocol::requests::ListedComment;
 use crucible_core::session::{PhysicalRoot, SessionId};
-use crucible_daemon::diff::comments::ListedComment;
 use crucible_daemon::DaemonClient;
 use crucible_oil::node::{col, styled, text, Node};
 use crucible_oil::render::{render_to_plain_text, render_to_string};

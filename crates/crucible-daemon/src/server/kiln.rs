@@ -8,6 +8,10 @@ use super::*;
 /// in `req.params` is now ignored.
 use crate::kiln_manager::request_scope;
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{
+    KilnOpenRequest, KilnRegisterRequest, NameRequest, ProcessFileRequest, SearchVectorsRequest,
+    VectorHit,
+};
 use crucible_core::storage::Scope;
 
 pub(crate) async fn handle_kiln_open(
@@ -16,7 +20,7 @@ pub(crate) async fn handle_kiln_open(
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<crate::rpc_client::KilnOpenRequest>(&req) {
+    let params = match typed_params::<KilnOpenRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -225,7 +229,7 @@ pub(crate) async fn handle_kiln_register(
 ) -> Response {
     use crucible_core::config::{KilnName, RegistrationOrigin};
 
-    let params = match typed_params::<crate::rpc_client::KilnRegisterRequest>(&req) {
+    let params = match typed_params::<KilnRegisterRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -454,7 +458,7 @@ pub(crate) async fn handle_kiln_forget(
 ) -> Response {
     use crucible_core::config::{KilnName, RegistrationOrigin};
 
-    let params = match typed_params::<crate::rpc_client::NameRequest>(&req) {
+    let params = match typed_params::<NameRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -544,7 +548,7 @@ pub(crate) async fn handle_search_vectors(
     // alone, because the repository the handle opens is bound to the kiln
     // path and scopes every note read to it. Deserializing the field rather
     // than dropping it keeps the client's struct honest about what it sends.
-    let params = match typed_params::<crate::rpc_client::SearchVectorsRequest>(&req) {
+    let params = match typed_params::<SearchVectorsRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -596,9 +600,9 @@ pub(crate) async fn handle_search_vectors(
             internal_error(req.id, anyhow::anyhow!(failures.join("; ")))
         }
         Ok((results, _)) => {
-            let hits: Vec<crate::rpc_client::VectorHit> = results
+            let hits: Vec<VectorHit> = results
                 .into_iter()
-                .map(|hit| crate::rpc_client::VectorHit {
+                .map(|hit| VectorHit {
                     document_id: hit.document_id.0,
                     score: hit.score,
                     block: hit.block,
@@ -996,7 +1000,7 @@ pub(crate) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Res
 // =============================================================================
 
 pub(crate) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
-    let params = match typed_params::<crate::rpc_client::ProcessFileRequest>(&req) {
+    let params = match typed_params::<ProcessFileRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

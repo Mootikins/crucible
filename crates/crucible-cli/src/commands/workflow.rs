@@ -12,9 +12,10 @@ use clap::Subcommand;
 use crucible_core::parser::types::{
     extract_yaml_frontmatter, CheckboxStatus, ParsedNote, WorkflowDoc, WorkflowStep,
 };
+use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::{WorkflowApproveGateRequest, WorkflowStartRequest};
 use crucible_core::text::truncate_chars;
 use crucible_core::EXCLUDED_DIRS;
-use crucible_daemon::rpc_client::{WorkflowApproveGateRequest, WorkflowStartRequest};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -388,7 +389,7 @@ async fn run_start(config: CliAppConfig, target: &str, _session: Option<&str>) -
     // follow-up — keeps this slice small and the invariant simple
     // (one active workflow per session).
     let create_resp = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "workflow".to_string(),
             kilns: config.session_kiln_name().into_iter().collect(),
             workspace: None,

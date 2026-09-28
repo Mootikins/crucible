@@ -4,9 +4,9 @@
 
 use super::*;
 use crate::notifications::NotificationHub;
-use crate::rpc_client::{NotificationDismissRequest, NotificationListRequest};
 use crate::rpc_helpers::typed_params;
 use crucible_core::config::KilnName;
+use crucible_core::protocol::requests::{NotificationDismissRequest, NotificationListRequest};
 
 pub(crate) async fn handle_notification_list(req: Request, hub: &Arc<NotificationHub>) -> Response {
     let params = match typed_params::<NotificationListRequest>(&req) {

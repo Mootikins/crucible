@@ -3,6 +3,7 @@
 //! Supports semantic search (via embeddings + vector search), full-text
 //! search (FTS5 over titles and bodies), or both combined.
 
+use crucible_core::protocol::requests::VectorHit;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -239,7 +240,7 @@ async fn run_semantic_search(
     kiln_path: &std::path::Path,
     query: &str,
     limit: usize,
-) -> Result<Vec<crucible_daemon::VectorHit>> {
+) -> Result<Vec<VectorHit>> {
     let query_embedding = client
         .embed_query(kiln_path, query)
         .await

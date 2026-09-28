@@ -40,7 +40,7 @@ at the same time. Each step leaves the tree working.
 | 3. One command registry (done) | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client (done) | a swapped pair of type names | S | none |
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
-| 6. Wire types live in core (parts 2 and 3 done) | a second home for wire types | M | steps 1 and 4 |
+| 6. Wire types live in core (parts 1, 2 and 3 done) | a second home for wire types | M | steps 1 and 4 |
 | 7. One test server | 18 test-server copies, a hand mock | M | step 6 helps |
 | 8. Local duplicates | about ten small copies | S each | none |
 | 9. Dead code (done) | unused modules and features | S | none |
@@ -225,21 +225,25 @@ the user's terminal.
 
 ## Step 6. Wire types live in core
 
-**Status: parts 2 and 3 done.** `RpcMethod`, `METHODS` and
+**Status: parts 1, 2 and 3 done.** The request and reply types moved to
+`crates/crucible-core/src/protocol/requests/`. `RpcMethod`, `METHODS` and
 `rpc_set_method` live in `crates/crucible-core/src/protocol/rpc/method.rs`.
 Every `DaemonClient` call takes an `RpcMethod`, so a misspelled method does
-not compile. A test that sends a raw request to the dispatcher still names
-the method as a string, because it tests the wire.
+not compile. The two DTO-only files that used to sit beside the client
+submodules are deleted; each client submodule now holds only `DaemonClient`
+methods and helpers. The server, the CLI, the web backend and the tests
+import each request and reply type from core, not from the daemon's client
+module. A test that sends a raw request to the dispatcher
+still names the method as a string, because it tests the wire.
 
-**Now.** 95 request types live in `crates/crucible-daemon/src/rpc_client/`,
-not in `crates/crucible-core/src/protocol/`. The server imports them from its
-own client module. The clients spell method names as strings in many places,
-next to `RpcMethod` in `crates/crucible-daemon/src/rpc/dispatch.rs`.
+**Now.** Part 4 remains: `crates/crucible-daemon/src/rpc/dispatch.rs` still
+reads raw JSON fields in several handlers, instead of taking a typed request
+for each one.
 
 **Change.**
-1. Move the request and reply types to `crates/crucible-core/src/protocol/`.
-2. Move `RpcMethod` next to them.
-3. Make each client call a method through `RpcMethod`, not a string.
+1. **(done)** Move the request and reply types to `crates/crucible-core/src/protocol/requests/`.
+2. **(done)** Move `RpcMethod` next to them.
+3. **(done)** Make each client call a method through `RpcMethod`, not a string.
 4. Give each dispatch handler a typed request. Today `dispatch.rs` still
    reads raw JSON fields in several handlers.
 

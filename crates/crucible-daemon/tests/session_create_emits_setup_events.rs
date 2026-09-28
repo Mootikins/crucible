@@ -15,7 +15,7 @@
 
 mod common;
 
-use crucible_daemon::rpc_client::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use std::collections::HashSet;
 use std::time::Duration;

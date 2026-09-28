@@ -26,6 +26,7 @@
 
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
+use crucible_core::protocol::requests::NoteRenameRequest;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -75,11 +76,10 @@ pub(crate) struct RenameOutcome {
 /// same reasoning as `fs.move`), both paths must be `.md`, and all path
 /// containment is delegated to the same validated move used by `fs.move`.
 pub(crate) async fn handle_note_rename(req: Request, km: &Arc<KilnManager>) -> Response {
-    let params =
-        match crate::rpc_helpers::typed_params::<crate::rpc_client::NoteRenameRequest>(&req) {
-            Ok(p) => p,
-            Err(response) => return *response,
-        };
+    let params = match crate::rpc_helpers::typed_params::<NoteRenameRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let from_rel = params.from_rel.as_str();
     let to_rel = params.to_rel.as_str();
 

@@ -13,6 +13,7 @@ mod common;
 use anyhow::Result;
 use common::{InProcessDaemon, InProcessDaemonBuilder};
 use crucible_core::config::BackendType;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::protocol::RpcMethod;
 use crucible_core::session::SessionAgent;
 use crucible_daemon::DaemonClient;
@@ -104,7 +105,7 @@ async fn test_complete_user_flow() {
 
     // ── Step 2: Create session ────────────────────────────────────────────
     let create_result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -331,7 +332,7 @@ async fn test_user_flow_session_list_reflects_state() {
 
     // Create session
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,

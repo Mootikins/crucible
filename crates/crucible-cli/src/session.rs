@@ -9,6 +9,7 @@
 //! 2. The config setting `chat.agent_preference`.
 //! 3. The internal agent.
 
+use crucible_core::protocol::requests::{SessionAgentSpec, SessionCreateParams};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -359,7 +360,7 @@ async fn create_new_daemon_session(
     params: &AgentInitParams,
     agent_type: &str,
 ) -> Result<String> {
-    let create = crucible_daemon::rpc_client::SessionCreateParams {
+    let create = SessionCreateParams {
         session_type: "chat".into(),
         kilns: config.session_kiln_name().into_iter().collect(),
         workspace: Some(workspace.to_path_buf()),
@@ -374,7 +375,7 @@ async fn create_new_daemon_session(
     let result = client
         .session_create_with_agent(
             create,
-            crucible_daemon::rpc_client::SessionAgentSpec {
+            SessionAgentSpec {
                 agent_name: (agent_type == "acp")
                     .then(|| {
                         params

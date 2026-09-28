@@ -5,6 +5,7 @@
 //! plugin's suite.
 
 use super::*;
+use crucible_core::protocol::requests::LuaRunPluginTestsRequest;
 use crucible_lua::manifest::PluginSource;
 use std::collections::HashMap;
 
@@ -51,12 +52,10 @@ pub(super) async fn activate_plugin_under_test(
 }
 
 pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
-    let params =
-        match crate::rpc_helpers::typed_params::<crate::rpc_client::LuaRunPluginTestsRequest>(&req)
-        {
-            Ok(p) => p,
-            Err(response) => return *response,
-        };
+    let params = match crate::rpc_helpers::typed_params::<LuaRunPluginTestsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let filter = params.filter;
     let test_path = PathBuf::from(&params.test_path);
 

@@ -14,8 +14,8 @@
 
 mod common;
 
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::protocol::RpcMethod;
-use crucible_daemon::rpc_client::SessionCreateParams;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use std::time::Duration;
 use tokio::sync::mpsc;

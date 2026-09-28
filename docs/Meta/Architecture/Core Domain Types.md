@@ -8,7 +8,7 @@ as_of: 582c5e6c1
 
 # Core Domain Types
 
-This page covers 115 files under `crates/crucible-core/src/`. It does not
+This page covers 126 files under `crates/crucible-core/src/`. It does not
 cover the config schema and permission engine ([[Core Config]]), the note
 parser (`parser/types/*`, [[Parser]]), or the SQLite link index, embeddings,
 and note-edit pipeline ([[Knowledge Storage and Retrieval]]). This page
@@ -156,6 +156,17 @@ behavior on top of them.
 | `crates/crucible-core/src/protocol/rpc/method.rs` | 391 | `RpcMethod` and `METHODS` from one `rpc_methods!` table, and `rpc_set_method`, the method that writes each `SessionKnob`. The server dispatches on `RpcMethod`, and each client calls a method through it, so a misspelled method does not compile. |
 | `crates/crucible-core/src/protocol/rpc/mod.rs` | 593 | `Request`/`Response`/`RpcError`, `SessionEventMessage` and its named constructors (`turn_finished` replaces the deleted `ended`); the `BUSY` error code. |
 | `crates/crucible-core/src/protocol/rpc/tests.rs` | 830 | Golden wire-shape regression tests for `SessionEventMessage`, including the migration of old recorded wire forms into their current shape. |
+| `crates/crucible-core/src/protocol/requests/mod.rs` | 27 | Declares the ten `requests` submodules and glob re-exports each one, so every type has one path: `crucible_core::protocol::requests::Name`. |
+| `crates/crucible-core/src/protocol/requests/agent.rs` | 186 | Request types for `session.*` agent/model/mode RPCs, `models.list`, `providers.list`, `embeddings.models`. |
+| `crates/crucible-core/src/protocol/requests/common.rs` | 117 | `DaemonCapabilities`/`CapabilityFlags`/`VersionCheck` and the small shared request shapes (`EmptyParams`, `PathRequest`, `NameRequest`, `SkillsListRequest`, `AgentsListCardsRequest`) more than one submodule needs. |
+| `crates/crucible-core/src/protocol/requests/lua.rs` | 126 | Request and reply types for `lua.*` plugin-lifecycle RPCs: init/shutdown session, discover, health check, generate stubs, run plugin tests. |
+| `crates/crucible-core/src/protocol/requests/notifications.rs` | 33 | Request and reply types for `notification.list`/`notification.dismiss`. |
+| `crates/crucible-core/src/protocol/requests/plugin.rs` | 99 | Request types for `plugin.*`/`project.*`/`surface.*` RPCs. |
+| `crates/crucible-core/src/protocol/requests/proposals.rs` | 58 | Request types for `proposal.*` RPCs: list, get, accept, reject, resolve. |
+| `crates/crucible-core/src/protocol/requests/session.rs` | 396 | Request and reply types for the bulk of `session.*` RPCs: create, list, get/status, history, pause/resume/end/delete/archive/clear, replay, send-message, interaction-respond, search, export. |
+| `crates/crucible-core/src/protocol/requests/storage.rs` | 510 | Request and reply types for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, `diff.*`, and `fs.*` RPCs; also `first_per_note`, `ListedComment`, and `GREP_DEFAULT_LIMIT`. |
+| `crates/crucible-core/src/protocol/requests/subscription.rs` | 8 | The `session.subscribe`/`session.unsubscribe` request type. |
+| `crates/crucible-core/src/protocol/requests/workflow.rs` | 18 | Request types for `workflow.start`/`approve_gate`. |
 | `crates/crucible-core/src/protocol/session_events/lifecycle.rs` | 444 | `JobPayload`/`ReviewPayload`/`NotificationPayload`/`WorkflowPayload`/`SystemPayload`, each declared through the `event_payload!` macro. |
 | `crates/crucible-core/src/protocol/session_events/mod.rs` | 461 | `SessionEventPayload`/`Group`/`EventDecodeError` and the `event_payload!` macro — the typed contract layered over the untyped envelope; `migrate`/`migrate_history` keep an old transcript decodable. |
 | `crates/crucible-core/src/protocol/session_events/settings.rs` | 85 | `SettingsPayload` — model/mode/scope/title/system-prompt/precognition/context-strategy/plugin-approval/plugin-turn-limit change events, and `CommandsChanged {}`, which says only that a client must read `session.commands` again; it carries no catalog itself. |
@@ -406,6 +417,19 @@ no longer sends `ended`). `tool_call_with_metadata`/`tool_call_update` take a
 `CanonicalToolCall` rather than a `lua_primary_arg` string and a raw
 `Vec<FileDiff>`, so the diffs, the render line and fields, the ACP agent, and
 the raw wire form all travel together on one type, once.
+**Request and reply types.** `crates/crucible-core/src/protocol/requests/`
+holds every RPC method's request and reply type: a client serializes one,
+and the daemon's own handler deserializes the identical type, so a field
+rename in one place changes what the daemon accepts. `mod.rs` glob
+re-exports all ten submodules, so a caller names a type as
+`crucible_core::protocol::requests::Name` and never needs the daemon crate
+to reach it. `crates/crucible-daemon/src/rpc_client/client/` holds only the
+`DaemonClient` methods that build and send these types over RPC ([[RPC
+Client]]); `storage.rs` also carries `ListedComment` (moved out of
+`crates/crucible-daemon/src/diff/comments.rs`) and `GREP_DEFAULT_LIMIT`
+(moved out of `crates/crucible-daemon/src/server/grep.rs`), because a
+client and the daemon's own handler both name them.
+
 `SessionEventMessage::plugin_message` exists alongside `user_message`, for a
 turn a `turn:complete` handler started, tagging `TurnPayload::UserMessage.origin`
 with `TurnOrigin::Plugin`. `protocol::BUSY = -32009` is a standard error code

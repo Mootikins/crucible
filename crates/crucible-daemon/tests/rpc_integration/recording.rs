@@ -1,5 +1,6 @@
 //! Session recording and replay RPC tests.
 
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;
@@ -15,7 +16,7 @@ async fn test_session_create_with_granular_recording_mode() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
@@ -52,7 +53,7 @@ async fn test_session_create_with_no_recording_mode() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+        .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
             kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,

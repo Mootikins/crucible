@@ -16,7 +16,7 @@ mod common;
 
 use anyhow::Result;
 use common::{InProcessDaemon, InProcessDaemonBuilder};
-use crucible_daemon::rpc_client::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_daemon::DaemonClient;
 use std::path::{Path, PathBuf};
 

@@ -3,36 +3,15 @@
 //! Methods for managing kilns, notes, and storage operations.
 
 use anyhow::Result;
+use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
-use super::types::{EmptyParams, KilnPathRequest, NameRequest, PathRequest};
 use super::DaemonClient;
+use crucible_core::protocol::requests::{EmptyParams, KilnPathRequest, NameRequest, PathRequest};
 
-use super::storage_requests::*;
 use crate::storage::sqlite::FtsResult;
-
-/// One row of `list_notes`, as it crosses the RPC wire.
-///
-/// A struct rather than a tuple: it grew a sixth field, and a six-tuple at
-/// three call sites is a puzzle rather than a type.
-#[derive(Debug, Clone, Default)]
-pub struct NoteListRow {
-    pub name: String,
-    pub path: String,
-    pub title: Option<String>,
-    pub tags: Vec<String>,
-    pub updated_at: Option<String>,
-    pub properties: std::collections::BTreeMap<String, serde_json::Value>,
-}
-
-impl NoteListRow {
-    /// The legacy five-field view, for callers that want no properties.
-    pub fn into_parts(self) -> (String, String, Option<String>, Vec<String>, Option<String>) {
-        (self.name, self.path, self.title, self.tags, self.updated_at)
-    }
-}
 
 impl DaemonClient {
     /// Apply a text mutation once. An unanswered write must never be replayed blindly.

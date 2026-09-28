@@ -1,11 +1,11 @@
 use super::super::*;
 use crate::agent_manager::commands::SlashRoute;
 use crate::require_param;
-use crate::rpc_client::{
+use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{
     SessionConfigureAgentRequest, SessionIdRequest, SessionInjectContextRequest,
     SessionInteractionRespondRequest, SessionTestInteractionRequest,
 };
-use crate::rpc_helpers::typed_params;
 use crucible_core::types::SendOutcome;
 
 pub(crate) async fn handle_session_configure_agent(

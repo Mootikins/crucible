@@ -1,11 +1,11 @@
 use super::*;
-use crate::rpc_client::{
-    SessionEventsAfterRequest, SessionExportToFileRequest, SessionIdRequest,
-    SessionRenderMarkdownRequest,
-};
 use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::server::session::scope::caller_kiln_scope;
 use crate::session_manager::{KilnFilter, KilnScope};
+use crucible_core::protocol::requests::{
+    SessionEventsAfterRequest, SessionExportToFileRequest, SessionIdRequest,
+    SessionRenderMarkdownRequest,
+};
 use crucible_core::session::SessionSummary;
 
 /// Load a persisted session's events.

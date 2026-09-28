@@ -5,8 +5,9 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
+use crucible_core::protocol::requests::{LuaInitSessionRequest, LuaShutdownSessionRequest};
 use crucible_core::protocol::RpcMethod;
-use crucible_daemon::{DaemonClient, LuaInitSessionRequest, LuaShutdownSessionRequest};
+use crucible_daemon::DaemonClient;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
