@@ -161,7 +161,6 @@ These sync to the daemon and are session-scoped:
 | Option | Type | Description |
 |--------|------|-------------|
 | `perm.show_diff` | bool | Show diffs in permission modals by default |
-| `perm.autoconfirm_session` | bool | Auto-approve all permissions for the session |
 | `perm.full_commands` | bool | Show the full command/args (wrapped) in permission prompts; off = compact one-line view. Default: on |
 
 ### Plugin Turns

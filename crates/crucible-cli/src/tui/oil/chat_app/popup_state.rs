@@ -29,8 +29,6 @@ pub(crate) struct PermissionState {
     pub permission_queue: VecDeque<(String, PermRequest)>,
     /// Whether to show diff by default in permission prompts (session-scoped)
     pub perm_show_diff: bool,
-    /// Whether to auto-allow all permission prompts for this session
-    pub perm_autoconfirm_session: bool,
     /// Whether permission prompts show the full command/args wrapped across
     /// lines instead of a single truncated line (session-scoped)
     pub perm_full_commands: bool,
@@ -41,7 +39,6 @@ impl Default for PermissionState {
         Self {
             permission_queue: VecDeque::new(),
             perm_show_diff: true,
-            perm_autoconfirm_session: false,
             perm_full_commands: true,
         }
     }

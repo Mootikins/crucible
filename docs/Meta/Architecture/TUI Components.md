@@ -517,8 +517,8 @@ path. It opens the session's pending prompts first (read once at
 later `interaction_requested` event, deduped by request id so a prompt
 already delivered as pending is not opened twice; each open is a
 `ChatAppMsg::OpenInteraction`. `chat_app` turns that message into an
-`InteractionModal` (unless `perm_autoconfirm_session` short-circuits a
-`Permission` request straight to `PermResponse::allow()`, outside this page).
+`InteractionModal`. The TUI answers no prompt by itself: the session mode
+`auto` makes the daemon allow each call, so no prompt comes.
 There is no separate interaction channel: the same `SessionEvent` stream
 that feeds the transcript carries the prompts too. Each keystroke goes
 through `InteractionModal::update` →
@@ -885,18 +885,6 @@ target text.
   prevents a caller from using the plain form and having the value land on
   this inert path instead of the real per-provider config path. Not covered
   by a misuse-case test.
-- **`perm.autoconfirm_session` is named "session" but stored client-side.**
-  The shortcut is declared `Virtual` (TUI-only) in
-  `crates/crucible-cli/src/tui/oil/config/shortcuts.rs` and flows through
-  `RuntimeConfig` into a flag on `OilChatApp` (outside this page) that makes
-  this one client auto-answer a `Permission` interaction with
-  `PermResponse::allow()` without asking the user. `AGENTS.md` places
-  session-scoped, multi-client-visible knobs in the daemon's `SessionKnobs`;
-  this flag instead lives per TUI client, so two clients attached to the same
-  session can disagree about whether a permission prompt is shown, despite
-  the option's name. The daemon still receives and interprets the same
-  `PermResponse` either way, so this is a naming/ownership tension to note,
-  not a broken admission boundary.
 - **`RenderStyle::natural` is a stale-doc mismatch, not a missing feature.**
   `crates/crucible-cli/src/tui/oil/markdown/mod.rs`'s module doc describes
   `natural` as using a large text width while tables use the terminal width;
@@ -922,7 +910,4 @@ target text.
   page's files: every daemon-bound path in `chat_runner/actions.rs` is a
   simple RPC forward, and the full-screen copy chain
   (`fullscreen/clipboard.rs`) writes only to the terminal, the OS clipboard
-  and tmux. `perm.autoconfirm_session` (see above) is a real naming/ownership
-  tension with `AGENTS.md`'s rule that multi-client, session-scoped knobs go
-  through the daemon's `SessionKnobs`, though it does not let this client
-  decide the daemon's admission outcome.
+  and tmux.

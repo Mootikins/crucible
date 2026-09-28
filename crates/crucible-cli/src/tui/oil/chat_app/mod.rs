@@ -9,7 +9,7 @@ use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
 use crate::tui::oil::event::InputAction;
 use crate::tui::oil::event::{Event, InputBuffer};
-use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermResponse};
+use crucible_core::interaction::InteractionRequest;
 use crucible_oil::node::*;
 use crucible_oil::style::Gap;
 use std::cell::Cell;
@@ -1006,16 +1006,6 @@ impl OilChatApp {
         request_id: String,
         request: InteractionRequest,
     ) -> Action<ChatAppMsg> {
-        if self.permission.perm_autoconfirm_session {
-            if let InteractionRequest::Permission(_) = &request {
-                tracing::info!(request_id = %request_id, "Auto-confirming permission");
-                return Action::Send(ChatAppMsg::CloseInteraction {
-                    request_id,
-                    response: InteractionResponse::Permission(PermResponse::allow()),
-                });
-            }
-        }
-
         if let InteractionRequest::Permission(perm) = &request {
             // NOTE: permission_pending was removed — the component model handles
             // graduation via explicit state transitions.

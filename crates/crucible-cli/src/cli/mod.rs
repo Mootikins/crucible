@@ -143,7 +143,7 @@ pub enum Commands {
 
         /// Session configuration overrides in vim-style format (can be repeated)
         /// Same syntax as TUI :set — examples: --set model=llama3 --set contextbudget=128000
-        /// Use --set key for boolean flags (e.g. --set perm.autoconfirm_session)
+        /// Use --set key for boolean flags (e.g. --set perm.show_diff)
         #[arg(long = "set", value_name = "KEY[=VALUE]")]
         set_overrides: Vec<String>,
 

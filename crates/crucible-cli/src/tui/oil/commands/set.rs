@@ -177,7 +177,7 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 }),
             }
         }
-        "perm.show_diff" | "perm.autoconfirm_session" | "perm.full_commands" => {
+        "perm.show_diff" | "perm.full_commands" => {
             parse_bool(&value).map_err(|message| SetError::InvalidValue {
                 key: key.clone(),
                 message,
@@ -369,12 +369,7 @@ pub fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEf
 fn is_tui_local_key(key: &str) -> bool {
     matches!(
         key,
-        "thinking"
-            | "show_diffs"
-            | "precognition"
-            | "perm.show_diff"
-            | "perm.autoconfirm_session"
-            | "perm.full_commands"
+        "thinking" | "show_diffs" | "precognition" | "perm.show_diff" | "perm.full_commands"
     )
 }
 
@@ -860,9 +855,9 @@ mod tests {
     #[test]
     fn validate_set_for_cli_perm_enable_ok() {
         assert_eq!(
-            validate_set_for_cli("perm.autoconfirm_session"),
+            validate_set_for_cli("perm.show_diff"),
             Ok(SetEffect::TuiLocal {
-                key: "perm.autoconfirm_session".to_string(),
+                key: "perm.show_diff".to_string(),
                 value: CliValue::Enable,
             })
         );

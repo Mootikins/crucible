@@ -105,12 +105,6 @@ pub static SHORTCUTS: &[ConfigShortcut] = &[
         description: "Show diff by default in permission prompts",
     },
     ConfigShortcut {
-        short: "perm.autoconfirm_session",
-        target: ShortcutTarget::Virtual,
-        completions: CompletionSource::None,
-        description: "Auto-allow all permission prompts for session",
-    },
-    ConfigShortcut {
         short: "perm.full_commands",
         target: ShortcutTarget::Virtual,
         completions: CompletionSource::None,
@@ -239,7 +233,6 @@ mod tests {
         assert!(shorts.contains(&"precognition"));
         assert!(shorts.contains(&"contextstrategy"));
         assert!(shorts.contains(&"perm.show_diff"));
-        assert!(shorts.contains(&"perm.autoconfirm_session"));
         assert!(shorts.contains(&"perm.full_commands"));
     }
 

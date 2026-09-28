@@ -134,7 +134,7 @@ Session configuration overrides using the same syntax as the TUI `:set` command.
 
 ```bash
 cru chat --set model=llama3 --set contextstrategy=truncate
-cru chat --set perm.autoconfirm_session
+cru chat --set perm.show_diff
 ```
 
 #### `-e, --env <KEY=VALUE>`

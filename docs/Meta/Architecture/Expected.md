@@ -207,7 +207,7 @@ entry but no shipped proof.
 | F126 | Permission modal: `y`, `n`, `a`, and `h` toggles the diff; prompts queue in order | P, T |
 | F127 | Ask modal: single, multi, free text; the other interaction renderers | P, T |
 | F128 | Diff preview, unified or side-by-side, syntax colored | P, T |
-| F129 | `:set perm.show_diff`, `perm.autoconfirm_session`, `perm.full_commands` | P, T |
+| F129 | `:set perm.show_diff`, `perm.full_commands` | P, T |
 | F130 | Autocomplete for nine triggers; `:set completion_style` | P, T |
 | F131 | Command palette on F1 | P, T |
 | F132 | `:pick notes\|files\|commands` | P, T |

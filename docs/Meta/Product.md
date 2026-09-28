@@ -421,7 +421,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
   - **Gets you:** single-select selection state works. Nothing proves any of it renders, and two of the three named features have no test at all.
 - [-] **Diff Preview** `P0` — syntax-highlighted, collapsible, unified and side-by-side **line** diffs · `crucible-cli`
   - **Gets you:** all of that, well-evidenced. **Word-level diffing does not exist** — that adjective is the entire demotion.
-- [-] **Permission Session Settings** `P0` — `:set perm.show_diff`, `:set perm.autoconfirm_session` · `crucible-cli`
+- [-] **Permission Session Settings** `P0` — `:set perm.show_diff`, `:set perm.full_commands` · `crucible-cli`
   - **Gets you:** both wires are complete in code and neither has a single test, at any level.
 - [-] **Batch Ask / Edit / Show / Panel** `P0` — all 7 `InteractionRequest` variants have renderers and key handlers · `crucible-cli`
   - **Gets you:** 7/7 renderers and 7/7 key handlers. The old claim "fully implemented with key handlers, renderers, **and tests**" holds for 1 of 7. The browser reached 7/7 on 2026-08-18 — see **Interaction Rendering (web)**.

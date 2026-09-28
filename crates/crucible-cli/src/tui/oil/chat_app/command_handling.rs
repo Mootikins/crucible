@@ -770,11 +770,7 @@ impl OilChatApp {
     }
 
     pub(super) fn handle_perm_set(&mut self, key: &str, value: &str) -> Action<ChatAppMsg> {
-        let valid_keys = [
-            "perm.show_diff",
-            "perm.autoconfirm_session",
-            "perm.full_commands",
-        ];
+        let valid_keys = ["perm.show_diff", "perm.full_commands"];
 
         if !valid_keys.contains(&key) {
             self.add_notification(crucible_core::types::Notification::warning(format!(
@@ -831,11 +827,6 @@ impl OilChatApp {
             "perm.show_diff" => {
                 if let Some(val) = self.runtime_config.get("perm.show_diff") {
                     self.permission.perm_show_diff = val.as_bool().unwrap_or(true);
-                }
-            }
-            "perm.autoconfirm_session" => {
-                if let Some(val) = self.runtime_config.get("perm.autoconfirm_session") {
-                    self.permission.perm_autoconfirm_session = val.as_bool().unwrap_or(false);
                 }
             }
             "perm.full_commands" => {

@@ -115,8 +115,8 @@ Shown when the agent needs approval for a tool call (see the footer hints):
 | `Esc` / `Ctrl+C` | Deny and close |
 
 While editing text: `Enter` sends, `Esc` returns to the options.
-`:set perm.show_diff`, `perm.autoconfirm_session`, and `perm.full_commands`
-tune this modal — see [[Help/TUI/Commands]].
+`:set perm.show_diff` and `perm.full_commands` tune this modal. To approve
+every prompt, use the `Auto` mode (`Shift+Tab`) — see [[Help/TUI/Commands]].
 
 ### Ask modals
 

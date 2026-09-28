@@ -789,7 +789,7 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     status.success("Ready");
 
     let answer = async {
-        let _autoconfirm_session = apply_oneshot_set_overrides(&session, &set_overrides).await;
+        apply_oneshot_set_overrides(&session, &set_overrides).await;
 
         if let Some(mode_id) = oneshot_mode_override(read_only) {
             session
@@ -884,10 +884,8 @@ async fn collect_turn_text(
 async fn apply_oneshot_set_overrides(
     session: &crate::session::LiveSession,
     set_overrides: &[String],
-) -> bool {
-    use crate::tui::oil::commands::{validate_set_for_cli, CliValue, SetEffect};
-
-    let mut autoconfirm = false;
+) {
+    use crate::tui::oil::commands::{validate_set_for_cli, SetEffect};
 
     for input in set_overrides {
         let effect = match validate_set_for_cli(input) {
@@ -905,31 +903,14 @@ async fn apply_oneshot_set_overrides(
                     std::process::exit(1);
                 }
             }
-            SetEffect::TuiLocal { key, value } => {
-                if key == "perm.autoconfirm_session" {
-                    autoconfirm = match value {
-                        CliValue::Disable => false,
-                        CliValue::Set(v)
-                            if matches!(
-                                v.to_ascii_lowercase().as_str(),
-                                "false" | "0" | "no" | "off"
-                            ) =>
-                        {
-                            false
-                        }
-                        _ => true,
-                    };
-                } else {
-                    eprintln!(
-                        "warning: --set '{}' is TUI-only and has no effect in oneshot mode",
-                        key
-                    );
-                }
+            SetEffect::TuiLocal { key, .. } => {
+                eprintln!(
+                    "warning: --set '{}' is TUI-only and has no effect in oneshot mode",
+                    key
+                );
             }
         }
     }
-
-    autoconfirm
 }
 
 async fn apply_rpc_action(

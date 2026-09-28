@@ -188,20 +188,20 @@ mod tests {
 
     #[test]
     fn validate_tui_local_enable() {
-        let effect = validate_set_for_cli("perm.autoconfirm_session").unwrap();
+        let effect = validate_set_for_cli("perm.show_diff").unwrap();
         assert!(matches!(
             effect,
-            SetEffect::TuiLocal { key, value: CliValue::Enable } if key == "perm.autoconfirm_session"
+            SetEffect::TuiLocal { key, value: CliValue::Enable } if key == "perm.show_diff"
         ));
     }
 
     #[test]
     fn validate_tui_local_set() {
-        let effect = validate_set_for_cli("perm.autoconfirm_session=true").unwrap();
+        let effect = validate_set_for_cli("perm.show_diff=true").unwrap();
         assert!(matches!(
             effect,
             SetEffect::TuiLocal { key, value: CliValue::Set(v) }
-                if key == "perm.autoconfirm_session" && v == "true"
+                if key == "perm.show_diff" && v == "true"
         ));
     }
 
