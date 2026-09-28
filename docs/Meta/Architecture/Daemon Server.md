@@ -74,7 +74,7 @@ Directory `crates/crucible-daemon/src/` (top-level files):
 | `crates/crucible-daemon/src/storage.rs` | 6 | Module root re-exporting the SQLite note/property/FTS store. |
 | `crates/crucible-daemon/src/subscription.rs` | 497 | `SubscriptionManager`: which connected clients want which session's events. |
 | `crates/crucible-daemon/src/test_fixtures.rs` | 101 | `#[cfg(test)]` builders for `LlmConfig`/`SessionAgent`/`AgentManager` shared across this crate's unit tests. |
-| `crates/crucible-daemon/src/test_support.rs` | 674 | `pub` test doubles (`MockKnowledgeRepository`, `MockEmbeddingProvider`, `MockSubagentHandle`) and temp session-manager builders shared with integration tests. |
+| `crates/crucible-daemon/src/test_support.rs` | 669 | `pub` test doubles (`MockKnowledgeRepository`, `MockEmbeddingProvider`, `MockSubagentHandle`) and temp session-manager builders shared with integration tests. |
 
 Directory `crates/crucible-daemon/src/observe/` (session-log read side):
 
@@ -171,7 +171,7 @@ Directory `crates/crucible-daemon/src/server/tests/` (integration tests, in-proc
 | `crates/crucible-daemon/src/server/tests/event_seq.rs` | 100 | Per-session contiguous `seq`, exercised directly against `EventBus::emit` (the former source-text bypass lint is gone now that `EventBus`'s sender is private). |
 | `crates/crucible-daemon/src/server/tests/events.rs` | 288 | Event persistence via the journal, kiln-index maintenance off the watcher bridge, error-response construction. |
 | `crates/crucible-daemon/src/server/tests/graph.rs` | 90 | `kiln.graph` node/edge shape, self-link exclusion. |
-| `crates/crucible-daemon/src/server/tests/idle_shutdown.rs` | 244 | End-to-end idle-timer wiring (unconnected exit, connected hold-open, in-flight turn). |
+| `crates/crucible-daemon/src/server/tests/idle_shutdown.rs` | 233 | End-to-end idle-timer wiring (unconnected exit, connected hold-open, in-flight turn). |
 | `crates/crucible-daemon/src/server/tests/isolation_param.rs` | 202 | `session.create`'s `isolation` param round-trips and inherits to children, including the new `isolation_record`. |
 | `crates/crucible-daemon/src/server/tests/kiln_index.rs` | 519 | The kiln index following disk changes off a lossless per-kiln queue, not the client broadcast bus. |
 | `crates/crucible-daemon/src/server/tests/kiln_scope_validation.rs` | 292 | Adversarial `note.upsert` scope-escape tests. |

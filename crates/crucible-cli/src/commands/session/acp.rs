@@ -133,28 +133,38 @@ fn print_event(event: &crucible_daemon::rpc_client::SessionEvent, raw: bool) -> 
         return true;
     }
 
-    let field = |key: &str| event.data.get(key).and_then(|v| v.as_str());
-    match event.event.as_str() {
-        "text_delta" => {
-            if let Some(content) = field("content") {
-                print!("{}", content);
-                std::io::stdout().flush().ok();
-            }
+    use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+    let Ok(SessionEventPayload::Turn(turn)) = event.payload() else {
+        return false;
+    };
+    match turn {
+        TurnPayload::TextDelta { content } => {
+            print!("{}", content);
+            std::io::stdout().flush().ok();
         }
-        "thinking" => {
-            if let Some(content) = field("content") {
+        TurnPayload::Thinking { content } => {
+            if !content.is_empty() {
                 eprintln!("[thinking] {}", content);
             }
         }
-        "tool_call" => eprintln!("[tool_call] {}", field("tool").unwrap_or("?")),
-        "tool_result" => eprintln!("[tool_result] {}", field("tool").unwrap_or("?")),
-        "message_complete" => {
+        TurnPayload::ToolCall { tool, .. } => eprintln!("[tool_call] {}", or_unknown(&tool)),
+        TurnPayload::ToolResult { tool, .. } => eprintln!("[tool_result] {}", or_unknown(&tool)),
+        TurnPayload::MessageComplete { .. } => {
             println!();
             eprintln!("[complete]");
         }
         _ => return false,
     }
     true
+}
+
+/// A tool name, or `?` when the event named none.
+fn or_unknown(tool: &str) -> &str {
+    if tool.is_empty() {
+        "?"
+    } else {
+        tool
+    }
 }
 
 pub(super) mod rpc {
@@ -642,7 +652,12 @@ pub(super) mod rpc {
                         continue;
                     }
 
-                    if event.event == "replay_complete" {
+                    if matches!(
+                        event.payload(),
+                        Ok(crucible_core::protocol::session_events::SessionEventPayload::System(
+                            crucible_core::protocol::session_events::SystemPayload::ReplayComplete { .. }
+                        ))
+                    ) {
                         if !raw {
                             eprintln!("[replay complete]");
                         }

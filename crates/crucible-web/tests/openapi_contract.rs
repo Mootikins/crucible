@@ -256,18 +256,6 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
             id: String::new(),
             request: serde_json::json!({}),
         },
-        ChatEvent::SubagentSpawned {
-            id: String::new(),
-            prompt: String::new(),
-        },
-        ChatEvent::SubagentCompleted {
-            id: String::new(),
-            summary: String::new(),
-        },
-        ChatEvent::SubagentFailed {
-            id: String::new(),
-            error: String::new(),
-        },
         ChatEvent::DelegationSpawned {
             id: String::new(),
             prompt: String::new(),

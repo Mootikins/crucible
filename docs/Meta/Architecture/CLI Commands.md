@@ -145,7 +145,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | --- | --- | --- |
 | `crates/crucible-cli/src/commands/acp/mod.rs` | 195 | `cru acp` entry point: resolves/attaches the kiln, hands off to `CrucibleAcpAgent::serve`; also covered end to end by `tests/acp_wire_tests.rs`, which drives the real binary against a mock provider. |
 | `crates/crucible-cli/src/commands/acp/agent.rs` | 589 | `CrucibleAcpAgent` — implements the ACP `Agent` role by delegating every operation to the daemon over RPC. |
-| `crates/crucible-cli/src/commands/acp/translate.rs` | 851 | Pure translation layer between daemon `SessionEvent`s and ACP wire types (`SessionUpdate`, `ToolCall`, `PermissionOption`), including the `TurnEnd` mapping and the canonical-tool-call-based title/kind lookup. |
+| `crates/crucible-cli/src/commands/acp/translate.rs` | 844 | Pure translation layer between daemon `SessionEvent`s and ACP wire types (`SessionUpdate`, `ToolCall`, `PermissionOption`), including the `TurnEnd` mapping and the canonical-tool-call-based title/kind lookup. |
 
 ### `src/commands/chat/` — `cru chat`
 
@@ -187,7 +187,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-cli/src/commands/session/mod.rs` | 191 | `cru session` dispatch — the single fan-out point over every `SessionCommands` variant. |
-| `crates/crucible-cli/src/commands/session/acp.rs` | 851 | RPC implementation behind nearly every `cru session <verb>`; named for historical reasons, covers the whole session RPC surface, including `send`'s turn-lifecycle-aware event loop. |
+| `crates/crucible-cli/src/commands/session/acp.rs` | 866 | RPC implementation behind nearly every `cru session <verb>`; named for historical reasons, covers the whole session RPC surface, including `send`'s turn-lifecycle-aware event loop. |
 | `crates/crucible-cli/src/commands/session/cleanup.rs` | 85 | `cru session cleanup` — deletes old persisted sessions, scoped by kiln. |
 | `crates/crucible-cli/src/commands/session/export.rs` | 41 | `cru session export` — writes a session transcript to Markdown. |
 | `crates/crucible-cli/src/commands/session/helpers.rs` | 96 | Shared pure helpers: permission-mode parsing, session-id resolution, send-argument disambiguation. |

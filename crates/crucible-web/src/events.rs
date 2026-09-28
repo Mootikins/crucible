@@ -141,21 +141,6 @@ pub enum ChatEvent {
         request: serde_json::Value,
     },
 
-    SubagentSpawned {
-        id: String,
-        prompt: String,
-    },
-
-    SubagentCompleted {
-        id: String,
-        summary: String,
-    },
-
-    SubagentFailed {
-        id: String,
-        error: String,
-    },
-
     DelegationSpawned {
         id: String,
         prompt: String,
@@ -215,9 +200,6 @@ impl ChatEvent {
             ChatEvent::TurnFinished { .. } => "turn_finished",
             ChatEvent::Error { .. } => "error",
             ChatEvent::InteractionRequested { .. } => "interaction_requested",
-            ChatEvent::SubagentSpawned { .. } => "subagent_spawned",
-            ChatEvent::SubagentCompleted { .. } => "subagent_completed",
-            ChatEvent::SubagentFailed { .. } => "subagent_failed",
             ChatEvent::DelegationSpawned { .. } => "delegation_spawned",
             ChatEvent::DelegationCompleted { .. } => "delegation_completed",
             ChatEvent::DelegationFailed { .. } => "delegation_failed",

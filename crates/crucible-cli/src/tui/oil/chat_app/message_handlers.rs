@@ -234,21 +234,9 @@ impl OilChatApp {
         Action::Continue
     }
 
-    /// Handle delegation events (Subagent*, Delegation*)
+    /// Handle delegation events
     pub(super) fn handle_delegation_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
-            ChatAppMsg::SubagentSpawned { id, prompt } => {
-                let agent = CachedSubagent::new(id, prompt, "subagent", self.frame_time());
-                self.container_list.add_agent_task(agent);
-            }
-            ChatAppMsg::SubagentCompleted { id, summary } => {
-                self.container_list
-                    .update_agent_task(&id, |s| s.mark_completed(&summary));
-            }
-            ChatAppMsg::SubagentFailed { id, error } => {
-                self.container_list
-                    .update_agent_task(&id, |s| s.mark_failed(&error));
-            }
             ChatAppMsg::DelegationSpawned {
                 id,
                 prompt,

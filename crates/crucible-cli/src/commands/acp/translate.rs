@@ -93,34 +93,70 @@ pub fn opens_turn(event: &SessionEvent, message_id: &str) -> bool {
 
 /// Classify a daemon event into a single turn step.
 ///
-/// Mirrors the daemon-proxy mapping in
-/// `crucible_daemon::rpc_client::agent::convert` but targets ACP wire types
-/// instead of `TurnEvent`.
+/// The event decodes once into its typed payload, and the match on the turn
+/// payload is exhaustive: a new turn event must decide here whether ACP shows
+/// it. Every other group is session state, not turn content.
 pub fn classify_event(event: &SessionEvent) -> TurnStep {
-    match event.event.as_str() {
-        "text_delta" => text(event)
-            .map(|c| update(SessionUpdate::AgentMessageChunk(chunk(c))))
-            .unwrap_or(TurnStep::Ignore),
-        "thinking" => text(event)
-            .map(|c| update(SessionUpdate::AgentThoughtChunk(chunk(c))))
-            .unwrap_or(TurnStep::Ignore),
-        "tool_call" => classify_tool_call(event),
-        "tool_result" => classify_tool_result(event),
-        // `message_complete` seals one reply. `turn_finished` is the one
-        // event that ends the turn.
-        "turn_finished" => match event.payload() {
-            Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished {
-                status,
-                stop_reason,
-                error,
-            })) => TurnStep::Finished(turn_end(status, stop_reason, error)),
-            _ => TurnStep::Finished(TurnEnd::Failed(format!(
+    let turn = match event.payload() {
+        Ok(SessionEventPayload::Turn(turn)) => turn,
+        Ok(_) => return TurnStep::Ignore,
+        // `turn_finished` is the one event that ends the turn. One that does
+        // not decode still ends it, as a failure, so the host does not wait
+        // for ever.
+        Err(_) if event.event == "turn_finished" => {
+            return TurnStep::Finished(TurnEnd::Failed(format!(
                 "the daemon sent a turn_finished event that does not decode: {}",
                 event.data
-            ))),
+            )))
+        }
+        Err(_) => return TurnStep::Ignore,
+    };
+    match turn {
+        TurnPayload::TextDelta { content } if !content.is_empty() => {
+            update(SessionUpdate::AgentMessageChunk(chunk(content)))
+        }
+        TurnPayload::Thinking { content } if !content.is_empty() => {
+            update(SessionUpdate::AgentThoughtChunk(chunk(content)))
+        }
+        TurnPayload::ToolCall {
+            call_id,
+            tool,
+            args,
+            display,
+            ..
+        } if !tool.is_empty() => classify_tool_call(call_id, &tool, args, display.as_deref()),
+        TurnPayload::ToolResult {
+            call_id,
+            tool,
+            result,
+            ..
+        } if !result.is_null() => classify_tool_result(call_id, &tool, result),
+        // `message_complete` seals one reply. `turn_finished` ends the turn.
+        TurnPayload::TurnFinished {
+            status,
+            stop_reason,
+            error,
+        } => TurnStep::Finished(turn_end(status, stop_reason, error)),
+        TurnPayload::InteractionRequested {
+            request_id,
+            request,
+        } => TurnStep::Interaction {
+            request_id,
+            request: Box::new(request),
         },
-        "interaction_requested" => classify_interaction(event),
-        _ => TurnStep::Ignore,
+        TurnPayload::TextDelta { .. }
+        | TurnPayload::Thinking { .. }
+        | TurnPayload::ToolCall { .. }
+        | TurnPayload::ToolResult { .. }
+        | TurnPayload::ContextCleared { .. }
+        | TurnPayload::UserMessage { .. }
+        | TurnPayload::SegmentComplete { .. }
+        | TurnPayload::MessageComplete { .. }
+        | TurnPayload::ToolCallUpdate { .. }
+        | TurnPayload::InteractionCompleted { .. }
+        | TurnPayload::ContextInjected { .. }
+        | TurnPayload::PrecognitionComplete { .. }
+        | TurnPayload::PostLlmCall { .. } => TurnStep::Ignore,
     }
 }
 
@@ -144,88 +180,60 @@ pub fn replay_step(event: &SessionEvent) -> TurnStep {
     match event.payload() {
         Ok(SessionEventPayload::Turn(TurnPayload::UserMessage {
             content, origin, ..
-        })) if !content.is_empty() => {
+        })) => {
+            if content.is_empty() {
+                return TurnStep::Ignore;
+            }
             let content = match origin.as_ref().and_then(|o| o.plugin()) {
                 Some(plugin) => format!("↻ {plugin}\n{content}"),
                 None => content,
             };
             update(SessionUpdate::UserMessageChunk(chunk(content)))
         }
-        _ if event.event == "user_message" => TurnStep::Ignore,
         _ => classify_event(event),
     }
-}
-
-fn text(event: &SessionEvent) -> Option<String> {
-    event
-        .data
-        .get("content")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
 }
 
 fn chunk(text: String) -> ContentChunk {
     ContentChunk::new(ContentBlock::Text(TextContent::new(text)))
 }
 
-fn classify_tool_call(event: &SessionEvent) -> TurnStep {
-    let Some(tool) = event.data.get("tool").and_then(|v| v.as_str()) else {
-        return TurnStep::Ignore;
-    };
-    let call_id = event
-        .data
-        .get("call_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-    let args = event.data.get("args").cloned();
+fn classify_tool_call(
+    call_id: String,
+    tool: &str,
+    args: serde_json::Value,
+    call: Option<&CanonicalToolCall>,
+) -> TurnStep {
     // The daemon sends the canonical call with its render. An event with
     // no call is `Other`: the name alone does not say the kind.
-    let call = (event.data.get("display"))
-        .and_then(|d| serde_json::from_value::<CanonicalToolCall>(d.clone()).ok());
-    let (title, kind) = describe(tool, call.as_ref());
-
+    let (title, kind) = describe(tool, call);
     let mut tc = ToolCall::new(call_id, title)
         .kind(kind)
         .status(ToolCallStatus::InProgress);
-    if let Some(args) = args {
+    if !args.is_null() {
         tc = tc.raw_input(args);
     }
     update(SessionUpdate::ToolCall(tc))
 }
 
-fn classify_tool_result(event: &SessionEvent) -> TurnStep {
-    let Some(result) = event.data.get("result") else {
-        return TurnStep::Ignore;
-    };
-    let call_id = event
-        .data
-        .get("call_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-
+fn classify_tool_result(call_id: String, tool: &str, result: serde_json::Value) -> TurnStep {
     let error = result.get("error").and_then(|e| e.as_str());
     let (status, text) = match error {
         Some(msg) => (ToolCallStatus::Failed, msg.to_string()),
-        None => (ToolCallStatus::Completed, summarize_result(result)),
+        None => (ToolCallStatus::Completed, summarize_result(&result)),
     };
 
+    // The render of the finished call gives the title its summary.
+    let render =
+        (result.get("render")).and_then(|r| serde_json::from_value::<ToolRender>(r.clone()).ok());
     let mut fields = ToolCallUpdateFields::new()
         .status(status)
         .content(vec![ToolCallContent::from(ContentBlock::Text(
             TextContent::new(text),
         ))])
-        .raw_output(result.clone());
-    // The render of the finished call gives the title its summary.
-    let render =
-        (result.get("render")).and_then(|r| serde_json::from_value::<ToolRender>(r.clone()).ok());
+        .raw_output(result);
     if let Some(render) = render.filter(|r| r.summary.is_some()) {
-        let tool = event
-            .data
-            .get("tool")
-            .and_then(|v| v.as_str())
-            .unwrap_or("tool");
+        let tool = if tool.is_empty() { "tool" } else { tool };
         let summary = render.summary.clone().unwrap_or_default();
         let call = CanonicalToolCall {
             render: Some(render),
@@ -237,21 +245,6 @@ fn classify_tool_result(event: &SessionEvent) -> TurnStep {
     update(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
         call_id, fields,
     )))
-}
-
-fn classify_interaction(event: &SessionEvent) -> TurnStep {
-    let request_id = event.data.get("request_id").and_then(|v| v.as_str());
-    let request = event.data.get("request");
-    match (request_id, request) {
-        (Some(id), Some(req)) => match serde_json::from_value::<InteractionRequest>(req.clone()) {
-            Ok(request) => TurnStep::Interaction {
-                request_id: id.to_string(),
-                request: Box::new(request),
-            },
-            Err(_) => TurnStep::Ignore,
-        },
-        _ => TurnStep::Ignore,
-    }
 }
 
 fn summarize_result(result: &serde_json::Value) -> String {

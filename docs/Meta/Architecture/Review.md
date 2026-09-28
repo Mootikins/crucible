@@ -151,7 +151,7 @@ decision left to emit.
 | File | Lines | Role |
 |---|---|---|
 | `crates/crucible-daemon/src/server/session/review/mod.rs` | 88 | `ensure_loaded`/`ensure_record_loaded` (load a resumed session's `review.jsonl`), `list_hunks` (backs only `cru.session.review_list_hunks`), `emit_review_changed`. No RPC handlers remain here. |
-| `crates/crucible-daemon/src/server/session/review/tests.rs` | 343 | The Lua-bridge/`diff.get`-handler parity regression, plus one end-to-end plugin-turn crossing: a plugin session's own note write lands in its own ledger, attributed to its tool call. |
+| `crates/crucible-daemon/src/server/session/review/tests.rs` | 332 | The Lua-bridge/`diff.get`-handler parity regression, plus one end-to-end plugin-turn crossing: a plugin session's own note write lands in its own ledger, attributed to its tool call. |
 
 ## Key types and traits
 

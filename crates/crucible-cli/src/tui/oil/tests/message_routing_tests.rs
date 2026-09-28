@@ -127,9 +127,10 @@ fn stream_cancelled_ends_streaming() {
 #[test]
 fn subagent_spawned_creates_container() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::SubagentSpawned {
+    app.on_message(ChatAppMsg::DelegationSpawned {
         id: "agent-1".into(),
         prompt: "analyze code".into(),
+        target_agent: None,
     });
 
     assert_eq!(app.container_list.len(), 1);
@@ -138,11 +139,12 @@ fn subagent_spawned_creates_container() {
 #[test]
 fn subagent_completed_marks_container_complete() {
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::SubagentSpawned {
+    app.on_message(ChatAppMsg::DelegationSpawned {
         id: "agent-1".into(),
         prompt: "analyze code".into(),
+        target_agent: None,
     });
-    app.on_message(ChatAppMsg::SubagentCompleted {
+    app.on_message(ChatAppMsg::DelegationCompleted {
         id: "agent-1".into(),
         summary: "done".into(),
     });

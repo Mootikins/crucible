@@ -69,8 +69,8 @@ Paths are relative to the repository root. Line counts are as recorded at
 | --- | --- | --- |
 | `crates/crucible-web/src/assets.rs` | 201 | Serves the embedded SolidJS bundle or a `--static-dir` override. |
 | `crates/crucible-web/src/error.rs` | 246 | `WebError`, the crate's one error enum (now including `Conflict`), and its HTTP/JSON projection. |
-| `crates/crucible-web/src/events.rs` | 1240 | `ChatEvent` (now including `TurnFinished` and per-call `render` fields), the browser-facing SSE event enum, and its projection from the daemon's `SessionEvent`/`SessionEventPayload`. |
-| `crates/crucible-web/src/fs_events.rs` | 133 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
+| `crates/crucible-web/src/events.rs` | 1222 | `ChatEvent` (now including `TurnFinished` and per-call `render` fields), the browser-facing SSE event enum, and its projection from the daemon's `SessionEvent`/`SessionEventPayload`. |
+| `crates/crucible-web/src/fs_events.rs` | 138 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
 | `crates/crucible-web/src/server.rs` | 717 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases route groups. |
 | `crates/crucible-web/src/test_support.rs` | 1722 | Shared mock-daemon and fixture library for every route test in this crate. |
 

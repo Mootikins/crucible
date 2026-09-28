@@ -122,9 +122,9 @@ Grouped by directory. Lines are as of `582c5e6c1`.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-daemon/src/session_bridge/tests/mod.rs` | 805 | Shared fixtures plus bridge-level tests not owned by a narrower file: permission-gate/plugin-turn behavior, context usage, compact, remove/undo messages. |
+| `crates/crucible-daemon/src/session_bridge/tests/mod.rs` | 794 | Shared fixtures plus bridge-level tests not owned by a narrower file: permission-gate/plugin-turn behavior, context usage, compact, remove/undo messages. |
 | `crates/crucible-daemon/src/session_bridge/tests/create.rs` | 562 | The plugin `cru.session.create` path: card resolution, trust gates, tool-policy override, mutual exclusion of `agent_card`/`agent_name`, and refusal of an SSRF-shaped internal endpoint on `create_session`/`configure_agent`. |
-| `crates/crucible-daemon/src/session_bridge/tests/async_session.rs` | 555 | Fork, delegated create/collection, `send_and_collect`, subscribe/unsubscribe, a fork refusal against a persisted `isolation_record`, and `configure_agent`'s isolation-bypass refusal from Lua. |
+| `crates/crucible-daemon/src/session_bridge/tests/async_session.rs` | 553 | Fork, delegated create/collection, `send_and_collect`, subscribe/unsubscribe, a fork refusal against a persisted `isolation_record`, and `configure_agent`'s isolation-bypass refusal from Lua. |
 | `crates/crucible-daemon/src/session_bridge/tests/lifecycle.rs` | 432 | Plugin re-entrancy at session end while the plugin-loader mutex is held: a create from inside the hook is refused, a create from a task the hook starts succeeds and runs the start hooks. |
 | `crates/crucible-daemon/src/session_bridge/tests/reflection.rs` | 548 | End-to-end test of the shipped `reflection` Luau plugin: session end, LLM call, note proposal (propose mode, no disk write) read back via `cru.proposals`, run on the reviewed session's own workspace/isolation, and gated on plugin-created sessions by a `reflection:request` event. |
 | `crates/crucible-daemon/src/session_bridge/tests/delegate.rs` | 216 | The `delegate=true` branch reaching a `DelegationSpawner` with a correct `DelegationRequest`. |

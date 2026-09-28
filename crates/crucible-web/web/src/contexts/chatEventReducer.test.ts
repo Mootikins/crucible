@@ -333,40 +333,19 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.tools()[0].display?.render).toEqual({ line: 'a.rs', summary: '2 lines' });
   });
 
-  // subagent_* / delegation_*: every variant mutates h.state.subagentEvents
+  // delegation_*: every variant mutates h.state.subagentEvents
   // via the same upsert path. Each row lists the events to dispatch and the
   // expected final array (strict equality preserves the array-length check).
   it.each([
     {
-      name: 'subagent_spawned: adds spawned event',
-      events: [{ type: 'subagent_spawned', id: 'sa-1', prompt: 'go' }],
-      expected: [{ id: 'sa-1', prompt: 'go', status: 'spawned' }],
+      name: 'delegation_completed: creates a new entry when no matching spawn',
+      events: [{ type: 'delegation_completed', id: 'd-orphan', summary: 'done' }],
+      expected: [{ id: 'd-orphan', prompt: '', status: 'completed', summary: 'done' }],
     },
     {
-      name: 'subagent_completed: upserts into existing spawned event',
-      events: [
-        { type: 'subagent_spawned', id: 'sa-1', prompt: 'go' },
-        { type: 'subagent_completed', id: 'sa-1', summary: 'done' },
-      ],
-      expected: [{ id: 'sa-1', prompt: 'go', status: 'completed', summary: 'done' }],
-    },
-    {
-      name: 'subagent_completed: creates a new entry when no matching spawn',
-      events: [{ type: 'subagent_completed', id: 'sa-orphan', summary: 'done' }],
-      expected: [{ id: 'sa-orphan', prompt: '', status: 'completed', summary: 'done' }],
-    },
-    {
-      name: 'subagent_failed: upserts with error',
-      events: [
-        { type: 'subagent_spawned', id: 'sa-1', prompt: 'go' },
-        { type: 'subagent_failed', id: 'sa-1', error: 'oom' },
-      ],
-      expected: [{ id: 'sa-1', prompt: 'go', status: 'failed', error: 'oom' }],
-    },
-    {
-      name: 'subagent_failed: creates new entry when no matching spawn',
-      events: [{ type: 'subagent_failed', id: 'sa-orphan', error: 'oom' }],
-      expected: [{ id: 'sa-orphan', prompt: '', status: 'failed', error: 'oom' }],
+      name: 'delegation_failed: creates new entry when no matching spawn',
+      events: [{ type: 'delegation_failed', id: 'd-orphan', error: 'oom' }],
+      expected: [{ id: 'd-orphan', prompt: '', status: 'failed', error: 'oom' }],
     },
     {
       name: 'delegation_spawned: adds spawned event with targetAgent',
@@ -1126,9 +1105,6 @@ const arbChatEvent = (): fc.Arbitrary<ChatEvent> => fc.oneof(
   }),
   evt('error', { code: fc.string({ minLength: 1, maxLength: 20 }), message: fc.string() }),
   fc.oneof(interactionAsk, interactionPopup, interactionPerm),
-  evt('subagent_spawned', { id: strId, prompt: fc.string() }),
-  evt('subagent_completed', { id: strId, summary: fc.string() }),
-  evt('subagent_failed', { id: strId, error: fc.string() }),
   evt('delegation_spawned', { id: strId, prompt: fc.string() }),
   evt('delegation_completed', { id: strId, summary: fc.string() }),
   evt('delegation_failed', { id: strId, error: fc.string() }),
@@ -1318,9 +1294,6 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
     'error',
     'interaction_requested',
     'session_event',
-    'subagent_spawned',
-    'subagent_completed',
-    'subagent_failed',
     'delegation_spawned',
     'delegation_completed',
     'delegation_failed',
@@ -1375,11 +1348,11 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'segment_complete') { minimal.message_id = 'placeholder'; minimal.index = 0; minimal.content = ''; }
       if (t === 'tool_call') minimal.title = minimal.name = 'noop';
       if (t === 'tool_result_delta') minimal.delta = '';
-      if (t === 'tool_result_error' || t === 'subagent_failed' || t === 'delegation_failed') {
+      if (t === 'tool_result_error' || t === 'delegation_failed') {
         minimal.error = '';
       }
-      if (t === 'subagent_completed' || t === 'delegation_completed') minimal.summary = '';
-      if (t === 'subagent_spawned' || t === 'delegation_spawned') minimal.prompt = '';
+      if (t === 'delegation_completed') minimal.summary = '';
+      if (t === 'delegation_spawned') minimal.prompt = '';
       expect(() => h.reducer(minimal as ChatEvent)).not.toThrow();
     }
   });

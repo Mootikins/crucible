@@ -75,7 +75,7 @@ and handle.
 | `crates/crucible-daemon/src/provider/copilot.rs` | 501 | GitHub Copilot OAuth device flow and token-refreshing API client |
 | `crates/crucible-daemon/src/provider/endpoint_check.rs` | 204 | Refuses a request-named endpoint that is not operator-configured and does not resolve to a globally routable address; the daemon's one SSRF/private-address gate for every client |
 | `crates/crucible-daemon/src/provider/endpoint_check/tests.rs` | 293 | `proptest`-driven and fixed-case coverage of every internal/reserved address range and the operator-configured-origin allowlist |
-| `crates/crucible-daemon/src/provider/genai_handle.rs` | 3254 | `GenaiAgentHandle`: the tool-loop `Agent`/`AgentHandle`/`SessionKnobs` implementation |
+| `crates/crucible-daemon/src/provider/genai_handle.rs` | 3241 | `GenaiAgentHandle`: the tool-loop `Agent`/`AgentHandle`/`SessionKnobs` implementation |
 | `crates/crucible-daemon/src/provider/model_listing.rs` | 238 | Probes a backend's model-listing endpoint for UI pickers; carries the SSRF no-redirect defense |
 | `crates/crucible-daemon/src/provider/oneshot.rs` | 140 | Single bounded request/response exchange behind `cru.session.complete` |
 | `crates/crucible-daemon/src/provider/tool_bridge.rs` | 98 | Converts `LlmToolDefinition` to genai's `Tool`; sanitizes JSON schema for provider compatibility |

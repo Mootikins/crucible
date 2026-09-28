@@ -40,19 +40,24 @@ impl FsEvent {
     /// Project a daemon watcher event into an [`FsEvent`], or `None` for any
     /// event type that is not a filesystem change.
     pub fn from_daemon_event(ev: &SessionEvent) -> Option<Self> {
-        let d = &ev.data;
-        match ev.event.as_str() {
-            "file_changed" => Some(FsEvent::Changed {
-                path: d["path"].as_str()?.to_string(),
-                kind: d["kind"].as_str().unwrap_or("modified").to_string(),
-            }),
-            "file_deleted" => Some(FsEvent::Deleted {
-                path: d["path"].as_str()?.to_string(),
-            }),
-            "file_moved" => Some(FsEvent::Moved {
-                from: d["from"].as_str()?.to_string(),
-                to: d["to"].as_str()?.to_string(),
-            }),
+        use crucible_core::protocol::session_events::{SessionEventPayload, SystemPayload};
+        let path = |p: std::path::PathBuf| p.to_string_lossy().into_owned();
+        match ev.payload().ok()? {
+            SessionEventPayload::System(SystemPayload::FileChanged { path: p, kind }) => {
+                Some(FsEvent::Changed {
+                    path: path(p),
+                    kind: kind.to_string(),
+                })
+            }
+            SessionEventPayload::System(SystemPayload::FileDeleted { path: p }) => {
+                Some(FsEvent::Deleted { path: path(p) })
+            }
+            SessionEventPayload::System(SystemPayload::FileMoved { from, to }) => {
+                Some(FsEvent::Moved {
+                    from: path(from),
+                    to: path(to),
+                })
+            }
             _ => None,
         }
     }

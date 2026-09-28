@@ -2551,21 +2551,6 @@ export interface components {
         }) | {
             id: string;
             prompt: string;
-            /** @enum {string} */
-            type: "subagent_spawned";
-        } | {
-            id: string;
-            summary: string;
-            /** @enum {string} */
-            type: "subagent_completed";
-        } | {
-            error: string;
-            id: string;
-            /** @enum {string} */
-            type: "subagent_failed";
-        } | {
-            id: string;
-            prompt: string;
             target_agent?: string | null;
             /** @enum {string} */
             type: "delegation_spawned";

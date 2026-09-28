@@ -929,7 +929,7 @@ fn e2e_cancel_during_tool_execution() {
     );
 }
 
-/// Test 11: SubagentSpawned + SubagentCompleted rendering.
+/// Test 11: DelegationSpawned + DelegationCompleted rendering.
 #[test]
 fn e2e_subagent_lifecycle() {
     let mut app = OilChatApp::default();
@@ -939,9 +939,10 @@ fn e2e_subagent_lifecycle() {
     vt.render_frame(&mut app);
 
     // Subagent spawned
-    app.on_message(ChatAppMsg::SubagentSpawned {
+    app.on_message(ChatAppMsg::DelegationSpawned {
         id: "agent-1".into(),
         prompt: "Analyze the code".into(),
+        target_agent: None,
     });
     vt.render_frame(&mut app);
 
@@ -957,7 +958,7 @@ fn e2e_subagent_lifecycle() {
     );
 
     // Subagent completed
-    app.on_message(ChatAppMsg::SubagentCompleted {
+    app.on_message(ChatAppMsg::DelegationCompleted {
         id: "agent-1".into(),
         summary: "Analysis complete: found 3 issues".into(),
     });

@@ -36,7 +36,7 @@ at the same time. Each step leaves the tree working.
 | Step | Deletes | Size | Depends on |
 |---|---|---|---|
 | 1. Remove the client-side agent proxy (done) | one client API layer | L | none |
-| 2. One event path to the clients | three event projections, one event type | L | step 1 helps |
+| 2. One event path to the clients (sub-step 1 done) | three event projections, one event type | L | step 1 helps |
 | 3. One command registry | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client | an in-process daemon in the CLI | M | none |
 | 5. Shell commands run in the daemon | two process spawners | M | none |
@@ -101,6 +101,16 @@ daemon in `crates/crucible-daemon/src/observe/markdown.rs`, the TUI in
 `crates/crucible-web/web/src/contexts/chatEventReducer.ts`. The persisted
 history uses a separate type, `LogEvent` in
 `crates/crucible-daemon/src/observe/events.rs`.
+
+**Status: sub-step 1 done.** `cru acp`, `cru session`, the TUI stream and
+the web file events decode `SessionEventPayload` and match its typed
+variants. The TUI and the web client no longer handle the three
+`subagent_*` names, which no producer sent: delegation reaches both
+clients as `delegation_*`. Two name checks stay on purpose: `cru acp`
+still ends a turn on a `turn_finished` that does not decode, and the web
+backend still accepts a pre-flattened `interaction_requested` from old
+stored history. `LogEvent` still has `subagent_*` variants, because old
+session files can hold them; sub-step 2 replaces that type.
 
 **Change.**
 1. Make every client decode `SessionEventPayload` only. Delete the string

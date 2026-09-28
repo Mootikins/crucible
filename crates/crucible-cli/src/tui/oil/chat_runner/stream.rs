@@ -2,7 +2,8 @@ use crate::tui::oil::chat_app::ChatAppMsg;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use super::commands::session_event_to_chat_msgs;
+use super::commands::payload_msgs;
+use crucible_core::protocol::session_events::{SessionEventPayload, SystemPayload, TurnPayload};
 
 /// The session id the daemon addresses genuinely global events to.
 ///
@@ -103,9 +104,8 @@ impl SessionEventStream {
     /// recoverable and a deleted thought is not, and no recording in
     /// `assets/fixtures` is non-exact, so nothing is bought by loosening it.
     /// Pinned by `a_replay_that_is_not_byte_exact_renders_twice_on_purpose`.
-    fn is_thinking_replay(&self, data: &serde_json::Value) -> bool {
-        self.thinking_run_deltas >= MIN_REPLAY_RUN_DELTAS
-            && data.get("content").and_then(|v| v.as_str()) == Some(self.thinking_run.as_str())
+    fn is_thinking_replay(&self, content: &str) -> bool {
+        self.thinking_run_deltas >= MIN_REPLAY_RUN_DELTAS && content == self.thinking_run
     }
 
     /// Forget the thinking run: nothing rendered after this can be judged a
@@ -121,61 +121,62 @@ impl SessionEventStream {
     }
 
     pub fn translate(&mut self, event_type: &str, data: &serde_json::Value) -> Vec<ChatAppMsg> {
-        if event_type == "text_delta" {
-            self.saw_text_delta = true;
-        } else if event_type == "user_message" {
-            self.saw_text_delta = false;
-            self.reset_thinking_run();
-        }
-
-        if event_type == "thinking" {
-            if self.is_thinking_replay(data) {
-                self.reset_thinking_run();
-                return Vec::new();
-            }
-            if let Some(content) = data.get("content").and_then(|v| v.as_str()) {
-                self.thinking_run.push_str(content);
-                self.thinking_run_deltas += 1;
-            }
-        }
-
-        let raw = session_event_to_chat_msgs(event_type, data);
-
-        // When the daemon's setup task emits `context_limit_resolved`, also
-        // stamp the atomic so that subsequent `message_complete` events pick
-        // up the real total for their `ContextUsage` patching.
-        if event_type == "context_limit_resolved" {
-            if let Some(ref limit) = self.context_limit {
-                for msg in &raw {
-                    if let ChatAppMsg::ContextLimitResolved { limit: l, .. } = msg {
-                        limit.store(*l, Ordering::Relaxed);
+        let decoded = SessionEventPayload::from_wire(event_type, data);
+        let mut is_message_complete = false;
+        if let Ok(SessionEventPayload::Turn(turn)) = &decoded {
+            match turn {
+                TurnPayload::TextDelta { .. } => self.saw_text_delta = true,
+                TurnPayload::UserMessage { .. } => {
+                    self.saw_text_delta = false;
+                    self.reset_thinking_run();
+                }
+                TurnPayload::Thinking { content } => {
+                    if self.is_thinking_replay(content) {
+                        self.reset_thinking_run();
+                        return Vec::new();
                     }
+                    self.thinking_run.push_str(content);
+                    self.thinking_run_deltas += 1;
+                }
+                TurnPayload::MessageComplete { .. } => is_message_complete = true,
+                _ => {}
+            }
+        }
+
+        let raw = payload_msgs(decoded);
+
+        // When the daemon's setup task resolves the context limit, also stamp
+        // the atomic so that later `message_complete` events pick up the real
+        // total for their `ContextUsage` patching.
+        if let Some(ref limit) = self.context_limit {
+            for msg in &raw {
+                if let ChatAppMsg::ContextLimitResolved { limit: l, .. } = msg {
+                    limit.store(*l, Ordering::Relaxed);
                 }
             }
         }
 
         // For message_complete, filter out the TextDelta if granular deltas
         // were seen, and patch the ContextUsage with the real context limit.
-        if event_type == "message_complete" {
-            let saw_deltas = self.saw_text_delta;
-            let total_limit = self
-                .context_limit
-                .as_ref()
-                .map(|l| l.load(Ordering::Relaxed))
-                .unwrap_or(0);
-            raw.into_iter()
-                .filter_map(|m| match m {
-                    ChatAppMsg::TextDelta(_) if saw_deltas => None,
-                    ChatAppMsg::ContextUsage { used, .. } => Some(ChatAppMsg::ContextUsage {
-                        used,
-                        total: total_limit,
-                    }),
-                    other => Some(other),
-                })
-                .collect()
-        } else {
-            raw
+        if !is_message_complete {
+            return raw;
         }
+        let saw_deltas = self.saw_text_delta;
+        let total_limit = self
+            .context_limit
+            .as_ref()
+            .map(|l| l.load(Ordering::Relaxed))
+            .unwrap_or(0);
+        raw.into_iter()
+            .filter_map(|m| match m {
+                ChatAppMsg::TextDelta(_) if saw_deltas => None,
+                ChatAppMsg::ContextUsage { used, .. } => Some(ChatAppMsg::ContextUsage {
+                    used,
+                    total: total_limit,
+                }),
+                other => Some(other),
+            })
+            .collect()
     }
 }
 
@@ -255,7 +256,12 @@ pub(crate) async fn session_event_consumer(
                 || event.session_id == SYSTEM_SESSION
         },
         |event, tx| {
-            if event.event == "replay_complete" {
+            if matches!(
+                event.payload(),
+                Ok(SessionEventPayload::System(
+                    SystemPayload::ReplayComplete { .. }
+                ))
+            ) {
                 let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
                 return false;
             }
@@ -304,7 +310,7 @@ pub(crate) async fn live_session_event_consumer(
                 || event.session_id == SYSTEM_SESSION
         },
         move |event, tx| {
-            if event.event == "interaction_requested" && event.session_id == session_id {
+            if event.session_id == session_id {
                 if let Some(msg) = open_prompt(event, &mut opened) {
                     let _ = tx.send(msg);
                 }
@@ -316,26 +322,25 @@ pub(crate) async fn live_session_event_consumer(
 }
 
 /// The message that opens the prompt of an `interaction_requested` event, or
-/// `None` when the prompt is already open or the payload does not decode.
+/// `None` for any other event and for a prompt that is already open.
+///
+/// An event that does not decode is not reported here: the translation of
+/// the same event reports it.
 fn open_prompt(
     event: &crucible_daemon::SessionEvent,
     opened: &mut std::collections::HashSet<String>,
 ) -> Option<ChatAppMsg> {
-    use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
-    match event.payload() {
-        Ok(SessionEventPayload::Turn(TurnPayload::InteractionRequested {
+    let Ok(SessionEventPayload::Turn(TurnPayload::InteractionRequested {
+        request_id,
+        request,
+    })) = event.payload()
+    else {
+        return None;
+    };
+    opened
+        .insert(request_id.clone())
+        .then_some(ChatAppMsg::OpenInteraction {
             request_id,
             request,
-        })) => opened
-            .insert(request_id.clone())
-            .then_some(ChatAppMsg::OpenInteraction {
-                request_id,
-                request,
-            }),
-        Ok(_) => None,
-        Err(e) => {
-            tracing::warn!(error = %e, "Failed to decode an interaction request");
-            None
-        }
-    }
+        })
 }

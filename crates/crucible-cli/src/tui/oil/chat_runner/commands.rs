@@ -16,27 +16,17 @@ use crucible_core::turn::{TurnOrigin, TurnStatus};
 /// group the TUI handles now fails to compile here instead of falling through to
 /// the `trace!` arm.
 pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) -> Vec<ChatAppMsg> {
-    // `subagent_*` are NOT on the wire — they exist only as
-    // `InternalSessionEvent` variants for Lua, so they have no
-    // `SessionEventPayload` name. The arms stay because `ChatAppMsg` carries the
-    // variants and a test pins them; whether the wire should carry them is a
-    // feature question with a missing producer, not three orphan consumers.
-    if let Some(msgs) = subagent_msgs(event_type, data) {
-        return msgs;
-    }
+    payload_msgs(SessionEventPayload::from_wire(event_type, data))
+}
 
-    // Also not in the typed vocabulary, and for a structural reason rather than
-    // an oversight: `stream_gap` is minted per *connection* by the daemon's event
-    // forwarder when this client's broadcast cursor falls off the ring
-    // (`daemon/src/server/core.rs`), so no session produces it and
-    // `SessionEventPayload` has no name for it. It must be handled before the
-    // typed dispatch, because that dispatch's `UnknownEvent` arm is a silent
-    // `trace!` — which is exactly how the gap stayed invisible.
-    if event_type == "stream_gap" {
-        return vec![stream_gap_msg(data)];
-    }
-
-    match SessionEventPayload::from_wire(event_type, data) {
+/// The messages of one decoded event.
+///
+/// Keyed on the typed payload: a new event in a group the TUI handles fails
+/// to compile here instead of falling through to the `trace!` arm.
+pub(crate) fn payload_msgs(
+    decoded: Result<SessionEventPayload, EventDecodeError>,
+) -> Vec<ChatAppMsg> {
+    match decoded {
         Ok(SessionEventPayload::Turn(turn)) => turn_msgs(turn),
         Ok(SessionEventPayload::Setup(setup)) => setup_msgs(setup),
         Ok(SessionEventPayload::Settings(settings)) => settings_msgs(settings),
@@ -61,60 +51,6 @@ pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) ->
             vec![]
         }
     }
-}
-
-/// Say out loud that this transcript is missing events.
-///
-/// Routed through `ChatAppMsg::Error`, which surfaces as a warning notification.
-/// A gap is not a turn failure, but it is the one thing the user cannot find out
-/// any other way: the events are gone from this connection and no later event
-/// mentions them, so a message that is easy to miss is the same as no message.
-///
-/// A missing `dropped` still warns. The count is the daemon's own field, so its
-/// absence means a version skew — not a reason to swallow the fact of the loss.
-fn stream_gap_msg(data: &serde_json::Value) -> ChatAppMsg {
-    // Count first: the status bar shows one truncated line, so the number has to
-    // survive the truncation to be worth carrying.
-    let dropped = data.get("dropped").and_then(|v| v.as_u64());
-    ChatAppMsg::Error(match dropped {
-        Some(n) => format!(
-            "{n} events dropped: the event stream fell behind. \
-             This conversation is incomplete — reload the session."
-        ),
-        None => "Events dropped: the event stream fell behind. \
-                 This conversation is incomplete — reload the session."
-            .to_string(),
-    })
-}
-
-/// `Some` only for the three names that never cross the wire.
-fn subagent_msgs(event_type: &str, data: &serde_json::Value) -> Option<Vec<ChatAppMsg>> {
-    let id = data.get("job_id").and_then(|v| v.as_str())?.to_string();
-    let text = |key: &str| {
-        data.get(key)
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string()
-    };
-    Some(match event_type {
-        "subagent_spawned" => vec![ChatAppMsg::SubagentSpawned {
-            id,
-            prompt: text("prompt"),
-        }],
-        "subagent_completed" => vec![ChatAppMsg::SubagentCompleted {
-            id,
-            summary: text("summary"),
-        }],
-        "subagent_failed" => {
-            let error = data
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error")
-                .to_string();
-            vec![ChatAppMsg::SubagentFailed { id, error }]
-        }
-        _ => return None,
-    })
 }
 
 /// Empty strings and absent keys are the same thing here: every one of these
@@ -460,8 +396,37 @@ fn system_msgs(system: SystemPayload) -> Vec<ChatAppMsg> {
         // A proposal changed. The event carries only the id; the app reads
         // the proposal again when it needs it.
         SystemPayload::ProposalChanged { id } => vec![ChatAppMsg::ProposalChanged(id)],
-        // `replay_complete` is consumed by the stateful wrapper, not here.
-        _ => vec![],
+        // The event stream lost events. The transcript has a hole, and no later
+        // event mentions it, so the user must be told here. It goes out as an
+        // error, which shows as a warning. The count comes first: the status bar
+        // shows one truncated line, so the number has to survive the truncation.
+        // A count of 0 means the loss is unknown, and it still warns.
+        SystemPayload::StreamGap { dropped } => vec![ChatAppMsg::Error(match dropped {
+            0 => "Events dropped: the event stream fell behind. \
+                  This conversation is incomplete — reload the session."
+                .to_string(),
+            n => format!(
+                "{n} events dropped: the event stream fell behind. \
+                 This conversation is incomplete — reload the session."
+            ),
+        })],
+        // `replay_complete` is consumed by the replay consumer, not here. The
+        // rest is kiln, note and daemon state that the chat does not show.
+        SystemPayload::ReplayComplete { .. }
+        | SystemPayload::FileChanged { .. }
+        | SystemPayload::FileDeleted { .. }
+        | SystemPayload::FileMoved { .. }
+        | SystemPayload::ClassificationRequired { .. }
+        | SystemPayload::ProcessComplete { .. }
+        | SystemPayload::NoteCreated { .. }
+        | SystemPayload::NoteModified { .. }
+        | SystemPayload::NoteDeleted { .. }
+        | SystemPayload::NoteRenamed { .. }
+        | SystemPayload::BaseChanged { .. }
+        | SystemPayload::WebhookReceived { .. }
+        | SystemPayload::SessionCreated { .. }
+        | SystemPayload::PublicationChanged { .. }
+        | SystemPayload::SessionEnded { .. } => vec![],
     }
 }
 

@@ -289,8 +289,8 @@ interface RawToolCall {
   _meta?: unknown;
 }
 
-/** Subagent event (background task). Client-local: the store collapses the
- * three `subagent_*` stream events into one row. */
+/** A delegated task. Client-local: the store collapses the three
+ * `delegation_*` stream events into one row. */
 export interface SubagentEvent {
   id: string;
   prompt: string;

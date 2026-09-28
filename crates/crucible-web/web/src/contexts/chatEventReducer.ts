@@ -494,42 +494,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
       }
 
-      case 'subagent_spawned':
-        deps.setSubagentEvents((prev) => [...prev, {
-          id: event.id,
-          prompt: event.prompt,
-          status: 'spawned',
-        }]);
-        break;
-
-      case 'subagent_completed':
-        deps.setSubagentEvents((prev) => upsertSubagentEvent(
-          prev,
-          event.id,
-          { status: 'completed', summary: event.summary },
-          {
-            id: event.id,
-            prompt: '',
-            status: 'completed',
-            summary: event.summary,
-          },
-        ));
-        break;
-
-      case 'subagent_failed':
-        deps.setSubagentEvents((prev) => upsertSubagentEvent(
-          prev,
-          event.id,
-          { status: 'failed', error: event.error },
-          {
-            id: event.id,
-            prompt: '',
-            status: 'failed',
-            error: event.error,
-          },
-        ));
-        break;
-
       case 'delegation_spawned':
         deps.setSubagentEvents((prev) => [...prev, {
           id: event.id,

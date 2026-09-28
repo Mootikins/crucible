@@ -322,9 +322,10 @@ fn a_running_subagent_animates_and_matches_a_fresh_layout() {
     let start = Instant::now();
     app.set_frame_time(start);
     app.on_message(ChatAppMsg::UserMessage("delegate it".into()));
-    app.on_message(ChatAppMsg::SubagentSpawned {
+    app.on_message(ChatAppMsg::DelegationSpawned {
         id: "agent-1".into(),
         prompt: "look around".into(),
+        target_agent: None,
     });
     let mut screens = Vec::new();
     for step in 0..4 {
@@ -334,7 +335,7 @@ fn a_running_subagent_animates_and_matches_a_fresh_layout() {
     screens.dedup();
     assert_eq!(screens.len(), 4, "the running agent changes on each frame");
 
-    app.on_message(ChatAppMsg::SubagentCompleted {
+    app.on_message(ChatAppMsg::DelegationCompleted {
         id: "agent-1".into(),
         summary: "found it".into(),
     });

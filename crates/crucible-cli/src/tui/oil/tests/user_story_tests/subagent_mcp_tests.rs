@@ -14,9 +14,10 @@ use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay};
 fn subagent_spawn_shows_prompt_preview() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate this".into()));
-    story.send(ChatAppMsg::SubagentSpawned {
+    story.send(ChatAppMsg::DelegationSpawned {
         id: "s1".into(),
         prompt: "Analyze the auth module".into(),
+        target_agent: None,
     });
 
     let screen = story.screen();
@@ -30,11 +31,12 @@ fn subagent_spawn_shows_prompt_preview() {
 fn subagent_completion_shows_summary() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate this".into()));
-    story.send(ChatAppMsg::SubagentSpawned {
+    story.send(ChatAppMsg::DelegationSpawned {
         id: "s1".into(),
         prompt: "Analyze the auth module".into(),
+        target_agent: None,
     });
-    story.send(ChatAppMsg::SubagentCompleted {
+    story.send(ChatAppMsg::DelegationCompleted {
         id: "s1".into(),
         summary: "Found three issues".into(),
     });
@@ -50,11 +52,12 @@ fn subagent_completion_shows_summary() {
 fn subagent_failure_shows_error() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate this".into()));
-    story.send(ChatAppMsg::SubagentSpawned {
+    story.send(ChatAppMsg::DelegationSpawned {
         id: "s1".into(),
         prompt: "Analyze the auth module".into(),
+        target_agent: None,
     });
-    story.send(ChatAppMsg::SubagentFailed {
+    story.send(ChatAppMsg::DelegationFailed {
         id: "s1".into(),
         error: "subagent timed out".into(),
     });
@@ -70,13 +73,15 @@ fn subagent_failure_shows_error() {
 fn concurrent_subagents_render_as_separate_rows() {
     let mut story = StoryRuntime::new(100, 24);
     story.send(ChatAppMsg::UserMessage("delegate two things".into()));
-    story.send(ChatAppMsg::SubagentSpawned {
+    story.send(ChatAppMsg::DelegationSpawned {
         id: "s1".into(),
         prompt: "First parallel task".into(),
+        target_agent: None,
     });
-    story.send(ChatAppMsg::SubagentSpawned {
+    story.send(ChatAppMsg::DelegationSpawned {
         id: "s2".into(),
         prompt: "Second parallel task".into(),
+        target_agent: None,
     });
 
     let screen = story.screen();

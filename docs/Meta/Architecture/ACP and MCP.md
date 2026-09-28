@@ -90,7 +90,7 @@ module classifies wire frames into and consumes, never duplicating them.
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-daemon/src/acp_handle.rs` | 727 | `AcpAgentHandle` — implements `AgentHandle`, `SessionKnobs` and `crucible_core::turn::Agent` for a daemon-managed external ACP agent. |
+| `crates/crucible-daemon/src/acp_handle.rs` | 709 | `AcpAgentHandle` — implements `AgentHandle`, `SessionKnobs` and `crucible_core::turn::Agent` for a daemon-managed external ACP agent. |
 | `crates/crucible-daemon/src/acp_handle/translate.rs` | 325 | Pure translation: `ClientError` → `TurnError` (`turn_error`), ACP `StopReason` → `crucible_core::turn::StopReason` (`turn_stop_reason`), and `acp_prompt_text` for injected-context forwarding. |
 | `crates/crucible-daemon/src/acp_launch.rs` | 690 | Resolves the command/args/env/tool-key-table to exec for an ACP agent via `acp::discovery::profile`, including sandbox relocation; refuses (does not execute) an unknown or malformed agent name. |
 

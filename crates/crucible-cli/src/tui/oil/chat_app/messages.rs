@@ -208,13 +208,7 @@ pub enum ChatAppMsg {
     /// `message_complete`. `None` indicates "no cache data this turn".
     /// Drives the optional `cache_hit_rate` statusline component.
     CacheHitRate(Option<f64>),
-    // --- Delegation & Subagent Events (daemon → TUI) ---
-    /// **Event** (daemon → TUI): Subagent spawned (background task started).
-    SubagentSpawned { id: String, prompt: String },
-    /// **Event** (daemon → TUI): Subagent completed successfully.
-    SubagentCompleted { id: String, summary: String },
-    /// **Event** (daemon → TUI): Subagent failed with error.
-    SubagentFailed { id: String, error: String },
+    // --- Delegation Events (daemon → TUI) ---
     /// **Event** (daemon → TUI): Delegation spawned (cross-agent task started).
     DelegationSpawned {
         id: String,
@@ -470,10 +464,7 @@ impl ChatAppMsg {
             | Self::PluginStatusLoaded(_)
             | Self::StatusItemsLoaded(_) => MsgCategory::Config,
 
-            Self::SubagentSpawned { .. }
-            | Self::SubagentCompleted { .. }
-            | Self::SubagentFailed { .. }
-            | Self::DelegationSpawned { .. }
+            Self::DelegationSpawned { .. }
             | Self::DelegationCompleted { .. }
             | Self::DelegationFailed { .. } => MsgCategory::Delegation,
 
