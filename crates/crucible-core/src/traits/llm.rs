@@ -33,40 +33,6 @@ pub enum MessageRole {
     Tool,
 }
 
-/// Tool call made by the assistant
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolCall {
-    /// Unique ID for this tool call
-    pub id: String,
-    /// Tool type (typically "function")
-    pub r#type: String,
-    /// Function call details
-    pub function: FunctionCall,
-}
-
-impl ToolCall {
-    /// Create a new tool call
-    pub fn new(id: impl Into<String>, name: impl Into<String>, arguments: String) -> Self {
-        Self {
-            id: id.into(),
-            r#type: "function".to_string(),
-            function: FunctionCall {
-                name: name.into(),
-                arguments,
-            },
-        }
-    }
-}
-
-/// Function call details
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FunctionCall {
-    /// Function name
-    pub name: String,
-    /// Function arguments (JSON string)
-    pub arguments: String,
-}
-
 /// Tool definition for LLM tool calling
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmToolDefinition {
@@ -138,13 +104,6 @@ pub struct TokenUsage {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_tool_call() {
-        let call = ToolCall::new("call_1", "search", r#"{"query": "rust"}"#.to_string());
-        assert_eq!(call.id, "call_1");
-        assert_eq!(call.function.name, "search");
-    }
 
     #[test]
     fn test_tool_definition() {

@@ -1,6 +1,7 @@
 //! Tests for ContextMessage - the canonical message type
 
 use super::*;
+use crate::traits::chat::ChatToolCall;
 
 #[test]
 fn injected_context_has_one_tag_and_provenance() {
@@ -13,7 +14,6 @@ fn injected_context_has_one_tag_and_provenance() {
         "<system-message kind=\"precognition\" source=\"daemon\">\nFound a note\n</system-message>"
     );
 }
-use crate::traits::llm::ToolCall;
 
 #[test]
 fn test_user_message_construction() {
@@ -33,12 +33,16 @@ fn test_assistant_message_construction() {
 
 #[test]
 fn test_assistant_with_tool_calls() {
-    let tool_call = ToolCall::new("call_1", "search", r#"{"q":"rust"}"#.to_string());
+    let tool_call = ChatToolCall {
+        name: "search".to_string(),
+        arguments: Some(serde_json::json!({"q": "rust"})),
+        id: Some("call_1".to_string()),
+    };
     let msg = ContextMessage::assistant_with_tools("Searching...", vec![tool_call.clone()]);
 
     assert_eq!(msg.role, MessageRole::Assistant);
     assert_eq!(msg.metadata.tool_calls.len(), 1);
-    assert_eq!(msg.metadata.tool_calls[0].id, "call_1");
+    assert_eq!(msg.metadata.tool_calls[0].id.as_deref(), Some("call_1"));
 }
 
 #[test]

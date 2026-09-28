@@ -12,7 +12,8 @@
 //!
 //! This separation allows flexible context management without hardcoding policies.
 
-use crate::traits::llm::{MessageRole, ToolCall};
+use crate::traits::chat::ChatToolCall;
+use crate::traits::llm::MessageRole;
 use serde::{Deserialize, Serialize};
 
 /// Break each `<system-message` and `</system-message` tag in `text`, in any case.
@@ -44,7 +45,7 @@ pub struct MessageMetadata {
     /// Tool call ID (for tool result messages)
     pub tool_call_id: Option<String>,
     /// Tool calls made by assistant (if any)
-    pub tool_calls: Vec<ToolCall>,
+    pub tool_calls: Vec<ChatToolCall>,
     /// Estimated token count for this message
     pub token_estimate: usize,
     /// Unix timestamp when message was added
@@ -135,7 +136,7 @@ impl ContextMessage {
     }
 
     /// Create an assistant message with tool calls
-    pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+    pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<ChatToolCall>) -> Self {
         Self::assistant(content).with_tool_calls(tool_calls)
     }
 
@@ -163,7 +164,7 @@ impl ContextMessage {
     }
 
     /// Add tool calls to this message (typically used with assistant messages)
-    pub fn with_tool_calls(mut self, tool_calls: Vec<ToolCall>) -> Self {
+    pub fn with_tool_calls(mut self, tool_calls: Vec<ChatToolCall>) -> Self {
         self.metadata.tool_calls = tool_calls;
         self
     }

@@ -19,9 +19,7 @@ pub mod tools;
 pub use chat::{ChatError, ChatResult, ChatToolCall};
 pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
 pub use knowledge::{KnowledgeRepository, NoteInfo, NoteLinks};
-pub use llm::{
-    FunctionCall, FunctionDefinition, LlmToolDefinition, MessageRole, TokenUsage, ToolCall,
-};
+pub use llm::{FunctionDefinition, LlmToolDefinition, MessageRole, TokenUsage};
 pub use tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };

@@ -145,9 +145,17 @@ impl ChatToolResult {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A tool call that the model requests.
+///
+/// This is the one model tool-call record. The daemon stream, the permission
+/// gate and the provider handles use it. `ContextMessage` metadata also keeps
+/// the tool calls of an assistant message in this shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatToolCall {
+    /// The name of the tool.
     pub name: String,
+    /// The parsed arguments, if the model sent arguments.
     pub arguments: Option<serde_json::Value>,
+    /// The provider call id, if the provider gave an id.
     pub id: Option<String>,
 }

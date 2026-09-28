@@ -222,11 +222,11 @@ behavior on top of them.
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-core/src/traits/auth.rs` | 8 | `AuthHeaders` type alias for provider auth-hook responses. |
-| `crates/crucible-core/src/traits/chat.rs` | 153 | `ChatError`, `PrecognitionNoteInfo`, `ChatToolResult`, `ChatToolCall`. `SessionKnobs`/`AgentHandle` and the per-plugin approval floor and turn-limit knobs live in `crucible_daemon::agent_manager::handle` — see [[Agent Manager]]. |
+| `crates/crucible-core/src/traits/chat.rs` | 161 | `ChatError`, `PrecognitionNoteInfo`, `ChatToolResult`, `ChatToolCall` (the one model tool-call record: `name`, parsed `arguments`, optional `id`). `SessionKnobs`/`AgentHandle` and the per-plugin approval floor and turn-limit knobs live in `crucible_daemon::agent_manager::handle` — see [[Agent Manager]]. |
 | `crates/crucible-core/src/traits/context_ops/context_ops_tests.rs` | 170 | Tests for `ContextMessage` construction, `Range`'s tagged-JSON serde, and the injection envelope's tag-forging resistance. |
 | `crates/crucible-core/src/traits/context_ops/mod.rs` | 257 | `ContextMessage`/`MessageMetadata`, `Position`, `Range` — Lua's context-manipulation primitives; `ContextMessage::injection`/`escape` tag a daemon-injected system message with its `kind`/`source`. |
 | `crates/crucible-core/src/traits/knowledge.rs` | 167 | `KnowledgeRepository` trait, `NoteInfo`/`NoteLinks`. |
-| `crates/crucible-core/src/traits/llm.rs` | 186 | `MessageRole`/`ToolCall`/`FunctionCall`/`LlmToolDefinition`/`TokenUsage`. |
+| `crates/crucible-core/src/traits/llm.rs` | 145 | `MessageRole`/`LlmToolDefinition`/`FunctionDefinition`/`TokenUsage`. |
 | `crates/crucible-core/src/traits/mcp.rs` | 260 | `ContentBlock`/`ToolCallResult`/`McpToolInfo`/`McpServerInfo`/`McpTransportConfig`/`McpError`. |
 | `crates/crucible-core/src/traits/mod.rs` | 32 | Trait-layer re-export root — every crate implementing these traits imports through here. |
 | `crates/crucible-core/src/traits/parser.rs` | 5 | Re-export of canonical parser types under the `traits::` namespace. |
@@ -365,7 +365,9 @@ message (Precognition, `cru.context.attach`, a plugin turn) with a
 `<system-message kind="..." source="...">` envelope and record `kind`/
 `source` in `MessageMetadata`, so a client or a later handler can tell an
 injection from ordinary history and cannot be tricked by injected text that
-contains its own fake envelope. `MessageRole`/`ToolCall`/`TokenUsage`
+contains its own fake envelope. `MessageMetadata::tool_calls` holds
+`ChatToolCall` (`traits/chat.rs`), the same record that the daemon stream,
+the permission gate and the provider handles use. `MessageRole`/`TokenUsage`
 (`traits/llm.rs`) and `ContentBlock`/`McpError` (`traits/mcp.rs`) are shared
 LLM/MCP wire-adjacent types. Every trait's real, business-logic
 implementation lives in `crucible-daemon` or `crucible-cli`; `crucible-core`
