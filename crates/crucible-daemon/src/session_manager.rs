@@ -655,14 +655,23 @@ impl SessionManager {
             return Ok(());
         };
         self.settle_history().await;
-        let persisted = self
-            .storage
-            .load_events(session_id, None, None)
-            .await?
+        let lines = self.storage.load_events(session_id, None, None).await?;
+        let persisted = lines
             .iter()
             .filter_map(|line| line.get("seq").and_then(serde_json::Value::as_u64))
             .max()
             .unwrap_or(0);
+        // The live fold continues the fold of the log, which is the snapshot
+        // a client reads. It starts before the counter, because the counter
+        // makes an entry for the session.
+        events.seed_transcript(session_id.as_str(), || {
+            let stored: Vec<crucible_core::protocol::SessionEventMessage> =
+                crucible_core::protocol::session_events::migrate_history(lines)
+                    .into_iter()
+                    .filter_map(|line| serde_json::from_value(line).ok())
+                    .collect();
+            crucible_core::transcript::TranscriptFold::from_events(&stored)
+        });
         events.seed_session(session_id.as_str(), persisted);
         Ok(())
     }

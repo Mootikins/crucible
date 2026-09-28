@@ -103,6 +103,12 @@ pub struct SessionEventMessage {
     pub timestamp: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seq: Option<u64>,
+    /// What the event changed in the folded transcript of the session. The
+    /// daemon sets it on the live copy only: the stored log holds the events,
+    /// and a reader folds them again. A client that renders the transcript
+    /// applies these ops; it does not fold the event itself.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transcript: Vec<crate::transcript::TranscriptOp>,
 }
 
 impl SessionEventMessage {
@@ -122,6 +128,7 @@ impl SessionEventMessage {
             data,
             timestamp: None,
             seq: None,
+            transcript: Vec::new(),
         }
     }
 
@@ -142,6 +149,7 @@ impl SessionEventMessage {
             data,
             timestamp: None,
             seq: None,
+            transcript: Vec::new(),
         }
     }
 

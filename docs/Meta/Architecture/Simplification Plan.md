@@ -145,7 +145,7 @@ ops. The commits, in order:
 1. **(done)** `crates/crucible-core/src/transcript/`: the types, the fold and
    the op replay, with golden files for five recordings.
 2. **(done)** `session.history` returns the snapshot as `transcript`. `SessionManager::load_transcript` folds the whole stored log, after the migration of old lines.
-3. The daemon event bus folds each event and sends its ops.
+3. **(done)** The daemon event bus folds each event and sends its ops in the `transcript` field of the live copy. The journal copy has no ops.
 4. The web backend forwards the ops.
 5. The web client renders the snapshot and the ops. Its own fold goes.
 6. The TUI renders the snapshot and the ops. Its own fold goes.

@@ -223,6 +223,12 @@ sequenceDiagram
    `crates/crucible-daemon/src/server/mod.rs` reads the journal, not the
    ring. Kiln indexing (flow 6) does not read this journal at all: it runs
    off its own `IndexQueue`, fed by the watcher and by every daemon write.
+   Under the same lock, the bus folds the event into the session's
+   transcript (`TranscriptFold` in `crates/crucible-core/src/transcript/mod.rs`)
+   and puts the ops of the fold in the `transcript` field of the live copy.
+   The journal copy has no ops. `SessionManager::seed_seq` seeds the fold
+   from the stored log when a session becomes resident, so the ops fit the
+   snapshot that `session.history` serves.
 7. `forward_events` in `crates/crucible-daemon/src/server/core/mod.rs` relays
    each message to a socket client (TUI or ACP host). The CLI TUI's live
    session runs `live_session_event_consumer` in

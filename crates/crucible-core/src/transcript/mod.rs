@@ -315,13 +315,20 @@ impl TranscriptFold {
         self.transcript.clone()
     }
 
-    /// Fold every event of `events`, in order.
-    pub fn of_events<'a>(events: impl IntoIterator<Item = &'a SessionEventMessage>) -> Transcript {
+    /// A fold that already read `events`, in order. A live fold starts here,
+    /// from the stored log, so that its next ops fit the snapshot a client
+    /// reads from that log.
+    pub fn from_events<'a>(events: impl IntoIterator<Item = &'a SessionEventMessage>) -> Self {
         let mut fold = Self::new();
         for event in events {
             fold.apply(event);
         }
-        fold.snapshot()
+        fold
+    }
+
+    /// Fold every event of `events`, in order.
+    pub fn of_events<'a>(events: impl IntoIterator<Item = &'a SessionEventMessage>) -> Transcript {
+        Self::from_events(events).snapshot()
     }
 
     /// Fold one event. The answer is the ops that the event caused, already

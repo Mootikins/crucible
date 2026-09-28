@@ -983,6 +983,7 @@ mod session_stop;
 mod status_items;
 mod title;
 mod transcript_containment;
+mod transcript_ops;
 mod trust_gate;
 mod turn_finished;
 mod two_sessions;

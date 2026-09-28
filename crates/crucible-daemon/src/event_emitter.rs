@@ -10,8 +10,18 @@ pub struct EventBus(Arc<Inner>);
 struct Inner {
     live: broadcast::Sender<SessionEventMessage>,
     journal: crate::lossless_queue::Sender<SessionEventMessage>,
-    // This lock orders stamping, journal enqueue and live publication together.
-    sequences: Mutex<HashMap<String, u64>>,
+    // This lock orders stamping, folding, journal enqueue and live
+    // publication together.
+    sessions: Mutex<HashMap<String, SessionStream>>,
+}
+
+/// What the bus keeps for one session: its seq counter and the fold of its
+/// transcript. The fold reads each event in seq order, because the lock that
+/// stamps the event also folds it.
+#[derive(Default)]
+struct SessionStream {
+    seq: u64,
+    fold: crucible_core::transcript::TranscriptFold,
 }
 
 impl std::fmt::Debug for EventBus {
@@ -41,7 +51,7 @@ impl EventBus {
         let bus = Self(Arc::new(Inner {
             live,
             journal,
-            sequences: Mutex::new(HashMap::new()),
+            sessions: Mutex::new(HashMap::new()),
         }));
         (bus, reader)
     }
@@ -72,11 +82,8 @@ impl EventBus {
     }
 
     fn publish(&self, mut event: SessionEventMessage, stamp: bool) -> bool {
-        let mut sequences = self
-            .0
-            .sequences
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut sessions = self.lock();
+        let stream = sessions.entry(event.session_id.clone()).or_default();
         if stamp {
             // A name that no payload enum declares decodes as `UnknownEvent`
             // in every client. Build events with `SessionEventMessage::typed`.
@@ -85,13 +92,42 @@ impl EventBus {
                 "the EventBus refuses the undeclared event name `{}`",
                 event.event
             );
-            let counter = sequences.entry(event.session_id.clone()).or_default();
-            event = stamp_event(event, counter);
+            event = stamp_event(event, &mut stream.seq);
         }
+        // The journal stores the event without its ops: a reader of the log
+        // folds the events again.
         self.0.journal.send(event.clone());
+        event.transcript = stream.fold.apply(&event);
         let received = self.0.live.send(event).is_ok();
-        drop(sequences);
+        drop(sessions);
         received
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, SessionStream>> {
+        self.0
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Start the fold of `session_id` from its stored log, when the bus has
+    /// no fold for it yet. A client reads its snapshot from that log, so the
+    /// next ops must continue the same fold.
+    pub(crate) fn seed_transcript(
+        &self,
+        session_id: &str,
+        fold: impl FnOnce() -> crucible_core::transcript::TranscriptFold,
+    ) {
+        let mut sessions = self.lock();
+        if !sessions.contains_key(session_id) {
+            sessions.insert(
+                session_id.to_owned(),
+                SessionStream {
+                    seq: 0,
+                    fold: fold(),
+                },
+            );
+        }
     }
 
     /// Continue the seq of `session_id` above `persisted`, the highest seq in
@@ -100,31 +136,19 @@ impl EventBus {
     /// seq that the log and a client cursor already hold, and a client would
     /// drop the event as a duplicate. The seed never lowers a live counter.
     pub(crate) fn seed_session(&self, session_id: &str, persisted: u64) {
-        let mut sequences = self
-            .0
-            .sequences
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let counter = sequences.entry(session_id.to_owned()).or_default();
-        *counter = (*counter).max(persisted);
+        let mut sessions = self.lock();
+        let stream = sessions.entry(session_id.to_owned()).or_default();
+        stream.seq = stream.seq.max(persisted);
     }
 
     /// Retire last in session cleanup. A late emitter may start a counter again
     /// on that dead session; retirement must never reset a live turn's count.
     pub(crate) fn forget_session(&self, session_id: &str) {
-        self.0
-            .sequences
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(session_id);
+        self.lock().remove(session_id);
     }
 
     pub(crate) fn has_seq_counter(&self, session_id: &str) -> bool {
-        self.0
-            .sequences
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains_key(session_id)
+        self.lock().contains_key(session_id)
     }
 }
 
@@ -172,8 +196,10 @@ mod tests {
         });
         for seq in 1..=400 {
             let stored = journal.try_recv().expect("every event journaled");
-            let received = live.try_recv().expect("every event broadcast");
+            let mut received = live.try_recv().expect("every event broadcast");
             assert_eq!(stored.seq, Some(seq));
+            // The live copy also carries the ops of the fold.
+            received.transcript.clear();
             assert_eq!(
                 serde_json::to_value(&*stored).unwrap(),
                 serde_json::to_value(received).unwrap()
@@ -181,6 +207,52 @@ mod tests {
         }
         assert!(journal.try_recv().is_none());
         assert!(live.try_recv().is_err());
+    }
+
+    /// The live copy of an event carries the ops of the transcript fold; the
+    /// journal copy does not, because a reader of the log folds it again.
+    #[test]
+    fn the_live_copy_carries_the_fold_and_the_journal_copy_does_not() {
+        let (bus, mut journal) = EventBus::journaled_channel(8);
+        let mut live = bus.subscribe();
+        bus.emit(SessionEventMessage::user_message("s", "m1", "hello"));
+
+        let stored = journal.try_recv().expect("journaled");
+        assert!(stored.transcript.is_empty());
+        assert!(!serde_json::to_string(&*stored)
+            .unwrap()
+            .contains("transcript"));
+
+        let received = live.try_recv().expect("broadcast");
+        let mut transcript = crucible_core::transcript::Transcript::default();
+        assert!(received.transcript.iter().all(|op| transcript.apply(op)));
+        assert_eq!(transcript.items[0].id, "m1");
+    }
+
+    /// A seeded fold continues the stored log: the next turn's ops fit the
+    /// snapshot of that log, and its ids do not restart.
+    #[test]
+    fn a_seeded_fold_continues_the_stored_log() {
+        let stored = [
+            SessionEventMessage::user_message("s", "m1", "one"),
+            SessionEventMessage::user_message("s", "m2", "two"),
+        ];
+        let snapshot = crucible_core::transcript::TranscriptFold::of_events(&stored);
+        let (bus, _journal) = EventBus::journaled_channel(8);
+        let mut live = bus.subscribe();
+        bus.seed_transcript("s", || {
+            crucible_core::transcript::TranscriptFold::from_events(&stored)
+        });
+        bus.emit(SessionEventMessage::text_delta("s", "answer"));
+
+        let mut transcript = snapshot;
+        let received = live.try_recv().expect("broadcast");
+        assert!(received.transcript.iter().all(|op| transcript.apply(op)));
+        assert_eq!(transcript.items.len(), 3);
+        assert_eq!(
+            transcript.items[2].id, "m2-seg-0",
+            "the answer joins the open turn"
+        );
     }
 
     #[tokio::test]
