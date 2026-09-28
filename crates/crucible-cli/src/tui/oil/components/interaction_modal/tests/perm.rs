@@ -6,7 +6,6 @@ use crossterm::event::KeyCode;
 use crucible_core::interaction::{InteractionRequest, PermRequest};
 use crucible_core::types::acp::FileDiff;
 use crucible_oil::render::render_to_string;
-use std::collections::HashSet;
 
 #[test]
 fn test_perm_modal_allow() {
@@ -82,23 +81,6 @@ fn test_perm_modal_navigation() {
 
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Up)));
     assert_eq!(modal.selected, 0);
-}
-
-#[test]
-fn test_wrap_selection() {
-    assert_eq!(InteractionModal::wrap_selection(0, -1, 3), 2);
-    assert_eq!(InteractionModal::wrap_selection(2, 1, 3), 0);
-    assert_eq!(InteractionModal::wrap_selection(1, -1, 3), 0);
-    assert_eq!(InteractionModal::wrap_selection(1, 1, 3), 2);
-}
-
-#[test]
-fn test_toggle_checked() {
-    let mut set = HashSet::new();
-    InteractionModal::toggle_checked(&mut set, 1);
-    assert!(set.contains(&1));
-    InteractionModal::toggle_checked(&mut set, 1);
-    assert!(!set.contains(&1));
 }
 
 #[test]

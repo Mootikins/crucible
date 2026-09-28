@@ -22,11 +22,11 @@ impl InteractionModal {
         match self.mode {
             InteractionMode::Selecting => match key.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    self.selected = Self::wrap_selection(self.selected, -1, total_options);
+                    self.selected = super::choice::wrap_selection(self.selected, -1, total_options);
                     InteractionModalOutput::None
                 }
                 KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    self.selected = Self::wrap_selection(self.selected, 1, total_options);
+                    self.selected = super::choice::wrap_selection(self.selected, 1, total_options);
                     InteractionModalOutput::None
                 }
                 KeyCode::Enter
@@ -90,6 +90,8 @@ impl InteractionModal {
                 }
                 _ => InteractionModalOutput::None,
             },
+            // Only a panel filters.
+            InteractionMode::Filter => InteractionModalOutput::None,
         }
     }
 

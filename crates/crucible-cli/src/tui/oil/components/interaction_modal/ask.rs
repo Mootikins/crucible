@@ -1,3 +1,4 @@
+use super::choice::{self, ChoiceList, ChoiceStep};
 use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crossterm::event::{KeyCode, KeyEvent};
 use crucible_core::interaction::{
@@ -13,80 +14,32 @@ impl InteractionModal {
         key: KeyEvent,
         ask_request: AskRequest,
     ) -> InteractionModalOutput {
-        let choices_count = ask_request.choices.as_ref().map(|c| c.len()).unwrap_or(0);
-        let total_items = choices_count + if ask_request.allow_other { 1 } else { 0 };
+        let choices_count = ask_request.choices.as_ref().map_or(0, Vec::len);
+        let list = ChoiceList::new(choices_count)
+            .allow_other(ask_request.allow_other)
+            .multi_select(ask_request.multi_select);
 
-        match self.mode {
-            InteractionMode::Selecting => match key.code {
-                KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    self.selected = Self::wrap_selection(self.selected, -1, total_items.max(1));
-                    InteractionModalOutput::None
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    self.selected = Self::wrap_selection(self.selected, 1, total_items.max(1));
-                    InteractionModalOutput::None
-                }
-                KeyCode::Enter => {
-                    if self.selected < choices_count {
-                        let response = if ask_request.multi_select {
-                            InteractionResponse::Ask(AskResponse::selected_many(
-                                self.checked.iter().copied().collect::<Vec<_>>(),
-                            ))
-                        } else {
-                            InteractionResponse::Ask(AskResponse::selected(self.selected))
-                        };
-                        InteractionModalOutput::AskResponse {
-                            request_id: self.request_id.clone(),
-                            response,
-                        }
-                    } else if ask_request.allow_other && self.selected == choices_count {
-                        self.mode = InteractionMode::TextInput;
-                        InteractionModalOutput::None
-                    } else {
-                        InteractionModalOutput::None
-                    }
-                }
-                KeyCode::Tab if ask_request.allow_other => {
-                    self.mode = InteractionMode::TextInput;
-                    InteractionModalOutput::None
-                }
-                KeyCode::Char(' ') if ask_request.multi_select => {
-                    Self::toggle_checked(&mut self.checked, self.selected);
-                    InteractionModalOutput::None
-                }
-                KeyCode::Esc => InteractionModalOutput::AskResponse {
-                    request_id: self.request_id.clone(),
-                    response: InteractionResponse::Cancelled,
-                },
-                KeyCode::Char('c') if Self::is_ctrl_c(key) => InteractionModalOutput::AskResponse {
-                    request_id: self.request_id.clone(),
-                    response: InteractionResponse::Cancelled,
-                },
-                _ => InteractionModalOutput::None,
-            },
-            InteractionMode::TextInput => match key.code {
-                KeyCode::Enter => {
-                    let response =
-                        InteractionResponse::Ask(AskResponse::other(self.other_text.clone()));
-                    InteractionModalOutput::AskResponse {
-                        request_id: self.request_id.clone(),
-                        response,
-                    }
-                }
-                KeyCode::Esc => {
-                    self.mode = InteractionMode::Selecting;
-                    InteractionModalOutput::None
-                }
-                KeyCode::Backspace => {
-                    self.other_text.pop();
-                    InteractionModalOutput::None
-                }
-                KeyCode::Char(c) => {
-                    self.other_text.push(c);
-                    InteractionModalOutput::None
-                }
-                _ => InteractionModalOutput::None,
-            },
+        // Tab opens the text input of the "Other" slot from any row.
+        if self.mode == InteractionMode::Selecting
+            && key.code == KeyCode::Tab
+            && ask_request.allow_other
+        {
+            self.mode = InteractionMode::TextInput;
+            return InteractionModalOutput::None;
+        }
+
+        let response = match list.handle_key(key, self.choice_input()) {
+            ChoiceStep::Pick(index) => InteractionResponse::Ask(AskResponse::selected(index)),
+            ChoiceStep::PickMany(indices) => {
+                InteractionResponse::Ask(AskResponse::selected_many(indices))
+            }
+            ChoiceStep::Other(text) => InteractionResponse::Ask(AskResponse::other(text)),
+            ChoiceStep::Cancel => InteractionResponse::Cancelled,
+            ChoiceStep::Handled | ChoiceStep::Ignored => return InteractionModalOutput::None,
+        };
+        InteractionModalOutput::AskResponse {
+            request_id: self.request_id.clone(),
+            response,
         }
     }
 
@@ -98,72 +51,60 @@ impl InteractionModal {
         if self.current_question >= batch.questions.len() {
             return InteractionModalOutput::None;
         }
+        // A batch has no text input for its "Other" slot.
+        if self.mode != InteractionMode::Selecting {
+            return InteractionModalOutput::None;
+        }
+
+        match key.code {
+            KeyCode::Tab => {
+                self.advance_batch_question(&batch);
+                return InteractionModalOutput::None;
+            }
+            KeyCode::BackTab => {
+                if self.current_question > 0 {
+                    self.record_batch_answer(&batch);
+                    self.current_question -= 1;
+                    self.selected = 0;
+                    self.checked = self
+                        .batch_answers
+                        .get(self.current_question)
+                        .cloned()
+                        .unwrap_or_default();
+                    self.other_text = self
+                        .batch_other_texts
+                        .get(self.current_question)
+                        .cloned()
+                        .unwrap_or_default();
+                }
+                return InteractionModalOutput::None;
+            }
+            KeyCode::Enter => {
+                let is_last = self.current_question == batch.questions.len() - 1;
+                if !is_last {
+                    self.advance_batch_question(&batch);
+                    return InteractionModalOutput::None;
+                }
+                self.record_batch_answer(&batch);
+                let response = InteractionResponse::AskBatch(self.batch_response(&batch));
+                return InteractionModalOutput::AskResponse {
+                    request_id: self.request_id.clone(),
+                    response,
+                };
+            }
+            _ => {}
+        }
 
         let current_q = &batch.questions[self.current_question];
-        let choices_count = current_q.choices.len();
-        let total_items = choices_count + if current_q.allow_other { 1 } else { 0 };
-
-        match self.mode {
-            InteractionMode::Selecting => match key.code {
-                KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => {
-                    self.selected = Self::wrap_selection(self.selected, -1, total_items.max(1));
-                    InteractionModalOutput::None
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => {
-                    self.selected = Self::wrap_selection(self.selected, 1, total_items.max(1));
-                    InteractionModalOutput::None
-                }
-                KeyCode::Char(' ') if current_q.multi_select => {
-                    Self::toggle_checked(&mut self.checked, self.selected);
-                    InteractionModalOutput::None
-                }
-                KeyCode::Tab => {
-                    self.advance_batch_question(&batch);
-                    InteractionModalOutput::None
-                }
-                KeyCode::BackTab => {
-                    if self.current_question > 0 {
-                        self.record_batch_answer(&batch);
-                        self.current_question -= 1;
-                        self.selected = 0;
-                        self.checked = self
-                            .batch_answers
-                            .get(self.current_question)
-                            .cloned()
-                            .unwrap_or_default();
-                        self.other_text = self
-                            .batch_other_texts
-                            .get(self.current_question)
-                            .cloned()
-                            .unwrap_or_default();
-                    }
-                    InteractionModalOutput::None
-                }
-                KeyCode::Enter => {
-                    let is_last = self.current_question == batch.questions.len() - 1;
-                    if is_last {
-                        self.record_batch_answer(&batch);
-                        let response = InteractionResponse::AskBatch(self.batch_response(&batch));
-                        InteractionModalOutput::AskResponse {
-                            request_id: self.request_id.clone(),
-                            response,
-                        }
-                    } else {
-                        self.advance_batch_question(&batch);
-                        InteractionModalOutput::None
-                    }
-                }
-                KeyCode::Esc => InteractionModalOutput::AskResponse {
-                    request_id: self.request_id.clone(),
-                    response: InteractionResponse::Cancelled,
-                },
-                KeyCode::Char('c') if Self::is_ctrl_c(key) => InteractionModalOutput::AskResponse {
-                    request_id: self.request_id.clone(),
-                    response: InteractionResponse::Cancelled,
-                },
-                _ => InteractionModalOutput::None,
+        let list = ChoiceList::new(current_q.choices.len())
+            .allow_other(current_q.allow_other)
+            .multi_select(current_q.multi_select);
+        match list.handle_key(key, self.choice_input()) {
+            ChoiceStep::Cancel => InteractionModalOutput::AskResponse {
+                request_id: self.request_id.clone(),
+                response: InteractionResponse::Cancelled,
             },
-            InteractionMode::TextInput => InteractionModalOutput::None,
+            _ => InteractionModalOutput::None,
         }
     }
 
@@ -351,17 +292,7 @@ impl InteractionModal {
         }
 
         if allow_other {
-            let other_idx = choices.len();
-            let is_selected = self.selected == other_idx;
-            let prefix = if is_selected { " > " } else { "   " };
-            let style = if is_selected {
-                Style::new().fg(t.resolve_color(t.colors.primary)).bold()
-            } else {
-                Style::new()
-                    .fg(t.resolve_color(t.colors.text_muted))
-                    .italic()
-            };
-            choice_nodes.push(styled(format!("{}Other...", prefix), style));
+            choice_nodes.push(choice::other_row(self.selected == choices.len(), " > "));
         }
 
         let key_style = Style::new()
@@ -396,18 +327,7 @@ impl InteractionModal {
         let footer = row([footer_content, footer_padding]);
 
         if self.mode == InteractionMode::TextInput {
-            let input_line = row([
-                styled(
-                    "   Enter text: ",
-                    Style::new().fg(t.resolve_color(t.colors.text_muted)),
-                ),
-                styled(
-                    &self.other_text,
-                    Style::new().fg(t.resolve_color(t.colors.text)),
-                ),
-                styled("_", Style::new().fg(t.resolve_color(t.colors.primary))),
-            ]);
-            choice_nodes.push(input_line);
+            choice_nodes.push(choice::other_text_row("   ", &self.other_text));
         }
 
         let choices_col = col(choice_nodes);

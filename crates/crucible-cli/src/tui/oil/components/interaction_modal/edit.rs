@@ -129,6 +129,8 @@ impl InteractionModal {
                 }
                 _ => InteractionModalOutput::None,
             },
+            // Only a panel filters.
+            InteractionMode::Filter => InteractionModalOutput::None,
         }
     }
 
@@ -230,7 +232,7 @@ impl InteractionModal {
         let hint_style = Style::new().fg(t.resolve_color(t.colors.text_muted)).dim();
         let mode_label = match self.mode {
             InteractionMode::Selecting => "NORMAL",
-            InteractionMode::TextInput => "INSERT",
+            InteractionMode::TextInput | InteractionMode::Filter => "INSERT",
         };
 
         let footer = if self.mode == InteractionMode::TextInput {

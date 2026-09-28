@@ -9,6 +9,7 @@ use crucible_core::interaction::{InteractionRequest, PanelState};
 use std::collections::HashSet;
 
 mod ask;
+mod choice;
 mod edit;
 mod helpers;
 mod panel;
@@ -27,6 +28,8 @@ pub enum InteractionMode {
     Selecting,
     /// Free-text input (for "Other" option).
     TextInput,
+    /// Filter input of a filterable panel.
+    Filter,
 }
 
 /// Messages that can be sent to the interaction modal.
@@ -154,21 +157,13 @@ impl InteractionModal {
         }
     }
 
-    pub(super) fn wrap_selection(selected: usize, delta: isize, total: usize) -> usize {
-        if delta < 0 && selected == 0 {
-            total - 1
-        } else if delta < 0 {
-            selected - 1
-        } else {
-            (selected + 1) % total
-        }
-    }
-
-    pub(super) fn toggle_checked(set: &mut HashSet<usize>, value: usize) {
-        if set.contains(&value) {
-            set.remove(&value);
-        } else {
-            set.insert(value);
+    /// The choice state of the Ask, AskBatch and Popup modals.
+    fn choice_input(&mut self) -> choice::ChoiceInput<'_> {
+        choice::ChoiceInput {
+            cursor: &mut self.selected,
+            checked: &mut self.checked,
+            text: &mut self.other_text,
+            mode: &mut self.mode,
         }
     }
 

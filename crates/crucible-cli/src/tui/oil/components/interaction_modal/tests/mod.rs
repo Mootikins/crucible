@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 mod ask;
+mod choice;
 mod edit;
 mod panel;
 mod perm;

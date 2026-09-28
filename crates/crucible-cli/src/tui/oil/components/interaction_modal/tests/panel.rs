@@ -54,10 +54,18 @@ fn panel_multi_select_toggle() {
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char(' '))));
 
-    let state = modal.panel_state.as_ref().unwrap();
-    assert!(state.selected.contains(&0));
-    assert!(state.selected.contains(&2));
-    assert!(!state.selected.contains(&1));
+    assert!(modal.checked.contains(&0));
+    assert!(modal.checked.contains(&2));
+    assert!(!modal.checked.contains(&1));
+
+    let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Enter)));
+    match output {
+        InteractionModalOutput::AskResponse {
+            response: InteractionResponse::Panel(result),
+            ..
+        } => assert_eq!(result.selected, vec![0, 2]),
+        other => panic!("Expected a Panel response, got {other:?}"),
+    }
 }
 
 #[test]
@@ -81,7 +89,7 @@ fn panel_filter_narrows_visible() {
     );
 
     modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('/'))));
-    assert_eq!(modal.mode, InteractionMode::TextInput);
+    assert_eq!(modal.mode, InteractionMode::Filter);
 
     for c in "a".chars() {
         modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char(c))));
@@ -105,4 +113,57 @@ fn panel_initial_selection_applied() {
     assert!(modal.checked.contains(&1));
     assert!(modal.checked.contains(&2));
     assert!(!modal.checked.contains(&0));
+}
+
+fn other_text(output: InteractionModalOutput) -> Option<String> {
+    match output {
+        InteractionModalOutput::AskResponse {
+            response: InteractionResponse::Panel(result),
+            ..
+        } => result.other,
+        other => panic!("Expected a Panel response, got {other:?}"),
+    }
+}
+
+/// The panel draws an "Other..." row after the items. The cursor reaches it,
+/// and Enter on it opens the text input.
+#[test]
+fn panel_other_slot_takes_text() {
+    let mut modal = make_panel_modal(vec!["A", "B"], PanelHints::new().allow_other());
+
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Up)));
+    assert_eq!(modal.panel_state.as_ref().unwrap().cursor, 2);
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Enter)));
+    assert_eq!(modal.mode, InteractionMode::TextInput);
+
+    for c in "mine".chars() {
+        modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char(c))));
+    }
+    let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Enter)));
+    assert_eq!(other_text(output), Some("mine".to_string()));
+}
+
+/// In a panel that filters and allows "Other", the filter and the text of
+/// the "Other" slot are separate inputs.
+#[test]
+fn panel_filter_and_other_text_stay_apart() {
+    let mut modal = make_panel_modal(
+        vec!["Apple", "Banana"],
+        PanelHints::new().filterable().allow_other(),
+    );
+
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('/'))));
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('b'))));
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Enter)));
+    assert_eq!(modal.mode, InteractionMode::Selecting);
+    assert_eq!(modal.panel_state.as_ref().unwrap().visible, vec![1]);
+
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Down)));
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Enter)));
+    assert_eq!(modal.mode, InteractionMode::TextInput);
+    modal.update(InteractionModalMsg::Key(key_event(KeyCode::Char('z'))));
+
+    assert_eq!(modal.panel_state.as_ref().unwrap().filter, "b");
+    let output = modal.update(InteractionModalMsg::Key(key_event(KeyCode::Enter)));
+    assert_eq!(other_text(output), Some("z".to_string()));
 }

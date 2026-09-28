@@ -122,19 +122,21 @@ the client.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/mod.rs` | 194 | `InteractionModal`/`InteractionModalOutput`: the Elm-style struct and dispatch for every `InteractionRequest` kind. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/ask.rs` | 425 | Key handling and rendering for `Ask` and `AskBatch` requests. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/edit.rs` | 287 | Key handling and rendering for the `Edit` line-editor request. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/mod.rs` | 189 | `InteractionModal`/`InteractionModalOutput`: the Elm-style struct and dispatch for every `InteractionRequest` kind. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/ask.rs` | 345 | Key handling and rendering for `Ask` and `AskBatch` requests, on `ChoiceList`. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/choice.rs` | 242 | `ChoiceList`/`ChoiceInput`/`ChoiceStep`: the one choice flow (cursor wrap, the "Other" slot, multi-select toggle, text input) of Ask, AskBatch, Popup and Panel, plus `wrap_selection` and the "Other" rows. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/edit.rs` | 289 | Key handling and rendering for the `Edit` line-editor request. |
 | `crates/crucible-cli/src/tui/oil/components/interaction_modal/helpers.rs` | 52 | `prettify_tool_args`/`prettify_tool_args_full`: shared tool-argument formatting for `perm.rs`. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/panel.rs` | 312 | Key handling and rendering for the generic filterable/multi-select `Panel` request. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/perm.rs` | 437 | Key handling and rendering for `Permission` requests: allow/deny/allowlist, plugin-origin banner and diff preview, reading the daemon's `CanonicalToolCall`. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/popup.rs` | 178 | Key handling and rendering for the `Popup` single-select request. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/panel.rs` | 224 | Key handling and rendering for the generic filterable/multi-select `Panel` request: the filter input, and `ChoiceList` over the visible items. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/perm.rs` | 439 | Key handling and rendering for `Permission` requests: allow/deny/allowlist, plugin-origin banner and diff preview, reading the daemon's `CanonicalToolCall`. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/popup.rs` | 115 | Key handling and rendering for the `Popup` single-select request, on `ChoiceList`. |
 | `crates/crucible-cli/src/tui/oil/components/interaction_modal/show.rs` | 121 | Key handling and rendering for the read-only `Show` scrollable-text request. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/mod.rs` | 16 | Shared key-event test fixtures for this directory's test files. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/mod.rs` | 17 | Shared key-event test fixtures for this directory's test files. |
 | `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/ask.rs` | 111 | Unit tests for `ask.rs`, including the batch-answer regression. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/choice.rs` | 187 | Unit tests for `choice.rs`: wrap, filtered ids, toggle, the "Other" slot, text input and cancel. |
 | `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/edit.rs` | 108 | Unit tests for `edit.rs`. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/panel.rs` | 108 | Unit tests for `panel.rs`, including filter narrowing. |
-| `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/perm.rs` | 322 | Unit and `insta` snapshot tests for `perm.rs`, including the plugin-origin banner. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/panel.rs` | 169 | Unit tests for `panel.rs`, including filter narrowing and the "Other" slot. |
+| `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/perm.rs` | 304 | Unit and `insta` snapshot tests for `perm.rs`, including the plugin-origin banner. |
 | `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/popup.rs` | 75 | Unit tests for `popup.rs`. |
 | `crates/crucible-cli/src/tui/oil/components/interaction_modal/tests/show.rs` | 66 | Unit tests for `show.rs`. |
 
@@ -264,6 +266,20 @@ the client.
   render-bearing tool call), and `layer: Option<String>` (who asked);
   `suggested_pattern()` returns `Option<String>`, `None` when no grant can
   name the call.
+- **`ChoiceList`, `ChoiceInput`, `ChoiceStep`**
+  (`crates/crucible-cli/src/tui/oil/components/interaction_modal/choice.rs`) —
+  the one choice flow of the Ask, AskBatch, Popup and Panel modals.
+  `ChoiceList` gives the shape of a list: the choice ids (`new(count)`, or
+  `filtered(&visible)` for a panel), `allow_other` and `multi_select`.
+  `handle_key` takes a `ChoiceInput` (borrows of the cursor, the checked ids,
+  the "Other" text and the `InteractionMode`) and returns a `ChoiceStep`:
+  `Pick(id)`, `PickMany(ids)` in ascending order, `Other(text)`, `Cancel`,
+  `Handled` or `Ignored`. Up/Down (`k`/`j`) wrap over the choices and the
+  "Other" slot. Space toggles a choice id, and does nothing on the "Other"
+  slot. Enter on the "Other" slot opens the text input. Each modal handles
+  its own keys first (Ask: Tab; AskBatch: Tab, BackTab, Enter; Panel: `/`
+  and the `InteractionMode::Filter` input). Then it turns the step into its
+  response type. `perm.rs` uses only `wrap_selection`.
 - **`StatusBar`, `StatusComponent`, `ItemContext`, `Fragment`**
   (`crates/crucible-cli/src/tui/oil/components/status_bar.rs`,
   `status_component.rs`, `status_items.rs`) — `StatusBar` is the per-frame data
@@ -760,7 +776,9 @@ target text.
   `crates/crucible-cli/src/tui/oil/components/interaction_modal/` (a
   `handle_*_key` and a `render_*_interaction` function), wired into the
   dispatch in `interaction_modal/mod.rs` and into `InteractionModal::new`'s
-  seed logic if the variant needs per-kind initial state.
+  seed logic if the variant needs per-kind initial state. A variant that
+  offers a list of choices uses `ChoiceList` in `choice.rs`. Do not write
+  another cursor or "Other" flow.
 - **A new full-screen view** — a new component beside `DiffModal`/
   `ProposalsModal` (`components/`), full-screen and self-contained (own
   screen, no window layer), returning an outcome enum the caller turns into
@@ -891,14 +909,6 @@ target text.
   the code makes `natural` an exact synonym for `viewport`. A test
   (`natural is a viewport layout under another name`) confirms the collapse
   was deliberate at some point, but the doc comment was not updated to match.
-- **Duplicated select/allow-other/text-input flow.**
-  `crates/crucible-cli/src/tui/oil/components/interaction_modal/ask.rs`,
-  `popup.rs` and `panel.rs` each reimplement the same
-  selection/"Other"-slot/text-input pattern. `ask.rs` and `popup.rs` share
-  `InteractionModal::wrap_selection`/`toggle_checked`; `panel.rs` reimplements
-  its own cursor wrap-around and multi-select toggle independently and calls
-  neither helper, so it shares no code with the other two at all. A
-  simplification opportunity, not a defect.
 - **`FullscreenShell` proves a model that `cru chat` does not use yet.**
   `crates/crucible-cli/src/tui/oil/fullscreen/shell.rs`'s own module doc
   states this directly: it "proves the view model, not the wiring." `cru
