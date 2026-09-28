@@ -122,8 +122,8 @@ pub use mcp_host::InProcessMcpHost;
 pub use mcp_server::McpServerManager;
 pub use observe::{events, id, markdown, session};
 pub use observe::{
-    load_events, parse_session_log, render_to_markdown, wire_to_log_event, LogEvent, RenderOptions,
-    SessionId, SessionIdError, SessionLogLine, SessionType, TokenUsage,
+    load_transcript, render_to_markdown, transcript_of_log, transcript_summary, LogEvent,
+    RenderOptions, SessionId, SessionIdError, SessionLogLine, SessionType, TokenUsage,
 };
 pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};

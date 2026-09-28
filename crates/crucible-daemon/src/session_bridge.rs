@@ -196,73 +196,111 @@ macro_rules! bridge_async {
     }};
 }
 
-/// The transcript rows a Lua caller sees for a session's event log.
+/// The transcript rows a Lua caller sees for a session.
 ///
-/// `include_tools` adds `tool_call` and `tool_result` rows. They are off by
-/// default because most callers want conversation text. The reflection
-/// reviewer wants what the agent did, which is these rows. A role filter
-/// names a text role, so it excludes the tool rows.
+/// The rows come from the transcript that the daemon folds once, so a Lua
+/// caller sees the turns that the TUI and the web client draw. An answer
+/// segment is one `assistant` row. `include_tools` adds a `tool_call` row and,
+/// for a call that answered, a `tool_result` row. They are off by default
+/// because most callers want conversation text. The reflection reviewer
+/// wants what the agent did, which is these rows. A role filter names a text
+/// role, so it excludes the tool rows.
 pub(crate) fn message_rows(
-    events: &[crate::observe::LogEvent],
+    transcript: &crucible_core::transcript::Transcript,
     role_filter: Option<&str>,
     include_tools: bool,
 ) -> Vec<serde_json::Value> {
-    use crate::observe::LogEvent;
+    use crucible_core::transcript::{ItemBody, ToolStatus};
+    use serde_json::{json, Value};
+
     let tools_wanted = include_tools && role_filter.is_none();
-    events
-        .iter()
-        .filter_map(|event| {
-            let ts = event.timestamp().to_rfc3339();
-            let text_row = |role: &str, content: &str| {
-                if role_filter.is_some_and(|r| r != role) {
-                    return None;
-                }
-                Some(serde_json::json!({ "role": role, "content": content, "timestamp": ts }))
-            };
-            match event {
-                LogEvent::User { content, plugin, .. } => match plugin {
-                    Some(name) if role_filter.is_none_or(|r| r == "system") => Some(
-                        serde_json::json!({"role": "system", "content": content, "plugin": name, "timestamp": ts}),
-                    ),
-                    Some(_) => None,
-                    None => text_row("user", content),
-                },
-                LogEvent::Assistant { content, .. } => text_row("assistant", content),
-                LogEvent::System { content, .. } => text_row("system", content),
-                LogEvent::ToolCall { id, name, args, .. } if tools_wanted => {
-                    Some(serde_json::json!({
-                        "role": "tool_call",
-                        "id": id,
-                        "name": name,
-                        "args": args,
-                        "timestamp": ts,
-                    }))
-                }
-                LogEvent::ToolResult {
-                    id,
-                    result,
-                    truncated,
-                    error,
-                    ..
-                } if tools_wanted => {
-                    let mut row = serde_json::json!({
-                        "role": "tool_result",
-                        "id": id,
-                        "content": result,
-                        "truncated": truncated,
-                        "timestamp": ts,
-                    });
-                    // mlua maps a JSON `null` to a truthy `null` userdata, so
-                    // a good result carries no `error` key at all.
-                    if let Some(error) = error {
-                        row["error"] = serde_json::Value::String(error.clone());
-                    }
-                    Some(row)
-                }
-                _ => None,
+    let wanted = |role: &str| role_filter.is_none_or(|r| r == role);
+    let mut rows = Vec::new();
+    for item in &transcript.items {
+        // mlua maps a JSON `null` to a truthy `null` userdata, so an absent
+        // value is an absent key, never `null`.
+        let mut push = |mut row: Value| {
+            if let Some(ts) = item.timestamp {
+                row["timestamp"] = Value::String(ts.to_rfc3339());
             }
-        })
-        .collect()
+            rows.push(row);
+        };
+        let text_row = |role: &str, content: &str| json!({ "role": role, "content": content });
+        let plugin_row = |name: &str, content: &str| json!({ "role": "system", "content": content, "plugin": name });
+        match &item.body {
+            ItemBody::UserTurn {
+                content,
+                origin,
+                precognition,
+            } => {
+                match origin.as_ref().and_then(|o| o.plugin()) {
+                    Some(name) if wanted("system") => push(plugin_row(name, content)),
+                    Some(_) => {}
+                    None if wanted("user") => push(text_row("user", content)),
+                    None => {}
+                }
+                if let Some(p) = precognition.as_ref().filter(|_| wanted("system")) {
+                    push(text_row(
+                        "system",
+                        &format!(
+                            "Context injected: {} note(s) for \"{}\"",
+                            p.notes_count, p.query_summary
+                        ),
+                    ));
+                }
+            }
+            ItemBody::AssistantSegment { text, .. } if !text.is_empty() && wanted("assistant") => {
+                push(text_row("assistant", text));
+            }
+            ItemBody::InjectedContext {
+                role,
+                content,
+                kind,
+                source,
+                ..
+            } => match (role.as_str(), source.as_deref()) {
+                ("user", Some(name)) if kind.as_deref() == Some("plugin") => {
+                    if wanted("system") {
+                        push(plugin_row(name, content));
+                    }
+                }
+                (role @ ("user" | "assistant"), _) if wanted(role) => {
+                    push(text_row(role, content));
+                }
+                ("user" | "assistant", _) => {}
+                _ if wanted("system") => push(text_row("system", content)),
+                _ => {}
+            },
+            ItemBody::ToolCard {
+                call_id,
+                name,
+                args,
+                status,
+                result,
+                error,
+                ..
+            } if tools_wanted => {
+                push(json!({ "role": "tool_call", "id": call_id, "name": name, "args": args }));
+                match status {
+                    ToolStatus::Complete => push(json!({
+                        "role": "tool_result",
+                        "id": call_id,
+                        "content": result.as_deref().unwrap_or_default(),
+                    })),
+                    ToolStatus::Failed => push(json!({
+                        "role": "tool_result",
+                        "id": call_id,
+                        "content": "",
+                        "error": error.as_deref().unwrap_or_default(),
+                    })),
+                    // The call has no answer.
+                    ToolStatus::Running | ToolStatus::Incomplete => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    rows
 }
 
 impl DaemonSessionApi for DaemonSessionBridge {
@@ -608,15 +646,14 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .await
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Session not found: {}", session_id))?;
-            let session_dir = sm.session_dir(&session.id);
-            sm.settle_history().await;
-            // NOTE: Loads entire session event log. For very long sessions, consider
-            // adding a streaming/backwards-reading approach with index files.
-            let events = crate::observe::load_events(&session_dir)
+            // The fold reads the whole log: a part of it can start in the
+            // middle of a turn.
+            let transcript = sm
+                .load_transcript(&session.id)
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let mut messages = message_rows(&events, role_filter.as_deref(), include_tools);
+            let mut messages = message_rows(&transcript, role_filter.as_deref(), include_tools);
 
             if let Some(n) = limit {
                 let start = messages.len().saturating_sub(n);

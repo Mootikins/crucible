@@ -670,11 +670,7 @@ impl SessionManager {
         // a client reads. It starts before the counter, because the counter
         // makes an entry for the session.
         events.seed_transcript(session_id.as_str(), || {
-            let stored: Vec<crucible_core::protocol::SessionEventMessage> =
-                crucible_core::protocol::session_events::migrate_history(lines)
-                    .into_iter()
-                    .filter_map(|line| serde_json::from_value(line).ok())
-                    .collect();
+            let stored = crate::observe::stored_events(session_id.as_str(), lines);
             crucible_core::transcript::TranscriptFold::from_events(&stored)
         });
         events.seed_session(session_id.as_str(), persisted);
@@ -705,8 +701,8 @@ impl SessionManager {
     /// the text that a running turn streamed, which the log does not store,
     /// so the next live ops fit it. Any other session folds its whole stored
     /// log. The fold reads every event, not one page: a page can start in
-    /// the middle of a turn. A line that is not an event (an old view line
-    /// the migration could not turn into one) is not part of the transcript.
+    /// the middle of a turn. An old view line becomes the wire event with its
+    /// meaning ([`crate::observe::stored_events`]).
     pub async fn load_transcript(
         &self,
         session_id: &SessionId,
@@ -718,12 +714,9 @@ impl SessionManager {
         {
             return Ok(live);
         }
-        let events: Vec<crucible_core::protocol::SessionEventMessage> = self
-            .load_session_events(session_id, None, None)
-            .await?
-            .into_iter()
-            .filter_map(|line| serde_json::from_value(line).ok())
-            .collect();
+        self.settle_history().await;
+        let lines = self.storage.load_events(session_id, None, None).await?;
+        let events = crate::observe::stored_events(session_id.as_str(), lines);
         Ok(crucible_core::transcript::TranscriptFold::of_events(
             &events,
         ))

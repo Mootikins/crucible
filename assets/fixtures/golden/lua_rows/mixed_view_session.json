@@ -10,14 +10,14 @@
     "timestamp": "2026-09-01T10:00:00+00:00"
   },
   {
-    "role": "assistant",
-    "content": "first answer",
-    "timestamp": "2026-09-01T10:00:05+00:00"
-  },
-  {
     "role": "system",
     "content": "remember the style guide",
     "timestamp": "2026-09-01T10:00:01+00:00"
+  },
+  {
+    "role": "assistant",
+    "content": "first answer",
+    "timestamp": "2026-09-01T10:00:05+00:00"
   },
   {
     "role": "system",
@@ -36,14 +36,14 @@
     "timestamp": "2026-09-01T10:04:00+00:00"
   },
   {
-    "role": "assistant",
-    "content": "second answer",
-    "timestamp": "2026-09-01T10:04:05+00:00"
-  },
-  {
     "role": "system",
     "content": "a plugin note",
     "plugin": "goal",
     "timestamp": "2026-09-01T10:04:01+00:00"
+  },
+  {
+    "role": "assistant",
+    "content": "second answer",
+    "timestamp": "2026-09-01T10:04:05+00:00"
   }
 ]

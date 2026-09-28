@@ -133,7 +133,6 @@ async fn the_observe_handlers_never_read_a_transcript_outside_the_sessions_root(
     .unwrap();
 
     for (n, method) in [
-        "session.load_events",
         "session.render_markdown",
         "session.resume_from_storage",
         // The write sink of the family: an accepted traversing id would put

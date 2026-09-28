@@ -3,38 +3,10 @@ use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::server::session::scope::caller_kiln_scope;
 use crate::session_manager::{KilnFilter, KilnScope};
 use crucible_core::protocol::requests::{
-    SessionCleanupRequest, SessionEventsAfterRequest, SessionExportToFileRequest, SessionIdRequest,
+    SessionCleanupRequest, SessionEventsAfterRequest, SessionExportToFileRequest,
     SessionListPersistedRequest, SessionRenderMarkdownRequest,
 };
 use crucible_core::session::SessionSummary;
-
-/// Load a persisted session's events.
-///
-/// Params:
-///   - `session_id` (string, required): The session id.
-///
-/// Keyed on the id rather than a directory: sessions live under the daemon's
-/// own root now, so only the daemon can spell the path, and a client that
-/// guessed one was guessing the layout.
-pub(crate) async fn handle_session_load_events(req: Request, sessions_root: &Path) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let session_id = match session_id_field(&params.session_id, &req) {
-        Ok(id) => id,
-        Err(response) => return *response,
-    };
-    let session_dir = session_id.dir_under(sessions_root);
-
-    match crate::observe::load_events(&session_dir).await {
-        Ok(events) => match serde_json::to_value(&events) {
-            Ok(v) => Response::success(req.id, v),
-            Err(e) => internal_error(req.id, e),
-        },
-        Err(e) => internal_error(req.id, e),
-    }
-}
 
 /// Replay the persisted wire envelopes past a seq cursor.
 ///
@@ -43,8 +15,8 @@ pub(crate) async fn handle_session_load_events(req: Request, sessions_root: &Pat
 ///   - `after` (u64, required): The caller's cursor — the last seq it applied.
 ///
 /// The reconnect path of the web chat stream. Raw envelopes, not the
-/// [`crate::observe::load_events`] projection: the cursor is compared against
-/// the `seq` stamped at emit, which the projection drops. A session with no
+/// transcript: the cursor is compared against the `seq` stamped at emit,
+/// which the transcript does not keep. A session with no
 /// log, a cursor past the end, and an unknown id all answer the same clean
 /// empty tail — a reconnect must not fail for having nothing to replay.
 pub(crate) async fn handle_session_events_after(req: Request, sessions_root: &Path) -> Response {
@@ -151,35 +123,8 @@ pub(crate) async fn handle_session_list_persisted(
 
     let mut session_entries = Vec::new();
     for summary in &sessions {
-        let session_dir = sm.session_dir(&summary.id);
-        let events = crate::observe::load_events(&session_dir)
-            .await
-            .unwrap_or_default();
-        let msg_count = events
-            .iter()
-            .filter(|e| {
-                matches!(
-                    e,
-                    crate::observe::LogEvent::User { .. }
-                        | crate::observe::LogEvent::Assistant { .. }
-                )
-            })
-            .count();
-
-        let title = events
-            .iter()
-            .find_map(|e| match e {
-                crate::observe::LogEvent::User { content, .. } => {
-                    let preview: String = content.chars().take(50).collect();
-                    if content.len() > 50 {
-                        Some(format!("{}...", preview))
-                    } else {
-                        Some(preview)
-                    }
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| "(empty)".to_string());
+        let transcript = sm.load_transcript(&summary.id).await.unwrap_or_default();
+        let (msg_count, title) = crate::observe::transcript_summary(&transcript);
 
         session_entries.push(serde_json::json!({
             "id": summary.id,
@@ -223,8 +168,8 @@ pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: 
     let include_tools = params.include_tools.unwrap_or(true);
     let max_content_length = params.max_content_length.unwrap_or(0);
 
-    let events = match crate::observe::load_events(&session_dir).await {
-        Ok(e) => e,
+    let transcript = match crate::observe::load_transcript(&session_dir).await {
+        Ok(transcript) => transcript,
         Err(e) => return internal_error(req.id, e),
     };
 
@@ -235,7 +180,7 @@ pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: 
         max_content_length,
     };
 
-    let md = crate::observe::render_to_markdown(&events, &options);
+    let md = crate::observe::render_to_markdown(&transcript, &options);
 
     Response::success(req.id, serde_json::json!({ "markdown": md }))
 }
@@ -344,8 +289,8 @@ pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &
 
     let session_dir = session_id.dir_under(sessions_root);
 
-    let events = match crate::observe::load_events(&session_dir).await {
-        Ok(e) => e,
+    let transcript = match crate::observe::load_transcript(&session_dir).await {
+        Ok(transcript) => transcript,
         Err(e) => return internal_error(req.id, e),
     };
 
@@ -361,7 +306,7 @@ pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &
         ..Default::default()
     };
 
-    let md = crate::observe::render_to_markdown(&events, &options);
+    let md = crate::observe::render_to_markdown(&transcript, &options);
 
     if let Err(e) = tokio::fs::write(&out_path, &md).await {
         return internal_error(req.id, e);
@@ -450,12 +395,10 @@ pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager
     let mut to_delete = Vec::new();
 
     for summary in candidates {
-        let session_dir = sm.session_dir(&summary.id);
-        let events = crate::observe::load_events(&session_dir)
-            .await
-            .unwrap_or_default();
+        let transcript = sm.load_transcript(&summary.id).await.unwrap_or_default();
 
-        let latest = events.iter().map(|e| e.timestamp()).max();
+        // A session with nothing to show has no time, and the sweep keeps it.
+        let latest = transcript.items.iter().filter_map(|i| i.timestamp).max();
         if let Some(ts) = latest {
             if ts < cutoff {
                 to_delete.push(summary.id);

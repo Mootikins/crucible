@@ -233,7 +233,17 @@ sequenceDiagram
    and puts the ops of the fold in the `transcript` field of the live copy.
    The journal copy has no ops. `SessionManager::seed_seq` seeds the fold
    from the stored log when a session becomes resident, so the ops fit the
-   snapshot that `session.history` serves.
+   snapshot that `session.history` serves. Each reader of a stored session
+   reads the same fold: `SessionManager::load_transcript` for
+   `session.history`, the Lua history rows (`message_rows` in
+   `crates/crucible-daemon/src/session_bridge.rs`), `session.list_persisted`
+   and `session.cleanup`, and `crucible_daemon::load_transcript` for
+   `session.render_markdown`, `session.export_to_file` and `cru session`
+   with no daemon. First, `stored_events`
+   (`crates/crucible-daemon/src/observe/events.rs`) turns each old view line
+   of the log into its wire event. The markdown export
+   (`render_to_markdown`, `crates/crucible-daemon/src/observe/markdown.rs`)
+   renders the transcript. It has no fold of its own.
 7. `forward_events` in `crates/crucible-daemon/src/server/core/mod.rs` relays
    each message to a socket client (TUI or ACP host). The CLI TUI's live
    session runs `live_session_event_consumer` in

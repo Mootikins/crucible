@@ -1,9 +1,8 @@
-use super::io::{list_session_dirs, read_session_events, sessions_dir};
+use super::io::{list_session_dirs, read_transcript, sessions_dir};
 use crate::common::daemon_client;
 use crate::config::CliAppConfig;
 use anyhow::{anyhow, Result};
-use crucible_core::text::truncate_chars;
-use crucible_daemon::{LogEvent, SessionId, SessionType};
+use crucible_daemon::{transcript_summary, SessionId, SessionType};
 
 pub(super) async fn list(
     config: CliAppConfig,
@@ -118,19 +117,8 @@ pub(super) async fn list_persisted(
             println!("Sessions (newest first):\n");
             for id_str in &ids {
                 let session_dir = sessions_path.join(id_str);
-                let events = read_session_events(&session_dir).await.unwrap_or_default();
-                let msg_count = events
-                    .iter()
-                    .filter(|e| matches!(e, LogEvent::User { .. } | LogEvent::Assistant { .. }))
-                    .count();
-
-                let title = events
-                    .iter()
-                    .find_map(|e| match e {
-                        LogEvent::User { content, .. } => Some(truncate_chars(content, 50, true)),
-                        _ => None,
-                    })
-                    .unwrap_or_else(|| "(empty)".to_string());
+                let transcript = read_transcript(&session_dir).await.unwrap_or_default();
+                let (msg_count, title) = transcript_summary(&transcript);
 
                 println!("  {} ({} messages)", id_str, msg_count);
                 println!("    {}\n", title);

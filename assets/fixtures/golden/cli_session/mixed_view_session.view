@@ -1,17 +1,17 @@
 Session: mixed_view_session
 
-Events: 10
+Items: 10
 
 [system] You are helpful.
 
 [user]
 first question
 
+[system] remember the style guide
 [assistant (unknown)]
 first answer
 
 [context cleared by goal]
-[system] remember the style guide
 
 [user]
 continue the goal
@@ -23,9 +23,9 @@ continuing
 [user]
 second question
 
-[assistant (gpt-x)]
-second answer
-
 
 [user]
 a plugin note
+
+[assistant (gpt-x)]
+second answer

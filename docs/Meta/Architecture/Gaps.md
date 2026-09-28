@@ -312,7 +312,7 @@ find the `DepthCapHit` emit in `stream.rs:751` and set the reason there.
 delete the listed items in one commit each and run `just ci`.
 
 **G30, G31.** Target: one `Arc<dyn SessionStorage>` on `SessionManager`; the
-CLI calls `session.load_events` and `session.render_markdown`. First step:
+CLI calls `session.history` and `session.render_markdown`. First step:
 replace the four `FileSessionStorage::new` sites with `sm.storage()`; then
 delete the CLI fallback readers.
 

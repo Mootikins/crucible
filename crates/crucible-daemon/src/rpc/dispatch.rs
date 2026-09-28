@@ -400,17 +400,6 @@ impl RpcDispatcher {
                 id,
                 crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions)
             ),
-            RpcMethod::SessionLoadEvents => {
-                // A client that saw an event live must find it in the log.
-                self.ctx.sessions.settle_history().await;
-                forward!(
-                    id,
-                    crate::server::observe::handle_session_load_events(
-                        req.clone(),
-                        self.ctx.sessions.sessions_root()
-                    )
-                )
-            }
             RpcMethod::SessionEventsAfter => {
                 // A client that saw an event live must find it in the log.
                 self.ctx.sessions.settle_history().await;

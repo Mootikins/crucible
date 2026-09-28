@@ -155,7 +155,20 @@ ops. The commits, in order:
    events through `EventFeed`, which runs the core fold, as the daemon does.
 7. **(done)** `cru acp` replays the snapshot on `session/load`, and maps the ops (`HostProjection` in `crates/crucible-cli/src/commands/acp/project.rs`).
 8. A parity test renders one fixture in all three clients.
-9. The markdown export and the Lua history read the snapshot.
+9. **(done)** The markdown export and the Lua history read the snapshot.
+   `render_to_markdown` (`observe/markdown.rs`), `message_rows`
+   (`session_bridge.rs`), `session.list_persisted`, `session.cleanup` and
+   `cru session show`, `list` and `export` read a `Transcript`. The CLI
+   gets it from `session.history`; when no daemon starts, it runs the
+   daemon's fold on the file (`crucible_daemon::load_transcript`). The CLI
+   has no renderer of its own for markdown. `parse_session_log`,
+   `load_events` and the `session.load_events` RPC are gone.
+   `stored_events` (`observe/events.rs`) turns each old view line and
+   `context_injection` line into its wire event before the fold. `LogEvent`
+   stays only as the form of a model-context message: the conversation
+   tree (`rebuild.rs`), a fork and accepted context read it through
+   `replay_session_log`. Golden files in `assets/fixtures/golden/export/`,
+   `lua_rows/` and `cli_session/` pin each reader.
 
 **Proof.** One fixture transcript renders the same turns, segments and tool
 cards in the TUI, the web client and `cru acp`. See [[Data Flows]] and

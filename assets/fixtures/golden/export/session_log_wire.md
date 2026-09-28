@@ -2,6 +2,8 @@
 
 how do I read a file
 
+## Assistant
+
 > [!thinking]- Thinking
 > consider std::fs
 
@@ -19,8 +21,6 @@ how do I read a file
 [package]
 name = "example"
 ```
-
-## Assistant
 
 Use std::fs::read_to_string.
 

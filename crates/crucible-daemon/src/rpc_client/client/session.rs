@@ -432,17 +432,6 @@ impl DaemonClient {
     // Session Observe RPC Methods
     // =========================================================================
 
-    /// Load events from a persisted session's JSONL log.
-    pub async fn session_load_events(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.typed_call(
-            RpcMethod::SessionLoadEvents,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
-        )
-        .await
-    }
-
     /// The persisted wire envelopes past a seq cursor (`session.events_after`),
     /// in order — the tail a reconnecting chat stream replays before its live
     /// forwarding begins. Envelopes carry the `seq` they were stamped with.

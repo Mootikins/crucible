@@ -153,10 +153,6 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/lifecycle.rs",
     ),
     (
-        "SessionIdRequest",
-        "crates/crucible-daemon/src/server/observe.rs",
-    ),
-    (
         "SessionRenderMarkdownRequest",
         "crates/crucible-daemon/src/server/observe.rs",
     ),

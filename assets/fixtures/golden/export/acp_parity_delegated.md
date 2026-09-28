@@ -2,6 +2,10 @@
 
 fix the greeting
 
+## Assistant
+
+I'll fix the greeting.
+
 ### Tool: `Edit File` (id: call-edit-1)
 
 ```json
@@ -15,9 +19,7 @@ fix the greeting
 #### Result (id: call-edit-1)
 
 ```
-{"result":"Replaced 1 occurrence(s)","render":{"line":"greeting.rs"}}
+Replaced 1 occurrence(s)
 ```
 
-## Assistant
-
-I'll fix the greeting. Done.
+ Done.

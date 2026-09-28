@@ -85,12 +85,13 @@ Directory `crates/crucible-daemon/src/observe/` (session-log read side):
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-daemon/src/observe/events.rs` | 1176 | `LogEvent`/`SessionLogLine` and the `session.jsonl` parser (`parse_session_log`, `replay_session_log`); `LogEvent::System` now carries `tags`/`injection`, `LogEvent::User` carries `plugin`, and a `LogEvent::Clear` variant marks a context clear. |
+| `crates/crucible-daemon/src/observe/events.rs` | 879 | `SessionLogLine`, `stored_events` (each stored line as its current wire event, the input of the transcript fold) and `replay_session_log` (the model-context messages for the conversation tree and a fork). `LogEvent` is the form of one such message: `System` carries `tags`/`injection`, `User` carries `plugin`, and `Clear` marks a context clear. |
 | `crates/crucible-daemon/src/observe/id.rs` | 53 | Re-export shim for `SessionId`/`SessionType`, replacing a former duplicate validator. |
-| `crates/crucible-daemon/src/observe/markdown.rs` | 524 | Renders a `Vec<LogEvent>` to Markdown (`session.md` export); shows a plugin turn as `## ↻ <plugin>` and a `Clear` marker as a `Context cleared` line. |
-| `crates/crucible-daemon/src/observe/mod.rs` | 70 | Module root; re-exports the observe read API. |
-| `crates/crucible-daemon/src/observe/rebuild.rs` | 326 | Reconstructs a `ConversationTree` from a session log for resume-time history; a `LogEvent::Clear` restarts the tree without erasing the log, and a plugin-authored user turn rebuilds as `NodeContent::Plugin`. |
-| `crates/crucible-daemon/src/observe/session.rs` | 344 | `load_events`/`events_after`: the file-backed loaders behind `session.load_events`/`session.events_after`. |
+| `crates/crucible-daemon/src/observe/golden_tests.rs` | 40 | Golden tests of the markdown export and the Lua history rows for the reader fixtures. |
+| `crates/crucible-daemon/src/observe/markdown.rs` | 387 | Renders a `Transcript` to Markdown (`session.md` export): one `## Assistant (model)` heading for each answer, a plugin turn as `## ↻ <plugin>`, a context clear as a `Context cleared` line. |
+| `crates/crucible-daemon/src/observe/mod.rs` | 83 | Module root; re-exports the observe read API. |
+| `crates/crucible-daemon/src/observe/rebuild.rs` | 325 | Reconstructs a `ConversationTree` from a session log for resume-time history; a `LogEvent::Clear` restarts the tree without erasing the log, and a plugin-authored user turn rebuilds as `NodeContent::Plugin`. |
+| `crates/crucible-daemon/src/observe/session.rs` | 301 | `load_transcript`/`transcript_of_log` (the fold of a log file or its text), `transcript_summary` (the count and title of a session list) and `events_after` (the raw tail behind `session.events_after`). |
 
 Directory `crates/crucible-daemon/src/rpc/` (dispatch layer):
 
@@ -125,7 +126,7 @@ Directory `crates/crucible-daemon/src/server/` (connection lifecycle and top-lev
 | `crates/crucible-daemon/src/server/mod.rs` | 1606 | `Server`: bind, boot sequence, accept loop, background tasks, shutdown against one shared deadline. |
 | `crates/crucible-daemon/src/server/note_refactor.rs` | 1128 | `note.rename`/`note.move`: link-rewriting note/canvas rename; its `plan_rename`/`apply_rename` split is what `crates/crucible-daemon/src/bases/write.rs` reuses, and its `reindex_rename` step is what `crates/crucible-daemon/src/proposals/rpc.rs` reuses. |
 | `crates/crucible-daemon/src/server/notifications.rs` | 43 | `notification.list`/`notification.dismiss` handlers over the global ring. |
-| `crates/crucible-daemon/src/server/observe.rs` | 502 | `session.load_events`/`events_after`/`list_persisted`/`render_markdown`/`export_to_file`/`cleanup`. |
+| `crates/crucible-daemon/src/server/observe.rs` | 445 | `session.events_after`/`list_persisted`/`render_markdown`/`export_to_file`/`cleanup`. Each reader except `events_after` reads the transcript. |
 | `crates/crucible-daemon/src/server/platform.rs` | 468 | `mcp.*`, `skills.*`, `agents.list_profiles`/`list_cards`/`resolve_profile`; skill/card discovery now takes an explicit `workspace` and every attached kiln. |
 | `crates/crucible-daemon/src/server/plugin_install.rs` | 391 | `plugin.install`/`plugin.remove`, each holding the plugin-loader task-local marker while its Lua runs. |
 | `crates/crucible-daemon/src/server/plugins.rs` | 1482 | Plugin lifecycle/surfaces/publications/options/commands, `project.*`, `scm.clone`, plugin file watcher; `session.status` now answers `AgentManager::status_items`'s typed `StatusDisplayItem` list. |

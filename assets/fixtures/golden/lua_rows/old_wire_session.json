@@ -18,9 +18,8 @@
   {
     "role": "tool_result",
     "id": "c1",
-    "content": "{\"result\":\"ok\"}",
-    "truncated": false,
-    "timestamp": "2026-09-01T10:00:02+00:00"
+    "content": "ok",
+    "timestamp": "2026-09-01T10:00:01+00:00"
   },
   {
     "role": "assistant",
@@ -36,15 +35,16 @@
     "role": "tool_call",
     "id": "c2",
     "name": "Edit",
-    "args": {},
+    "args": {
+      "file_path": "src/main.rs"
+    },
     "timestamp": "2026-09-01T10:01:01+00:00"
   },
   {
     "role": "tool_result",
     "id": "c2",
-    "content": "{\"result\":\"edited\"}",
-    "truncated": false,
-    "timestamp": "2026-09-01T10:01:04+00:00"
+    "content": "edited",
+    "timestamp": "2026-09-01T10:01:01+00:00"
   },
   {
     "role": "user",

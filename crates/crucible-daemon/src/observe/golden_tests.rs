@@ -11,12 +11,12 @@ fn golden(dir: &str, file: String) -> std::path::PathBuf {
 #[test]
 fn the_markdown_export_of_each_fixture_matches_its_golden_file() {
     for name in READER_FIXTURES {
-        let events = crate::observe::parse_session_log(&stored_log(name));
+        let transcript = crate::observe::transcript_of_log("s1", &stored_log(name));
         let stem = name.trim_end_matches(".jsonl");
-        let plain = crate::observe::render_to_markdown(&events, &Default::default());
+        let plain = crate::observe::render_to_markdown(&transcript, &Default::default());
         assert_golden(&golden("export", format!("{stem}.md")), &plain);
         let timed = crate::observe::render_to_markdown(
-            &events,
+            &transcript,
             &crate::observe::RenderOptions {
                 include_timestamps: true,
                 ..Default::default()
@@ -29,8 +29,8 @@ fn the_markdown_export_of_each_fixture_matches_its_golden_file() {
 #[test]
 fn the_lua_history_rows_of_each_fixture_match_their_golden_file() {
     for name in READER_FIXTURES {
-        let events = crate::observe::parse_session_log(&stored_log(name));
-        let rows = crate::session_bridge::message_rows(&events, None, true);
+        let transcript = crate::observe::transcript_of_log("s1", &stored_log(name));
+        let rows = crate::session_bridge::message_rows(&transcript, None, true);
         let stem = name.trim_end_matches(".jsonl");
         assert_golden(
             &golden("lua_rows", format!("{stem}.json")),

@@ -1,7 +1,8 @@
 use crate::config::CliAppConfig;
 use anyhow::{anyhow, Result};
 use crucible_core::text::truncate_chars;
-use crucible_daemon::{FileSessionStorage, LogEvent};
+use crucible_core::transcript::{DelegationStatus, ItemBody, Notice, ToolStatus, Transcript};
+use crucible_daemon::FileSessionStorage;
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -21,19 +22,28 @@ pub(crate) fn sessions_dir(config: &CliAppConfig) -> PathBuf {
     FileSessionStorage::root_for(&data_home)
 }
 
-/// Fallback for when the daemon is unreachable; the daemon-side
-/// `session.load_events` RPC is the normal path (`show.rs`).
+/// The transcript of a stored session, for when no daemon can start.
 ///
-/// Delegates to `crucible_daemon::parse_session_log` rather than parsing
-/// here. The hand-rolled `filter_map(… .ok())` this replaces dropped every
-/// wire-format line without even a warning, which is why `cru session list`
-/// reported `(0 messages)` for every session.
-pub(super) async fn read_session_events(session_dir: &std::path::Path) -> Result<Vec<LogEvent>> {
-    let jsonl_path = session_dir.join("session.jsonl");
-    let content = fs::read_to_string(&jsonl_path)
+/// The daemon's own fold reads the file (`crucible_daemon::load_transcript`),
+/// so the offline view and the RPC view come from one fold.
+pub(super) async fn read_transcript(session_dir: &std::path::Path) -> Result<Transcript> {
+    crucible_daemon::load_transcript(session_dir)
         .await
-        .map_err(|e| anyhow!("Failed to read session events: {}", e))?;
-    Ok(crucible_daemon::parse_session_log(&content))
+        .map_err(|e| anyhow!("Failed to read session events: {}", e))
+}
+
+/// The transcript in the `transcript` field of a `session.history` answer.
+pub(super) async fn history_transcript(
+    client: &crucible_daemon::DaemonClient,
+    session_id: &str,
+) -> Result<Transcript> {
+    // No page of raw events: the transcript is the fold of the whole log.
+    let history = client.session_history(session_id, Some(0), None).await?;
+    let transcript = history
+        .get("transcript")
+        .cloned()
+        .ok_or_else(|| anyhow!("session.history answered no transcript"))?;
+    Ok(serde_json::from_value(transcript)?)
 }
 
 pub(super) async fn list_session_dirs(sessions_path: &std::path::Path) -> Result<Vec<String>> {
@@ -50,122 +60,110 @@ pub(super) async fn list_session_dirs(sessions_path: &std::path::Path) -> Result
     Ok(dirs)
 }
 
-pub(super) fn format_events_markdown(events: &[LogEvent]) -> String {
-    use std::fmt::Write;
-    let mut md = String::new();
-    for event in events {
-        match event {
-            LogEvent::System { content, .. } => {
-                let _ = writeln!(md, "> {}\n", content);
-            }
-            LogEvent::User { content, .. } => {
-                let _ = write!(md, "## User\n\n{}\n\n", content);
-            }
-            LogEvent::Assistant { content, model, .. } => {
-                let label = model.as_deref().unwrap_or("Assistant");
-                let _ = write!(md, "## {}\n\n{}\n\n", label, content);
-            }
-            LogEvent::Thinking { content, .. } => {
-                let _ = writeln!(
-                    md,
-                    "<details><summary>Thinking</summary>\n\n{}\n</details>\n",
-                    content
-                );
-            }
-            LogEvent::ToolCall { name, .. } => {
-                let _ = writeln!(md, "### Tool: {}\n", name);
-            }
-            _ => {}
-        }
-    }
-    md
-}
-
-pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
-    print!("{}", events_text(id, events));
-}
-
-pub(super) fn events_text(id: &str, events: &[LogEvent]) -> String {
+/// The plain-text view of `cru session show`: one short line for each item,
+/// and the whole text of each turn.
+pub(super) fn transcript_text(id: &str, transcript: &Transcript) -> String {
     use std::fmt::Write;
     let mut out = String::new();
     let _ = writeln!(out, "Session: {}\n", id);
-    let _ = writeln!(out, "Events: {}\n", events.len());
+    let _ = writeln!(out, "Items: {}\n", transcript.items.len());
 
-    for event in events {
-        match event {
-            LogEvent::System { content, .. } => {
-                let _ = writeln!(out, "[system] {}", truncate_chars(content, 100, true));
-            }
-            LogEvent::User { content, .. } => {
+    for item in &transcript.items {
+        match &item.body {
+            ItemBody::UserTurn {
+                content,
+                precognition,
+                ..
+            } => {
                 let _ = writeln!(out, "\n[user]\n{}\n", content);
+                if let Some(p) = precognition {
+                    let text = format!(
+                        "Context injected: {} note(s) for \"{}\"",
+                        p.notes_count, p.query_summary
+                    );
+                    let _ = writeln!(out, "[system] {}", truncate_chars(&text, 100, true));
+                }
             }
-            LogEvent::Assistant { content, model, .. } => {
-                let model_str = model.as_deref().unwrap_or("unknown");
-                let _ = writeln!(out, "[assistant ({})]\n{}\n", model_str, content);
-            }
-            LogEvent::ToolCall { name, id, .. } => {
-                let _ = writeln!(out, "[tool:{}] id={}", name, id);
-            }
-            LogEvent::ToolResult { id, truncated, .. } => {
-                let marker = if *truncated { " (truncated)" } else { "" };
-                let _ = writeln!(out, "[result:{}]{}", id, marker);
-            }
-            LogEvent::Error {
-                message,
-                recoverable,
+            ItemBody::AssistantSegment {
+                text,
+                thinking,
+                model,
                 ..
             } => {
-                let level = if *recoverable { "warning" } else { "error" };
-                let _ = writeln!(out, "[{}] {}", level, message);
+                if !thinking.is_empty() {
+                    let _ = writeln!(out, "[thinking] {}", truncate_chars(thinking, 100, true));
+                }
+                if !text.is_empty() {
+                    let model = model.as_deref().unwrap_or("unknown");
+                    let _ = writeln!(out, "[assistant ({})]\n{}\n", model, text);
+                }
             }
-            LogEvent::Init {
-                session_id, model, ..
-            } => {
-                let model_str = model.as_deref().unwrap_or("unknown");
-                let _ = writeln!(out, "[init] session={}, model={}", session_id, model_str);
-            }
-            LogEvent::Thinking { content, .. } => {
-                let _ = writeln!(out, "[thinking] {}", truncate_chars(content, 100, true));
-            }
-            LogEvent::Clear { plugin, .. } => {
-                let _ = writeln!(
-                    out,
-                    "[context cleared by {}]",
-                    plugin.as_deref().unwrap_or("user")
-                );
-            }
-            LogEvent::SubagentSpawned {
-                id, session_link, ..
-            } => {
-                let _ = writeln!(out, "[subagent:{}] {}", id, session_link);
-            }
-            LogEvent::SubagentCompleted {
-                id,
-                summary,
-                session_link,
+            ItemBody::ToolCard {
+                call_id,
+                name,
+                status,
                 ..
             } => {
-                let _ = writeln!(
-                    out,
-                    "[subagent:{}] {} -> {}",
-                    id,
-                    session_link,
-                    truncate_chars(summary, 60, true)
-                );
+                let _ = writeln!(out, "[tool:{}] id={}", name, call_id);
+                match status {
+                    ToolStatus::Complete => {
+                        let _ = writeln!(out, "[result:{}]", call_id);
+                    }
+                    ToolStatus::Failed => {
+                        let _ = writeln!(out, "[result:{}] (error)", call_id);
+                    }
+                    ToolStatus::Running | ToolStatus::Incomplete => {}
+                }
             }
-            LogEvent::SubagentFailed {
-                id,
-                error,
-                session_link,
+            ItemBody::Delegation {
+                delegation_id,
+                prompt,
+                status,
+                outcome,
                 ..
             } => {
-                let _ = writeln!(
-                    out,
-                    "[subagent:{}] {} FAILED: {}",
-                    id,
-                    session_link,
-                    truncate_chars(error, 60, true)
-                );
+                let outcome = outcome.as_deref().unwrap_or_default();
+                let _ = match status {
+                    DelegationStatus::Running => writeln!(
+                        out,
+                        "[subagent:{}] {}",
+                        delegation_id,
+                        truncate_chars(prompt, 60, true)
+                    ),
+                    DelegationStatus::Complete => writeln!(
+                        out,
+                        "[subagent:{}] -> {}",
+                        delegation_id,
+                        truncate_chars(outcome, 60, true)
+                    ),
+                    DelegationStatus::Failed => writeln!(
+                        out,
+                        "[subagent:{}] FAILED: {}",
+                        delegation_id,
+                        truncate_chars(outcome, 60, true)
+                    ),
+                };
+            }
+            ItemBody::InjectedContext { role, content, .. } => {
+                let _ = match role.as_str() {
+                    "user" => writeln!(out, "\n[user]\n{}\n", content),
+                    "assistant" => writeln!(out, "[assistant (unknown)]\n{}\n", content),
+                    _ => writeln!(out, "[system] {}", truncate_chars(content, 100, true)),
+                };
+            }
+            ItemBody::Notice { notice } => {
+                let _ = match notice {
+                    Notice::ContextCleared { plugin } => writeln!(
+                        out,
+                        "[context cleared by {}]",
+                        plugin.as_deref().unwrap_or("user")
+                    ),
+                    Notice::StopReason { text, .. } => writeln!(out, "[notice] {}", text),
+                    Notice::TurnFailed { status, error } => match error {
+                        Some(error) => writeln!(out, "[error] {}", error),
+                        None => writeln!(out, "[error] {:?}", status),
+                    },
+                };
             }
         }
     }

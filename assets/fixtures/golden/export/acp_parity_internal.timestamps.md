@@ -4,6 +4,11 @@
 fix the greeting
 
 <!-- 09:14:07 -->
+## Assistant
+
+I'll fix the greeting.
+
+<!-- 09:14:07 -->
 ### Tool: `edit_file` (id: call-edit-1)
 
 ```json
@@ -14,14 +19,11 @@ fix the greeting
 }
 ```
 
-<!-- 09:14:07 -->
 #### Result (id: call-edit-1)
 
 ```
-{"result":"Replaced 1 occurrence(s)","render":{"line":"greeting.rs"}}
+Replaced 1 occurrence(s)
 ```
 
 <!-- 09:14:07 -->
-## Assistant
-
-I'll fix the greeting. Done.
+ Done.

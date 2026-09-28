@@ -5,6 +5,11 @@
     "timestamp": "2026-08-03T09:14:07+00:00"
   },
   {
+    "role": "assistant",
+    "content": "I'll fix the greeting.",
+    "timestamp": "2026-08-03T09:14:07+00:00"
+  },
+  {
     "role": "tool_call",
     "id": "call-edit-1",
     "name": "Edit File",
@@ -18,13 +23,12 @@
   {
     "role": "tool_result",
     "id": "call-edit-1",
-    "content": "{\"result\":\"Replaced 1 occurrence(s)\",\"render\":{\"line\":\"greeting.rs\"}}",
-    "truncated": false,
+    "content": "Replaced 1 occurrence(s)",
     "timestamp": "2026-08-03T09:14:07+00:00"
   },
   {
     "role": "assistant",
-    "content": "I'll fix the greeting. Done.",
+    "content": " Done.",
     "timestamp": "2026-08-03T09:14:07+00:00"
   }
 ]

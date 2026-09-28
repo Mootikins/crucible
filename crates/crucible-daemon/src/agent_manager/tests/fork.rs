@@ -184,9 +184,10 @@ async fn forks_read_cold_parents_and_refuse_unreadable_history_without_creating_
         assert!(child.agent.is_none());
         assert!(child.workspace.is_none());
         assert_eq!(
-            crate::observe::load_events(restarted.session_dir(&child.id))
+            crate::observe::load_transcript(restarted.session_dir(&child.id))
                 .await
                 .unwrap()
+                .items
                 .len(),
             expected as usize
         );

@@ -1,4 +1,4 @@
-<!-- system: 09:59:00 -->
+<!-- 09:59:00 -->
 > [!system]- System Prompt
 > You are helpful.
 
@@ -7,6 +7,10 @@
 
 first question
 
+<!-- 10:00:01 -->
+> [!system]- System Prompt
+> remember the style guide
+
 <!-- 10:00:05 -->
 ## Assistant
 
@@ -14,14 +18,10 @@ first answer
 
 *Tokens: 10 in, 5 out, 3 cached*
 
-<!-- clear: 10:01:00 -->
+<!-- 10:01:00 -->
 ---
 
 Context cleared by goal
-
-<!-- system: 10:00:01 -->
-> [!system]- System Prompt
-> remember the style guide
 
 <!-- 10:02:00 -->
 ## ↻ goal
@@ -38,12 +38,12 @@ continuing
 
 second question
 
-<!-- 10:04:05 -->
-## Assistant (gpt-x)
-
-second answer
-
 <!-- 10:04:01 -->
 ## ↻ goal
 
 a plugin note
+
+<!-- 10:04:05 -->
+## Assistant (gpt-x)
+
+second answer

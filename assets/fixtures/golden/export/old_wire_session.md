@@ -15,7 +15,7 @@ edit the library
 #### Result (id: c1)
 
 ```
-{"result":"ok"}
+ok
 ```
 
 ## Assistant
@@ -29,15 +29,21 @@ fix main
 ### Tool: `Edit` (id: c2)
 
 ```json
-{}
+{
+  "file_path": "src/main.rs"
+}
 ```
 
 #### Result (id: c2)
 
 ```
-{"result":"edited"}
+edited
 ```
+
+> **Error:** The turn failed: agent turn error: LLM timeout
 
 ## User
 
 try again
+
+> **Error:** The turn failed: agent turn error: stopped

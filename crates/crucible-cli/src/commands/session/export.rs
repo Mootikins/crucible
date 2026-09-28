@@ -1,4 +1,4 @@
-use super::io::{format_events_markdown, read_session_events, sessions_dir};
+use super::io::{read_transcript, sessions_dir};
 use crate::common::daemon_client;
 use crate::config::CliAppConfig;
 use anyhow::Result;
@@ -31,8 +31,14 @@ pub(super) async fn export(
         }
     }
 
-    let events = read_session_events(&session_dir).await?;
-    let md = format_events_markdown(&events);
+    let transcript = read_transcript(&session_dir).await?;
+    let md = crucible_daemon::render_to_markdown(
+        &transcript,
+        &crucible_daemon::RenderOptions {
+            include_timestamps: timestamps,
+            ..Default::default()
+        },
+    );
     let output_path = output.unwrap_or_else(|| session_dir.join("session.md"));
     fs::write(&output_path, &md).await?;
     println!("Exported session to: {}", output_path.display());

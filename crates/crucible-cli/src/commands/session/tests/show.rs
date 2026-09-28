@@ -1,5 +1,5 @@
 use super::super::export::export;
-use super::super::io::{format_events_markdown, read_session_events};
+use super::super::io::{read_transcript, transcript_text};
 use super::super::show::show;
 use super::{setup_test_session, test_config, test_sessions_dir};
 use tempfile::TempDir;
@@ -57,66 +57,44 @@ async fn test_export_session() {
     // `crucible-daemon`'s `session_export_to_file_writes_markdown`.
 }
 
-/// The fallback renderer `export` uses when no daemon is reachable
-/// (`export.rs`), against the real wire-format log.
-///
-/// The fixture's conversation, not the old three-message `"You are helpful"` /
-/// `"Hello, how are you?"` script: `setup_test_session` now materializes
-/// `assets/fixtures/session_log_wire.jsonl`, which is one user message, a
-/// thinking block, a tool call and its result, and the completed response.
-/// There is no `system` event in it — the daemon does not persist system
-/// prompts. Before the read-path fix this rendered to the empty string.
+/// The offline path of `export` (`export.rs`) against the real wire-format
+/// log: the daemon's fold and the daemon's export renderer.
 #[tokio::test]
 async fn export_renders_the_fixtures_conversation() {
     let tmp = TempDir::new().unwrap();
     let sessions_path = test_sessions_dir(tmp.path());
 
     let id = setup_test_session(&sessions_path).await;
-    let events = read_session_events(&sessions_path.join(id.as_str()))
+    let transcript = read_transcript(&sessions_path.join(id.as_str()))
         .await
         .unwrap();
-    let md = format_events_markdown(&events);
+    let md = crucible_daemon::render_to_markdown(&transcript, &Default::default());
 
     assert!(md.contains("## User"), "{md}");
     assert!(md.contains("how do I read a file"), "{md}");
     assert!(md.contains("Use std::fs::read_to_string."), "{md}");
-    assert!(md.contains("### Tool: read_file"), "{md}");
+    assert!(md.contains("### Tool: `read_file`"), "{md}");
 }
 
-/// The offline readers of `cru session show`, `list` and `export`, pinned
-/// against the fixtures. `CRUCIBLE_WRITE_GOLDEN=1` writes the files.
+/// The offline views of `cru session show` and `list`, pinned against the
+/// fixtures. The markdown view is the daemon's export, which
+/// `crucible-daemon`'s `observe::golden_tests` pins.
+/// `CRUCIBLE_WRITE_GOLDEN=1` writes the files.
 #[test]
 fn the_offline_session_views_of_each_fixture_match_their_golden_files() {
     use crucible_daemon::test_support::{assert_golden, fixture_path, stored_log, READER_FIXTURES};
-    use crucible_daemon::LogEvent;
     let dir = fixture_path("golden").join("cli_session");
     for name in READER_FIXTURES {
-        let events = crucible_daemon::parse_session_log(&stored_log(name));
+        let transcript = crucible_daemon::transcript_of_log("s1", &stored_log(name));
         let stem = name.trim_end_matches(".jsonl");
         assert_golden(
-            &dir.join(format!("{stem}.md")),
-            &format_events_markdown(&events),
-        );
-        assert_golden(
             &dir.join(format!("{stem}.view")),
-            &super::super::io::events_text(stem, &events),
+            &transcript_text(stem, &transcript),
         );
-        let count = events
-            .iter()
-            .filter(|e| matches!(e, LogEvent::User { .. } | LogEvent::Assistant { .. }))
-            .count();
-        let title = events.iter().find_map(|e| match e {
-            LogEvent::User { content, .. } => {
-                Some(crucible_core::text::truncate_chars(content, 50, true))
-            }
-            _ => None,
-        });
+        let (count, title) = crucible_daemon::transcript_summary(&transcript);
         assert_golden(
             &dir.join(format!("{stem}.list.view")),
-            &format!(
-                "({count} messages)\n{}",
-                title.unwrap_or_else(|| "(empty)".into())
-            ),
+            &format!("({count} messages)\n{title}"),
         );
     }
 }

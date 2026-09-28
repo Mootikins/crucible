@@ -323,11 +323,12 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
 
     /// Load conversation messages for a session.
     ///
-    /// Returns an array of `{ role, content, timestamp }` objects filtered from
-    /// the session event log. `role_filter` restricts to a single text role
-    /// (e.g. `"user"`). `limit` returns only the last N messages.
-    /// `include_tools` adds `tool_call` and `tool_result` rows
-    /// (`{ role, id, name, args }` and `{ role, id, content, truncated, error? }`).
+    /// Returns an array of `{ role, content, timestamp? }` objects from the
+    /// transcript that the daemon folds: one row for each user turn, answer
+    /// segment and piece of accepted context. `role_filter` restricts to a
+    /// single text role (e.g. `"user"`). `limit` returns only the last N
+    /// messages. `include_tools` adds `tool_call` and `tool_result` rows
+    /// (`{ role, id, name, args }` and `{ role, id, content, error? }`).
     /// A `tool_result` row carries `error` only when the tool failed.
     fn load_messages(
         &self,

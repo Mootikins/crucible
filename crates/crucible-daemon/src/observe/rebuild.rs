@@ -6,9 +6,9 @@
 //! current leaf, producing a degenerate single-spine tree that matches
 //! the session's lived order.
 //!
-//! Parsing is not done here. [`crate::observe::parse_session_log`] turns the
-//! JSONL into [`LogEvent`]s — it is the only parser, and it is the one that
-//! knows every `session.jsonl` line shape. There is no second one to find.
+//! Parsing is not done here. `replay_session_log` (`events.rs`) turns the
+//! JSONL into the [`LogEvent`] messages of the model context. It knows every
+//! `session.jsonl` line shape.
 //!
 //! If a future `LogEvent` gains optional `node_id` / `parent_id`
 //! fields, this module is the place to honour them and rebuild actual
@@ -300,7 +300,6 @@ this is not json
         tokio::fs::create_dir_all(&session_dir).await.unwrap();
 
         let lines: Vec<String> = [
-            LogEvent::init_with_details("test-session", Some(".".into()), Some("mock".into())),
             LogEvent::user("hello"),
             LogEvent::assistant("hi there"),
             LogEvent::user("bye"),

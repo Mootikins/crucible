@@ -1,7 +1,15 @@
-//! Session log events for JSONL persistence
+//! The lines of `session.jsonl`, and the messages that a turn reads from them.
 //!
-//! These events are for session persistence/resume, separate from
-//! `crucible_core::events::SessionEvent`, the canonical event type.
+//! What a person sees of a session is the transcript
+//! ([`crucible_core::transcript`]), which the daemon folds once. This module
+//! keeps two other jobs:
+//! - [`stored_events`] turns each stored line into its current wire event.
+//!   An older daemon wrote [`LogEvent`] and `context_injection` lines, and a
+//!   stored session keeps them, so the fold needs them in wire form.
+//! - [`replay_session_log`] gives the messages of the model context, for the
+//!   conversation tree (`rebuild.rs`) and for a fork (`copy_session`).
+//!   [`LogEvent`] is the form of one such message, and the form of accepted
+//!   context before the daemon stores it.
 
 use chrono::{DateTime, Utc};
 use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
@@ -24,19 +32,6 @@ pub use crucible_core::traits::llm::TokenUsage;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LogEvent {
-    /// Session initialization
-    Init {
-        ts: DateTime<Utc>,
-        /// Session ID
-        session_id: String,
-        /// Working directory
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cwd: Option<String>,
-        /// Model being used
-        #[serde(skip_serializing_if = "Option::is_none")]
-        model: Option<String>,
-    },
-
     /// System message (prompt, context injection)
     System {
         ts: DateTime<Utc>,
@@ -102,87 +97,14 @@ pub enum LogEvent {
         ts: DateTime<Utc>,
         /// Correlation ID matching the ToolCall
         id: String,
-        /// Result content (may be truncated for large outputs)
         result: String,
-        /// Whether the result was truncated
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        truncated: bool,
-        /// Original size in bytes (only set if truncated)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        full_size: Option<usize>,
         /// Error message if tool failed
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
-
-    /// Error during session
-    Error {
-        ts: DateTime<Utc>,
-        message: String,
-        /// Whether the error is recoverable
-        #[serde(default)]
-        recoverable: bool,
-    },
-
-    /// Subagent spawned - links to subagent's own session file
-    SubagentSpawned {
-        ts: DateTime<Utc>,
-        /// Task identifier (also the subagent session ID)
-        id: String,
-        /// Wikilink to subagent session (e.g., "[[.subagents/sub-20260124-1432-beef/session]]")
-        session_link: String,
-        /// Brief description/prompt summary for display
-        description: String,
-    },
-
-    /// Subagent completed - summary only, full output in linked session
-    SubagentCompleted {
-        ts: DateTime<Utc>,
-        /// Task identifier
-        id: String,
-        /// Wikilink to subagent session
-        session_link: String,
-        /// Brief summary of result (full output in subagent session)
-        summary: String,
-    },
-
-    /// Subagent failed
-    SubagentFailed {
-        ts: DateTime<Utc>,
-        /// Task identifier
-        id: String,
-        /// Wikilink to subagent session
-        session_link: String,
-        /// Error message
-        error: String,
-    },
 }
 
 impl LogEvent {
-    /// Create a session init event
-    pub fn init(session_id: impl Into<String>) -> Self {
-        LogEvent::Init {
-            ts: Utc::now(),
-            session_id: session_id.into(),
-            cwd: None,
-            model: None,
-        }
-    }
-
-    /// Create a session init event with details
-    pub fn init_with_details(
-        session_id: impl Into<String>,
-        cwd: Option<String>,
-        model: Option<String>,
-    ) -> Self {
-        LogEvent::Init {
-            ts: Utc::now(),
-            session_id: session_id.into(),
-            cwd,
-            model,
-        }
-    }
-
     /// Create a system event
     pub fn system(content: impl Into<String>) -> Self {
         LogEvent::System {
@@ -212,141 +134,16 @@ impl LogEvent {
         }
     }
 
-    /// Create an assistant message with model info
-    pub fn assistant_with_model(
-        content: impl Into<String>,
-        model: impl Into<String>,
-        tokens: Option<TokenUsage>,
-    ) -> Self {
-        LogEvent::Assistant {
-            ts: Utc::now(),
-            content: content.into(),
-            model: Some(model.into()),
-            tokens,
-        }
-    }
-
-    /// Create a thinking/reasoning event
-    pub fn thinking(content: impl Into<String>) -> Self {
-        LogEvent::Thinking {
-            ts: Utc::now(),
-            content: content.into(),
-        }
-    }
-
-    /// Create a tool call event
-    pub fn tool_call(id: impl Into<String>, name: impl Into<String>, args: Value) -> Self {
-        LogEvent::ToolCall {
-            ts: Utc::now(),
-            id: id.into(),
-            name: name.into(),
-            args,
-        }
-    }
-
-    /// Create a tool result event (not truncated)
-    pub fn tool_result(id: impl Into<String>, result: impl Into<String>) -> Self {
-        LogEvent::ToolResult {
-            ts: Utc::now(),
-            id: id.into(),
-            result: result.into(),
-            truncated: false,
-            full_size: None,
-            error: None,
-        }
-    }
-
-    /// Create a tool result event with truncation info
-    pub fn tool_result_truncated(
-        id: impl Into<String>,
-        result: impl Into<String>,
-        full_size: usize,
-    ) -> Self {
-        LogEvent::ToolResult {
-            ts: Utc::now(),
-            id: id.into(),
-            result: result.into(),
-            truncated: true,
-            full_size: Some(full_size),
-            error: None,
-        }
-    }
-
-    /// Create a tool error event
-    pub fn tool_error(id: impl Into<String>, error: impl Into<String>) -> Self {
-        LogEvent::ToolResult {
-            ts: Utc::now(),
-            id: id.into(),
-            result: String::new(),
-            truncated: false,
-            full_size: None,
-            error: Some(error.into()),
-        }
-    }
-
-    /// Create an error event
-    pub fn error(message: impl Into<String>, recoverable: bool) -> Self {
-        LogEvent::Error {
-            ts: Utc::now(),
-            message: message.into(),
-            recoverable,
-        }
-    }
-
-    pub fn subagent_spawned(
-        id: impl Into<String>,
-        session_link: impl Into<String>,
-        description: impl Into<String>,
-    ) -> Self {
-        LogEvent::SubagentSpawned {
-            ts: Utc::now(),
-            id: id.into(),
-            session_link: session_link.into(),
-            description: description.into(),
-        }
-    }
-
-    pub fn subagent_completed(
-        id: impl Into<String>,
-        session_link: impl Into<String>,
-        summary: impl Into<String>,
-    ) -> Self {
-        LogEvent::SubagentCompleted {
-            ts: Utc::now(),
-            id: id.into(),
-            session_link: session_link.into(),
-            summary: summary.into(),
-        }
-    }
-
-    pub fn subagent_failed(
-        id: impl Into<String>,
-        session_link: impl Into<String>,
-        error: impl Into<String>,
-    ) -> Self {
-        LogEvent::SubagentFailed {
-            ts: Utc::now(),
-            id: id.into(),
-            session_link: session_link.into(),
-            error: error.into(),
-        }
-    }
-
     /// Get the timestamp of this event
     pub fn timestamp(&self) -> DateTime<Utc> {
         match self {
-            LogEvent::Init { ts, .. }
-            | LogEvent::System { ts, .. }
+            LogEvent::System { ts, .. }
             | LogEvent::User { ts, .. }
             | LogEvent::Clear { ts, .. }
             | LogEvent::Assistant { ts, .. }
             | LogEvent::Thinking { ts, .. }
             | LogEvent::ToolCall { ts, .. }
-            | LogEvent::ToolResult { ts, .. }
-            | LogEvent::Error { ts, .. }
-            | LogEvent::SubagentSpawned { ts, .. }
-            | LogEvent::SubagentCompleted { ts, .. }
-            | LogEvent::SubagentFailed { ts, .. } => *ts,
+            | LogEvent::ToolResult { ts, .. } => *ts,
         }
     }
 
@@ -418,16 +215,29 @@ impl SessionLogLine {
             _ => serde_json::from_str(line).map(SessionLogLine::View),
         }
     }
+
+    /// [`Self::from_jsonl`] for a line that is already parsed.
+    pub fn from_value(line: Value) -> Result<Self, serde_json::Error> {
+        match line.get("type").and_then(Value::as_str) {
+            Some("context_injection") => {
+                serde_json::from_value(line).map(SessionLogLine::Injection)
+            }
+            Some("event" | "replay_event") => {
+                serde_json::from_value(line).map(SessionLogLine::Wire)
+            }
+            _ => serde_json::from_value(line).map(SessionLogLine::View),
+        }
+    }
 }
 
-/// Project a persisted [`SessionEventMessage`] onto the presentation type
-/// every reader already matches on.
+/// Project a persisted [`SessionEventMessage`] onto the message form of the
+/// model context.
 ///
 /// Only the events `should_persist` (`server/core.rs`) admits can reach
 /// a session log, so only those are mapped. `None` means "carries no
 /// conversation content" — an ordinary outcome, not a parse failure, so
 /// callers must not warn on it.
-pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
+fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
     // `EventBus` owns the only sender, and it stamps each event before the
     // persist task sees it, so a line that this build wrote has a timestamp.
     // A log that an older daemon wrote can hold a line with no timestamp:
@@ -473,7 +283,7 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
             ts,
             content: text("full_response")?,
             // Not carried by the payload (`SessionEventMessage::message_complete` writes only
-            // message_id, full_response and usage). `parse_session_log`
+            // message_id, full_response and usage). `replay_session_log`
             // fills it from the session's last `model_switched`.
             model: None,
             tokens: wire_token_usage(data),
@@ -495,11 +305,6 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
                 Some(other) => other.to_string(),
                 None => String::new(),
             },
-            // Truncation is applied before the event is emitted, so the
-            // wire form carries no marker to recover. Reporting `false`
-            // is honest about what the log knows.
-            truncated: false,
-            full_size: None,
             error: text("error"),
         }),
         // Injected context is part of the turn's record: without it a
@@ -519,7 +324,7 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
         // `message_complete.full_response` — `segment_complete`'s own doc comment says so outright
         // ("`message_complete` still carries the WHOLE turn's accumulated
         // text"). Mapping both would print every turn twice.
-        // `model_switched` is consumed by `parse_session_log` for the model
+        // `model_switched` is consumed by `replay_session_log` for the model
         // attribution, not rendered on its own. `ended` is lifecycle
         // bookkeeping with no conversation content.
         _ => None,
@@ -628,24 +433,71 @@ pub(crate) fn stored_line(
     serde_json::to_string(&message)
 }
 
-/// Parse a whole session log into presentation events.
+/// Each stored line as its current wire event, in log order: the input of
+/// the transcript fold.
 ///
-/// Pure `&str -> Vec<LogEvent>` so the async file-backed reader
-/// (`observe::load_events`) and the sync in-memory one
-/// (`observe::rebuild::rebuild_tree_from_str`) share one parser instead of
-/// the two divergent line loops they had — which is how only one of them
-/// would have been fixed.
-///
-/// A line that parses as no recognized shape warns and is skipped, keeping a
-/// partially-corrupt log recoverable. A line that parses but maps to no
-/// presentation event is skipped **silently**: a new persisted event kind is
-/// not corruption, and warning on it would put a line in the log for every
-/// `segment_complete` of every turn.
-pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
-    replay_session_log(jsonl)
+/// A wire line takes the migration of old event names (`migrate_history`).
+/// An older daemon wrote a [`LogEvent`] line or a `context_injection` line,
+/// and each becomes the wire event with the same meaning, so that the fold
+/// and every reader of it see the whole log. A line of no known shape is
+/// skipped with a warning.
+pub fn stored_events(session_id: &str, lines: Vec<Value>) -> Vec<SessionEventMessage> {
+    crucible_core::protocol::session_events::migrate_history(lines)
         .into_iter()
-        .map(|row| row.event)
+        .filter_map(|line| match SessionLogLine::from_value(line) {
+            Ok(SessionLogLine::Wire(message)) => Some(message),
+            Ok(SessionLogLine::View(event)) => view_event(session_id, event),
+            Ok(SessionLogLine::Injection(injection)) => {
+                let ts = injection.message.timestamp();
+                injection_payload(&injection.message, injection.after_turn)
+                    .map(|payload| stamped(SessionEventMessage::typed(session_id, payload), ts))
+            }
+            Err(error) => {
+                tracing::warn!(%error, "skipping unparseable session log line");
+                None
+            }
+        })
         .collect()
+}
+
+/// The wire event of an old view line.
+fn view_event(session_id: &str, event: LogEvent) -> Option<SessionEventMessage> {
+    let ts = event.timestamp();
+    let message = match event {
+        LogEvent::User {
+            content, plugin, ..
+        } => SessionEventMessage::typed(
+            session_id,
+            TurnPayload::UserMessage {
+                // The fold numbers a turn with no id.
+                message_id: String::new(),
+                content,
+                origin: plugin.map(crucible_core::turn::TurnOrigin::Plugin),
+            },
+        ),
+        LogEvent::Assistant {
+            content, tokens, ..
+        } => SessionEventMessage::message_complete(session_id, "", content, tokens.as_ref(), None),
+        // A plain system line (a fork of an older daemon wrote one) is
+        // context that the session accepted.
+        event @ LogEvent::System { .. } => {
+            SessionEventMessage::typed(session_id, injection_payload(&event, None)?)
+        }
+        LogEvent::Clear { plugin, .. } => {
+            SessionEventMessage::typed(session_id, TurnPayload::ContextCleared { plugin })
+        }
+        // No daemon wrote these as view lines. They exist only as the
+        // model-context form of a wire event.
+        LogEvent::Thinking { .. } | LogEvent::ToolCall { .. } | LogEvent::ToolResult { .. } => {
+            return None
+        }
+    };
+    Some(stamped(message, ts))
+}
+
+fn stamped(mut message: SessionEventMessage, ts: DateTime<Utc>) -> SessionEventMessage {
+    message.timestamp = Some(ts);
+    message
 }
 
 /// One replayed message, in the order that a turn reads it.
@@ -658,15 +510,16 @@ pub(crate) struct ReplayRow {
     pub wire: Option<SessionEventMessage>,
 }
 
-/// Replay preserves whether a message is context rather than a user turn.
+/// The messages of the model context, in the order that a turn reads them.
+///
+/// This is not a transcript. It is the input of the conversation tree
+/// (`rebuild.rs`) and of a fork (`copy_session`). Replay preserves whether a
+/// message is context rather than a user turn.
 pub(crate) fn replay_session_log(jsonl: &str) -> Vec<ReplayRow> {
     let mut events = Vec::new();
     // The model a turn ran under is announced once, by `model_switched`,
-    // and not repeated on each `message_complete`. Carry it forward so
-    // `## Assistant (model)` in the markdown renderer and `[assistant
-    // (model)]` in `cru session show` say something true. Turns before the
-    // first switch keep `None`: a session's *starting* model is never
-    // emitted as an event, and inventing one would be worse than omitting it.
+    // and not repeated on each `message_complete`. The row carries it, so
+    // that a fork announces each model again in the copy.
     let mut current_model: Option<String> = None;
 
     let lines: Vec<_> = jsonl.lines().enumerate().filter_map(|(line_no, line)| {
@@ -789,7 +642,13 @@ pub(crate) fn replay_session_log(jsonl: &str) -> Vec<ReplayRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Datelike;
+
+    fn replayed(jsonl: &str) -> Vec<LogEvent> {
+        replay_session_log(jsonl)
+            .into_iter()
+            .map(|row| row.event)
+            .collect()
+    }
 
     #[test]
     fn deferred_context_is_replayed_at_its_turn_boundary_even_when_writers_race() {
@@ -808,13 +667,12 @@ mod tests {
             vec![&first, &injection, &reply, &second],
             vec![&first, &reply, &injection, &second],
         ] {
-            let events =
-                parse_session_log(&lines.into_iter().cloned().collect::<Vec<_>>().join("\n"));
+            let events = replayed(&lines.into_iter().cloned().collect::<Vec<_>>().join("\n"));
             assert!(
                 matches!(&events[..], [LogEvent::User { .. }, LogEvent::Assistant { .. }, LogEvent::System { content, .. }, LogEvent::User { .. }] if content == "remember")
             );
         }
-        let pending = parse_session_log(&[first, injection, reply].join("\n"));
+        let pending = replayed(&[first, injection, reply].join("\n"));
         assert!(
             matches!(&pending[..], [LogEvent::User { .. }, LogEvent::Assistant { .. }, LogEvent::System { content, .. }] if content == "remember")
         );
@@ -941,8 +799,7 @@ mod tests {
             serde_json::to_string(&SessionEventMessage::user_message("s", "a", "before")).unwrap();
         let after =
             serde_json::to_string(&SessionEventMessage::user_message("s", "b", "after")).unwrap();
-        let events =
-            parse_session_log(&[before.clone(), cleared.clone(), after.clone()].join("\n"));
+        let events = replayed(&[before.clone(), cleared.clone(), after.clone()].join("\n"));
         assert!(matches!(
             &events[..],
             [
@@ -995,27 +852,6 @@ mod tests {
     }
 
     #[test]
-    fn assistant_event_json_carries_canonical_token_fields() {
-        let event = LogEvent::assistant_with_model(
-            "Hi there!",
-            "claude-3-haiku",
-            Some(TokenUsage {
-                prompt_tokens: 10,
-                completion_tokens: 5,
-                total_tokens: 15,
-                cache_read_tokens: None,
-                cache_creation_tokens: None,
-            }),
-        );
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"assistant\""));
-        assert!(json.contains("\"model\":\"claude-3-haiku\""));
-        assert!(json.contains("\"prompt_tokens\":10"));
-        assert!(json.contains("\"completion_tokens\":5"));
-    }
-
-    #[test]
     fn test_assistant_minimal_json() {
         let event = LogEvent::assistant("Hi!");
         let json = event.to_jsonl().unwrap();
@@ -1026,144 +862,11 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_call_json() {
-        let event =
-            LogEvent::tool_call("tc_001", "read_file", serde_json::json!({"path": "foo.rs"}));
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"tool_call\""));
-        assert!(json.contains("\"id\":\"tc_001\""));
-        assert!(json.contains("\"name\":\"read_file\""));
-        assert!(json.contains("\"path\":\"foo.rs\""));
-    }
-
-    #[test]
-    fn test_tool_result_json() {
-        let event = LogEvent::tool_result("tc_001", "fn main() {}");
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"tool_result\""));
-        assert!(json.contains("\"id\":\"tc_001\""));
-        assert!(json.contains("\"result\":\"fn main() {}\""));
-        // truncated: false should be omitted
-        assert!(!json.contains("\"truncated\""));
-    }
-
-    #[test]
-    fn test_tool_result_truncated_json() {
-        let event = LogEvent::tool_result_truncated("tc_001", "...", 50000);
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"truncated\":true"));
-        assert!(json.contains("\"full_size\":50000"));
-    }
-
-    #[test]
-    fn test_tool_error_json() {
-        let event = LogEvent::tool_error("tc_001", "File not found");
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"error\":\"File not found\""));
-    }
-
-    #[test]
-    fn test_error_event_json() {
-        let event = LogEvent::error("Rate limited", true);
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"error\""));
-        assert!(json.contains("\"message\":\"Rate limited\""));
-        assert!(json.contains("\"recoverable\":true"));
-    }
-
-    #[test]
     fn test_jsonl_roundtrip() {
         let events = vec![
             LogEvent::system("System prompt"),
             LogEvent::user("Hello"),
             LogEvent::assistant("Hi!"),
-            LogEvent::tool_call("t1", "test", serde_json::json!({})),
-            LogEvent::tool_result("t1", "result"),
-            LogEvent::error("oops", false),
-        ];
-
-        for event in events {
-            let json = event.to_jsonl().unwrap();
-            let parsed = LogEvent::from_jsonl(&json).unwrap();
-            let json2 = parsed.to_jsonl().unwrap();
-            assert_eq!(json, json2);
-        }
-    }
-
-    #[test]
-    fn test_parse_example_jsonl() {
-        // From the spec. The `assistant` line's `tokens` used to read
-        // `{"in":10,"out":5}`, which is *not* a compatibility requirement: no
-        // production writer ever emitted a `tokens` field at all
-        // (`LogEvent::assistant`, the constructor `inject_context` and both
-        // fork paths use, sets `tokens: None`), so that shape never reached
-        // disk. It is written here in the canonical field names.
-        let lines = [
-            r#"{"ts":"2026-01-04T15:30:00Z","type":"system","content":"You are a helpful assistant..."}"#,
-            r#"{"ts":"2026-01-04T15:30:01Z","type":"user","content":"Hello"}"#,
-            r#"{"ts":"2026-01-04T15:30:02Z","type":"assistant","content":"Hi!","model":"claude-3-haiku","tokens":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
-            r#"{"ts":"2026-01-04T15:30:03Z","type":"tool_call","id":"tc_001","name":"read_file","args":{"path":"foo.rs"}}"#,
-            r#"{"ts":"2026-01-04T15:30:04Z","type":"tool_result","id":"tc_001","result":"fn main()...","truncated":false}"#,
-            r#"{"ts":"2026-01-04T15:30:05Z","type":"error","message":"Rate limited","recoverable":true}"#,
-        ];
-
-        for line in lines {
-            let event = LogEvent::from_jsonl(line).unwrap();
-            assert!(event.timestamp().year() == 2026);
-        }
-    }
-
-    #[test]
-    fn test_subagent_spawned_json() {
-        let event = LogEvent::subagent_spawned(
-            "sub-20260124-1432-beef",
-            "[[.subagents/sub-20260124-1432-beef/session]]",
-            "Research topic X",
-        );
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"subagent_spawned\""));
-        assert!(json.contains("\"session_link\":\"[[.subagents/sub-20260124-1432-beef/session]]\""));
-        assert!(json.contains("\"description\":\"Research topic X\""));
-    }
-
-    #[test]
-    fn test_subagent_completed_json() {
-        let event = LogEvent::subagent_completed(
-            "sub-20260124-1432-beef",
-            "[[.subagents/sub-20260124-1432-beef/session]]",
-            "Found 5 relevant files",
-        );
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"subagent_completed\""));
-        assert!(json.contains("\"summary\":\"Found 5 relevant files\""));
-    }
-
-    #[test]
-    fn test_subagent_failed_json() {
-        let event = LogEvent::subagent_failed(
-            "sub-20260124-1432-beef",
-            "[[.subagents/sub-20260124-1432-beef/session]]",
-            "Timeout",
-        );
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"subagent_failed\""));
-        assert!(json.contains("\"error\":\"Timeout\""));
-    }
-
-    #[test]
-    fn test_background_events_roundtrip() {
-        let events = vec![
-            LogEvent::subagent_spawned("t3", "[[.subagents/t3/session]]", "prompt"),
-            LogEvent::subagent_completed("t3", "[[.subagents/t3/session]]", "result"),
-            LogEvent::subagent_failed("t4", "[[.subagents/t4/session]]", "failed"),
         ];
 
         for event in events {

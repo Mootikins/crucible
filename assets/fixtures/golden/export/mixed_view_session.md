@@ -5,6 +5,9 @@
 
 first question
 
+> [!system]- System Prompt
+> remember the style guide
+
 ## Assistant
 
 first answer
@@ -14,9 +17,6 @@ first answer
 ---
 
 Context cleared by goal
-
-> [!system]- System Prompt
-> remember the style guide
 
 ## ↻ goal
 
@@ -30,10 +30,10 @@ continuing
 
 second question
 
-## Assistant (gpt-x)
-
-second answer
-
 ## ↻ goal
 
 a plugin note
+
+## Assistant (gpt-x)
+
+second answer

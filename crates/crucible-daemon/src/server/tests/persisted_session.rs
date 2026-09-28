@@ -8,7 +8,8 @@ use super::*;
 // whole point of the relocation: a caller that could name the directory could
 // name any directory.
 
-/// A sessions root holding one session whose JSONL has three sample events.
+/// A sessions root holding one session whose JSONL has two view lines of an
+/// older daemon.
 /// Returns the root and the session id.
 fn seed_session(tmp: &TempDir) -> (PathBuf, String) {
     let sessions_root = tmp.path().join("sessions");
@@ -16,7 +17,6 @@ fn seed_session(tmp: &TempDir) -> (PathBuf, String) {
     let session_dir = sessions_root.join(&session_id);
     std::fs::create_dir_all(&session_dir).unwrap();
     let events = [
-        "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
         "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}",
         "{\"type\":\"assistant\",\"ts\":\"2026-01-01T12:00:02Z\",\"content\":\"Hi there!\"}",
     ];
@@ -35,43 +35,25 @@ fn make_request(method: &str, params: Value) -> Request {
 }
 
 #[tokio::test]
-async fn session_load_events_returns_events_from_jsonl() {
-    let tmp = TempDir::new().unwrap();
-    let (sessions_root, session_id) = seed_session(&tmp);
-
-    let req = make_request("session.load_events", json!({ "session_id": session_id }));
-    let resp = handle_session_load_events(req, &sessions_root).await;
-
-    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-    let result = resp.result.unwrap();
-    let events = result.as_array().unwrap();
-    assert_eq!(events.len(), 3);
-    assert_eq!(events[0]["type"], "init");
-    assert_eq!(events[1]["type"], "user");
-    assert_eq!(events[2]["type"], "assistant");
-}
-
-#[tokio::test]
-async fn session_load_events_unknown_id_returns_empty() {
+async fn session_render_markdown_of_an_unknown_id_is_empty() {
     let tmp = TempDir::new().unwrap();
     let (sessions_root, _) = seed_session(&tmp);
 
     let req = make_request(
-        "session.load_events",
+        "session.render_markdown",
         json!({ "session_id": "chat-does-not-exist" }),
     );
-    let resp = handle_session_load_events(req, &sessions_root).await;
+    let resp = handle_session_render_markdown(req, &sessions_root).await;
 
     assert!(resp.error.is_none());
-    let result = resp.result.unwrap();
-    assert!(result.as_array().unwrap().is_empty());
+    assert_eq!(resp.result.unwrap()["markdown"], "");
 }
 
 /// A traversing id must not reach outside the sessions root. `session_id` is
 /// joined onto a daemon-owned path, so `../` in it would otherwise be a
 /// readable-anything primitive over the RPC surface.
 #[tokio::test]
-async fn session_load_events_refuses_an_id_that_escapes_the_sessions_root() {
+async fn session_render_markdown_refuses_an_id_that_escapes_the_sessions_root() {
     let tmp = TempDir::new().unwrap();
     let (sessions_root, session_id) = seed_session(&tmp);
     // A sibling of the sessions root, shaped like a session so that reaching it
@@ -85,10 +67,10 @@ async fn session_load_events_refuses_an_id_that_escapes_the_sessions_root() {
     .unwrap();
 
     let req = make_request(
-        "session.load_events",
+        "session.render_markdown",
         json!({ "session_id": format!("../elsewhere/{session_id}") }),
     );
-    let resp = handle_session_load_events(req, &sessions_root).await;
+    let resp = handle_session_render_markdown(req, &sessions_root).await;
 
     let leaked = serde_json::to_string(&resp).unwrap();
     assert!(
@@ -101,9 +83,8 @@ async fn session_load_events_refuses_an_id_that_escapes_the_sessions_root() {
 //
 // The chat stream replays the persisted tail above a caller's cursor, so a
 // reconnect mid-turn loses nothing the log holds. The reader is over RAW wire
-// envelopes — not the `LogEvent` projection `session.load_events` answers —
-// because the cursor compares the `seq` the daemon stamped at emit, which the
-// projection drops.
+// envelopes, not the transcript, because the cursor compares the `seq` the
+// daemon stamped at emit, which the transcript does not keep.
 
 /// A session whose JSONL holds the two shapes a real log mixes: wire
 /// envelopes with seqs (what `persist_event` appends) and view lines written
@@ -115,7 +96,6 @@ fn seed_wire_session(tmp: &TempDir) -> (PathBuf, String) {
     std::fs::create_dir_all(&session_dir).unwrap();
     let lines = [
         // A view line the reader must skip: no `event` field, no seq.
-        "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
         // Wire envelopes, seqs 1-4.
         "{\"type\":\"event\",\"session_id\":\"chat-20260101-1200-abcd\",\"event\":\"user_message\",\"data\":{\"content\":\"one\"},\"seq\":1}",
         "{\"type\":\"event\",\"session_id\":\"chat-20260101-1200-abcd\",\"event\":\"message_complete\",\"data\":{\"full_response\":\"one\"},\"seq\":2}",
@@ -197,8 +177,9 @@ async fn session_events_after_beyond_the_end_answers_an_empty_tail() {
     assert_eq!(answered_seqs(&resp), Vec::<u64>::new());
 }
 
-/// A session that never existed answers the same empty tail as
-/// `session.load_events` — pinned in `missing_session_contract.rs` too.
+/// A session that never existed answers an empty tail, as
+/// `session.render_markdown` answers an empty document. Pinned in
+/// `missing_session_contract.rs` too.
 #[tokio::test]
 async fn session_events_after_unknown_id_answers_an_empty_tail() {
     let tmp = TempDir::new().unwrap();
@@ -273,10 +254,8 @@ fn seed_session_under(sessions_root: &std::path::Path) -> String {
     let session_id = "chat-20260101-1200-abcd".to_string();
     let session_dir = sessions_root.join(&session_id);
     std::fs::create_dir_all(&session_dir).unwrap();
-    let events = [
-        "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
-        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}",
-    ];
+    let events =
+        ["{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}"];
     std::fs::write(session_dir.join("session.jsonl"), events.join("\n") + "\n").unwrap();
     session_id
 }

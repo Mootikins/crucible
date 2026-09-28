@@ -148,7 +148,6 @@ rpc_methods! {
     SessionSetTitle = "session.set_title",
     SessionGenerateTitle = "session.generate_title",
     SessionSearch = "session.search",
-    SessionLoadEvents = "session.load_events",
     SessionEventsAfter = "session.events_after",
     SessionListPersisted = "session.list_persisted",
     SessionRenderMarkdown = "session.render_markdown",

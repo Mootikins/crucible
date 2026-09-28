@@ -1,12 +1,15 @@
 Session: acp_parity_internal
 
-Events: 4
+Items: 4
 
 
 [user]
 fix the greeting
 
+[assistant (unknown)]
+I'll fix the greeting.
+
 [tool:edit_file] id=call-edit-1
 [result:call-edit-1]
 [assistant (unknown)]
-I'll fix the greeting. Done.
+ Done.

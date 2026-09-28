@@ -1,48 +1,12 @@
 Session: delegation-demo
 
-Events: 57
+Items: 20
 
 
 [user]
 What is a kiln in Crucible? Use semantic search to find relevant docs.
 
 [system] Context injected: 0 note(s) for "What is a kiln in Crucible? Use semantic search to find relevant d…
-[tool:ToolSearch] id=toolu_01QVCEYKhaD48SCtS7Z8XTMS
-[result:f947fad2-e424-4abb-8e62-35b9015140ed]
-[tool:Semantic Search] id=toolu_01DvBwfxfLUoeZY14e8EFKLu
-[tool:Get Kiln Info] id=toolu_01PMAioVH4jxsPuJfGkpazvm
-[result:fc829393-7927-4eb4-a698-d5334cfd0996]
-[result:a0b74ab9-e27c-4c29-a368-075ba139dc59]
-[tool:Grep] id=toolu_01V3hE7VKWyF67tQF6Wz4vTT
-[tool:Grep] id=toolu_01XGvCfzhPqHc7Lx2qxm91Wb
-[result:f61645e3-f46d-4c53-9042-98e6c4948b6c]
-[result:a725d08f-ffbd-43f0-a1e5-07b7236ec030]
-[tool:Read File] id=toolu_01FjzVjMW8SYXjwp4iXNCLdd
-[tool:Find] id=toolu_01N1HMnQfUSNYudC9Vf94Zbc
-[result:b3dfeb6a-9d18-4009-81fc-e1dd1bd589ee]
-[result:3b61e599-382e-48ec-8d47-ed46648c70f1]
-[tool:Terminal] id=toolu_01GxdMMio33bxEmEnVrq2LK9
-[tool:Find] id=toolu_0129FLGarSbQ9PzvLz4zL2sj
-[result:2dee5a87-fdc9-458f-aa8d-7605652af1a5]
-[result:b9969c55-be59-4f67-b72c-afe1d1593809]
-[tool:Grep] id=toolu_016XF4ermrfcZkXbWJ5BV6tg
-[result:2032baf1-9d85-44f6-9047-21437fe09e42]
-[tool:Terminal] id=toolu_01VKoCrNpqo2eL4RwF3DpZnJ
-[result:72f93c1f-3138-48ae-8aeb-2137ffbb89b3]
-[tool:Terminal] id=toolu_01MEZBU2TW5kW8qQorwEpNvc
-[tool:Grep] id=toolu_01Xy2CfUpV6SrxZTgyzapNpY
-[result:55b7b14c-71a2-4fb7-83ce-566aef1ea952]
-[result:fe760c23-5e14-4d5e-9128-aac5e263e7e5]
-[tool:Terminal] id=toolu_01YQNcFfRS3KWSw69AvpZ394
-[result:e73c817e-1db3-4732-ab11-3732833cb580]
-[tool:Terminal] id=toolu_01Efh5JZBMMmPeM6JaVhENPe
-[result:22939b92-2cbc-46da-aaee-e1f68b28bb01]
-[tool:Terminal] id=toolu_01MPSL979UDmgZRVDWciR8R3
-[result:b579a804-2bca-4def-b921-dceb9c6d3d1b]
-[tool:Terminal] id=toolu_01CHrELwcdVvqPsqZzHsygz5
-[result:19efc952-b42b-4ca3-b59a-3fd2a1f8bb54]
-[tool:Terminal] id=toolu_01K2z8gMRHRiWYMqms2JRq6b
-[result:6eaf676e-485a-4c92-82ab-45687e8c46dd]
 [tool:ToolSearch] id=toolu_01QVCEYKhaD48SCtS7Z8XTMS
 [tool:mcp__crucible__semantic_search] id=toolu_01DvBwfxfLUoeZY14e8EFKLu
 [tool:mcp__crucible__get_kiln_info] id=toolu_01PMAioVH4jxsPuJfGkpazvm

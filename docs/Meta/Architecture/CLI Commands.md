@@ -190,24 +190,24 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | `crates/crucible-cli/src/commands/session/mod.rs` | 191 | `cru session` dispatch — the single fan-out point over every `SessionCommands` variant. |
 | `crates/crucible-cli/src/commands/session/acp.rs` | 877 | RPC implementation behind nearly every `cru session <verb>`; named for historical reasons, covers the whole session RPC surface, including `send`'s turn-lifecycle-aware event loop. `send` reads the `SendOutcome` of `session_send_message` and prints a command's result instead of waiting on a turn that never started. |
 | `crates/crucible-cli/src/commands/session/cleanup.rs` | 85 | `cru session cleanup` — deletes old persisted sessions, scoped by kiln. |
-| `crates/crucible-cli/src/commands/session/export.rs` | 41 | `cru session export` — writes a session transcript to Markdown. |
+| `crates/crucible-cli/src/commands/session/export.rs` | 47 | `cru session export` — writes a session transcript to Markdown. With no daemon, it runs the daemon's export renderer on the daemon's fold of the file. |
 | `crates/crucible-cli/src/commands/session/helpers.rs` | 96 | Shared pure helpers: permission-mode parsing, session-id resolution, send-argument disambiguation. |
-| `crates/crucible-cli/src/commands/session/io.rs` | 163 | Filesystem-facing helpers for the daemon-unreachable session fallback path, including a context-clear event render. |
-| `crates/crucible-cli/src/commands/session/list.rs` | 142 | `cru session list` — live daemon sessions plus, with `--all`, persisted history. |
+| `crates/crucible-cli/src/commands/session/io.rs` | 171 | `history_transcript` (the `transcript` of `session.history`), `read_transcript` (the daemon's fold of a file, when no daemon starts) and `transcript_text`, the plain-text view of `cru session show`. |
+| `crates/crucible-cli/src/commands/session/list.rs` | 130 | `cru session list` — live daemon sessions plus, with `--all`, persisted history. |
 | `crates/crucible-cli/src/commands/session/reindex.rs` | 30 | `cru session reindex` — retired stub explaining why the RPC it used to call no longer exists. |
 | `crates/crucible-cli/src/commands/session/resume.rs` | 22 | `cru session open` — resumes a persisted session into the interactive chat TUI. |
 | `crates/crucible-cli/src/commands/session/search.rs` | 33 | `cru session search` — full-text scan over past session logs via the daemon; prints `SessionSearchResponse::to_text`, the same text form the TUI's and the web's `/search` share. |
-| `crates/crucible-cli/src/commands/session/show.rs` | 122 | `cru session show` — renders one session's metadata and transcript, three-layer fallback. |
+| `crates/crucible-cli/src/commands/session/show.rs` | 90 | `cru session show` — renders one session's metadata, or its transcript as JSON, markdown or text. The transcript comes from `session.history`, or from the daemon's fold of the file when no daemon starts. |
 
 ### `src/commands/session/tests/`
 
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-cli/src/commands/session/tests/mod.rs` | 58 | Shared fixtures/harness (`test_config`, `setup_test_session` against a real wire-format fixture). |
-| `crates/crucible-cli/src/commands/session/tests/list.rs` | 55 | Tests for `list_persisted` and message-counting. |
+| `crates/crucible-cli/src/commands/session/tests/list.rs` | 46 | Tests for `list_persisted` and message-counting. |
 | `crates/crucible-cli/src/commands/session/tests/misc.rs` | 130 | Tests for `resolve_session_id`, `resolve_send_inputs`, `truncate_chars`. |
 | `crates/crucible-cli/src/commands/session/tests/reindex.rs` | 29 | Tests proving `reindex` never reaches for the retired RPC. |
-| `crates/crucible-cli/src/commands/session/tests/show.rs` | 84 | Tests for `show` and `export` against the real wire-format fixture. |
+| `crates/crucible-cli/src/commands/session/tests/show.rs` | 100 | Tests for `show` and `export` against the real wire-format fixture, and golden files of the text and list views (`assets/fixtures/golden/cli_session/`). |
 
 ### `src/factories/` — composition root
 
@@ -627,8 +627,10 @@ doc for test-isolation reasons.
   multibyte/emoji input.
 - **Daemon-first, local-fallback layering is one-directional per command.**
   `session/show.rs`, `session/export.rs`, and `session/list.rs` each try the
-  daemon, then a narrower daemon RPC, then a fully local read — never mixing
-  sources within one response.
+  daemon, then a fully local read — never mixing sources within one
+  response. The local read is the daemon's own fold and renderer
+  (`crucible_daemon::load_transcript`, `render_to_markdown`), so both paths
+  show one transcript.
 - **`cru agents` (the bare list) has no disk fallback.** `commands/agents.rs::list`
   reaches the daemon through `common::daemon_client` (auto-starting) and
   treats a reply with no `cards` field as a hard error, not a silent
@@ -720,7 +722,7 @@ doc for test-isolation reasons.
 - **A shared real-wire-format fixture**: `commands/session/tests/mod.rs`'s
   `setup_test_session` materializes
   `assets/fixtures/session_log_wire.jsonl` rather than a hand-rolled log,
-  explicitly to keep the CLI's fallback parser honest against what the
+  explicitly to keep the CLI's fallback reader honest against what the
   daemon actually writes — cross-referenced against a same-named daemon-side
   test, matching the root AGENTS.md's "test that actual crossing" rule.
 - **Named gaps**: `commands/process.rs` and `commands/lua.rs` have zero

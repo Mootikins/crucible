@@ -103,7 +103,8 @@ Lists daemon sessions in a table (ID, type, state, started).
 
 Shows session details: for a live daemon session, its metadata (type, state, kiln,
 started, title); otherwise the stored transcript. `-f` takes `text`, `json`, or
-`markdown`.
+`markdown`. The transcript is the one that the TUI and the web client show: `json`
+prints its items, and `markdown` is the same document as `cru session export`.
 
 ### `cru session search <query>`
 

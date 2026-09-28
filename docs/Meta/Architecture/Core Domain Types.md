@@ -237,8 +237,8 @@ behavior on top of them.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-core/src/transcript/mod.rs` | 952 | `TranscriptFold`, `Transcript`, `TranscriptItem`, `TranscriptOp`: the one fold from session events to what a client draws (user turns, answer segments, tool cards, delegations, injected context, notices). `TranscriptFold::apply` gives the ops of each event; `Transcript::apply` replays them on a snapshot. |
-| `crates/crucible-core/src/transcript/tests.rs` | 353 | The fold of a live turn and of its stored events give one transcript; the ops rebuild the snapshot; golden files in `assets/fixtures/golden/transcript/` hold the fold of five recordings. |
+| `crates/crucible-core/src/transcript/mod.rs` | 1031 | `TranscriptFold`, `Transcript`, `TranscriptItem`, `TranscriptOp`: the one fold from session events to what a client draws (user turns, answer segments, tool cards, delegations, injected context, notices). `TranscriptFold::apply` gives the ops of each event; `Transcript::apply` replays them on a snapshot. An item has the `timestamp` of the event that made it (an answer segment: the event that ended it). An answer segment names the `model` of the session, and its `usage` has `cache_read_tokens`. `Precognition` keeps its `query_summary`. The markdown export, the Lua history rows and `cru session` read these fields. |
+| `crates/crucible-core/src/transcript/tests.rs` | 490 | The fold of a live turn and of its stored events give one transcript; the ops rebuild the snapshot; golden files in `assets/fixtures/golden/transcript/` hold the fold of five recordings. |
 | `crates/crucible-core/src/turn/mod.rs` | 719 | `TurnEvent`/`Agent` trait/`StopReason`/`AgentCapabilities`/`TurnContext`/`TurnStatus`/`TurnOrigin` — the unified agent-event protocol; a turn ends before any handler-requested follow-up runs. |
 | `crates/crucible-core/src/turn/tree.rs` | 622 | `ConversationTree`/`TurnNode`/`NodeContent`/`NodeId` — the append-only, branchable conversation store; `NodeContent::Plugin` gives a plugin-requested turn its own node kind. |
 
@@ -922,8 +922,9 @@ crate — see [[Agent Manager]] for that hazard.
 - **`protocol/session_events/turn.rs`'s `ContextInjected` non-persistence is
   an acknowledged, not a resolved, design question.** The code comment
   points to an open question in an external plan document rather than a
-  closed decision; a resumed transcript still relies on `inject_context`'s
-  separate `LogEvent` line to avoid double-persisting the same content.
+  closed decision; a resumed transcript still relies on the stored
+  `context_injected` line that `inject_context` writes directly, to avoid
+  double-persisting the same content.
 None of the above conflicts with `AGENTS.md`'s ownership table: every trait
 in this page is implemented outside `crucible-core`, every closed set with a
 compile-time gate matches the "one exhaustive table" design rule, and the

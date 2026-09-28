@@ -3,7 +3,9 @@
 
 how do I read a file
 
-<!-- thinking: 00:20:43 -->
+<!-- 00:20:43 -->
+## Assistant
+
 > [!thinking]- Thinking
 > consider std::fs
 
@@ -16,7 +18,6 @@ how do I read a file
 }
 ```
 
-<!-- 00:20:43 -->
 #### Result (id: c1)
 
 ```
@@ -25,8 +26,6 @@ name = "example"
 ```
 
 <!-- 00:20:43 -->
-## Assistant
-
 Use std::fs::read_to_string.
 
 *Tokens: 25 in, 75 out, 12 cached*

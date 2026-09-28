@@ -17,8 +17,7 @@
     "role": "tool_result",
     "id": "c1",
     "content": "[package]\nname = \"example\"",
-    "truncated": false,
-    "timestamp": "2026-09-24T00:20:43.362885531+00:00"
+    "timestamp": "2026-09-24T00:20:43.362884951+00:00"
   },
   {
     "role": "assistant",

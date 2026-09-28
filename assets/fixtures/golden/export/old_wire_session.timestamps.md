@@ -14,11 +14,10 @@ edit the library
 }
 ```
 
-<!-- 10:00:02 -->
 #### Result (id: c1)
 
 ```
-{"result":"ok"}
+ok
 ```
 
 <!-- 10:00:03 -->
@@ -35,17 +34,24 @@ fix main
 ### Tool: `Edit` (id: c2)
 
 ```json
-{}
+{
+  "file_path": "src/main.rs"
+}
 ```
 
-<!-- 10:01:04 -->
 #### Result (id: c2)
 
 ```
-{"result":"edited"}
+edited
 ```
+
+<!-- 10:01:05 -->
+> **Error:** The turn failed: agent turn error: LLM timeout
 
 <!-- 10:02:00 -->
 ## User
 
 try again
+
+<!-- 10:02:02 -->
+> **Error:** The turn failed: agent turn error: stopped

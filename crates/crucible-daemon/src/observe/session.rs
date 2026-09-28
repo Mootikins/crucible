@@ -5,8 +5,8 @@
 //! (`server/core.rs`), off the daemon's broadcast channel; this module only
 //! reads. See [`crate::observe`] for the two line shapes a log can hold.
 
-use crate::observe::events::LogEvent;
 use crate::protocol::SessionEventMessage;
+use crucible_core::transcript::{ItemBody, Transcript, TranscriptFold};
 use std::path::Path;
 use tokio::fs;
 
@@ -14,42 +14,83 @@ use tokio::fs;
 ///
 /// Not to be confused with `session_manager::SessionError`, a different type
 /// with its own `NotFound(String)`.
-///
-/// Only `Io` remains. `NotFound` and `AlreadyExists` were constructed solely by
-/// the deleted `SessionWriter`, and `Json` solely by its `event.to_jsonl()?` —
-/// `parse_session_log` handles its own parse failures with `warn!` and never
-/// propagates a `serde_json::Error`, so nothing produces it any more. rustc
-/// would not have told us: this enum is `pub` and re-exported from `lib.rs`.
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
 
-/// Load all events from a session log.
+/// The transcript of a stored log: each line in its current wire form
+/// ([`crate::observe::stored_events`]), then the one fold of core.
 ///
-/// Reads both shapes the file can hold; see [`crate::observe::SessionLogLine`].
-pub async fn load_events(session_dir: impl AsRef<Path>) -> Result<Vec<LogEvent>, SessionError> {
-    let jsonl_path = session_dir.as_ref().join("session.jsonl");
+/// `SessionManager::load_transcript` reads the same fold through its storage.
+/// This reads text, for a caller that has the file: the observe RPCs and the
+/// CLI when no daemon can start. A line that is not JSON is skipped with a
+/// warning.
+pub fn transcript_of_log(session_id: &str, jsonl: &str) -> Transcript {
+    let lines = jsonl
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim().is_empty())
+        .filter_map(|(index, line)| match serde_json::from_str(line.trim()) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                tracing::warn!(line = index + 1, %error, "skipping unparseable session log line");
+                None
+            }
+        })
+        .collect();
+    TranscriptFold::of_events(&crate::observe::stored_events(session_id, lines))
+}
 
+/// The transcript of the session in `session_dir`. A session with no log
+/// has an empty transcript.
+pub async fn load_transcript(session_dir: impl AsRef<Path>) -> Result<Transcript, SessionError> {
+    let session_dir = session_dir.as_ref();
+    let jsonl_path = session_dir.join("session.jsonl");
     if !jsonl_path.exists() {
-        return Ok(Vec::new());
+        return Ok(Transcript::default());
     }
-
-    // Whole-file read, matching `FileSessionStorage::load_events`
-    // (`session_storage.rs`) and its `count_events`. The streaming
-    // reader this replaces bought nothing: every caller consumes the entire
-    // `Vec` anyway (see the note at `session_bridge.rs`).
-    Ok(crate::observe::events::parse_session_log(
+    let session_id = session_dir
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(transcript_of_log(
+        &session_id,
         &fs::read_to_string(&jsonl_path).await?,
     ))
+}
+
+/// What a session list shows of a transcript: the count of user turns and
+/// answer segments with text, and the start of the first user turn.
+pub fn transcript_summary(transcript: &Transcript) -> (usize, String) {
+    let count = transcript
+        .items
+        .iter()
+        .filter(|item| match &item.body {
+            ItemBody::UserTurn { .. } => true,
+            ItemBody::AssistantSegment { text, .. } => !text.is_empty(),
+            _ => false,
+        })
+        .count();
+    let title = transcript
+        .items
+        .iter()
+        .find_map(|item| match &item.body {
+            ItemBody::UserTurn { content, .. } => {
+                Some(crucible_core::text::truncate_chars(content, 50, true))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| "(empty)".to_string());
+    (count, title)
 }
 
 /// The wire envelopes a session log holds past a seq cursor, in order.
 ///
 /// The replay path of a reconnecting chat stream (`session.events_after`):
-/// unlike [`load_events`], this reads the RAW envelopes — `seq` is stamped at
-/// emit and the `LogEvent` projection drops it, so the cursor can only be
+/// unlike [`load_transcript`], this reads the RAW envelopes — `seq` is stamped at
+/// emit and the transcript does not keep it, so the cursor can only be
 /// compared against the wire form a live subscriber receives.
 ///
 /// A line joins the tail only when it is a wire event carrying a seq: view
@@ -108,137 +149,92 @@ mod tests {
         session_dir
     }
 
-    /// The committed wire-format log, which
-    /// `server::tests::session_log_capture` keeps equal to live daemon output.
-    ///
-    fn as_jsonl(events: &[LogEvent]) -> String {
-        events
+    fn kinds(transcript: &Transcript) -> Vec<&'static str> {
+        transcript
+            .items
             .iter()
-            .map(|e| e.to_jsonl().unwrap())
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
+            .map(|item| match item.body {
+                ItemBody::UserTurn { .. } => "user",
+                ItemBody::AssistantSegment { .. } => "segment",
+                ItemBody::ToolCard { .. } => "tool",
+                ItemBody::Delegation { .. } => "delegation",
+                ItemBody::InjectedContext { .. } => "context",
+                ItemBody::Notice { .. } => "notice",
+            })
+            .collect()
     }
 
     #[tokio::test]
-    async fn load_events_returns_events_for_a_real_session_log() {
+    async fn load_transcript_folds_a_real_session_log() {
         let dir = TempDir::new().unwrap();
-        let session_dir = dir.path().join("chat-20260811-1200-abcd");
-        fs::create_dir_all(&session_dir).await.unwrap();
-        fs::write(session_dir.join("session.jsonl"), WIRE_LOG)
-            .await
-            .unwrap();
+        let id = SessionId::generate(SessionType::Chat);
+        let session_dir = write_log(dir.path(), &id, WIRE_LOG).await;
 
-        let events = load_events(&session_dir).await.unwrap();
+        let transcript = load_transcript(&session_dir).await.unwrap();
 
-        assert_eq!(
-            events.len(),
-            5,
-            "every line of a real session log must survive the read"
-        );
-        assert!(matches!(
-            &events[0],
-            LogEvent::User { content, .. } if content == "how do I read a file"
-        ));
-        assert!(matches!(
-            &events[1],
-            LogEvent::Thinking { content, .. } if content == "consider std::fs"
-        ));
-        assert!(matches!(
-            &events[2],
-            LogEvent::ToolCall { id, name, .. } if id == "c1" && name == "read_file"
-        ));
-        assert!(matches!(
-            &events[3],
-            LogEvent::ToolResult { id, result, .. } if id == "c1" && result == "[package]"
-        ));
-        let LogEvent::Assistant {
-            content, tokens, ..
-        } = &events[4]
-        else {
-            panic!("expected Assistant, got {:?}", events[4]);
+        assert_eq!(kinds(&transcript), ["user", "segment", "tool", "segment"]);
+        let ItemBody::ToolCard { result, .. } = &transcript.items[2].body else {
+            panic!("not a tool card");
         };
-        assert_eq!(content, "Use std::fs::read_to_string.");
-        let tokens = tokens.as_ref().expect("message_complete carries usage");
-        assert_eq!(tokens.prompt_tokens, 25);
-        assert_eq!(tokens.completion_tokens, 75);
+        assert_eq!(result.as_deref(), Some("[package]"));
+        let ItemBody::AssistantSegment { text, usage, .. } = &transcript.items[3].body else {
+            panic!("not a segment");
+        };
+        assert_eq!(text, "Use std::fs::read_to_string.");
         assert_eq!(
-            tokens.cache_read_tokens,
+            usage.unwrap().cache_read_tokens,
             Some(12),
             "cache accounting must not be dropped on the way in"
         );
+        assert_eq!(
+            transcript.items[3].timestamp,
+            Some("2026-08-11T12:00:05Z".parse().unwrap()),
+            "a segment takes the time of the event that ended it"
+        );
     }
 
-    /// `inject_context_impl` (`server/session/messaging.rs`) and both fork
-    /// handlers append `LogEvent` to the same file. A log is mixed by
-    /// construction, and both shapes must survive.
+    /// An older daemon wrote view lines into the same file as the wire
+    /// lines. Each view line is part of the transcript.
     #[tokio::test]
-    async fn load_events_reads_a_log_holding_both_persisted_shapes() {
+    async fn load_transcript_reads_the_view_lines_of_an_older_daemon() {
         let dir = TempDir::new().unwrap();
-        let session_dir = dir.path().join("chat-20260811-1200-abcd");
-        fs::create_dir_all(&session_dir).await.unwrap();
-        let mixed = format!(
-            "{}{}\n",
-            WIRE_LOG, r#"{"type":"system","ts":"2026-08-11T12:00:06Z","content":"injected note"}"#
+        let id = SessionId::generate(SessionType::Chat);
+        let log = [
+            r#"{"type":"system","ts":"2026-08-11T12:00:00Z","content":"System"}"#,
+            r#"{"type":"user","ts":"2026-08-11T12:00:01Z","content":"Hello"}"#,
+            r#"{"type":"assistant","ts":"2026-08-11T12:00:02Z","content":"Hi!"}"#,
+            r#"{"type":"clear","ts":"2026-08-11T12:00:03Z"}"#,
+        ]
+        .join("\n");
+        let session_dir = write_log(dir.path(), &id, &format!("{log}\n{WIRE_LOG}")).await;
+
+        let transcript = load_transcript(&session_dir).await.unwrap();
+
+        assert_eq!(
+            kinds(&transcript),
+            ["context", "user", "segment", "notice", "user", "segment", "tool", "segment"]
         );
-        fs::write(session_dir.join("session.jsonl"), mixed)
-            .await
-            .unwrap();
-
-        let events = load_events(&session_dir).await.unwrap();
-
-        assert_eq!(events.len(), 6);
         assert!(matches!(
-            events.last().unwrap(),
-            LogEvent::System { content, .. } if content == "injected note"
+            &transcript.items[1].body,
+            ItemBody::UserTurn { content, .. } if content == "Hello"
+        ));
+        assert!(matches!(
+            &transcript.items[2].body,
+            ItemBody::AssistantSegment { text, .. } if text == "Hi!"
         ));
     }
 
-    /// The `View` branch on its own — the shape `inject_context` and fork write.
     #[tokio::test]
-    async fn test_load_events_roundtrip() {
-        let dir = TempDir::new().unwrap();
-        let sessions_dir = dir.path().join("sessions");
-        let id = SessionId::generate(SessionType::Chat);
-
-        let session_dir = write_log(
-            &sessions_dir,
-            &id,
-            &as_jsonl(&[
-                LogEvent::system("System"),
-                LogEvent::user("Hello"),
-                LogEvent::assistant("Hi!"),
-            ]),
-        )
-        .await;
-
-        let events = load_events(&session_dir).await.unwrap();
-
-        assert_eq!(events.len(), 3);
-
-        match &events[0] {
-            LogEvent::System { content, .. } => assert_eq!(content, "System"),
-            _ => panic!("wrong event type"),
-        }
-
-        match &events[1] {
-            LogEvent::User { content, .. } => assert_eq!(content, "Hello"),
-            _ => panic!("wrong event type"),
-        }
-
-        match &events[2] {
-            LogEvent::Assistant { content, .. } => assert_eq!(content, "Hi!"),
-            _ => panic!("wrong event type"),
-        }
-    }
-
-    #[tokio::test]
-    async fn load_events_on_a_missing_log_is_empty_not_an_error() {
+    async fn load_transcript_of_a_missing_log_is_empty_not_an_error() {
         let dir = TempDir::new().unwrap();
         let session_dir = dir.path().join("chat-20260811-1200-abcd");
         fs::create_dir_all(&session_dir).await.unwrap();
 
-        assert!(load_events(&session_dir).await.unwrap().is_empty());
+        assert!(load_transcript(&session_dir)
+            .await
+            .unwrap()
+            .items
+            .is_empty());
     }
 
     /// `LogEvent`'s `type` tags and the wire envelope's `type` values share one
@@ -301,44 +297,5 @@ mod tests {
                 "LogEvent variant `{tag}` collides with a SessionEventMessage msg_type",
             );
         }
-    }
-
-    /// A real log is mixed. `inject_context` writes a `LogEvent` line to disk and
-    /// broadcasts a `SessionEventMessage`; `fork` copies `LogEvent` lines into a
-    /// file the turn loop then appends wire lines to. Reading one shape must not
-    /// drop the other — and until now no fixture contained both, so the reader's
-    /// tolerance for that was entirely untested.
-    #[tokio::test]
-    async fn a_log_holding_both_shapes_yields_both() {
-        let dir = TempDir::new().unwrap();
-        let sessions_dir = dir.path().join("sessions");
-        let id = SessionId::generate(SessionType::Chat);
-
-        // A LogEvent line (as `inject_context` and `fork` write it), then the
-        // wire lines the broadcast path appends.
-        let mixed = format!(
-            "{}{}",
-            as_jsonl(&[LogEvent::system("injected context")]),
-            WIRE_LOG
-        );
-        let session_dir = write_log(&sessions_dir, &id, &mixed).await;
-
-        let events = load_events(&session_dir).await.unwrap();
-
-        assert!(
-            matches!(&events[0], LogEvent::System { content, .. } if content == "injected context"),
-            "the LogEvent line must survive, got {:?}",
-            events.first()
-        );
-        assert!(
-            events.len() > 1,
-            "the wire lines must survive alongside it, got {events:?}"
-        );
-        assert!(
-            events.iter().any(
-                |e| matches!(e, LogEvent::User { content, .. } if content == "how do I read a file")
-            ),
-            "the wire `user_message` line must survive, got {events:?}"
-        );
     }
 }

@@ -199,7 +199,7 @@ pub struct SessionListRequest {
 ///
 /// Used by: `session.get`, `session.status`, `session.pause`, `session.resume`,
 /// `session.end`, `session.cancel`, `session.list_models`, `session.list_modes`,
-/// `session.list_notifications`, `session.load_events`,
+/// `session.list_notifications`,
 /// `session.get_precognition`, `session.archive`, `session.unarchive`,
 /// `session.delete`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

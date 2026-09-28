@@ -21,7 +21,7 @@
 //! 5. success, reporting the work was not done — `session.cancel` →
 //!    `cancelled: false`.
 //! 6. success with a zero aggregate — `session.cache_stats`.
-//! 7. success with an empty collection — `session.load_events`,
+//! 7. success with an empty collection — `session.events_after`,
 //!    `session.render_markdown`, `session.status`.
 //! 8. success that never consulted the session at all —
 //!    `session.test_interaction`.
@@ -237,11 +237,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
                 "prompt_tokens": 0, "completion_tokens": 0,
                 "hit_rate": serde_json::Value::Null,
             })),
-        ),
-        (
-            "session.load_events",
-            json!({}),
-            Answer::Succeeds(json!([])),
         ),
         (
             "session.events_after",

@@ -1,9 +1,9 @@
-use super::io::{display_events_text, format_events_markdown, read_session_events, sessions_dir};
+use super::io::{history_transcript, read_transcript, sessions_dir, transcript_text};
 use crate::common::daemon_client;
 use crate::config::CliAppConfig;
 use crate::output;
 use anyhow::Result;
-use crucible_daemon::{LogEvent, SessionId};
+use crucible_daemon::{render_to_markdown, RenderOptions, SessionId};
 
 pub(super) async fn show(config: CliAppConfig, id: String, format: String) -> Result<()> {
     let client = daemon_client().await.ok();
@@ -62,60 +62,28 @@ pub(super) async fn show(config: CliAppConfig, id: String, format: String) -> Re
         anyhow::bail!("Session not found: {}", id);
     }
 
-    if let Some(client) = &client {
-        let loaded = match format.as_str() {
-            "json" => {
-                if let Ok(events_json) = client.session_load_events(session_id.as_str()).await {
-                    let json = serde_json::to_string_pretty(&events_json)?;
-                    println!("{json}");
-                    true
-                } else {
-                    false
-                }
-            }
-            "markdown" | "md" => {
-                if let Ok(md) = client
-                    .session_render_markdown(session_id.as_str(), None, None, None, None)
-                    .await
-                {
-                    println!("{md}");
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => {
-                if let Ok(events_json) = client.session_load_events(session_id.as_str()).await {
-                    if let Ok(events) = serde_json::from_value::<Vec<LogEvent>>(events_json) {
-                        display_events_text(&id, &events);
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            }
-        };
-        if loaded {
-            return Ok(());
-        }
-    }
-
-    let events = read_session_events(&session_dir).await?;
+    // The daemon folds the log. Only when no daemon answers does the CLI
+    // run the same fold on the file.
+    let transcript = match &client {
+        Some(client) => match history_transcript(client, session_id.as_str()).await {
+            Ok(transcript) => transcript,
+            Err(_) => read_transcript(&session_dir).await?,
+        },
+        None => read_transcript(&session_dir).await?,
+    };
 
     match format.as_str() {
         "json" => {
-            let json = serde_json::to_string_pretty(&events)?;
+            let json = serde_json::to_string_pretty(&transcript)?;
             println!("{json}");
         }
         "markdown" | "md" => {
-            let md = format_events_markdown(&events);
-            println!("{md}");
+            println!(
+                "{}",
+                render_to_markdown(&transcript, &RenderOptions::default())
+            );
         }
-        _ => {
-            display_events_text(&id, &events);
-        }
+        _ => print!("{}", transcript_text(&id, &transcript)),
     }
 
     Ok(())
