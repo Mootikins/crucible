@@ -62,7 +62,7 @@ this page's files.
 | `crates/crucible-lua/src/mcp.rs` | 97 | `cru.mcp` stub — always-empty answers for the stub-generator VM; plugins reach MCP through daemon gateway tools instead. |
 | `crates/crucible-lua/src/modes.rs` | 769 | `cru.modes` — agent modes a Lua table declares (`ModeDefinition`, `ModeStance`, `ToolSelector`, `WriteMode`); the daemon reads these for tool visibility, permission stance and whether a note write applies or becomes a proposal. |
 | `crates/crucible-lua/src/notify.rs` | 595 | `cru.log.notify`/`notify_once`/`levels` and the `NotificationSink` trait the daemon implements. |
-| `crates/crucible-lua/src/oil.rs` | 1371 | `cru.oil.*` — builds `crucible_oil::Node` trees (`text`, `col`, `row`, `popup`, `component`, …) from Lua. |
+| `crates/crucible-lua/src/oil.rs` | 1370 | `cru.oil.*` — builds `crucible_oil::Node` trees (`text`, `col`, `row`, `popup`, `component`, …) from Lua. |
 | `crates/crucible-lua/src/paths.rs` | 288 | `cru.paths.*` — read-only session/workspace/plugin-state/config directory lookups. |
 | `crates/crucible-lua/src/publications.rs` | 390 | `cru.plugin.publish` — a plugin-scoped JSON channel any client can read back. |
 | `crates/crucible-lua/src/ratelimit.rs` | 280 | `cru.ratelimit.new` — a token-bucket rate limiter exposed as Lua userdata. |
@@ -75,7 +75,7 @@ this page's files.
 | `crates/crucible-lua/src/statusline_lua.rs` | 533 | `cru.statusline` Lua constructors (`sl.mode`, `sl.model{}`, `sl.proposals`, `sl.items`, `sl.plugin_turns`, `sl.setup`) that build a `Layout`. `crates/crucible-lua/src/plugin_status.rs` (see [[Luau Host]]) opens the same `statusline` module table through `crate::lua_util::get_or_create_module` to add `cru.statusline.item`/`publish`; the two files share one Lua table, not one owner. |
 | `crates/crucible-lua/src/storage_api.rs` | 444 | `cru.storage.*` — the per-plugin EAV property-store API over `crucible_core::storage::PropertyStore`. |
 | `crates/crucible-lua/src/surfaces.rs` | 1067 | `cru.surface.declare`/`set_rows` — the cross-client panel registry (`SurfaceRegistry`, `Shape`, `Mark`). |
-| `crates/crucible-lua/src/theme.rs` | 1385 | Canonical `ThemeConfig` domain type and its Lua-table parser/loader; the built-in dark theme. |
+| `crates/crucible-lua/src/theme.rs` | 1325 | Canonical `ThemeConfig` domain type and its Lua-table parser/loader; the built-in dark theme. |
 | `crates/crucible-lua/src/theme_wire.rs` | 479 | JSON wire codec for `ThemeConfig`, for the `ui.config` RPC handshake; keeps colors unresolved on the wire. |
 | `crates/crucible-lua/src/timer.rs` | 582 | `cru.timer.clock`/`sleep`/`timeout`/`spawn` with per-plugin task-abort bookkeeping. |
 | `crates/crucible-lua/src/tools_api.rs` | 1151 | `cru.tools.*` — direct workspace-tool invocation (`call`/`list`/`batch`/`set_active`) over `DaemonToolsApi`. |

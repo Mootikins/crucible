@@ -640,11 +640,15 @@ oil.row(child1, child2):align("center")
 
 ### Colors
 
-**Named colors:**
-- `"red"`, `"green"`, `"blue"`, `"cyan"`, `"yellow"`, `"magenta"`, `"white"`, `"black"`
+A color takes the same forms here as in a theme:
 
-**Hex colors:**
-- `"#ff0000"`, `"#00ff00"`, `"#0000ff"`, etc.
+- **Names:** `"red"`, `"green"`, `"blue"`, `"cyan"`, `"yellow"`, `"magenta"`,
+  `"white"`, `"black"`, `"gray"`, `"dark_gray"`, and the bright forms such as
+  `"bright_red"`.
+- **Palette slots:** `"term4"` or `"4"` is slot 4 of the terminal's palette,
+  whatever color the user put there.
+- **RGB:** `"#ff0000"` or `"rgb(255, 0, 0)"`.
+- **Reset:** `"reset"` uses the terminal's default color.
 
 **Usage:**
 ```lua

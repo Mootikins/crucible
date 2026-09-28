@@ -79,7 +79,7 @@ fn adaptive_to_wire(c: AdaptiveColor) -> Value {
 /// over JSON instead of Lua values.
 fn adaptive_from_wire(v: &Value) -> Option<AdaptiveColor> {
     match v {
-        Value::String(s) => crate::theme::parse_color_string(s).map(AdaptiveColor::from_single),
+        Value::String(s) => crucible_oil::style::Color::parse(s).map(AdaptiveColor::from_single),
         Value::Object(o) => adaptive_pair_from_wire(o),
         _ => None,
     }
@@ -88,8 +88,8 @@ fn adaptive_from_wire(v: &Value) -> Option<AdaptiveColor> {
 /// The `{dark, light}` wire object. The theme colours and the highlight
 /// groups share this form.
 pub(crate) fn adaptive_pair_from_wire(o: &Map<String, Value>) -> Option<AdaptiveColor> {
-    let dark = crate::theme::parse_color_string(o.get("dark")?.as_str()?)?;
-    let light = crate::theme::parse_color_string(o.get("light")?.as_str()?)?;
+    let dark = crucible_oil::style::Color::parse(o.get("dark")?.as_str()?)?;
+    let light = crucible_oil::style::Color::parse(o.get("light")?.as_str()?)?;
     Some(AdaptiveColor { dark, light })
 }
 

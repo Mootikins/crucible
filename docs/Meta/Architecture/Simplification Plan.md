@@ -251,6 +251,7 @@ Each item is small and independent. Merge each one into the owner named here.
 |---|---|---|
 | Two markdown renderers for the terminal: `crates/crucible-cli/src/formatting/markdown_renderer.rs` and `crates/crucible-cli/src/tui/oil/markdown/` | the Oil renderer; render it to a string for plain output | [[TUI Components]] |
 | **Done in part.** Three ANSI parsers: `crates/crucible-oil/src/ansi.rs`, `crates/crucible-oil/src/cell_grid.rs`, `crates/crucible-oil/src/overlay.rs` | The overlay reads through `CellGrid` and truncates through `crates/crucible-oil/src/utils.rs`, so a joined grapheme keeps its cells. `ansi.rs` and `cell_grid.rs` keep their documented, tracked divergence | [[Oil Renderer]] |
+| **Done.** Two color readers: `parse_color_string` in `crates/crucible-lua/src/theme.rs` and one for `cru.oil` nodes and HTML templates. The second knew fewer forms, so a theme color could fail in a node | `Color::parse` in `crates/crucible-oil/src/style.rs` | [[Oil Renderer]] |
 | **Done.** Five frontmatter scans: three in `crates/crucible-core/src/parser/`, one in `crates/crucible-core/tests/dev_kiln.rs`, and the writer's `split_fences` | `split_frontmatter` in `crates/crucible-core/src/parser/frontmatter.rs`, which uses `split_fences` for YAML | [[Parser]] |
 | The selection flow in three TUI modals in `crates/crucible-cli/src/tui/oil/components/interaction_modal/` | one shared helper | [[TUI Components]] |
 | `ToolCall` and `ChatToolCall` in `crates/crucible-core/src/traits/` | one model tool-call record | [[Core Domain Types]] |

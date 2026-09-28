@@ -710,7 +710,7 @@ macro_rules! parse_char_field {
 fn parse_adaptive_color(value: &Value) -> Option<AdaptiveColor> {
     match value {
         Value::String(s) => {
-            let color = parse_color_string(&s.to_str().ok()?)?;
+            let color = Color::parse(&s.to_str().ok()?)?;
             Some(AdaptiveColor::from_single(color))
         }
         other => adaptive_from_lua_structured(other),
@@ -744,69 +744,9 @@ pub(crate) fn adaptive_from_lua_structured(value: &Value) -> Option<AdaptiveColo
 /// One side of an adaptive pair: a name, a hex literal, or an index.
 pub(crate) fn parse_any_color(value: &Value) -> Option<Color> {
     match value {
-        Value::String(s) => parse_color_string(&s.to_str().ok()?),
+        Value::String(s) => Color::parse(&s.to_str().ok()?),
         Value::Integer(n) => u8::try_from(*n).ok().map(Color::Indexed),
         Value::Table(t) => t.get::<u8>("idx").ok().map(Color::Indexed),
-        _ => None,
-    }
-}
-
-pub(crate) fn parse_color_string(s: &str) -> Option<Color> {
-    if let Some(hex) = s.strip_prefix('#') {
-        if hex.len() == 6 {
-            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            return Some(Color::Rgb(r, g, b));
-        }
-    }
-    // A bare number is a palette index, so `fg = "4"` and `fg = 4` agree.
-    if let Ok(index) = s.parse::<u8>() {
-        return Some(Color::Indexed(index));
-    }
-
-    // `term4` — the terminal's slot 4, whatever colour the user has put there.
-    //
-    // The colour *names* below are aliases for these same slots, so `"blue"`
-    // and `term4` are identical at the wire level. But a name is a claim about
-    // appearance, and that claim is false the moment someone remaps their
-    // palette — plenty of terminal themes put something other than blue in slot
-    // 4. `term4` promises only the slot, which is the honest spelling when a
-    // theme means "whatever the user calls blue" rather than "blue".
-    // Longest prefix first: stripping "term" from "terminal12" would leave
-    // "inal12" and short-circuit the alternative.
-    if let Some(n) = s
-        .strip_prefix("terminal")
-        .or_else(|| s.strip_prefix("term"))
-        .and_then(|n| n.parse::<u8>().ok())
-    {
-        if n <= 15 {
-            return Some(Color::Indexed(n));
-        }
-    }
-
-    match s.to_lowercase().as_str() {
-        "black" => Some(Color::Black),
-        "red" => Some(Color::Red),
-        "green" => Some(Color::Green),
-        "yellow" => Some(Color::Yellow),
-        "blue" => Some(Color::Blue),
-        "magenta" => Some(Color::Magenta),
-        "cyan" => Some(Color::Cyan),
-        "white" => Some(Color::White),
-        "gray" | "grey" => Some(Color::Gray),
-        "dark_gray" | "darkgray" | "dark_grey" | "darkgrey" => Some(Color::DarkGray),
-        // "bright black" is the conventional name for palette 8, which this
-        // codebase has always called dark gray. Accept both.
-        "bright_black" | "brightblack" => Some(Color::DarkGray),
-        "bright_red" | "brightred" => Some(Color::BrightRed),
-        "bright_green" | "brightgreen" => Some(Color::BrightGreen),
-        "bright_yellow" | "brightyellow" => Some(Color::BrightYellow),
-        "bright_blue" | "brightblue" => Some(Color::BrightBlue),
-        "bright_magenta" | "brightmagenta" => Some(Color::BrightMagenta),
-        "bright_cyan" | "brightcyan" => Some(Color::BrightCyan),
-        "bright_white" | "brightwhite" => Some(Color::BrightWhite),
-        "reset" | "none" | "default" => Some(Color::Reset),
         _ => None,
     }
 }
@@ -1081,11 +1021,11 @@ mod tests {
     /// unmodified palette.
     #[test]
     fn term_slots_are_aliases_for_the_matching_indices() {
-        assert_eq!(parse_color_string("term4"), Some(Color::Indexed(4)));
-        assert_eq!(parse_color_string("terminal12"), Some(Color::Indexed(12)));
+        assert_eq!(Color::parse("term4"), Some(Color::Indexed(4)));
+        assert_eq!(Color::parse("terminal12"), Some(Color::Indexed(12)));
         assert_eq!(
-            parse_color_string("term4").and_then(Color::palette_index),
-            parse_color_string("blue").and_then(Color::palette_index),
+            Color::parse("term4").and_then(Color::palette_index),
+            Color::parse("blue").and_then(Color::palette_index),
             "term4 and blue address the same slot; only the promise differs"
         );
         // …and the same slot *on the frame*. Asserting only `palette_index`
@@ -1097,7 +1037,7 @@ mod tests {
         let painted = |name: &str| {
             crucible_oil::ansi::apply_style(
                 "x",
-                &crucible_oil::Style::new().fg(parse_color_string(name).expect("known colour")),
+                &crucible_oil::Style::new().fg(Color::parse(name).expect("known colour")),
             )
         };
         assert_eq!(
@@ -1111,8 +1051,8 @@ mod tests {
     /// spelling would imply a configurability that does not exist.
     #[test]
     fn term_slots_above_fifteen_are_rejected() {
-        assert_eq!(parse_color_string("term16"), None);
-        assert_eq!(parse_color_string("term250"), None);
+        assert_eq!(Color::parse("term16"), None);
+        assert_eq!(Color::parse("term250"), None);
     }
 
     /// The terminal-colour vocabulary: names, brights, bare integers and the
@@ -1138,9 +1078,9 @@ mod tests {
     /// always called dark gray; both must land on palette 8.
     #[test]
     fn bright_black_and_dark_gray_are_the_same_slot() {
-        assert_eq!(parse_color_string("bright_black"), Some(Color::DarkGray));
+        assert_eq!(Color::parse("bright_black"), Some(Color::DarkGray));
         assert_eq!(
-            parse_color_string("dark_gray").and_then(Color::palette_index),
+            Color::parse("dark_gray").and_then(Color::palette_index),
             Some(8)
         );
     }

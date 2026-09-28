@@ -44,7 +44,7 @@ impl HlColor {
     /// and no literal is named `popup_bg` — so the order is stable, and trying
     /// literals first pins the colour names permanently.
     pub fn parse(s: &str) -> Self {
-        match crate::theme::parse_color_string(s) {
+        match crucible_oil::style::Color::parse(s) {
             Some(c) => HlColor::Adaptive(AdaptiveColor::from_single(c)),
             None => HlColor::Palette(s.to_string()),
         }

@@ -162,6 +162,81 @@ pub enum Color {
 }
 
 impl Color {
+    /// Parse a color: `#rrggbb`, `rgb(r, g, b)`, a palette index (`4`,
+    /// `term4`, `terminal12`), a name (`blue`, `bright_red`, `dark_gray`) or
+    /// `reset`. `None` for any other text.
+    ///
+    /// The one color reader for themes, `cru.oil` nodes and HTML templates,
+    /// so a color that one of them accepts, the others accept too.
+    pub fn parse(s: &str) -> Option<Color> {
+        if let Some(hex) = s.strip_prefix('#') {
+            if hex.len() == 6 {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                return Some(Self::Rgb(r, g, b));
+            }
+        }
+        if let Some(inner) = s.strip_prefix("rgb(").and_then(|r| r.strip_suffix(')')) {
+            let mut parts = inner.split(',').map(|p| p.trim().parse::<u8>());
+            let (r, g, b) = (
+                parts.next()?.ok()?,
+                parts.next()?.ok()?,
+                parts.next()?.ok()?,
+            );
+            return parts.next().is_none().then_some(Self::Rgb(r, g, b));
+        }
+        // A bare number is a palette index, so `fg = "4"` and `fg = 4` agree.
+        if let Ok(index) = s.parse::<u8>() {
+            return Some(Self::Indexed(index));
+        }
+
+        // `term4` — the terminal's slot 4, whatever colour the user has put there.
+        //
+        // The colour *names* below are aliases for these same slots, so `"blue"`
+        // and `term4` are identical at the wire level. But a name is a claim about
+        // appearance, and that claim is false the moment someone remaps their
+        // palette — plenty of terminal themes put something other than blue in slot
+        // 4. `term4` promises only the slot, which is the honest spelling when a
+        // theme means "whatever the user calls blue" rather than "blue".
+        // Longest prefix first: stripping "term" from "terminal12" would leave
+        // "inal12" and short-circuit the alternative.
+        if let Some(n) = s
+            .strip_prefix("terminal")
+            .or_else(|| s.strip_prefix("term"))
+            .and_then(|n| n.parse::<u8>().ok())
+        {
+            if n <= 15 {
+                return Some(Self::Indexed(n));
+            }
+        }
+
+        match s.to_lowercase().as_str() {
+            "black" => Some(Self::Black),
+            "red" => Some(Self::Red),
+            "green" => Some(Self::Green),
+            "yellow" => Some(Self::Yellow),
+            "blue" => Some(Self::Blue),
+            "magenta" => Some(Self::Magenta),
+            "cyan" => Some(Self::Cyan),
+            "white" => Some(Self::White),
+            "gray" | "grey" => Some(Self::Gray),
+            "dark_gray" | "darkgray" | "dark_grey" | "darkgrey" => Some(Self::DarkGray),
+            // "bright black" is the conventional name for palette 8, which this
+            // codebase has always called dark gray. Accept both.
+            "bright_black" | "brightblack" => Some(Self::DarkGray),
+            "bright_red" | "brightred" => Some(Self::BrightRed),
+            "bright_green" | "brightgreen" => Some(Self::BrightGreen),
+            "bright_yellow" | "brightyellow" => Some(Self::BrightYellow),
+            "bright_blue" | "brightblue" => Some(Self::BrightBlue),
+            "bright_magenta" | "brightmagenta" => Some(Self::BrightMagenta),
+            "bright_cyan" | "brightcyan" => Some(Self::BrightCyan),
+            "bright_white" | "brightwhite" => Some(Self::BrightWhite),
+            "reset" | "none" | "default" => Some(Self::Reset),
+            _ => None,
+        }
+    }
+
     /// Derive a selection-highlight surface from an arbitrary base color:
     /// step toward white on dark surfaces and toward black on light ones, so
     /// a selected row reads as "the same surface, raised" for ANY themed bg
@@ -910,5 +985,36 @@ mod tests {
         let guard = crucible_core::test_support::EnvVarGuard::set("NO_COLOR", "1".to_string());
         assert_eq!(ac.resolve(true), Color::Reset);
         drop(guard);
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::*;
+
+    #[test]
+    fn a_color_is_a_name_a_hex_value_an_rgb_triple_or_a_palette_slot() {
+        assert_eq!(Color::parse("bright_red"), Some(Color::BrightRed));
+        assert_eq!(Color::parse("term4"), Some(Color::Indexed(4)));
+        assert_eq!(Color::parse("200"), Some(Color::Indexed(200)));
+        assert_eq!(Color::parse("Red"), Some(Color::Red));
+        assert_eq!(Color::parse("dark_grey"), Some(Color::DarkGray));
+        assert_eq!(Color::parse("#ff8000"), Some(Color::Rgb(255, 128, 0)));
+        assert_eq!(Color::parse("rgb(1, 2, 3)"), Some(Color::Rgb(1, 2, 3)));
+    }
+
+    #[test]
+    fn any_other_text_is_no_color() {
+        for text in [
+            "",
+            "chartreuse",
+            "#fff",
+            "#gg0000",
+            "rgb(1,2)",
+            "rgb(1,2,3,4)",
+            "rgb(256,0,0)",
+        ] {
+            assert_eq!(Color::parse(text), None, "{text}");
+        }
     }
 }

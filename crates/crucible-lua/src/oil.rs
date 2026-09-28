@@ -23,7 +23,6 @@ use std::collections::BTreeMap;
 /// wiring; callers use `parse::border(s)`, `parse::style_from_table(t)`, etc.
 mod parse {
     use super::{LuaNode, Style};
-    use crucible_oil::template::parse_color;
     use crucible_oil::{text, AlignItems, Border, JustifyContent, Node};
     use mlua::{Result as LuaResult, Table, Value};
 
@@ -57,10 +56,10 @@ mod parse {
     }
 
     pub fn color(value: &str, prop_name: &str) -> LuaResult<crucible_oil::Color> {
-        parse_color(value).ok_or_else(|| {
+        crucible_oil::Color::parse(value).ok_or_else(|| {
             mlua::Error::RuntimeError(format!(
-                "invalid color '{}' for '{}'. Use named colors (red, green, blue, yellow, \
-                 cyan, magenta, white, black) or hex (#ff0000)",
+                "invalid color '{}' for '{}'. Use a name (red, bright_blue), a palette \
+                 slot (term4), hex (#ff0000) or rgb(255, 0, 0)",
                 value, prop_name
             ))
         })
