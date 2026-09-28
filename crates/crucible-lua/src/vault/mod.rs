@@ -358,8 +358,8 @@ pub fn register_kiln_repository_resolver(
     Ok(())
 }
 
-fn repo_error(e: crucible_core::CrucibleError) -> mlua::Error {
-    mlua::Error::runtime(format!("Kiln error: {e}"))
+fn repo_error(e: anyhow::Error) -> mlua::Error {
+    mlua::Error::runtime(format!("Kiln error: {e:#}"))
 }
 
 /// Register `cru.kiln.path(name, relative?)` against a resolver.

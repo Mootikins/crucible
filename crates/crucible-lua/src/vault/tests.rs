@@ -841,26 +841,26 @@ mod blocks_tests {
         async fn get_note_by_name(
             &self,
             _name: &str,
-        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+        ) -> anyhow::Result<Option<crucible_core::parser::ParsedNote>> {
             Ok(None)
         }
         async fn get_note_by_path(
             &self,
             path: &str,
-        ) -> crucible_core::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
+        ) -> anyhow::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
             Ok(self.records().into_iter().find(|r| r.path == path))
         }
         async fn list_notes(
             &self,
             _path: Option<&str>,
-        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
+        ) -> anyhow::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
             Ok(Vec::new())
         }
         async fn search_vectors(
             &self,
             _vector: Vec<f32>,
             _limit: usize,
-        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        ) -> anyhow::Result<Vec<crucible_core::types::SearchResult>> {
             Ok(Vec::new())
         }
         /// The blocks that carry a vector, best first by dot product.
@@ -868,7 +868,7 @@ mod blocks_tests {
             &self,
             vector: Vec<f32>,
             limit: usize,
-        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        ) -> anyhow::Result<Vec<crucible_core::types::SearchResult>> {
             let mut hits: Vec<_> = self
                 .0
                 .iter()
@@ -896,13 +896,13 @@ mod blocks_tests {
         }
         async fn list_note_records(
             &self,
-        ) -> crucible_core::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
+        ) -> anyhow::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
             Ok(self.records())
         }
         async fn links_for_note(
             &self,
             path: &str,
-        ) -> crucible_core::Result<crucible_core::traits::NoteLinks> {
+        ) -> anyhow::Result<crucible_core::traits::NoteLinks> {
             Ok(crucible_core::traits::NoteLinks {
                 outlinks: if path == "a.md" {
                     vec!["b.md".to_string()]
@@ -916,7 +916,7 @@ mod blocks_tests {
                 },
             })
         }
-        async fn blocks_for_note(&self, path: &str) -> crucible_core::Result<Vec<BlockRecord>> {
+        async fn blocks_for_note(&self, path: &str) -> anyhow::Result<Vec<BlockRecord>> {
             Ok(self
                 .0
                 .iter()

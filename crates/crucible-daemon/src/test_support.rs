@@ -100,7 +100,7 @@ impl KnowledgeRepository for MockKnowledgeRepository {
         &self,
         _vector: Vec<f32>,
         limit: usize,
-    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+    ) -> anyhow::Result<Vec<crucible_core::types::SearchResult>> {
         self.block_limits.lock().unwrap().push(limit);
         Ok(self.block_results.iter().take(limit).cloned().collect())
     }
@@ -108,7 +108,7 @@ impl KnowledgeRepository for MockKnowledgeRepository {
     async fn blocks_for_note(
         &self,
         path: &str,
-    ) -> crucible_core::Result<Vec<crucible_core::storage::BlockRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::BlockRecord>> {
         Ok(self
             .note_blocks
             .iter()
@@ -119,35 +119,35 @@ impl KnowledgeRepository for MockKnowledgeRepository {
 
     async fn list_note_records(
         &self,
-    ) -> crucible_core::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
         Ok(Vec::new())
     }
 
     async fn links_for_note(
         &self,
         _path: &str,
-    ) -> crucible_core::Result<crucible_core::traits::NoteLinks> {
+    ) -> anyhow::Result<crucible_core::traits::NoteLinks> {
         Ok(crucible_core::traits::NoteLinks::default())
     }
 
     async fn get_note_by_name(
         &self,
         _name: &str,
-    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+    ) -> anyhow::Result<Option<crucible_core::parser::ParsedNote>> {
         Ok(None)
     }
 
     async fn get_note_by_path(
         &self,
         _path: &str,
-    ) -> crucible_core::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
         Ok(None)
     }
 
     async fn list_notes(
         &self,
         _path: Option<&str>,
-    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
+    ) -> anyhow::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
         Ok(vec![])
     }
 
@@ -155,11 +155,9 @@ impl KnowledgeRepository for MockKnowledgeRepository {
         &self,
         _vector: Vec<f32>,
         _limit: usize,
-    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+    ) -> anyhow::Result<Vec<crucible_core::types::SearchResult>> {
         if self.fail_search {
-            return Err(crucible_core::CrucibleError::DatabaseError(
-                "mock failure".into(),
-            ));
+            anyhow::bail!("mock failure");
         }
         Ok(self.results.clone())
     }

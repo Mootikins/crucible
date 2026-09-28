@@ -136,18 +136,4 @@ pub use events::{
     SharedEventBus,
 };
 
-#[derive(Debug, thiserror::Error)]
-pub enum CrucibleError {
-    #[error("Note not found: {0}")]
-    DocumentNotFound(uuid::Uuid),
-
-    #[error("Invalid operation: {0}")]
-    InvalidOperation(String),
-
-    #[error("Database error: {0}")]
-    DatabaseError(String),
-}
-
-pub type Result<T> = std::result::Result<T, CrucibleError>;
-
 pub mod bases;

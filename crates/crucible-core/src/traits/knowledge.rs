@@ -54,7 +54,7 @@
 use crate::parser::ParsedNote;
 use crate::storage::BlockRecord;
 use crate::types::SearchResult;
-use crate::Result;
+use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 

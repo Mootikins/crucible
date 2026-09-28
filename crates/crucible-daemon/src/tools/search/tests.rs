@@ -29,7 +29,7 @@ impl KnowledgeRepository for OneHitRepository {
         &self,
         _vector: Vec<f32>,
         _limit: usize,
-    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+    ) -> anyhow::Result<Vec<crucible_core::types::SearchResult>> {
         // No block store behind this repository; callers fall back to notes.
         Ok(Vec::new())
     }
@@ -37,48 +37,48 @@ impl KnowledgeRepository for OneHitRepository {
     async fn blocks_for_note(
         &self,
         _path: &str,
-    ) -> crucible_core::Result<Vec<crucible_core::storage::BlockRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::BlockRecord>> {
         // No block store behind this repository.
         Ok(Vec::new())
     }
 
     async fn list_note_records(
         &self,
-    ) -> crucible_core::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
         Ok(Vec::new())
     }
 
     async fn links_for_note(
         &self,
         _path: &str,
-    ) -> crucible_core::Result<crucible_core::traits::NoteLinks> {
+    ) -> anyhow::Result<crucible_core::traits::NoteLinks> {
         Ok(crucible_core::traits::NoteLinks::default())
     }
 
     async fn get_note_by_name(
         &self,
         _name: &str,
-    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+    ) -> anyhow::Result<Option<crucible_core::parser::ParsedNote>> {
         Ok(None)
     }
     async fn get_note_by_path(
         &self,
         _path: &str,
-    ) -> crucible_core::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
         Ok(None)
     }
 
     async fn list_notes(
         &self,
         _path: Option<&str>,
-    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
+    ) -> anyhow::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
         Ok(vec![])
     }
     async fn search_vectors(
         &self,
         _vector: Vec<f32>,
         _limit: usize,
-    ) -> crucible_core::Result<Vec<crucible_core::SearchResult>> {
+    ) -> anyhow::Result<Vec<crucible_core::SearchResult>> {
         Ok(vec![crucible_core::SearchResult {
             document_id: crucible_core::DocumentId("notes/Rust.md".to_string()),
             score: 0.9,

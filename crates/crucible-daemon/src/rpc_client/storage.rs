@@ -12,7 +12,6 @@ use crucible_core::storage::{
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::types::SearchResult as KnowledgeSearchResult;
 use crucible_core::DocumentId;
-use crucible_core::{CrucibleError, Result as CoreResult};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -131,7 +130,7 @@ impl KnowledgeRepository for DaemonStorageClient {
         &self,
         _vector: Vec<f32>,
         _limit: usize,
-    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+    ) -> anyhow::Result<Vec<crucible_core::types::SearchResult>> {
         // No block store behind this repository; callers fall back to notes.
         Ok(Vec::new())
     }
@@ -139,7 +138,7 @@ impl KnowledgeRepository for DaemonStorageClient {
     async fn blocks_for_note(
         &self,
         _path: &str,
-    ) -> crucible_core::Result<Vec<crucible_core::storage::BlockRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::BlockRecord>> {
         // No block store behind this repository.
         Ok(Vec::new())
     }
@@ -148,21 +147,20 @@ impl KnowledgeRepository for DaemonStorageClient {
     /// client-side caller reads them. Empty is the honest answer.
     async fn list_note_records(
         &self,
-    ) -> CoreResult<Vec<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
         Ok(Vec::new())
     }
 
-    async fn links_for_note(&self, _path: &str) -> CoreResult<crucible_core::traits::NoteLinks> {
+    async fn links_for_note(
+        &self,
+        _path: &str,
+    ) -> anyhow::Result<crucible_core::traits::NoteLinks> {
         Ok(crucible_core::traits::NoteLinks::default())
     }
 
-    async fn get_note_by_name(&self, name: &str) -> CoreResult<Option<ParsedNote>> {
+    async fn get_note_by_name(&self, name: &str) -> anyhow::Result<Option<ParsedNote>> {
         // Use the backend-agnostic get_note_by_name RPC method
-        let result = self
-            .client
-            .get_note_by_name(&self.kiln, name, None)
-            .await
-            .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
+        let result = self.client.get_note_by_name(&self.kiln, name, None).await?;
 
         match result {
             Some(data) => Ok(parse_note_from_record(&data)),
@@ -176,17 +174,16 @@ impl KnowledgeRepository for DaemonStorageClient {
     async fn get_note_by_path(
         &self,
         _path: &str,
-    ) -> CoreResult<Option<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
         Ok(None)
     }
 
-    async fn list_notes(&self, path_filter: Option<&str>) -> CoreResult<Vec<NoteInfo>> {
+    async fn list_notes(&self, path_filter: Option<&str>) -> anyhow::Result<Vec<NoteInfo>> {
         // Use the backend-agnostic list_notes RPC method
         let results = self
             .client
             .list_notes(&self.kiln, path_filter, None)
-            .await
-            .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
+            .await?;
 
         Ok(results
             .into_iter()
@@ -210,13 +207,12 @@ impl KnowledgeRepository for DaemonStorageClient {
         &self,
         vector: Vec<f32>,
         limit: usize,
-    ) -> CoreResult<Vec<KnowledgeSearchResult>> {
+    ) -> anyhow::Result<Vec<KnowledgeSearchResult>> {
         // Use the backend-agnostic search_vectors RPC method
         let results = self
             .client
             .search_vectors(&self.kiln, &vector, limit, None)
-            .await
-            .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
+            .await?;
 
         Ok(results
             .into_iter()

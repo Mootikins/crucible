@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use crucible_core::parser::{Frontmatter, FrontmatterFormat, ParsedNote, Wikilink};
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, NoteLinks};
 use crucible_core::types::{DocumentId, SearchResult};
-use crucible_core::{CrucibleError, Result as CrucibleResult};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -85,16 +84,17 @@ impl SqliteKnowledgeRepository {
 
 #[async_trait]
 impl KnowledgeRepository for SqliteKnowledgeRepository {
-    async fn get_note_by_name(&self, name: &str) -> CrucibleResult<Option<ParsedNote>> {
+    async fn get_note_by_name(&self, name: &str) -> anyhow::Result<Option<ParsedNote>> {
         use crucible_core::storage::NoteStore;
 
         let authority = scope_for(self.kiln_path.as_deref());
 
         // Get all notes and find one matching by path or title
-        let notes =
-            self.store.list(&authority).await.map_err(|e| {
-                CrucibleError::DatabaseError(format!("Failed to list notes: {}", e))
-            })?;
+        let notes = self
+            .store
+            .list(&authority)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to list notes: {e}"))?;
 
         // Find note where path contains name or title matches
         let name_lower = name.to_lowercase();
@@ -136,25 +136,26 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn get_note_by_path(
         &self,
         path: &str,
-    ) -> CrucibleResult<Option<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
         use crucible_core::storage::NoteStore;
 
         let authority = scope_for(self.kiln_path.as_deref());
         self.store
             .get(path, &authority)
             .await
-            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to get note: {}", e)))
+            .map_err(|e| anyhow::anyhow!("Failed to get note: {e}"))
     }
 
-    async fn list_notes(&self, path: Option<&str>) -> CrucibleResult<Vec<NoteInfo>> {
+    async fn list_notes(&self, path: Option<&str>) -> anyhow::Result<Vec<NoteInfo>> {
         use crucible_core::storage::NoteStore;
 
         let authority = scope_for(self.kiln_path.as_deref());
 
-        let notes =
-            self.store.list(&authority).await.map_err(|e| {
-                CrucibleError::DatabaseError(format!("Failed to list notes: {}", e))
-            })?;
+        let notes = self
+            .store
+            .list(&authority)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to list notes: {e}"))?;
 
         let filtered: Vec<NoteInfo> = notes
             .into_iter()
@@ -175,7 +176,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         &self,
         vector: Vec<f32>,
         limit: usize,
-    ) -> CrucibleResult<Vec<SearchResult>> {
+    ) -> anyhow::Result<Vec<SearchResult>> {
         let Some(blocks) = self.blocks.as_ref() else {
             return Ok(Vec::new());
         };
@@ -183,7 +184,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         let hits = blocks
             .search_blocks(&vector, limit)
             .await
-            .map_err(|e| CrucibleError::DatabaseError(format!("Block search failed: {e}")))?;
+            .map_err(|e| anyhow::anyhow!("Block search failed: {e}"))?;
 
         Ok(hits
             .into_iter()
@@ -208,39 +209,39 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn blocks_for_note(
         &self,
         path: &str,
-    ) -> CrucibleResult<Vec<crucible_core::storage::BlockRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::BlockRecord>> {
         let Some(blocks) = self.blocks.as_ref() else {
             return Ok(Vec::new());
         };
         blocks
             .blocks_for_note(path)
             .await
-            .map_err(|e| CrucibleError::DatabaseError(format!("Block read failed: {e}")))
+            .map_err(|e| anyhow::anyhow!("Block read failed: {e}"))
     }
 
     async fn list_note_records(
         &self,
-    ) -> CrucibleResult<Vec<crucible_core::storage::note_store::NoteRecord>> {
+    ) -> anyhow::Result<Vec<crucible_core::storage::note_store::NoteRecord>> {
         use crucible_core::storage::NoteStore;
 
         let authority = scope_for(self.kiln_path.as_deref());
         self.store
             .list(&authority)
             .await
-            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to list notes: {e}")))
+            .map_err(|e| anyhow::anyhow!("Failed to list notes: {e}"))
     }
 
-    async fn links_for_note(&self, path: &str) -> CrucibleResult<NoteLinks> {
+    async fn links_for_note(&self, path: &str) -> anyhow::Result<NoteLinks> {
         use crucible_core::storage::{scoped_backlinks, scoped_outlinks};
 
         let authority = scope_for(self.kiln_path.as_deref());
         let store: &dyn crucible_core::storage::NoteStore = self.store.as_ref();
         let outlinks = scoped_outlinks(store, &authority, path)
             .await
-            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to read links: {e}")))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read links: {e}"))?;
         let backlinks = scoped_backlinks(store, &authority, path)
             .await
-            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to read links: {e}")))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read links: {e}"))?;
         Ok(NoteLinks {
             outlinks,
             backlinks,
@@ -251,7 +252,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         &self,
         vector: Vec<f32>,
         limit: usize,
-    ) -> CrucibleResult<Vec<SearchResult>> {
+    ) -> anyhow::Result<Vec<SearchResult>> {
         use crucible_core::storage::{Filter, NoteStore};
 
         let scope_filter = self
@@ -263,7 +264,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
             .store
             .search(&vector, limit, scope_filter)
             .await
-            .map_err(|e| CrucibleError::DatabaseError(format!("Search failed: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!("Search failed: {e}"))?;
 
         let converted: Vec<SearchResult> = results
             .into_iter()
