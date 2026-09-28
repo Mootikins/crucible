@@ -251,7 +251,7 @@ Each item is small and independent. Merge each one into the owner named here.
 |---|---|---|
 | Two markdown renderers for the terminal: `crates/crucible-cli/src/formatting/markdown_renderer.rs` and `crates/crucible-cli/src/tui/oil/markdown/` | the Oil renderer; render it to a string for plain output | [[TUI Components]] |
 | Three ANSI parsers: `crates/crucible-oil/src/ansi.rs`, `crates/crucible-oil/src/cell_grid.rs`, `crates/crucible-oil/src/overlay.rs` | one grapheme-aware parser; `overlay.rs` still uses one `char` per cell | [[Oil Renderer]] |
-| Three frontmatter scanners in `crates/crucible-core/src/parser/` | `frontmatter_extractor.rs` | [[Parser]] |
+| **Done.** Five frontmatter scans: three in `crates/crucible-core/src/parser/`, one in `crates/crucible-core/tests/dev_kiln.rs`, and the writer's `split_fences` | `split_frontmatter` in `crates/crucible-core/src/parser/frontmatter.rs`, which uses `split_fences` for YAML | [[Parser]] |
 | The selection flow in three TUI modals in `crates/crucible-cli/src/tui/oil/components/interaction_modal/` | one shared helper | [[TUI Components]] |
 | `ToolCall` and `ChatToolCall` in `crates/crucible-core/src/traits/` | one model tool-call record | [[Core Domain Types]] |
 | Two `SessionError` types, and the legacy `CrucibleError` | one error for each domain | [[Session Services]] |

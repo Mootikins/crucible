@@ -205,15 +205,14 @@ impl TaskFile {
         })
     }
 
-    /// Extract frontmatter from content.
-    ///
-    /// Delegates to the shared [`crate::parser::extract_frontmatter`] so task files
-    /// get the same TOML/CRLF/EOF handling as notes (previously this was a
-    /// divergent YAML-`---\n`-only copy).
+    /// Extract frontmatter from content, with the same scan as notes.
     fn extract_frontmatter(content: &str) -> (Option<Frontmatter>, String) {
-        match crate::parser::extract_frontmatter(content) {
-            Ok(result) => (result.frontmatter, result.body),
-            Err(_) => (None, content.to_string()),
+        match crate::parser::split_frontmatter(content) {
+            Some(split) => (
+                Some(Frontmatter::new(split.raw.to_string(), split.format)),
+                split.body.to_string(),
+            ),
+            None => (None, content.to_string()),
         }
     }
 

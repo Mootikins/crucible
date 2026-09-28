@@ -10,7 +10,7 @@
 //! - `error` - Parser error types
 //! - `extensions` - Syntax extension system
 //! - `implementation` - Main `CrucibleParser` implementation
-//! - `frontmatter_extractor` - Frontmatter parsing utilities
+//! - `frontmatter` - The split of a note into frontmatter and body
 //! - `markdown_it` - markdown-it AST converter + syntax plugins (feature-gated)
 //! - Extension modules: `wikilinks`, `latex`, `inline_links`, etc.
 
@@ -23,7 +23,7 @@ pub mod types;
 #[cfg(feature = "markdown-it-parser")]
 pub mod basic_markdown_it;
 pub mod enhanced_tags;
-pub mod frontmatter_extractor;
+pub mod frontmatter;
 pub mod implementation;
 pub mod inline_links;
 pub mod latex;
@@ -41,10 +41,7 @@ pub use extensions::{Extension, ExtensionRegistry};
 pub use traits::ParserCapabilities;
 
 // Re-export implementation types
-pub use frontmatter_extractor::{
-    extract_frontmatter, FrontmatterExtractor, FrontmatterExtractorConfig, FrontmatterResult,
-    LineEndingStyle,
-};
+pub use frontmatter::{split_frontmatter, FrontmatterSplit};
 pub use implementation::CrucibleParser;
 
 // Re-export parser types from canonical source (this module)

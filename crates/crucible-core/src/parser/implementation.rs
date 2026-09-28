@@ -53,84 +53,6 @@ impl CrucibleParser {
         self
     }
 
-    /// Parse frontmatter from content
-    fn parse_frontmatter<'a>(
-        &self,
-        content: &'a str,
-    ) -> (Option<String>, &'a str, super::types::FrontmatterFormat) {
-        // Check for YAML frontmatter
-        if content.starts_with("---\n") || content.starts_with("---\r\n") {
-            let start = if content.starts_with("---\r\n") { 5 } else { 4 };
-            if let Some(end) = content
-                .find("\n---\n")
-                .or_else(|| content.find("\n---\r\n"))
-            {
-                let frontmatter = &content[start..end];
-                let after = &content[end..];
-                let skip = if after.starts_with("\n---\r\n") { 6 } else { 5 };
-                let content = &content[end + skip..];
-                return (
-                    Some(frontmatter.to_string()),
-                    content,
-                    super::types::FrontmatterFormat::Yaml,
-                );
-            }
-            if content[start..].trim_end() == "---" || content.ends_with("\n---") {
-                let end = content.len()
-                    - if content.ends_with("\r\n---") {
-                        5
-                    } else if content.ends_with("\n---") {
-                        4
-                    } else {
-                        3
-                    };
-                let frontmatter = &content[start..end];
-                return (
-                    Some(frontmatter.to_string()),
-                    "",
-                    super::types::FrontmatterFormat::Yaml,
-                );
-            }
-        }
-
-        // Check for TOML frontmatter
-        if content.starts_with("+++\n") || content.starts_with("+++\r\n") {
-            let start = if content.starts_with("+++\r\n") { 5 } else { 4 };
-            if let Some(end) = content
-                .find("\n+++\n")
-                .or_else(|| content.find("\n+++\r\n"))
-            {
-                let frontmatter = &content[start..end];
-                let after = &content[end..];
-                let skip = if after.starts_with("\n+++\r\n") { 6 } else { 5 };
-                let content = &content[end + skip..];
-                return (
-                    Some(frontmatter.to_string()),
-                    content,
-                    super::types::FrontmatterFormat::Toml,
-                );
-            }
-            if content[start..].trim_end() == "+++" || content.ends_with("\n+++") {
-                let end = content.len()
-                    - if content.ends_with("\r\n+++") {
-                        5
-                    } else if content.ends_with("\n+++") {
-                        4
-                    } else {
-                        3
-                    };
-                let frontmatter = &content[start..end];
-                return (
-                    Some(frontmatter.to_string()),
-                    "",
-                    super::types::FrontmatterFormat::Toml,
-                );
-            }
-        }
-
-        (None, content, super::types::FrontmatterFormat::None)
-    }
-
     /// Validate file size against limits
     fn validate_file_size(&self, size: usize) -> ParserResult<()> {
         if let Some(max_size) = self.max_file_size {
@@ -195,7 +117,11 @@ impl CrucibleParser {
         // disk: a change confined to the frontmatter still changes the file.
         let content_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
 
-        let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
+        let (frontmatter_raw, content, frontmatter_format) = match super::split_frontmatter(content)
+        {
+            Some(split) => (Some(split.raw.to_string()), split.body, split.format),
+            None => (None, content, super::types::FrontmatterFormat::None),
+        };
         let body_offset = original_len - content.len();
 
         let mut parse_errors = Vec::new();
@@ -484,32 +410,6 @@ mod tests {
 
         // Large file should fail
         assert!(parser.validate_file_size(15).is_err());
-    }
-
-    #[test]
-    fn test_parse_frontmatter() {
-        let parser = CrucibleParser::new();
-
-        // YAML frontmatter
-        let content = "---\ntitle: Test\n---\nContent";
-        let (fm, content, format) = parser.parse_frontmatter(content);
-        assert!(fm.is_some());
-        assert_eq!(content, "Content");
-        assert_eq!(format, crate::parser::types::FrontmatterFormat::Yaml);
-
-        // TOML frontmatter
-        let content = "+++\ntitle = \"Test\"\n+++\nContent";
-        let (fm, content, format) = parser.parse_frontmatter(content);
-        assert!(fm.is_some());
-        assert_eq!(content, "Content");
-        assert_eq!(format, crate::parser::types::FrontmatterFormat::Toml);
-
-        // No frontmatter
-        let content = "Just content";
-        let (fm, content, format) = parser.parse_frontmatter(content);
-        assert!(fm.is_none());
-        assert_eq!(content, "Just content");
-        assert_eq!(format, crate::parser::types::FrontmatterFormat::None);
     }
 
     #[tokio::test]

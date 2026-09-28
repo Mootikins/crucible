@@ -248,28 +248,11 @@ impl KilnLinkIndex {
     }
 }
 
-/// Extract the YAML frontmatter, if present.
+/// Extract the YAML frontmatter, if present, with the parser's own scan.
 fn extract_frontmatter(content: &str) -> Option<String> {
-    let lines: Vec<&str> = content.lines().collect();
-
-    if lines.is_empty() || lines[0] != "---" {
-        return None;
-    }
-
-    // Find closing ---
-    let mut end_idx = None;
-    for (i, line) in lines.iter().enumerate().skip(1) {
-        if *line == "---" {
-            end_idx = Some(i);
-            break;
-        }
-    }
-
-    if let Some(end) = end_idx {
-        Some(lines[1..end].join("\n"))
-    } else {
-        None
-    }
+    crucible_core::parser::split_frontmatter(content)
+        .filter(|split| split.format == crucible_core::parser::types::FrontmatterFormat::Yaml)
+        .map(|split| split.raw.to_string())
 }
 
 /// Parse YAML frontmatter into a simple key-value map

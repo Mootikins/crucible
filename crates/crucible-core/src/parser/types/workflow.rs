@@ -262,29 +262,17 @@ struct RawGate {
     byte_offset: usize,
 }
 
-/// Extract the YAML frontmatter block of a workflow source, without parsing it.
-/// The block must start at byte 0 with `---\n` and end with `\n---\n`.
+/// Extract the YAML frontmatter block of a workflow source, without parsing
+/// it, with the same scan as notes.
 pub fn extract_yaml_frontmatter(source: &str) -> Option<Frontmatter> {
-    let rest = source.strip_prefix("---\n")?;
-    let end = rest.find("\n---\n")?;
-    Some(Frontmatter::new(
-        rest[..end].to_string(),
-        FrontmatterFormat::Yaml,
-    ))
+    crate::parser::split_frontmatter(source)
+        .filter(|split| split.format == FrontmatterFormat::Yaml)
+        .map(|split| Frontmatter::new(split.raw.to_string(), FrontmatterFormat::Yaml))
 }
 
+/// The byte offset of the body: after the frontmatter block, or 0.
 fn body_start_offset(source: &str) -> usize {
-    if let Some(rest) = source.strip_prefix("---\n") {
-        if let Some(end_idx) = rest.find("\n---\n") {
-            return "---\n".len() + end_idx + "\n---\n".len();
-        }
-    }
-    if let Some(rest) = source.strip_prefix("+++\n") {
-        if let Some(end_idx) = rest.find("\n+++\n") {
-            return "+++\n".len() + end_idx + "\n+++\n".len();
-        }
-    }
-    0
+    crate::parser::split_frontmatter(source).map_or(0, |split| split.body_offset(source))
 }
 
 fn heading_re() -> &'static Regex {

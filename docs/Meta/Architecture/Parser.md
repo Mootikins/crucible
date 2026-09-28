@@ -53,7 +53,7 @@ performs that conversion.
 | `crates/crucible-core/src/parser/extensions.rs` | 191 | The closed `Extension` enum and `ExtensionRegistry` that runs its variants in order |
 | `crates/crucible-core/src/parser/traits.rs` | 68 | `ParserCapabilities`, the descriptor of what `CrucibleParser` supports |
 | `crates/crucible-core/src/parser/error.rs` | 225 | `ParserError` (fatal), `ParseError`/`ParseErrorType`/`ErrorSeverity` (non-fatal, collected) |
-| `crates/crucible-core/src/parser/frontmatter_extractor.rs` | 496 | `FrontmatterExtractor`/`extract_frontmatter`: a second YAML/TOML frontmatter splitter, used by `TaskFile` |
+| `crates/crucible-core/src/parser/frontmatter.rs` | 195 | `split_frontmatter`: the one scan that splits a note into its frontmatter block and its body, as slices of the file. A YAML block uses `split_fences` from `crates/crucible-core/src/note_frontmatter.rs`, the writer's scan, so reads and writes agree on a byte order mark and a `...` closing line; the `+++` TOML scan is here. Notes, task files, workflows and the docs-kiln test use it. |
 | `crates/crucible-core/src/parser/test_utils.rs` | 94 | `parse_note`, a cfg-gated cross-crate test helper wrapping `CrucibleParser` |
 | `crates/crucible-core/src/parser/basic_markdown_it.rs` | 581 | `BasicMarkdownItExtension`: markdown-it-backed extension filling `NoteContent.blocks` (feature `markdown-it-parser`) |
 | `crates/crucible-core/src/parser/wikilinks.rs` | 187 | `WikilinkExtension`: `[[note]]`, `[[note\|alias]]`, `[[note#heading]]`, `![[embed]]` |
@@ -413,10 +413,10 @@ re-export from `types/mod.rs` and `parser/mod.rs`.
   keeps a comment, flow list, anchor or alias on an untouched key, key
   create/replace/delete (including deleting the last key), BOM and CRLF
   preservation, a no-op equal-value write, and quoted or non-ASCII keys.
-- `crates/crucible-core/tests/dev_kiln.rs` — exercises a private,
-  same-named `extract_frontmatter` test helper, not the parser's
-  `extract_frontmatter`; it is not coverage of `frontmatter_extractor.rs`
-  (see Findings).
+- `crates/crucible-core/src/parser/frontmatter.rs` — inline tests of the
+  split: YAML and TOML, CRLF line endings, a closing delimiter at the end of
+  the file, unclosed and misplaced delimiters, a longer dash line inside the
+  block, and the body offset.
 
 Gaps: `crates/crucible-core/src/note_edit.rs` has no inline `#[cfg(test)]
 mod tests`; its behavior is exercised only through `crates/crucible-core/tests/note_edit.rs` and daemon-level tests
@@ -427,21 +427,6 @@ extraction code exists to test.
 
 ## Findings
 
-- **`frontmatter_extractor.rs` is not dead code.** `TaskFile::
-  extract_frontmatter` in `crates/crucible-core/src/parser/types/task.rs`
-  calls `crate::parser::extract_frontmatter`, the free function in
-  `crates/crucible-core/src/parser/frontmatter_extractor.rs`, on every
-  `TaskFile::from_markdown`. `crates/crucible-core/tests/dev_kiln.rs`
-  defines its own private, identically-named `extract_frontmatter` helper
-  and is not a caller of the parser's version.
-- **Three independent frontmatter-delimiter scanners exist.**
-  `CrucibleParser`'s private `parse_frontmatter` in `crates/crucible-core/src/parser/implementation.rs` (used for notes), `extract_frontmatter` in
-  `crates/crucible-core/src/parser/frontmatter_extractor.rs` (used for
-  `TaskFile`), and `extract_yaml_frontmatter` in `crates/crucible-core/src/parser/types/workflow.rs` (used for `WorkflowDoc`, strict YAML-only) each
-  scan for `---`/`+++` delimiters with separate, non-shared logic. This
-  runs against AGENTS.md's "Prefer derives, conversions, `?` and small
-  shared helpers over repeated plumbing." Only the `TaskFile` path took the
-  documented step of switching to a shared extractor.
 - **`enhanced_tags.rs` documents task-list parsing it does not perform.**
   Its module doc comment claims "Task list parsing with `- [ ]` and `- [x]`
   checkbox syntax," and `can_handle` still probes for task-list markers, but
