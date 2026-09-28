@@ -25,9 +25,9 @@ pub(crate) struct TurnRequest<'a> {
     /// Reset conversation context after claiming the turn slot, before the
     /// prompt is committed. This makes clear-with-prompt one admitted turn.
     pub clear_before: bool,
-    /// The review comments that the message attaches, as the daemon rendered
-    /// them. `server::diff_context::review_context` builds this text.
-    pub review_context: Option<crate::diff::context::ReviewContext>,
+    /// The context blocks that the message carries, as the daemon rendered
+    /// them: review comments and skill instructions.
+    pub attached: Vec<crate::agent_manager::attachments::AttachedContext>,
     pub event_tx: &'a crate::EventBus,
     pub is_interactive: bool,
     pub permission_override: Option<PermissionMode>,
@@ -89,7 +89,7 @@ impl AgentManager {
                         TurnRequest {
                             origin: gate.origin,
                             clear_before: true,
-                            review_context: None,
+                            attached: Vec::new(),
                             event_tx,
                             is_interactive: gate.is_interactive,
                             permission_override: gate.permission_override,
@@ -192,7 +192,7 @@ impl AgentManager {
             TurnRequest {
                 origin: TurnOrigin::User,
                 clear_before: false,
-                review_context: None,
+                attached: Vec::new(),
                 event_tx,
                 is_interactive,
                 permission_override,
@@ -218,7 +218,7 @@ impl AgentManager {
             TurnRequest {
                 origin: TurnOrigin::Plugin(plugin),
                 clear_before: false,
-                review_context: None,
+                attached: Vec::new(),
                 event_tx,
                 is_interactive: true,
                 permission_override: None,
@@ -244,7 +244,7 @@ impl AgentManager {
             TurnRequest {
                 origin: relay.map_or(TurnOrigin::User, TurnOrigin::Relay),
                 clear_before: false,
-                review_context: None,
+                attached: Vec::new(),
                 event_tx,
                 is_interactive,
                 permission_override: None,
@@ -260,7 +260,7 @@ impl AgentManager {
         self: &Arc<Self>,
         session_id: &str,
         content: String,
-        review_context: Option<crate::diff::context::ReviewContext>,
+        attached: Vec<crate::agent_manager::attachments::AttachedContext>,
         event_tx: &crate::EventBus,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
@@ -271,7 +271,7 @@ impl AgentManager {
             TurnRequest {
                 origin: TurnOrigin::User,
                 clear_before: false,
-                review_context,
+                attached,
                 event_tx,
                 is_interactive,
                 permission_override,
@@ -301,7 +301,7 @@ impl AgentManager {
                 TurnRequest {
                     origin: TurnOrigin::User,
                     clear_before: false,
-                    review_context: None,
+                    attached: Vec::new(),
                     event_tx,
                     is_interactive,
                     permission_override,
@@ -342,7 +342,7 @@ impl AgentManager {
                     TurnRequest {
                         origin: TurnOrigin::Plugin(follow_up.plugin),
                         clear_before: false,
-                        review_context: None,
+                        attached: Vec::new(),
                         event_tx: &event_tx,
                         is_interactive,
                         permission_override,
@@ -369,7 +369,7 @@ impl AgentManager {
         let TurnRequest {
             origin,
             clear_before,
-            review_context,
+            attached,
             event_tx,
             is_interactive,
             permission_override,
@@ -514,24 +514,24 @@ impl AgentManager {
             )
             .await;
 
-        // The review comments that the message attaches. An internal agent
-        // gets them as accepted context before the user turn, so replay, undo
-        // and fork keep them with their role. An ACP agent owns its history,
-        // so the block goes with this turn only, as the `@file` attachments do.
+        // The context blocks that the message carries. An internal agent
+        // gets each as accepted context before the user turn, so replay, undo
+        // and fork keep it with its role. An ACP agent owns its history, so
+        // each block goes with this turn only, as the `@file` attachments do.
         //
         // Both routes tag the block with its kind. A `transform_context`
         // handler then finds the block by its tag on either route, instead of
         // matching a substring of the text the daemon rendered.
-        let mut acp_review_context = None;
-        if let Some(review) = review_context {
+        let mut acp_attached = Vec::new();
+        for block in attached {
             if agent_config.agent_type == "acp" {
-                acp_review_context = Some(
+                acp_attached.push(
                     crucible_core::traits::ContextMessage::injection(
-                        crate::diff::context::KIND,
-                        review.source,
-                        &review.body,
+                        block.kind,
+                        &block.source,
+                        &block.body,
                     )
-                    .with_tag(crate::diff::context::KIND),
+                    .with_tag(block.kind),
                 );
             } else if let Err(e) = input
                 .accept(
@@ -539,12 +539,9 @@ impl AgentManager {
                     &session,
                     crate::observe::LogEvent::System {
                         ts: chrono::Utc::now(),
-                        content: review.body,
-                        tags: vec![crate::diff::context::KIND.to_string()],
-                        injection: Some((
-                            crate::diff::context::KIND.to_string(),
-                            review.source.to_string(),
-                        )),
+                        content: block.body,
+                        tags: vec![block.kind.to_string()],
+                        injection: Some((block.kind.to_string(), block.source)),
                     },
                 )
                 .await
@@ -724,12 +721,10 @@ impl AgentManager {
         if attachment_message.is_some() {
             debug!(session_id = %session_id, "Attached @-mentioned file contents to the turn");
         }
-        // One injection is one element, so the review and the files go as
-        // two messages.
-        let attachment_messages: Vec<_> = acp_review_context
-            .into_iter()
-            .chain(attachment_message)
-            .collect();
+        // One injection is one element, so each block and the files go as
+        // separate messages.
+        let attachment_messages: Vec<_> =
+            acp_attached.into_iter().chain(attachment_message).collect();
 
         // Pass the user's content through to the stream loop unchanged;
         // the Precognition system block (if any) is staged on
@@ -1215,7 +1210,9 @@ impl AgentManager {
         let surface = crate::agent_manager::slot::AgentSurface {
             modes: agent.get_modes().cloned(),
             config_options: agent.agent_config_options().to_vec(),
+            commands: agent.agent_commands(),
         };
+        let agent_commands = surface.commands.clone();
         let agent_modes = surface.modes.clone();
 
         // Tell the clients when the agent's own mode set replaces the one
@@ -1237,7 +1234,11 @@ impl AgentManager {
         // (valid for the config it read) and simply goes uncached, so the next
         // turn rebuilds from the new config.
         let agent = Arc::new(Mutex::new(agent));
-        if !slot.install_agent(generation, &agent, surface) {
+        if slot.install_agent(generation, &agent, surface) {
+            if let Some(commands) = agent_commands {
+                announce_agent_commands(session_id, commands, event_tx.clone());
+            }
+        } else {
             debug!(
                 session_id = %session_id,
                 "session config changed during agent build; serving this turn uncached"
@@ -1473,4 +1474,27 @@ impl AgentManager {
 
         Ok((agent, resolved_config))
     }
+}
+
+/// Tell the clients each time the agent's command list changes, until the
+/// agent connection ends. An agent often sends its list with the handshake,
+/// before this task starts, so a list that is already there counts as a change.
+pub(in crate::agent_manager) fn announce_agent_commands(
+    session_id: &str,
+    mut commands: tokio::sync::watch::Receiver<Vec<crucible_core::types::SessionCommand>>,
+    event_tx: crate::EventBus,
+) {
+    let session_id = session_id.to_string();
+    tokio::spawn(async move {
+        let mut announce = !commands.borrow_and_update().is_empty();
+        loop {
+            if announce {
+                event_tx.emit(SessionEventMessage::commands_changed(&session_id));
+            }
+            if commands.changed().await.is_err() {
+                break;
+            }
+            announce = true;
+        }
+    });
 }

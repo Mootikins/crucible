@@ -29,6 +29,7 @@ mod precognition_tests; // US-209
 mod resume_tests; // US-912
 mod scroll_tests; // US-801
 mod shell_tests; // US-601 / US-602
+mod slash_catalog_tests; // US-103
 mod status_items_tests; // US-911
 mod stop_reason_tests; // US-206
 mod stream_gap_tests; // US-907

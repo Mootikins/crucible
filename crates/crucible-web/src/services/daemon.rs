@@ -371,7 +371,7 @@ impl ReconnectingDaemon {
         /// members left out.
         Safe SessionSearch =>
         session_search(query: &str, kilns: &[crucible_core::config::KilnName], limit: Option<usize>)
-        -> serde_json::Value = session_search(&query, &kilns, limit);
+        -> crucible_core::session::SessionSearchResponse = session_search(&query, &kilns, limit);
     }
 
     forward_rpc! {
@@ -449,6 +449,18 @@ impl ReconnectingDaemon {
         -> () = session_clear(&session_id);
     }
 
+    forward_rpc! {
+        Once SessionUndo =>
+        session_undo(session_id: &str, count: usize)
+        -> Vec<crucible_core::types::UndoSummary> = session_undo(&session_id, count);
+    }
+
+    forward_rpc! {
+        Safe SessionCommands =>
+        session_commands(session_id: &str)
+        -> Vec<crucible_core::types::SessionCommand> = session_commands(&session_id);
+    }
+
     async fn session_subscribe(&self, session_ids: &[&str]) -> anyhow::Result<serde_json::Value> {
         let ids: Vec<String> = session_ids.iter().map(|id| (*id).to_string()).collect();
         self.forward_rpc(
@@ -474,7 +486,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Once SessionSendMessage =>
         session_send_message(session_id: &str, content: &str, comments: &[crucible_core::diff::CommentRef])
-        -> String = session_send_message_with_comments(&session_id, &content, &comments, true);
+        -> crucible_core::types::SendOutcome = session_send_message_with_comments(&session_id, &content, &comments, true);
     }
 
     forward_rpc! {

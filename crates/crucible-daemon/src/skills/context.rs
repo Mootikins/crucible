@@ -35,6 +35,23 @@ pub fn format_skills_for_context(skills: &HashMap<String, ResolvedSkill>) -> Str
     output
 }
 
+/// The instructions of one skill, as the agent gets them: the body, then the
+/// skill's tool list. `skill_view` and the `/skill` command both use this.
+///
+/// Crucible skills are context injection with no activation lifecycle, so
+/// `allowed-tools` is an instruction to the agent, not a gate.
+pub fn skill_instructions(name: &str, skill: &crate::skills::types::Skill) -> String {
+    let mut body = skill.body.clone();
+    if let Some(tools) = skill.allowed_tools.as_ref().filter(|t| !t.is_empty()) {
+        body.push_str(&format!(
+            "\n\n---\n**Tool restriction (skill `{name}`):** While working on \
+             this skill, use only these tools: {}.",
+            tools.join(", ")
+        ));
+    }
+    body
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

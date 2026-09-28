@@ -88,15 +88,15 @@ const rawSession = {
 // =============================================================================
 
 describe('sendChatMessage', () => {
-  it('sends POST to /api/chat/send and returns message_id', async () => {
+  it('sends POST to /api/chat/send and returns the outcome', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/chat/send': { body: { message_id: 'msg-001' } },
+      'POST /api/chat/send': { body: { outcome: 'turn', message_id: 'msg-001' } },
     });
     global.fetch = mockFetch;
 
     const result = await sendChatMessage('ses-1', 'Hello world');
 
-    expect(result).toBe('msg-001');
+    expect(result).toEqual({ outcome: 'turn', message_id: 'msg-001' });
     expect(mockFetch).toHaveBeenCalledOnce();
     const sent = await mockFetch.sent(0);
     expect(sent.path).toBe('/api/chat/send');

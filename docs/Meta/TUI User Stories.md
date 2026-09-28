@@ -50,8 +50,37 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-103: Slash commands
 **As a user**, I type `/` commands and they execute locally or route onward.
-**Acceptance:** the built-ins are `/mode` (cycle), `/default`, `/undo [N]`, and `/help`; `/clear` is the user's clear through the `session.clear` RPC (the web `/clear` and the palette "Clear Chat" send the same RPC), and its divider names no plugin; every declared mode is its own command (`/plan`, `/auto`, `/normal`, a Lua-declared `/review`); plugin-registered commands run via `plugin.run_command` with the session they run from, which the command reads as `ctx.session_id` (`/generate` titles this session), and a command that raises shows `/name failed: plugin '<plugin>' command '<name>' failed: <reason>`; other unknown `/` input is forwarded to the agent as a plain chat message, with no local effect and no suggestion (levenshtein typo suggestions exist for `:` commands only); `/help` lists the REPL commands plus registered slash commands.
-**Tests:** T1 dispatch matrix in `chat_app/command_handling.rs` (quit/clear/messages/model/config/export/undo, unknown-command suggestion), T2 (help render); the daemon half of a plugin command is `session_bridge::tests::auto_title` and `server::plugins::plugin_command_rpc_tests`.
+**Acceptance:** the daemon owns one command catalog per session
+(`AgentManager::session_commands`, `agent_manager/commands.rs`): the
+built-ins (`/help`, `/clear`, `/model`, `/mode`, `/undo [N]`, `/resume
+[id]`, `/export [path]`, `/search <query>`), then every declared mode as
+its own command (`/plan`, `/auto`, `/normal`, a Lua-declared `/review`),
+then plugin commands, then discovered skills, then the commands an ACP
+agent advertises — an earlier source keeps a name two sources share. The
+TUI matches `BuiltinCommand` with no wildcard and runs those eight itself;
+every other `/name` goes to the daemon as `ExecuteSlashCommand`, which the
+daemon's catalog routes: a mode switches the session and starts a turn
+only when there is text after it; a plugin command runs via
+`plugin.run_command` semantics with the session it runs from, which the
+command reads as `ctx.session_id` (`/generate` titles this session), and a
+command that raises shows the daemon's failure text; a skill attaches its
+instructions to the turn and sends the typed text on; an agent command or
+an unknown name is forwarded to the agent as a plain chat message, with no
+local effect and no suggestion (levenshtein typo suggestions exist for
+`:` commands only). `/clear` is the user's clear through the `session.clear`
+RPC (the web `/clear` and the palette "Clear Chat" send the same RPC), and
+its divider names no plugin. `/help` lists the REPL commands plus the
+session's command catalog, each with its source. The popup lists every
+catalog command with its source, and a command the TUI does not run
+itself still leaves the input as the typed line for the daemon to route.
+**Tests:** T1 dispatch matrix in `chat_app/command_handling.rs`
+(quit/clear/messages/model/config/export/undo, unknown-command
+suggestion); T2 `user_story_tests/slash_catalog_tests.rs` (the popup lists
+a catalog command with its source; a catalog command leaves the TUI as
+the typed line). Daemon: `agent_manager/tests/commands.rs` (the catalog's
+join order and shared-name precedence, and `slash_route`'s routing of a
+mode, a plugin command and a skill). ACP wire:
+`acp_wire_tests.rs::the_host_gets_the_command_catalog_and_a_mode_command_runs_in_the_daemon`.
 
 ### US-104: REPL `:set` runtime config
 **As a user**, I use vim-style `:set key=value` (and `?`, `??`, `&`, `^`) to change runtime config (context strategy/budget/window, autocompact threshold, precognition, perm.*).

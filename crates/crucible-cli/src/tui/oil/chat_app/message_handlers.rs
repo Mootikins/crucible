@@ -194,7 +194,14 @@ impl OilChatApp {
                 self.model_list_state = ModelListState::Loaded;
             }
             // Nothing to do TUI-side: the fetch is spawned by the runner.
-            ChatAppMsg::FetchModes => {}
+            ChatAppMsg::FetchModes | ChatAppMsg::FetchCommands => {}
+            // An empty list means the daemon could not be asked; the
+            // built-in commands stay.
+            ChatAppMsg::CommandsLoaded(ref commands) => {
+                if !commands.is_empty() {
+                    self.commands = commands.clone();
+                }
+            }
             ChatAppMsg::ModesLoaded(ref modes) => {
                 // An empty list means the daemon could not be asked; keeping
                 // the built-ins beats leaving the session with no mode to
@@ -505,6 +512,7 @@ impl OilChatApp {
             | ChatAppMsg::ConfigQuery { .. }
             | ChatAppMsg::ConfigDrop { .. }
             | ChatAppMsg::ExecuteSlashCommand(_)
+            | ChatAppMsg::SearchSessions(_)
             | ChatAppMsg::ExportSession(_)
             | ChatAppMsg::Undo(_) => {}
             _ => {

@@ -27,6 +27,7 @@ import {
 import { fetchPendingInteractionsOnce, useRespondToInteraction } from '@/lib/query/interactions';
 import { useCancelSession } from '@/lib/query/sessions';
 import { useExecuteCommand } from '@/lib/query/commands';
+import { commandResultText } from '@/lib/slash-commands';
 import {
   fetchSessionHistoryOnce,
   useSendChatMessage,
@@ -671,7 +672,18 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   ) => {
     if (!props.sessionId) return;
     try {
-      const messageId = await send.mutateAsync({ id: props.sessionId, message: trimmed, comments });
+      const outcome = await send.mutateAsync({ id: props.sessionId, message: trimmed, comments });
+      // A command that the daemon ran without a turn: no turn opened, so the
+      // optimistic entries go, and the result shows as a system line.
+      if (outcome.outcome === 'command') {
+        removeMessage(tempUserId);
+        removeMessage(tempResponseId);
+        setTranscriptStreaming(props.sessionId, false);
+        patchTranscript(props.sessionId, { isLoading: false, currentStreamingMessageId: null });
+        addSystemMessage(`/${outcome.command}: ${commandResultText(outcome.result)}`);
+        return;
+      }
+      const messageId = outcome.message_id;
       const messages = () => transcriptMessages(props.sessionId);
 
       // Canonicalize the user entry — unless the SSE echo already added it.

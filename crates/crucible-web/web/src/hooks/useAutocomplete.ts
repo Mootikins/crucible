@@ -4,6 +4,7 @@ import { fetchDirOnce } from '@/lib/query/fs';
 import { fetchSlashCommandsOnce } from '@/lib/query/commands';
 import { fuzzyScore } from '@/lib/fuzzy';
 import type { FileEntry } from '@/lib/types';
+import type { SessionCommand } from '@/lib/slash-commands';
 
 type TriggerType = '@' | '#' | '/' | '[[';
 
@@ -30,29 +31,47 @@ interface UseAutocompleteOptions {
    * Absent (or null) leaves only the kiln files in the `@` list.
    */
   workspacePath?: Accessor<string | null | undefined>;
+  /**
+   * The session whose command catalog `/` lists. Absent (or null) leaves
+   * `/` with nothing to list: a draft has no session and so no catalog yet.
+   */
+  sessionId?: Accessor<string | null | undefined>;
   textareaRef: Accessor<HTMLTextAreaElement | undefined>;
 }
 
+/** The source of a command that the daemon runs, for the popup's detail line. */
+function commandSource(command: SessionCommand): string | null {
+  switch (command.kind) {
+    case 'builtin':
+      return null;
+    case 'mode':
+    case 'plugin':
+    case 'skill':
+    case 'agent':
+      return command.kind;
+  }
+}
+
 /**
- * The commands as popup rows.
+ * The session's commands as popup rows.
  *
- * The list itself is held by `lib/query/commands.ts`, under one key for the
- * whole browser. This hook used to memoise its own promise beside that cache,
- * which meant a second copy of a list that is static for the daemon's
- * lifetime, and its own hand-written rule for dropping the copy after a
- * refused fetch. The query does both: a refusal leaves no data, so the next
- * keystroke asks again.
+ * The catalog itself is held by `lib/query/commands.ts`, one entry per
+ * session. A refusal leaves no data, so the next keystroke asks again.
  */
-function loadCommandItems(): Promise<AutocompleteItem[]> {
-  return fetchSlashCommandsOnce().then((commands) =>
-    commands.map((c) => ({
-      id: `command:${c.name}`,
-      label: `/${c.name}`,
-      // Commands taking an argument keep the trailing space so the user can
-      // type straight into it; nullary ones don't (nothing follows).
-      insertText: c.args ? `${c.name} ` : c.name,
-      detail: c.description,
-    })),
+function loadCommandItems(sessionId: string | null | undefined): Promise<AutocompleteItem[]> {
+  if (!sessionId) return Promise.resolve([]);
+  return fetchSlashCommandsOnce(sessionId).then((commands) =>
+    commands.map((c) => {
+      const source = commandSource(c);
+      return {
+        id: `command:${c.name}`,
+        label: `/${c.name}`,
+        // Commands taking an argument keep the trailing space so the user can
+        // type straight into it; nullary ones don't (nothing follows).
+        insertText: c.input_hint ? `${c.name} ` : c.name,
+        detail: source ? `${c.description} (${source})` : c.description,
+      };
+    }),
   );
 }
 
@@ -260,7 +279,7 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
 
     try {
       if (match.trigger === '/') {
-        setCommandItems(await loadCommandItems());
+        setCommandItems(await loadCommandItems(options.sessionId?.()));
       } else if (match.trigger === '@') {
         await Promise.all([ensureKilnData(), loadWorkspaceFolder(path)]);
       } else {

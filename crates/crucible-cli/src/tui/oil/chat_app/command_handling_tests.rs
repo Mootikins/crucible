@@ -441,12 +441,28 @@ fn set_query_unmodified_key_is_continue() {
 // US-103: slash & REPL command dispatch
 // ════════════════════════════════════════════════════════════════
 
+/// A plugin command as the daemon's catalog lists it.
+fn plugin_command(name: &str, plugin: &str) -> crucible_core::types::SessionCommand {
+    crucible_core::types::SessionCommand {
+        name: name.to_string(),
+        description: "Run a reflection pass".to_string(),
+        input_hint: None,
+        kind: crucible_core::types::CommandKind::Plugin {
+            plugin: plugin.to_string(),
+        },
+    }
+}
+
+/// A mode command goes to the daemon, which switches the mode and then
+/// announces `mode_changed`. The TUI keeps no second list of modes to route.
 #[test]
-fn slash_plan_sets_mode_and_syncs() {
+fn a_mode_command_goes_to_the_daemon() {
     let mut app = app();
     let action = app.handle_slash_command("/plan");
-    assert!(matches!(action, Action::Send(ChatAppMsg::ModeChanged(m)) if m == "plan"));
-    assert_eq!(app.mode(), "plan");
+    assert!(matches!(
+        action,
+        Action::Send(ChatAppMsg::ExecuteSlashCommand(c)) if c == "/plan"
+    ));
 }
 
 #[test]
@@ -467,60 +483,72 @@ fn unknown_slash_forwards_to_agent() {
     ));
 }
 
+/// The daemon runs a plugin command; the TUI sends the whole line.
 #[test]
-fn registered_plugin_command_dispatches_to_run_plugin_command() {
+fn a_catalog_command_goes_to_the_daemon_with_its_arguments() {
     let mut app = app();
-    app.set_plugin_commands(vec![(
-        "reflect".to_string(),
-        "Run a reflection pass".into(),
-    )]);
+    app.on_message(ChatAppMsg::CommandsLoaded(vec![plugin_command(
+        "reflect", "alpha",
+    )]));
     let action = app.handle_slash_command("/reflect last 3 turns");
     assert!(
         matches!(
             action,
-            Action::Send(ChatAppMsg::RunPluginCommand { ref name, ref args })
-                if name == "reflect" && args == "last 3 turns"
+            Action::Send(ChatAppMsg::ExecuteSlashCommand(ref c)) if c == "/reflect last 3 turns"
         ),
-        "a plugin command is an invocation, not chat text — got {action:?}"
+        "got {action:?}"
     );
 }
 
+/// A built-in name stays the TUI's, whatever the catalog says.
 #[test]
-fn a_full_plugin_command_runs_even_when_only_its_bare_name_is_listed() {
+fn a_catalog_entry_cannot_take_a_builtin_name() {
     let mut app = app();
-    app.set_plugin_commands(vec![("reflect".into(), "Reflect".into())]);
-    let action = app.handle_slash_command("/alpha:reflect now");
+    app.on_message(ChatAppMsg::CommandsLoaded(vec![plugin_command(
+        "help", "impostor",
+    )]));
+    let action = app.handle_slash_command("/help");
     assert!(
-        matches!(action, Action::Send(ChatAppMsg::RunPluginCommand { name, args })
-        if name == "alpha:reflect" && args == "now")
+        !matches!(action, Action::Send(ChatAppMsg::ExecuteSlashCommand(_))),
+        "/help runs in the TUI, got {action:?}"
     );
 }
 
 #[test]
-fn plugin_command_cannot_shadow_a_builtin_slash() {
+fn catalog_commands_join_slash_autocomplete_with_their_source() {
     let mut app = app();
-    app.set_plugin_commands(vec![("plan".to_string(), "impostor".into())]);
-    app.handle_slash_command("/plan");
-    assert_eq!(
-        app.mode(),
-        "plan",
-        "built-ins dispatch before plugin names, so /plan stays mode-switching"
-    );
-}
-
-#[test]
-fn plugin_commands_join_slash_autocomplete() {
-    let mut app = app();
-    app.set_plugin_commands(vec![(
-        "reflect".to_string(),
-        "Run a reflection pass".into(),
-    )]);
+    app.on_message(ChatAppMsg::CommandsLoaded(vec![plugin_command(
+        "reflect", "alpha",
+    )]));
     assert!(
-        app.slash_commands
+        app.slash_command_rows()
             .iter()
             .any(|(n, d)| n == "reflect" && d.contains("(plugin)")),
         "plugin commands must be discoverable, not just callable"
     );
+}
+
+/// `commands_changed` makes the TUI read the catalog again.
+#[test]
+fn a_commands_changed_event_fetches_the_catalog() {
+    let msgs = crate::tui::oil::chat_runner::session_event_to_chat_msgs(
+        "commands_changed",
+        &serde_json::json!({}),
+    );
+    assert!(matches!(msgs.as_slice(), [ChatAppMsg::FetchCommands]));
+}
+
+#[test]
+fn slash_search_sends_the_query_and_a_bare_search_asks_for_one() {
+    let mut app = app();
+    assert!(matches!(
+        app.handle_slash_command("/search red fox"),
+        Action::Send(ChatAppMsg::SearchSessions(q)) if q == "red fox"
+    ));
+    assert!(matches!(
+        app.handle_slash_command("/search"),
+        Action::Continue
+    ));
 }
 
 #[test]
@@ -698,24 +726,17 @@ fn a_lua_declared_mode_is_selectable_and_cyclable() {
         crate::tui::oil::chat_app::state::mode_descriptors(&["ask", "review"]),
     ));
 
-    app.handle_slash_command("/review");
+    app.handle_slash_command("/mode");
     assert_eq!(
         app.mode(),
         "review",
-        "a declared mode is its own slash command"
+        "cycling reaches the declared mode, which the built-in ring never would"
     );
-
     app.handle_slash_command("/mode");
     assert_eq!(
         app.mode(),
         "ask",
-        "cycling wraps within the daemon's list, not the built-in ring"
-    );
-    app.handle_slash_command("/mode");
-    assert_eq!(
-        app.mode(),
-        "review",
-        "and reaches the declared mode, which the built-in ring never would"
+        "and wraps within the daemon's list, not the built-in ring"
     );
 }
 
@@ -759,21 +780,6 @@ fn a_mode_named_after_a_builtin_does_not_shadow_it() {
 
 /// A mode declared as `cru.modes.Review` is reachable as `/review`, and
 /// switching to it reports the id the daemon actually declared.
-#[test]
-fn a_mode_id_matches_case_insensitively() {
-    let mut app = app();
-    app.on_message(ChatAppMsg::ModesLoaded(
-        crate::tui::oil::chat_app::state::mode_descriptors(&["ask", "Review"]),
-    ));
-
-    app.handle_slash_command("/review");
-    assert_eq!(
-        app.mode(),
-        "Review",
-        "the daemon's own spelling wins — it is what set_mode validates against"
-    );
-}
-
 /// `:set precognition` / `:set noprecognition` / `:set precognition!` are the
 /// spellings `:help` advertises, and they never reach `classify_set_value` —
 /// they go straight to the runtime-config enable/disable/toggle handlers.
@@ -1180,7 +1186,8 @@ fn choice(id: &str, title: Option<&str>) -> crate::tui::oil::chat_app::model_sta
 #[test]
 fn slash_resume_is_advertised() {
     assert!(
-        crate::commands::chat::known_slash_commands()
+        app()
+            .slash_command_rows()
             .iter()
             .any(|(name, _)| name == "resume"),
         "the slash popup and the palette must offer /resume"

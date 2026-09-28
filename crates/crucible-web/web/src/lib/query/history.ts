@@ -5,7 +5,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import { getSessionHistory, sendChatMessage } from '@/lib/api';
+import { getSessionHistory, sendChatMessage, type SendOutcome } from '@/lib/api';
 import type { SessionHistoryResponse } from '@/lib/types';
 import type { CommentRef } from '@/lib/diffset';
 import { getQueryClient } from './client';
@@ -97,7 +97,7 @@ export function fetchSessionHistoryOnce(sessionId: string): Promise<SessionHisto
  * message from its optimistic entry, which the canonical id then replaces.
  */
 export function useSendChatMessage(): UseMutationResult<
-  string,
+  SendOutcome,
   Error,
   { id: string; message: string; comments?: CommentRef[] }
 > {

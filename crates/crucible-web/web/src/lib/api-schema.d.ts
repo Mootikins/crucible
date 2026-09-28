@@ -197,29 +197,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Start a turn in a session. */
-        post: operations["send_message"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/commands": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
         /**
-         * `GET /api/commands` — the slash commands the web composer can complete.
-         * @description Session-independent: the set is static, so the composer fetches it once
-         *     rather than per session.
+         * Start a turn in a session, or run the daemon command that the message
+         *     names.
+         * @description A turn answers its `message_id`: the browser correlates the SSE events
+         *     that follow with it. A command that ran without a turn, such as a plugin
+         *     command, answers its result instead.
          */
-        get: operations["list_commands"];
-        put?: never;
-        post?: never;
+        post: operations["send_message"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1437,8 +1422,34 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run one slash command in a session. */
+        /**
+         * Run one built-in command in a session.
+         * @description The composer sends only built-in commands here. Any other command is a
+         *     chat message, so this route refuses it with an `error` reply.
+         */
         post: operations["execute_command"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/session/{id}/commands` — the commands the composer completes.
+         * @description The daemon answers the catalog of the session: built-in, mode, plugin,
+         *     skill and agent commands. A `commands_changed` event on the session's
+         *     stream says when to ask again.
+         */
+        get: operations["list_commands"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2307,6 +2318,11 @@ export interface components {
             /** @description Byte offset where the block starts, relative to the note body. */
             span_start: number;
         };
+        /**
+         * @description A command that every client provides as its own action.
+         * @enum {string}
+         */
+        BuiltinCommand: "help" | "clear" | "model" | "mode" | "undo" | "resume" | "export" | "search";
         /** @description Response for session cancellation. */
         CancelledResponse: {
             cancelled: boolean;
@@ -2556,6 +2572,9 @@ export interface components {
             /** @enum {string} */
             type: "title_changed";
         } | {
+            /** @enum {string} */
+            type: "commands_changed";
+        } | {
             data: unknown;
             event: string;
             /** @enum {string} */
@@ -2591,27 +2610,48 @@ export interface components {
          * @enum {string}
          */
         CommandEffectRow: "read" | "write";
+        /** @description Where a command comes from, and so who runs it. */
+        CommandKind: {
+            command: components["schemas"]["BuiltinCommand"];
+            /** @enum {string} */
+            kind: "builtin";
+        } | {
+            /** @enum {string} */
+            kind: "mode";
+            mode_id: string;
+        } | {
+            /** @enum {string} */
+            kind: "plugin";
+            plugin: string;
+        } | {
+            /** @enum {string} */
+            kind: "skill";
+        } | {
+            /** @enum {string} */
+            kind: "agent";
+        };
         /** @description One plugin command invocation. */
         CommandRequest: {
             args?: unknown;
             name: string;
         };
         /**
-         * @description What one slash command produced.
+         * @description What one built-in command produced.
          *
-         *     A command the server does not know, and a command used wrongly, both come
-         *     back here with `type` reading `error`: the composer prints the text either
-         *     way, and neither is a transport failure.
+         *     A command used wrongly comes back here with `type` reading `error`: the
+         *     composer prints the text either way, and it is not a transport failure.
          */
         CommandResponse: {
+            /** @description The session the browser opens, for `/resume <id>`. */
+            open_session?: string | null;
             /** @description The text the composer prints. */
             result: string;
             /** @description `success` or `error`. */
             type: string;
         };
-        /** @description The command set the composer completes from. */
+        /** @description The command catalog of one session. */
         CommandsResponse: {
-            commands: components["schemas"]["SlashCommand"][];
+            commands: components["schemas"]["SessionCommand"][];
         };
         /**
          * @description What a comment is anchored in. The web mirror of
@@ -4529,14 +4569,16 @@ export interface components {
             content: string;
             session_id: string;
         };
-        /**
-         * @description The identifier the daemon minted for the turn this request started.
-         *
-         *     One key, because the browser correlates the SSE events that follow with it
-         *     and needs nothing else to do so.
-         */
-        SendMessageResponse: {
+        /** @description What `session.send_message` did with the text. */
+        SendOutcome: {
             message_id: string;
+            /** @enum {string} */
+            outcome: "turn";
+        } | {
+            command: string;
+            /** @enum {string} */
+            outcome: "command";
+            result: unknown;
         };
         /**
          * @description The agent record `session.get` nests inside a session.
@@ -4553,6 +4595,14 @@ export interface components {
             model: string;
         } & {
             [key: string]: unknown;
+        };
+        /** @description One entry of a session's command catalog. */
+        SessionCommand: components["schemas"]["CommandKind"] & {
+            description: string;
+            /** @description The argument placeholder, when the command takes one. */
+            input_hint?: string | null;
+            /** @description The name after the slash. */
+            name: string;
         };
         /**
          * @description One persisted session event, as `session.resume_from_storage` replays it.
@@ -4693,10 +4743,6 @@ export interface components {
          *
          *     Not a session: the daemon answers the line it matched on, so a caller that
          *     wants the session reads `session_id` and asks for it.
-         *
-         *     `pub(super)`: `session_commands::execute_command`'s `/search` also reads
-         *     this shape, to print one line per match rather than the raw `session.search`
-         *     JSON it used to forward untouched.
          */
         SessionSearchMatch: {
             /** @description The matched line, truncated to 100 characters. */
@@ -4709,16 +4755,15 @@ export interface components {
             line: number;
             session_id: string;
         };
-        /** @description What `GET /api/sessions/search` answers. */
+        /** @description What `session.search` answers. */
         SessionSearchResponse: {
             matches: components["schemas"]["SessionSearchMatch"][];
             /**
              * @description Why the search looked at nothing, when it looked at nothing.
              *
-             *     The daemon writes it for a search with no kiln scope
-             *     (`server/session/list.rs:206`), and only then. An unscoped search is
-             *     the one case where an empty result is not a statement about the
-             *     corpus, so the sentence has to reach the caller.
+             *     The daemon writes it for a search with no kiln scope, and only then.
+             *     An unscoped search is the one case where an empty result is not a
+             *     statement about the corpus, so the sentence has to reach the caller.
              */
             note?: string | null;
             /** @description How many matches the reply carries. */
@@ -4837,14 +4882,6 @@ export interface components {
          * @enum {string}
          */
         SkipReason: "ambiguous" | "stale-span" | "canvas-no-exact-match" | "canvas-unreadable";
-        /** @description One slash command, as both the `/help` text and the web autocomplete see it. */
-        SlashCommand: {
-            /** @description Argument placeholder shown in help/completion, empty when nullary. */
-            args: string;
-            description: string;
-            /** @description Bare name, no leading slash. */
-            name: string;
-        };
         Source: {
             path: string;
         } | {
@@ -5183,6 +5220,7 @@ export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
 export type SchemaBacklinksResponse = components['schemas']['BacklinksResponse'];
 export type SchemaBaseValue = components['schemas']['BaseValue'];
 export type SchemaBlockRef = components['schemas']['BlockRef'];
+export type SchemaBuiltinCommand = components['schemas']['BuiltinCommand'];
 export type SchemaCancelledResponse = components['schemas']['CancelledResponse'];
 export type SchemaCanvas = components['schemas']['Canvas'];
 export type SchemaCanvasColor = components['schemas']['CanvasColor'];
@@ -5196,6 +5234,7 @@ export type SchemaChatEvent = components['schemas']['ChatEvent'];
 export type SchemaCloneRequest = components['schemas']['CloneRequest'];
 export type SchemaColumn = components['schemas']['Column'];
 export type SchemaCommandEffectRow = components['schemas']['CommandEffectRow'];
+export type SchemaCommandKind = components['schemas']['CommandKind'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
 export type SchemaCommandResponse = components['schemas']['CommandResponse'];
 export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
@@ -5337,8 +5376,9 @@ export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchR
 export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearchResponse'];
 export type SchemaSemanticSearchRow = components['schemas']['SemanticSearchRow'];
 export type SchemaSendMessageRequest = components['schemas']['SendMessageRequest'];
-export type SchemaSendMessageResponse = components['schemas']['SendMessageResponse'];
+export type SchemaSendOutcome = components['schemas']['SendOutcome'];
 export type SchemaSessionAgentRow = components['schemas']['SessionAgentRow'];
+export type SchemaSessionCommand = components['schemas']['SessionCommand'];
 export type SchemaSessionHistoryEvent = components['schemas']['SessionHistoryEvent'];
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
 export type SchemaSessionKnobsResponse = components['schemas']['SessionKnobsResponse'];
@@ -5365,7 +5405,6 @@ export type SchemaSkillsReply = components['schemas']['SkillsReply'];
 export type SchemaSkillSummary = components['schemas']['SkillSummary'];
 export type SchemaSkippedRef = components['schemas']['SkippedRef'];
 export type SchemaSkipReason = components['schemas']['SkipReason'];
-export type SchemaSlashCommand = components['schemas']['SlashCommand'];
 export type SchemaSource = components['schemas']['Source'];
 export type SchemaSourceOrigin = components['schemas']['SourceOrigin'];
 export type SchemaStatusColorGroup = components['schemas']['StatusColorGroup'];
@@ -5895,7 +5934,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SendMessageResponse"];
+                    "application/json": components["schemas"]["SendOutcome"];
                 };
             };
             /** @description The message is empty and attaches no comment */
@@ -5911,25 +5950,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    list_commands: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommandsResponse"];
-                };
             };
         };
     };
@@ -8396,6 +8416,35 @@ export interface operations {
                 };
             };
             /** @description The daemon could not serve the command */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_commands: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session whose commands to list */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandsResponse"];
+                };
+            };
+            /** @description The daemon could not list the commands */
             502: {
                 headers: {
                     [name: string]: unknown;

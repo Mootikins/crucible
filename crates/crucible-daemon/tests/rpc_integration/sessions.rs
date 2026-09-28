@@ -194,10 +194,10 @@ async fn test_session_send_message_returns_message_id() {
         .await;
 
     match result {
-        Ok(message_id) => {
+        Ok(outcome) => {
             assert!(
-                !message_id.is_empty() || message_id.is_empty(),
-                "Got a message ID response"
+                matches!(outcome, crucible_core::types::SendOutcome::Turn { .. }),
+                "plain text starts a turn: {outcome:?}"
             );
         }
         Err(e) => {

@@ -157,7 +157,7 @@ behavior on top of them.
 | `crates/crucible-core/src/protocol/rpc/tests.rs` | 830 | Golden wire-shape regression tests for `SessionEventMessage`, including the migration of old recorded wire forms into their current shape. |
 | `crates/crucible-core/src/protocol/session_events/lifecycle.rs` | 444 | `JobPayload`/`ReviewPayload`/`NotificationPayload`/`WorkflowPayload`/`SystemPayload`, each declared through the `event_payload!` macro. |
 | `crates/crucible-core/src/protocol/session_events/mod.rs` | 461 | `SessionEventPayload`/`Group`/`EventDecodeError` and the `event_payload!` macro — the typed contract layered over the untyped envelope; `migrate`/`migrate_history` keep an old transcript decodable. |
-| `crates/crucible-core/src/protocol/session_events/settings.rs` | 80 | `SettingsPayload` — model/mode/scope/title/system-prompt/precognition/context-strategy/plugin-approval/plugin-turn-limit change events. |
+| `crates/crucible-core/src/protocol/session_events/settings.rs` | 85 | `SettingsPayload` — model/mode/scope/title/system-prompt/precognition/context-strategy/plugin-approval/plugin-turn-limit change events, and `CommandsChanged {}`, which says only that a client must read `session.commands` again; it carries no catalog itself. |
 | `crates/crucible-core/src/protocol/session_events/setup.rs` | 153 | `SetupPayload` group — the eight session-setup-phase payloads; `acp_resume_fallback` is the one variant an ACP connection, not the setup task, produces. |
 | `crates/crucible-core/src/protocol/session_events/tests.rs` | 816 | Mechanism, completeness, fixture-sweep, and persistence tests for the typed payload contract; a golden `session_event_wire_names.txt` list pins every declared name. |
 | `crates/crucible-core/src/protocol/session_events/turn.rs` | 397 | `TurnPayload` (15 variants: adds `context_cleared`/`turn_finished`, merges the split ACP-update pair into one `tool_call_update`, and drops `ended`/`injection_pending`) and `ToolResultBody` — the per-turn event stream. |
@@ -177,6 +177,7 @@ behavior on top of them.
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-core/src/session/mod.rs` | 36 | Re-export surface and glossary doc for the session domain types. |
+| `crates/crucible-core/src/session/search.rs` | 105 | `SessionSearchMatch`/`SessionSearchResponse` — the reply of `session.search`, and `SessionSearchResponse::to_text`, the one text rendering `cru session search`, the TUI's `/search` and the web's `/search` all share. |
 | `crates/crucible-core/src/session/types/agent.rs` | 675 | `SessionAgent` and its `from_profile`/`from_card`/`internal_from_config` constructors; `from_profile` no longer copies the ACP profile's `env` into `env_overrides`. |
 | `crates/crucible-core/src/session/types/config.rs` | 47 | `ContextStrategy` — `Truncate`/`Summarize`. |
 | `crates/crucible-core/src/session/types/enums.rs` | 128 | `RecordingMode`/`SessionType`/`SessionState`. |
@@ -232,10 +233,11 @@ behavior on top of them.
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-core/src/types/acp.rs` | 100 | `FileDiff` and re-exports of the raw ACP schema types under `types::acp::schema`. |
+| `crates/crucible-core/src/types/command.rs` | 248 | `BuiltinCommand` (the commands every client provides), `CommandKind` (`Builtin`/`Mode`/`Plugin`/`Skill`/`Agent`), `SessionCommand` (one catalog entry), `SendOutcome` (`Turn { message_id }` or `Command { command, result }`, `session.send_message`'s reply), and `split_slash_command`. |
 | `crates/crucible-core/src/types/database.rs` | 71 | `DocumentId`/`SearchResult`/`BlockRef`. |
 | `crates/crucible-core/src/types/knob.rs` | 346 | `SessionKnob`/`AcpKnob`/`AgentConfigOption` — which per-session settings exist and how ACP handles them; `SessionKnob::PluginTurnLimit` is a daemon-only knob. |
 | `crates/crucible-core/src/types/mcp_status.rs` | 20 | `McpServerInfo` (display-only) for the `mcp_servers_ready` setup event. |
-| `crates/crucible-core/src/types/mode.rs` | 447 | `WriteMode`/`BuiltinMode`/`ModeDescriptor`/`SessionModes` — mode presentation and whether a mode's note writes apply to disk or are recorded as proposals. |
+| `crates/crucible-core/src/types/mode.rs` | 447 | `WriteMode`/`BuiltinMode`/`ModeDescriptor`/`SessionModes` — mode presentation and whether a mode's note writes apply to disk or are recorded as proposals. `SessionModes::next_mode`/the free function `next_mode` give the mode after the current one, wrapping, for `/mode` and its `Shift+Tab` equivalent. |
 | `crates/crucible-core/src/types/mod.rs` | 82 | Re-export root for `types/*`; documents where each canonical type actually lives. |
 | `crates/crucible-core/src/types/notification.rs` | 309 | `Notification`/`NotificationScope`/`NotificationKind`; a session scope wins over workspace/kiln scoping. |
 | `crates/crucible-core/src/types/plugin_status.rs` | 24 | `PluginStatusEntry` for the `plugins_discovered` setup event. |

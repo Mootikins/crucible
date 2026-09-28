@@ -402,6 +402,12 @@ impl SessionKnobs for AcpAgentHandle {
         &self.config_options
     }
 
+    fn agent_commands(
+        &self,
+    ) -> Option<tokio::sync::watch::Receiver<Vec<crucible_core::types::SessionCommand>>> {
+        Some(self.client.commands())
+    }
+
     async fn set_agent_config_option(&mut self, id: &str, value: &str) -> ChatResult<()> {
         // Fail fast on an id the agent did not list, the way `switch_model`
         // does: the agent would refuse it with a less clear message.

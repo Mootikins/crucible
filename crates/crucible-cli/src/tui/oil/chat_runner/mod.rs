@@ -85,8 +85,6 @@ pub struct OilChatRunner {
     pub(super) plugin_status: Vec<PluginStatusEntry>,
     pub(super) show_thinking: bool,
     pub(super) show_diffs: bool,
-    pub(super) slash_commands: Vec<(String, String)>,
-    pub(super) plugin_commands: Vec<(String, String)>,
     pub(super) agent_name: Option<String>,
     pub(super) initial_sets: Vec<SetEffect>,
     pub(super) replay_path: Option<PathBuf>,
@@ -158,8 +156,6 @@ impl OilChatRunner {
             plugin_status: Vec::new(),
             show_thinking: false,
             show_diffs: true,
-            slash_commands: Vec::new(),
-            plugin_commands: Vec::new(),
             agent_name: None,
             initial_sets: Vec::new(),
             replay_path: None,
@@ -237,19 +233,6 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_slash_commands(mut self, commands: Vec<(String, String)>) -> Self {
-        self.slash_commands = commands;
-        self
-    }
-
-    /// Plugin-declared commands (name, description) from the daemon's
-    /// `plugin.commands` RPC — dispatched to `plugin.run_command`, and
-    /// surfaced in slash autocomplete alongside the built-ins.
-    pub fn with_plugin_commands(mut self, commands: Vec<(String, String)>) -> Self {
-        self.plugin_commands = commands;
-        self
-    }
-
     /// The kilns the startup banner names. Empty says so in as many words.
     pub fn with_connected_kilns(mut self, kilns: Vec<KilnSummary>) -> Self {
         self.connected_kilns = kilns;
@@ -311,6 +294,9 @@ impl OilChatRunner {
         // message to queue.
         if msg_tx.send(ChatAppMsg::FetchModes).is_err() {
             tracing::warn!("UI channel closed, initial FetchModes dropped");
+        }
+        if msg_tx.send(ChatAppMsg::FetchCommands).is_err() {
+            tracing::warn!("UI channel closed, initial FetchCommands dropped");
         }
     }
 

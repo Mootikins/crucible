@@ -63,8 +63,7 @@ impl Default for OilChatApp {
             runtime_config: RuntimeConfig::empty(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
-            slash_commands: crate::commands::chat::known_slash_commands(),
-            plugin_command_names: std::collections::HashSet::new(),
+            commands: crucible_core::types::BuiltinCommand::entries(),
         }
     }
 }

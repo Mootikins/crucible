@@ -268,9 +268,13 @@ Types defined inside `crates/crucible-daemon/src/diff/`:
   (`root_beside_snapshots`), not inside it. `list_projected` applies
   `crucible_core::diff::project` to every comment before returning it.
 - **`ListedComment`** (`comment`, `outdated`) — a comment after projection.
-- **`CommentBlock`**, **`ReviewContext`** (`source: "human"/"agent"/"mixed"`,
-  `body`) — the resolved inputs and the built body of one message's comment
-  injection, from `crates/crucible-daemon/src/diff/context.rs`.
+- **`CommentBlock`** — the resolved inputs of one message's comment
+  injection, from `crates/crucible-daemon/src/diff/context.rs`. Its
+  `message()` function builds an `AttachedContext { kind, source:
+  "human"/"agent"/"mixed", body }` — the shared block type in
+  `crates/crucible-daemon/src/agent_manager/attachments.rs` that a `/skill`
+  invocation also builds, in place of the review-only `ReviewContext` this
+  replaced.
 
 Types defined inside `crates/crucible-daemon/src/proposals/`:
 

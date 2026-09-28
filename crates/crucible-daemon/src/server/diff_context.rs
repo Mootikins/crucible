@@ -16,8 +16,9 @@ use crucible_core::diff::{
 };
 use crucible_core::session::Comment;
 
+use crate::agent_manager::attachments::AttachedContext;
 use crate::diff::branch;
-use crate::diff::context::{message, CommentBlock, ReviewContext};
+use crate::diff::context::{message, CommentBlock};
 use crate::proposals::ProposalError;
 use crate::review::ReviewError;
 use crate::server::diff::{
@@ -36,7 +37,7 @@ pub(crate) async fn review_context(
     workspace: Option<&Path>,
     refs: &[CommentRef],
     content: &str,
-) -> Result<Option<ReviewContext>, Refusal> {
+) -> Result<Option<AttachedContext>, Refusal> {
     let mut wanted: Vec<(String, Option<DiffsetSource>)> = Vec::new();
     for reference in refs {
         if !wanted.iter().any(|(id, _)| *id == reference.id) {

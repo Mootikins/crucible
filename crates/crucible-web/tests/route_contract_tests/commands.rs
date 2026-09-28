@@ -1,4 +1,4 @@
-//! Execute Command Contract Tests (with mock daemon)
+//! Built-in command contract tests (with mock daemon)
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -7,436 +7,223 @@ use tower::ServiceExt;
 
 use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
 
-#[tokio::test]
-async fn command_help_returns_help_text() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
+/// POST one command line to the command route; answer the reply body.
+async fn run(app: axum::Router, line: &str) -> Value {
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/api/session/test-session-001/command")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/help"}"#))
+                .body(Body::from(
+                    serde_json::json!({ "command": line }).to_string(),
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::OK, "{line}");
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["type"], "success");
-    let result = json["result"].as_str().unwrap();
-    assert!(result.contains("/help"), "Help text should mention /help");
-    assert!(
-        result.contains("/search"),
-        "Help text should mention /search"
-    );
-    assert!(
-        result.contains("/models"),
-        "Help text should mention /models"
-    );
-    assert!(result.contains("/clear"), "Help text should mention /clear");
-    assert!(
-        result.contains("/export"),
-        "Help text should mention /export"
-    );
-    assert!(result.contains("/model"), "Help text should mention /model");
+    serde_json::from_slice(&body).unwrap()
 }
 
-#[tokio::test]
-async fn commands_endpoint_lists_the_command_set() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
+/// GET the session's command catalog.
+async fn catalog(app: axum::Router) -> Vec<Value> {
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/commands")
+                .uri("/api/session/test-session-001/commands")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-
     assert_eq!(response.status(), StatusCode::OK);
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    let commands = json["commands"].as_array().unwrap();
+    json["commands"].as_array().unwrap().clone()
+}
 
+#[tokio::test]
+async fn help_lists_the_session_catalog_with_the_source_of_each_command() {
+    let (_mock, client) = start_mock_daemon().await;
+    let json = run(build_test_app(build_mock_state(client)), "/help").await;
+    assert_eq!(json["type"], "success");
+    let result = json["result"].as_str().unwrap();
+    for expected in [
+        "/help",
+        "/search <query>",
+        "/model [name]",
+        "/clear",
+        "/export",
+    ] {
+        assert!(result.contains(expected), "missing {expected}: {result}");
+    }
+    assert!(
+        result.contains("/reflect — Run a reflection pass (plugin)"),
+        "{result}"
+    );
+}
+
+#[tokio::test]
+async fn the_commands_route_answers_the_daemon_catalog() {
+    let (_mock, client) = start_mock_daemon().await;
+    let commands = catalog(build_test_app(build_mock_state(client))).await;
     let names: Vec<&str> = commands
         .iter()
         .map(|c| c["name"].as_str().unwrap())
         .collect();
-    // `/models` is the one the hand-maintained frontend list used to omit.
-    assert!(names.contains(&"models"), "got {names:?}");
-    for expected in ["help", "search", "models", "model", "clear", "export"] {
-        assert!(
-            names.contains(&expected),
-            "missing /{expected} in {names:?}"
-        );
-    }
+    assert!(
+        names.contains(&"help") && names.contains(&"reflect"),
+        "{names:?}"
+    );
+    assert_eq!(commands.last().unwrap()["kind"], "plugin");
+}
 
-    // Descriptions drive the completion popup's second line — an empty one
-    // would render a blank row.
-    for cmd in commands {
+/// Every built-in command of the catalog runs on the command route.
+#[tokio::test]
+async fn every_built_in_command_of_the_catalog_runs() {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    for command in catalog(build_test_app(state.clone())).await {
+        if command["kind"] != "builtin" {
+            continue;
+        }
+        let name = command["name"].as_str().unwrap();
+        let json = run(build_test_app(state.clone()), &format!("/{name}")).await;
         assert!(
-            !cmd["description"].as_str().unwrap().is_empty(),
-            "/{} has no description",
-            cmd["name"].as_str().unwrap()
+            !json["result"]
+                .as_str()
+                .unwrap()
+                .contains("not a built-in command"),
+            "/{name} is in the catalog but the route does not run it"
         );
     }
 }
 
-/// Every command the endpoint advertises must actually dispatch.
-///
-/// This is the anti-drift guard in the direction a list can't catch: it runs
-/// each *declared* command through the real handler and fails if any falls to
-/// the unknown-command arm.
+/// A command that is not built in is a chat message; the route says so.
 #[tokio::test]
-async fn every_advertised_command_is_dispatchable() {
+async fn a_command_that_is_not_built_in_is_refused_with_a_reason() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state.clone());
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/commands")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-
-    for cmd in json["commands"].as_array().unwrap() {
-        let name = cmd["name"].as_str().unwrap();
-        // Supply a dummy argument for commands that require one, so a "Usage:"
-        // reply doesn't masquerade as a dispatch failure.
-        let args = if cmd["args"].as_str().unwrap().is_empty() {
-            String::new()
-        } else {
-            " placeholder".to_string()
-        };
-        let app = build_test_app(state.clone());
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/session/test-session-001/command")
-                    .header("content-type", "application/json")
-                    .body(Body::from(format!(r#"{{"command":"/{name}{args}"}}"#)))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK, "/{name}");
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-        let result = json["result"].as_str().unwrap();
-        assert!(
-            !result.contains("Unknown command"),
-            "/{name} is advertised by /api/commands but not handled by execute_command"
-        );
-    }
+    let json = run(build_test_app(build_mock_state(client)), "/reflect").await;
+    assert_eq!(json["type"], "error");
+    assert!(
+        json["result"]
+            .as_str()
+            .unwrap()
+            .contains("/reflect is not a built-in command"),
+        "{json}"
+    );
 }
 
 #[tokio::test]
 async fn command_search_no_args_returns_error() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/search"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let json = run(build_test_app(build_mock_state(client)), "/search").await;
     assert_eq!(json["type"], "error");
-    assert!(
-        json["result"].as_str().unwrap().contains("Usage"),
-        "Error should contain usage hint"
-    );
+    assert!(json["result"].as_str().unwrap().contains("Usage"));
 }
 
 #[tokio::test]
 async fn command_search_with_query_returns_results() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
+    let json = run(
+        build_test_app(build_mock_state(client)),
+        "/search test query",
+    )
+    .await;
+    assert_eq!(json["type"], "success");
+    let result = json["result"].as_str().unwrap();
+    assert!(result.contains("test query"), "{result}");
+    assert!(result.contains("Test Session"), "{result}");
+}
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/search test query"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+/// `/model` with no name lists the models, as `/models` did.
+#[tokio::test]
+async fn model_without_a_name_lists_the_models() {
+    let (_mock, client) = start_mock_daemon().await;
+    let json = run(build_test_app(build_mock_state(client)), "/model").await;
     assert_eq!(json["type"], "success");
     let result = json["result"].as_str().unwrap();
     assert!(
-        result.contains("test query"),
-        "Result should reference the search query"
-    );
-    assert!(
-        result.contains("Test Session"),
-        "Result should contain mock session title"
-    );
-}
-
-#[tokio::test]
-async fn command_models_returns_model_list() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/models"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["type"], "success");
-    let result = json["result"].as_str().unwrap();
-    assert!(result.contains("llama3.2"), "Should list llama3.2 model");
-    assert!(result.contains("mistral"), "Should list mistral model");
-}
-
-#[tokio::test]
-async fn command_model_no_args_returns_error() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/model"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["type"], "error");
-    assert!(
-        json["result"].as_str().unwrap().contains("Usage"),
-        "Error should contain usage hint"
+        result.contains("llama3.2") && result.contains("mistral"),
+        "{result}"
     );
 }
 
 #[tokio::test]
 async fn command_model_with_name_switches_model() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/model mistral"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let (mock, client) = start_mock_daemon().await;
+    let json = run(build_test_app(build_mock_state(client)), "/model mistral").await;
     assert_eq!(json["type"], "success");
-    assert!(
-        json["result"].as_str().unwrap().contains("mistral"),
-        "Result should confirm model switch to mistral"
+    assert!(json["result"].as_str().unwrap().contains("mistral"));
+    assert_eq!(
+        mock.received_params("session.switch_model").unwrap()["model_id"],
+        "mistral"
     );
+}
+
+/// `/mode` moves to the mode after the current one in the daemon's list.
+#[tokio::test]
+async fn mode_switches_to_the_next_mode() {
+    let (mock, client) = start_mock_daemon().await;
+    let json = run(build_test_app(build_mock_state(client)), "/mode").await;
+    assert_eq!(json["result"], "Mode: plan");
+    assert_eq!(
+        mock.received_params("session.set_mode").unwrap()["mode_id"],
+        "plan"
+    );
+}
+
+#[tokio::test]
+async fn undo_asks_the_daemon_for_the_turn_count() {
+    let (mock, client) = start_mock_daemon().await;
+    let state = build_mock_state(client);
+    let json = run(build_test_app(state.clone()), "/undo 2").await;
+    assert_eq!(json["type"], "success");
+    assert_eq!(mock.received_params("session.undo").unwrap()["count"], 2);
+    let json = run(build_test_app(state), "/undo two").await;
+    assert_eq!(json["type"], "error");
+}
+
+/// `/resume <id>` tells the browser which session to open.
+#[tokio::test]
+async fn resume_with_an_id_opens_that_session() {
+    let (_mock, client) = start_mock_daemon().await;
+    let json = run(build_test_app(build_mock_state(client)), "/resume s-7").await;
+    assert_eq!(json["open_session"], "s-7");
+    let (_mock, client) = start_mock_daemon().await;
+    let json = run(build_test_app(build_mock_state(client)), "/resume").await;
+    assert!(json.get("open_session").is_none(), "{json}");
 }
 
 #[tokio::test]
 async fn command_export_returns_hint() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/export"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let json = run(build_test_app(build_mock_state(client)), "/export").await;
     assert_eq!(json["type"], "success");
-    assert!(
-        json["result"].as_str().unwrap().contains("export"),
-        "Result should mention export"
-    );
-}
-
-#[tokio::test]
-async fn command_unknown_returns_error_type() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"/foobar"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["type"], "error");
-    let result = json["result"].as_str().unwrap();
-    assert!(
-        result.contains("Unknown command"),
-        "Error should say unknown command"
-    );
-    assert!(
-        result.contains("foobar"),
-        "Error should echo the unknown command name"
-    );
+    assert!(json["result"].as_str().unwrap().contains("export"));
 }
 
 #[tokio::test]
 async fn command_without_slash_prefix_works() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    // Send "help" without leading "/" — should still work
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"help"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let json = run(build_test_app(build_mock_state(client)), "help").await;
     assert_eq!(json["type"], "success");
-    assert!(
-        json["result"].as_str().unwrap().contains("/help"),
-        "Help text should work without leading slash"
-    );
+    assert!(json["result"].as_str().unwrap().contains("/help"));
 }
 
 #[tokio::test]
 async fn command_with_whitespace_padding_works() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
-
-    // Send command with extra whitespace
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/command")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"command":"  /help  "}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let json = run(build_test_app(build_mock_state(client)), "  /help  ").await;
     assert_eq!(json["type"], "success");
-    assert!(
-        json["result"].as_str().unwrap().contains("/help"),
-        "Command should work with whitespace padding"
-    );
+    assert!(json["result"].as_str().unwrap().contains("/help"));
 }
 
 /// `/clear` clears the model context through the daemon, with the same

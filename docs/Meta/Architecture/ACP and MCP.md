@@ -67,7 +67,7 @@ module classifies wire frames into and consumes, never duplicating them.
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-daemon/src/acp/client/mod.rs` | 350 | Defines `CrucibleAcpClient`, builds the SDK `Client` connection (notification/permission handlers), and exposes the generic `request<R: JsonRpcRequest>` RPC call. |
+| `crates/crucible-daemon/src/acp/client/mod.rs` | 391 | Defines `CrucibleAcpClient`, builds the SDK `Client` connection (notification/permission handlers), and exposes the generic `request<R: JsonRpcRequest>` RPC call. Keeps the agent's latest `available_commands_update` in a `watch` channel, read by `commands()`. |
 | `crates/crucible-daemon/src/acp/client/connection.rs` | 259 | Process spawn/kill (`spawn`, `AgentProcess` with whole-process-group kill), capability-aware handshake (`handshake`), and `session/close` (`close`). |
 | `crates/crucible-daemon/src/acp/client/streaming.rs` | 369 | The client's per-turn prompt driver (`prompt`, `wait_for_turn_end`, `CANCELLED_TURN_GRACE`) and `apply_update`, which turns each `SessionUpdate` directly into `crucible_core::turn::TurnEvent`. |
 | `crates/crucible-daemon/src/acp/client/streaming_tests.rs` | 295 | `#[cfg(test)]` unit tests attached to `streaming.rs` via `#[path]` (needs crate-private access to `apply_update`). |
@@ -110,14 +110,23 @@ wire client. It holds a clone of the `agent-client-protocol` SDK's
 `ConnectionTo<Agent>`, the agent's declared `AgentCapabilities` (from
 `initialize`), a `turn_gate: tokio::sync::Mutex<()>` that serializes turns,
 and `Arc<Mutex<Shared>>` (the running turn's state, the latest model choice,
-and the agent's tool-key table). There is no JSON-RPC id counter and no raw
-stdin/stdout field on the client itself — the SDK owns the transport and
-correlates requests to responses. `CrucibleAcpClient::spawn` (production; via
-`AcpAgentHandle::new`) starts an agent process and connects over its stdio;
-`CrucibleAcpClient::connect` (tests, replay) connects over any
+the agent's tool-key table, and a `commands:
+tokio::sync::watch::Sender<Vec<SessionCommand>>`). There is no JSON-RPC id
+counter and no raw stdin/stdout field on the client itself — the SDK owns
+the transport and correlates requests to responses. `CrucibleAcpClient::spawn`
+(production; via `AcpAgentHandle::new`) starts an agent process and connects
+over its stdio; `CrucibleAcpClient::connect` (tests, replay) connects over any
 `impl ConnectTo<Client>`, with no process. `AcpAgentHandle` holds the client
 in a bare `Arc<CrucibleAcpClient>` — turn exclusivity is enforced inside the
 client itself, not by a handle-side mutex.
+
+`route_update` keeps an `AvailableCommandsUpdate` the same way it keeps a
+model choice: it can arrive at any time, also outside a turn, so `commands()`
+gives a `watch::Receiver` any caller can read from rather than a value
+`route_update` could only apply to a turn that happens to be running.
+`AgentManager::session_commands` (`agent_manager/commands.rs`) reads it to
+list the ACP agent's commands as `CommandKind::Agent` entries in the
+session's catalog.
 
 **`AcpSession`** (`crates/crucible-daemon/src/acp/session.rs`) is a plain,
 immutable-after-construction record of what one connected session carries: a

@@ -57,7 +57,8 @@ export const keys = {
   skillsList: (kiln: string) => ['skills', 'list', kiln] as const,
   skillsSearch: (kiln: string, query: string) => ['skills', 'search', kiln, query] as const,
   skillDetail: (name: string, kiln: string) => ['skills', 'detail', name, kiln] as const,
-  slashCommands: () => ['commands', 'slash'] as const,
+  slashCommands: (sessionId?: string) =>
+    sessionId ? (['commands', 'slash', sessionId] as const) : (['commands', 'slash'] as const),
   mcpStatus: () => ['mcp', 'status'] as const,
 
   fsDir: (path: string) => ['fs', 'dir', path] as const,

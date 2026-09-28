@@ -554,6 +554,8 @@ impl OilChatRunner {
                     // the trailing `on_message` dispatch's job.
                     ChatAppMsg::ModeSynced(ref mode_id) if !params.app.knows_mode(mode_id) => {
                         let _ = params.msg_tx.send(ChatAppMsg::FetchModes);
+                        // Each mode is also a command of the catalog.
+                        let _ = params.msg_tx.send(ChatAppMsg::FetchCommands);
                     }
                     ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
@@ -745,6 +747,8 @@ impl OilChatRunner {
                         // send. Keypress entry is already gated against
                         // streaming upstream in input_handling.
                         if let (false, Some(session)) = (self.is_replay, params.session) {
+                            // The input line sends a `/` line as a slash
+                            // command, so a user message names no command.
                             if let Err(e) = send_user_message(session, content).await {
                                 tracing::warn!(error = %e, "session.send_message failed");
                                 // The daemon refuses a message that names an
@@ -1083,6 +1087,8 @@ impl OilChatRunner {
                                             }
                                         }
                                     }
+                                    // A reload can add or drop plugin commands.
+                                    let _ = tx.send(ChatAppMsg::FetchCommands);
                                 }
                                 Err(e) => {
                                     let _ = tx.send(ChatAppMsg::Error(format!(
@@ -1113,61 +1119,55 @@ impl OilChatRunner {
                             }
                         }));
                     }
-                    ChatAppMsg::RunPluginCommand { ref name, ref args } if !self.is_replay => {
-                        tracing::info!(command = %name, "Running plugin command");
-                        let name = name.clone();
-                        let args = if args.is_empty() {
-                            serde_json::Value::Null
-                        } else {
-                            serde_json::json!({ "input": args })
-                        };
-                        // The command learns the session it runs from, so a
-                        // command that acts on "this session" needs no id.
-                        let session_id = params.session.map(|s| s.id.clone());
-                        let tx = params.msg_tx.clone();
-                        params.background_tasks.push(tokio::spawn(async move {
-                            match crucible_daemon::DaemonClient::connect().await {
-                                Ok(client) => match client
-                                    .plugin_run_command_in(&name, args, session_id.as_deref())
-                                    .await
+                    // Gated on `!self.is_replay`: the daemon holds the
+                    // session logs. The scope is the session's whole kiln set.
+                    ChatAppMsg::SearchSessions(ref query) if !self.is_replay => {
+                        if let Some(session) = params.session {
+                            let client = std::sync::Arc::clone(&session.client);
+                            let session_id = session.id.clone();
+                            let query = query.clone();
+                            let tx = params.msg_tx.clone();
+                            params.background_tasks.push(tokio::spawn(async move {
+                                let msg = match search_sessions(&client, &session_id, &query).await
                                 {
-                                    Ok(result) => {
-                                        let rendered = match result.get("result") {
-                                            Some(serde_json::Value::String(s)) => s.clone(),
-                                            Some(other) => serde_json::to_string_pretty(other)
-                                                .unwrap_or_else(|_| other.to_string()),
-                                            None => "(no result)".to_string(),
-                                        };
-                                        let _ = tx.send(ChatAppMsg::Status(format!(
-                                            "/{name}: {rendered}"
-                                        )));
-                                    }
-                                    Err(e) => {
-                                        // The daemon's message names the plugin
-                                        // and its reason; the envelope does not
-                                        // help the user.
-                                        let _ = tx.send(ChatAppMsg::Error(format!(
-                                            "/{name} failed: {}",
-                                            crucible_daemon::rpc_error_message(&e)
-                                        )));
-                                    }
-                                },
-                                Err(e) => {
-                                    let _ = tx.send(ChatAppMsg::Error(format!(
-                                        "Cannot connect to daemon: {e}"
-                                    )));
-                                }
-                            }
-                        }));
+                                    Ok(text) => ChatAppMsg::SystemNotice(text),
+                                    Err(e) => ChatAppMsg::Error(format!(
+                                        "/search failed: {}",
+                                        crucible_daemon::rpc_error_message(&e)
+                                    )),
+                                };
+                                let _ = tx.send(msg);
+                            }));
+                        }
                     }
                     // Gated on `!self.is_replay`: slash commands forward to the
                     // agent (and thus the daemon). Defense-in-depth — user
                     // keystrokes during replay must not hit the daemon.
                     ChatAppMsg::ExecuteSlashCommand(ref cmd) if !self.is_replay => {
-                        tracing::info!(command = %cmd, "Forwarding slash command as user message");
+                        tracing::info!(command = %cmd, "Sending slash command to the daemon");
                         if let Some(session) = params.session {
-                            if let Err(e) = send_user_message(session, cmd).await {
-                                tracing::warn!(error = %e, "session.send_message failed for slash command");
+                            match send_user_message(session, cmd).await {
+                                Ok(Some(result)) => {
+                                    params.app.on_message(ChatAppMsg::SystemNotice(result));
+                                }
+                                Ok(None) => {}
+                                Err(e) => {
+                                    params.app.on_message(ChatAppMsg::Error(e));
+                                }
+                            }
+                        }
+                    }
+                    // The catalog is per session: modes, plugins, skills and
+                    // the agent's own commands all differ between sessions.
+                    ChatAppMsg::FetchCommands if !self.is_replay => {
+                        if let Some(session) = params.session {
+                            match session.client.session_commands(&session.id).await {
+                                Ok(commands) => {
+                                    params.app.on_message(ChatAppMsg::CommandsLoaded(commands));
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "Failed to fetch the command catalog");
+                                }
                             }
                         }
                     }
@@ -1224,7 +1224,8 @@ impl OilChatRunner {
                     | ChatAppMsg::ConfigQuery { .. }
                     | ChatAppMsg::ConfigDrop { .. }
                     | ChatAppMsg::ExecuteSlashCommand(_)
-                    | ChatAppMsg::RunPluginCommand { .. }
+                    | ChatAppMsg::SearchSessions(_)
+                    | ChatAppMsg::FetchCommands
                     | ChatAppMsg::ClearContext
                     | ChatAppMsg::ExportSession(_)
                     | ChatAppMsg::CloseDaemonNotifications(_)
@@ -1265,18 +1266,44 @@ impl OilChatRunner {
     }
 }
 
-/// Send a user message to the session. The turn that follows comes back as
-/// session events.
+/// Send a user message to the session. A turn that follows comes back as
+/// session events. A command that the daemon ran without a turn gives its
+/// result as `Some` text for the transcript.
 ///
 /// The error is the daemon's own message, not the `RPC error: {json}`
 /// envelope: a refused turn names its reason there, and the TUI shows it.
-async fn send_user_message(session: &LiveSession, content: &str) -> Result<(), String> {
-    session
+async fn send_user_message(session: &LiveSession, content: &str) -> Result<Option<String>, String> {
+    use crucible_core::types::SendOutcome;
+    let outcome = session
         .client
         .session_send_message(&session.id, content, true)
         .await
-        .map(|_| ())
-        .map_err(|e| crucible_daemon::rpc_error_message(&e))
+        .map_err(|e| crucible_daemon::rpc_error_message(&e))?;
+    Ok(match outcome {
+        SendOutcome::Turn { .. } => None,
+        SendOutcome::Command { command, result } => {
+            Some(format!("/{command}: {}", SendOutcome::result_text(&result)))
+        }
+    })
+}
+
+/// `/search`: the matches in the sessions that share a kiln with this one,
+/// as text.
+async fn search_sessions(
+    client: &crucible_daemon::DaemonClient,
+    session_id: &str,
+    query: &str,
+) -> anyhow::Result<String> {
+    let session = client.session_get(session_id).await?;
+    let kilns: Vec<crucible_core::config::KilnName> = session["kilns"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|kiln| kiln.as_str())
+        .filter_map(|kiln| crucible_core::config::KilnName::parse(kiln).ok())
+        .collect();
+    let found = client.session_search(query, &kilns, Some(10)).await?;
+    Ok(found.to_text(query))
 }
 
 /// Apply `set` to the plugin approval of `plugin`, when it is present, and

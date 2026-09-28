@@ -37,7 +37,7 @@ at the same time. Each step leaves the tree working.
 |---|---|---|---|
 | 1. Remove the client-side agent proxy (done) | one client API layer | L | none |
 | 2. One event path to the clients (sub-steps 1 and 2 done) | three event projections, one event type | L | step 1 helps |
-| 3. One command registry | two command interpreters, one hand list | M | none |
+| 3. One command registry (done) | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client (done) | a swapped pair of type names | S | none |
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
 | 6. Wire types live in core | a second home for wire types | M | steps 1 and 4 |
@@ -143,19 +143,36 @@ cards in the TUI, the web client and `cru acp`. See [[Data Flows]] and
 
 ## Step 3. One command registry
 
-**Now.** Three interpreters parse slash commands. The TUI has `ReplCommand`
-in `crates/crucible-cli/src/tui/oil/chat_app/repl_command.rs`. The web server
-has a static table in `crates/crucible-web/src/routes/session_commands.rs`.
-The daemon lists plugin commands with `plugin.commands`. The web palette in
-`crates/crucible-web/web/src/App.tsx` has a fourth list.
+**Status: done.** The daemon builds one command catalog per session
+(`AgentManager::session_commands`, `crates/crucible-daemon/src/agent_manager/commands.rs`):
+the built-in commands (`BuiltinCommand` in `crates/crucible-core/src/types/command.rs`),
+then declared modes, then plugin commands, then discovered skills, then the
+commands an ACP agent advertises — an earlier source keeps a name two
+sources share. `session.commands` serves the list. `session.send_message`
+routes a leading `/name` from the same catalog (`slash_route`) and answers
+a `SendOutcome` (`Turn { message_id }` or `Command { command, result }`),
+so a mode switch, a plugin command or a skill invocation no longer needs
+its own RPC. The TUI matches `BuiltinCommand` with no wildcard and sends
+every other `/name` to the daemon as a chat message;
+`known_slash_commands`, `plugin_command_names` and
+`ChatAppMsg::RunPluginCommand` are gone. The web server's static table in
+`crates/crucible-web/src/routes/session_commands.rs` is gone too: `GET
+/api/session/{id}/commands` answers the daemon's catalog, and `POST
+/api/session/{id}/command` runs only the built-in commands, over the same
+exhaustive `BuiltinCommand` match the TUI uses. `cru acp` advertises the
+catalog to its host as `available_commands_update`, minus the built-in
+commands, which have no meaning for a host.
 
-**Change.**
-1. Put one registry in the daemon. It holds the builtin commands and the
-   plugin commands. It serves a list and an execute RPC.
-2. Delete `crates/crucible-web/src/routes/session_commands.rs`.
-3. Make the web palette and the TUI read the list from the daemon.
-4. Keep in the TUI only the commands that change display state, for example
-   quit and the palette.
+**Known gaps.**
+- A plugin reload does not emit `commands_changed`. A client must refetch
+  the catalog itself after a reload it asked for.
+- The web draft composer — before a session exists — has no catalog to
+  list: `useAutocomplete`'s `/` trigger lists nothing until a session id
+  is available.
+
+**Kept, with the reason.** `lua.register_commands` stays even though no
+client sends it any more: `crates/crucible-cli/tests/tui_e2e_tests/session_store.rs`
+uses it as a Lua-session probe.
 
 **Proof.** `/model x` from the TUI, the web client and Lua reaches
 `session.switch_model` once. See [[TUI Chat App]] and [[Web Server]].
@@ -276,8 +293,8 @@ Kept, with the reason:
   get built or go.
 - The `FullscreenShell` prototype: the full-screen user story names its
   pane code as tested prototype work.
-- `lua.register_commands`: no client sends it, but step 3 owns the command
-  RPCs.
+- `lua.register_commands`: no client sends it, but see step 3 for why it
+  stays.
 
 ## Step 10. Group the daemon modules
 

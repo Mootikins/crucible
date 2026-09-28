@@ -289,6 +289,16 @@ sequenceDiagram
     Web->>Web: ChatEvent::from_daemon_event -> SSE frame
 ```
 
+Before `Handler` calls `send_message`, it reads `content` through
+`AgentManager::slash_route` (`agent_manager/commands.rs`), against the
+session's one command catalog. Plain text, a built-in command, and an agent
+command all answer `SlashRoute::Message`, so the diagram above still holds
+for them unchanged. A mode switches the session and starts no turn unless
+`rest` has text; a plugin command runs and answers without a turn; a skill
+attaches its instructions and lets the diagram's turn proceed. The RPC
+answers a `SendOutcome`: `Turn { message_id }` for a turn that started, or
+`Command { command, result }` for one the daemon ran without a turn.
+
 ## 4. A tool call that writes a note, through propose-or-apply disposition
 
 No step in flow 3's gate pipeline holds a write for a later human decision

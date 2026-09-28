@@ -5,16 +5,17 @@
 //! side effects (sending `session/update`, requesting permission).
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ContentChunk, PermissionOption, PermissionOptionId, PermissionOptionKind,
-    RequestPermissionOutcome, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    AvailableCommand, AvailableCommandInput, ContentBlock, ContentChunk, PermissionOption,
+    PermissionOptionId, PermissionOptionKind, RequestPermissionOutcome, SessionUpdate, StopReason,
+    TextContent, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
+    ToolKind, UnstructuredCommandInput,
 };
 use crucible_core::interaction::{
     InteractionRequest, InteractionResponse, PermResponse, PermissionScope,
 };
-use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+use crucible_core::protocol::session_events::{SessionEventPayload, SettingsPayload, TurnPayload};
 use crucible_core::turn::{StopReason as CoreStopReason, TurnStatus};
-use crucible_core::types::{CanonicalToolCall, ToolRender};
+use crucible_core::types::{CanonicalToolCall, CommandKind, SessionCommand, ToolRender};
 use crucible_daemon::SessionEvent;
 
 /// Permission option IDs advertised to the host. Matching them back in
@@ -35,8 +36,29 @@ pub enum TurnStep {
     },
     /// The whole turn is over (`turn_finished`); respond to `session/prompt`.
     Finished(TurnEnd),
+    /// The session's command catalog changed; advertise it again.
+    CommandsChanged,
     /// Nothing to forward (unknown or empty event).
     Ignore,
+}
+
+/// The daemon's command catalog as the commands an ACP host offers.
+///
+/// A built-in command is an action of a Crucible client, which a host does
+/// not have, so it is left out. The host sends each other command back as
+/// prompt text, and the daemon routes it from the same catalog.
+pub fn available_commands(catalog: &[SessionCommand]) -> Vec<AvailableCommand> {
+    catalog
+        .iter()
+        .filter(|command| !matches!(command.kind, CommandKind::Builtin { .. }))
+        .map(|command| {
+            AvailableCommand::new(&command.name, &command.description).input(
+                command.input_hint.as_ref().map(|hint| {
+                    AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(hint))
+                }),
+            )
+        })
+        .collect()
 }
 
 /// How `cru acp` answers `session/prompt` when the turn is over.
@@ -99,6 +121,9 @@ pub fn opens_turn(event: &SessionEvent, message_id: &str) -> bool {
 pub fn classify_event(event: &SessionEvent) -> TurnStep {
     let turn = match event.payload() {
         Ok(SessionEventPayload::Turn(turn)) => turn,
+        Ok(SessionEventPayload::Settings(SettingsPayload::CommandsChanged {})) => {
+            return TurnStep::CommandsChanged
+        }
         Ok(_) => return TurnStep::Ignore,
         // `turn_finished` is the one event that ends the turn. One that does
         // not decode still ends it, as a failure, so the host does not wait
@@ -389,6 +414,43 @@ mod tests {
 
     fn event(event_type: &str, data: serde_json::Value) -> SessionEvent {
         SessionEvent::new("s1", event_type, data)
+    }
+
+    #[test]
+    fn the_host_gets_every_command_but_the_built_in_ones() {
+        let catalog = vec![
+            crucible_core::types::BuiltinCommand::Help.entry(),
+            SessionCommand {
+                name: "reflect".into(),
+                description: "Reflect".into(),
+                input_hint: Some("[turns]".into()),
+                kind: CommandKind::Plugin {
+                    plugin: "alpha".into(),
+                },
+            },
+            SessionCommand {
+                name: "tidy".into(),
+                description: "Tidy".into(),
+                input_hint: None,
+                kind: CommandKind::Skill,
+            },
+        ];
+        let offered = available_commands(&catalog);
+        let names: Vec<_> = offered.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["reflect", "tidy"]);
+        assert!(matches!(
+            &offered[0].input,
+            Some(AvailableCommandInput::Unstructured(input)) if input.hint == "[turns]"
+        ));
+        assert!(offered[1].input.is_none());
+    }
+
+    #[test]
+    fn a_commands_changed_event_asks_for_a_new_advertisement() {
+        assert!(matches!(
+            classify_event(&event("commands_changed", json!({}))),
+            TurnStep::CommandsChanged
+        ));
     }
 
     #[test]

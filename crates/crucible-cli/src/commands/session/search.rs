@@ -24,25 +24,10 @@ pub(super) async fn search(
         .await
         .context("Session search failed")?;
 
-    let matches = result
-        .get("matches")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-
     if format == "json" {
-        println!("{}", serde_json::json!({"matches": matches}));
-    } else if matches.is_empty() {
-        println!("No sessions matching '{}' found.", query);
+        println!("{}", serde_json::json!({"matches": result.matches}));
     } else {
-        println!("Sessions matching '{}':\n", query);
-        for m in &matches {
-            let session_id = m["session_id"].as_str().unwrap_or("");
-            let line = m["line"].as_u64().unwrap_or(0);
-            let context = m["context"].as_str().unwrap_or("");
-            println!("  {} (line {})", session_id, line);
-            println!("    {}\n", context);
-        }
+        println!("{}", result.to_text(&query));
     }
     Ok(())
 }

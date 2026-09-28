@@ -221,11 +221,18 @@ Full tool access with automatic approval. Tool calls execute without confirmatio
 | `/auto` | Switch to auto (full access) mode |
 | `/undo [N]` | Undo the last N exchanges (default 1) |
 | `/help [topic]` | Show help (same as `:help`) |
+| `/model [name]` | Switch the model, or list the models with no name |
+| `/resume [id]` | Resume an earlier session: a picker, or the session with that id |
+| `/export [path]` | Export the session to markdown |
+| `/search <query>` | Search sessions |
 
-Every mode the daemon declares gets its own slash command — a Lua-declared
-`review` mode is reachable as `/review`. Plugin-declared commands also run as
-slash commands. Anything else typed with a leading `/` is **not** an error: it
-is forwarded to the agent as ordinary chat text.
+The daemon builds one command catalog per session: the built-in commands
+above, each declared mode, each plugin command, each discovered skill, and
+each command an ACP agent advertises. A Lua-declared `review` mode is
+reachable as `/review`. When two sources name the same command, the earlier
+source in that order keeps it. Anything typed with a leading `/` that names
+no command in the catalog is **not** an error: it is forwarded to the agent
+as ordinary chat text.
 
 ### REPL Commands
 

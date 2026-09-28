@@ -25,7 +25,10 @@
 //! .with_kiln(PathBuf::from("/home/user/reference"));
 //! ```
 
+mod search;
 mod types;
+
+pub use search::{SessionSearchMatch, SessionSearchResponse};
 
 pub use types::{
     ChildLedgerRef, Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk,

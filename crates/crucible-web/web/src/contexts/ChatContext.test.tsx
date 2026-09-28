@@ -158,7 +158,7 @@ beforeEach(() => {
       { id: 'review', name: 'Review', description: null, icon: null, color: null },
     ],
   });
-  sendAnswer = () => ({ message_id: 'msg-turn-1' });
+  sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
   listAnswer = () => ({ sessions: [], total: 0 });
   setModeAnswer = () => new Response(null, { status: 204 });
   historyAsked.length = 0;
@@ -223,7 +223,7 @@ describe('ChatContext', () => {
   });
 
   it('adds user message when sending', async () => {
-    sendAnswer = () => ({ message_id: 'msg_server_1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg_server_1' });
 
     render(() => (
       <TestWrapper>
@@ -248,8 +248,31 @@ describe('ChatContext', () => {
     expect(items[0].textContent).toBe('test message');
   });
 
+  // A plugin command runs in the daemon and opens no turn. The optimistic
+  // user and assistant entries go, and the result shows as a system line.
+  it('shows a command result instead of a turn', async () => {
+    sendAnswer = () => ({ outcome: 'command', command: 'reflect', result: 'reflected' });
+
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
+
+    screen.getByText('Send').click();
+
+    await waitFor(() => {
+      const items = screen.getAllByRole('listitem');
+      expect(items).toHaveLength(1);
+      expect(items[0].getAttribute('data-role')).toBe('system');
+      expect(items[0].textContent).toBe('/reflect: reflected');
+    });
+    expect(screen.getByTestId('loading').textContent).toBe('idle');
+  });
+
   it('does not send without session', async () => {
-    sendAnswer = () => ({ message_id: 'msg_server_1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg_server_1' });
 
     render(() => (
       <TestWrapper session={null}>
@@ -270,7 +293,7 @@ describe('ChatContext', () => {
   });
 
   it('shows loading state while sending', async () => {
-    sendAnswer = () => ({ message_id: 'msg_server_1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg_server_1' });
 
     render(() => (
       <TestWrapper>
@@ -300,7 +323,7 @@ describe('ChatContext', () => {
 describe('streaming reconciliation', () => {
   it('reconciles a message minted by a token that beat the send POST (no orphan bubble)', async () => {
     // Hold the POST open so a token can arrive mid-flight.
-    const held = deferred<{ message_id: string }>();
+    const held = deferred<{ outcome: 'turn'; message_id: string }>();
     sendAnswer = () => held.promise;
 
     render(() => (
@@ -320,7 +343,7 @@ describe('streaming reconciliation', () => {
     // POST resolves with the canonical turn id. The early streaming message
     // must be reconciled into `${id}-response`, not left orphaned beside a new
     // empty placeholder.
-    held.resolve({ message_id: 'msg-turn-1' });
+    held.resolve({ outcome: 'turn', message_id: 'msg-turn-1' });
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
 
     FakeEventSource.instances[0]!.emit('message_complete', {
@@ -347,7 +370,7 @@ describe('a reply the provider cut off', () => {
   // must draw the string it received, so a test that used the real wording
   // could pass while the page derived the words itself.
   it('draws the note the daemon worded', async () => {
-    sendAnswer = () => ({ message_id: 'msg-turn-1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
 
     render(() => (
       <TestWrapper>
@@ -418,7 +441,7 @@ describe('draft first-message handoff', () => {
     // empty transcript after sending their first draft message.
     sessionAnswer = () => new Promise(() => {});
     historyAnswer = () => new Promise(() => {});
-    sendAnswer = () => ({ message_id: 'msg-turn-1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
 
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
     setPendingFirstMessage(mockSession.session_id, 'first message from draft');
@@ -453,7 +476,7 @@ describe('draft first-message handoff', () => {
     const seeded = { ...mockSession, title: undefined } as unknown as Session;
     env.client.setQueryData(keys.session(mockSession.session_id), seeded);
     sessionAnswer = () => seeded;
-    sendAnswer = () => ({ message_id: 'msg-turn-1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
 
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
     setPendingFirstMessage(mockSession.session_id, 'first message from draft');
@@ -507,7 +530,7 @@ describe('session switching', () => {
   }
 
   it('does not clear messages on initial mount', async () => {
-    sendAnswer = () => ({ message_id: 'msg_server_1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg_server_1' });
 
     render(() => (
       <DynamicTestWrapper>
@@ -523,7 +546,7 @@ describe('session switching', () => {
   });
 
   it('clears messages when switching to different session', async () => {
-    sendAnswer = () => ({ message_id: 'msg_server_1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg_server_1' });
 
     render(() => (
       <DynamicTestWrapper>
@@ -1127,7 +1150,7 @@ describe('a slow history load cannot duplicate a finished turn', () => {
     // Held open until the live turn has finished.
     const held = deferred<unknown>();
     historyAnswer = () => held.promise;
-    sendAnswer = () => ({ message_id: 'msg-turn-1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
 
     render(() => (
       <TestWrapper>
@@ -1269,7 +1292,7 @@ describe('the shared session stream', () => {
 
   it('gives a pane that joins an open stream its open gate at once', async () => {
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
-    sendAnswer = () => ({ message_id: 'msg-turn-1' });
+    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
 
     render(() => (
       <ChatProvider sessionId={mockSession.session_id}>

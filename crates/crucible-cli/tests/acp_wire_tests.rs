@@ -254,10 +254,16 @@ fn session_load_replays_the_recorded_transcript() {
         })
         .map(|n| n["params"]["update"].clone())
         .collect();
-    let kinds: Vec<&str> = updates
+    let mut kinds: Vec<&str> = updates
         .iter()
         .map(|u| u["sessionUpdate"].as_str().expect("update tag"))
         .collect();
+    // The command list follows the replayed transcript.
+    assert_eq!(
+        kinds.pop(),
+        Some("available_commands_update"),
+        "{updates:?}"
+    );
     assert_eq!(
         kinds,
         vec![
@@ -598,6 +604,45 @@ fn a_prompt_turn_streams_the_provider_text_and_ends_the_turn() {
         .find(|r| r.to_string().contains("ping over acp"))
         .expect("the prompt reached the provider");
     assert_eq!(request["model"], "gpt-4o-mini");
+
+    acp.finish();
+}
+
+/// After `session/new` the host gets the session's commands, without the
+/// built-in ones. A prompt that names a mode command switches the mode in the
+/// daemon: the result comes back as agent text, and no model call happens.
+#[test]
+fn the_host_gets_the_command_catalog_and_a_mode_command_runs_in_the_daemon() {
+    let provider = start_mock_provider(ProviderScript::Reply);
+    let mut acp = AcpUnderTest::start(&provider);
+    let session = acp.open_session();
+
+    acp.send(&json!({
+        "jsonrpc": "2.0", "id": 3, "method": "session/prompt",
+        "params": {"sessionId": session, "prompt": [{"type": "text", "text": "/plan"}]}
+    }));
+    let (notifications, reply) = acp.exchange(3);
+
+    let advertised: Vec<&str> = notifications
+        .iter()
+        .filter(|n| n["params"]["update"]["sessionUpdate"] == "available_commands_update")
+        .flat_map(|n| {
+            n["params"]["update"]["availableCommands"]
+                .as_array()
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert!(advertised.contains(&"plan"), "{notifications:#?}");
+    assert!(!advertised.contains(&"help"), "{advertised:?}");
+
+    assert_eq!(reply["result"]["stopReason"], "end_turn", "{reply}");
+    assert_eq!(agent_text(&notifications, &session), "Mode: plan");
+    assert!(
+        provider.requests.try_iter().next().is_none(),
+        "a mode command calls no model"
+    );
 
     acp.finish();
 }

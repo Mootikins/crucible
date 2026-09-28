@@ -21,6 +21,7 @@ Setup	plugins_discovered
 Setup	providers_listed
 Setup	session_initialized
 Setup	workspace_indexed
+Settings	commands_changed
 Settings	context_strategy_changed
 Settings	mode_changed
 Settings	model_switched

@@ -563,6 +563,11 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         deps.onTitleChanged(event.title);
         break;
 
+      // The catalog is a query of its own; `lib/query/routes/session.ts`
+      // invalidates it. The pane shows nothing for the event.
+      case 'commands_changed':
+        break;
+
       case 'session_event': {
         // A new canonical form of a call that a prior `tool_call` announced:
         // an ACP agent can send the arguments or the diff of a call in a

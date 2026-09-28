@@ -481,7 +481,8 @@
     },
     "/api/chat/send": {
       "post": {
-        "summary": "Start a turn in a session.",
+        "summary": "Start a turn in a session, or run the daemon command that the message\nnames.",
+        "description": "A turn answers its `message_id`: the browser correlates the SSE events\nthat follow with it. A command that ran without a turn, such as a plugin\ncommand, answers its result instead.",
         "operationId": "send_message",
         "requestBody": {
           "content": {
@@ -499,7 +500,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SendMessageResponse"
+                  "$ref": "#/components/schemas/SendOutcome"
                 }
               }
             }
@@ -509,25 +510,6 @@
           },
           "502": {
             "description": "The daemon could not accept the message"
-          }
-        }
-      }
-    },
-    "/api/commands": {
-      "get": {
-        "summary": "`GET /api/commands` — the slash commands the web composer can complete.",
-        "description": "Session-independent: the set is static, so the composer fetches it once\nrather than per session.",
-        "operationId": "list_commands",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommandsResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -3029,7 +3011,8 @@
     },
     "/api/session/{id}/command": {
       "post": {
-        "summary": "Run one slash command in a session.",
+        "summary": "Run one built-in command in a session.",
+        "description": "The composer sends only built-in commands here. Any other command is a\nchat message, so this route refuses it with an `error` reply.",
         "operationId": "execute_command",
         "parameters": [
           {
@@ -3065,6 +3048,39 @@
           },
           "502": {
             "description": "The daemon could not serve the command"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/commands": {
+      "get": {
+        "summary": "`GET /api/session/{id}/commands` — the commands the composer completes.",
+        "description": "The daemon answers the catalog of the session: built-in, mode, plugin,\nskill and agent commands. A `commands_changed` event on the session's\nstream says when to ask again.",
+        "operationId": "list_commands",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose commands to list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the commands"
           }
         }
       }
@@ -5217,6 +5233,20 @@
           }
         }
       },
+      "BuiltinCommand": {
+        "type": "string",
+        "description": "A command that every client provides as its own action.",
+        "enum": [
+          "help",
+          "clear",
+          "model",
+          "mode",
+          "undo",
+          "resume",
+          "export",
+          "search"
+        ]
+      },
       "CancelledResponse": {
         "type": "object",
         "description": "Response for session cancellation.",
@@ -5932,6 +5962,21 @@
           },
           {
             "type": "object",
+            "description": "The session's command catalog changed; the composer reads it again.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "commands_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "required": [
               "event",
               "data",
@@ -6002,6 +6047,98 @@
           "write"
         ]
       },
+      "CommandKind": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The client runs it.",
+            "required": [
+              "command",
+              "kind"
+            ],
+            "properties": {
+              "command": {
+                "$ref": "#/components/schemas/BuiltinCommand"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "builtin"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The daemon switches the session to this mode.",
+            "required": [
+              "mode_id",
+              "kind"
+            ],
+            "properties": {
+              "mode_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "mode"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The daemon runs the command of this plugin.",
+            "required": [
+              "plugin",
+              "kind"
+            ],
+            "properties": {
+              "plugin": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plugin"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The daemon gives the turn this skill's instructions.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "skill"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The ACP agent of the session runs it; the daemon sends the text on.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where a command comes from, and so who runs it."
+      },
       "CommandRequest": {
         "type": "object",
         "description": "One plugin command invocation.",
@@ -6017,7 +6154,7 @@
       },
       "CommandResponse": {
         "type": "object",
-        "description": "What one slash command produced.\n\nA command the server does not know, and a command used wrongly, both come\nback here with `type` reading `error`: the composer prints the text either\nway, and neither is a transport failure.",
+        "description": "What one built-in command produced.\n\nA command used wrongly comes back here with `type` reading `error`: the\ncomposer prints the text either way, and it is not a transport failure.",
         "required": [
           "result",
           "type"
@@ -6030,12 +6167,19 @@
           "type": {
             "type": "string",
             "description": "`success` or `error`."
+          },
+          "open_session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session the browser opens, for `/resume <id>`."
           }
         }
       },
       "CommandsResponse": {
         "type": "object",
-        "description": "The command set the composer completes from.",
+        "description": "The command catalog of one session.",
         "required": [
           "commands"
         ],
@@ -6043,7 +6187,7 @@
           "commands": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SlashCommand"
+              "$ref": "#/components/schemas/SessionCommand"
             }
           }
         }
@@ -9963,17 +10107,50 @@
           }
         }
       },
-      "SendMessageResponse": {
-        "type": "object",
-        "description": "The identifier the daemon minted for the turn this request started.\n\nOne key, because the browser correlates the SSE events that follow with it\nand needs nothing else to do so.",
-        "required": [
-          "message_id"
-        ],
-        "properties": {
-          "message_id": {
-            "type": "string"
+      "SendOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A turn started. Its events follow on the session's event stream.",
+            "required": [
+              "message_id",
+              "outcome"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "turn"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The text named a command that the daemon ran without a turn, for\nexample a plugin command or a bare mode switch.",
+            "required": [
+              "command",
+              "result",
+              "outcome"
+            ],
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "result": {},
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "command"
+                ]
+              }
+            }
           }
-        }
+        ],
+        "description": "What `session.send_message` did with the text."
       },
       "SessionAgentRow": {
         "type": "object",
@@ -9997,6 +10174,37 @@
         "additionalProperties": {
           "description": "Every other field of the daemon's agent record, carried verbatim."
         }
+      },
+      "SessionCommand": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CommandKind"
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "description"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The name after the slash."
+              },
+              "description": {
+                "type": "string"
+              },
+              "input_hint": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The argument placeholder, when the command takes one."
+              }
+            }
+          }
+        ],
+        "description": "One entry of a session's command catalog."
       },
       "SessionHistoryEvent": {
         "type": "object",
@@ -10331,7 +10539,7 @@
       },
       "SessionSearchMatch": {
         "type": "object",
-        "description": "One transcript line that matched a session search.\n\nNot a session: the daemon answers the line it matched on, so a caller that\nwants the session reads `session_id` and asks for it.\n\n`pub(super)`: `session_commands::execute_command`'s `/search` also reads\nthis shape, to print one line per match rather than the raw `session.search`\nJSON it used to forward untouched.",
+        "description": "One transcript line that matched a session search.\n\nNot a session: the daemon answers the line it matched on, so a caller that\nwants the session reads `session_id` and asks for it.",
         "required": [
           "session_id",
           "line",
@@ -10355,7 +10563,7 @@
       },
       "SessionSearchResponse": {
         "type": "object",
-        "description": "What `GET /api/sessions/search` answers.",
+        "description": "What `session.search` answers.",
         "required": [
           "matches",
           "total"
@@ -10377,7 +10585,7 @@
               "string",
               "null"
             ],
-            "description": "Why the search looked at nothing, when it looked at nothing.\n\nThe daemon writes it for a search with no kiln scope\n(`server/session/list.rs:206`), and only then. An unscoped search is\nthe one case where an empty result is not a statement about the\ncorpus, so the sentence has to reach the caller."
+            "description": "Why the search looked at nothing, when it looked at nothing.\n\nThe daemon writes it for a search with no kiln scope, and only then.\nAn unscoped search is the one case where an empty result is not a\nstatement about the corpus, so the sentence has to reach the caller."
           }
         }
       },
@@ -10639,28 +10847,6 @@
           },
           "reason": {
             "$ref": "#/components/schemas/SkipReason"
-          }
-        }
-      },
-      "SlashCommand": {
-        "type": "object",
-        "description": "One slash command, as both the `/help` text and the web autocomplete see it.",
-        "required": [
-          "name",
-          "args",
-          "description"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Bare name, no leading slash."
-          },
-          "args": {
-            "type": "string",
-            "description": "Argument placeholder shown in help/completion, empty when nullary."
-          },
-          "description": {
-            "type": "string"
           }
         }
       },

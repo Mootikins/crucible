@@ -9,6 +9,8 @@ import { composerComments, type AttachedComment } from '@/stores/composerComment
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { getBus } from '@/lib/bus';
 import { useExecuteCommand } from '@/lib/query/commands';
+import { isBuiltinCommand } from '@/lib/slash-commands';
+import { openSessionInChat } from '@/lib/session-actions';
 import { useDeleteDiffComment } from '@/lib/query/diff';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
@@ -110,14 +112,18 @@ export const ChatInput: Component = () => {
 
     setInput('');
 
-    // Slash command detection: route to command endpoint
-    if (message.startsWith('/')) {
+    // A built-in command runs on the command route. Every other `/name`
+    // goes to the daemon as a message, and the daemon routes it from the
+    // session's catalog.
+    const name = /^\/(\S+)/.exec(message)?.[1]?.toLowerCase();
+    if (name && isBuiltinCommand(name)) {
       const s = session();
       if (!s) return;
 
       try {
         const result = await runCommand.mutateAsync(message);
         addSystemMessage(result.result);
+        if (result.open_session) openSessionInChat(result.open_session, result.open_session);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Command failed';
         addSystemMessage(`Error: ${errorMsg}`);
@@ -297,6 +303,7 @@ export const ChatInput: Component = () => {
             const s = currentSession();
             return s ? sessionWorkspace(s) : null;
           }}
+          sessionId={() => session()?.session_id}
           placeholder={session() ? 'Type a message...' : 'Select a session first...'}
           // Typing stays live mid-turn: a message sent while the agent works
           // queues below the streaming block and dispatches when it ends.

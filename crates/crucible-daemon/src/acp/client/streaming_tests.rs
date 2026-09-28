@@ -293,3 +293,40 @@ fn config_option_update_mid_stream_updates_the_model_choice() {
         vec!["mock-sonnet".to_string(), "mock-opus".to_string()]
     );
 }
+
+/// An agent advertises its commands with `available_commands_update`, often
+/// right after `session/new` and so before any turn. The client keeps the
+/// list outside a turn too, because the session's command catalog reads it.
+#[test]
+fn available_commands_update_outside_a_turn_replaces_the_command_list() {
+    use agent_client_protocol::schema::v1::SessionNotification;
+    use crucible_core::types::CommandKind;
+
+    let shared = std::sync::Mutex::new(super::super::Shared::default());
+    let mut commands = super::super::lock(&shared).commands.subscribe();
+
+    let notification: SessionNotification = serde_json::from_value(serde_json::json!({
+        "sessionId": "s1",
+        "update": {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": [
+                {"name": "review", "description": "Review the branch", "input": {"hint": "branch"}},
+                {"name": "compact", "description": "Compact the context"}
+            ]
+        }
+    }))
+    .expect("valid available_commands_update notification");
+
+    super::super::route_update(&shared, notification.update);
+
+    assert!(
+        commands.has_changed().unwrap(),
+        "a change must wake a reader"
+    );
+    let listed = commands.borrow_and_update().clone();
+    let names: Vec<_> = listed.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["review", "compact"]);
+    assert_eq!(listed[0].input_hint.as_deref(), Some("branch"));
+    assert_eq!(listed[1].input_hint, None);
+    assert!(listed.iter().all(|c| c.kind == CommandKind::Agent));
+}

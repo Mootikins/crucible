@@ -1,6 +1,13 @@
-//! `/api/session/{id}/command` — web slash-command execution.
-//! Split from `session.rs`; command listing and execution are a surface of
-//! their own, apart from the session router.
+//! `/api/session/{id}/commands` and `/api/session/{id}/command` — the web
+//! client's slash commands.
+//!
+//! The daemon owns the command catalog of a session. The composer completes
+//! from it. A built-in command is the client's own action, so this route
+//! runs it; every other command goes to the daemon as a chat message, which
+//! the daemon routes.
+
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::match_wildcard_for_single_variants)]
 
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -8,6 +15,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use crucible_core::types::{split_slash_command, BuiltinCommand, CommandKind, SessionCommand};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -17,11 +25,10 @@ pub(super) struct ExecuteCommandRequest {
     command: String,
 }
 
-/// What one slash command produced.
+/// What one built-in command produced.
 ///
-/// A command the server does not know, and a command used wrongly, both come
-/// back here with `type` reading `error`: the composer prints the text either
-/// way, and neither is a transport failure.
+/// A command used wrongly comes back here with `type` reading `error`: the
+/// composer prints the text either way, and it is not a transport failure.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub(super) struct CommandResponse {
     /// The text the composer prints.
@@ -29,91 +36,74 @@ pub(super) struct CommandResponse {
     /// `success` or `error`.
     #[serde(rename = "type")]
     response_type: String,
+    /// The session the browser opens, for `/resume <id>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    open_session: Option<String>,
 }
 
-/// One slash command, as both the `/help` text and the web autocomplete see it.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub(super) struct SlashCommand {
-    /// Bare name, no leading slash.
-    #[schema(value_type = String)]
-    pub name: &'static str,
-    /// Argument placeholder shown in help/completion, empty when nullary.
-    #[schema(value_type = String)]
-    pub args: &'static str,
-    #[schema(value_type = String)]
-    pub description: &'static str,
-}
+impl CommandResponse {
+    fn success(result: impl Into<String>) -> Json<Self> {
+        Json(Self {
+            result: result.into(),
+            response_type: "success".to_string(),
+            open_session: None,
+        })
+    }
 
-/// The command set, declared once.
-///
-/// `/help` renders from this and `GET /api/commands` serves it, so the web
-/// autocomplete can't drift from what `execute_command` actually accepts —
-/// it previously hardcoded its own list and silently omitted `/models`.
-pub(super) const SLASH_COMMANDS: &[SlashCommand] = &[
-    SlashCommand {
-        name: "help",
-        args: "",
-        description: "Show available commands",
-    },
-    SlashCommand {
-        name: "search",
-        args: "<query>",
-        description: "Search sessions by title",
-    },
-    SlashCommand {
-        name: "models",
-        args: "",
-        description: "List available models",
-    },
-    SlashCommand {
-        name: "model",
-        args: "<name>",
-        description: "Switch to a different model",
-    },
-    SlashCommand {
-        name: "clear",
-        args: "",
-        description: "Clear the model context (the transcript stays)",
-    },
-    SlashCommand {
-        name: "export",
-        args: "",
-        description: "Export session to markdown",
-    },
-];
-
-impl SlashCommand {
-    /// `/search <query> — Search sessions by title`
-    fn help_line(&self) -> String {
-        let head = if self.args.is_empty() {
-            format!("/{}", self.name)
-        } else {
-            format!("/{} {}", self.name, self.args)
-        };
-        format!("{} — {}", head, self.description)
+    fn error(result: impl Into<String>) -> Json<Self> {
+        Json(Self {
+            result: result.into(),
+            response_type: "error".to_string(),
+            open_session: None,
+        })
     }
 }
 
-/// The command set the composer completes from.
-#[derive(Debug, Serialize, ToSchema)]
+/// The command catalog of one session.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub(super) struct CommandsResponse {
-    #[schema(value_type = Vec<SlashCommand>)]
-    commands: &'static [SlashCommand],
+    commands: Vec<SessionCommand>,
 }
 
-/// `GET /api/commands` — the slash commands the web composer can complete.
+/// `GET /api/session/{id}/commands` — the commands the composer completes.
 ///
-/// Session-independent: the set is static, so the composer fetches it once
-/// rather than per session.
+/// The daemon answers the catalog of the session: built-in, mode, plugin,
+/// skill and agent commands. A `commands_changed` event on the session's
+/// stream says when to ask again.
 #[utoipa::path(
     get,
-    path = "/api/commands",
-    responses((status = 200, body = CommandsResponse))
+    path = "/api/session/{id}/commands",
+    params(("id" = String, Path, description = "The session whose commands to list")),
+    responses(
+        (status = 200, body = CommandsResponse),
+        (status = 502, description = "The daemon could not list the commands"),
+    )
 )]
-pub(super) async fn list_commands() -> Json<CommandsResponse> {
-    Json(CommandsResponse {
-        commands: SLASH_COMMANDS,
-    })
+pub(super) async fn list_commands(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<CommandsResponse>, WebError> {
+    let commands = state.daemon.session_commands(&id).await.daemon_err()?;
+    Ok(Json(CommandsResponse { commands }))
+}
+
+/// `/name hint — description (source)`, one line of `/help`.
+fn help_line(command: &SessionCommand) -> String {
+    let head = match &command.input_hint {
+        Some(hint) => format!("/{} {}", command.name, hint),
+        None => format!("/{}", command.name),
+    };
+    let source = match &command.kind {
+        CommandKind::Builtin { .. } => None,
+        CommandKind::Mode { .. } => Some("mode"),
+        CommandKind::Plugin { .. } => Some("plugin"),
+        CommandKind::Skill => Some("skill"),
+        CommandKind::Agent => Some("agent"),
+    };
+    match source {
+        Some(source) => format!("{head} — {} ({source})", command.description),
+        None => format!("{head} — {}", command.description),
+    }
 }
 
 /// The kiln set a `session.get` payload reports, as `session.search` wants it.
@@ -136,7 +126,10 @@ fn session_scope_kilns(session: &serde_json::Value) -> Vec<crucible_core::config
         .unwrap_or_default()
 }
 
-/// Run one slash command in a session.
+/// Run one built-in command in a session.
+///
+/// The composer sends only built-in commands here. Any other command is a
+/// chat message, so this route refuses it with an `error` reply.
 #[utoipa::path(
     post,
     path = "/api/session/{id}/command",
@@ -152,131 +145,113 @@ pub(super) async fn execute_command(
     Path(id): Path<String>,
     Json(req): Json<ExecuteCommandRequest>,
 ) -> Result<Json<CommandResponse>, WebError> {
-    let raw = req.command.trim().to_string();
-    let command_str = raw.strip_prefix('/').unwrap_or(&raw);
-    let (cmd, args) = match command_str.split_once(' ') {
-        Some((c, a)) => (c.trim(), a.trim()),
-        None => (command_str.trim(), ""),
+    let raw = req.command.trim();
+    let line = if raw.starts_with('/') {
+        raw.to_string()
+    } else {
+        format!("/{raw}")
+    };
+    let Some((name, args)) = split_slash_command(&line) else {
+        return Ok(CommandResponse::error("Type /help for the commands."));
+    };
+    let Some(command) = BuiltinCommand::from_name(name) else {
+        return Ok(CommandResponse::error(format!(
+            "/{name} is not a built-in command. Send it as a message."
+        )));
     };
 
-    match cmd {
-        "help" => {
-            let help_text = SLASH_COMMANDS
-                .iter()
-                .map(SlashCommand::help_line)
-                .collect::<Vec<_>>()
-                .join("\n");
-            Ok(Json(CommandResponse {
-                result: help_text,
-                response_type: "success".to_string(),
-            }))
+    match command {
+        BuiltinCommand::Help => {
+            let commands = state.daemon.session_commands(&id).await.daemon_err()?;
+            Ok(CommandResponse::success(
+                commands
+                    .iter()
+                    .map(help_line)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ))
         }
-        "search" => {
+        BuiltinCommand::Search => {
             if args.is_empty() {
-                return Ok(Json(CommandResponse {
-                    result: "Usage: /search <query>".to_string(),
-                    response_type: "error".to_string(),
-                }));
+                return Ok(CommandResponse::error("Usage: /search <query>"));
             }
-
             let session = state.daemon.session_get(&id).await.daemon_err()?;
-            let results = state
+            let found = state
                 .daemon
                 .session_search(args, &session_scope_kilns(&session), Some(10))
                 .await
                 .daemon_err()?;
-            // `{matches, total}` of transcript lines, not of sessions — a
-            // match never carries a `title` (`server/session/list.rs:277`).
-            let found: super::session::SessionSearchResponse =
-                super::session::daemon_shape(results, "session.search")?;
-
-            let result_text = if found.matches.is_empty() {
-                match found.note {
-                    // An unscoped search looked at nothing; say so rather
-                    // than reporting "no results" about a corpus it never read.
-                    Some(note) => format!("No results found for '{}': {}", args, note),
-                    None => format!("No results found for '{}'", args),
-                }
-            } else {
-                let mut lines = vec![format!(
-                    "Search results for '{}' ({} found):",
-                    args, found.total
-                )];
-                for (i, m) in found.matches.iter().enumerate() {
-                    // Line 0 marks a title match on a session whose
-                    // transcript has not reached disk yet; there is no line
-                    // number worth printing for it.
-                    let location = if m.line == 0 {
-                        m.session_id.clone()
-                    } else {
-                        format!("{} (line {})", m.session_id, m.line)
-                    };
-                    lines.push(format!("  {}. {} — {}", i + 1, location, m.context));
-                }
-                lines.join("\n")
-            };
-
-            Ok(Json(CommandResponse {
-                result: result_text,
-                response_type: "success".to_string(),
-            }))
+            Ok(CommandResponse::success(found.to_text(args)))
         }
-        "models" => {
+        // No name lists the models; a name switches to it.
+        BuiltinCommand::Model if args.is_empty() => {
             let models = state.daemon.session_list_models(&id).await.daemon_err()?;
-            let result = if models.is_empty() {
-                "No models available".to_string()
-            } else {
-                let mut lines = vec![format!("Available models ({}):", models.len())];
-                for model in &models {
-                    lines.push(format!("  • {}", model));
-                }
-                lines.join("\n")
-            };
-            Ok(Json(CommandResponse {
-                result,
-                response_type: "success".to_string(),
-            }))
-        }
-        "model" => {
-            if args.is_empty() {
-                return Ok(Json(CommandResponse {
-                    result: "Usage: /model <name>".to_string(),
-                    response_type: "error".to_string(),
-                }));
+            if models.is_empty() {
+                return Ok(CommandResponse::success("No models available"));
             }
+            let mut lines = vec![format!("Available models ({}):", models.len())];
+            lines.extend(models.iter().map(|model| format!("  • {model}")));
+            Ok(CommandResponse::success(lines.join("\n")))
+        }
+        BuiltinCommand::Model => {
             state
                 .daemon
                 .session_switch_model(&id, args)
                 .await
                 .daemon_err()?;
-            Ok(Json(CommandResponse {
-                result: format!("Switched model to {}", args),
-                response_type: "success".to_string(),
-            }))
+            Ok(CommandResponse::success(format!(
+                "Switched model to {args}"
+            )))
         }
-        // `session.clear`, the same user clear as the TUI's `/clear`. The transcript keeps
-        // the history, and the daemon's `context_cleared` draws the divider.
-        "clear" => {
+        BuiltinCommand::Mode => {
+            let modes = state.daemon.session_list_modes(&id).await.daemon_err()?;
+            let Some(next) = modes.next_mode() else {
+                return Ok(CommandResponse::error("This session has no next mode."));
+            };
+            state
+                .daemon
+                .session_set_mode(&id, next)
+                .await
+                .daemon_err()?;
+            Ok(CommandResponse::success(format!("Mode: {next}")))
+        }
+        // `session.clear`, the same user clear as the TUI's. The transcript
+        // keeps the history, and the daemon's `context_cleared` draws the
+        // divider.
+        BuiltinCommand::Clear => {
             state.daemon.session_clear(&id).await.daemon_err()?;
-            Ok(Json(CommandResponse {
-                result: "Context cleared".to_string(),
-                response_type: "success".to_string(),
-            }))
+            Ok(CommandResponse::success("Context cleared"))
         }
-        "export" => {
-            // Return a hint — the actual export is handled by the existing export endpoint
-            Ok(Json(CommandResponse {
-                result: "Use the export dialog to download your session as markdown.".to_string(),
-                response_type: "success".to_string(),
-            }))
+        BuiltinCommand::Undo => {
+            let Ok(count) = (if args.is_empty() {
+                Ok(1)
+            } else {
+                args.parse::<usize>()
+            }) else {
+                return Ok(CommandResponse::error("Usage: /undo [turns]"));
+            };
+            let undone = state
+                .daemon
+                .session_undo(&id, count.max(1))
+                .await
+                .daemon_err()?;
+            Ok(CommandResponse::success(format!(
+                "Undid {} turn(s)",
+                undone.len()
+            )))
         }
-        _ => Ok(Json(CommandResponse {
-            result: format!(
-                "Unknown command: /{}. Type /help for available commands.",
-                cmd
-            ),
-            response_type: "error".to_string(),
+        BuiltinCommand::Resume if args.is_empty() => Ok(CommandResponse::success(
+            "Choose a session in the session list, or type /resume <session>.",
+        )),
+        BuiltinCommand::Resume => Ok(Json(CommandResponse {
+            result: format!("Opening {args}"),
+            response_type: "success".to_string(),
+            open_session: Some(args.to_string()),
         })),
+        // The export endpoint downloads the file; the dialog calls it.
+        BuiltinCommand::Export => Ok(CommandResponse::success(
+            "Use the export dialog to download your session as markdown.",
+        )),
     }
 }
 

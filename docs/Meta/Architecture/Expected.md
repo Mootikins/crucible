@@ -1059,7 +1059,7 @@ others.
 
 - Responsibility: the session record and its lifecycle; notifications; scratch workspaces.
 - Owns: `Session`, `SessionConfig`, `Notification`, the `session_kilns` index.
-- Operations: `session.create|get|list|pause|resume|end|archive|unarchive|delete|set_title|set_workspace|connect_kiln|disconnect_kiln`; every `session.set_*` and `session.get_*` knob; `session.list_modes|set_mode|get_mode`; `session.switch_model|list_models`; `session.pending_interactions`; `session.cache_stats`; `session.search`; `session.render_markdown`; `session.export`; `session.fork`; notification add, list and dismiss; the title sweep; the archive sweep; revive on send.
+- Operations: `session.create|get|list|pause|resume|end|archive|unarchive|delete|set_title|set_workspace|connect_kiln|disconnect_kiln`; every `session.set_*` and `session.get_*` knob; `session.list_modes|set_mode|get_mode`; `session.commands`; `session.switch_model|list_models`; `session.pending_interactions`; `session.cache_stats`; `session.search`; `session.render_markdown`; `session.export`; `session.fork`; notification add, list and dismiss; the title sweep; the archive sweep; revive on send.
 - Must never know: provider wire formats, tool execution, rendering.
 
 ### 4.8 SessionLog
@@ -1319,11 +1319,10 @@ route uses the daemon's field name.
 GET  /health  /ready
 POST /api/auth/login  /api/auth/logout
 GET  /api/session  POST /api/session  GET /api/session/:id  DELETE /api/session/:id
-POST /api/session/:id/{send,cancel,pause,resume,archive,unarchive,export,title,workspace,kiln,mode,model}
-GET  /api/session/:id/{history,models,mode,config}  PUT /api/session/:id/config/:knob
+POST /api/session/:id/{send,cancel,pause,resume,archive,unarchive,export,title,workspace,kiln,mode,model,command}
+GET  /api/session/:id/{history,models,mode,config,commands}  PUT /api/session/:id/config/:knob
 GET  /api/chat/events/:id              (SSE)
 GET  /api/interactions/pending  POST /api/interaction/respond
-GET  /api/commands
 GET  /api/kilns  GET /api/kiln/graph  GET /api/kiln/file  PUT /api/kiln/file
 GET  /api/notes  GET /api/notes/:name  PUT /api/notes/:name  GET /api/notes/resolve  GET /api/backlinks
 POST /api/search/{grep,semantic,vectors}
@@ -1692,8 +1691,10 @@ REPL: `:quit` `:q`, `:help`, `:clear`, `:model`, `:set`, `:export`, `:messages`
 `:msgs` `:notifications`, `:mcp`, `:config`, `:palette` `:commands`, `:lua`
 `:=`, `:pick`, `:plugins`, `:reload`, `:undo`.
 
-Slash built-ins: `/mode`, `/default`, `/undo`, `/help`, plus one per declared
-mode, plus plugin commands. Anything else forwards to the agent.
+Slash built-ins: `/help`, `/clear`, `/model`, `/mode`, `/undo`, `/resume`,
+`/export`, `/search`. The daemon adds one command per declared mode, one per
+plugin command, one per discovered skill, and one per command an ACP agent
+advertises, in that order. Anything else forwards to the agent.
 
 ### 8.13 Autocomplete triggers
 
@@ -1778,8 +1779,10 @@ gains a per-backend abstraction. The `oci` plugin is the reference. [D21]
 ### 9.6 A mode
 
 Declare `cru.modes.<id> = { tools = selector, permissions = { default, allow,
-deny, ask }, label, color }` in `init.lua`. The TUI derives the badge, the
-BackTab cycle and the `/<id>` command from `session.list_modes`.
+deny, ask }, label, color }` in `init.lua`. The TUI derives the badge and the
+BackTab cycle from `session.list_modes`. The daemon adds the `/<id>` command
+to the session's catalog from the same list, and every client reaches it
+through `session.commands`.
 
 ### 9.7 A context strategy
 

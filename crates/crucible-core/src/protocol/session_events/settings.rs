@@ -63,6 +63,11 @@ event_payload! {
             #[serde(default)]
             limit: u32,
         },
+        /// The session's ACP agent advertised a new command list. A client
+        /// reads the catalog again with `session.commands`. A plugin reload
+        /// sends no such event yet, so a client also reads the catalog again
+        /// after a reload that it asked for.
+        "commands_changed" => CommandsChanged {},
     }
 }
 

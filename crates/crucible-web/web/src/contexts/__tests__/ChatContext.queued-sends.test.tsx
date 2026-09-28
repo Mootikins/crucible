@@ -48,7 +48,7 @@ beforeEach(() => {
       if (holdSend) {
         return new Promise((resolve) => holdSend!(resolve));
       }
-      return { message_id: `turn-${++turnCounter}` };
+      return { outcome: 'turn', message_id: `turn-${++turnCounter}` };
     },
     [CANCEL]: () => ({ cancelled: true }),
   });

@@ -426,6 +426,26 @@ impl DaemonClient {
         .await
     }
 
+    /// The session's command catalog, in the order of its sources.
+    pub async fn session_commands(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crucible_core::types::SessionCommand>> {
+        #[derive(serde::Deserialize)]
+        struct Reply {
+            commands: Vec<crucible_core::types::SessionCommand>,
+        }
+        let reply: Reply = self
+            .typed_call_with_retry(
+                "session.commands",
+                SessionIdRequest {
+                    session_id: session_id.to_string(),
+                },
+            )
+            .await?;
+        Ok(reply.commands)
+    }
+
     pub async fn session_list_modes(
         &self,
         session_id: &str,

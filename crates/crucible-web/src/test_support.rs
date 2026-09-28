@@ -860,7 +860,24 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.unarchive" => json!({"archived": false}),
         "session.subscribe" => json!(null),
         "session.configure_agent" => json!(null),
-        "session.send_message" => json!({"message_id": "msg-001"}),
+        "session.send_message" => json!({
+            "session_id": "test-session-001",
+            "outcome": "turn",
+            "message_id": "msg-001"
+        }),
+        // The built-in commands, then one plugin command.
+        "session.commands" => {
+            let mut commands: Vec<Value> = crucible_core::types::BuiltinCommand::entries()
+                .into_iter()
+                .map(|c| serde_json::to_value(c).unwrap())
+                .collect();
+            commands.push(json!({
+                "name": "reflect", "description": "Run a reflection pass",
+                "kind": "plugin", "plugin": "alpha"
+            }));
+            json!({ "session_id": "test-session-001", "commands": commands })
+        }
+        "session.undo" => json!({ "undone": [] }),
         "session.interaction_respond" => json!(null),
         "session.list_models" => json!({"models": ["llama3.2", "mistral"]}),
         "session.switch_model" => json!(null),

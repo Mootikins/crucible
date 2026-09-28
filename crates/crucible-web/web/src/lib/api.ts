@@ -1,4 +1,5 @@
 import type { components } from './api-schema';
+import type { SessionCommand } from './slash-commands';
 import { APP_CALLER, callerParam, client, decode, expectOk, type ApiError } from './api-client';
 import { getBus } from './bus';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
@@ -48,6 +49,8 @@ import type {
  * or a value the browser assembles — keeps its hand-written form and says so.
  */
 type Schemas = components['schemas'];
+
+export type { SessionCommand };
 
 /**
  * What `GET /api/config` answers.
@@ -176,16 +179,19 @@ function openJson<T>(value: unknown): T {
 // Chat Endpoints
 // =============================================================================
 
+/** What the daemon did with a sent message: a turn, or a command that ran without one. */
+export type SendOutcome = Schemas['SendOutcome'];
+
 /**
  * Send a chat message to a session.
- * Returns the assigned message_id. Does NOT stream events —
+ * Returns what the daemon did with it. A turn does NOT stream here —
  * subscribe to events separately via `subscribeToEvents`.
  */
 export async function sendChatMessage(
   sessionId: string,
   content: string,
   comments?: CommentRef[],
-): Promise<string> {
+): Promise<SendOutcome> {
   return decode(
     await client.POST('/api/chat/send', {
       // The references only. The daemon builds the context of each comment.
@@ -193,7 +199,7 @@ export async function sendChatMessage(
     }),
     'Failed to send message',
     { notify: true },
-  ).message_id;
+  );
 }
 
 /**
@@ -228,6 +234,7 @@ export const SSE_EVENT_TYPES = [
   'precognition_result',
   'mode_changed',
   'title_changed',
+  'commands_changed',
 ] as const satisfies readonly Schemas['ChatEvent']['type'][];
 
 /** Every daemon event name the tuple above forgot. Empty, or the build stops. */
@@ -1308,7 +1315,7 @@ export async function exportSession(sessionId: string): Promise<string> {
 
 export type CommandResult = Schemas['CommandResponse'];
 
-/** Execute a slash command in a session. */
+/** Execute a built-in slash command in a session. */
 export async function executeCommand(sessionId: string, command: string): Promise<CommandResult> {
   return decode(
     await client.POST('/api/session/{id}/command', {
@@ -1319,19 +1326,19 @@ export async function executeCommand(sessionId: string, command: string): Promis
   );
 }
 
-/** One completable slash command. `args` is the argument placeholder, empty
- * for nullary commands. */
-export type SlashCommand = Schemas['SlashCommand'];
-
 /**
- * The slash commands the composer can complete.
+ * The command catalog of one session, which the composer completes from.
  *
- * Served by the server from the same constant `execute_command` dispatches on,
- * so the completion list can't drift from what actually runs — the previously
- * hand-maintained frontend copy had already lost `/models`.
+ * The daemon joins the built-in, mode, plugin, skill and agent commands. A
+ * `commands_changed` event says when the list moved.
  */
-export async function listSlashCommands(): Promise<SlashCommand[]> {
-  return decode(await client.GET('/api/commands'), 'Failed to list commands').commands;
+export async function listSessionCommands(
+  sessionId: string,
+): Promise<SessionCommand[]> {
+  return decode(
+    await client.GET('/api/session/{id}/commands', { params: { path: { id: sessionId } } }),
+    'Failed to list commands',
+  ).commands;
 }
 
 // =============================================================================

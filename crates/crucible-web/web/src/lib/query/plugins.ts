@@ -63,6 +63,9 @@ function invalidateRoster(client: QueryClient): Promise<void> {
     client.invalidateQueries({ queryKey: keys.pluginList() }),
     client.invalidateQueries({ queryKey: keys.pluginOptions() }),
     client.invalidateQueries({ queryKey: keys.pluginCommands() }),
+    // Every session's catalog lists plugin commands, and the daemon does not
+    // announce a plugin change yet.
+    client.invalidateQueries({ queryKey: keys.slashCommands() }),
   ]).then(() => undefined);
 }
 

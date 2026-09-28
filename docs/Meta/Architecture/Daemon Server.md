@@ -92,7 +92,7 @@ Directory `crates/crucible-daemon/src/rpc/` (dispatch layer):
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-daemon/src/rpc/context.rs` | 482 | `RpcContext`, `RpcContextParams`, `DeferredShutdown`: the shared state every handler dispatches against; builds `SessionLifecycle`, binds it to delegation, and binds the notification hub to `AgentManager`. |
-| `crates/crucible-daemon/src/rpc/dispatch.rs` | 4308 | `RpcMethod`/`METHODS`/`RpcDispatcher::dispatch`: the closed method table and cross-cutting session/config/plugin logic, including the `diff.*`/`proposal.*`/`base.*`/`fs.read` families (no `review.*` methods remain). |
+| `crates/crucible-daemon/src/rpc/dispatch.rs` | 4317 | `RpcMethod`/`METHODS`/`RpcDispatcher::dispatch`: the closed method table and cross-cutting session/config/plugin logic, including the `diff.*`/`proposal.*`/`base.*`/`fs.read` families (no `review.*` methods remain) and `session.commands`. |
 | `crates/crucible-daemon/src/rpc/knob_method.rs` | 101 | `rpc_set_method`: the total mapping from `SessionKnob` to its writing `RpcMethod`. |
 | `crates/crucible-daemon/src/rpc/missing_session_contract.rs` | 383 | `#[cfg(test)]` pinned table of every session-taking method's answer for a missing session — seven distinct answers now that the review family (an eighth) is gone. |
 | `crates/crucible-daemon/src/rpc/mod.rs` | 19 | Module root; re-exports the RPC public surface. |
@@ -152,10 +152,10 @@ Directory `crates/crucible-daemon/src/server/session/` (session RPC surface):
 | `crates/crucible-daemon/src/server/session/create.rs` | 836 | `session.create`: kiln/workspace/agent admission (SSRF check, then one shared trust gate) before persisting. |
 | `crates/crucible-daemon/src/server/session/lifecycle.rs` | 319 | pause/resume/resume_from_storage/history/end/delete/archive/unarchive/replay/compact, with pause/end/delete/archive funneling through `SessionLifecycle::stop`. |
 | `crates/crucible-daemon/src/server/session/list.rs` | 762 | `session.list`/`search`/`get` (the `get` reply now includes `plugin_approvals`/`plugin_turn_limit`). |
-| `crates/crucible-daemon/src/server/session/messaging.rs` | 532 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. |
+| `crates/crucible-daemon/src/server/session/messaging.rs` | 610 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. `handle_session_send_message` reads `content` through `AgentManager::slash_route` first — a mode, a plugin command or a skill is routed there, and the reply is a `SendOutcome`, not a bare `message_id`. |
 | `crates/crucible-daemon/src/server/session/mod.rs` | 273 | Module aggregator plus the post-create background `spawn_setup_task` (typed `SetupPayload` events). |
 | `crates/crucible-daemon/src/server/session/models.rs` | 200 | `switch_model`/`list_models`/`models.list`/`providers.list`/`fork` (fork now refuses an ACP-run parent by name). |
-| `crates/crucible-daemon/src/server/session/modes.rs` | 430 | `list_modes`/`list_knobs`/`list_agent_options`/`set_agent_option`; each mode descriptor now carries a `writes: WriteMode` (`Apply`/`Propose`). |
+| `crates/crucible-daemon/src/server/session/modes.rs` | 456 | `list_modes`/`list_knobs`/`list_agent_options`/`set_agent_option`; each mode descriptor now carries a `writes: WriteMode` (`Apply`/`Propose`). `handle_session_commands` answers `session.commands` by calling `AgentManager::session_commands`. |
 | `crates/crucible-daemon/src/server/session/notifications.rs` | 98 | `add_notification`/`list_notifications`/`dismiss_notification`, reading/writing `NotificationHub` directly for a live-or-stored session. |
 | `crates/crucible-daemon/src/server/session/params.rs` | 311 | `set_mode`/`set_precognition`/`get_*`/`undo`/`can_undo`/`undo_depth`/`cache_stats`/`set_plugin_turn_limit`/`get_plugin_turn_limit`. |
 | `crates/crucible-daemon/src/server/session/scope.rs` | 351 | `caller_kiln_scope`, `connect_kiln`/`disconnect_kiln`/`set_workspace`, `connect_kiln` now gated by the one shared trust gate. |

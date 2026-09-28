@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 use crate::acp::session::ModelChoice;
 use crate::acp::{ClientError, Result};
 use crucible_core::turn::TurnEvent;
-use crucible_core::types::{AgentKeys, CanonicalToolCall};
+use crucible_core::types::{AgentKeys, CanonicalToolCall, CommandKind, SessionCommand};
 
 mod connection;
 mod recording;
@@ -74,6 +74,9 @@ struct Shared {
     /// The key table of the agent, from its profile. It classifies each
     /// tool call.
     keys: Vec<AgentKeys>,
+    /// The commands from the latest `available_commands_update`. An agent
+    /// may send one at any time, also outside a turn.
+    commands: tokio::sync::watch::Sender<Vec<SessionCommand>>,
 }
 
 /// One connection to one ACP agent.
@@ -251,6 +254,12 @@ impl CrucibleAcpClient {
         lock(&self.shared).model_update.take()
     }
 
+    /// The commands that the agent advertises. The receiver sees each new
+    /// list, also a list that comes outside a turn.
+    pub fn commands(&self) -> tokio::sync::watch::Receiver<Vec<SessionCommand>> {
+        lock(&self.shared).commands.subscribe()
+    }
+
     /// Whether the agent takes a Streamable HTTP MCP server. `false` before
     /// the handshake.
     pub fn agent_supports_http_mcp(&self) -> bool {
@@ -272,13 +281,15 @@ fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Keep the model choice. Apply the other updates to the turn that runs.
+/// Keep the model choice and the command list. Apply the other updates to
+/// the turn that runs.
 fn route_update(shared: &Mutex<Shared>, update: SessionUpdate) {
     let mut shared = lock(shared);
     let Shared {
         turn,
         model_update,
         keys,
+        commands,
     } = &mut *shared;
 
     match update {
@@ -290,10 +301,40 @@ fn route_update(shared: &Mutex<Shared>, update: SessionUpdate) {
                 *model_update = Some(choice);
             }
         }
+        SessionUpdate::AvailableCommandsUpdate(update) => {
+            tracing::debug!(
+                count = update.available_commands.len(),
+                "ACP agent advertised its commands"
+            );
+            commands.send_replace(
+                update
+                    .available_commands
+                    .into_iter()
+                    .map(agent_command)
+                    .collect(),
+            );
+        }
         update => match turn {
             Some(turn) => streaming::apply_update(update, &mut turn.state, &turn.out, keys),
             None => tracing::debug!(?update, "Ignoring a session update outside a turn"),
         },
+    }
+}
+
+/// An advertised command as an entry of the session's command catalog.
+fn agent_command(command: agent_client_protocol::schema::v1::AvailableCommand) -> SessionCommand {
+    use agent_client_protocol::schema::v1::AvailableCommandInput;
+    let input_hint = match command.input {
+        Some(AvailableCommandInput::Unstructured(input)) => Some(input.hint),
+        // The schema marks the enum non-exhaustive. A later input form still
+        // takes the text after the name, so the entry only loses its hint.
+        Some(_) | None => None,
+    };
+    SessionCommand {
+        name: command.name,
+        description: command.description,
+        input_hint,
+        kind: CommandKind::Agent,
     }
 }
 

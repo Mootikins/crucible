@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use crucible_core::config::KilnName;
+use crucible_core::types::SendOutcome;
 use std::path::{Path, PathBuf};
 
 use super::DaemonClient;
@@ -429,12 +430,6 @@ pub struct SessionCleanupRequest {
 
 // --- Session RPC Response Types ---
 
-/// Response from `session.send_message`.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct SessionSendMessageResponse {
-    pub message_id: String,
-}
-
 /// Response from `session.cancel`.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SessionCancelResponse {
@@ -673,7 +668,7 @@ impl DaemonClient {
         session_id: &str,
         content: &str,
         is_interactive: bool,
-    ) -> Result<String> {
+    ) -> Result<SendOutcome> {
         self.session_send_message_with_permissions(session_id, content, is_interactive, None)
             .await
     }
@@ -684,21 +679,18 @@ impl DaemonClient {
         content: &str,
         is_interactive: bool,
         permission_mode: Option<String>,
-    ) -> Result<String> {
-        let resp: SessionSendMessageResponse = self
-            .typed_call(
-                "session.send_message",
-                SessionSendMessageRequest {
-                    session_id: session_id.to_string(),
-                    content: content.to_string(),
-                    is_interactive,
-                    permission_mode,
-                    comments: Vec::new(),
-                },
-            )
-            .await?;
-
-        Ok(resp.message_id)
+    ) -> Result<SendOutcome> {
+        self.typed_call(
+            "session.send_message",
+            SessionSendMessageRequest {
+                session_id: session_id.to_string(),
+                content: content.to_string(),
+                is_interactive,
+                permission_mode,
+                comments: Vec::new(),
+            },
+        )
+        .await
     }
 
     /// Send a message with the stored review comments that it attaches.
@@ -710,20 +702,18 @@ impl DaemonClient {
         content: &str,
         comments: &[crucible_core::diff::CommentRef],
         is_interactive: bool,
-    ) -> Result<String> {
-        let resp: SessionSendMessageResponse = self
-            .typed_call(
-                "session.send_message",
-                SessionSendMessageRequest {
-                    session_id: session_id.to_string(),
-                    content: content.to_string(),
-                    is_interactive,
-                    permission_mode: None,
-                    comments: comments.to_vec(),
-                },
-            )
-            .await?;
-        Ok(resp.message_id)
+    ) -> Result<SendOutcome> {
+        self.typed_call(
+            "session.send_message",
+            SessionSendMessageRequest {
+                session_id: session_id.to_string(),
+                content: content.to_string(),
+                is_interactive,
+                permission_mode: None,
+                comments: comments.to_vec(),
+            },
+        )
+        .await
     }
 
     /// All pending interactions across sessions (`{pending: [{session_id,
@@ -805,7 +795,7 @@ impl DaemonClient {
         query: &str,
         kilns: &[KilnName],
         limit: Option<usize>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crucible_core::session::SessionSearchResponse> {
         self.typed_call(
             "session.search",
             SessionSearchRequest {

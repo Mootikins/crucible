@@ -508,26 +508,7 @@ impl CrucibleMcpServer {
         );
         let body = match discovery.discover() {
             Ok(skills) => match crate::skills::discovery::resolve_skill(&skills, &name) {
-                Ok(Some(resolved)) => {
-                    let mut body = resolved.skill.body.clone();
-                    // Advisory tool restriction: Crucible skills are context
-                    // injection with no activation lifecycle, so allowed-tools is
-                    // surfaced as a soft instruction rather than a hard gate. The
-                    // agent is asked to self-restrict for the duration of the skill.
-                    if let Some(tools) = resolved
-                        .skill
-                        .allowed_tools
-                        .as_ref()
-                        .filter(|t| !t.is_empty())
-                    {
-                        body.push_str(&format!(
-                            "\n\n---\n**Tool restriction (skill `{name}`):** While working on \
-                             this skill, use only these tools: {}.",
-                            tools.join(", ")
-                        ));
-                    }
-                    body
-                }
+                Ok(Some(resolved)) => crate::skills::skill_instructions(&name, &resolved.skill),
                 Ok(None) => {
                     let mut names: Vec<&str> = skills.keys().map(String::as_str).collect();
                     names.sort_unstable();

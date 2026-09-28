@@ -152,12 +152,9 @@ pub struct OilChatApp {
     workspace_files: Vec<String>,
     /// Kiln note names (for #-note autocomplete)
     kiln_notes: Vec<String>,
-    /// Known slash commands (name, description) for autocomplete — populated by runner
-    slash_commands: Vec<(String, String)>,
-    /// Plugin-declared command names. `/name` for one of these dispatches to
-    /// the daemon's `plugin.run_command` instead of forwarding to the agent
-    /// as a chat message — plugin commands are invocations, not prose.
-    plugin_command_names: std::collections::HashSet<String>,
+    /// The session's command catalog, from `session.commands`. Until the
+    /// first answer it holds the built-in commands.
+    commands: Vec<crucible_core::types::SessionCommand>,
 }
 
 // ─── View, update, message ───────────────────────────────────────────────────
@@ -428,20 +425,27 @@ impl OilChatApp {
         self.kiln_notes = notes;
     }
 
-    pub(crate) fn set_slash_commands(&mut self, commands: Vec<(String, String)>) {
-        self.slash_commands = commands;
-    }
-
-    /// Register plugin-declared commands: names route `/name` to the daemon's
-    /// `plugin.run_command`, and each also joins the slash autocomplete list.
-    pub(crate) fn set_plugin_commands(&mut self, commands: Vec<(String, String)>) {
-        for (name, description) in commands {
-            if !self.slash_commands.iter().any(|(n, _)| n == &name) {
-                self.slash_commands
-                    .push((name.clone(), format!("{description} (plugin)")));
-            }
-            self.plugin_command_names.insert(name);
-        }
+    /// The slash commands as (name, description) rows for completion. The
+    /// description names the source of a command that the daemon runs.
+    pub(crate) fn slash_command_rows(&self) -> Vec<(String, String)> {
+        use crucible_core::types::CommandKind;
+        self.commands
+            .iter()
+            .map(|command| {
+                let source = match &command.kind {
+                    CommandKind::Builtin { .. } => None,
+                    CommandKind::Mode { .. } => Some("mode"),
+                    CommandKind::Plugin { .. } => Some("plugin"),
+                    CommandKind::Skill => Some("skill"),
+                    CommandKind::Agent => Some("agent"),
+                };
+                let description = match source {
+                    Some(source) => format!("{} ({source})", command.description),
+                    None => command.description.clone(),
+                };
+                (command.name.clone(), description)
+            })
+            .collect()
     }
 
     pub(crate) fn set_shell_output_dir(&mut self, path: PathBuf) {

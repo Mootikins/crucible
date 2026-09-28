@@ -452,10 +452,17 @@ running loop rather than staying in it: it guards against resuming the
 already-open session (toast, no-op) or a session with a turn in flight
 (warning, no-op), else sets `self.next_session` so `run_with_factory`
 returns `ChatExit::Resume(id)` instead of looping again. `EvalLua` and
-`RunPluginCommand` unwrap an RPC error through the shared
+`ExecuteSlashCommand` unwrap an RPC error through the shared
 `crucible_daemon::rpc_error_message`, so both paths show the daemon's
-`plugin '<name>' command '<command>' failed: <reason>` text instead of a raw
-envelope. `ExportSession` no longer reads a client-local session directory;
+failure text instead of a raw envelope.
+`ExecuteSlashCommand` sends the whole `/name args` line to
+`session.send_message`; `actions.rs::send_user_message` reads the
+`SendOutcome` it answers and shows `SendOutcome::Command`'s result as a
+`SystemNotice`, `/name: <result>`, or nothing at all for `SendOutcome::Turn`,
+whose events already arrive on the session's event stream. There is no
+`RunPluginCommand` arm any more: a plugin command is one more name the
+daemon's catalog routes, the same as a mode or a skill.
+`ExportSession` no longer reads a client-local session directory;
 it reads the agent's session id and asks the daemon's `session_export_to_file`
 RPC to write the file, since `OilChatRunner` keeps no session directory to
 export from (`shell_output_dir` exists only for the shell modal's saved

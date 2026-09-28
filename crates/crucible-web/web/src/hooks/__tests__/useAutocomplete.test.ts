@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRoot, createSignal } from 'solid-js';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { FileEntry } from '@/lib/types';
-import type { SlashCommand } from '@/lib/api';
+import type { SessionCommand } from '@/lib/api';
 import { notificationActions, notificationStore } from '@/stores/notificationStore';
 import {
   fuzzyFilter,
@@ -13,18 +13,18 @@ import {
 
 /**
  * Nothing in `@/lib/api` is stubbed. The command list is held by
- * `lib/query/commands.ts` now, so the hook runs the real `listSlashCommands`
+ * `lib/query/commands.ts` now, so the hook runs the real `listSessionCommands`
  * against the mocked fetch — which is what proves the list is fetched once and
  * that a refusal does not poison the cache.
  */
 
 /** What each route answers next. */
-let commands: SlashCommand[] = [];
+let commands: SessionCommand[] = [];
 let files: FileEntry[] = [];
 let notes: FileEntry[] = [];
 /** What `GET /api/fs/list` answers, by the `rel_path` it is asked for. */
 let dirs: Record<string, Array<{ name: string; rel_path: string; is_dir: boolean }>> = {};
-/** When true, `GET /api/commands` refuses once. */
+/** When true, `GET /api/session/s-1/commands` refuses once. */
 let refuseCommands = false;
 /** When true, `GET /api/fs/list` refuses the root, as the daemon does for a root it did not admit. */
 let refuseDirs = false;
@@ -33,7 +33,7 @@ let env: TestQueryEnv;
 
 function installEnv(): void {
   env = createTestQueryEnv({
-    'GET /api/commands': () => {
+    'GET /api/session/s-1/commands': () => {
       if (!refuseCommands) return { commands };
       refuseCommands = false;
       return new Response(JSON.stringify({ error: { code: 503, message: 'offline' } }), {
@@ -93,6 +93,7 @@ function harness(initial = '', workspace: string | null = null) {
     setInput: setInput as never,
     kilnPath: () => '/kiln',
     workspacePath: () => workspace,
+    sessionId: () => 's-1',
     textareaRef: () => textarea,
   });
   const type = async (value: string, cursor = value.length) => {
@@ -106,9 +107,15 @@ function harness(initial = '', workspace: string | null = null) {
 describe('useAutocomplete slash commands', () => {
   beforeEach(() => {
     commands = [
-      { name: 'help', args: '', description: 'Show available commands' },
-      { name: 'models', args: '', description: 'List available models' },
-      { name: 'model', args: '<name>', description: 'Switch to a different model' },
+      { name: 'help', description: 'Show available commands', kind: 'builtin', command: 'help' },
+      { name: 'models', description: 'List available models', kind: 'plugin', plugin: 'alpha' },
+      {
+        name: 'model',
+        description: 'Switch to a different model',
+        input_hint: '[name]',
+        kind: 'builtin',
+        command: 'model',
+      },
     ];
     files = [];
     notes = [];
@@ -126,13 +133,17 @@ describe('useAutocomplete slash commands', () => {
     });
   });
 
-  it('serves commands from the server, not a hardcoded list', async () => {
+  it('serves commands from the session catalog, not a hardcoded list', async () => {
     await createRoot(async (dispose) => {
       const { auto, type } = harness();
       await type('/');
-      expect(env.fetch.calls('GET /api/commands')).toBe(1);
-      // Descriptions come across for the popup's second line.
+      expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(1);
+      // Descriptions come across for the popup's second line, with the source
+      // of a command that the daemon runs.
       expect(auto.items().find((i) => i.label === '/help')?.detail).toBe('Show available commands');
+      expect(auto.items().find((i) => i.label === '/models')?.detail).toBe(
+        'List available models (plugin)',
+      );
       dispose();
     });
   });
@@ -147,13 +158,13 @@ describe('useAutocomplete slash commands', () => {
       const second = harness();
       await second.type('/h');
       expect(second.auto.isOpen()).toBe(true);
-      expect(env.fetch.calls('GET /api/commands')).toBe(1);
+      expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(1);
 
       // The seam: a daemon restarted under a browser that stayed open serves a
       // different set, and this is what lets the next keystroke see it.
       await resetCommandCache();
       await first.type('/m');
-      expect(env.fetch.calls('GET /api/commands')).toBe(2);
+      expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(2);
       dispose();
     });
   });

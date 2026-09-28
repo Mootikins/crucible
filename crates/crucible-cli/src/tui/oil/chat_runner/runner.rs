@@ -61,12 +61,6 @@ impl OilChatRunner {
         }
         app.set_show_thinking(self.show_thinking);
         app.set_show_diffs(self.show_diffs);
-        if !self.slash_commands.is_empty() {
-            app.set_slash_commands(std::mem::take(&mut self.slash_commands));
-        }
-        if !self.plugin_commands.is_empty() {
-            app.set_plugin_commands(std::mem::take(&mut self.plugin_commands));
-        }
 
         // The banner goes in before the first frame, so the session opens
         // saying what knowledge it is attached to. A replay attaches nothing

@@ -319,6 +319,8 @@ fn settings_msgs(settings: SettingsPayload) -> Vec<ChatAppMsg> {
         SettingsPayload::ModeChanged { mode } => non_empty(mode)
             .map(|m| vec![ChatAppMsg::ModeSynced(m)])
             .unwrap_or_default(),
+        // The agent advertised a new command list.
+        SettingsPayload::CommandsChanged {} => vec![ChatAppMsg::FetchCommands],
         // The rest are acknowledgements of a change this client either made or
         // can re-read from the session record.
         _ => vec![],

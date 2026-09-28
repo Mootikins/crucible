@@ -137,6 +137,7 @@ rpc_methods! {
     SessionGetMode = "session.get_mode",
     SessionListModels = "session.list_models",
     SessionListModes = "session.list_modes",
+    SessionCommands = "session.commands",
     SessionListKnobs = "session.list_knobs",
     SessionListAgentOptions = "session.list_agent_options",
     SessionSetAgentOption = "session.set_agent_option",
@@ -840,6 +841,14 @@ impl RpcDispatcher {
             RpcMethod::SessionListModes => forward!(
                 id,
                 crate::server::session::handle_session_list_modes(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::SessionCommands => forward!(
+                id,
+                crate::server::session::handle_session_commands(
                     req.clone(),
                     &self.ctx.agents,
                     &self.ctx.event_tx

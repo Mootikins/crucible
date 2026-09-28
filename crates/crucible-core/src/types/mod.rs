@@ -14,6 +14,7 @@
 //! This module serves as a central re-export point for types that cross module boundaries.
 
 pub mod acp;
+pub mod command;
 pub mod database;
 pub mod knob;
 pub mod mcp_status;
@@ -54,6 +55,9 @@ pub use crate::types::mode::{
 pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
 
 // Re-export tool reference types
+pub use crate::types::command::{
+    split_slash_command, BuiltinCommand, CommandKind, SendOutcome, SessionCommand,
+};
 pub use crate::types::tool_call::{BuiltinKind, CanonicalToolCall, RenderField, ToolRender};
 pub use crate::types::tool_match::{classify_acp, AgentKeys, KeyPattern, RawToolCall};
 pub use crate::types::tool_ref::{ToolRef, ToolSource};

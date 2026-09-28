@@ -11,6 +11,8 @@
 
 use std::path::PathBuf;
 
+use crucible_core::types::BuiltinCommand;
+
 use crate::tui::oil::app::Action;
 use crate::tui::oil::commands::{
     classify_key_without_value, classify_set_value, key_home, CliValue, DropKind, KeyHome,
@@ -21,7 +23,7 @@ use crate::tui::oil::config::{ConfigValue, ModSource};
 use super::messages::ChatAppMsg;
 use super::model_state::ModelListState;
 use super::repl_command::ReplCommand;
-use super::state::{next_mode, DEFAULT_MODE};
+use super::state::next_mode;
 use super::OilChatApp;
 
 /// Suggest the closest command for a typo. Each name and alias of every
@@ -118,16 +120,28 @@ fn help_text(category: Option<&str>) -> String {
 }
 
 impl OilChatApp {
+    /// Run a built-in command here, and send every other `/name` to the
+    /// daemon, which routes it from the session's catalog.
+    ///
+    /// The match over [`BuiltinCommand`] has no wildcard, so a new built-in
+    /// command does not compile until the TUI handles it.
     pub(super) fn handle_slash_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
-        let parts: Vec<&str> = cmd[1..].splitn(2, ' ').collect();
-        let command = parts[0].to_lowercase();
+        let Some((name, arg)) = crucible_core::types::split_slash_command(cmd) else {
+            return Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string()));
+        };
+        let Some(command) = BuiltinCommand::from_name(&name.to_lowercase()) else {
+            return Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string()));
+        };
+        let arg = Some(arg).filter(|a| !a.is_empty());
 
-        match command.as_str() {
-            "mode" => self.cycle_mode(),
-            "default" => self.set_mode_with_status(DEFAULT_MODE),
-            "undo" => {
-                let count = parts
-                    .get(1)
+        match command {
+            BuiltinCommand::Help => self.handle_help_repl(arg),
+            BuiltinCommand::Clear => Action::Send(ChatAppMsg::ClearContext),
+            // No name opens the model picker; a name switches to it.
+            BuiltinCommand::Model => self.handle_model_repl(arg),
+            BuiltinCommand::Mode => self.cycle_mode(),
+            BuiltinCommand::Undo => {
+                let count = arg
                     .and_then(|s| s.parse::<usize>().ok())
                     .unwrap_or(1)
                     .max(1);
@@ -135,50 +149,20 @@ impl OilChatApp {
             }
             // `/resume <id>` leaves this session for that one; a bare
             // `/resume` opens the picker. The daemon holds the list.
-            "resume" => match parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            BuiltinCommand::Resume => match arg {
                 Some(id) => Action::Send(ChatAppMsg::ResumeSession(id.to_string())),
                 None => self.open_session_picker(),
             },
-            // Alias for :help — the command palette advertises "/help".
-            "help" => {
-                self.handle_help_repl(parts.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()))
-            }
-            // Every declared mode is its own slash command, so a Lua-declared
-            // `review` gets `/review` for free.
-            //
-            // Below the built-in arms, not above them: match arms are tried in
-            // order, so a mode named `undo` or `help` would otherwise shadow
-            // the real command and there would be no way to reach it. Above the
-            // plugin arm, so a plugin still cannot shadow `/plan`.
-            // `command` is already lowercased; compare case-insensitively so a
-            // mode declared as `cru.modes.Review` is still reachable as
-            // `/review`, and switch to the id the daemon actually knows.
-            _ if self
-                .available_modes
-                .iter()
-                .any(|m| m.eq_ignore_ascii_case(&command)) =>
-            {
-                let declared = self
-                    .available_modes
-                    .iter()
-                    .find(|m| m.eq_ignore_ascii_case(&command))
-                    .cloned()
-                    .unwrap_or_else(|| command.clone());
-                self.set_mode_with_status(&declared)
-            }
-            // Plugin-declared commands run via the daemon's plugin registry —
-            // an invocation, not a chat message. Checked after the built-ins
-            // so a plugin cannot shadow /plan or /help.
-            _ if self.plugin_command_names.contains(command.as_str()) || command.contains(':') => {
-                Action::Send(ChatAppMsg::RunPluginCommand {
-                    name: command,
-                    args: parts
-                        .get(1)
-                        .map(|s| s.trim().to_string())
-                        .unwrap_or_default(),
-                })
-            }
-            _ => Action::Send(ChatAppMsg::ExecuteSlashCommand(cmd.to_string())),
+            BuiltinCommand::Export => self.handle_export_command(arg.unwrap_or("")),
+            BuiltinCommand::Search => match arg {
+                Some(query) => Action::Send(ChatAppMsg::SearchSessions(query.to_string())),
+                None => {
+                    self.add_notification(crucible_core::types::Notification::warning(
+                        "Usage: /search <query>".to_string(),
+                    ));
+                    Action::Continue
+                }
+            },
         }
     }
 
@@ -315,9 +299,9 @@ impl OilChatApp {
         if topic.is_none() {
             // For the overview, also append the slash command list
             let slash_list: String = self
-                .slash_commands
+                .commands
                 .iter()
-                .map(|(name, _)| format!("/{}", name))
+                .map(|command| format!("/{}", command.name))
                 .collect::<Vec<_>>()
                 .join(" ");
             if slash_list.is_empty() {

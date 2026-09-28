@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use agent_client_protocol::schema::v1::{
-    AgentCapabilities, AuthenticateRequest, AuthenticateResponse, CancelNotification,
-    CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk, Error,
-    InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
+    AgentCapabilities, AuthenticateRequest, AuthenticateResponse, AvailableCommandsUpdate,
+    CancelNotification, CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk,
+    Error, InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
     NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse,
     RequestPermissionRequest, Result as AcpResult, SessionCapabilities, SessionCloseCapabilities,
     SessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
@@ -29,14 +29,15 @@ use agent_client_protocol::{
 };
 use crucible_core::config::CliAppConfig;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
+use crucible_core::types::SendOutcome;
 use crucible_daemon::rpc_client::SessionCreateParams;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info, warn};
 
 use super::translate::{
-    classify_event, interaction_tool_call, opens_turn, outcome_to_interaction_response,
-    permission_options, replay_step, TurnEnd, TurnStep,
+    available_commands, classify_event, interaction_tool_call, opens_turn,
+    outcome_to_interaction_response, permission_options, replay_step, TurnEnd, TurnStep,
 };
 
 /// Shared event stream for one ACP session's daemon connection.
@@ -114,9 +115,17 @@ impl CrucibleAcpAgent {
                                 responder: Responder<NewSessionResponse>,
                                 cx: HostConnection| {
                         let agent = agent.clone();
+                        let conn = cx.clone();
                         cx.spawn(async move {
                             match agent.new_session(req).await {
-                                Ok(response) => responder.respond(response),
+                                Ok(response) => {
+                                    // The host learns the session id from the
+                                    // reply, so the commands follow it.
+                                    let id = response.session_id.clone();
+                                    let answered = responder.respond(response);
+                                    agent.advertise_commands(&id, &conn).await;
+                                    answered
+                                }
                                 Err(error) => responder.respond_with_error(error),
                             }
                         })
@@ -309,8 +318,33 @@ impl CrucibleAcpAgent {
                     warn!(session = %daemon_session_id, error = %message, "the turn failed");
                     return Err(Error::internal_error().data(serde_json::Value::String(message)));
                 }
+                TurnStep::CommandsChanged => {
+                    self.advertise_commands(acp_session_id, conn).await;
+                }
                 TurnStep::Ignore => {}
             }
+        }
+    }
+
+    /// Send the host the session's commands, as `available_commands_update`.
+    /// Best-effort: a host without the list still sends `/name` as text.
+    async fn advertise_commands(&self, acp_session_id: &SessionId, conn: &HostConnection) {
+        let Some((client, daemon_session_id, _)) = self.lookup(acp_session_id.0.as_ref()) else {
+            return;
+        };
+        let catalog = match client.session_commands(&daemon_session_id).await {
+            Ok(catalog) => catalog,
+            Err(e) => {
+                warn!(error = %e, "session.commands failed; the host gets no command list");
+                return;
+            }
+        };
+        let update = SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(
+            available_commands(&catalog),
+        ));
+        let notif = SessionNotification::new(acp_session_id.clone(), update);
+        if let Err(e) = conn.send_notification(notif) {
+            warn!(error = ?e, "failed to send the command list");
         }
     }
 
@@ -455,13 +489,27 @@ impl CrucibleAcpAgent {
         }
 
         debug!(session = %daemon_session_id, "acp prompt: sending message");
-        let message_id = client
+        let outcome = client
             .session_send_message(&daemon_session_id, &text, true)
             .await
             .map_err(|e| {
                 warn!(error = %e, "session.send_message failed");
                 Error::internal_error()
             })?;
+        let message_id = match outcome {
+            SendOutcome::Turn { message_id } => message_id,
+            // A command that ran without a turn: its result is the answer.
+            SendOutcome::Command { result, .. } => {
+                let text = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                    TextContent::new(SendOutcome::result_text(&result)),
+                )));
+                let notif = SessionNotification::new(acp_session_id.clone(), text);
+                if let Err(e) = conn.send_notification(notif) {
+                    warn!(error = ?e, "failed to send the command result");
+                }
+                return Ok(PromptResponse::new(StopReason::EndTurn));
+            }
+        };
 
         let reason = self
             .pump_turn(
@@ -543,6 +591,7 @@ impl CrucibleAcpAgent {
         }
 
         self.insert_session(daemon_session_id, client, event_rx);
+        self.advertise_commands(&args.session_id, conn).await;
         Ok(LoadSessionResponse::default())
     }
 

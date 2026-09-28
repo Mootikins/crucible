@@ -165,6 +165,10 @@ pub enum ChatAppMsg {
     ModelsLoaded(Vec<String>),
     /// **Event** (daemon → TUI): Model fetch failed with error.
     ModelsFetchFailed(String),
+    /// **Command** (TUI → daemon): Fetch the session's command catalog.
+    FetchCommands,
+    /// **Event** (daemon → TUI): The session's command catalog.
+    CommandsLoaded(Vec<crucible_core::types::SessionCommand>),
     /// **Command** (TUI → daemon): Fetch the session's declared modes.
     FetchModes,
     /// **Event** (daemon → TUI): Mode ids the session may enter. Replaces the
@@ -367,12 +371,13 @@ pub enum ChatAppMsg {
         value: serde_json::Value,
         origin: serde_json::Value,
     },
-    /// **Command** (TUI → daemon): Execute a slash command (/:command args).
+    /// **Command** (TUI → daemon): Send a `/name` command that is not a
+    /// built-in command. The daemon routes it from the session's catalog: a
+    /// mode, plugin or skill command runs there, and other text is a message.
     ExecuteSlashCommand(String),
-    /// **Command** (TUI → daemon): Invoke a plugin-declared command via
-    /// `plugin.run_command`. Distinct from `ExecuteSlashCommand`, which
-    /// forwards unknown slashes to the agent as chat text.
-    RunPluginCommand { name: String, args: String },
+    /// **Command** (TUI → daemon): `/search <query>`, a search of the
+    /// sessions that share a kiln with this one.
+    SearchSessions(String),
     /// **Command** (TUI → daemon): `/clear`, the user's clear of the model
     /// context through `session.clear`. The transcript stays.
     ClearContext,
@@ -456,6 +461,8 @@ impl ChatAppMsg {
             | Self::ModelsFetchFailed(_)
             | Self::FetchModes
             | Self::ModesLoaded(_)
+            | Self::FetchCommands
+            | Self::CommandsLoaded(_)
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
             | Self::SetPrecognition(_)
@@ -484,7 +491,7 @@ impl ChatAppMsg {
             | Self::InteractionEnded { .. }
             | Self::PrecognitionResult { .. }
             | Self::ExecuteSlashCommand(_)
-            | Self::RunPluginCommand { .. }
+            | Self::SearchSessions(_)
             | Self::ClearContext
             | Self::ExportSession(_)
             | Self::ReloadPlugin(_)

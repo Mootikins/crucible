@@ -873,6 +873,13 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.spies.onTitleChanged).toHaveBeenCalledWith('Merkle tree sync design');
   });
 
+  it('commands_changed: changes nothing in the pane', () => {
+    const h = createHarness();
+    const before = JSON.stringify(h.state);
+    h.reducer({ type: 'commands_changed' });
+    expect(JSON.stringify(h.state)).toBe(before);
+  });
+
   it('session_event stream_gap: surfaces the loss with its count', () => {
     const h = createHarness();
     h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 12 } });
@@ -1300,6 +1307,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
     'precognition_result',
     'mode_changed',
     'title_changed',
+    'commands_changed',
   ] as const;
 
   it('SSE_EVENT_TYPES and reducer-handled types are identical', () => {

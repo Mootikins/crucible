@@ -42,7 +42,7 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     ['/api/models', api.listAllModels, { models: ['m'] }, ['m']],
     ['/api/session/s%2Fx/config/context-strategy', () => api.getContextStrategy('s/x'), { context_strategy: null }, null],
     ['/api/session/s%2Fx/config/context-strategy', () => api.setContextStrategy('s/x', 'truncate'), {}, undefined, { context_strategy: 'truncate' }],
-    ['/api/commands', api.listSlashCommands, { commands: [{ name: 'help' }] }, [{ name: 'help' }]],
+    ['/api/session/s%2Fx/commands', () => api.listSessionCommands('s/x'), { commands: [{ name: 'help' }] }, [{ name: 'help' }]],
     ['/api/surfaces', api.getSurfaces, { surfaces: [{ id: 'p' }] }, [{ id: 'p' }]],
     ['/api/notes/resolve?kiln=k&name=a%20b', () => api.resolveNotePath('k', 'a b'), { path: 'a' }, { path: 'a' }],
     ['/api/backlinks?kiln=k&note=a%20b', () => api.getBacklinks('k', 'a b'), { linked: [] }, { linked: [] }],

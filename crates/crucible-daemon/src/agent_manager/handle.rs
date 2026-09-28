@@ -52,6 +52,17 @@ pub trait SessionKnobs: Send + Sync {
         &[]
     }
 
+    /// The commands that the external agent advertises. The receiver sees
+    /// each new list, because an ACP agent can send one at any time.
+    ///
+    /// `None` is the true answer for an internal agent: it advertises no
+    /// commands of its own.
+    fn agent_commands(
+        &self,
+    ) -> Option<tokio::sync::watch::Receiver<Vec<crucible_core::types::SessionCommand>>> {
+        None
+    }
+
     /// The current model identifier, if known.
     fn current_model(&self) -> Option<&str>;
 
@@ -338,6 +349,12 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     async fn set_agent_config_option(&mut self, id: &str, value: &str) -> ChatResult<()> {
         (**self).set_agent_config_option(id, value).await
+    }
+
+    fn agent_commands(
+        &self,
+    ) -> Option<tokio::sync::watch::Receiver<Vec<crucible_core::types::SessionCommand>>> {
+        (**self).agent_commands()
     }
 
     fn current_model(&self) -> Option<&str> {

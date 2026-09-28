@@ -230,6 +230,10 @@ pub(crate) struct AgentSurface {
     pub(crate) modes: Option<crucible_core::types::acp::schema::SessionModeState>,
     /// Every config option the agent advertised, in wire order.
     pub(crate) config_options: Vec<crucible_core::types::acp::schema::SessionConfigOption>,
+    /// The commands the agent advertises. Unlike the two fields above, an
+    /// agent can change this list after the handshake, so it is a receiver.
+    pub(crate) commands:
+        Option<tokio::sync::watch::Receiver<Vec<crucible_core::types::SessionCommand>>>,
 }
 
 /// What a caller finds when it asks for the cached agent handle.
@@ -353,6 +357,15 @@ impl SessionSlot {
         if let Some(dispatcher) = dispatcher {
             build.dispatcher = Some(Arc::clone(dispatcher));
         }
+    }
+
+    /// Give the cached handle's agent an advertised command list.
+    #[cfg(test)]
+    pub(crate) fn seed_agent_commands_for_test(
+        &self,
+        commands: tokio::sync::watch::Receiver<Vec<crucible_core::types::SessionCommand>>,
+    ) {
+        self.lock_build().surface.commands = Some(commands);
     }
 
     /// Whether a handle is cached.

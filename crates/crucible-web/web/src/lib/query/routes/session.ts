@@ -201,6 +201,10 @@ function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void
       bus.emit('sessionTitleChanged', { sessionId, title: event.title });
       break;
 
+    case 'commands_changed':
+      void client.invalidateQueries({ queryKey: keys.slashCommands(sessionId) });
+      break;
+
     case 'session_event':
       routeSessionSubEvent(event, context);
       break;

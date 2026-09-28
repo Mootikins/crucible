@@ -172,6 +172,9 @@ pub enum ChatEvent {
         title: String,
     },
 
+    /// The session's command catalog changed; the composer reads it again.
+    CommandsChanged {},
+
     SessionEvent {
         event: String,
         data: serde_json::Value,
@@ -206,6 +209,7 @@ impl ChatEvent {
             ChatEvent::PrecognitionResult { .. } => "precognition_result",
             ChatEvent::ModeChanged { .. } => "mode_changed",
             ChatEvent::TitleChanged { .. } => "title_changed",
+            ChatEvent::CommandsChanged { .. } => "commands_changed",
             ChatEvent::SessionEvent { .. } => "session_event",
         }
     }
@@ -411,6 +415,9 @@ impl ChatEvent {
             }
             SessionEventPayload::Settings(SettingsPayload::TitleChanged { title }) => {
                 ChatEvent::TitleChanged { title }
+            }
+            SessionEventPayload::Settings(SettingsPayload::CommandsChanged {}) => {
+                ChatEvent::CommandsChanged {}
             }
 
             SessionEventPayload::Job(JobPayload::DelegationSpawned {

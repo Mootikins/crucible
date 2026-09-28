@@ -41,8 +41,8 @@ pub(crate) use models::{
     handle_session_switch_model,
 };
 pub(crate) use modes::{
-    handle_session_list_agent_options, handle_session_list_knobs, handle_session_list_modes,
-    handle_session_set_agent_option,
+    handle_session_commands, handle_session_list_agent_options, handle_session_list_knobs,
+    handle_session_list_modes, handle_session_set_agent_option,
 };
 pub(crate) use notifications::{
     handle_session_add_notification, handle_session_dismiss_notification,

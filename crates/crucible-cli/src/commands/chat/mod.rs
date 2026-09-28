@@ -534,20 +534,6 @@ async fn run_interactive_chat(
         None => Vec::new(),
     };
 
-    // Plugin-declared slash commands: `/name` dispatches to the daemon's
-    // `plugin.run_command` and autocompletes alongside the built-ins. The
-    // daemon's plugin loader holds the set, so it needs no session.
-    let plugin_commands = match setup_client.as_ref() {
-        Some(client) => match client.plugin_commands().await {
-            Ok(commands) => plugin_command_entries(&commands),
-            Err(e) => {
-                warn!("Failed to read the plugin commands: {}", e);
-                Vec::new()
-            }
-        },
-        None => Vec::new(),
-    };
-
     // Saved shell output is TUI state, so it goes in a folder that the client
     // owns. Not in the daemon's session store: a folder there is a session
     // the daemon cannot load. Not in a kiln: a kiln holds knowledge, and
@@ -576,11 +562,7 @@ async fn run_interactive_chat(
             .with_initial_sets(std::mem::take(&mut initial_sets))
             .with_screen(screen)
             .with_connected_kilns(connected_kilns.clone())
-            .with_slash_commands(known_slash_commands())
             .with_shell_output_dir(shell_dir.clone());
-        if !plugin_commands.is_empty() {
-            runner = runner.with_plugin_commands(plugin_commands.clone());
-        }
 
         if let Some(ref session_id) = resume {
             info!("Will resume session: {}", session_id);
@@ -828,12 +810,20 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
             }
         }
 
-        session
+        let outcome = session
             .client
             .session_send_message(&session.id, &query_text, true)
             .await
             .map_err(|e| anyhow::anyhow!("{}", crucible_daemon::rpc_error_message(&e)))?;
-        collect_turn_text(&session.id, &mut events).await
+        match outcome {
+            crucible_core::types::SendOutcome::Turn { .. } => {
+                collect_turn_text(&session.id, &mut events).await
+            }
+            // A command that ran without a turn: its result is the answer.
+            crucible_core::types::SendOutcome::Command { result, .. } => {
+                Ok(crucible_core::types::SendOutcome::result_text(&result))
+            }
+        }
     }
     .await;
     session.end().await;
@@ -999,21 +989,6 @@ async fn init_lua_session(session_id: &str, kiln_root: &std::path::Path) -> bool
 }
 
 /// The (name, description) pairs of the plugin commands that the daemon lists.
-fn plugin_command_entries(commands: &[serde_json::Value]) -> Vec<(String, String)> {
-    commands
-        .iter()
-        .filter_map(|c| {
-            let name = c.get("name")?.as_str()?.to_string();
-            let description = c
-                .get("description")
-                .and_then(|d| d.as_str())
-                .unwrap_or("")
-                .to_string();
-            Some((name, description))
-        })
-        .collect()
-}
-
 /// Where the TUI saves the output of a shell command: `<data home>/shell`.
 ///
 /// The folder is beside the daemon's session store, never in it. The data
@@ -1037,28 +1012,6 @@ async fn fetch_resume_history(session_id: &str) -> Result<Vec<serde_json::Value>
         .and_then(|h| h.as_array())
         .cloned()
         .unwrap_or_default())
-}
-
-/// Slash commands advertised in the TUI completion popup.
-///
-/// Only list commands `handle_slash_command` actually handles — anything
-/// else falls through to `ExecuteSlashCommand`, which delivers the raw
-/// text to the LLM as a user message. Advertising unhandled commands
-/// (/search, /new, /resume, ...) promised features that silently became
-/// prompt text.
-pub fn known_slash_commands() -> Vec<(String, String)> {
-    vec![
-        ("mode".into(), "Cycle chat mode".into()),
-        (
-            "default".into(),
-            "Set default mode (ask permissions)".into(),
-        ),
-        ("plan".into(), "Set plan mode (read-only)".into()),
-        ("auto".into(), "Set auto mode (full access)".into()),
-        ("undo".into(), "Undo last exchange(s)".into()),
-        ("resume".into(), "Resume an earlier session".into()),
-        ("help".into(), "Show help".into()),
-    ]
 }
 
 #[cfg(test)]

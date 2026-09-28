@@ -415,7 +415,7 @@ Roles are condensed from the file's own doc comment or its test names.
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-web/tests/route_contract_tests/chat.rs` | 513 | `ChatEvent` serialization, daemon-event mapping, and the SSE chat stream's replay-past-cursor/seq numbering. `ChatEvent::ToolCall` no longer carries `diffs`; `ToolResult`/`ToolResultError` carry `render` in its place. |
-| `crates/crucible-web/tests/route_contract_tests/commands.rs` | 466 | Command-execution routes, the `/api/commands` enumeration, and a guard that every advertised command is dispatchable; `/clear` now forwards a real `session.clear` RPC to the daemon. |
+| `crates/crucible-web/tests/route_contract_tests/commands.rs` | 253 | `GET /api/session/{id}/commands` and `POST /api/session/{id}/command`: the built-in commands run, every other name is refused with an `error` reply, `/clear` forwards a real `session.clear` RPC, and `/resume <id>` answers `open_session`. |
 | `crates/crucible-web/tests/route_contract_tests/daemon_errors.rs` | 248 | Daemon JSON-RPC error envelopes surface as HTTP 502 (server), 422 (validation) or 409 (`BUSY`, e.g. a proposal decision that another decision holds), with the daemon's own message. |
 | `crates/crucible-web/tests/route_contract_tests/diff_comments.rs` | 75 | Diff-comment error-status contract: a daemon `INVALID_PARAMS` refusal on `diff.comment` is a 422 with the daemon's message; an internal failure is a 502. |
 | `crates/crucible-web/tests/route_contract_tests/errors.rs` | 85 | `WebError` serialization to HTTP status and JSON body, with no mock daemon involved. |

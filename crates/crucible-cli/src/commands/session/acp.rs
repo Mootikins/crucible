@@ -458,7 +458,7 @@ pub(super) mod rpc {
 
         client.session_subscribe(&[session_id]).await?;
 
-        let message_id = match client
+        let outcome = match client
             .session_send_message_with_permissions(
                 session_id,
                 message,
@@ -483,6 +483,17 @@ pub(super) mod rpc {
                     .await?
             }
             Err(e) => return Err(e),
+        };
+        let message_id = match outcome {
+            crucible_core::types::SendOutcome::Turn { message_id } => message_id,
+            // A command that ran without a turn has no events to wait for.
+            crucible_core::types::SendOutcome::Command { result, .. } => {
+                println!(
+                    "{}",
+                    crucible_core::types::SendOutcome::result_text(&result)
+                );
+                return Ok(());
+            }
         };
 
         if !raw {

@@ -10,7 +10,7 @@ mod error;
 pub mod parser;
 pub mod types;
 
-pub use context::format_skills_for_context;
+pub use context::{format_skills_for_context, skill_instructions};
 pub use discovery::{FolderDiscovery, SearchPath};
 pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;

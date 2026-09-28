@@ -23,6 +23,21 @@ use crucible_core::traits::ContextMessage;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 
+/// A block of context that a message carries into its turn: the review
+/// comments it attaches, or the instructions of a skill it invokes.
+///
+/// An internal agent gets the block as accepted context before the user
+/// turn, so replay, undo and fork keep it with its role. An ACP agent owns
+/// its history, so the block goes with this turn only. Both routes tag the
+/// block with `kind`, so a `transform_context` handler finds it by its tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachedContext {
+    pub kind: &'static str,
+    /// Who the block speaks for, for example `human` or a skill name.
+    pub source: String,
+    pub body: String,
+}
+
 /// Metadata tag marking the attachment block, mirroring `PRECOGNITION_TAG`.
 pub(crate) const ATTACHMENT_TAG: &str = "file_attachment";
 

@@ -114,7 +114,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/proposals.rs` | 318 | `/api/proposals*` — accept/reject/dismiss/resolve a note-tool proposal, a thin proxy with no session in its path. |
 | `crates/crucible-web/src/routes/scm.rs` | 93 | `POST /api/scm/clone` — thin proxy for a git clone. |
 | `crates/crucible-web/src/routes/search.rs` | 1633 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. |
-| `crates/crucible-web/src/routes/session_commands.rs` | 362 | `/api/commands` catalogue and `/api/session/{id}/command` execution, including a daemon-backed `/clear` and a readable `/search`. |
+| `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
 | `crates/crucible-web/src/routes/skills.rs` | 171 | `/api/skills*` — proxies to daemon skill discovery. |
 | `crates/crucible-web/src/routes/surface.rs` | 402 | `GET /api/surfaces` and its SSE change stream, built on the shared `system_stream` helper. |
@@ -154,6 +154,12 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/services/daemon_retry_tests.rs` | 548 | Real-Unix-socket tests for `ReconnectingDaemon`'s reconnect/replay machinery and the `Interest`/`EventStream` upstream-subscription protocol, driven through both the raw client and the assembled router's SSE routes. |
 | `crates/crucible-web/src/services/daemon_session_config.rs` | 17 | Forwards the two session-context-strategy RPCs. |
 | `crates/crucible-web/src/services/forwarding.rs` | 32 | `ReplayPolicy` and the `forward_rpc!` macro shared by every `daemon_*.rs` forwarder. |
+
+### `crates/crucible-web/web/src/lib/` (selected)
+
+| File | Lines | Role |
+| --- | --- | --- |
+| `crates/crucible-web/web/src/lib/slash-commands.ts` | 45 | `isBuiltinCommand`, checked against the generated `BuiltinCommand` union so a new Rust built-in command fails this file's build until it is added here, and `commandResultText`. Imports no API client, so the composer can use it with no session open. |
 
 ## Key types and traits
 

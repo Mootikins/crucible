@@ -224,11 +224,11 @@ impl OilChatApp {
                 Self::filter_to_popup_items(&self.kiln_notes, &filter, "note", 15)
             }
             AutocompleteKind::Command => {
-                let owned: Vec<(String, String, String)> =
-                    crate::commands::chat::known_slash_commands()
-                        .into_iter()
-                        .map(|(name, desc)| (format!("/{}", name), desc, "command".to_string()))
-                        .collect();
+                let owned: Vec<(String, String, String)> = self
+                    .slash_command_rows()
+                    .into_iter()
+                    .map(|(name, desc)| (format!("/{}", name), desc, "command".to_string()))
+                    .collect();
                 let refs: Vec<(&str, &str, &str)> = owned
                     .iter()
                     .map(|(n, d, k)| (n.as_str(), d.as_str(), k.as_str()))
@@ -237,9 +237,9 @@ impl OilChatApp {
             }
             AutocompleteKind::SlashCommand => {
                 let owned: Vec<(String, String, String)> = self
-                    .slash_commands
-                    .iter()
-                    .map(|(name, desc)| (format!("/{}", name), desc.clone(), "command".to_string()))
+                    .slash_command_rows()
+                    .into_iter()
+                    .map(|(name, desc)| (format!("/{}", name), desc, "command".to_string()))
                     .collect();
                 let refs: Vec<(&str, &str, &str)> = owned
                     .iter()
@@ -567,9 +567,9 @@ impl OilChatApp {
             }
             PickSource::Commands => {
                 let owned: Vec<(String, String, String)> = self
-                    .slash_commands
-                    .iter()
-                    .map(|(name, desc)| (format!("/{}", name), desc.clone(), "command".to_string()))
+                    .slash_command_rows()
+                    .into_iter()
+                    .map(|(name, desc)| (format!("/{}", name), desc, "command".to_string()))
                     .collect();
                 let refs: Vec<(&str, &str, &str)> = owned
                     .iter()
@@ -594,9 +594,9 @@ impl OilChatApp {
                     20,
                 ));
                 let owned: Vec<(String, String, String)> = self
-                    .slash_commands
-                    .iter()
-                    .map(|(name, desc)| (format!("/{}", name), desc.clone(), "command".to_string()))
+                    .slash_command_rows()
+                    .into_iter()
+                    .map(|(name, desc)| (format!("/{}", name), desc, "command".to_string()))
                     .collect();
                 let refs: Vec<(&str, &str, &str)> = owned
                     .iter()
@@ -728,10 +728,10 @@ mod tests {
             "Testing Notes".into(),
             "Roadmap".into(),
         ]);
-        app.set_slash_commands(vec![
-            ("help".into(), "Show help".into()),
-            ("undo".into(), "Undo a turn".into()),
-        ]);
+        app.on_message(ChatAppMsg::CommandsLoaded(vec![
+            crucible_core::types::BuiltinCommand::Help.entry(),
+            crucible_core::types::BuiltinCommand::Undo.entry(),
+        ]));
         // Loaded state so Model triggers don't request a fetch.
         app.set_available_models(vec![
             "gpt-4o".into(),

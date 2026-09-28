@@ -29,11 +29,13 @@ export interface ComposerCardProps {
   setValue: Setter<string>;
   /**
    * Kiln backing `[[note]]`, `@file` and `#tag` completion. Absent (or null)
-   * leaves those triggers inert; `/command` completion works regardless.
+   * leaves those triggers inert.
    */
   kilnPath?: Accessor<string | null | undefined>;
   /** Workspace whose files `@file` lists. Absent lists only the kiln files. */
   workspacePath?: Accessor<string | null | undefined>;
+  /** Session whose command catalog `/command` lists. Absent lists none. */
+  sessionId?: Accessor<string | null | undefined>;
   placeholder: string;
   ariaLabel?: string;
   /** Lines the prompt occupies when empty. It grows from here, never below. */
@@ -95,6 +97,7 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
     setInput: props.setValue,
     kilnPath: props.kilnPath ?? (() => null),
     workspacePath: props.workspacePath ?? (() => null),
+    sessionId: props.sessionId ?? (() => null),
     textareaRef,
   });
 

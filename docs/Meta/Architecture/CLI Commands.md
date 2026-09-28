@@ -144,14 +144,14 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-cli/src/commands/acp/mod.rs` | 195 | `cru acp` entry point: resolves/attaches the kiln, hands off to `CrucibleAcpAgent::serve`; also covered end to end by `tests/acp_wire_tests.rs`, which drives the real binary against a mock provider. |
-| `crates/crucible-cli/src/commands/acp/agent.rs` | 589 | `CrucibleAcpAgent` — implements the ACP `Agent` role by delegating every operation to the daemon over RPC. |
-| `crates/crucible-cli/src/commands/acp/translate.rs` | 844 | Pure translation layer between daemon `SessionEvent`s and ACP wire types (`SessionUpdate`, `ToolCall`, `PermissionOption`), including the `TurnEnd` mapping and the canonical-tool-call-based title/kind lookup. |
+| `crates/crucible-cli/src/commands/acp/agent.rs` | 638 | `CrucibleAcpAgent` — implements the ACP `Agent` role by delegating every operation to the daemon over RPC; `advertise_commands` sends `session.commands` on as `available_commands_update`. |
+| `crates/crucible-cli/src/commands/acp/translate.rs` | 906 | Pure translation layer between daemon `SessionEvent`s and ACP wire types (`SessionUpdate`, `ToolCall`, `PermissionOption`), including the `TurnEnd` mapping, the canonical-tool-call-based title/kind lookup, `TurnStep::CommandsChanged`, and `available_commands`, which projects the session's catalog into `AvailableCommand`s, leaving out the built-in commands. |
 
 ### `src/commands/chat/` — `cru chat`
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-cli/src/commands/chat/mod.rs` | 1065 | `cru chat` end to end: flag-to-mode resolution, full-screen-by-default TUI launch (looping over `/resume`), oneshot path (direct RPCs plus `collect_turn_text`), replay. |
+| `crates/crucible-cli/src/commands/chat/mod.rs` | 1018 | `cru chat` end to end: flag-to-mode resolution, full-screen-by-default TUI launch (looping over `/resume`), oneshot path (direct RPCs plus `collect_turn_text`), replay. `cru chat -q` prints a `SendOutcome::Command`'s result instead of waiting for a turn. |
 | `crates/crucible-cli/src/commands/chat/tests.rs` | 320 | Unit tests for `chat/mod.rs`'s pure helpers (env parsing, mode selection, piped-query folding, `chat_screen`'s inline/full-screen decision). |
 
 ### `src/commands/config/`
@@ -187,7 +187,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-cli/src/commands/session/mod.rs` | 191 | `cru session` dispatch — the single fan-out point over every `SessionCommands` variant. |
-| `crates/crucible-cli/src/commands/session/acp.rs` | 866 | RPC implementation behind nearly every `cru session <verb>`; named for historical reasons, covers the whole session RPC surface, including `send`'s turn-lifecycle-aware event loop. |
+| `crates/crucible-cli/src/commands/session/acp.rs` | 877 | RPC implementation behind nearly every `cru session <verb>`; named for historical reasons, covers the whole session RPC surface, including `send`'s turn-lifecycle-aware event loop. `send` reads the `SendOutcome` of `session_send_message` and prints a command's result instead of waiting on a turn that never started. |
 | `crates/crucible-cli/src/commands/session/cleanup.rs` | 85 | `cru session cleanup` — deletes old persisted sessions, scoped by kiln. |
 | `crates/crucible-cli/src/commands/session/export.rs` | 41 | `cru session export` — writes a session transcript to Markdown. |
 | `crates/crucible-cli/src/commands/session/helpers.rs` | 96 | Shared pure helpers: permission-mode parsing, session-id resolution, send-argument disambiguation. |
@@ -195,7 +195,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | `crates/crucible-cli/src/commands/session/list.rs` | 142 | `cru session list` — live daemon sessions plus, with `--all`, persisted history. |
 | `crates/crucible-cli/src/commands/session/reindex.rs` | 30 | `cru session reindex` — retired stub explaining why the RPC it used to call no longer exists. |
 | `crates/crucible-cli/src/commands/session/resume.rs` | 22 | `cru session open` — resumes a persisted session into the interactive chat TUI. |
-| `crates/crucible-cli/src/commands/session/search.rs` | 48 | `cru session search` — full-text scan over past session logs via the daemon. |
+| `crates/crucible-cli/src/commands/session/search.rs` | 33 | `cru session search` — full-text scan over past session logs via the daemon; prints `SessionSearchResponse::to_text`, the same text form the TUI's and the web's `/search` share. |
 | `crates/crucible-cli/src/commands/session/show.rs` | 122 | `cru session show` — renders one session's metadata and transcript, three-layer fallback. |
 
 ### `src/commands/session/tests/`
@@ -300,6 +300,17 @@ as a message chunk, then answered `refusal`), and `Failed(String)` for a
 failed or timed-out turn (answered with a JSON-RPC error, not a
 `PromptResponse`). `turn_end` is the one table from the daemon's
 `TurnStatus` to a `TurnEnd`.
+
+**`TurnStep::CommandsChanged`** (`translate.rs`) — `classify_event` returns
+it for a `commands_changed` settings event. `agent.rs::advertise_commands`
+answers it, and every `new_session`/`load_session`, by reading
+`session.commands` and sending the host an `available_commands_update`.
+`translate.rs::available_commands` projects the catalog into
+`AvailableCommand`s, leaving out the built-in commands, which have no
+meaning for a host. When a prompt names a command that the daemon ran
+without a turn (`SendOutcome::Command`), `agent.rs::prompt` sends the
+result as one message chunk and answers `session/prompt` directly, with no
+`pump_turn` wait.
 
 **`GitPlugin` / `EntrySource`** (`crates/crucible-cli/src/commands/plugin/mod.rs`)
 — `configured_plugin_entries` is the one place that merges the daemon's live
@@ -426,10 +437,15 @@ client for the duration of the command.
    `new_session` connects a dedicated `DaemonClient`
    (`connect_or_start_with_events`), subscribes wildcard before
    `session.create` (create→subscribe race guard), then narrows the
-   subscription with `narrow_subscription`.
-3. `prompt` sends the message via `session_send_message` (which returns a
-   `message_id`), then `pump_turn` skips every event until `opens_turn`
-   confirms the `user_message` that opens that turn, then loops the rest,
+   subscription with `narrow_subscription`. After it answers the host,
+   `advertise_commands` reads `session.commands` and sends an
+   `available_commands_update`; `load_session` does the same.
+3. `prompt` sends the message via `session_send_message`, which answers a
+   `SendOutcome`. `SendOutcome::Command` — the text named a command the
+   daemon ran without a turn — sends the result as one message chunk and
+   answers `session/prompt` right away. `SendOutcome::Turn { message_id }`
+   starts `pump_turn`, which skips every event until `opens_turn` confirms
+   the `user_message` that opens that turn, then loops the rest,
    mapping each event through `translate.rs::classify_event` into a
    `TurnStep` — `Update` (forwarded as an ACP `session/update`),
    `Interaction` (routed through `handle_interaction` to an ACP

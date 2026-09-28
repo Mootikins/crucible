@@ -376,6 +376,12 @@ impl SessionEventMessage {
         )
     }
 
+    /// The session's command catalog changed. A client reads it again with
+    /// `session.commands`.
+    pub fn commands_changed(session_id: impl Into<String>) -> Self {
+        Self::typed(session_id, SettingsPayload::CommandsChanged {})
+    }
+
     /// The session's composed diff moved: a hunk was accepted, rejected,
     /// reverted, commented on, or a comment was resolved.
     ///

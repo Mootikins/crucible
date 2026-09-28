@@ -182,6 +182,30 @@ pub struct SessionModes {
     pub modes: Vec<ModeDescriptor>,
 }
 
+impl SessionModes {
+    /// The mode after the current one, wrapping. `None` when the current
+    /// mode is not in the list: see [`next_mode`].
+    pub fn next_mode(&self) -> Option<&str> {
+        next_after(&self.current_mode_id, &self.modes, |m| &m.id).map(|m| m.id.as_str())
+    }
+}
+
+/// The mode after `current` in `available`, wrapping.
+///
+/// An empty list, or a current mode the daemon no longer offers, cycles
+/// nowhere: advancing into a mode `set_mode` would reject is worse than
+/// leaving the mode alone.
+pub fn next_mode<'a, S: AsRef<str>>(current: &str, available: &'a [S]) -> Option<&'a str> {
+    next_after(current, available, AsRef::as_ref).map(AsRef::as_ref)
+}
+
+fn next_after<'a, T>(current: &str, items: &'a [T], id: impl Fn(&T) -> &str) -> Option<&'a T> {
+    let idx = items
+        .iter()
+        .position(|item| id(item).eq_ignore_ascii_case(current))?;
+    items.get((idx + 1) % items.len())
+}
+
 impl From<SessionMode> for ModeDescriptor {
     fn from(mode: SessionMode) -> Self {
         Self::from(&mode)

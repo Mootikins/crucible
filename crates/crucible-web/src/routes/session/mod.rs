@@ -12,6 +12,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use crucible_core::session::SessionSearchResponse;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use utoipa::{IntoParams, ToSchema};
@@ -194,40 +195,6 @@ struct SessionListResponse {
     total: usize,
 }
 
-/// One transcript line that matched a session search.
-///
-/// Not a session: the daemon answers the line it matched on, so a caller that
-/// wants the session reads `session_id` and asks for it.
-///
-/// `pub(super)`: `session_commands::execute_command`'s `/search` also reads
-/// this shape, to print one line per match rather than the raw `session.search`
-/// JSON it used to forward untouched.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct SessionSearchMatch {
-    pub(super) session_id: String,
-    /// The 1-based line of the transcript. `0` marks a title match on a
-    /// session whose transcript has not reached disk yet.
-    pub(super) line: u64,
-    /// The matched line, truncated to 100 characters.
-    pub(super) context: String,
-}
-
-/// What `GET /api/sessions/search` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct SessionSearchResponse {
-    pub(super) matches: Vec<SessionSearchMatch>,
-    /// How many matches the reply carries.
-    pub(super) total: usize,
-    /// Why the search looked at nothing, when it looked at nothing.
-    ///
-    /// The daemon writes it for a search with no kiln scope
-    /// (`server/session/list.rs:206`), and only then. An unscoped search is
-    /// the one case where an empty result is not a statement about the
-    /// corpus, so the sentence has to reach the caller.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) note: Option<String>,
-}
-
 /// One persisted session event, as `session.resume_from_storage` replays it.
 ///
 /// The same envelope the SSE stream carries, but this route replays whatever
@@ -407,8 +374,6 @@ pub fn session_routes() -> OpenApiRouter<AppState> {
         .merge(super::session_config::config_routes())
         .routes(routes!(export_session))
         .routes(routes!(execute_command))
-        // Session-independent: the command set is static, so the composer can
-        // fetch it once instead of per session.
         .routes(routes!(list_commands))
 }
 #[derive(Debug, Deserialize, ToSchema)]
@@ -655,7 +620,7 @@ async fn search_sessions(
         .await
         .daemon_err()?;
 
-    Ok(Json(daemon_shape(results, "session.search")?))
+    Ok(Json(results))
 }
 
 #[utoipa::path(

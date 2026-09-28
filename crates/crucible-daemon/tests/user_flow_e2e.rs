@@ -229,10 +229,10 @@ async fn test_complete_user_flow() {
         .await;
 
     match &send_result {
-        Ok(message_id) => {
+        Ok(outcome) => {
             // Unexpected but acceptable — if a mock provider somehow responds
             assert!(
-                !message_id.is_empty(),
+                matches!(outcome, crucible_core::types::SendOutcome::Turn { message_id } if !message_id.is_empty()),
                 "Message ID should not be empty on success"
             );
         }

@@ -33,22 +33,18 @@ struct SendMessageRequest {
     comments: Vec<crucible_core::diff::CommentRef>,
 }
 
-/// The identifier the daemon minted for the turn this request started.
+/// Start a turn in a session, or run the daemon command that the message
+/// names.
 ///
-/// One key, because the browser correlates the SSE events that follow with it
-/// and needs nothing else to do so.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SendMessageResponse {
-    message_id: String,
-}
-
-/// Start a turn in a session.
+/// A turn answers its `message_id`: the browser correlates the SSE events
+/// that follow with it. A command that ran without a turn, such as a plugin
+/// command, answers its result instead.
 #[utoipa::path(
     post,
     path = "/api/chat/send",
     request_body = SendMessageRequest,
     responses(
-        (status = 200, body = SendMessageResponse),
+        (status = 200, body = crucible_core::types::SendOutcome),
         (status = 400, description = "The message is empty and attaches no comment"),
         (status = 502, description = "The daemon could not accept the message"),
     )
@@ -56,18 +52,18 @@ struct SendMessageResponse {
 async fn send_message(
     State(state): State<AppState>,
     Json(req): Json<SendMessageRequest>,
-) -> Result<Json<SendMessageResponse>, WebError> {
+) -> Result<Json<crucible_core::types::SendOutcome>, WebError> {
     if req.content.trim().is_empty() && req.comments.is_empty() {
         return Err(WebError::Chat("Message cannot be empty".to_string()));
     }
 
-    let message_id = state
+    let outcome = state
         .daemon
         .session_send_message(&req.session_id, &req.content, &req.comments)
         .await
         .daemon_err()?;
 
-    Ok(Json(SendMessageResponse { message_id }))
+    Ok(Json(outcome))
 }
 
 /// The resume cursor of `GET /api/chat/events/{session_id}`.
@@ -374,9 +370,14 @@ mod tests {
         .await;
         assert_eq!(status, axum::http::StatusCode::OK);
 
-        let parsed: SendMessageResponse =
+        let parsed: crucible_core::types::SendOutcome =
             serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}: {json}"));
-        assert_eq!(parsed.message_id, "msg-001");
+        assert_eq!(
+            parsed,
+            crucible_core::types::SendOutcome::Turn {
+                message_id: "msg-001".into()
+            }
+        );
     }
 
     /// The route forwards the comment references as the client sent them.

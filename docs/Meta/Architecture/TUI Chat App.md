@@ -82,7 +82,7 @@ This subsystem must not own:
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-cli/src/tui/oil/chat_app/autocomplete.rs` | 998 | Popup-autocomplete: trigger detection (`/resume`, `@path:line`), fuzzy filtering, completion insertion. |
-| `crates/crucible-cli/src/tui/oil/chat_app/command_handling.rs` | 1024 | `/` slash and `:` REPL dispatch, the `:set` subsystem, mode switching, the `/resume`, status and plugin-approval pickers. |
+| `crates/crucible-cli/src/tui/oil/chat_app/command_handling.rs` | 1024 | `/` slash and `:` REPL dispatch over the exhaustive `BuiltinCommand` match, the `:set` subsystem, the `/resume`, status and plugin-approval pickers. Every `/name` outside `BuiltinCommand` — a mode, a plugin command, a skill, an agent command — goes to the daemon as `ExecuteSlashCommand`. |
 | `crates/crucible-cli/src/tui/oil/chat_app/command_handling_tests.rs` | 1324 | The dispatch-matrix test suite for `command_handling.rs`, attached via `#[path]`. |
 | `crates/crucible-cli/src/tui/oil/chat_app/defaults.rs` | 70 | `impl Default for OilChatApp` — the one constructor. |
 | `crates/crucible-cli/src/tui/oil/chat_app/input_handling.rs` | 387 | Key-event dispatch, ordered by which modal or mode owns the screen. |
@@ -109,7 +109,9 @@ This subsystem must not own:
   `diff_modal`, `proposals_modal`, `show_thinking`, `show_diffs`,
   `terminal_size: Cell<(u16, u16)>`, `transcript_rows`), and I/O/lifecycle
   fields flagged as tech debt (`shell_output_dir`, `runtime_config`,
-  `workspace_files`, `plugin_command_names`). Every other type in this page
+  `workspace_files`, `commands: Vec<SessionCommand>` — the session's one
+  command catalog from the daemon, which replaced `slash_commands` and
+  `plugin_command_names`). Every other type in this page
   is created to fill, or read from, one of these fields.
 - **`ChatAppMsg` / `MsgCategory`** (`messages.rs`). One enum for both
   directions of traffic: outbound intents (`UserMessage`, `SwitchModel`,
@@ -455,13 +457,18 @@ forward a real daemon event, but can never reach the daemon itself.
   a compiler or runtime completeness gate, not a source grep. The four
   variants this slice added (`Diff`, `Proposals`, `Status`, `PluginMode`)
   went through the same table.
-- **A plugin command can dispatch on a bare colon.** The slash-command
-  shadow check is no longer only "the name is in `plugin_command_names`":
-  `_ if self.plugin_command_names.contains(command.as_str()) ||
-  command.contains(':')` also routes any namespaced word (`source:name`)
-  to `RunPluginCommand`, even for a plugin the TUI has never registered a
-  bare name for. It still runs after every built-in slash command, so a
-  plugin still cannot shadow `/plan` or `/help`.
+- **The TUI keeps no plugin or mode command list of its own.**
+  `command_handling.rs::handle_slash_command` matches
+  `BuiltinCommand` (`crates/crucible-core/src/types/command.rs`) with no
+  wildcard, so the compiler forces a new built-in command to get its own
+  arm. Every other `/name` — a mode, a plugin command, a skill, or an agent
+  command — is sent to the daemon as `ChatAppMsg::ExecuteSlashCommand`, and
+  the daemon's session catalog (`agent_manager/commands.rs`) decides what it
+  is and runs it. This removed `known_slash_commands`, `plugin_command_names`
+  and `ChatAppMsg::RunPluginCommand` from the TUI: a plugin still cannot
+  shadow `/plan` or `/help`, but now because the daemon's catalog lists the
+  built-in commands and the modes before the plugin commands, not because
+  the TUI checks a local set first.
 - **`ModeChanged` is one-directional.** `messages.rs`'s doc comment on
   `ChatAppMsg::ModeChanged` warns it must never be produced from an inbound
   daemon event, only from a local key action; `ModeSynced` is the inbound
@@ -487,7 +494,14 @@ forward a real daemon event, but can never reach the daemon itself.
   `FetchSessions`, and the rest — followed exactly this seam;
   `ProposalChanged` is the case where the same change added the daemon-side
   event (`crates/crucible-daemon/src/proposals/mod.rs`) and the TUI variant
-  that reads it together.
+  that reads it together. `FetchCommands`/`CommandsLoaded(Vec<SessionCommand>)`
+  are the same seam for the session's command catalog: `chat_runner/mod.rs`
+  sends `FetchCommands` once at startup, `chat_runner/commands.rs` sends it
+  again on the daemon's `commands_changed` settings event, and
+  `chat_runner/actions.rs` answers it by calling `session.commands` and
+  posting `CommandsLoaded`. `SearchSessions(String)` is the TUI's `/search`,
+  which `chat_runner/actions.rs` answers with `session.search` and
+  `SessionSearchResponse::to_text` (`crucible-core/src/session/search.rs`).
 - **A new autocomplete trigger** adds an `AutocompleteKind` variant
   (`state.rs`), a case in `autocomplete.rs::detect_trigger`, and a matching
   arm in `autocomplete.rs::get_popup_items`; `AutocompleteKind::Session` is

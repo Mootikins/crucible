@@ -168,12 +168,12 @@ describe('fetchSessionHistoryOnce', () => {
 
 describe('useSendChatMessage', () => {
   it('answers the canonical id the daemon minted', async () => {
-    env = createTestQueryEnv({ [SEND]: () => ({ message_id: 'msg-turn-1' }) });
+    env = createTestQueryEnv({ [SEND]: () => ({ outcome: 'turn', message_id: 'msg-turn-1' }) });
 
     const send = inRoot(() => useSendChatMessage());
-    const messageId = await send.mutateAsync({ id: 's-1', message: 'hello' });
+    const outcome = await send.mutateAsync({ id: 's-1', message: 'hello' });
 
-    expect(messageId).toBe('msg-turn-1');
+    expect(outcome).toEqual({ outcome: 'turn', message_id: 'msg-turn-1' });
     expect(env.fetch.calls(SEND)).toBe(1);
   });
 
@@ -181,7 +181,7 @@ describe('useSendChatMessage', () => {
     // The daemon echoes the turn over the stream under the id the send
     // answered, and the route appends it there under a message-id guard. A
     // second append here would be the same write in two modules.
-    env = createTestQueryEnv({ [SEND]: () => ({ message_id: 'msg-turn-1' }) });
+    env = createTestQueryEnv({ [SEND]: () => ({ outcome: 'turn', message_id: 'msg-turn-1' }) });
     env.client.setQueryData(keys.sessionHistory('s-1'), history('s-1', [userTurn('s-1', 'msg-0', 'older')]));
 
     const send = inRoot(() => useSendChatMessage());

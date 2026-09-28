@@ -216,6 +216,17 @@ describe('ChatInput', () => {
     expect(mockClearMessages).not.toHaveBeenCalled();
   });
 
+  // Only a built-in command runs on the command route. The daemon routes any
+  // other `/name` from the session's catalog, so the composer sends it as a
+  // message.
+  it('a command that is not built in goes to the daemon as a message', async () => {
+    render(() => <ChatInput />);
+    fireEvent.input(screen.getByTestId('chat-input'), { target: { value: '/reflect last turn' } });
+    fireEvent.submit(screen.getByTestId('chat-input-form'));
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('/reflect last turn', []));
+    expect(kilnEnv.fetch.calls('POST /api/session/test-session/command')).toBe(0);
+  });
+
   it('removing a chip deletes the stored comment', async () => {
     const source: DiffsetSource = { kind: 'session_record', session: 'test-session' };
     composerComments.attach('test-session', {

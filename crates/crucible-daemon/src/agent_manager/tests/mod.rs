@@ -954,6 +954,7 @@ mod active_tools;
 mod agent_tool_chain;
 mod bases_attribution;
 mod build_race;
+mod commands;
 mod concurrency;
 mod context_injection;
 mod dispatch;

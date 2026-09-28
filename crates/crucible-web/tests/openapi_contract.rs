@@ -279,6 +279,7 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
         ChatEvent::TitleChanged {
             title: String::new(),
         },
+        ChatEvent::CommandsChanged {},
         ChatEvent::SessionEvent {
             event: String::new(),
             data: serde_json::Value::Null,

@@ -1,10 +1,12 @@
 use super::super::*;
+use crate::agent_manager::commands::SlashRoute;
 use crate::require_param;
 use crate::rpc_client::{
     SessionConfigureAgentRequest, SessionIdRequest, SessionInjectContextRequest,
     SessionInteractionRespondRequest, SessionTestInteractionRequest,
 };
 use crate::rpc_helpers::typed_params;
+use crucible_core::types::SendOutcome;
 
 pub(crate) async fn handle_session_configure_agent(
     req: Request,
@@ -72,6 +74,37 @@ pub(crate) async fn handle_session_send_message(
                 .ok()
         });
 
+    // A `/name` message that names a daemon command runs it. A mode switch
+    // or a skill still starts a turn when there is text for one.
+    let mut attached = Vec::new();
+    let mut content = content;
+    let routed_rest;
+    match am.slash_route(session_id, content, event_tx).await {
+        Ok(SlashRoute::Message) => {}
+        Ok(SlashRoute::Mode { mode_id, rest }) => {
+            if let Err(e) = am.set_mode(session_id, &mode_id, Some(event_tx)).await {
+                return agent_error_to_response(req.id, e);
+            }
+            if rest.is_empty() {
+                return command_reply(
+                    req.id,
+                    session_id,
+                    &mode_id,
+                    format!("Mode: {mode_id}").into(),
+                );
+            }
+            routed_rest = rest;
+            content = &routed_rest;
+        }
+        Ok(SlashRoute::Plugin { name, rest }) => {
+            return run_plugin_command(req.id, am, session_id, &name, &rest).await;
+        }
+        // The turn keeps the text the user typed, so the transcript shows
+        // the invocation; the instructions go with it as context.
+        Ok(SlashRoute::Skill { instructions }) => attached.push(instructions),
+        Err(e) => return agent_error_to_response(req.id, e),
+    }
+
     let comments: Vec<crucible_core::diff::CommentRef> = match req.params.get("comments") {
         None | Some(serde_json::Value::Null) => Vec::new(),
         Some(value) => match serde_json::from_value(value.clone()) {
@@ -113,25 +146,70 @@ pub(crate) async fn handle_session_send_message(
         .send_message_with_context(
             session_id,
             content.to_string(),
-            review_context,
+            attached.into_iter().chain(review_context).collect(),
             event_tx,
             is_interactive,
             permission_override,
         )
         .await
     {
-        Ok(message_id) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "message_id": message_id,
-            }),
-        ),
+        Ok(message_id) => send_reply(req.id, session_id, SendOutcome::Turn { message_id }),
         // Classified rather than blanket-internal: this handler answered every
         // failure with -32603, so a missing session, an unconfigured agent and
         // a malformed id all read as daemon faults. crucible-web maps anything
         // that is not -32602 to HTTP 502.
         Err(e) => agent_error_to_response(req.id, e),
+    }
+}
+
+/// The reply of `session.send_message`: the session and what happened.
+fn send_reply(id: Option<RequestId>, session_id: &str, outcome: SendOutcome) -> Response {
+    let mut reply = serde_json::to_value(outcome).expect("a send outcome serializes");
+    reply["session_id"] = session_id.into();
+    Response::success(id, reply)
+}
+
+fn command_reply(
+    id: Option<RequestId>,
+    session_id: &str,
+    command: &str,
+    result: serde_json::Value,
+) -> Response {
+    send_reply(
+        id,
+        session_id,
+        SendOutcome::Command {
+            command: command.to_string(),
+            result,
+        },
+    )
+}
+
+/// Run a plugin command that a message named, with the rest of the message
+/// as its input, as `plugin.run_command` does for a client's button.
+async fn run_plugin_command(
+    id: Option<RequestId>,
+    am: &AgentManager,
+    session_id: &str,
+    name: &str,
+    rest: &str,
+) -> Response {
+    let Some(registry) = am.plugin_registry().await else {
+        return internal_error(id, "Plugin loader not initialized");
+    };
+    let args = if rest.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::json!({ "input": rest })
+    };
+    match registry.run_command_in(name, args, Some(session_id)).await {
+        Ok(Some(result)) => command_reply(id, session_id, name, result),
+        Ok(None) => internal_error(id, format!("Unknown plugin command: {name}")),
+        // The plugin's message names the plugin and its reason.
+        Err(e) => {
+            tracing::warn!(command = %name, "{e:#}");
+            Response::error(id, INTERNAL_ERROR, e.to_string())
+        }
     }
 }
 

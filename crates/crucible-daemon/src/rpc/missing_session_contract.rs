@@ -152,6 +152,7 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ),
         ("session.list_models", json!({}), not_found()),
         ("session.list_modes", json!({}), not_found()),
+        ("session.commands", json!({}), not_found()),
         ("session.connect_kiln", json!({"kiln": "kiln"}), not_found()),
         (
             "session.disconnect_kiln",

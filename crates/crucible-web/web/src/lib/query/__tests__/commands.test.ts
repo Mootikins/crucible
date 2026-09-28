@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { apiError } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
-import type { SlashCommand } from '@/lib/api';
+import type { SessionCommand } from '@/lib/api';
 import {
   fetchSlashCommandsOnce,
   resetCommandCache,
@@ -10,9 +10,9 @@ import {
   useSlashCommands,
 } from '../commands';
 
-const COMMANDS: SlashCommand[] = [
-  { name: 'help', args: '', description: 'Show available commands' },
-  { name: 'model', args: '<name>', description: 'Switch to a different model' },
+const COMMANDS: SessionCommand[] = [
+  { name: 'help', description: 'Show available commands', kind: 'builtin', command: 'help' },
+  { name: 'reflect', description: 'Run a reflection pass', kind: 'plugin', plugin: 'alpha' },
 ];
 
 let env: TestQueryEnv;
@@ -33,17 +33,17 @@ function inRoot<T>(body: () => T): T {
 }
 
 describe('the slash command list', () => {
-  // The daemon serves these from the constant `execute_command` dispatches on,
-  // so they cannot change while it runs. One GET per browser is the point.
+  // The catalog moves only when the daemon says so, so one GET per session
+  // is the point.
   it('asks once however many times a composer reads it', async () => {
-    env = createTestQueryEnv({ 'GET /api/commands': () => ({ commands: COMMANDS }) });
+    env = createTestQueryEnv({ 'GET /api/session/s-1/commands': () => ({ commands: COMMANDS }) });
 
-    expect(await fetchSlashCommandsOnce()).toEqual(COMMANDS);
-    expect(await fetchSlashCommandsOnce()).toEqual(COMMANDS);
-    const query = inRoot(() => useSlashCommands());
+    expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
+    expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
+    const query = inRoot(() => useSlashCommands(() => 's-1'));
 
     await vi.waitFor(() => expect(query.data).toEqual(COMMANDS));
-    expect(env.fetch.calls('GET /api/commands')).toBe(1);
+    expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(1);
   });
 
   // A failed fetch must not poison the cache: the composer's next keystroke
@@ -52,7 +52,7 @@ describe('the slash command list', () => {
   it('asks again after a refusal', async () => {
     let refuse = true;
     env = createTestQueryEnv({
-      'GET /api/commands': () =>
+      'GET /api/session/s-1/commands': () =>
         refuse
           ? new Response(JSON.stringify({ error: { code: 500, message: 'not ready' } }), {
               status: 500,
@@ -60,21 +60,31 @@ describe('the slash command list', () => {
           : { commands: COMMANDS },
     });
 
-    await expect(fetchSlashCommandsOnce()).rejects.toThrow('Failed to list commands');
+    await expect(fetchSlashCommandsOnce('s-1')).rejects.toThrow('Failed to list commands');
     refuse = false;
 
-    expect(await fetchSlashCommandsOnce()).toEqual(COMMANDS);
-    expect(env.fetch.calls('GET /api/commands')).toBe(2);
+    expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
+    expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(2);
+  });
+
+  it('keeps one catalog per session', async () => {
+    env = createTestQueryEnv({
+      'GET /api/session/s-1/commands': () => ({ commands: COMMANDS }),
+      'GET /api/session/s-2/commands': () => ({ commands: [] }),
+    });
+
+    expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
+    expect(await fetchSlashCommandsOnce('s-2')).toEqual([]);
   });
 
   it('asks again after the cache is reset', async () => {
-    env = createTestQueryEnv({ 'GET /api/commands': () => ({ commands: COMMANDS }) });
+    env = createTestQueryEnv({ 'GET /api/session/s-1/commands': () => ({ commands: COMMANDS }) });
 
-    expect(await fetchSlashCommandsOnce()).toEqual(COMMANDS);
+    expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
     await resetCommandCache();
 
-    expect(await fetchSlashCommandsOnce()).toEqual(COMMANDS);
-    expect(env.fetch.calls('GET /api/commands')).toBe(2);
+    expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
+    expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(2);
   });
 });
 

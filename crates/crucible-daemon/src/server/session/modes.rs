@@ -69,6 +69,32 @@ pub(crate) async fn handle_session_list_modes(
     )
 }
 
+/// The session's command catalog: built-in, mode, plugin, skill and agent
+/// commands, in that order. See `agent_manager::commands`.
+pub(crate) async fn handle_session_commands(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &crate::EventBus,
+) -> Response {
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    match am
+        .session_commands(&params.session_id, Some(event_tx))
+        .await
+    {
+        Ok(commands) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": params.session_id,
+                "commands": commands,
+            }),
+        ),
+        Err(e) => agent_error_to_response(req.id, e),
+    }
+}
+
 /// Which settings this session can change, and which it cannot.
 ///
 /// A settings panel drew a fixed list of controls, which was wrong for every
