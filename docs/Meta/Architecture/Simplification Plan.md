@@ -42,7 +42,7 @@ at the same time. Each step leaves the tree working.
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
 | 6. Wire types live in core (done) | a second home for wire types | M | steps 1 and 4 |
 | 7. One test server (done) | 18 test-server copies, a hand mock | M | step 6 helps |
-| 8. Local duplicates | about ten small copies | S each | none |
+| 8. Local duplicates (done) | about ten small copies | S each | none |
 | 9. Dead code (done) | unused modules and features | S | none |
 | 10. Group the daemon modules | 87 flat entries | M | steps 1 to 6 |
 
