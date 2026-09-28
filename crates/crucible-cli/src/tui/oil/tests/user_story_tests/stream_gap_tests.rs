@@ -73,9 +73,7 @@ fn a_gap_with_no_count_still_appears() {
 #[test]
 fn an_ordinary_event_produces_no_gap_warning() {
     let mut story = StoryRuntime::new(80, 24);
-    for msg in session_event_to_chat_msgs("text_delta", &serde_json::json!({ "content": "hi" })) {
-        story.send(msg);
-    }
+    story.event("text_delta", serde_json::json!({ "content": "hi" }));
 
     story.app().show_messages();
     let screen = story.screen();

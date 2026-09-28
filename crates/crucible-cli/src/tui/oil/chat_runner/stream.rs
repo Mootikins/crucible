@@ -20,99 +20,22 @@ use crucible_core::protocol::session_events::{SessionEventPayload, SystemPayload
 use crucible_daemon::event_map::SYSTEM_SESSION;
 use crucible_daemon::subscription::WILDCARD_SESSION;
 
-/// Stateful SessionEvent → ChatAppMsg converter.
+/// SessionEvent → ChatAppMsg converter for the messages that are not
+/// transcript items.
 ///
-/// Tracks `saw_text_delta` per turn so `message_complete.full_response`
-/// only produces a TextDelta when no granular text_deltas preceded it
-/// (the "coarse resume" case — daemon drops text_delta during storage
-/// compaction, keeping only the final message_complete snapshot).
-///
-/// Also de-duplicates a provider's end-of-stream reasoning replay — see
-/// [`SessionEventStream::is_thinking_replay`].
-///
-/// Optionally holds a `context_limit` handle so that `message_complete`
-/// token counts can be converted into a `ContextUsage` with the correct
-/// `total` field. Without a handle, the total defaults to 0.
+/// The daemon folds the transcript (`crucible_core::transcript`), so this
+/// keeps no turn state. It holds an optional `context_limit` handle, so that
+/// the token count of `message_complete` becomes a `ContextUsage` with the
+/// correct `total`. Without a handle, the total is 0.
 pub struct SessionEventStream {
-    saw_text_delta: bool,
-    /// Thinking rendered since the last replay boundary, concatenated.
-    thinking_run: String,
-    /// How many `thinking` deltas that run is made of. A run of one is a
-    /// single thought, not a stream — see [`MIN_REPLAY_RUN_DELTAS`].
-    thinking_run_deltas: usize,
     context_limit: Option<Arc<AtomicUsize>>,
 }
-
-/// Shortest delta run a `thinking` payload may be judged a replay of.
-///
-/// A replay is by construction the *concatenation* of a streamed run, so it
-/// takes at least two deltas to make one. Without this floor the rule also
-/// matches a thought that simply repeats the one before it — an agent that says
-/// `"Hmm."` three times rendered only twice, and a single-delta thought
-/// followed by an identical single-delta thought was deleted outright. That
-/// window is open exactly when the run is short: at the start of a turn and
-/// immediately after every drop.
-///
-/// The floor costs nothing on real data. All 11 replays across
-/// `assets/fixtures` (`demo`, `parity-test`, `reproduce`,
-/// `reproduce-formatting`) follow runs of **17–103** deltas and carry 79–515
-/// chars; none is anywhere near the boundary.
-const MIN_REPLAY_RUN_DELTAS: usize = 2;
 
 impl SessionEventStream {
     pub fn new() -> Self {
         Self {
-            saw_text_delta: false,
-            thinking_run: String::new(),
-            thinking_run_deltas: 0,
             context_limit: None,
         }
-    }
-
-    /// Is this `thinking` payload a replay of reasoning already rendered?
-    ///
-    /// Providers that stream reasoning incrementally *also* hand the whole
-    /// block back at stream end (genai's `End.captured_reasoning_content`), so
-    /// the replay arrives as one `thinking` event carrying the exact
-    /// concatenation of the deltas that preceded it. Painting it duplicates the
-    /// entire thought. `ReasoningEmissionState` (`provider/genai_handle.rs`)
-    /// drops it at the source, but only since 2026-04-27 — every session
-    /// recorded before that still carries the replay, and replay is precisely
-    /// what this converter serves.
-    ///
-    /// Matching on content rather than position is what lets genuinely
-    /// interleaved thoughts through. An agent that owns its own tool loop —
-    /// any ACP-delegated agent, and the internal agent between tool batches —
-    /// alternates thinking and text within one turn; those later thoughts are
-    /// new content. The earlier `saw_text_delta` rule discarded all of them,
-    /// and still missed the replays that arrive with no text in between.
-    ///
-    /// Consuming the run on a match keeps this correct across several
-    /// reasoning blocks in one turn: each replay covers only the block since
-    /// the previous one. Verified against every recording in `assets/fixtures`
-    /// — each replay there is byte-identical to its run.
-    ///
-    /// The [`MIN_REPLAY_RUN_DELTAS`] floor is what keeps a *repetition* from
-    /// being mistaken for a replay. Dropping content is unrecoverable, so the
-    /// rule must never fire on a run short enough to be one ordinary thought.
-    ///
-    /// The comparison is byte-exact, deliberately. A replay whose bytes differ
-    /// from its run — by a trailing newline, say — renders, painting the block
-    /// twice. Equality is the only predicate here that says something about how
-    /// the payload was *produced*; every looser one is a similarity heuristic
-    /// feeding a code path that deletes without a trace. A visible duplicate is
-    /// recoverable and a deleted thought is not, and no recording in
-    /// `assets/fixtures` is non-exact, so nothing is bought by loosening it.
-    /// Pinned by `a_replay_that_is_not_byte_exact_renders_twice_on_purpose`.
-    fn is_thinking_replay(&self, content: &str) -> bool {
-        self.thinking_run_deltas >= MIN_REPLAY_RUN_DELTAS && content == self.thinking_run
-    }
-
-    /// Forget the thinking run: nothing rendered after this can be judged a
-    /// replay of what came before it.
-    fn reset_thinking_run(&mut self) {
-        self.thinking_run.clear();
-        self.thinking_run_deltas = 0;
     }
 
     pub fn with_context_limit(mut self, limit: Arc<AtomicUsize>) -> Self {
@@ -121,60 +44,22 @@ impl SessionEventStream {
     }
 
     pub fn translate(&mut self, event_type: &str, data: &serde_json::Value) -> Vec<ChatAppMsg> {
-        let decoded = SessionEventPayload::from_wire(event_type, data);
-        let mut is_message_complete = false;
-        if let Ok(SessionEventPayload::Turn(turn)) = &decoded {
-            match turn {
-                TurnPayload::TextDelta { .. } => self.saw_text_delta = true,
-                TurnPayload::UserMessage { .. } => {
-                    self.saw_text_delta = false;
-                    self.reset_thinking_run();
-                }
-                TurnPayload::Thinking { content } => {
-                    if self.is_thinking_replay(content) {
-                        self.reset_thinking_run();
-                        return Vec::new();
-                    }
-                    self.thinking_run.push_str(content);
-                    self.thinking_run_deltas += 1;
-                }
-                TurnPayload::MessageComplete { .. } => is_message_complete = true,
-                _ => {}
-            }
-        }
-
-        let raw = payload_msgs(decoded);
-
-        // When the daemon's setup task resolves the context limit, also stamp
-        // the atomic so that later `message_complete` events pick up the real
-        // total for their `ContextUsage` patching.
-        if let Some(ref limit) = self.context_limit {
-            for msg in &raw {
-                if let ChatAppMsg::ContextLimitResolved { limit: l, .. } = msg {
-                    limit.store(*l, Ordering::Relaxed);
-                }
-            }
-        }
-
-        // For message_complete, filter out the TextDelta if granular deltas
-        // were seen, and patch the ContextUsage with the real context limit.
-        if !is_message_complete {
+        let raw = payload_msgs(SessionEventPayload::from_wire(event_type, data));
+        let Some(limit) = &self.context_limit else {
             return raw;
+        };
+        // When the daemon's setup task resolves the context limit, stamp the
+        // atomic, so that later `message_complete` events carry the total.
+        for msg in &raw {
+            if let ChatAppMsg::ContextLimitResolved { limit: l, .. } = msg {
+                limit.store(*l, Ordering::Relaxed);
+            }
         }
-        let saw_deltas = self.saw_text_delta;
-        let total_limit = self
-            .context_limit
-            .as_ref()
-            .map(|l| l.load(Ordering::Relaxed))
-            .unwrap_or(0);
+        let total = limit.load(Ordering::Relaxed);
         raw.into_iter()
-            .filter_map(|m| match m {
-                ChatAppMsg::TextDelta(_) if saw_deltas => None,
-                ChatAppMsg::ContextUsage { used, .. } => Some(ChatAppMsg::ContextUsage {
-                    used,
-                    total: total_limit,
-                }),
-                other => Some(other),
+            .map(|m| match m {
+                ChatAppMsg::ContextUsage { used, .. } => ChatAppMsg::ContextUsage { used, total },
+                other => other,
             })
             .collect()
     }
@@ -184,6 +69,24 @@ impl Default for SessionEventStream {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The messages of one event: the transcript ops that it carries, then the
+/// rest. The ops come first, so that the end of a turn that the same event
+/// carries seals the segment that the ops just wrote.
+pub(crate) fn event_msgs(
+    stream: &mut SessionEventStream,
+    event: &crucible_daemon::SessionEvent,
+) -> Vec<ChatAppMsg> {
+    let mut msgs = Vec::new();
+    if !event.transcript.is_empty() {
+        msgs.push(ChatAppMsg::Transcript {
+            seq: event.seq,
+            ops: event.transcript.clone(),
+        });
+    }
+    msgs.extend(stream.translate(&event.event, &event.data));
+    msgs
 }
 
 /// Shared event-pump used by both replay and live consumers.
@@ -220,7 +123,7 @@ async fn consume_session_events<F, E>(
         if !on_event(&event, &msg_tx) {
             return;
         }
-        for msg in stream.translate(&event.event, &event.data) {
+        for msg in event_msgs(&mut stream, &event) {
             if msg_tx.send(msg).is_err() {
                 return;
             }

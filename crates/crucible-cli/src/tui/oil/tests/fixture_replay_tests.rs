@@ -7,7 +7,6 @@
 use std::path::Path;
 
 use crate::tui::oil::chat_app::OilChatApp;
-use crate::tui::oil::chat_runner::SessionEventStream;
 use crucible_oil::ansi::strip_ansi;
 use crucible_oil::node::BRAILLE_SPINNER_FRAMES;
 use crucible_oil::node::SPINNER_FRAMES;
@@ -17,46 +16,15 @@ use super::vt100_runtime::Vt100TestRuntime;
 // ─── JSONL Parsing ─────────────────────────────────────────────────────────
 
 /// Translate a recording into the `ChatAppMsg` stream the TUI would receive on
-/// replay, through the production [`SessionEventStream`] — the same converter
-/// `chat_runner` feeds from the daemon. Re-implementing its turn state here
-/// would leave these snapshots pinning a fiction: they would keep passing while
-/// the shipped rule regressed.
+/// replay: the daemon's transcript fold, then the production converter that
+/// `chat_runner` feeds from the daemon ([`super::helpers::fixture_msgs`]).
+/// Re-implementing either here would leave these snapshots pinning a fiction.
 pub(super) fn parse_fixture(path: &Path) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
-    let content = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read fixture {}: {e}", path.display()));
-
-    let mut stream = SessionEventStream::new();
-    let mut messages = Vec::new();
-
-    for line in content.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let value: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        // Skip header/footer
-        if value.get("version").is_some() || value.get("ended_at").is_some() {
-            continue;
-        }
-
-        let event_type = match value.get("event").and_then(|v| v.as_str()) {
-            Some(e) => e,
-            None => continue,
-        };
-
-        let data = value
-            .get("data")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-
-        messages.extend(stream.translate(event_type, &data));
-    }
-
-    messages
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_else(|| panic!("a fixture file name: {}", path.display()));
+    super::helpers::fixture_msgs(name)
 }
 
 use super::helpers::fixture_path;

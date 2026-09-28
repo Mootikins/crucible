@@ -296,8 +296,6 @@ fn a_late_acp_diff_appears_in_the_rendered_tool_card() {
 /// `[auto]` marker, as it does for Crucible's own tools.
 #[test]
 fn a_late_permission_grant_marks_the_acp_tool_card() {
-    use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
-
     let mut story = StoryRuntime::new(80, 24);
     send_user_message(&mut story, "fix the greeting");
     announce_tool_call(
@@ -313,9 +311,7 @@ fn a_late_permission_grant_marks_the_acp_tool_card() {
         "args": null,
         "auto_approved": "permissions config",
     });
-    for msg in session_event_to_chat_msgs("tool_call_update", &data) {
-        story.send(msg);
-    }
+    story.event("tool_call_update", data);
 
     let frame = story.fresh_screen();
     assert!(frame.contains("[auto]"), "the grant never showed:\n{frame}");

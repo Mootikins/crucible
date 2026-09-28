@@ -571,12 +571,12 @@ async fn run_interactive_chat(
             runner = runner.with_resume_session(session_id.clone());
 
             match fetch_resume_history(session_id).await {
-                Ok(history) if !history.is_empty() => {
+                Ok((history, transcript)) if !history.is_empty() => {
                     info!(
                         count = history.len(),
                         "Fetched resume history for viewport hydration"
                     );
-                    runner = runner.with_resume_history(history);
+                    runner = runner.with_resume_history(history, transcript);
                 }
                 Ok(_) => {
                     info!("No history events found for session {}", session_id);
@@ -1003,17 +1003,31 @@ fn shell_output_dir(config: &CliAppConfig) -> PathBuf {
         .join("shell")
 }
 
-async fn fetch_resume_history(session_id: &str) -> Result<Vec<serde_json::Value>> {
+/// The stored events of a session and the transcript that the daemon folded
+/// from them. The TUI draws the transcript; the events give it the rest of
+/// the session state, such as token use.
+async fn fetch_resume_history(
+    session_id: &str,
+) -> Result<(
+    Vec<serde_json::Value>,
+    crucible_core::transcript::Transcript,
+)> {
     let client = crate::common::daemon_client().await?;
     let result = client
         .session_resume_from_storage(session_id, None, None)
         .await?;
 
-    Ok(result
+    let history = result
         .get("history")
         .and_then(|h| h.as_array())
         .cloned()
-        .unwrap_or_default())
+        .unwrap_or_default();
+    let transcript = result
+        .get("transcript")
+        .cloned()
+        .and_then(|t| serde_json::from_value(t).ok())
+        .unwrap_or_default();
+    Ok((history, transcript))
 }
 
 #[cfg(test)]

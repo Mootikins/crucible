@@ -485,27 +485,16 @@ impl TranscriptFold {
             }
             TurnPayload::ToolResult {
                 call_id,
-                tool,
                 result,
                 terminate,
+                ..
             } => {
-                let turn_id = self.turn.as_ref().map(|t| t.id.clone());
-                let mut item = self.item(&tool_id(&call_id)).unwrap_or(TranscriptItem {
-                    id: tool_id(&call_id),
-                    turn_id,
-                    body: ItemBody::ToolCard {
-                        call_id: call_id.clone(),
-                        name: tool,
-                        args: Value::Null,
-                        source: None,
-                        auto_approved: None,
-                        display: None,
-                        status: ToolStatus::Running,
-                        result: None,
-                        error: None,
-                        terminate: false,
-                    },
-                });
+                // A result belongs to the card of its call. A result whose call id
+                // matches no call (an old ACP recorder wrote fresh ids) has no
+                // card to go on.
+                let Some(mut item) = self.item(&tool_id(&call_id)) else {
+                    return;
+                };
                 if let ItemBody::ToolCard {
                     display,
                     status,

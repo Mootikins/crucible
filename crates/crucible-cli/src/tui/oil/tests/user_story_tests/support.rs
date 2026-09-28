@@ -14,10 +14,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::chat_runner::SessionEventStream;
 use crate::tui::oil::event::Event;
 
-use super::super::helpers::read_fixture;
 use super::super::vt100_runtime::Vt100TestRuntime;
 
 /// Parse a JSONL session recording into the `ChatAppMsg` stream the TUI
@@ -32,31 +30,7 @@ use super::super::vt100_runtime::Vt100TestRuntime;
 /// that skipped it would render a fixture differently from every live console,
 /// which is precisely the class of divergence these stories exist to catch.
 pub(crate) fn load_fixture(name: &str) -> Vec<ChatAppMsg> {
-    let content = read_fixture(name);
-    let mut stream = SessionEventStream::new();
-
-    let mut msgs = Vec::new();
-    for line in content.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let value: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        if value.get("version").is_some() || value.get("ended_at").is_some() {
-            continue;
-        }
-        let Some(event_type) = value.get("event").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let data = value
-            .get("data")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        msgs.extend(stream.translate(event_type, &data));
-    }
-    msgs
+    crate::tui::oil::tests::helpers::fixture_msgs(name)
 }
 
 pub(crate) struct StoryRuntime {
@@ -69,6 +43,8 @@ pub(crate) struct StoryRuntime {
     recent_frames: std::collections::VecDeque<String>,
     width: u16,
     height: u16,
+    /// The daemon fold and the runner converter for the events of the story.
+    feed: crate::tui::oil::tests::helpers::EventFeed,
 }
 
 impl StoryRuntime {
@@ -81,6 +57,7 @@ impl StoryRuntime {
             vt: Vt100TestRuntime::new(width, height),
             frames: Vec::new(),
             recent_frames: std::collections::VecDeque::with_capacity(Self::RECENT_FRAME_CAP),
+            feed: Default::default(),
             width,
             height,
         }
@@ -113,6 +90,15 @@ impl StoryRuntime {
     /// Feed a daemon → TUI message through the real `on_message` path.
     pub(crate) fn send(&mut self, msg: ChatAppMsg) -> &mut Self {
         self.app.on_message(msg);
+        self
+    }
+
+    /// Feed one daemon event on the path of a live session: the fold of the
+    /// daemon, then the runner's translation, then `on_message`.
+    pub(crate) fn event(&mut self, name: &str, data: serde_json::Value) -> &mut Self {
+        for msg in self.feed.msgs(name, data) {
+            self.app.on_message(msg);
+        }
         self
     }
 

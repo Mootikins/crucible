@@ -27,6 +27,8 @@ mod tests;
 
 pub use commands::session_event_to_chat_msgs;
 pub use render::render_frame;
+#[cfg(test)]
+pub(crate) use stream::event_msgs;
 pub use stream::SessionEventStream;
 pub(crate) use stream::{live_session_event_consumer, session_event_consumer};
 
@@ -80,6 +82,8 @@ pub struct OilChatRunner {
     pub(super) shell_output_dir: Option<PathBuf>,
     pub(super) resume_session_id: Option<String>,
     pub(super) resume_history: Option<Vec<serde_json::Value>>,
+    /// The transcript that the daemon folded from `resume_history`.
+    pub(super) resume_transcript: Option<crucible_core::transcript::Transcript>,
     pub(super) mcp_servers: Vec<McpServerDisplay>,
     pub(super) connected_kilns: Vec<KilnSummary>,
     pub(super) plugin_status: Vec<PluginStatusEntry>,
@@ -151,6 +155,7 @@ impl OilChatRunner {
             shell_output_dir: None,
             resume_session_id: None,
             resume_history: None,
+            resume_transcript: None,
             mcp_servers: Vec::new(),
             connected_kilns: Vec::new(),
             plugin_status: Vec::new(),
@@ -218,8 +223,13 @@ impl OilChatRunner {
         self
     }
 
-    pub fn with_resume_history(mut self, history: Vec<serde_json::Value>) -> Self {
+    pub fn with_resume_history(
+        mut self,
+        history: Vec<serde_json::Value>,
+        transcript: crucible_core::transcript::Transcript,
+    ) -> Self {
         self.resume_history = Some(history);
+        self.resume_transcript = Some(transcript);
         self
     }
 

@@ -86,6 +86,7 @@ This subsystem must not own:
 | `crates/crucible-cli/src/tui/oil/chat_app/command_handling_tests.rs` | 1324 | The dispatch-matrix test suite for `command_handling.rs`, attached via `#[path]`. |
 | `crates/crucible-cli/src/tui/oil/chat_app/defaults.rs` | 70 | `impl Default for OilChatApp` — the one constructor. |
 | `crates/crucible-cli/src/tui/oil/chat_app/input_handling.rs` | 387 | Key-event dispatch, ordered by which modal or mode owns the screen. |
+| `crates/crucible-cli/src/tui/oil/chat_app/transcript.rs` | 311 | Draws the transcript that the daemon folds: `load_transcript` for the snapshot of a resumed session, `apply_transcript` for the ops of each live event. It maps each item to a node of `container_list`: a user turn claims the message that the TUI drew at send time, a segment becomes an `AssistantResponse`, a tool card joins a `ToolGroup`. It decides nothing about turns, segments or tool status. |
 | `crates/crucible-cli/src/tui/oil/chat_app/message_handlers.rs` | 576 | The four `on_message` sub-dispatchers: stream, config, delegation, UI. |
 | `crates/crucible-cli/src/tui/oil/chat_app/messages.rs` | 528 | `ChatAppMsg` and `MsgCategory` — the wire vocabulary. |
 | `crates/crucible-cli/src/tui/oil/chat_app/mod.rs` | 1123 | The `OilChatApp` struct; `view()`/`frame_view()`/`compose()`/`chrome()`, `update()`, `on_message()`; module root. |
@@ -280,7 +281,13 @@ flowchart LR
    `OilChatApp` fields.
 6. Those handlers create or update `CachedToolCall`/`CachedSubagent`/
    `CachedShellExecution` (`viewport_cache.rs`) and mutate `container_list`
-   (`containers.rs`), which bumps the touched node's revision.
+   (`containers.rs`), which bumps the touched node's revision. The
+   transcript comes as `ChatAppMsg::Transcript { seq, ops }`: the runner
+   sends the ops that the daemon folded for each event, before the other
+   messages of that event (`chat_runner/stream.rs`, `event_msgs`). A resume
+   sends `ChatAppMsg::TranscriptLoaded` with the snapshot of the resume
+   reply first. `cru chat --replay` has no daemon, so its driver
+   (`local_replay.rs`) runs the core fold and puts the ops on each event.
 7. The next `view()` or `frame_view()` call renders `container_list.nodes()`
    into the frame's `Node` tree; `frame_view()` reuses a finished node's
    kept rows from `transcript_rows.rs` instead of laying it out again.

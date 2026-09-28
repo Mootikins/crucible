@@ -16,7 +16,6 @@ use crucible_core::types::acp::FileDiff;
 
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::ChatAppMsg;
-use crate::tui::oil::chat_runner::SessionEventStream;
 
 use super::support::StoryRuntime;
 
@@ -30,11 +29,14 @@ pub(crate) fn send_user_message(story: &mut StoryRuntime, text: &str) -> Action<
 }
 
 /// Simulate the daemon streaming an assistant reply back to this console:
-/// one text delta followed by stream completion. This is the mock-tier stand-in
+/// one text delta, then the end of the answer. This is the mock-tier stand-in
 /// for a real turn (the live tier drives a real model through the daemon).
 pub(crate) fn stream_assistant_reply(story: &mut StoryRuntime, text: &str) {
-    story.send(ChatAppMsg::TextDelta(text.to_string()));
-    story.send(ChatAppMsg::StreamComplete);
+    story.event("text_delta", serde_json::json!({ "content": text }));
+    story.event(
+        "message_complete",
+        serde_json::json!({ "full_response": text }),
+    );
 }
 
 /// Assert the assistant's reply containing `needle` becomes visible, settling
@@ -58,16 +60,14 @@ pub(crate) fn announce_tool_call(
     args: &str,
     source: Option<&str>,
 ) {
-    story.send(ChatAppMsg::ToolCall {
-        name: name.to_string(),
-        args: args.to_string(),
-        call_id: Some(format!("{name}-1")),
-        description: None,
-        source: source.map(str::to_string),
-        render: None,
-        diffs: Vec::new(),
-        auto_approved: None,
-    });
+    let args: serde_json::Value =
+        serde_json::from_str(args).unwrap_or_else(|_| serde_json::Value::String(args.into()));
+    let mut data =
+        serde_json::json!({ "call_id": format!("{name}-1"), "tool": name, "args": args });
+    if let Some(source) = source {
+        data["source"] = source.into();
+    }
+    story.event("tool_call", data);
 }
 
 /// Simulate a delegated agent attaching file diffs to a tool call it already
@@ -82,17 +82,19 @@ pub(crate) fn attach_late_diff(
     old_content: &str,
     new_content: &str,
 ) {
-    story.send(ChatAppMsg::ToolCallUpdate {
-        call_id: call_id.to_string(),
-        args: None,
-        diffs: Some(vec![FileDiff::from_contents(
-            path.to_string(),
-            Some(old_content.to_string()),
-            new_content.to_string(),
-        )]),
-        render: None,
-        auto_approved: None,
-    });
+    let diff = FileDiff::from_contents(
+        path.to_string(),
+        Some(old_content.to_string()),
+        new_content.to_string(),
+    );
+    story.event(
+        "tool_call_update",
+        serde_json::json!({
+            "call_id": call_id,
+            "args": null,
+            "display": { "kind": "edit", "tool": "", "diffs": [diff] },
+        }),
+    );
 }
 
 /// Simulate the daemon reporting that a tool finished, as the pair of messages
@@ -104,53 +106,24 @@ pub(crate) fn complete_tool_call(
     call_id: &str,
     output: &str,
 ) {
-    story.send(ChatAppMsg::ToolResultDelta {
-        name: name.to_string(),
-        delta: output.to_string(),
-        call_id: Some(call_id.to_string()),
-    });
-    story.send(ChatAppMsg::ToolResultComplete {
-        name: name.to_string(),
-        call_id: Some(call_id.to_string()),
-    });
+    story.event(
+        "tool_result",
+        serde_json::json!({ "call_id": call_id, "tool": name, "result": { "result": output } }),
+    );
 }
 
-/// Feed this console a raw daemon session event, through the same
-/// `session_event → ChatAppMsg` mapping the live RPC client uses. Use this
-/// (rather than [`announce_tool_call`]) when the story is about the wire
-/// payload surviving that mapping.
-///
-/// **Stateless.** This is the bare mapping function; it carries nothing across
-/// events. Any story whose meaning depends on what came before — replay dedup,
-/// `message_complete` suppression — must use [`relay_session_turn`] instead, or
-/// it will assert against a stream no live console produces.
+/// Feed this console a raw daemon session event on the path of a live
+/// session: the daemon's transcript fold, then the runner's translation.
+/// The story keeps one fold, so consecutive events build on each other.
 pub(crate) fn relay_session_event(story: &mut StoryRuntime, event: &str, data: serde_json::Value) {
-    for msg in crate::tui::oil::chat_runner::session_event_to_chat_msgs(event, &data) {
-        story.send(msg);
-    }
+    story.event(event, data);
 }
 
-/// Relay a whole turn of raw daemon session events through the *stateful*
-/// [`SessionEventStream`] the live runner and session resume both use.
-///
-/// Prefer this over repeated [`relay_session_event`] calls whenever the story
-/// depends on cross-event state — de-duplicating a provider's end-of-stream
-/// replays, or suppressing `message_complete`'s full-response snapshot once
-/// granular deltas have streamed.
-///
-/// **One call is one turn, and each call builds a fresh `SessionEventStream`.**
-/// Production keeps *one* stream per session for its whole life and relies on
-/// the `user_message` event to reset the per-turn state
-/// (`chat_runner/stream.rs`). So consecutive calls here model two turns only
-/// because construction happens to reset the same fields; a story that needs to
-/// pin the `user_message` reset itself must drive one stream across both turns
-/// directly (see `session_event_stream_tests`).
+/// Relay a turn of raw daemon session events, in order, through
+/// [`relay_session_event`].
 pub(crate) fn relay_session_turn(story: &mut StoryRuntime, events: &[(&str, serde_json::Value)]) {
-    let mut stream = SessionEventStream::new();
     for (event, data) in events {
-        for msg in stream.translate(event, data) {
-            story.send(msg);
-        }
+        story.event(event, data.clone());
     }
 }
 

@@ -165,6 +165,14 @@ pub enum ChatAppMsg {
     ModelsLoaded(Vec<String>),
     /// **Event** (daemon → TUI): Model fetch failed with error.
     ModelsFetchFailed(String),
+    /// **Event** (daemon → TUI): What one event changed in the folded
+    /// transcript. `seq` is the event's seq.
+    Transcript {
+        seq: Option<u64>,
+        ops: Vec<crucible_core::transcript::TranscriptOp>,
+    },
+    /// **Event** (daemon → TUI): The folded transcript of a resumed session.
+    TranscriptLoaded(crucible_core::transcript::Transcript),
     /// **Command** (TUI → daemon): Fetch the session's command catalog.
     FetchCommands,
     /// **Event** (daemon → TUI): The session's command catalog.
@@ -453,7 +461,9 @@ impl ChatAppMsg {
             | Self::ToolResultComplete { .. }
             | Self::ToolResultError { .. }
             | Self::StreamComplete
-            | Self::StreamCancelled => MsgCategory::Stream,
+            | Self::StreamCancelled
+            | Self::Transcript { .. }
+            | Self::TranscriptLoaded(_) => MsgCategory::Stream,
 
             Self::SwitchModel(_)
             | Self::FetchModels

@@ -4,8 +4,6 @@
 //! assertions read the rendered frame. The daemon sends the score as a full
 //! `f64`; only the display rounds it.
 
-use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
-
 use super::support::StoryRuntime;
 
 fn pump_precognition(story: &mut StoryRuntime) {
@@ -18,9 +16,12 @@ fn pump_precognition(story: &mut StoryRuntime) {
             { "title": "Help/Concepts/Link Resolution", "kiln": "docs", "score": 0.5 },
         ],
     });
-    for msg in session_event_to_chat_msgs("precognition_complete", &data) {
-        story.send(msg);
-    }
+    // Precognition grounds a turn, so the turn comes first.
+    story.event(
+        "user_message",
+        serde_json::json!({"message_id": "m1", "content": "what is a kiln?"}),
+    );
+    story.event("precognition_complete", data);
 }
 
 #[test]

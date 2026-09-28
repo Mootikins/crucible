@@ -297,6 +297,13 @@ pub struct ContainerList {
     /// here rather than in a transcript node. The status line reports how many
     /// are in flight; the transcript shows only the immutable start and finish.
     background: Vec<CachedToolCall>,
+    /// The node of each transcript item that has one node: a user turn, an
+    /// answer segment, a notice, a delegation. A tool card lives in a group
+    /// and is found by its call id.
+    item_nodes: std::collections::HashMap<String, usize>,
+    /// A user message that this TUI drew when the user sent it, before the
+    /// daemon named its turn. The first user-turn item takes it.
+    unclaimed_user: Option<usize>,
 }
 
 impl ContainerList {
@@ -306,6 +313,8 @@ impl ContainerList {
             revisions: Vec::new(),
             turn_active: false,
             background: Vec::new(),
+            item_nodes: std::collections::HashMap::new(),
+            unclaimed_user: None,
         }
     }
 
@@ -322,6 +331,8 @@ impl ContainerList {
         self.revisions.clear();
         self.background.clear();
         self.turn_active = false;
+        self.item_nodes.clear();
+        self.unclaimed_user = None;
     }
 
     pub fn nodes(&self) -> &[ChatNode] {
@@ -357,8 +368,49 @@ impl ContainerList {
 
     // ─── Mutations ──────────────────────────────────────────────────────
 
+    /// Draw the message that the user just sent. The daemon's user-turn
+    /// item for it claims this node, so the message shows once.
     pub fn add_user_message(&mut self, content: String) {
         self.push(ChatNode::UserMessage { text: content });
+        self.unclaimed_user = Some(self.nodes.len() - 1);
+    }
+
+    /// The node of the transcript item `id`, when it has one.
+    pub fn item_node(&self, id: &str) -> Option<usize> {
+        self.item_nodes.get(id).copied()
+    }
+
+    /// Append `node` as the node of the transcript item `id`.
+    pub fn push_item(&mut self, id: &str, node: ChatNode) {
+        self.push(node);
+        self.item_nodes.insert(id.to_owned(), self.nodes.len() - 1);
+    }
+
+    /// Record that the tool card of item `id` is drawn, in the last group.
+    pub fn mark_tool_item(&mut self, id: &str) {
+        if let Some(last) = self.nodes.len().checked_sub(1) {
+            self.item_nodes.insert(id.to_owned(), last);
+        }
+    }
+
+    /// Give the user message that this TUI drew to the item `id`. `false`
+    /// when there is no such message.
+    pub fn claim_user_message(&mut self, id: &str) -> bool {
+        let Some(index) = self.unclaimed_user.take() else {
+            return false;
+        };
+        self.item_nodes.insert(id.to_owned(), index);
+        true
+    }
+
+    /// Change the node at `index`; it gets a new revision.
+    pub fn update_node(&mut self, index: usize, f: impl FnOnce(&mut ChatNode)) {
+        if let (Some(node), Some(revision)) =
+            (self.nodes.get_mut(index), self.revisions.get_mut(index))
+        {
+            *revision = next_revision();
+            f(node);
+        }
     }
 
     /// Ensure there's an AssistantResponse at the end. Creates one if needed.

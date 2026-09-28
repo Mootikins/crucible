@@ -32,6 +32,7 @@ pub mod popup_state;
 mod repl_command;
 mod shell;
 pub mod state;
+mod transcript;
 
 pub use messages::ChatAppMsg;
 pub use model_state::{KilnSummary, McpServerDisplay, ModelListState, PluginStatusEntry};
@@ -135,6 +136,9 @@ pub struct OilChatApp {
     /// Message queue state (deferred messages, counter, Ctrl-C tracking)
     message_queue: MessageQueueState,
     pending_delegate_supersessions: HashSet<String>,
+    /// The `seq` of the transcript snapshot this TUI drew. An op of an
+    /// event at or below it is already in the snapshot.
+    transcript_as_of: u64,
 
     // ─── I/O / Lifecycle (tech debt — future extraction) ──────────────
     // Callbacks, filesystem state, and registries that ideally move

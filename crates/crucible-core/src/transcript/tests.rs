@@ -351,3 +351,79 @@ fn the_fold_of_each_recording_matches_its_golden_file() {
         );
     }
 }
+
+/// Each recording that carries an end-of-stream reasoning replay keeps
+/// exactly its other thoughts. Each number is the count of `thinking` events
+/// in the fixture minus its replays, counted against the raw JSONL:
+///
+///   demo                  68 thinking events −  2 replays (156, 119 chars)
+///   parity-test           59                 −  1        (266)
+///   reproduce            173                 −  4        (515, 79, 161, 87)
+///   reproduce-formatting 162                 −  4        (272, 146, 183, 144)
+///
+/// A constant has no model of the rule to get wrong. It fails when a replay
+/// is kept, and when the run is not consumed on a match, because a later
+/// replay in the same turn then stops matching.
+#[test]
+fn recorded_fixtures_keep_exactly_their_non_replayed_thoughts() {
+    for (name, expected) in [
+        ("demo.jsonl", 66),
+        ("parity-test.jsonl", 58),
+        ("reproduce.jsonl", 169),
+        ("reproduce-formatting.jsonl", 158),
+    ] {
+        let mut fold = TranscriptFold::new();
+        let kept = fixture(name)
+            .iter()
+            .flat_map(|event| fold.apply(event))
+            .filter(|op| {
+                matches!(
+                    op,
+                    TranscriptOp::Append {
+                        field: TextField::Thinking,
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(kept, expected, "{name}");
+    }
+}
+
+/// The segments of a turn, joined, are the whole answer that
+/// `message_complete` carries: no text shows twice, and none is lost. Tool
+/// output once bled into the answer text of the delegation recording.
+#[test]
+fn the_segments_of_a_turn_join_into_its_whole_answer() {
+    // `demo.jsonl` is not here: its recording scrubbed a home path in the
+    // whole answer but not in the streamed deltas.
+    for name in [
+        "delegation-demo.jsonl",
+        "acp_parity_internal.jsonl",
+        "acp_parity_delegated.jsonl",
+        "session_log_wire.jsonl",
+    ] {
+        let events = fixture(name);
+        let full: String = events
+            .iter()
+            .filter_map(|e| match e.payload() {
+                Ok(SessionEventPayload::Turn(TurnPayload::MessageComplete {
+                    full_response,
+                    ..
+                })) => Some(full_response),
+                _ => None,
+            })
+            .collect();
+        let transcript = TranscriptFold::of_events(&events);
+        let joined: String = transcript
+            .items
+            .iter()
+            .filter_map(|item| match &item.body {
+                ItemBody::AssistantSegment { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(!full.is_empty(), "{name}: the recording has an answer");
+        assert_eq!(joined, full, "{name}");
+    }
+}

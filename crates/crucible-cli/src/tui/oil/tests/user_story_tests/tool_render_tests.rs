@@ -6,7 +6,6 @@ use serde_json::json;
 use super::support::StoryRuntime;
 use super::vocab::{relay_session_event, send_user_message};
 use crate::tui::oil::chat_app::ChatAppMsg;
-use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 
 /// A plugin kind: the card shows the canonical tool and the render line, and
 /// not a value that the TUI took from the arguments.
@@ -202,10 +201,12 @@ fn an_old_transcript_shows_its_lines_and_diffs() {
         .lines()
         .map(|l| serde_json::from_str(l).expect("a JSON line"))
         .collect();
-    let msgs: Vec<ChatAppMsg> = crucible_core::protocol::session_events::migrate_history(lines)
-        .iter()
-        .flat_map(|e| session_event_to_chat_msgs(e["event"].as_str().unwrap_or(""), &e["data"]))
-        .collect();
+    let events: Vec<crucible_core::protocol::SessionEventMessage> =
+        crucible_core::protocol::session_events::migrate_history(lines)
+            .into_iter()
+            .filter_map(|e| serde_json::from_value(e).ok())
+            .collect();
+    let msgs: Vec<ChatAppMsg> = crate::tui::oil::tests::helpers::event_msgs(events);
     let errors: Vec<&ChatAppMsg> = msgs
         .iter()
         .filter(|m| matches!(m, ChatAppMsg::Error(_)))

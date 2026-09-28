@@ -2,8 +2,8 @@
 source: crates/crucible-cli/src/tui/oil/tests/user_story_tests/precognition_tests.rs
 expression: screen
 ---
-
-
+ > what is a kiln?                                                              
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 
  * precognition pulled 3 notes                                                  
      0.83  Kilns (docs)                                                         

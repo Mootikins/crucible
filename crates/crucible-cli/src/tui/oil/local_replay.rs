@@ -51,6 +51,10 @@ pub fn read_recording(path: &Path) -> Result<(RecordingHeader, Vec<RecordedEvent
 /// Rewrites `session_id` on each message to `new_session_id` so the consumer
 /// filter matches. Recorded `session_id` is ignored (informational only).
 /// `speed <= 0.0` is treated as instant (no delay between events).
+///
+/// A recording has no daemon behind it, so this driver runs the transcript
+/// fold of `crucible_core::transcript` itself and puts its ops on each event,
+/// as the daemon's event bus does for a live session.
 pub async fn drive_replay(
     events: Vec<RecordedEvent>,
     speed: f64,
@@ -58,6 +62,7 @@ pub async fn drive_replay(
     tx: mpsc::UnboundedSender<SessionEventMessage>,
 ) {
     let mut prev: Option<DateTime<Utc>> = None;
+    let mut fold = crucible_core::transcript::TranscriptFold::new();
     for ev in events {
         if crucible_daemon::replay::is_keypress_event(&ev.event) {
             continue;
@@ -74,6 +79,7 @@ pub async fn drive_replay(
         msg.msg_type = "replay_event".into();
         msg.timestamp = Some(ev.ts);
         msg.seq = Some(ev.seq);
+        msg.transcript = fold.apply(&msg);
         if tx.send(msg).is_err() {
             return;
         }

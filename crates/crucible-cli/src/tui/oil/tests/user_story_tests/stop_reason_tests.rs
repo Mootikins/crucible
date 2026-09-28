@@ -6,8 +6,6 @@
 //! off, and until it is on screen the user reads a truncated reply as a
 //! finished one.
 
-use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
-
 use super::support::StoryRuntime;
 
 /// Drive the real wire event through the real translation into the app, so a
@@ -20,9 +18,7 @@ fn pump_reply(story: &mut StoryRuntime, text: &str, stop_reason: Option<&str>) {
     if let Some(reason) = stop_reason {
         data["stop_reason"] = serde_json::Value::String(reason.to_string());
     }
-    for msg in session_event_to_chat_msgs("message_complete", &data) {
-        story.send(msg);
-    }
+    story.event("message_complete", data);
 }
 
 #[test]

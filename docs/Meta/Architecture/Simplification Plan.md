@@ -148,7 +148,11 @@ ops. The commits, in order:
 3. **(done)** The daemon event bus folds each event and sends its ops in the `transcript` field of the live copy. The journal copy has no ops.
 4. The web backend forwards the ops.
 5. The web client renders the snapshot and the ops. Its own fold goes.
-6. The TUI renders the snapshot and the ops. Its own fold goes.
+6. **(part a done)** The TUI renders the snapshot and the ops. Its own fold
+   goes: `turn_msgs` makes no transcript messages, and `SessionEventStream`
+   keeps no turn state. Part b remains: the old stream messages of
+   `ChatAppMsg` (`TextDelta`, `ToolCall` and the rest) have no production
+   sender, and their tests move to the event path.
 7. `cru acp` replays the snapshot on `session/load`, and maps the ops.
 8. A parity test renders one fixture in all three clients.
 9. The markdown export and the Lua history read the snapshot.

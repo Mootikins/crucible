@@ -90,3 +90,68 @@ fn the_resume_picker_draws_in_the_full_screen_mode() {
     );
     insta::assert_snapshot!("resume_picker_full_screen", screen);
 }
+
+/// A resumed session draws the transcript that the daemon folded. The
+/// narration before a tool stays above the tool: a resume that rebuilt the
+/// turn from its stored events put all the text below the tools.
+#[test]
+fn a_resumed_session_keeps_the_narration_above_its_tool() {
+    let path = crate::tui::oil::tests::helpers::fixture_path("acp_parity_internal.jsonl");
+    let events: Vec<crucible_core::protocol::SessionEventMessage> = std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(|line| {
+            let name = line.get("event")?.as_str()?.to_string();
+            Some(crucible_core::protocol::SessionEventMessage::new(
+                "s",
+                name,
+                line.get("data").cloned().unwrap_or_default(),
+            ))
+        })
+        .collect();
+    let snapshot = crucible_core::transcript::TranscriptFold::of_events(&events);
+
+    let mut story = StoryRuntime::new(80, 30);
+    story.send(ChatAppMsg::TranscriptLoaded(snapshot));
+    let screen = story.screen();
+
+    let at = |needle: &str| {
+        screen
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} is on screen:\n{screen}"))
+    };
+    assert!(
+        at("fix the greeting") < at("I'll fix the greeting."),
+        "{screen}"
+    );
+    assert!(at("I'll fix the greeting.") < at("Done."), "{screen}");
+    assert!(
+        screen
+            .lines()
+            .any(|line| line.contains("Edit") || line.contains("edit")),
+        "the tool card is drawn:\n{screen}"
+    );
+}
+
+/// The message that the user sends shows at once. When the daemon then
+/// upserts the turn of that message, the TUI keeps the one row.
+#[test]
+fn a_sent_message_shows_once_when_the_daemon_names_its_turn() {
+    let mut story = StoryRuntime::new(80, 24);
+    story.text("hello there");
+    let _ = story.enter();
+    story.event(
+        "user_message",
+        serde_json::json!({ "message_id": "m1", "content": "hello there" }),
+    );
+    story.event("text_delta", serde_json::json!({ "content": "hi" }));
+    story.event(
+        "message_complete",
+        serde_json::json!({ "message_id": "m1", "full_response": "hi" }),
+    );
+
+    let screen = story.screen();
+    assert_eq!(screen.matches("hello there").count(), 1, "{screen}");
+    assert!(screen.contains("hi"), "{screen}");
+}

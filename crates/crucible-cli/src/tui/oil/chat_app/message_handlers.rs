@@ -11,7 +11,7 @@ use super::model_state::ModelListState;
 use super::OilChatApp;
 
 /// Parse a tool source provenance string into a display type.
-fn parse_tool_source(s: &str) -> Option<ToolSourceDisplay> {
+pub(super) fn parse_tool_source(s: &str) -> Option<ToolSourceDisplay> {
     match s {
         "Core" => Some(ToolSourceDisplay::Core),
         "Crucible" => Some(ToolSourceDisplay::Crucible),
@@ -160,6 +160,8 @@ impl OilChatApp {
                 self.container_list.cancel_streaming();
                 self.finalize_streaming();
             }
+            ChatAppMsg::Transcript { seq, ops } => self.apply_transcript(seq, ops),
+            ChatAppMsg::TranscriptLoaded(transcript) => self.load_transcript(transcript),
             _ => {
                 tracing::trace!("[stub] stream msg: {:?}", msg.category());
             }
@@ -529,7 +531,7 @@ impl OilChatApp {
 /// The score leads each line, so the scores form one column whatever the
 /// title lengths are. The daemon sends the full `f64`, and only this display
 /// rounds it to two digits. The indent matches the kiln banner.
-fn precognition_notice(
+pub(super) fn precognition_notice(
     notes_count: usize,
     notes: &[crucible_core::traits::chat::PrecognitionNoteInfo],
 ) -> String {

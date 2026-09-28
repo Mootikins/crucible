@@ -86,10 +86,13 @@ impl OilChatRunner {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
 
-        // Hydrate viewport with conversation history from a resumed session by
-        // pumping stored events through the shared SessionEventStream — the
-        // same path live and replay use. `message_complete` in the stream
-        // produces a `StreamComplete` that finalizes the final turn.
+        // Draw the transcript of a resumed session before any live event, so
+        // that the ops of the next events continue it.
+        if let Some(transcript) = self.resume_transcript.take() {
+            let _ = msg_tx.send(ChatAppMsg::TranscriptLoaded(transcript));
+        }
+        // The stored events give the rest of the session state, such as token
+        // use, through the same SessionEventStream that live and replay use.
         if let Some(events) = self.resume_history.take() {
             if !events.is_empty() {
                 tracing::info!(count = events.len(), "Loading resume history into viewport");

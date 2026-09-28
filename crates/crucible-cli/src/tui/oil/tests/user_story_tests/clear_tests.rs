@@ -3,7 +3,6 @@
 
 use super::support::StoryRuntime;
 use super::vocab::relay_session_turn;
-use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 use crucible_core::interaction::{InteractionRequest, PermRequest};
 use serde_json::json;
 
@@ -63,9 +62,7 @@ fn a_resumed_plugin_turn_keeps_its_label() {
     }})];
     let mut story = StoryRuntime::new(80, 24);
     for e in crucible_core::protocol::session_events::migrate_history(old) {
-        for msg in session_event_to_chat_msgs(e["event"].as_str().unwrap(), &e["data"]) {
-            story.send(msg);
-        }
+        story.event(e["event"].as_str().unwrap(), e["data"].clone());
     }
     let screen = story.screen();
     assert!(screen.contains("↻ goal"), "{screen}");

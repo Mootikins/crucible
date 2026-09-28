@@ -56,6 +56,7 @@ impl Default for OilChatApp {
             permission: PermissionState::default(),
             message_queue: MessageQueueState::default(),
             pending_delegate_supersessions: std::collections::HashSet::new(),
+            transcript_as_of: 0,
 
             // I/O / Lifecycle
             shell_output_dir: None,

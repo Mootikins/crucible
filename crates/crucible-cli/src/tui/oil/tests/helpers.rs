@@ -138,3 +138,62 @@ pub fn assert_no_triple_blanks(screen: &str, context: &str) {
         );
     }
 }
+
+/// The path of a live session, for a test that feeds raw events: the
+/// daemon's event bus folds each event and puts the ops on it, and the TUI
+/// consumer turns the event into messages. A raw event carries no ops, so
+/// the test needs the fold. One feed keeps one fold, as one session does.
+#[derive(Default)]
+pub struct EventFeed {
+    fold: crucible_core::transcript::TranscriptFold,
+    stream: crate::tui::oil::chat_runner::SessionEventStream,
+}
+
+impl EventFeed {
+    /// The app messages of the event `name` with `data`.
+    pub fn msgs(
+        &mut self,
+        name: &str,
+        data: serde_json::Value,
+    ) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        self.event(crucible_core::protocol::SessionEventMessage::new(
+            "test", name, data,
+        ))
+    }
+
+    /// The app messages of `event`.
+    pub fn event(
+        &mut self,
+        mut event: crucible_core::protocol::SessionEventMessage,
+    ) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+        event.transcript = self.fold.apply(&event);
+        crate::tui::oil::chat_runner::event_msgs(&mut self.stream, &event)
+    }
+}
+
+/// The app messages of `events`, through one [`EventFeed`].
+pub fn event_msgs(
+    events: impl IntoIterator<Item = crucible_core::protocol::SessionEventMessage>,
+) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+    let mut feed = EventFeed::default();
+    events.into_iter().flat_map(|e| feed.event(e)).collect()
+}
+
+/// The app messages of a recorded fixture, through [`event_msgs`].
+pub fn fixture_msgs(name: &str) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+    let events = read_fixture(name)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(|line| {
+            let name = line.get("event")?.as_str()?.to_string();
+            let mut event = crucible_core::protocol::SessionEventMessage::new(
+                "fixture",
+                name,
+                line.get("data").cloned().unwrap_or_default(),
+            );
+            event.seq = line.get("seq").and_then(serde_json::Value::as_u64);
+            Some(event)
+        })
+        .collect::<Vec<_>>();
+    event_msgs(events)
+}

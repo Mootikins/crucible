@@ -1,170 +1,67 @@
 use super::super::*;
 use tokio::sync::mpsc;
 
+/// The consumer forwards the transcript ops of an event before its other
+/// messages, so the end of a turn that the same event carries seals the
+/// segment that the ops just wrote. A delegation reaches the TUI this way:
+/// it is a transcript item, not a message of its own.
 #[tokio::test]
-async fn replay_consumer_handles_delegation_spawned() {
+async fn the_consumer_forwards_the_ops_of_an_event_before_its_other_messages() {
     use serde_json::json;
     use tokio::time::{timeout, Duration};
 
     let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
     let (event_tx, event_rx) = mpsc::unbounded_channel();
+    let session = "test-session-ops".to_string();
+    let consumer = tokio::spawn(session_event_consumer(
+        session.clone(),
+        event_rx,
+        msg_tx,
+        None,
+    ));
 
-    let replay_session_id = "test-session-delegation-spawned".to_string();
-    let session_id_clone = replay_session_id.clone();
-
-    let consumer_task = tokio::spawn(async move {
-        session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
-    });
-
-    event_tx
-        .send(crucible_daemon::SessionEvent::new(
-            replay_session_id.clone(),
-            "delegation_spawned".to_string(),
-            json!({
-                "delegation_id": "d1",
-                "prompt": "test prompt",
-                "target_agent": "opencode"
-            }),
-        ))
-        .unwrap();
-
-    let msg = timeout(Duration::from_secs(1), msg_rx.recv())
-        .await
-        .expect("Timeout waiting for message")
-        .expect("Should receive a message");
-
-    match msg {
-        ChatAppMsg::DelegationSpawned {
-            id,
-            prompt,
-            target_agent,
-        } => {
-            assert_eq!(id, "d1");
-            assert_eq!(prompt, "test prompt");
-            assert_eq!(target_agent, Some("opencode".to_string()));
-        }
-        other => panic!("Expected DelegationSpawned, got {:?}", other),
+    // The daemon's event bus folds each event and puts the ops on it.
+    let mut fold = crucible_core::transcript::TranscriptFold::new();
+    for (name, data) in [
+        (
+            "delegation_spawned",
+            json!({ "delegation_id": "d1", "prompt": "test prompt", "target_agent": "opencode" }),
+        ),
+        (
+            "message_complete",
+            json!({ "message_id": "m1", "full_response": "done" }),
+        ),
+    ] {
+        let mut event = crucible_daemon::SessionEvent::new(session.clone(), name, data);
+        event.transcript = fold.apply(&event);
+        event_tx.send(event).unwrap();
     }
 
-    event_tx
-        .send(crucible_daemon::SessionEvent::new(
-            replay_session_id,
-            "replay_complete".to_string(),
-            json!({}),
-        ))
-        .unwrap();
-    drop(event_tx);
-
-    timeout(Duration::from_secs(1), consumer_task)
-        .await
-        .expect("Timeout waiting for consumer task")
-        .expect("Consumer task should complete");
-}
-
-#[tokio::test]
-async fn replay_consumer_handles_delegation_completed() {
-    use serde_json::json;
-    use tokio::time::{timeout, Duration};
-
-    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-    let (event_tx, event_rx) = mpsc::unbounded_channel();
-
-    let replay_session_id = "test-session-delegation-completed".to_string();
-    let session_id_clone = replay_session_id.clone();
-
-    let consumer_task = tokio::spawn(async move {
-        session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
-    });
-
-    event_tx
-        .send(crucible_daemon::SessionEvent::new(
-            replay_session_id.clone(),
-            "delegation_completed".to_string(),
-            json!({
-                "delegation_id": "d1",
-                "result_summary": "test summary"
-            }),
-        ))
-        .unwrap();
-
-    let msg = timeout(Duration::from_secs(1), msg_rx.recv())
-        .await
-        .expect("Timeout waiting for message")
-        .expect("Should receive a message");
-
-    match msg {
-        ChatAppMsg::DelegationCompleted { id, summary } => {
-            assert_eq!(id, "d1");
-            assert_eq!(summary, "test summary");
-        }
-        other => panic!("Expected DelegationCompleted, got {:?}", other),
+    let mut msgs = Vec::new();
+    for _ in 0..3 {
+        msgs.push(
+            timeout(Duration::from_secs(1), msg_rx.recv())
+                .await
+                .expect("a message in time")
+                .expect("the channel is open"),
+        );
     }
-
-    event_tx
-        .send(crucible_daemon::SessionEvent::new(
-            replay_session_id,
-            "replay_complete".to_string(),
-            json!({}),
-        ))
-        .unwrap();
-    drop(event_tx);
-
-    timeout(Duration::from_secs(1), consumer_task)
-        .await
-        .expect("Timeout waiting for consumer task")
-        .expect("Consumer task should complete");
-}
-
-#[tokio::test]
-async fn replay_consumer_handles_delegation_failed() {
-    use serde_json::json;
-    use tokio::time::{timeout, Duration};
-
-    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-    let (event_tx, event_rx) = mpsc::unbounded_channel();
-
-    let replay_session_id = "test-session-delegation-failed".to_string();
-    let session_id_clone = replay_session_id.clone();
-
-    let consumer_task = tokio::spawn(async move {
-        session_event_consumer(session_id_clone, event_rx, msg_tx, None).await;
-    });
-
-    event_tx
-        .send(crucible_daemon::SessionEvent::new(
-            replay_session_id.clone(),
-            "delegation_failed".to_string(),
-            json!({
-                "delegation_id": "d1",
-                "error": "test failure"
-            }),
-        ))
-        .unwrap();
-
-    let msg = timeout(Duration::from_secs(1), msg_rx.recv())
-        .await
-        .expect("Timeout waiting for message")
-        .expect("Should receive a message");
-
-    match msg {
-        ChatAppMsg::DelegationFailed { id, error } => {
-            assert_eq!(id, "d1");
-            assert_eq!(error, "test failure");
+    let mut msgs = msgs.into_iter();
+    match msgs.next().unwrap() {
+        ChatAppMsg::Transcript { ops, .. } => {
+            let mut transcript = crucible_core::transcript::Transcript::default();
+            assert!(ops.iter().all(|op| transcript.apply(op)));
+            assert!(matches!(
+                &transcript.items[0].body,
+                crucible_core::transcript::ItemBody::Delegation { delegation_id, .. }
+                    if delegation_id == "d1"
+            ));
         }
-        other => panic!("Expected DelegationFailed, got {:?}", other),
+        other => panic!("expected the ops of the delegation, got {other:?}"),
     }
+    assert!(matches!(msgs.next(), Some(ChatAppMsg::Transcript { .. })));
+    assert!(matches!(msgs.next(), Some(ChatAppMsg::StreamComplete)));
 
-    event_tx
-        .send(crucible_daemon::SessionEvent::new(
-            replay_session_id,
-            "replay_complete".to_string(),
-            json!({}),
-        ))
-        .unwrap();
     drop(event_tx);
-
-    timeout(Duration::from_secs(1), consumer_task)
-        .await
-        .expect("Timeout waiting for consumer task")
-        .expect("Consumer task should complete");
+    consumer.await.unwrap();
 }

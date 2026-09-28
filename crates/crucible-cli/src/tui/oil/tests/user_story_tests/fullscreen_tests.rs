@@ -174,9 +174,15 @@ fn page_up_holds_the_reader_while_an_answer_streams() {
     }
 }
 
-/// Relay one daemon session event into `app`, as the runner does.
-fn relay(app: &mut OilChatApp, event: &str, data: serde_json::Value) {
-    for msg in crate::tui::oil::chat_runner::session_event_to_chat_msgs(event, &data) {
+/// Relay one daemon session event into `app` on the path of a live session:
+/// the daemon's transcript fold, then the runner's translation.
+fn relay(
+    app: &mut OilChatApp,
+    feed: &mut crate::tui::oil::tests::helpers::EventFeed,
+    event: &str,
+    data: serde_json::Value,
+) {
+    for msg in feed.msgs(event, data) {
         app.on_message(msg);
     }
 }
@@ -189,9 +195,11 @@ fn relay(app: &mut OilChatApp, event: &str, data: serde_json::Value) {
 fn a_tool_card_draws_the_render_table_in_the_full_screen_mode() {
     use serde_json::json;
     let mut app = OilChatApp::default();
+    let mut feed = crate::tui::oil::tests::helpers::EventFeed::default();
     app.on_message(ChatAppMsg::UserMessage("fix it and search".into()));
     relay(
         &mut app,
+        &mut feed,
         "tool_call",
         json!({
             "call_id": "c1", "tool": "spawn_agent",
@@ -204,11 +212,13 @@ fn a_tool_card_draws_the_render_table_in_the_full_screen_mode() {
     );
     relay(
         &mut app,
+        &mut feed,
         "tool_result",
         json!({ "call_id": "c1", "tool": "spawn_agent", "result": { "result": "done" } }),
     );
     relay(
         &mut app,
+        &mut feed,
         "tool_call",
         json!({
             "call_id": "c2", "tool": "web_search", "args": { "query": "rust" },
@@ -220,6 +230,7 @@ fn a_tool_card_draws_the_render_table_in_the_full_screen_mode() {
     );
     relay(
         &mut app,
+        &mut feed,
         "tool_result",
         json!({
             "call_id": "c2", "tool": "web_search",

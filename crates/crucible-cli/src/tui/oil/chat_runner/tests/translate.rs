@@ -146,208 +146,10 @@ fn translate_bad_payload_shape_returns_empty() {
 }
 
 #[test]
-fn translate_tool_call_with_malformed_diffs_yields_empty_diffs() {
-    use serde_json::json;
-    // Wire-protocol drift safety: if the daemon sends a `diffs` field that
-    // isn't a Vec<FileDiff>, the translator must log a warning and emit
-    // an empty Vec rather than panic or drop the entire ToolCall message.
-    let data = json!({
-        "call_id": "tc-1",
-        "tool": "edit_file",
-        "args": {},
-        "display": {"kind": "file_edit", "tool": "edit_file", "diffs": "this is not a list"},
-    });
-    let msgs = session_event_to_chat_msgs("tool_call", &data);
-    match msgs.as_slice() {
-        [ChatAppMsg::ToolCall { diffs, .. }] => assert!(diffs.is_empty()),
-        other => panic!("expected single ToolCall, got {other:?}"),
-    }
-}
-
-#[test]
-fn translate_tool_call_with_well_formed_diffs_passes_through() {
-    use serde_json::json;
-    let data = json!({
-        "call_id": "tc-1",
-        "tool": "edit_file",
-        "args": {},
-        "display": {"kind": "file_edit", "tool": "edit_file", "diffs": [{
-            "path": "/tmp/foo.rs",
-            "old_content": "old",
-            "new_content": "new"
-        }]},
-    });
-    let msgs = session_event_to_chat_msgs("tool_call", &data);
-    match msgs.as_slice() {
-        [ChatAppMsg::ToolCall { diffs, .. }] => {
-            assert_eq!(diffs.len(), 1);
-            assert_eq!(diffs[0].path, "/tmp/foo.rs");
-        }
-        other => panic!("expected single ToolCall, got {other:?}"),
-    }
-}
-
-#[test]
 fn translate_unknown_event_returns_empty() {
     use serde_json::json;
     let msgs = session_event_to_chat_msgs("never_heard_of_it", &json!({}));
     assert!(msgs.is_empty());
-}
-
-#[test]
-fn translate_tool_call_propagates_diffs_into_chat_msg() {
-    use crucible_core::types::acp::FileDiff;
-    use serde_json::json;
-
-    // Build a payload as the daemon emits via tool_call_with_metadata: the
-    // diffs ride in the canonical call.
-    let diffs_in = vec![FileDiff::from_contents(
-        "src/foo.rs",
-        Some("fn old() {}\n".to_string()),
-        "fn new() {}\n",
-    )];
-    let data = json!({
-        "call_id": "call-1",
-        "tool": "edit",
-        "args": { "path": "src/foo.rs" },
-        "display": { "kind": "file_edit", "tool": "edit", "diffs": diffs_in },
-    });
-
-    let msgs = session_event_to_chat_msgs("tool_call", &data);
-    assert_eq!(msgs.len(), 1);
-    match &msgs[0] {
-        ChatAppMsg::ToolCall { diffs, .. } => {
-            assert_eq!(diffs, &diffs_in, "diffs must propagate end-to-end");
-        }
-        other => panic!("expected ToolCall, got {other:?}"),
-    }
-}
-
-/// The card shows the canonical tool name of the call, not a second name
-/// that the event carries beside it.
-#[test]
-fn translate_tool_call_names_the_card_by_the_canonical_tool() {
-    use serde_json::json;
-    let data = json!({
-        "call_id": "call-1",
-        "tool": "Edit src/foo.rs",
-        "args": { "file_path": "src/foo.rs" },
-        "display": { "kind": "file_edit", "tool": "Edit", "paths": ["src/foo.rs"] },
-    });
-    match session_event_to_chat_msgs("tool_call", &data).as_slice() {
-        [ChatAppMsg::ToolCall { name, .. }] => assert_eq!(name, "Edit"),
-        other => panic!("expected ToolCall, got {other:?}"),
-    }
-}
-
-#[test]
-fn translate_tool_call_without_diffs_yields_empty_vec() {
-    use serde_json::json;
-    let data = json!({
-        "call_id": "call-1",
-        "tool": "read_file",
-        "args": { "path": "/tmp/x" },
-    });
-    let msgs = session_event_to_chat_msgs("tool_call", &data);
-    assert_eq!(msgs.len(), 1);
-    match &msgs[0] {
-        ChatAppMsg::ToolCall { diffs, .. } => {
-            assert!(
-                diffs.is_empty(),
-                "missing diffs key must yield empty Vec, got {diffs:?}"
-            );
-        }
-        other => panic!("expected ToolCall, got {other:?}"),
-    }
-}
-
-#[test]
-fn translate_tool_call_update_emits_chat_msg_with_args_and_diffs() {
-    use crucible_core::types::acp::FileDiff;
-    use serde_json::json;
-
-    // Late path: ACP agents like Claude Code first send an empty tool_call,
-    // then attach the arguments and the diff via a follow-up
-    // tool_call_update. The daemon sends the new canonical call in a
-    // `tool_call_update` event; the TUI must produce a
-    // `ChatAppMsg::ToolCallUpdate` so the existing card takes both.
-    let diffs_in = vec![FileDiff::from_contents(
-        "src/late.rs",
-        Some("fn old() {}\n".to_string()),
-        "fn new() {}\n",
-    )];
-    let data = json!({
-        "call_id": "tc-late-1",
-        "args": {"file_path": "src/late.rs"},
-        "display": {
-            "kind": "file_edit", "tool": "Edit", "diffs": diffs_in,
-            "render": { "line": "src/late.rs" },
-        },
-    });
-
-    let msgs = session_event_to_chat_msgs("tool_call_update", &data);
-    assert_eq!(msgs.len(), 1);
-    match &msgs[0] {
-        ChatAppMsg::ToolCallUpdate {
-            call_id,
-            args,
-            diffs,
-            render,
-            ..
-        } => {
-            assert_eq!(call_id, "tc-late-1");
-            assert_eq!(
-                render.as_ref(),
-                Some(&"src/late.rs".into()),
-                "the new render"
-            );
-            assert_eq!(args.as_deref(), Some(r#"{"file_path":"src/late.rs"}"#));
-            assert_eq!(
-                diffs.as_ref(),
-                Some(&diffs_in),
-                "diffs must propagate end-to-end"
-            );
-        }
-        other => panic!("expected ToolCallUpdate, got {other:?}"),
-    }
-}
-
-/// The render of a finished call rides the result and replaces the render
-/// of the card, before the result completes the card.
-#[test]
-fn translate_tool_result_carries_the_render_of_the_result() {
-    let data = serde_json::json!({
-        "call_id": "c1", "tool": "read_file",
-        "result": { "result": "a\nb", "render": { "line": "a.rs", "summary": "2 lines" } },
-    });
-    let msgs = session_event_to_chat_msgs("tool_result", &data);
-    let render = crucible_core::types::ToolRender {
-        summary: Some("2 lines".into()),
-        .."a.rs".into()
-    };
-    assert!(
-        matches!(&msgs[..], [
-            ChatAppMsg::ToolCallUpdate { call_id, render: Some(r), args: None, diffs: None, .. },
-            ChatAppMsg::ToolResultDelta { .. },
-            ChatAppMsg::ToolResultComplete { .. },
-        ] if call_id == "c1" && *r == render),
-        "{msgs:?}"
-    );
-}
-
-/// A structured result is not a string. The card shows its JSON, not nothing.
-#[test]
-fn translate_tool_result_shows_a_structured_result() {
-    let data = serde_json::json!({
-        "call_id": "c1", "tool": "Bash",
-        "result": { "result": { "exit_code": 0 } },
-    });
-    let msgs = session_event_to_chat_msgs("tool_result", &data);
-    assert!(
-        matches!(&msgs[..], [ChatAppMsg::ToolResultDelta { delta, .. }, ChatAppMsg::ToolResultComplete { .. }]
-            if delta == r#"{"exit_code":0}"#),
-        "{msgs:?}"
-    );
 }
 
 /// A daemon notification goes to the notification area with its kind.
@@ -375,37 +177,6 @@ fn translate_a_dismissed_notification() {
 }
 
 #[test]
-fn translate_tool_call_update_with_nothing_in_it_drops_msg() {
-    use serde_json::json;
-    // No args and no canonical call → no need to disturb the TUI scrollback.
-    for args in [json!({}), json!(null)] {
-        let data = json!({ "call_id": "tc-noop", "args": args });
-        let msgs = session_event_to_chat_msgs("tool_call_update", &data);
-        assert!(
-            msgs.is_empty(),
-            "an empty update should not emit a ChatAppMsg, got {msgs:?}"
-        );
-    }
-}
-
-/// A malformed `diffs` in the canonical call does not drop the update: the
-/// call loads with no diff (`lenient_diffs`).
-#[test]
-fn translate_tool_call_update_with_malformed_diffs_keeps_the_update() {
-    use serde_json::json;
-    let data = json!({
-        "call_id": "tc-bad",
-        "display": { "kind": "file_edit", "tool": "Edit", "diffs": "not a list" },
-    });
-    match session_event_to_chat_msgs("tool_call_update", &data).as_slice() {
-        [ChatAppMsg::ToolCallUpdate { diffs, .. }] => {
-            assert_eq!(diffs.as_deref(), Some(&[][..]));
-        }
-        other => panic!("expected ToolCallUpdate, got {other:?}"),
-    }
-}
-
-#[test]
 fn translate_context_limit_resolved_updates_atomic_through_stream() {
     use serde_json::json;
     let limit = Arc::new(AtomicUsize::new(0));
@@ -418,37 +189,123 @@ fn translate_context_limit_resolved_updates_atomic_through_stream() {
     assert_eq!(limit.load(Ordering::Relaxed), 4096);
 }
 
-/// The auto-approval marker rides on `tool_call` rather than arriving as a
-/// follow-up event. The gate decides before this event is emitted, so a
-/// separate event would only make the badge appear a beat after the row.
-#[test]
-fn tool_call_carries_the_auto_approval_reason() {
-    let data = serde_json::json!({
-        "call_id": "c1",
-        "tool": "bash",
-        "args": {"command": "ls"},
-        "auto_approved": "auto mode",
-    });
-    let msgs = session_event_to_chat_msgs("tool_call", &data);
-    match msgs.as_slice() {
-        [ChatAppMsg::ToolCall { auto_approved, .. }] => {
-            assert_eq!(auto_approved.as_deref(), Some("auto mode"));
+// ─── Transcript items, as the TUI draws them ────────────────────────
+//
+// The daemon folds the events (`crucible_core::transcript`) and the TUI
+// draws the items. These tests feed wire events through the fold and the
+// runner, as a live session does, and read what the app drew.
+
+use crate::tui::oil::containers::ChatNode;
+use crate::tui::oil::tests::helpers::EventFeed;
+use crate::tui::oil::viewport_cache::CachedToolCall;
+
+/// The app after `events`, on the live path.
+fn drawn(events: &[(&str, serde_json::Value)]) -> OilChatApp {
+    let mut app = OilChatApp::default();
+    let mut feed = EventFeed::default();
+    for (event, data) in events {
+        for msg in feed.msgs(event, data.clone()) {
+            app.on_message(msg);
         }
-        other => panic!("expected single ToolCall, got {other:?}"),
     }
+    app
+}
+
+/// The first tool card that `events` draw.
+fn card(events: &[(&str, serde_json::Value)]) -> CachedToolCall {
+    drawn(events)
+        .container_list()
+        .nodes()
+        .iter()
+        .find_map(|node| match node {
+            ChatNode::ToolGroup { tools } => tools.first().cloned(),
+            _ => None,
+        })
+        .expect("a tool card is drawn")
+}
+
+fn edit_call(diffs: serde_json::Value) -> (&'static str, serde_json::Value) {
+    (
+        "tool_call",
+        serde_json::json!({
+            "call_id": "tc-1", "tool": "edit_file", "args": { "path": "src/foo.rs" },
+            "display": { "kind": "file_edit", "tool": "edit_file", "diffs": diffs },
+        }),
+    )
+}
+
+/// A diff list of the wrong shape loads as no diffs; the card stays.
+#[test]
+fn a_malformed_diff_list_draws_a_card_without_diffs() {
+    assert!(card(&[edit_call(serde_json::json!("not a list"))])
+        .diffs
+        .is_empty());
 }
 
 #[test]
-fn tool_call_without_auto_approval_carries_none() {
-    let data = serde_json::json!({
-        "call_id": "c1",
-        "tool": "bash",
-        "args": {"command": "ls"},
-    });
-    let msgs = session_event_to_chat_msgs("tool_call", &data);
-    match msgs.as_slice() {
-        [ChatAppMsg::ToolCall { auto_approved, .. }] => assert_eq!(*auto_approved, None),
-        other => panic!("expected single ToolCall, got {other:?}"),
+fn the_diffs_of_a_call_reach_its_card() {
+    let tool = card(&[edit_call(serde_json::json!([
+        { "path": "src/foo.rs", "old_content": "old", "new_content": "new" }
+    ]))]);
+    assert_eq!(tool.diffs.len(), 1);
+    assert_eq!(tool.diffs[0].path, "src/foo.rs");
+}
+
+/// The card shows the canonical tool name of the call, not a second name
+/// that the event carries beside it.
+#[test]
+fn a_card_takes_the_canonical_tool_name() {
+    let tool = card(&[(
+        "tool_call",
+        serde_json::json!({
+            "call_id": "call-1", "tool": "Edit src/foo.rs", "args": {},
+            "display": { "kind": "file_edit", "tool": "Edit", "paths": ["src/foo.rs"] },
+        }),
+    )]);
+    assert_eq!(tool.name.as_ref(), "Edit");
+}
+
+/// ACP agents first announce an empty call, then send its arguments, diff
+/// and render in a `tool_call_update`. The card takes all three.
+#[test]
+fn a_late_update_fills_the_args_diffs_and_render_of_the_card() {
+    let tool = card(&[
+        (
+            "tool_call",
+            serde_json::json!({ "call_id": "tc-late", "tool": "Edit", "args": {} }),
+        ),
+        (
+            "tool_call_update",
+            serde_json::json!({
+                "call_id": "tc-late", "args": { "file_path": "src/late.rs" },
+                "display": {
+                    "kind": "file_edit", "tool": "Edit",
+                    "diffs": [{ "path": "src/late.rs", "old_content": "a", "new_content": "b" }],
+                    "render": { "line": "src/late.rs" },
+                },
+            }),
+        ),
+    ]);
+    assert_eq!(tool.args.as_ref(), r#"{"file_path":"src/late.rs"}"#);
+    assert_eq!(tool.diffs.len(), 1);
+    assert_eq!(tool.render.as_deref(), Some(&"src/late.rs".into()));
+}
+
+/// An update with nothing in it keeps the arguments of the card.
+#[test]
+fn an_empty_update_keeps_the_args_of_the_card() {
+    for args in [serde_json::json!({}), serde_json::json!(null)] {
+        let tool = card(&[
+            (
+                "tool_call",
+                serde_json::json!({ "call_id": "c", "tool": "bash", "args": { "command": "ls" } }),
+            ),
+            (
+                "tool_call_update",
+                serde_json::json!({ "call_id": "c", "args": args }),
+            ),
+        ]);
+        assert_eq!(tool.args.as_ref(), r#"{"command":"ls"}"#);
     }
 }
 
@@ -457,77 +314,143 @@ fn tool_call_without_auto_approval_carries_none() {
 /// args, and keeps its diffs.
 #[test]
 fn an_old_args_update_line_still_fills_the_card() {
-    use serde_json::json;
-    let data = json!({
-        "call_id": "tc-late-args",
-        "args": {"path": "Concepts/Target.md"},
-    });
-
-    let msgs = session_event_to_chat_msgs("tool_call_args_update", &data);
-    assert_eq!(msgs.len(), 1, "got {msgs:?}");
-    match &msgs[0] {
-        ChatAppMsg::ToolCallUpdate {
-            call_id,
-            args,
-            diffs,
-            ..
-        } => {
-            assert_eq!(call_id, "tc-late-args");
-            assert_eq!(args.as_deref(), Some(r#"{"path":"Concepts/Target.md"}"#));
-            assert_eq!(diffs, &None, "an old line says nothing about diffs");
-        }
-        other => panic!("expected ToolCallUpdate, got {other:?}"),
-    }
+    let tool = card(&[
+        edit_call(serde_json::json!([
+            { "path": "src/foo.rs", "old_content": "old", "new_content": "new" }
+        ])),
+        (
+            "tool_call_args_update",
+            serde_json::json!({ "call_id": "tc-1", "args": { "path": "Concepts/Target.md" } }),
+        ),
+    ]);
+    assert_eq!(tool.args.as_ref(), r#"{"path":"Concepts/Target.md"}"#);
+    assert_eq!(tool.diffs.len(), 1, "an old line says nothing about diffs");
 }
 
-/// A reply the provider cut off draws a note in the transcript.
-///
-/// The daemon names the reason; the TUI is where a user meets it. Tested from
-/// the WIRE payload, because a front end fed unfamiliar data is where this
-/// breaks while the producing side's tests all still pass.
+/// The render of a finished call replaces the render of the card, and a
+/// structured result shows as its JSON.
+#[test]
+fn a_result_gives_the_card_its_render_and_its_output() {
+    let tool = card(&[
+        (
+            "tool_call",
+            serde_json::json!({
+                "call_id": "c1", "tool": "read_file", "args": {},
+                "display": { "kind": "file_read", "tool": "read_file", "render": { "line": "a.rs" } },
+            }),
+        ),
+        (
+            "tool_result",
+            serde_json::json!({
+                "call_id": "c1", "tool": "read_file",
+                "result": { "result": { "exit_code": 0 }, "render": { "line": "a.rs", "summary": "2 lines" } },
+            }),
+        ),
+    ]);
+    assert!(tool.complete);
+    assert_eq!(
+        tool.render.as_ref().and_then(|r| r.summary.as_deref()),
+        Some("2 lines")
+    );
+    assert_eq!(tool.result(), r#"{"exit_code":0}"#);
+}
+
+/// The auto-approval marker rides on `tool_call`, so the badge draws with
+/// the row.
+#[test]
+fn a_card_carries_its_auto_approval_reason_or_none() {
+    let approved = card(&[(
+        "tool_call",
+        serde_json::json!({ "call_id": "c1", "tool": "bash", "args": {}, "auto_approved": "auto mode" }),
+    )]);
+    assert_eq!(approved.auto_approved.as_deref(), Some("auto mode"));
+    let asked = card(&[(
+        "tool_call",
+        serde_json::json!({ "call_id": "c1", "tool": "bash", "args": {} }),
+    )]);
+    assert_eq!(asked.auto_approved, None);
+}
+
+/// A reply that the provider cut off draws a note after its bubble; a reply
+/// that finished, or one from a daemon too old to name a reason, draws none.
 #[test]
 fn a_truncated_reply_draws_a_note_after_the_bubble() {
-    use serde_json::json;
-    let data = json!({
-        "message_id": "msg-1",
-        "full_response": "Half an ans",
-        "stop_reason": "max_tokens",
-    });
+    let reply = |data: serde_json::Value| {
+        let app = drawn(&[("message_complete", data)]);
+        app.container_list()
+            .nodes()
+            .iter()
+            .map(|node| match node {
+                ChatNode::AssistantResponse { text, .. } => format!("reply:{text}"),
+                ChatNode::SystemMessage { text } => format!("note:{text}"),
+                _ => "other".to_string(),
+            })
+            .collect::<Vec<_>>()
+    };
+    let cut =
+        reply(serde_json::json!({ "full_response": "Half an ans", "stop_reason": "max_tokens" }));
+    assert_eq!(cut.len(), 2, "{cut:?}");
+    assert_eq!(cut[0], "reply:Half an ans");
+    assert!(
+        cut[1].starts_with("note:") && cut[1].contains("output limit"),
+        "{cut:?}"
+    );
 
-    let msgs = session_event_to_chat_msgs("message_complete", &data);
-
-    // The note comes AFTER the completion: the completion seals the assistant
-    // bubble only while that bubble is the last node.
-    let complete = msgs
-        .iter()
-        .position(|m| matches!(m, ChatAppMsg::StreamComplete))
-        .expect("the stream still completes");
-    let notice = msgs
-        .iter()
-        .position(|m| matches!(m, ChatAppMsg::SystemNotice(_)))
-        .expect("a truncated reply is announced");
-    assert!(notice > complete, "got {msgs:?}");
-    match &msgs[notice] {
-        ChatAppMsg::SystemNotice(text) => assert!(text.contains("output limit"), "{text}"),
-        other => panic!("expected SystemNotice, got {other:?}"),
+    for data in [
+        serde_json::json!({ "full_response": "done", "stop_reason": "end_turn" }),
+        serde_json::json!({ "full_response": "done" }),
+    ] {
+        assert_eq!(reply(data), ["reply:done"]);
     }
 }
 
-/// A reply that finished, or one from a daemon too old to name a reason,
-/// mints no notice.
+/// The text of each node that `events` draw.
+fn drawn_texts(events: &[(&str, serde_json::Value)]) -> Vec<String> {
+    drawn(events)
+        .container_list()
+        .nodes()
+        .iter()
+        .filter_map(|node| match node {
+            ChatNode::UserMessage { text } => Some(format!("user:{text}")),
+            ChatNode::SystemMessage { text } => Some(format!("system:{text}")),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn a_finished_reply_mints_no_notice() {
-    use serde_json::json;
-    for data in [
-        json!({"message_id": "m", "full_response": "done", "stop_reason": "end_turn"}),
-        json!({"message_id": "m", "full_response": "done"}),
-    ] {
-        let msgs = session_event_to_chat_msgs("message_complete", &data);
-        assert!(
-            !msgs
-                .iter()
-                .any(|m| matches!(m, ChatAppMsg::SystemNotice(_))),
-            "got {msgs:?} for {data}"
-        );
-    }
+fn a_plugin_clear_names_the_plugin_in_the_transcript() {
+    assert_eq!(
+        drawn_texts(&[("context_cleared", serde_json::json!({ "plugin": "alpha" }))]),
+        ["system:── ↻ alpha cleared the context ──"]
+    );
+}
+
+/// A relayed message is a person's words, so it stays a user message, and
+/// it names the plugin that relayed it.
+#[test]
+fn a_relayed_message_is_a_user_message_that_names_its_relay() {
+    assert_eq!(
+        drawn_texts(&[(
+            "user_message",
+            serde_json::json!({
+                "message_id": "m1", "content": "hi", "origin": { "kind": "relay", "name": "discord" }
+            }),
+        )]),
+        ["user:via discord\nhi"]
+    );
+}
+
+#[test]
+fn a_plugin_turn_is_a_labelled_system_row_in_the_tui() {
+    assert_eq!(
+        drawn_texts(&[(
+            "user_message",
+            serde_json::json!({
+                "message_id": "m2", "content": "continue with the detailed plan",
+                "origin": { "kind": "plugin", "name": "alpha" }
+            }),
+        )]),
+        ["system:↻ alpha\ncontinue with the detailed plan"]
+    );
 }
