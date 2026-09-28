@@ -1,0 +1,28 @@
+[
+  {
+    "role": "user",
+    "content": "how do I read a file",
+    "timestamp": "2026-09-24T00:20:43.362879451+00:00"
+  },
+  {
+    "role": "tool_call",
+    "id": "c1",
+    "name": "read_file",
+    "args": {
+      "path": "Cargo.toml"
+    },
+    "timestamp": "2026-09-24T00:20:43.362884951+00:00"
+  },
+  {
+    "role": "tool_result",
+    "id": "c1",
+    "content": "[package]\nname = \"example\"",
+    "truncated": false,
+    "timestamp": "2026-09-24T00:20:43.362885531+00:00"
+  },
+  {
+    "role": "assistant",
+    "content": "Use std::fs::read_to_string.",
+    "timestamp": "2026-09-24T00:20:43.362886191+00:00"
+  }
+]

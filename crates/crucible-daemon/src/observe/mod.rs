@@ -58,6 +58,8 @@
 //! ```
 
 pub mod events;
+#[cfg(test)]
+mod golden_tests;
 pub mod id;
 pub mod markdown;
 pub mod rebuild;

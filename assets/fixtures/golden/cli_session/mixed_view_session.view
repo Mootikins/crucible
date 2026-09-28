@@ -1,0 +1,31 @@
+Session: mixed_view_session
+
+Events: 10
+
+[system] You are helpful.
+
+[user]
+first question
+
+[assistant (unknown)]
+first answer
+
+[context cleared by goal]
+[system] remember the style guide
+
+[user]
+continue the goal
+
+[assistant (unknown)]
+continuing
+
+
+[user]
+second question
+
+[assistant (gpt-x)]
+second answer
+
+
+[user]
+a plugin note

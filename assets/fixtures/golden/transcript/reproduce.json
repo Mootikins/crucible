@@ -4,15 +4,18 @@
     {
       "id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:33.028268255Z",
       "type": "user_turn",
       "content": "tell me about this repo",
       "precognition": {
-        "notes_count": 0
+        "notes_count": 0,
+        "query_summary": "tell me about this repo"
       }
     },
     {
       "id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322-seg-0",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:40.308316842Z",
       "type": "assistant_segment",
       "index": 0,
       "text": "I'll explore the repository to understand what it contains.",
@@ -22,6 +25,7 @@
     {
       "id": "tool-call_91ee029c01b84139a0459f3b",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:40.308316842Z",
       "type": "tool_card",
       "call_id": "call_91ee029c01b84139a0459f3b",
       "name": "bash",
@@ -36,6 +40,7 @@
     {
       "id": "tool-call_037e730725a044bdb2176ef1",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:40.319129523Z",
       "type": "tool_card",
       "call_id": "call_037e730725a044bdb2176ef1",
       "name": "glob",
@@ -50,6 +55,7 @@
     {
       "id": "tool-call_9c2a2227049f470385bb8cbc",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:40.319585869Z",
       "type": "tool_card",
       "call_id": "call_9c2a2227049f470385bb8cbc",
       "name": "glob",
@@ -64,6 +70,7 @@
     {
       "id": "tool-call_45b7f81296b346c3a0a4dcd2",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:40.319803943Z",
       "type": "tool_card",
       "call_id": "call_45b7f81296b346c3a0a4dcd2",
       "name": "glob",
@@ -78,6 +85,7 @@
     {
       "id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322-seg-1",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:43.428866681Z",
       "type": "assistant_segment",
       "index": 1,
       "text": "",
@@ -87,6 +95,7 @@
     {
       "id": "tool-call_9c0c1eb080d64c4eb27365db",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:43.428866681Z",
       "type": "tool_card",
       "call_id": "call_9c0c1eb080d64c4eb27365db",
       "name": "read_file",
@@ -101,6 +110,7 @@
     {
       "id": "tool-call_79174c2dc4f3436e9a60b806",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:43.430274958Z",
       "type": "tool_card",
       "call_id": "call_79174c2dc4f3436e9a60b806",
       "name": "read_file",
@@ -115,6 +125,7 @@
     {
       "id": "tool-call_2a11d174c3cd4c23ac021bc8",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:44.313292289Z",
       "type": "tool_card",
       "call_id": "call_2a11d174c3cd4c23ac021bc8",
       "name": "bash",
@@ -129,6 +140,7 @@
     {
       "id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322-seg-2",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:50.462868894Z",
       "type": "assistant_segment",
       "index": 2,
       "text": "",
@@ -138,6 +150,7 @@
     {
       "id": "tool-call_07b4ccbca87944c29b66116b",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:35:50.462868894Z",
       "type": "tool_card",
       "call_id": "call_07b4ccbca87944c29b66116b",
       "name": "read_file",
@@ -153,6 +166,7 @@
     {
       "id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322-seg-3",
       "turn_id": "msg-dab8f7f7-c8fe-49be-a9dd-ccf78f24c322",
+      "timestamp": "2026-04-03T12:36:09.139427496Z",
       "type": "assistant_segment",
       "index": 3,
       "text": "## Crucible\n\n**Crucible** is a **knowledge-grounded agent runtime** — a local-first system where AI agents draw from and contribute to a personal knowledge graph built from your notes, conversations, and wikilinks.\n\n### Key Concepts\n\n| Concept | Description |\n|---------|-------------|\n| **Kiln** | A content directory storing notes, sessions, and knowledge (plaintext markdown) |\n| **Precognition** | Auto-injects relevant context from your knowledge graph before each LLM turn |\n| **Sessions as Notes** | Every chat saves as markdown — searchable, linkable, versionable in git |\n| **MCP Server** | Exposes knowledge tools to Claude/GPT/local models |\n| **ACP** | Agent Context Protocol — spawn Claude Code, Cursor, OpenCode, etc. through Crucible |\n\n### Architecture\n\nIt's a **Rust workspace** with 11 crates:\n\n| Crate | Purpose |\n|-------|---------|\n| `crucible-core` | Domain logic, traits, parser types |\n| `crucible-cli` | Terminal UI, REPL, commands |\n| `crucible-daemon` | Background daemon with RPC (Unix socket), session management, file watching |\n| `crucible-llm` | LLM/embedding backends (Ollama, OpenAI, FastEmbed) |\n| `crucible-sqlite` | SQLite storage |\n| `crucible-lance` | LanceDB vector storage |\n| `crucible-lua` | Lua/Fennel plugin system |\n| `crucible-web` | Browser chat UI (SolidJS + Axum) |\n| `crucible-acp` | Agent Context Protocol support |\n| `crucible-oil` | Terminal rendering primitives |\n\n### Notable Features\n\n- **Neovim-like**: TUI-first, headless daemon with RPC, Lua/Fennel plugins\n- **Plaintext-first**: Markdown files are the source of truth; no proprietary formats\n- **Block-level semantic search**: Embeddings at paragraph granularity\n- **Multi-agent orchestration**: Agents can delegate to each other via ACP\n\n### Tech Stack\n\n- **Rust 1.75+** with Tokio async runtime\n- **Storage**: SQLite + LanceDB (vector embeddings)\n- **Protocol**: JSON-RPC 2.0 over Unix socket\n- **Frontend**: Ratatmoi (TUI), SolidJS (web)\n- **Plugins**: Lua 5.4 via mlua\n\n### Project Status\n\nVersion **0.4.0**, early development. Active with CI, documentation site, and recent commits. Licensed MIT OR Apache-2.0.",

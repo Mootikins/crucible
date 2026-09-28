@@ -1,0 +1,12 @@
+Session: acp_parity_delegated
+
+Events: 4
+
+
+[user]
+fix the greeting
+
+[tool:Edit File] id=call-edit-1
+[result:call-edit-1]
+[assistant (unknown)]
+I'll fix the greeting. Done.

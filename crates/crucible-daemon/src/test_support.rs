@@ -668,6 +668,81 @@ pub fn scratch_snapshot_root() -> std::path::PathBuf {
         .join("review-snapshots")
 }
 
+/// The recordings and stored logs that the transcript readers are pinned
+/// against, with golden files in `assets/fixtures/golden/`.
+pub const READER_FIXTURES: [&str; 7] = [
+    "session_log_wire.jsonl",
+    "old_wire_session.jsonl",
+    "mixed_view_session.jsonl",
+    "acp_parity_internal.jsonl",
+    "acp_parity_delegated.jsonl",
+    "reproduce.jsonl",
+    "delegation-demo.jsonl",
+];
+
+/// The path of `name` in `assets/fixtures/`.
+pub fn fixture_path(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures")
+        .join(name)
+}
+
+/// The `session.jsonl` that the daemon keeps for the fixture `name`.
+///
+/// A stored log stays as it is. A recording (a header line, then
+/// `{ts, seq, event, data}` lines) becomes the wire lines of the events that
+/// the daemon persists, with the time of each event.
+pub fn stored_log(name: &str) -> String {
+    use crucible_core::protocol::SessionEventMessage;
+    use serde_json::Value;
+
+    let path = fixture_path(name);
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let recording = text.lines().next().is_some_and(|first| {
+        serde_json::from_str::<Value>(first).is_ok_and(|v| v.get("version").is_some())
+    });
+    if !recording {
+        return text;
+    }
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|line| {
+            let name = line.get("event")?.as_str()?.to_string();
+            let mut message =
+                SessionEventMessage::new("s1", name, line.get("data").cloned().unwrap_or_default());
+            message.seq = line.get("seq").and_then(Value::as_u64);
+            message.timestamp = line
+                .get("ts")
+                .and_then(|ts| serde_json::from_value(ts.clone()).ok());
+            message
+                .payload()
+                .is_ok_and(|p| p.is_persisted())
+                .then(|| serde_json::to_string(&message).expect("a wire line"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Compare `got` with the golden file at `path`. `CRUCIBLE_WRITE_GOLDEN=1`
+/// writes the file instead.
+pub fn assert_golden(path: &std::path::Path, got: &str) {
+    if std::env::var_os("CRUCIBLE_WRITE_GOLDEN").is_some() {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(path, format!("{}\n", got.trim_end())).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(path).unwrap_or_default();
+    assert_eq!(
+        got.trim_end(),
+        want.trim_end(),
+        "{} differs. The reader gives:\n{got}",
+        path.display()
+    );
+}
+
 /// A real [`crate::Server`] bound in process, run on a spawned task, over an
 /// isolated data root.
 ///

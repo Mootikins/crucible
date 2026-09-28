@@ -82,3 +82,41 @@ async fn export_renders_the_fixtures_conversation() {
     assert!(md.contains("Use std::fs::read_to_string."), "{md}");
     assert!(md.contains("### Tool: read_file"), "{md}");
 }
+
+/// The offline readers of `cru session show`, `list` and `export`, pinned
+/// against the fixtures. `CRUCIBLE_WRITE_GOLDEN=1` writes the files.
+#[test]
+fn the_offline_session_views_of_each_fixture_match_their_golden_files() {
+    use crucible_daemon::test_support::{assert_golden, fixture_path, stored_log, READER_FIXTURES};
+    use crucible_daemon::LogEvent;
+    let dir = fixture_path("golden").join("cli_session");
+    for name in READER_FIXTURES {
+        let events = crucible_daemon::parse_session_log(&stored_log(name));
+        let stem = name.trim_end_matches(".jsonl");
+        assert_golden(
+            &dir.join(format!("{stem}.md")),
+            &format_events_markdown(&events),
+        );
+        assert_golden(
+            &dir.join(format!("{stem}.view")),
+            &super::super::io::events_text(stem, &events),
+        );
+        let count = events
+            .iter()
+            .filter(|e| matches!(e, LogEvent::User { .. } | LogEvent::Assistant { .. }))
+            .count();
+        let title = events.iter().find_map(|e| match e {
+            LogEvent::User { content, .. } => {
+                Some(crucible_core::text::truncate_chars(content, 50, true))
+            }
+            _ => None,
+        });
+        assert_golden(
+            &dir.join(format!("{stem}.list.view")),
+            &format!(
+                "({count} messages)\n{}",
+                title.unwrap_or_else(|| "(empty)".into())
+            ),
+        );
+    }
+}

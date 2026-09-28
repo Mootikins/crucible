@@ -7951,6 +7951,13 @@
                   }
                 ]
               },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The model that the session used when the segment started, from\nthe last `session_initialized` or `model_switched` event."
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -9332,6 +9339,10 @@
           "notes_count": {
             "type": "integer",
             "minimum": 0
+          },
+          "query_summary": {
+            "type": "string",
+            "description": "The query that the search ran with."
           },
           "notes": {
             "type": "array",
@@ -11603,6 +11614,15 @@
             ],
             "format": "int32",
             "minimum": 0
+          },
+          "cache_read_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The prompt tokens that the provider read from its cache, when it said.",
+            "minimum": 0
           }
         }
       },
@@ -11658,6 +11678,14 @@
                   "null"
                 ],
                 "description": "The turn that the item belongs to, when it belongs to one."
+              },
+              "timestamp": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "The time of the event that made the item. For an answer segment, the\ntime of the event that ended it: a stored log has no text deltas, so\nonly the end has one time in the live stream and in the log."
               }
             }
           }

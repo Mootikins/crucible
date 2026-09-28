@@ -4,15 +4,18 @@
     {
       "id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:37:32.973580016Z",
       "type": "user_turn",
       "content": "What is a kiln in Crucible? Use semantic search to find relevant docs.",
       "precognition": {
-        "notes_count": 0
+        "notes_count": 0,
+        "query_summary": "What is a kiln in Crucible? Use semantic search to find relevant docs."
       }
     },
     {
       "id": "tool-toolu_01QVCEYKhaD48SCtS7Z8XTMS",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.645280652Z",
       "type": "tool_card",
       "call_id": "toolu_01QVCEYKhaD48SCtS7Z8XTMS",
       "name": "ToolSearch",
@@ -26,6 +29,7 @@
     {
       "id": "tool-toolu_01DvBwfxfLUoeZY14e8EFKLu",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.645819275Z",
       "type": "tool_card",
       "call_id": "toolu_01DvBwfxfLUoeZY14e8EFKLu",
       "name": "mcp__crucible__semantic_search",
@@ -39,6 +43,7 @@
     {
       "id": "tool-toolu_01PMAioVH4jxsPuJfGkpazvm",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.646074438Z",
       "type": "tool_card",
       "call_id": "toolu_01PMAioVH4jxsPuJfGkpazvm",
       "name": "mcp__crucible__get_kiln_info",
@@ -49,6 +54,7 @@
     {
       "id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf-seg-0",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:37:46.141799042Z",
       "type": "assistant_segment",
       "index": 0,
       "text": "Semantic search returned no results, and the kiln info shows basic stats. Let me dig deeper into the codebase.",
@@ -57,6 +63,7 @@
     {
       "id": "tool-toolu_01V3hE7VKWyF67tQF6Wz4vTT",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.646380368Z",
       "type": "tool_card",
       "call_id": "toolu_01V3hE7VKWyF67tQF6Wz4vTT",
       "name": "grep -l | head -20 --include=\"*.md\" \"kiln\" /home/user/.crucible",
@@ -73,6 +80,7 @@
     {
       "id": "tool-toolu_01XGvCfzhPqHc7Lx2qxm91Wb",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.646543583Z",
       "type": "tool_card",
       "call_id": "toolu_01XGvCfzhPqHc7Lx2qxm91Wb",
       "name": "grep -l | head -20 --include=\"*.{toml,yaml,yml,json,rs,py,ts}\" \"kiln\" /home/user/.crucible",
@@ -89,6 +97,7 @@
     {
       "id": "tool-toolu_01FjzVjMW8SYXjwp4iXNCLdd",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.646745487Z",
       "type": "tool_card",
       "call_id": "toolu_01FjzVjMW8SYXjwp4iXNCLdd",
       "name": "Read projects.json",
@@ -101,6 +110,7 @@
     {
       "id": "tool-toolu_01N1HMnQfUSNYudC9Vf94Zbc",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.646817695Z",
       "type": "tool_card",
       "call_id": "toolu_01N1HMnQfUSNYudC9Vf94Zbc",
       "name": "Find `/home/user/.crucible` `*.md`",
@@ -114,6 +124,7 @@
     {
       "id": "tool-toolu_01GxdMMio33bxEmEnVrq2LK9",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.646919842Z",
       "type": "tool_card",
       "call_id": "toolu_01GxdMMio33bxEmEnVrq2LK9",
       "name": "ls /home/user/.crucible/.crucible/",
@@ -127,6 +138,7 @@
     {
       "id": "tool-toolu_0129FLGarSbQ9PzvLz4zL2sj",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647041908Z",
       "type": "tool_card",
       "call_id": "toolu_0129FLGarSbQ9PzvLz4zL2sj",
       "name": "Find `/home/user/.crucible/.crucible` `*.md`",
@@ -140,6 +152,7 @@
     {
       "id": "tool-toolu_016XF4ermrfcZkXbWJ5BV6tg",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647117786Z",
       "type": "tool_card",
       "call_id": "toolu_016XF4ermrfcZkXbWJ5BV6tg",
       "name": "grep -C 3 | head -30 \"kiln\" /home/user/.crucible/sessions/chat-2026-04-17T1736-1mwul4/session.md",
@@ -156,6 +169,7 @@
     {
       "id": "tool-toolu_01VKoCrNpqo2eL4RwF3DpZnJ",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647209223Z",
       "type": "tool_card",
       "call_id": "toolu_01VKoCrNpqo2eL4RwF3DpZnJ",
       "name": "ls /home/user/.crucible/",
@@ -169,6 +183,7 @@
     {
       "id": "tool-toolu_01MEZBU2TW5kW8qQorwEpNvc",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647275591Z",
       "type": "tool_card",
       "call_id": "toolu_01MEZBU2TW5kW8qQorwEpNvc",
       "name": "ls /home/user/.crucible/runes/ 2>/dev/null; echo \"---\"; ls /home/user/.crucible/tools/ 2>/dev/null",
@@ -182,6 +197,7 @@
     {
       "id": "tool-toolu_01Xy2CfUpV6SrxZTgyzapNpY",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647352149Z",
       "type": "tool_card",
       "call_id": "toolu_01Xy2CfUpV6SrxZTgyzapNpY",
       "name": "grep -i -C 5 | head -40 \"kiln\" /home/user/.crucible/sessions/chat-2026-04-17T1811-56p6o7/session.md",
@@ -199,6 +215,7 @@
     {
       "id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf-seg-1",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:38:21.352717306Z",
       "type": "assistant_segment",
       "index": 1,
       "text": "Let me check the Crucible source or binary for more context on what a kiln is.",
@@ -207,6 +224,7 @@
     {
       "id": "tool-toolu_01YQNcFfRS3KWSw69AvpZ394",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647433516Z",
       "type": "tool_card",
       "call_id": "toolu_01YQNcFfRS3KWSw69AvpZ394",
       "name": "which crucible 2>/dev/null; crucible --help 2>/dev/null | head -50",
@@ -220,6 +238,7 @@
     {
       "id": "tool-toolu_01Efh5JZBMMmPeM6JaVhENPe",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647503484Z",
       "type": "tool_card",
       "call_id": "toolu_01Efh5JZBMMmPeM6JaVhENPe",
       "name": "find /home/user -maxdepth 3 -name \"crucible\" -type f 2>/dev/null; find /usr/local/bin /usr/bin -name \"crucible*\" 2>/dev/null; which crucible-server 2>/dev/null; ps aux | grep -i crucible 2>/dev/null | head -5",
@@ -233,6 +252,7 @@
     {
       "id": "tool-toolu_01MPSL979UDmgZRVDWciR8R3",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647583682Z",
       "type": "tool_card",
       "call_id": "toolu_01MPSL979UDmgZRVDWciR8R3",
       "name": "type cru 2>/dev/null; cru --help 2>/dev/null | head -60",
@@ -246,6 +266,7 @@
     {
       "id": "tool-toolu_01CHrELwcdVvqPsqZzHsygz5",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647644500Z",
       "type": "tool_card",
       "call_id": "toolu_01CHrELwcdVvqPsqZzHsygz5",
       "name": "cru init --help 2>/dev/null",
@@ -259,6 +280,7 @@
     {
       "id": "tool-toolu_01K2z8gMRHRiWYMqms2JRq6b",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.647701268Z",
       "type": "tool_card",
       "call_id": "toolu_01K2z8gMRHRiWYMqms2JRq6b",
       "name": "cru stats 2>/dev/null; echo \"===\"; cru status 2>/dev/null",
@@ -272,6 +294,7 @@
     {
       "id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf-seg-2",
       "turn_id": "msg-457a0855-19b0-4cbc-9a69-840948faecaf",
+      "timestamp": "2026-04-18T18:40:45.645280652Z",
       "type": "assistant_segment",
       "index": 2,
       "text": "Now I have a clear picture. Here's what a **kiln** is in Crucible:\n\nA **kiln** is Crucible's term for a **knowledge store** — a directory that has been initialized to hold and manage notes, documents, and their semantic embeddings. It's the core data unit in Crucible.\n\nKey details:\n\n- **Created with `cru init`** — initializes a directory as a kiln (or project). This creates a `.crucible/` subdirectory inside it containing a SQLite database (`crucible-sqlite.db`) for storing notes and embeddings.\n- **Contains notes** — markdown files that are parsed, enriched, and stored with semantic embeddings for search.\n- **Has its own database** — each kiln gets its own `.crucible/` directory with a SQLite DB, enabling local semantic search, text search, and property search.\n- **Tracked in `projects.json`** — Crucible's global registry maps projects to their kilns. A project can have zero or more kilns (see the `\"kilns\": [...]` array in `projects.json`).\n- **Used as workspace context** — chat sessions are scoped to a kiln (`kiln: /home/user/.crucible` in session metadata), so the AI agent knows which knowledge base to search.\n\nYour current active kiln points to `/home/user/crucible/docs` with 351 notes and 173 markdown files. The name follows the pottery/forge metaphor of \"Crucible\" — a kiln is where raw materials (documents) are fired (processed/enriched) into something useful (a searchable knowledge base).",

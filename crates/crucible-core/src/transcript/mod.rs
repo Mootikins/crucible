@@ -17,12 +17,13 @@
 //! question cards) are not transcript items: they belong to the moment, and
 //! each client shows the open one on its own.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error_utils::strip_tool_error_prefix;
 use crate::protocol::session_events::{
-    JobPayload, SessionEventPayload, ToolResultBody, TurnPayload,
+    JobPayload, SessionEventPayload, SettingsPayload, SetupPayload, ToolResultBody, TurnPayload,
 };
 use crate::protocol::SessionEventMessage;
 use crate::traits::chat::PrecognitionNoteInfo;
@@ -53,6 +54,11 @@ pub struct TranscriptItem {
     /// The turn that the item belongs to, when it belongs to one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
+    /// The time of the event that made the item. For an answer segment, the
+    /// time of the event that ended it: a stored log has no text deltas, so
+    /// only the end has one time in the live stream and in the log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<DateTime<Utc>>,
     #[serde(flatten)]
     pub body: ItemBody,
 }
@@ -83,6 +89,10 @@ pub enum ItemBody {
         /// The token use of the turn, on its last segment.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         usage: Option<TokenUsage>,
+        /// The model that the session used when the segment started, from
+        /// the last `session_initialized` or `model_switched` event.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
     },
     ToolCard {
         call_id: String,
@@ -181,6 +191,9 @@ pub enum Notice {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Precognition {
     pub notes_count: usize,
+    /// The query that the search ran with.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub query_summary: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "openapi", schema(value_type = Vec<Object>))]
     pub notes: Vec<PrecognitionNoteInfo>,
@@ -195,6 +208,9 @@ pub struct TokenUsage {
     pub completion_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
+    /// The prompt tokens that the provider read from its cache, when it said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u32>,
 }
 
 /// One change to a transcript.
@@ -303,6 +319,10 @@ pub struct TranscriptFold {
     turn: Option<OpenTurn>,
     /// The number of turns seen, for a turn with no id in an old log.
     turns_seen: usize,
+    /// The model of the session now.
+    model: Option<String>,
+    /// The time of the event that the fold reads now.
+    now: Option<DateTime<Utc>>,
 }
 
 impl TranscriptFold {
@@ -340,15 +360,30 @@ impl TranscriptFold {
         let Ok(payload) = event.payload() else {
             return Vec::new();
         };
+        self.now = event.timestamp;
         let mut ops = Vec::new();
         match payload {
             SessionEventPayload::Turn(turn) => self.turn_event(turn, &mut ops),
             SessionEventPayload::Job(job) => self.job_event(job, &mut ops),
-            // Settings, setup, review, workflow and system events change no
-            // transcript item.
+            // The model of the later answers. An empty name is no answer: the
+            // setup task can run before the model resolves.
+            SessionEventPayload::Setup(SetupPayload::SessionInitialized(setup)) => {
+                self.set_model(setup.model);
+            }
+            SessionEventPayload::Settings(SettingsPayload::ModelSwitched { model_id, .. }) => {
+                self.set_model(model_id);
+            }
+            // Other settings, setup, review, workflow and system events
+            // change no transcript item.
             _ => {}
         }
         ops
+    }
+
+    fn set_model(&mut self, model: String) {
+        if !model.is_empty() {
+            self.model = Some(model);
+        }
     }
 
     /// Apply `op` to the fold's own transcript at once, so a later read in
@@ -378,6 +413,7 @@ impl TranscriptFold {
                     upsert(TranscriptItem {
                         id: id.clone(),
                         turn_id: Some(id.clone()),
+                        timestamp: self.now,
                         body: ItemBody::UserTurn {
                             content,
                             origin: origin.filter(|o| *o != TurnOrigin::User),
@@ -432,6 +468,7 @@ impl TranscriptFold {
                     upsert(TranscriptItem {
                         id: tool_id(&call_id),
                         turn_id,
+                        timestamp: self.now,
                         body: ItemBody::ToolCard {
                             call_id,
                             name: tool,
@@ -536,6 +573,7 @@ impl TranscriptFold {
                 prompt_tokens,
                 completion_tokens,
                 total_tokens,
+                cache_read_tokens,
                 stop_reason,
                 ..
             } => {
@@ -546,6 +584,7 @@ impl TranscriptFold {
                     prompt_tokens,
                     completion_tokens,
                     total_tokens,
+                    cache_read_tokens,
                 });
                 self.finish_answer(full_response, usage, ops);
                 if let Some(reason) = stop_reason {
@@ -556,6 +595,7 @@ impl TranscriptFold {
                             upsert(TranscriptItem {
                                 id: format!("{}-stop", turn_id.clone().unwrap_or_default()),
                                 turn_id,
+                                timestamp: self.now,
                                 body: ItemBody::Notice {
                                     notice: Notice::StopReason {
                                         reason,
@@ -577,6 +617,7 @@ impl TranscriptFold {
                     upsert(TranscriptItem {
                         id,
                         turn_id: None,
+                        timestamp: self.now,
                         body: ItemBody::Notice {
                             notice: Notice::ContextCleared { plugin },
                         },
@@ -601,6 +642,7 @@ impl TranscriptFold {
                         item: Box::new(TranscriptItem {
                             id,
                             turn_id: None,
+                            timestamp: self.now,
                             body: ItemBody::InjectedContext {
                                 role,
                                 content,
@@ -614,7 +656,9 @@ impl TranscriptFold {
                 );
             }
             TurnPayload::PrecognitionComplete {
-                notes_count, notes, ..
+                notes_count,
+                query_summary,
+                notes,
             } => {
                 let Some(turn_id) = self.turn.as_ref().map(|t| t.id.clone()) else {
                     return;
@@ -623,7 +667,11 @@ impl TranscriptFold {
                     return;
                 };
                 if let ItemBody::UserTurn { precognition, .. } = &mut item.body {
-                    *precognition = Some(Precognition { notes_count, notes });
+                    *precognition = Some(Precognition {
+                        notes_count,
+                        query_summary,
+                        notes,
+                    });
                 }
                 self.emit(ops, upsert(item));
             }
@@ -648,6 +696,7 @@ impl TranscriptFold {
                 upsert(TranscriptItem {
                     id: delegation_item_id(&delegation_id),
                     turn_id,
+                    timestamp: self.now,
                     body: ItemBody::Delegation {
                         delegation_id,
                         prompt,
@@ -747,12 +796,15 @@ impl TranscriptFold {
         let item = TranscriptItem {
             id: segment_id(&turn_id, index),
             turn_id: Some(turn_id),
+            // The end of the segment gives its time.
+            timestamp: None,
             body: ItemBody::AssistantSegment {
                 index,
                 text: String::new(),
                 thinking: String::new(),
                 streaming: true,
                 usage: None,
+                model: self.model.clone(),
             },
         };
         let id = item.id.clone();
@@ -786,6 +838,7 @@ impl TranscriptFold {
                 *text = content;
             }
             *streaming = false;
+            item.timestamp = self.now;
             let turn = self.open_turn();
             turn.closed_texts.push(text.clone());
             turn.open_segment = None;
@@ -830,6 +883,7 @@ impl TranscriptFold {
                 *streaming = false;
                 *seg_usage = usage;
             }
+            item.timestamp = self.now;
             self.emit(ops, upsert(item));
         }
         if let Some(turn) = self.turn.as_mut() {
@@ -869,7 +923,10 @@ impl TranscriptFold {
         for mut item in open_tools {
             match &mut item.body {
                 ItemBody::ToolCard { status, .. } => *status = ToolStatus::Incomplete,
-                ItemBody::AssistantSegment { streaming, .. } => *streaming = false,
+                ItemBody::AssistantSegment { streaming, .. } => {
+                    *streaming = false;
+                    item.timestamp = self.now;
+                }
                 _ => {}
             }
             self.emit(ops, upsert(item));
@@ -881,6 +938,7 @@ impl TranscriptFold {
                     upsert(TranscriptItem {
                         id: format!("{}-failed", turn.id),
                         turn_id: Some(turn.id.clone()),
+                        timestamp: self.now,
                         body: ItemBody::Notice {
                             notice: Notice::TurnFailed { status, error },
                         },

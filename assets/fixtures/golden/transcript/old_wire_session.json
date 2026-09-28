@@ -4,12 +4,14 @@
     {
       "id": "m1",
       "turn_id": "m1",
+      "timestamp": "2026-09-01T10:00:00Z",
       "type": "user_turn",
       "content": "edit the library"
     },
     {
       "id": "tool-c1",
       "turn_id": "m1",
+      "timestamp": "2026-09-01T10:00:01Z",
       "type": "tool_card",
       "call_id": "c1",
       "name": "edit_file",
@@ -39,6 +41,7 @@
     {
       "id": "m1-seg-0",
       "turn_id": "m1",
+      "timestamp": "2026-09-01T10:00:03Z",
       "type": "assistant_segment",
       "index": 0,
       "text": "Done.",
@@ -47,12 +50,14 @@
     {
       "id": "m2",
       "turn_id": "m2",
+      "timestamp": "2026-09-01T10:01:00Z",
       "type": "user_turn",
       "content": "fix main"
     },
     {
       "id": "tool-c2",
       "turn_id": "m2",
+      "timestamp": "2026-09-01T10:01:01Z",
       "type": "tool_card",
       "call_id": "c2",
       "name": "Edit",
@@ -81,6 +86,7 @@
     {
       "id": "m2-failed",
       "turn_id": "m2",
+      "timestamp": "2026-09-01T10:01:05Z",
       "type": "notice",
       "notice": {
         "kind": "turn_failed",
@@ -91,12 +97,14 @@
     {
       "id": "m3",
       "turn_id": "m3",
+      "timestamp": "2026-09-01T10:02:00Z",
       "type": "user_turn",
       "content": "try again"
     },
     {
       "id": "m3-failed",
       "turn_id": "m3",
+      "timestamp": "2026-09-01T10:02:02Z",
       "type": "notice",
       "notice": {
         "kind": "turn_failed",

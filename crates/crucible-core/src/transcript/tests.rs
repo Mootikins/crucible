@@ -20,6 +20,12 @@ fn fixture(name: &str) -> Vec<SessionEventMessage> {
             let mut message =
                 SessionEventMessage::new("s1", name, line.get("data").cloned().unwrap_or_default());
             message.seq = line.get("seq").and_then(Value::as_u64);
+            // A recording names the time `ts`; a stored line names it
+            // `timestamp`.
+            message.timestamp = line
+                .get("ts")
+                .or_else(|| line.get("timestamp"))
+                .and_then(|ts| serde_json::from_value(ts.clone()).ok());
             Some(message)
         })
         .collect()
@@ -143,7 +149,17 @@ fn a_live_turn_folds_into_ordered_segments_and_a_card() {
 /// narration below the tools.
 #[test]
 fn the_stored_events_fold_into_the_live_transcript() {
-    let live = live_turn();
+    // Each event has its own time, so the test also proves that an item
+    // takes the same time from the live stream and from the log.
+    let start: chrono::DateTime<chrono::Utc> = "2026-09-01T10:00:00Z".parse().unwrap();
+    let live: Vec<SessionEventMessage> = live_turn()
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut e)| {
+            e.timestamp = Some(start + chrono::Duration::seconds(i as i64));
+            e
+        })
+        .collect();
     let stored: Vec<SessionEventMessage> = live
         .iter()
         .filter(|e| e.payload().is_ok_and(|p| p.is_persisted()))
@@ -278,7 +294,8 @@ fn precognition_joins_its_turn_and_a_stop_reason_gets_a_notice() {
     ]);
     assert!(matches!(
         &transcript.items[0].body,
-        ItemBody::UserTurn { precognition: Some(p), .. } if p.notes_count == 2
+        ItemBody::UserTurn { precognition: Some(p), .. }
+            if p.notes_count == 2 && p.query_summary == "q"
     ));
     assert!(matches!(
         &transcript.items[2].body,
@@ -289,6 +306,50 @@ fn precognition_joins_its_turn_and_a_stop_reason_gets_a_notice() {
             }
         }
     ));
+}
+
+/// A segment names the model of the session when it started. The first
+/// model comes from `session_initialized`; an empty name is no answer.
+#[test]
+fn a_segment_names_the_model_and_the_usage_of_its_turn() {
+    let transcript = TranscriptFold::of_events(&[
+        event(
+            "session_initialized",
+            json!({"model": "", "mode": "normal", "agent_name": null, "workspace_path": "/w"}),
+        ),
+        event("user_message", json!({"message_id": "m1", "content": "q"})),
+        event(
+            "message_complete",
+            json!({"message_id": "m1", "full_response": "a"}),
+        ),
+        event(
+            "session_initialized",
+            json!({"model": "first", "mode": "normal", "agent_name": null, "workspace_path": "/w"}),
+        ),
+        event("user_message", json!({"message_id": "m2", "content": "q"})),
+        event(
+            "message_complete",
+            json!({"message_id": "m2", "full_response": "b", "prompt_tokens": 10,
+                   "completion_tokens": 5, "total_tokens": 15, "cache_read_tokens": 3}),
+        ),
+        event(
+            "model_switched",
+            json!({"model_id": "second", "provider": "p"}),
+        ),
+        event("user_message", json!({"message_id": "m3", "content": "q"})),
+        event(
+            "message_complete",
+            json!({"message_id": "m3", "full_response": "c"}),
+        ),
+    ]);
+    let segment = |id: &str| match &transcript.items.iter().find(|i| i.id == id).unwrap().body {
+        ItemBody::AssistantSegment { model, usage, .. } => (model.clone(), *usage),
+        other => panic!("{id} is not a segment: {other:?}"),
+    };
+    assert_eq!(segment("m1-seg-0").0, None);
+    assert_eq!(segment("m2-seg-0").0.as_deref(), Some("first"));
+    assert_eq!(segment("m2-seg-0").1.unwrap().cache_read_tokens, Some(3));
+    assert_eq!(segment("m3-seg-0").0.as_deref(), Some("second"));
 }
 
 #[test]

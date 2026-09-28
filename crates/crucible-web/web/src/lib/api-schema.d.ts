@@ -3426,6 +3426,11 @@ export interface components {
             type: "user_turn";
         } | {
             index: number;
+            /**
+             * @description The model that the session used when the segment started, from
+             *     the last `session_initialized` or `model_switched` event.
+             */
+            model?: string | null;
             /** @description The segment can still grow. */
             streaming: boolean;
             text: string;
@@ -4137,6 +4142,8 @@ export interface components {
         Precognition: {
             notes?: Record<string, never>[];
             notes_count: number;
+            /** @description The query that the search ran with. */
+            query_summary?: string;
         };
         PrecognitionNote: {
             name: string;
@@ -5154,6 +5161,11 @@ export interface components {
             title: string;
         };
         TokenUsage: {
+            /**
+             * Format: int32
+             * @description The prompt tokens that the provider read from its cache, when it said.
+             */
+            cache_read_tokens?: number | null;
             /** Format: int32 */
             completion_tokens?: number | null;
             /** Format: int32 */
@@ -5181,6 +5193,13 @@ export interface components {
              *     `tool-{call_id}` for a tool card.
              */
             id: string;
+            /**
+             * Format: date-time
+             * @description The time of the event that made the item. For an answer segment, the
+             *     time of the event that ended it: a stored log has no text deltas, so
+             *     only the end has one time in the live stream and in the log.
+             */
+            timestamp?: string | null;
             /** @description The turn that the item belongs to, when it belongs to one. */
             turn_id?: string | null;
         };

@@ -1,0 +1,11 @@
+{"type":"system","ts":"2026-09-01T09:59:00Z","content":"You are helpful."}
+{"type":"event","session_id":"chat-mixed","event":"user_message","data":{"message_id":"m1","content":"first question"},"timestamp":"2026-09-01T10:00:00Z","seq":1}
+{"type":"context_injection","after_turn":"m1","message":{"type":"system","ts":"2026-09-01T10:00:01Z","content":"remember the style guide","tags":["review"],"injection":["review","branch:main"]}}
+{"type":"event","session_id":"chat-mixed","event":"message_complete","data":{"message_id":"m1","full_response":"first answer","prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"cache_read_tokens":3},"timestamp":"2026-09-01T10:00:05Z","seq":2}
+{"type":"clear","ts":"2026-09-01T10:01:00Z","plugin":"goal"}
+{"type":"user","ts":"2026-09-01T10:02:00Z","content":"continue the goal","plugin":"goal"}
+{"type":"assistant","ts":"2026-09-01T10:02:05Z","content":"continuing"}
+{"type":"event","session_id":"chat-mixed","event":"model_switched","data":{"model_id":"gpt-x","provider":"openai"},"timestamp":"2026-09-01T10:03:00Z","seq":3}
+{"type":"event","session_id":"chat-mixed","event":"user_message","data":{"message_id":"m3","content":"second question"},"timestamp":"2026-09-01T10:04:00Z","seq":4}
+{"type":"event","session_id":"chat-mixed","event":"context_injected","data":{"role":"user","content":"a plugin note","kind":"plugin","source":"goal"},"timestamp":"2026-09-01T10:04:01Z","seq":5}
+{"type":"event","session_id":"chat-mixed","event":"message_complete","data":{"message_id":"m3","full_response":"second answer"},"timestamp":"2026-09-01T10:04:05Z","seq":6}

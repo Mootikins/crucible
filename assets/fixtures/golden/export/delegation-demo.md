@@ -1,0 +1,409 @@
+## User
+
+What is a kiln in Crucible? Use semantic search to find relevant docs.
+
+> [!system]- System Prompt
+> Context injected: 0 note(s) for "What is a kiln in Crucible? Use semantic search to find relevant docs."
+
+### Tool: `ToolSearch` (id: toolu_01QVCEYKhaD48SCtS7Z8XTMS)
+
+```json
+{}
+```
+
+#### Result (id: f947fad2-e424-4abb-8e62-35b9015140ed)
+
+```
+{"result":"[{\"type\":\"tool_reference\",\"tool_name\":\"mcp__crucible__semantic_search\"},{\"type\":\"tool_reference\",\"tool_name\":\"mcp__crucible__get_kiln_info\"}]"}
+```
+
+### Tool: `Semantic Search` (id: toolu_01DvBwfxfLUoeZY14e8EFKLu)
+
+```json
+{}
+```
+
+### Tool: `Get Kiln Info` (id: toolu_01PMAioVH4jxsPuJfGkpazvm)
+
+```json
+{}
+```
+
+#### Result (id: fc829393-7927-4eb4-a698-d5334cfd0996)
+
+```
+{"result":"[{\"type\":\"text\",\"text\":\"{\\\"results\\\":[],\\\"query\\\":\\\"what is a kiln in Crucible\\\",\\\"limit\\\":10}\"}]"}
+```
+
+#### Result (id: a0b74ab9-e27c-4c29-a368-075ba139dc59)
+
+```
+{"result":"[{\"type\":\"text\",\"text\":\"{\\\"name\\\":\\\".crucible\\\",\\\"total_files\\\":4211,\\\"markdown_files\\\":151,\\\"total_size_bytes\\\":8246102}\"}]"}
+```
+
+### Tool: `Grep` (id: toolu_01V3hE7VKWyF67tQF6Wz4vTT)
+
+```json
+{}
+```
+
+### Tool: `Grep` (id: toolu_01XGvCfzhPqHc7Lx2qxm91Wb)
+
+```json
+{}
+```
+
+#### Result (id: f61645e3-f46d-4c53-9042-98e6c4948b6c)
+
+```
+{"result":"Found 20 files limit: 20, offset: 0\nsessions/chat-2026-04-18T1837-s6tg19/session.md\nsessions/chat-2026-04-18T1832-j1hykk/session.md\nsessions/chat-2026-04-18T1505-neol13/session.md\nsessions/chat-2026-04-18T1501-y9ehse/session.md\nsessions/chat-2026-04-18T0558-0u44k9/session.md\nsessions/chat-2026-04-18T0550-s0m3yn/session.md\nsessions/chat-2026-04-18T0549-cav5ob/session.md\nsessions/chat-2026-04-18T0316-6r0329/session.md\nsessions/chat-2026-04-18T0314-pc1rls/session.md\nsessions/chat-2026-04-18T0252-zfa3it/session.md\nsessions/chat-2026-04-17T2113-ua65s0/session.md\nsessions/chat-2026-04-17T2109-1xmr5z/session.md\nsessions/chat-2026-04-17T2032-p3wbkc/session.md\nsessions/chat-2026-04-17T2029-88b7f9/session.md\nsessions/chat-2026-04-17T1852-ruqoq6/session.md\nsessions/chat-2026-04-17T1833-cpj50l/session.md\nsessions/chat-2026-04-17T1811-56p6o7/session.md\nsessions/chat-2026-04-17T1811-hg7s2p/session.md\nsessions/chat-2026-04-17T1739-kd161j/session.md\nsessions/chat-2026-04-17T1736-1mwul4/session.md"}
+```
+
+#### Result (id: a725d08f-ffbd-43f0-a1e5-07b7236ec030)
+
+```
+{"result":"Found 20 files limit: 20, offset: 0\nsessions/chat-2026-04-18T1837-s6tg19/meta.json\nprojects.json\nsessions/chat-2026-04-18T1835-rv24tz/meta.json\nsessions/chat-2026-04-18T1835-ctsd5z/meta.json\nsessions/chat-2026-04-18T1835-esm7ha/meta.json\nsessions/chat-2026-04-18T1835-zm7rdo/meta.json\nsessions/chat-2026-04-18T1835-cv5nmw/meta.json\nsessions/chat-2026-04-18T1835-u6os51/meta.json\nsessions/chat-2026-04-18T1835-v46ptu/meta.json\nsessions/chat-2026-04-18T1835-h75h7o/meta.json\nsessions/chat-2026-04-18T1835-2so1jp/meta.json\nsessions/chat-2026-04-18T1835-3nf0vq/meta.json\nsessions/chat-2026-04-18T1835-6s5p4z/meta.json\nsessions/chat-2026-04-18T1835-kwfgfr/meta.json\nsessions/chat-2026-04-18T1835-sbztom/meta.json\nsessions/chat-2026-04-18T1835-ex6129/meta.json\nsessions/chat-2026-04-18T1835-kt6dcm/meta.json\nsessions/chat-2026-04-18T1834-hf7vz1/meta.json\nsessions/chat-2026-04-18T1834-yqpzj2/meta.json\nsessions/chat-2026-04-18T1834-xd8u2j/meta.json"}
+```
+
+### Tool: `Read File` (id: toolu_01FjzVjMW8SYXjwp4iXNCLdd)
+
+```json
+{}
+```
+
+### Tool: `Find` (id: toolu_01N1HMnQfUSNYudC9Vf94Zbc)
+
+```json
+{}
+```
+
+#### Result (id: b3dfeb6a-9d18-4009-81fc-e1dd1bd589ee)
+
+```
+{"result":"     1→[\n     2→  {\n     3→    \"path\": \"/tmp/.tmpAheQkS\",\n     4→    \"name\": \".tmpAheQkS\",\n     5→    \"kilns\": [],\n     6→    \"last_accessed\": \"2026-04-16T20:11:51.600909989Z\"\n     7→  },\n     8→  {\n     9→    \"path\": \"/tmp/.tmpMOqsSu\",\n    10→    \"name\": \".tmpMOqsSu\",\n    11→    \"kilns\": [],\n    12→    \"last_accessed\": \"2026-04-16T19:58:34.409149383Z\"\n    13→  },\n    14→  {\n    15→    \"path\": \"/tmp/.tmpuv0g11\",\n    16→    \"name\": \".tmpuv0g11\",\n    17→    \"kilns\": [],\n    18→    \"last_accessed\": \"2026-04-17T01:07:20.974669965Z\"\n    19→  },\n    20→  {\n    21→    \"path\": \"/home/user/.crucible\",\n    22→    \"name\": \".crucible\",\n    23→    \"kilns\": [\n    24→      {\n    25→        \"path\": \"/home/user/.crucible/.crucible\"\n    26→      }\n    27→    ],\n    28→    \"last_accessed\": \"2026-04-18T18:37:24.501327806Z\"\n    29→  },\n    30→  {\n    31→    \"path\": \"/tmp/.tmp7nieSq\",\n    32→    \"name\": \".tmp7nieSq\",\n    33→    \"kilns\": [],\n    34→    \"last_accessed\": \"2026-04-17T00:47:13.491565866Z\"\n    35→  },\n    36→  {\n    37→    \"path\": \"/tmp/.tmp8fkoVh\",\n    38→    \"name\": \".tmp8fkoVh\",\n    39→    \"kilns\": [],\n    40→    \"last_accessed\": \"2026-04-17T00:15:27.982322860Z\"\n    41→  },\n    42→  {\n    43→    \"path\": \"/home/user/example-k3s\",\n    44→    \"name\": \"example-k3s\",\n    45→    \"kilns\": [],\n    46→    \"last_accessed\": \"2026-04-14T20:36:07.540153102Z\",\n    47→    \"repository\": {\n    48→      \"root\": \"/home/user/example-k3s\",\n    49→      \"remote_url\": \"ssh://git@git.example.io:32222/moot/example-k3s.git\",\n    50→      \"is_worktree\": false\n    51→    }\n    52→  },\n    53→  {\n    54→    \"path\": \"/tmp/.tmptc2T25\",\n    55→    \"name\": \".tmptc2T25\",\n    56→    \"kilns\": [],\n    57→    \"last_accessed\": \"2026-04-17T13:56:09.184781577Z\"\n    58→  },\n    59→  {\n    60→    \"path\": \"/tmp/.tmplIj37W\",\n    61→    \"name\": \".tmplIj37W\",\n    62→    \"kilns\": [],\n    63→    \"last_accessed\": \"2026-04-16T19:33:11.017556850Z\"\n    64→  },\n    65→  {\n    66→    \"path\": \"/tmp/.tmp7CujtD\",\n    67→    \"name\": \".tmp7CujtD\",\n    68→    \"kilns\": [],\n    69→    \"last_accessed\": \"2026-04-17T13:46:53.471574180Z\"\n    70→  },\n    71→  {\n    72→    \"path\": \"/tmp/.tmp30mxvC\",\n    73→    \"name\": \".tmp30mxvC\",\n    74→    \"kilns\": [],\n    75→    \"last_accessed\": \"2026-04-17T02:01:33.949401848Z\"\n    76→  },\n    77→  {\n    78→    \"path\": \"/tmp/.tmpn4TCNn\",\n    79→    \"name\": \".tmpn4TCNn\",\n    80→    \"kilns\": [],\n    81→    \"last_accessed\": \"2026-04-16T23:57:58.388926607Z\"\n    82→  },\n    83→  {\n    84→    \"path\": \"/tmp/.tmpEi40s6\",\n    85→    \"name\": \".tmpEi40s6\",\n    86→    \"kilns\": [],\n    87→    \"last_accessed\": \"2026-04-16T19:58:26.790319164Z\"\n    88→  },\n    89→  {\n    90→    \"path\": \"/tmp/.tmpB4frWb\",\n    91→    \"name\": \".tmpB4frWb\",\n    92→    \"kilns\": [],\n    93→    \"last_accessed\": \"2026-04-17T14:24:59.989083436Z\"\n    94→  },\n    95→  {\n    96→    \"path\": \"/tmp/.tmpx5KmnQ\",\n    97→    \"name\": \".tmpx5KmnQ\",\n    98→    \"kilns\": [],\n    99→    \"last_accessed\": \"2026-04-17T02:01:33.732582286Z\"\n   100→  },\n   101→  {\n   102→    \"path\": \"/tmp/.tmpy8xSLt\",\n   103→    \"name\": \".tmpy8xSLt\",\n   104→    \"kilns\": [],\n   105→    \"last_accessed\": \"2026-04-17T14:21:26.506721730Z\"\n   106→  },\n   107→  {\n   108→    \"path\": \"/tmp/.tmpRuSNjA\",\n   109→    \"name\": \".tmpRuSNjA\",\n   110→    \"kilns\": [],\n   111→    \"last_accessed\": \"2026-04-17T00:21:21.611227932Z\"\n   112→  },\n   113→  {\n   114→    \"path\": \"/tmp/.tmpAaZkXT\",\n   115→    \"name\": \".tmpAaZkXT\",\n   116→    \"kilns\": [],\n   117→    \"last_accessed\": \"2026-04-17T00:45:40.578789390Z\"\n   118→  }\n   119→]"}
+```
+
+#### Result (id: 3b61e599-382e-48ec-8d47-ed46648c70f1)
+
+```
+{"result":"/home/user/.crucible/sessions/chat-2026-03-31T0226-u3sbhc/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0227-q55arr/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0237-lyiavr/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0247-9w2zc9/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0256-ovrk0s/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0556-af4n1r/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0610-odmjpk/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0610-f2wenc/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T0608-pza5ud/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1137-tahvqx/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1150-tobopd/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1151-yw2dbd/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1313-3r5bza/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1318-u7fe2p/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1318-12sc6o/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1321-orcl1j/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1321-2013kv/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1322-24tfzv/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1322-dzmq7w/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1324-p43uc2/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1326-m0xv9g/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1328-yzvqw9/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1444-hqadds/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1444-4sqrba/session.md\n/home/user/.crucible/sessions/chat-2026-03-31T1446-637e54/session.md\n/home/user/.crucible/sessions/chat-2026-04-01T1817-2sktno/session.md\n/home/user/.crucible/sessions/chat-2026-04-01T1839-enj2bv/session.md\n/home/user/.crucible/sessions/chat-2026-04-01T1843-s4rn8g/session.md\n/home/user/.crucible/sessions/chat-2026-04-01T1843-g7pz1t/session.md\n/home/user/.crucible/sessions/chat-2026-04-01T1845-m89on2/session.md\n/home/user/.crucible/sessions/chat-2026-04-01T1845-ukv12s/session.md\n/home/user/.crucible/sessions/chat-2026-04-01T1847-qqlrsj/session.md\n/home/user/.crucible/sessions/chat-2026-04-02T0034-22rdxv/session.md\n/home/user/.crucible/sessions/chat-2026-04-02T1518-06l8am/session.md\n/home/user/.crucible/sessions/chat-2026-04-02T1930-t29j37/session.md\n/home/user/.crucible/sessions/chat-2026-04-02T2320-95i7v1/session.md\n/home/user/.crucible/sessions/chat-2026-04-02T2341-4gpe1j/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0022-s84wz1/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0022-jrerkw/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0025-yjgwc1/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0025-r2n8xf/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0035-oc6k5z/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0035-o1difn/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0139-oigvy4/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0144-5ass1g/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0144-qecag3/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0205-nxv3i1/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0208-db9nz2/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0215-r4w60r/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0215-ny7nw8/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0220-eeibg3/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T0220-0esrqw/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T1124-2k10cl/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T1235-z11l21/session.md\n/home/user/.crucible/sessions/chat-2026-04-03T2004-5qsldp/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0129-hs3zhc/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0201-o9w4zf/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0201-7wk0gl/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0205-gfq4xg/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0205-yny5kv/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0210-vfkstf/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0210-t4lf4q/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0213-l5igxj/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0213-dnb73v/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0216-lkhc4j/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0217-bqa8ho/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0227-0keszs/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0556-v0dmu6/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0604-92ninv/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0604-nzk2up/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0607-1cbst3/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0607-0fu0nw/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T0617-qs98e6/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T1753-0cy6v0/session.md\n/home/user/.crucible/sessions/chat-2026-04-04T1758-cfs8qb/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T0118-3hn41o/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1311-liql2x/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1317-wj8aci/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1317-p92jr0/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1318-myrgvt/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1359-t2lokt/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1359-va4fsh/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1401-d2iife/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1401-owuqfq/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1403-5jwt96/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1403-kqodqz/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1415-82f2vx/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1452-cw4a06/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1521-c4pqjk/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1524-jb8xse/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1526-8iljks/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1526-6cog0t/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1528-gl4bcn/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1531-ns83fo/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1541-mootk4/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1551-9oi5lv/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1631-tawero/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1703-e29xkc/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T1725-o9w0x4/session.md\n/home/user/.crucible/sessions/chat-2026-04-05T2224-t83t13/session.md\n(Results are truncated. Consider using a more specific path or pattern.)"}
+```
+
+### Tool: `Terminal` (id: toolu_01GxdMMio33bxEmEnVrq2LK9)
+
+```json
+{}
+```
+
+### Tool: `Find` (id: toolu_0129FLGarSbQ9PzvLz4zL2sj)
+
+```json
+{}
+```
+
+#### Result (id: 2dee5a87-fdc9-458f-aa8d-7605652af1a5)
+
+```
+{"result":"No files found"}
+```
+
+#### Result (id: b9969c55-be59-4f67-b72c-afe1d1593809)
+
+```
+{"result":"crucible-sqlite.db\ncrucible-sqlite.db-shm\ncrucible-sqlite.db-wal"}
+```
+
+### Tool: `Grep` (id: toolu_016XF4ermrfcZkXbWJ5BV6tg)
+
+```json
+{}
+```
+
+#### Result (id: 2032baf1-9d85-44f6-9047-21437fe09e42)
+
+```
+{"result":"1----\n2-session_id: chat-2026-04-17T1736-1mwul4\n3-type: chat\n4:kiln: /home/user/.crucible\n5-workspace: /home/user/.crucible\n6-started: 2026-04-17T17:36:20.545312543+00:00\n7----\n\n[Showing results with pagination = limit: 30, offset: 0]"}
+```
+
+### Tool: `Terminal` (id: toolu_01VKoCrNpqo2eL4RwF3DpZnJ)
+
+```json
+{}
+```
+
+#### Result (id: 72f93c1f-3138-48ae-8aeb-2137ffbb89b3)
+
+```
+{"result":"chat.log\ncrucible.log\ndb-server.log\nembeddings.db\nevents\nkiln.db\nmcp.log\nprojects.json\nrepl_history\nrunes\nsessions\ntools"}
+```
+
+### Tool: `Terminal` (id: toolu_01MEZBU2TW5kW8qQorwEpNvc)
+
+```json
+{}
+```
+
+### Tool: `Grep` (id: toolu_01Xy2CfUpV6SrxZTgyzapNpY)
+
+```json
+{}
+```
+
+#### Result (id: 55b7b14c-71a2-4fb7-83ce-566aef1ea952)
+
+```
+{"result":"events\n---\nadd.rn\ncountdown.rn\necho.rn\nhello.rn"}
+```
+
+#### Result (id: fe760c23-5e14-4d5e-9128-aac5e263e7e5)
+
+```
+{"result":"1----\n2-session_id: chat-2026-04-17T1811-56p6o7\n3-type: chat\n4:kiln: /home/user/.crucible\n5-workspace: /home/user/.crucible\n6-started: 2026-04-17T18:11:56.784503491+00:00\n7----\n8-\n9-# Chat Session\n\n[Showing results with pagination = limit: 40, offset: 0]"}
+```
+
+### Tool: `Terminal` (id: toolu_01YQNcFfRS3KWSw69AvpZ394)
+
+```json
+{}
+```
+
+#### Result (id: e73c817e-1db3-4732-ab11-3732833cb580)
+
+```
+{"result":"(Bash completed with no output)"}
+```
+
+### Tool: `Terminal` (id: toolu_01Efh5JZBMMmPeM6JaVhENPe)
+
+```json
+{}
+```
+
+#### Result (id: 22939b92-2cbc-46da-aaee-e1f68b28bb01)
+
+```
+{"result":"moot      568484  0.0  0.0 233084  4784 ?        Ss   13:37   0:00 /usr/bin/zsh -c source /home/user/.claude/shell-snapshots/snapshot-zsh-1776399956032-27ufvs.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB 2>/dev/null || true && eval 'echo \"What is a kiln in Crucible? Use semantic search to find relevant docs.\" | cru session send chat-2026-04-18T1837-s6tg19 --permissions allow 2>&1' < /dev/null && pwd -P >| /tmp/claude-89b9-cwd\nmoot      569049  0.0  0.0 233084  4708 ?        Ss   13:37   0:00 /usr/bin/zsh -c source /home/user/.claude/shell-snapshots/snapshot-zsh-1776399956032-27ufvs.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB 2>/dev/null || true && eval 'until grep -qE \"\\[complete\\]|Error\" /tmp/claude-1000/-home-moot-crucible/9da5b8ef-4565-4ea9-87f5-e501720ef389/tasks/bxmfeyxv7.output 2>/dev/null; do sleep 5; done; echo done' < /dev/null && pwd -P >| /tmp/claude-b316-cwd\nmoot      571281  0.0  0.0 233124  4792 ?        Ss   13:38   0:00 /usr/bin/zsh -c source /home/user/.claude/shell-snapshots/snapshot-zsh-1776537481238-ooi7ea.sh && setopt NO_EXTENDED_GLOB 2>/dev/null || true && eval 'find /home/user -maxdepth 3 -name crucible -type f 2>/dev/null ; find /usr/local/bin /usr/bin -name crucible\\* 2>/dev/null ; which crucible-server 2>/dev/null ; ps aux < /dev/null | grep -i crucible 2>/dev/null | head -5' && pwd -P >| /tmp/claude-9e54-cwd\nmoot      571288  0.0  0.0 231276  2660 ?        S    13:38   0:00 grep --color=auto --exclude-dir=.bzr --exclude-dir=CVS --exclude-dir=.git --exclude-dir=.hg --exclude-dir=.svn --exclude-dir=.idea --exclude-dir=.tox --exclude-dir=.venv --exclude-dir=venv -i crucible"}
+```
+
+### Tool: `Terminal` (id: toolu_01MPSL979UDmgZRVDWciR8R3)
+
+```json
+{}
+```
+
+#### Result (id: b579a804-2bca-4def-b921-dceb9c6d3d1b)
+
+```
+{"result":"cru is /home/user/.cargo/bin/cru\ncru - Crucible CLI - Interactive knowledge management with semantic search\n\nUsage: cru [OPTIONS] [COMMAND]\n\nCommands:\n  chat         Interactive AI chat with session persistence and tool access [aliases: c]\n  mcp          Start MCP server exposing Crucible tools for external AI agents\n  process      Process markdown files through the pipeline (parse, enrich, store) [aliases: p]\n  search       Search kiln notes using semantic and/or text search\n  stats        Display kiln statistics\n  models       List available models from configured LLM provider\n  config       Manage Crucible configuration (initialize, view, export) [aliases: cfg]\n  status       Display storage status and statistics for the knowledge base\n  doctor       Run installation diagnostics for Crucible\n  storage      Manage storage operations (migration, verification, backup, cleanup)\n  agents       Manage agent cards (list, show, validate)\n  tasks        Manage tasks from a TASKS.md file (list, next, pick, done)\n  daemon       Manage the Crucible daemon (start, stop, status, logs)\n  skills       Discover and manage agent skills (list, show, search)\n  tools        Discover and manage tools (list, show)\n  plugin       Manage and develop Lua plugins\n  lua          Evaluate Lua code in the daemon's plugin runtime\n  init         Initialize a new kiln or project [aliases: i]\n  session      Manage chat sessions (create, configure, send, pause, resume, end) [aliases: s, sess]\n  auth         Manage LLM provider credentials (login, logout, list)\n  set          Configure a running session's settings (same syntax as TUI :set)\n  setup        Generate shell completion scripts (bash, zsh) Bootstrap the Crucible runtime (plugins, themes, default init.lua)\n  completions  Generate shell completion scripts for bash and zsh\n  web          Start the web UI server for browser-based chat\n  help         Print this message or the help of the given subcommand(s)\n\nOptions:\n  -l, --log-level <LOG_LEVEL>\n          Set log level (off, error, warn, info, debug, trace) If not specified, uses config file value or defaults to 'off'\n\n          Possible values:\n          - off:   No logging output\n          - error: Error messages only\n          - warn:  Warnings and errors\n          - info:  Informational messages (default for verbose)\n          - debug: Debug messages\n          - trace: Trace-level messages (most verbose)\n\n  -v, --verbose\n          Enable verbose logging (shortcut for --log-level=debug)\n\n  -C, --config <CONFIG>\n          Config file path (defaults to ~/.config/crucible/config.toml)\n\n      --embedding-url <EMBEDDING_URL>\n          Embedding service URL (overrides config file)\n\n      --embedding-model <EMBEDDING_MODEL>\n          Embedding model name (overrides config file)\n\n  -f, --format <FORMAT>\n          Set output format (table, json, csv)\n          \n          [default: table]"}
+```
+
+### Tool: `Terminal` (id: toolu_01CHrELwcdVvqPsqZzHsygz5)
+
+```json
+{}
+```
+
+#### Result (id: 19efc952-b42b-4ca3-b59a-3fd2a1f8bb54)
+
+```
+{"result":"Initialize a directory as a Crucible kiln (knowledge store) or project.\n\nAuto-detects whether the directory is already a kiln or project. For new directories,\nan interactive prompt asks which type to create.\n\nExamples:\n  # Initialize in current directory (interactive)\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-notes\n\n  # Skip prompts, use defaults (kiln)\n  cru init -y\n\n  # Force overwrite existing config\n  cru init --force\n\nUsage: cru init [OPTIONS]\n\nOptions:\n  -p, --path <PATH>\n          Path to initialize (defaults to current directory)\n\n  -F, --force\n          Overwrite existing configuration\n\n  -y, --yes\n          Skip interactive prompts, use defaults\n\n  -l, --log-level <LOG_LEVEL>\n          Set log level (off, error, warn, info, debug, trace) If not specified, uses config file value or defaults to 'off'\n\n          Possible values:\n          - off:   No logging output\n          - error: Error messages only\n          - warn:  Warnings and errors\n          - info:  Informational messages (default for verbose)\n          - debug: Debug messages\n          - trace: Trace-level messages (most verbose)\n\n  -v, --verbose\n          Enable verbose logging (shortcut for --log-level=debug)\n\n  -C, --config <CONFIG>\n          Config file path (defaults to ~/.config/crucible/config.toml)\n\n      --embedding-url <EMBEDDING_URL>\n          Embedding service URL (overrides config file)\n\n      --embedding-model <EMBEDDING_MODEL>\n          Embedding model name (overrides config file)\n\n  -f, --format <FORMAT>\n          Set output format (table, json, csv)\n          \n          [default: table]\n\n      --standalone\n          Run with an in-process daemon (no background server required). Useful for single-session use, restricted environments, or testing. Data persists to the kiln's .crucible/ directory\n\n  -h, --help\n          Print help (see a summary with '-h')"}
+```
+
+### Tool: `Terminal` (id: toolu_01K2z8gMRHRiWYMqms2JRq6b)
+
+```json
+{}
+```
+
+#### Result (id: 6eaf676e-485a-4c92-82ab-45687e8c46dd)
+
+```
+{"result":"📊 Kiln Statistics\n\n📁 Total files: 186\n📝 Markdown files: 173\n💾 Total size: 1268 KB\n🗂️  Kiln path: /home/user/crucible/docs\n\n✅ Kiln scan completed successfully.\n===\nℹ Gathering global storage status...\n\nStorage Status\n──────────────\n  Storage Mode: daemon\n  Kiln Path: /home/user/crucible/docs\n  Total Notes: 351\n✓ Status completed in 102.01s"}
+```
+
+### Tool: `ToolSearch` (id: toolu_01QVCEYKhaD48SCtS7Z8XTMS)
+
+```json
+{
+  "query": "select:mcp__crucible__semantic_search,mcp__crucible__get_kiln_info",
+  "max_results": 2
+}
+```
+
+### Tool: `mcp__crucible__semantic_search` (id: toolu_01DvBwfxfLUoeZY14e8EFKLu)
+
+```json
+{
+  "query": "what is a kiln in Crucible",
+  "limit": 10
+}
+```
+
+### Tool: `mcp__crucible__get_kiln_info` (id: toolu_01PMAioVH4jxsPuJfGkpazvm)
+
+```json
+{}
+```
+
+### Tool: `grep -l | head -20 --include="*.md" "kiln" /home/user/.crucible` (id: toolu_01V3hE7VKWyF67tQF6Wz4vTT)
+
+```json
+{
+  "pattern": "kiln",
+  "path": "/home/user/.crucible",
+  "glob": "*.md",
+  "output_mode": "files_with_matches",
+  "head_limit": 20
+}
+```
+
+### Tool: `grep -l | head -20 --include="*.{toml,yaml,yml,json,rs,py,ts}" "kiln" /home/user/.crucible` (id: toolu_01XGvCfzhPqHc7Lx2qxm91Wb)
+
+```json
+{
+  "pattern": "kiln",
+  "path": "/home/user/.crucible",
+  "glob": "*.{toml,yaml,yml,json,rs,py,ts}",
+  "output_mode": "files_with_matches",
+  "head_limit": 20
+}
+```
+
+### Tool: `Read projects.json` (id: toolu_01FjzVjMW8SYXjwp4iXNCLdd)
+
+```json
+{
+  "file_path": "/home/user/.crucible/projects.json"
+}
+```
+
+### Tool: `Find `/home/user/.crucible` `*.md`` (id: toolu_01N1HMnQfUSNYudC9Vf94Zbc)
+
+```json
+{
+  "pattern": "*.md",
+  "path": "/home/user/.crucible"
+}
+```
+
+### Tool: `ls /home/user/.crucible/.crucible/` (id: toolu_01GxdMMio33bxEmEnVrq2LK9)
+
+```json
+{
+  "command": "ls /home/user/.crucible/.crucible/",
+  "description": "List the kiln directory contents"
+}
+```
+
+### Tool: `Find `/home/user/.crucible/.crucible` `*.md`` (id: toolu_0129FLGarSbQ9PzvLz4zL2sj)
+
+```json
+{
+  "pattern": "*.md",
+  "path": "/home/user/.crucible/.crucible"
+}
+```
+
+### Tool: `grep -C 3 | head -30 "kiln" /home/user/.crucible/sessions/chat-2026-04-17T1736-1mwul4/session.md` (id: toolu_016XF4ermrfcZkXbWJ5BV6tg)
+
+```json
+{
+  "pattern": "kiln",
+  "path": "/home/user/.crucible/sessions/chat-2026-04-17T1736-1mwul4/session.md",
+  "output_mode": "content",
+  "-C": 3,
+  "head_limit": 30
+}
+```
+
+### Tool: `ls /home/user/.crucible/` (id: toolu_01VKoCrNpqo2eL4RwF3DpZnJ)
+
+```json
+{
+  "command": "ls /home/user/.crucible/",
+  "description": "List top-level crucible directory"
+}
+```
+
+### Tool: `ls /home/user/.crucible/runes/ 2>/dev/null; echo "---"; ls /home/user/.crucible/tools/ 2>/dev/null` (id: toolu_01MEZBU2TW5kW8qQorwEpNvc)
+
+```json
+{
+  "command": "ls /home/user/.crucible/runes/ 2>/dev/null; echo \"---\"; ls /home/user/.crucible/tools/ 2>/dev/null",
+  "description": "List runes and tools directories"
+}
+```
+
+### Tool: `grep -i -C 5 | head -40 "kiln" /home/user/.crucible/sessions/chat-2026-04-17T1811-56p6o7/session.md` (id: toolu_01Xy2CfUpV6SrxZTgyzapNpY)
+
+```json
+{
+  "pattern": "kiln",
+  "path": "/home/user/.crucible/sessions/chat-2026-04-17T1811-56p6o7/session.md",
+  "output_mode": "content",
+  "-C": 5,
+  "head_limit": 40,
+  "-i": true
+}
+```
+
+### Tool: `which crucible 2>/dev/null; crucible --help 2>/dev/null | head -50` (id: toolu_01YQNcFfRS3KWSw69AvpZ394)
+
+```json
+{
+  "command": "which crucible 2>/dev/null; crucible --help 2>/dev/null | head -50",
+  "description": "Check crucible CLI help for kiln info"
+}
+```
+
+### Tool: `find /home/user -maxdepth 3 -name "crucible" -type f 2>/dev/null; find /usr/local/bin /usr/bin -name "crucible*" 2>/dev/null; which crucible-server 2>/dev/null; ps aux | grep -i crucible 2>/dev/null | head -5` (id: toolu_01Efh5JZBMMmPeM6JaVhENPe)
+
+```json
+{
+  "command": "find /home/user -maxdepth 3 -name \"crucible\" -type f 2>/dev/null; find /usr/local/bin /usr/bin -name \"crucible*\" 2>/dev/null; which crucible-server 2>/dev/null; ps aux | grep -i crucible 2>/dev/null | head -5",
+  "description": "Find crucible binary and running processes"
+}
+```
+
+### Tool: `type cru 2>/dev/null; cru --help 2>/dev/null | head -60` (id: toolu_01MPSL979UDmgZRVDWciR8R3)
+
+```json
+{
+  "command": "type cru 2>/dev/null; cru --help 2>/dev/null | head -60",
+  "description": "Check cru CLI help"
+}
+```
+
+### Tool: `cru init --help 2>/dev/null` (id: toolu_01CHrELwcdVvqPsqZzHsygz5)
+
+```json
+{
+  "command": "cru init --help 2>/dev/null",
+  "description": "Check init subcommand help for kiln details"
+}
+```
+
+### Tool: `cru stats 2>/dev/null; echo "==="; cru status 2>/dev/null` (id: toolu_01K2z8gMRHRiWYMqms2JRq6b)
+
+```json
+{
+  "command": "cru stats 2>/dev/null; echo \"===\"; cru status 2>/dev/null",
+  "description": "Get kiln stats and status"
+}
+```
+
+## Assistant
+
+Semantic search returned no results, and the kiln info shows basic stats. Let me dig deeper into the codebase.Let me check the Crucible source or binary for more context on what a kiln is.Now I have a clear picture. Here's what a **kiln** is in Crucible:
+
+A **kiln** is Crucible's term for a **knowledge store** — a directory that has been initialized to hold and manage notes, documents, and their semantic embeddings. It's the core data unit in Crucible.
+
+Key details:
+
+- **Created with `cru init`** — initializes a directory as a kiln (or project). This creates a `.crucible/` subdirectory inside it containing a SQLite database (`crucible-sqlite.db`) for storing notes and embeddings.
+- **Contains notes** — markdown files that are parsed, enriched, and stored with semantic embeddings for search.
+- **Has its own database** — each kiln gets its own `.crucible/` directory with a SQLite DB, enabling local semantic search, text search, and property search.
+- **Tracked in `projects.json`** — Crucible's global registry maps projects to their kilns. A project can have zero or more kilns (see the `"kilns": [...]` array in `projects.json`).
+- **Used as workspace context** — chat sessions are scoped to a kiln (`kiln: /home/user/.crucible` in session metadata), so the AI agent knows which knowledge base to search.
+
+Your current active kiln points to `/home/user/crucible/docs` with 351 notes and 173 markdown files. The name follows the pottery/forge metaphor of "Crucible" — a kiln is where raw materials (documents) are fired (processed/enriched) into something useful (a searchable knowledge base).

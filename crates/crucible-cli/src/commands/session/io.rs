@@ -82,27 +82,33 @@ pub(super) fn format_events_markdown(events: &[LogEvent]) -> String {
 }
 
 pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
-    println!("Session: {}\n", id);
-    println!("Events: {}\n", events.len());
+    print!("{}", events_text(id, events));
+}
+
+pub(super) fn events_text(id: &str, events: &[LogEvent]) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(out, "Session: {}\n", id);
+    let _ = writeln!(out, "Events: {}\n", events.len());
 
     for event in events {
         match event {
             LogEvent::System { content, .. } => {
-                println!("[system] {}", truncate_chars(content, 100, true));
+                let _ = writeln!(out, "[system] {}", truncate_chars(content, 100, true));
             }
             LogEvent::User { content, .. } => {
-                println!("\n[user]\n{}\n", content);
+                let _ = writeln!(out, "\n[user]\n{}\n", content);
             }
             LogEvent::Assistant { content, model, .. } => {
                 let model_str = model.as_deref().unwrap_or("unknown");
-                println!("[assistant ({})]\n{}\n", model_str, content);
+                let _ = writeln!(out, "[assistant ({})]\n{}\n", model_str, content);
             }
             LogEvent::ToolCall { name, id, .. } => {
-                println!("[tool:{}] id={}", name, id);
+                let _ = writeln!(out, "[tool:{}] id={}", name, id);
             }
             LogEvent::ToolResult { id, truncated, .. } => {
                 let marker = if *truncated { " (truncated)" } else { "" };
-                println!("[result:{}]{}", id, marker);
+                let _ = writeln!(out, "[result:{}]{}", id, marker);
             }
             LogEvent::Error {
                 message,
@@ -110,19 +116,20 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
                 ..
             } => {
                 let level = if *recoverable { "warning" } else { "error" };
-                println!("[{}] {}", level, message);
+                let _ = writeln!(out, "[{}] {}", level, message);
             }
             LogEvent::Init {
                 session_id, model, ..
             } => {
                 let model_str = model.as_deref().unwrap_or("unknown");
-                println!("[init] session={}, model={}", session_id, model_str);
+                let _ = writeln!(out, "[init] session={}, model={}", session_id, model_str);
             }
             LogEvent::Thinking { content, .. } => {
-                println!("[thinking] {}", truncate_chars(content, 100, true));
+                let _ = writeln!(out, "[thinking] {}", truncate_chars(content, 100, true));
             }
             LogEvent::Clear { plugin, .. } => {
-                println!(
+                let _ = writeln!(
+                    out,
                     "[context cleared by {}]",
                     plugin.as_deref().unwrap_or("user")
                 );
@@ -130,7 +137,7 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
             LogEvent::SubagentSpawned {
                 id, session_link, ..
             } => {
-                println!("[subagent:{}] {}", id, session_link);
+                let _ = writeln!(out, "[subagent:{}] {}", id, session_link);
             }
             LogEvent::SubagentCompleted {
                 id,
@@ -138,7 +145,8 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
                 session_link,
                 ..
             } => {
-                println!(
+                let _ = writeln!(
+                    out,
                     "[subagent:{}] {} -> {}",
                     id,
                     session_link,
@@ -151,7 +159,8 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
                 session_link,
                 ..
             } => {
-                println!(
+                let _ = writeln!(
+                    out,
                     "[subagent:{}] {} FAILED: {}",
                     id,
                     session_link,
@@ -160,4 +169,5 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
             }
         }
     }
+    out
 }

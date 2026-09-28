@@ -4,12 +4,14 @@
     {
       "id": "m1",
       "turn_id": "m1",
+      "timestamp": "2026-09-24T00:20:43.362879451Z",
       "type": "user_turn",
       "content": "how do I read a file"
     },
     {
       "id": "m1-seg-0",
       "turn_id": "m1",
+      "timestamp": "2026-09-24T00:20:43.362884951Z",
       "type": "assistant_segment",
       "index": 0,
       "text": "",
@@ -19,6 +21,7 @@
     {
       "id": "tool-c1",
       "turn_id": "m1",
+      "timestamp": "2026-09-24T00:20:43.362884951Z",
       "type": "tool_card",
       "call_id": "c1",
       "name": "read_file",
@@ -58,6 +61,7 @@
     {
       "id": "m1-seg-1",
       "turn_id": "m1",
+      "timestamp": "2026-09-24T00:20:43.362886191Z",
       "type": "assistant_segment",
       "index": 1,
       "text": "Use std::fs::read_to_string.",
@@ -65,7 +69,8 @@
       "usage": {
         "prompt_tokens": 25,
         "completion_tokens": 75,
-        "total_tokens": 100
+        "total_tokens": 100,
+        "cache_read_tokens": 12
       }
     }
   ]

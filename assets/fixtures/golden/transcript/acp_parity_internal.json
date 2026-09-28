@@ -4,12 +4,14 @@
     {
       "id": "msg-parity-0001",
       "turn_id": "msg-parity-0001",
+      "timestamp": "2026-08-03T09:14:07Z",
       "type": "user_turn",
       "content": "fix the greeting"
     },
     {
       "id": "msg-parity-0001-seg-0",
       "turn_id": "msg-parity-0001",
+      "timestamp": "2026-08-03T09:14:07Z",
       "type": "assistant_segment",
       "index": 0,
       "text": "I'll fix the greeting.",
@@ -18,6 +20,7 @@
     {
       "id": "tool-call-edit-1",
       "turn_id": "msg-parity-0001",
+      "timestamp": "2026-08-03T09:14:07Z",
       "type": "tool_card",
       "call_id": "call-edit-1",
       "name": "edit_file",
@@ -51,6 +54,7 @@
     {
       "id": "msg-parity-0001-seg-1",
       "turn_id": "msg-parity-0001",
+      "timestamp": "2026-08-03T09:14:07Z",
       "type": "assistant_segment",
       "index": 1,
       "text": " Done.",

@@ -1,0 +1,22 @@
+Session: old_wire_session
+
+Events: 8
+
+
+[user]
+edit the library
+
+[tool:edit_file] id=c1
+[result:c1]
+[assistant (unknown)]
+Done.
+
+
+[user]
+fix main
+
+[tool:Edit] id=c2
+[result:c2]
+
+[user]
+try again
