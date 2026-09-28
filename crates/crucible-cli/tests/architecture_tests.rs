@@ -623,7 +623,7 @@ const TUI_KEY_EXEMPT: &[&str] = &["mode", "plugin_approval"];
 /// A knob the daemon advertises must be reachable from the TUI as well as the
 /// web.
 ///
-/// AGENTS.md asks "Where does a user meet it? TUI *and* web", and the web half
+/// AGENTS.md requires that a feature is reachable in the TUI *and* the web client, and the web half
 /// is the gate above. Without this half a knob can ship to one renderer and
 /// pass review — which is what happened to `agent_option`.
 ///
@@ -999,8 +999,8 @@ const WIRE_NAME_HOMES: &[&str] = &["crates/crucible-core/src/protocol/session_ev
 /// either one.
 ///
 /// **This gate FORBIDS rather than REQUIRES.** A gate that requires an entry
-/// is satisfiable by not adding the entry — the failure `AGENTS.md` records
-/// four times. A gate that forbids an extra copy fails the moment somebody
+/// is satisfiable by not adding the entry — a failure the history of this
+/// file records four times. A gate that forbids an extra copy fails the moment somebody
 /// writes one, which is the event to catch. The names come from the compiled
 /// consts, and a run that scans no file fails.
 #[test]

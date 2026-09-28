@@ -1,138 +1,65 @@
-# AI Agent Guide for crucible-cli
+# Working on crucible-cli
 
-> **TARGET LOCATION**: `crates/crucible-cli/AGENTS.md`
-> 
-> This draft should be moved to the CLI crate during plan execution.
+Read the root `AGENTS.md` first. This file adds the rules for the `cru`
+binary and the TUI.
 
----
+## The CLI is a client
 
-## Critical Architecture Rule
+The CLI and the TUI show state and send user intent to the daemon. The daemon
+decides. The CLI must not hold business logic, session state that other
+clients need, or a second agent configuration.
 
-> **⚠️ CLI/TUI IS A VIEW LAYER ONLY — NO DOMAIN LOGIC**
+To decide where code goes, ask one question: would another client (the web
+client, `cru acp`, a second TUI) need the same logic?
+- **Yes:** put it in the daemon or in `crucible-core`.
+- **No:** it can stay in the CLI, because it is presentation only.
 
-The CLI and TUI are **presentation layers**. They render state and forward user actions to the daemon. All actual domain logic lives in `crucible-daemon` and `crucible-core`.
+| Put in the CLI | Put in the daemon |
+|---|---|
+| Rendering: Oil nodes, layout, themes | Session management and session settings |
+| Key handling that becomes an RPC call | Handler registration and execution |
+| Display state: popups, scroll, cursor | Injection, turn and tool-call flow |
+| Display settings: theme, show-thinking | LLM message processing |
+| Output formatting | Event dispatch to Lua handlers |
 
-### What This Means
+A setting that two clients on one session must agree on is a session
+setting. Use the cross-layer checklist in the root `AGENTS.md`.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  CORRECT Architecture                                       │
-│                                                             │
-│  CLI/TUI (crucible-cli)     Daemon (crucible-daemon)        │
-│  ┌─────────────────────┐    ┌─────────────────────────────┐ │
-│  │ • Render messages   │    │ • Session management        │ │
-│  │ • Handle key events │───►│ • Handler registration      │ │
-│  │ • Display popups    │    │ • Handler execution         │ │
-│  │ • Show notifications│◄───│ • Event dispatch            │ │
-│  │ • Format output     │    │ • Inject flow               │ │
-│  └─────────────────────┘    │ • LLM communication         │ │
-│        VIEW ONLY            │ • State persistence         │ │
-│                             └─────────────────────────────┘ │
-│                                   DOMAIN LOGIC              │
-└─────────────────────────────────────────────────────────────┘
-```
+## Imports from other crates
 
-### DO NOT Put in CLI/TUI
+The CLI imports types and display helpers from `crucible-daemon`,
+`crucible-lua` and `crucible-oil`. It must not run daemon logic in its own
+process.
 
-- ❌ Handler registration or execution logic
-- ❌ Session state beyond what's needed for display
-- ❌ Business rules (e.g., "if todo incomplete, inject message")
-- ❌ LLM message processing or transformation
-- ❌ Event dispatch to Lua handlers
-- ❌ Inject message flow logic
+Some commands still do that: `cru plugin add`, `cru plugin check`,
+`cru plugin stubs`, and the config evaluation in `src/config.rs`,
+`src/main.rs`, `src/commands/daemon.rs` and `src/commands/doctor.rs`.
+[Simplification Plan](<../../docs/Meta/Architecture/Simplification Plan.md>)
+step 4 moves them to RPC. Do not add another one.
 
-### DO Put in CLI/TUI
+## Where things are
 
-- ✅ Rendering components (OIL nodes, layout)
-- ✅ Key event handling → RPC calls to daemon
-- ✅ Display state (popup visible, scroll position, cursor)
-- ✅ UI-only settings (theme, show_thinking toggle)
-- ✅ Formatting output for display
+| Path | Role |
+|---|---|
+| `src/main.rs`, `src/cli/` | The `cru` entry point and the clap argument types |
+| `src/commands/` | One module for each `cru` subcommand: parse the arguments, call the daemon, format the output |
+| `src/formatting/`, `src/output.rs` | Plain-text output for commands |
+| `src/tui/oil/chat_app/` | `OilChatApp`: the TUI reducer and its display state |
+| `src/tui/oil/chat_runner/` | The event loop: daemon events in, RPC calls out |
+| `src/tui/oil/commands/` | The `:` commands, for example `:set` |
+| `src/tui/oil/components/` | Reusable TUI components |
+| `src/tui/oil/markdown/` | Markdown to Oil nodes |
+| `src/tui/oil/theme/`, `src/tui/oil/config/` | Themes, shortcuts and TUI-local settings |
+| `src/tui/oil/tests/` | TUI tests and user-story tests |
 
-### Why This Matters
+[TUI Chat App](<../../docs/Meta/Architecture/TUI Chat App.md>),
+[TUI Components](<../../docs/Meta/Architecture/TUI Components.md>) and
+[CLI Commands](<../../docs/Meta/Architecture/CLI Commands.md>) describe
+these modules in full.
 
-1. **Multi-client consistency**: Multiple CLI instances connected to same session see same behavior
-2. **Testability**: Domain logic in daemon can be tested without TUI
-3. **Separation of concerns**: UI changes don't affect business logic
-4. **Session-scoped state**: Handlers, injections, and state belong to session, not client
+## Tests
 
-### Example: Handler Execution
-
-**WRONG** (logic in CLI):
-```rust
-// In chat_runner.rs - DON'T DO THIS
-if event.is_turn_complete() {
-    let handlers = registry.get_handlers("turn:complete");
-    for handler in handlers {
-        let result = executor.execute(handler, event);
-        if let Inject { content } = result {
-            send_to_agent(content); // Business logic in CLI!
-        }
-    }
-}
-```
-
-**CORRECT** (CLI just displays, daemon does logic):
-```rust
-// In chat_runner.rs - CLI just receives events and displays
-match daemon_event {
-    SessionEvent::InjectionSent { content, source } => {
-        // Just display that injection happened
-        self.notify(format!("Handler {} injected message", source));
-    }
-    SessionEvent::MessageReceived { message } => {
-        // Just display the message
-        self.append_message(message);
-    }
-}
-
-// In agent_manager.rs (daemon) - All logic here
-if event.is_turn_complete() {
-    let handlers = session.get_handlers("turn:complete");
-    for handler in handlers {
-        match executor.execute(handler, event) {
-            Inject { content } => {
-                session.queue_injection(content);
-                self.emit_event(InjectionSent { content, source: handler.name });
-            }
-        }
-    }
-}
-```
-
-### When In Doubt
-
-Ask: "Would a different client (web UI, API, another TUI) need this same logic?"
-
-- **YES** → Put in daemon/core
-- **NO** → OK for CLI (it's truly presentation-only)
-
-## Thin-Client Domain Dependencies
-
-The CLI imports a **minimal set of domain crates** for display purposes only. These are intentional and do NOT violate the view-layer rule:
-
-| Crate | What We Use | Why | Scope |
-|-------|------------|-----|-------|
-| `crucible-lua` | `LuaNode` types | Render Lua execution results in chat | Display only |
-| `crucible-daemon::acp` | `humanize_tool_title()` | Format tool names for display | Display only |
-| `crucible-daemon::observe` | `LogEvent`, `SessionId`, `SessionType`, `load_events`, `parse_session_log`, `render_to_markdown` | Read and render persisted session logs | Read + display only |
-
-**Key principle:** We import *types and display utilities*, never *execution logic*. The daemon owns all business logic.
-
-
-## File Organization
-
-| Directory | Purpose |
-|-----------|---------|
-| `src/commands/` | CLI command implementations (parse args, call daemon, format output) |
-| `src/tui/oil/` | TUI components and rendering |
-| `src/tui/oil/components/` | Reusable UI components |
-| `src/tui/oil/chat_app.rs` | Main TUI state (display state only!) |
-| `src/tui/oil/chat_runner.rs` | Event loop (receives daemon events, updates display) |
-
-## Testing
-
-- **Unit tests**: Test rendering, key handling, display logic
-- **Snapshot tests**: Verify visual output with insta
-- **Integration tests**: Test CLI commands produce correct RPC calls
-- **DO NOT**: Test business logic here — that's daemon's job
+- Test rendering, key handling and display logic here.
+- Use insta snapshots for visual output. Examine each changed snapshot.
+- Test that a CLI command sends the correct RPC call.
+- Do not test business logic here. The daemon tests it.

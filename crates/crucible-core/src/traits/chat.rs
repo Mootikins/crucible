@@ -154,7 +154,7 @@ impl ChatToolResult {
 /// Each knob is required. A client or a provider that omits one does not
 /// compile. Before this split the knobs had defaults that returned `None`
 /// or `NotSupported`, so a new handle compiled with every knob unwired and
-/// nothing reported it (see "Session-scoped vs TUI-local" in AGENTS.md).
+/// nothing reported it (see the cross-layer checklist in AGENTS.md).
 ///
 /// A handle that does not support a knob says so: the setter returns
 /// `ChatError::NotSupported` and the getter returns its empty value.
