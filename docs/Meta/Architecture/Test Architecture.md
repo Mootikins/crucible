@@ -420,14 +420,14 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-web/tests/route_contract_tests/diff_comments.rs` | 75 | Diff-comment error-status contract: a daemon `INVALID_PARAMS` refusal on `diff.comment` is a 422 with the daemon's message; an internal failure is a 502. |
 | `crates/crucible-web/tests/route_contract_tests/errors.rs` | 85 | `WebError` serialization to HTTP status and JSON body, with no mock daemon involved. |
 | `crates/crucible-web/tests/route_contract_tests/fs.rs` | 146 | `/api/fs/*` daemon-proxy routes: list, move, mkdir, trash. |
-| `crates/crucible-web/tests/route_contract_tests/health.rs` | 141 | `/health` and `/ready` signal daemon connectivity and readiness. |
-| `crates/crucible-web/tests/route_contract_tests/kilns.rs` | 881 | Kiln/note listing, graph building, semantic/vector search, backlinks, patch/put, and concurrent-write serialization; every kiln-scoped file route resolves a symlink against the innermost registered kiln root consistently. |
+| `crates/crucible-web/tests/route_contract_tests/health.rs` | 144 | `/health` and `/ready` signal daemon connectivity and readiness. A real in-process daemon answers the ping; the mock gives the refused ping. |
+| `crates/crucible-web/tests/route_contract_tests/kilns.rs` | 886 | Kiln/note listing, graph building, semantic/vector search, backlinks, patch/put, and concurrent-write serialization; every kiln-scoped file route resolves a symlink against the innermost registered kiln root consistently. The file, patch, put and backlinks tests run against a real in-process daemon with real kilns and a real index. |
 | `crates/crucible-web/tests/route_contract_tests/plugins.rs` | 652 | Plugin discovery, install, remove, reload, option get/set/execute, publications, commands, permission checks. |
 | `crates/crucible-web/tests/route_contract_tests/projects.rs` | 149 | Project registration: list, register, unregister, `registration_roots` containment. |
 | `crates/crucible-web/tests/route_contract_tests/router.rs` | 76 | Router wiring: method mismatches, unknown routes, the providers-enumeration endpoint. |
 | `crates/crucible-web/tests/route_contract_tests/session_config.rs` | 63 | Precognition session-config get/set. |
-| `crates/crucible-web/tests/route_contract_tests/sessions.rs` | 746 | Session lifecycle routes: create, list, retrieve, pause, end, cancel, switch model/mode, title, export, archive, scope, plugin status. The private-IP-endpoint test now runs a real daemon; the session-status wire type uses `id`/`color_group`, and the daemon always prepends a pinned `plugin_turns` item. |
-| `crates/crucible-web/tests/route_contract_tests/shared.rs` | 13 | Re-exports `crucible_web::test_support`'s mock daemon so sibling files never hand-roll a second copy. |
+| `crates/crucible-web/tests/route_contract_tests/sessions.rs` | 726 | Session lifecycle routes: create, list, retrieve, pause, end, cancel, switch model/mode, title, export, archive, scope, plugin status. The private-IP-endpoint test now runs a real daemon; the session-status wire type uses `id`/`color_group`, and the daemon always prepends a pinned `plugin_turns` item. |
+| `crates/crucible-web/tests/route_contract_tests/shared.rs` | 14 | Re-exports the mock daemon and the real in-process daemon of `crucible_web::test_support`, so sibling files never make a second copy. |
 | `crates/crucible-web/tests/route_contract_tests/skills.rs` | 144 | Skills routes: list, get, search within a kiln. |
 | `crates/crucible-web/tests/route_contract_tests/stream_version.rs` | 135 | Every versioned SSE stream names its version in both the HTTP header and the body handshake frame; the route set now includes `/api/events/system`, not `/api/plugins/events`. |
 | `crates/crucible-web/tests/route_contract_tests/system_events.rs` | 157 | `GET /api/events/system` forwards `proposal_changed` and `publication_changed`; all three versioned event streams (system, fs, surfaces) answer `stream_gap` on ring overflow and on an upstream gap frame. |
@@ -436,14 +436,14 @@ Roles are condensed from the file's own doc comment or its test names.
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-web/tests/bases_daemon_e2e.rs` | 158 | The `/api/bases/*` HTTP routes (query, property, views, group-order, entries) against a real daemon: typed cell values, optimistic concurrency (409 on a stale `ancestor_hash`), and path-traversal/unknown-view 422 refusals. |
+| `crates/crucible-web/tests/bases_daemon_e2e.rs` | 152 | The `/api/bases/*` HTTP routes (query, property, views, group-order, entries) against a real daemon: typed cell values, optimistic concurrency (409 on a stale `ancestor_hash`), and path-traversal/unknown-view 422 refusals. |
 | `crates/crucible-web/tests/config_daemon_e2e.rs` | 251 | The config pin/refuse gate through `/api/config`, against a real daemon booted from a real `init.lua` — the mock cannot prove this; see [Purpose and ownership](#purpose-and-ownership). |
 | `crates/crucible-web/tests/config_secret_redaction_e2e.rs` | 163 | `redact_credentials` keeps provider and web API keys out of `/api/config`'s JSON body, including the `origins` rows, against a real booted daemon in its own test binary (process-global config store). |
-| `crates/crucible-web/tests/file_root_daemon_e2e.rs` | 202 | The web's `/api/kiln/file`/`/api/file/raw`/`/api/canvas` routes now defer root/containment decisions to the daemon's `fs.read`/`fs.write`; a kiln-less session's generated folder is a root for every file route, and an unregistered session workspace is a root for none. |
+| `crates/crucible-web/tests/file_root_daemon_e2e.rs` | 185 | The web's `/api/kiln/file`/`/api/file/raw`/`/api/canvas` routes now defer root/containment decisions to the daemon's `fs.read`/`fs.write`; a kiln-less session's generated folder is a root for every file route, and an unregistered session workspace is a root for none. |
 | `crates/crucible-web/tests/notification_daemon_e2e.rs` | 290 | Real-daemon E2E: a plugin `cru.log.notify(...)` call reaches the web session stream, and `GET`/`POST` notification routes list and dismiss per-session, verified against two independent live `ReconnectingDaemon` subscribers. |
 | `crates/crucible-web/tests/openapi_contract.rs` | 1195 | Hand-rolled static-analysis suite: the committed `openapi.json`, the Axum router's actual routes, and the SolidJS client's literal `/api` paths all agree — see [Boundaries and invariants](#boundaries-and-invariants). |
-| `crates/crucible-web/tests/proposal_daemon_e2e.rs` | 122 | Real-daemon E2E: `POST /api/proposals/{id}/{accept,reject,resolve}` against two kilns sharing a relative path, proving root selection and conflict-state shape. |
-| `crates/crucible-web/tests/route_contract_tests.rs` | 41 | `#[path]` mounts for the 17 `route_contract_tests/` files; no tests of its own. |
+| `crates/crucible-web/tests/proposal_daemon_e2e.rs` | 117 | Real-daemon E2E: `POST /api/proposals/{id}/{accept,reject,resolve}` against two kilns sharing a relative path, proving root selection and conflict-state shape. |
+| `crates/crucible-web/tests/route_contract_tests.rs` | 42 | `#[path]` mounts for the 17 `route_contract_tests/` files; no tests of its own. |
 | `crates/crucible-web/tests/router_security.rs` | 203 | The assembled Axum router enforces auth/host/origin before dispatch, for every sensitive route and the opt-in remote-shell WebSocket. |
 
 ## Key types and traits
@@ -541,12 +541,20 @@ Roles are condensed from the file's own doc comment or its test names.
   calls it (directly or via its own copy) so CI can scale case counts
   without touching individual files. Per-file `.max(N)` calls set a floor
   the env var cannot lower.
-- **`MockDaemon` test support** (`crucible_web::test_support`, outside this
+- **The web test daemons** (`crucible_web::test_support`, outside this
   page's file list; re-exported for this page's files by
-  `crates/crucible-web/tests/route_contract_tests/shared.rs`). The canonical
-  mock Unix-socket JSON-RPC peer every `route_contract_tests/` file uses;
-  its own comment records that a hand-maintained duplicate used to live
-  beside the tests and drifted, and asks that nothing recreate it.
+  `crates/crucible-web/tests/route_contract_tests/shared.rs`). A route test
+  that needs only normal daemon behavior uses
+  `start_real_daemon_with_kilns`, a real daemon from
+  `InProcessDaemonBuilder` with the given kilns registered and indexed. A
+  route test that needs a daemon failure, a fixed reply shape, or a record
+  of the RPC params uses `MockDaemon`, a mock Unix-socket JSON-RPC peer.
+  Its reply function is a `match` over `RpcMethod` with no wildcard arm.
+  Thus a new `RpcMethod` variant does not compile until the mock gives it a
+  reply or names it in the final `null` arm. The scripted errors and the
+  recorded calls use `RpcMethod` keys, so a misspelled method does not
+  compile. A copy of the mock lived beside the tests once and drifted. Do
+  not make a copy again.
 - **`FakeDaemon`** (`crates/crucible-cli/src/test_daemon.rs`, `#[cfg(test)]`).
   `crucible-cli`'s own version of the same pattern: a Unix-socket JSON-RPC
   fake in a `TempDir` that records each method and params and answers
@@ -853,7 +861,14 @@ harnesses correct, and what runs them.
 - **Fixed:** the in-process `TestServer` harness (see [Findings](#findings))
   no longer has fifteen-plus copies to drift. `InProcessDaemonBuilder`
   (`crucible_daemon::test_support`) is the one definition every daemon and
-  CLI in-process E2E test now shares.
+  CLI in-process E2E test now shares. The web route tests and the web E2E
+  files that bind with plain kilns share it too.
+- **Fixed:** the web mock daemon had a `match` on method strings with a
+  `null` wildcard, so a new RPC method passed through it with no decision.
+  Its reply `match` is now exhaustive over `RpcMethod`. Eight arms for
+  method names that `RpcMethod` does not carry were dead, and are gone. The
+  mock no longer serves real files: the tests that read or write a real
+  file use a real in-process daemon.
 - **Gap:** the one scripted `MockScript`/`Step` agent
   (`crates/crucible-daemon/tests/acp_support/mock_agent.rs`) has no test of
   its own proving the framework correct, unlike the deleted per-mock

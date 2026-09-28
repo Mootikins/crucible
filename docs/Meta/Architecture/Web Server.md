@@ -72,7 +72,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/events.rs` | 1222 | `ChatEvent` (now including `TurnFinished` and per-call `render` fields), the browser-facing SSE event enum, and its projection from the daemon's `SessionEvent`/`SessionEventPayload`. |
 | `crates/crucible-web/src/fs_events.rs` | 138 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
 | `crates/crucible-web/src/server.rs` | 710 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases route groups. |
-| `crates/crucible-web/src/test_support.rs` | 1722 | Shared mock-daemon and fixture library for every route test in this crate. |
+| `crates/crucible-web/src/test_support.rs` | 1860 | Shared test daemons and fixtures for every route test in this crate: the mock daemon, whose reply `match` is exhaustive over `RpcMethod`, and `start_real_daemon_with_kilns`, a real in-process daemon. |
 
 ### `crates/crucible-web/src/middleware/`
 
@@ -708,16 +708,30 @@ losing or duplicating the decision.
   (`comment_rows_tests.rs`), CORS/CSP/Host-header layering (`server.rs`),
   auth/session/host/shell logic (all of `middleware/auth/`), and per-route
   shape and validation behavior across `routes/*.rs`.
-- **`crates/crucible-web/src/test_support.rs`** is the single shared
-  mock-JSON-RPC-daemon harness (a real `UnixListener` answering scripted
-  replies built from the daemon's own serializable types), used by every
-  route test in this crate. It compiles under `#[cfg(any(test, feature =
-  "test-utils"))]`; `crucible-web`'s own `Cargo.toml` enables `test-utils`
-  as a dev-dependency on itself so `crates/crucible-web/tests/` can
-  reach it. `crucible-cli` does not enable this feature and does not
-  reference `crucible_web::test_support` anywhere in its own tests. It now
-  also mocks `fs.read` and the `diff.*`/`proposal.*`/`base.*` RPC families;
-  the whole `review.*` mock branch is gone.
+- **`crates/crucible-web/src/test_support.rs`** holds the two test daemons
+  of this crate. It compiles under `#[cfg(any(test, feature =
+  "test-utils"))]`. `crucible-web`'s own `Cargo.toml` enables `test-utils`
+  as a dev-dependency on itself, so `crates/crucible-web/tests/` can reach
+  it. `crucible-cli` does not enable this feature and does not reference
+  `crucible_web::test_support` in its own tests.
+  - `start_real_daemon_with_kilns` starts a real daemon in this process
+    through `InProcessDaemonBuilder`. It registers each given directory as a
+    kiln and indexes the markdown notes of each kiln before it returns. A
+    route test that needs only normal daemon behavior uses it: the file,
+    canvas, note-write and backlinks tests (through `request_json_in_kilns`
+    and `shape_in_kilns`), the `/health` and `/ready` tests, and the
+    private-endpoint session test.
+  - `start_mock_daemon` and `start_mock_daemon_with_errors` start the mock
+    daemon: a `UnixListener` that answers fixed replies, most of them built
+    from the daemon's own serializable types. A test that needs a daemon
+    failure, a fixed reply shape, or a record of the RPC params uses it.
+    `mock_rpc_response` is a `match` over `RpcMethod` with no wildcard arm,
+    and `MockErrors`, `received_params` and `received_methods` take
+    `RpcMethod`. Thus a new `RpcMethod` variant does not compile until the
+    mock gives it a reply or names it in the final `null` arm. A method
+    name that `RpcMethod` does not know gets the "method not found" error.
+    The mock holds no root, so its `fs.read` and `fs.write` answer the
+    refusal of the daemon's own reader and writer.
 - **`crates/crucible-web/src/services/daemon_retry_tests.rs`** proves the
   reconnect/replay machinery, and the `Interest`/`EventStream`
   upstream-subscription protocol (reconnect restoring every still-open
@@ -731,6 +745,10 @@ losing or duplicating the decision.
   `init.lua` (not the mock) to prove the config pin/refuse gate and
   credential redaction hold end to end through `/api/config`; each is its
   own test binary because the app-config store is process-global.
+- **`crates/crucible-web/tests/file_root_daemon_e2e.rs`**,
+  **`bases_daemon_e2e.rs`** and **`proposal_daemon_e2e.rs`** start their
+  daemon through `InProcessDaemonBuilder`. They do not bind a copy of their
+  own.
 - **`crates/crucible-web/tests/file_root_daemon_e2e.rs`** puts a real
   daemon behind the real web file routes to prove a session's own generated
   folder is a root for every file route, and a session workspace unregistered

@@ -41,7 +41,7 @@ at the same time. Each step leaves the tree working.
 | 4. The CLI is an RPC client (done) | a swapped pair of type names | S | none |
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
 | 6. Wire types live in core (done) | a second home for wire types | M | steps 1 and 4 |
-| 7. One test server | 18 test-server copies, a hand mock | M | step 6 helps |
+| 7. One test server (done) | 18 test-server copies, a hand mock | M | step 6 helps |
 | 8. Local duplicates | about ten small copies | S each | none |
 | 9. Dead code (done) | unused modules and features | S | none |
 | 10. Group the daemon modules | 87 flat entries | M | steps 1 to 6 |
@@ -300,7 +300,7 @@ lists each request type and the server file that deserializes it.
 
 ## Step 7. One test server
 
-**Status: done for the in-process harness (change items 1 and 2), item 3 open.**
+**Status: done.**
 `InProcessDaemonBuilder`/`InProcessDaemon` (`crates/crucible-daemon/src/test_support.rs`,
 behind the crate's `test-utils` feature) is now the one definition. It
 replaces the eighteen `struct TestServer` copies under
@@ -315,21 +315,29 @@ re-exports it for the daemon's own test files. The nineteenth copy,
 TestServer`, stays: it sits inside the crate's unit tests, which cannot
 reach `tests/common`. It is out of scope for this step.
 
-Remaining, and NOT part of this step: `crates/crucible-web/src/test_support.rs`,
-the web crate's hand-written mock daemon. It is a different kind of
-duplicate — a mock that answers about 99 RPC methods by hand, not a copy of
-an in-process real-daemon bind — and change item 3 below still describes
-work to do there.
+Change item 3 is done. `start_real_daemon_with_kilns` in
+`crates/crucible-web/src/test_support.rs` starts a real daemon through
+`InProcessDaemonBuilder`, registers the given kilns and indexes their notes.
+The file, canvas, note-write and backlinks route tests, the `/health` and
+`/ready` tests, and the private-endpoint session test use it. The mock no
+longer holds kilns or serves real files. `bases_daemon_e2e.rs`,
+`file_root_daemon_e2e.rs` and `proposal_daemon_e2e.rs` also use the builder
+now, not a bind of their own. The mock stays for a test that needs a daemon
+failure, a fixed reply shape, or a record of the RPC params. Its reply
+`match` is exhaustive over `RpcMethod`, with no wildcard arm, and its
+scripted errors and recorded calls use `RpcMethod` keys. A dummy
+`RpcMethod` variant fails to compile at that `match`.
 
-**Now.** The shared harness
+**Before.** The shared harness
 in `crates/crucible-daemon/tests/common/` existed before most of the copies.
-`crates/crucible-web/src/test_support.rs` (1722 lines) answers about 99 RPC
-methods by hand. Each RPC change must also update it.
+`crates/crucible-web/src/test_support.rs` (1722 lines) answered about 99 RPC
+methods by hand, through a `match` on strings with a `null` wildcard. Each
+RPC change had to update it, and no check found a method that it missed.
 
 **Change.**
-1. Keep one test server in `crates/crucible-daemon/tests/common/`.
-2. Delete the copies.
-3. Run the web route tests against a real in-process daemon where
+1. **Done.** Keep one test server in `crates/crucible-daemon/tests/common/`.
+2. **Done.** Delete the copies.
+3. **Done.** Run the web route tests against a real in-process daemon where
    possible. Where a mock stays, derive its method set from `RpcMethod`, so
    an unhandled method fails to compile.
 
