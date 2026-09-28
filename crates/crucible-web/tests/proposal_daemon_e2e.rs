@@ -7,7 +7,7 @@ use crucible_core::{
 };
 use crucible_daemon::{
     proposals::{proposals_root, ProposalStore},
-    DaemonClient, Server,
+    test_support::InProcessDaemonBuilder,
 };
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -20,20 +20,15 @@ async fn web_decisions_select_the_second_kiln() {
     std::fs::create_dir(&first).unwrap();
     std::fs::create_dir(&second).unwrap();
     let data = dir.path().join("data");
-    let socket = dir.path().join("daemon.sock");
-    let server = Server::bind_with_data_home_and_kilns(
-        &socket,
-        data.clone(),
-        &[("first", &first), ("second", &second)],
-    )
-    .await
-    .unwrap();
-    let shutdown = server.shutdown_handle();
-    let task = tokio::spawn(server.run());
-    let client = DaemonClient::connect_to(&socket).await.unwrap();
-    let app = crucible_web::test_support::build_test_app(
-        crucible_web::test_support::build_mock_state(client),
-    );
+    let server = InProcessDaemonBuilder::at_data_home(data.clone())
+        .with_kiln_at("first", &first)
+        .with_kiln_at("second", &second)
+        .start()
+        .await
+        .unwrap();
+    let client = server.connect().await;
+    let app =
+        crucible_web::test_support::build_test_app(crucible_web::test_support::build_state(client));
     let store = ProposalStore::new(proposals_root(&data));
     for operation in ["accept", "reject", "resolve"] {
         let mut proposal = None;
@@ -117,6 +112,5 @@ async fn web_decisions_select_the_second_kiln() {
             _ => unreachable!(),
         }
     }
-    shutdown.send(()).unwrap();
-    task.await.unwrap().unwrap();
+    server.shutdown().await;
 }

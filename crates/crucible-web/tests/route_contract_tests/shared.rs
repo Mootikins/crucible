@@ -1,13 +1,14 @@
-//! Mock daemon infrastructure shared across route contract tests.
+//! The test daemons of the route contract tests.
 //!
-//! The canonical mock daemon lives in `crucible_web::test_support`
-//! (exposed via the `test-utils` self dev-dependency) — this module only
-//! re-exports it and the production-composed test router. A hand-maintained copy used to
-//! live here and drifted from the library copy; don't recreate it.
+//! The mock daemon and the real in-process daemon live in
+//! `crucible_web::test_support`, which the `test-utils` self dev-dependency
+//! exposes. This module only re-exports them and the test router. A copy of
+//! the mock lived here once and drifted from the library copy. Do not make a
+//! copy again.
 
 pub(super) use crucible_web::test_support::{
-    build_mock_state, start_mock_daemon, start_mock_daemon_with_errors,
-    start_mock_daemon_with_kilns, MockErrors,
+    build_state, start_mock_daemon, start_mock_daemon_with_errors, start_real_daemon_with_kilns,
+    MockErrors,
 };
 
 pub(super) use crucible_web::test_support::build_test_app;

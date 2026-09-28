@@ -1,5 +1,7 @@
 //! Tests for the session routes.
 
+use crucible_core::protocol::rpc::RpcMethod;
+
 use tower::ServiceExt;
 
 // =========================================================================
@@ -41,9 +43,9 @@ async fn create_session_accepts_acp_agent() {
 
 #[tokio::test]
 async fn create_session_forwards_a_card_without_reconfiguring_its_agent() {
-    use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon};
+    use crate::test_support::{build_state, build_test_app, start_mock_daemon};
     let (mock, client) = start_mock_daemon().await;
-    let response = build_test_app(build_mock_state(client))
+    let response = build_test_app(build_state(client))
         .oneshot(
             axum::http::Request::builder()
                 .method("POST")
@@ -57,15 +59,14 @@ async fn create_session_forwards_a_card_without_reconfiguring_its_agent() {
         .await
         .unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let request = mock.received_params("session.create").unwrap();
+    let request = mock.received_params(RpcMethod::SessionCreate).unwrap();
     assert_eq!(request["agent_card"], "researcher");
     assert_eq!(request["workspace"], "/work/project");
     assert_eq!(request["configure_agent"], true);
     assert!(request.get("agent_name").is_none());
     assert!(!mock
         .received_methods()
-        .iter()
-        .any(|method| method == "session.configure_agent"));
+        .contains(&RpcMethod::SessionConfigureAgent));
 }
 
 /// The daemon owns the endpoint check, so the route forwards the endpoint
@@ -73,9 +74,9 @@ async fn create_session_forwards_a_card_without_reconfiguring_its_agent() {
 /// `daemon_err`, as for every other caller-fixable create error.
 #[tokio::test]
 async fn create_session_forwards_the_endpoint_to_the_daemon_unchecked() {
-    use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon};
+    use crate::test_support::{build_state, build_test_app, start_mock_daemon};
     let (mock, client) = start_mock_daemon().await;
-    let response = build_test_app(build_mock_state(client))
+    let response = build_test_app(build_state(client))
         .oneshot(
             axum::http::Request::builder()
                 .method("POST")
@@ -89,7 +90,7 @@ async fn create_session_forwards_the_endpoint_to_the_daemon_unchecked() {
         .await
         .unwrap();
     assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let request = mock.received_params("session.create").unwrap();
+    let request = mock.received_params(RpcMethod::SessionCreate).unwrap();
     assert_eq!(
         request["endpoint"],
         "http://169.254.169.254/latest/meta-data/"
@@ -143,7 +144,7 @@ async fn create_session_with_unknown_acp_agent_does_not_create_a_session() {
     // profile client-side (agents.resolve_profile), and does NOT proceed to
     // subscribe once create fails.
     let (mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -171,15 +172,15 @@ async fn create_session_with_unknown_acp_agent_does_not_create_a_session() {
 
     let methods = mock.received_methods();
     assert!(
-        methods.iter().any(|m| m == "session.create"),
+        methods.contains(&RpcMethod::SessionCreate),
         "web must forward the create (with the agent spec) to the daemon: {methods:?}"
     );
     assert!(
-        !methods.iter().any(|m| m == "agents.resolve_profile"),
+        !methods.contains(&RpcMethod::AgentsResolveProfile),
         "profile resolution moved daemon-side; web must NOT resolve it: {methods:?}"
     );
     assert!(
-        !methods.iter().any(|m| m == "session.subscribe"),
+        !methods.contains(&RpcMethod::SessionSubscribe),
         "a failed create must not proceed to subscribe: {methods:?}"
     );
 }
@@ -291,7 +292,7 @@ async fn set_workspace_attaches_project_dir() {
 #[tokio::test]
 async fn export_session_returns_text_markdown_content_type() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -323,7 +324,7 @@ async fn export_session_returns_text_markdown_content_type() {
 #[tokio::test]
 async fn export_session_returns_markdown_body() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -356,7 +357,7 @@ async fn export_session_returns_markdown_body() {
 #[tokio::test]
 async fn export_session_fallback_includes_session_metadata() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -387,7 +388,7 @@ async fn export_session_fallback_includes_session_metadata() {
 #[tokio::test]
 async fn export_session_with_valid_session_returns_200() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -412,7 +413,7 @@ async fn export_session_with_valid_session_returns_200() {
 #[tokio::test]
 async fn auto_title_returns_200_with_title_field() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -445,7 +446,7 @@ async fn auto_title_delegates_to_daemon_generate_title() {
     // Title generation is daemon-owned (topic-based LLM with truncation
     // fallback); the web route only forwards and unwraps the result.
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -480,7 +481,7 @@ async fn auto_title_delegates_to_daemon_generate_title() {
 #[tokio::test]
 async fn test_create_session_without_provider_uses_detected_default() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     // Only kilns is required — provider and model should resolve from detected defaults
@@ -513,7 +514,7 @@ async fn test_create_session_without_provider_uses_detected_default() {
 #[tokio::test]
 async fn test_create_session_with_explicit_provider_still_works() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -551,7 +552,7 @@ async fn test_create_session_with_explicit_provider_still_works() {
 #[tokio::test]
 async fn test_list_providers_with_kiln_query_param_returns_200() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -583,7 +584,7 @@ async fn test_list_providers_with_kiln_query_param_returns_200() {
 #[tokio::test]
 async fn list_modes_returns_the_daemon_s_modes_and_current_mode() {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let app = crate::test_support::build_test_app(state);
 
     let response = app
@@ -624,9 +625,9 @@ async fn list_modes_returns_the_daemon_s_modes_and_current_mode() {
 /// session every time it loaded.
 #[tokio::test]
 async fn reading_the_history_does_not_resume_the_session() {
-    use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon};
+    use crate::test_support::{build_state, build_test_app, start_mock_daemon};
     let (mock, client) = start_mock_daemon().await;
-    let response = build_test_app(build_mock_state(client))
+    let response = build_test_app(build_state(client))
         .oneshot(
             axum::http::Request::builder()
                 .method("GET")
@@ -639,11 +640,13 @@ async fn reading_the_history_does_not_resume_the_session() {
     assert_eq!(response.status(), axum::http::StatusCode::OK);
     let methods = mock.received_methods();
     assert!(
-        !methods.iter().any(|m| m.starts_with("session.resume")),
+        !methods
+            .iter()
+            .any(|m| m.as_str().starts_with("session.resume")),
         "a history read must not resume the session: {methods:?}"
     );
     let params = mock
-        .received_params("session.history")
+        .received_params(RpcMethod::SessionHistory)
         .unwrap_or_else(|| panic!("the history read must use session.history: {methods:?}"));
     assert_eq!(params["session_id"], "test-session-001");
     assert_eq!(params["limit"], 5);

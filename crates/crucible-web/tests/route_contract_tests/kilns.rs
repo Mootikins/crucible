@@ -1,18 +1,16 @@
-//! Search/Kiln Route Contract Tests (with mock daemon)
+//! Search/Kiln Route Contract Tests
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use super::shared::{
-    build_mock_state, build_test_app, start_mock_daemon, start_mock_daemon_with_kilns,
-};
+use super::shared::{build_state, build_test_app, start_mock_daemon, start_real_daemon_with_kilns};
 
 #[tokio::test]
 async fn list_kilns_returns_200_with_array() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -37,7 +35,7 @@ async fn list_kilns_returns_200_with_array() {
 #[tokio::test]
 async fn list_notes_requires_kiln_query_param() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     // Missing required 'kiln' query parameter
@@ -62,7 +60,7 @@ async fn list_notes_requires_kiln_query_param() {
 #[tokio::test]
 async fn list_notes_with_kiln_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -87,7 +85,7 @@ async fn list_notes_with_kiln_returns_200() {
 #[tokio::test]
 async fn kiln_graph_returns_200_with_notes_and_links() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -118,7 +116,7 @@ async fn kiln_graph_returns_200_with_notes_and_links() {
 #[tokio::test]
 async fn kiln_graph_requires_kiln_query_param() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -141,7 +139,7 @@ async fn kiln_graph_requires_kiln_query_param() {
 #[tokio::test]
 async fn search_vectors_returns_200_with_results() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -178,7 +176,7 @@ async fn search_vectors_returns_200_with_results() {
 #[tokio::test]
 async fn search_semantic_returns_200_with_results() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -217,7 +215,7 @@ async fn search_semantic_returns_200_with_results() {
 #[tokio::test]
 async fn search_semantic_keeps_one_row_per_note_with_its_best_block() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -262,7 +260,7 @@ async fn search_semantic_keeps_one_row_per_note_with_its_best_block() {
 #[tokio::test]
 async fn search_semantic_blank_query_returns_empty() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -307,7 +305,7 @@ async fn get_json(app: axum::Router, uri: &str) -> (StatusCode, Value) {
 #[tokio::test]
 async fn backlinks_requires_kiln_and_note_params() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let (status, _) = get_json(app, "/api/backlinks").await;
@@ -320,7 +318,7 @@ async fn backlinks_requires_kiln_and_note_params() {
 #[tokio::test]
 async fn backlinks_unknown_note_returns_404() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let (status, _) = get_json(app, "/api/backlinks?kiln=/tmp/test-kiln&note=missing").await;
@@ -330,7 +328,7 @@ async fn backlinks_unknown_note_returns_404() {
 #[tokio::test]
 async fn backlinks_rejects_path_traversal_in_note() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let (status, _) = get_json(app, "/api/backlinks?kiln=/tmp/test-kiln&note=../etc/passwd").await;
@@ -342,19 +340,27 @@ async fn backlinks_rejects_path_traversal_in_note() {
 
 #[tokio::test]
 async fn backlinks_returns_linked_and_filtered_unlinked() {
-    // Real kiln dir so the route can read the focused note's content for
-    // the suggest_links (unlinked mentions) pass. The daemon's `fs.read`
-    // serves it only because the mock lists it as a kiln.
+    // The real daemon indexes the three notes. The linker note links to the
+    // focused note. The focused note names another note and itself in plain
+    // text, so the route gets two suggestions and must filter one.
+    const FOCUSED: &str =
+        "---\ntitle: Focused Note\n---\nOther Note is mentioned here. Focused Note names itself.";
     let kiln = tempfile::tempdir().unwrap();
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let state = build_mock_state(client);
-    let app = build_test_app(state);
+    let notes = [
+        ("notes/focused.md", FOCUSED),
+        (
+            "notes/linker.md",
+            "---\ntitle: Linker Note\n---\nSee [[focused]].\n",
+        ),
+        ("notes/Other Note.md", "Another note.\n"),
+    ];
     std::fs::create_dir_all(kiln.path().join("notes")).unwrap();
-    std::fs::write(
-        kiln.path().join("notes/focused.md"),
-        "Other Note is mentioned here. Focused Note names itself.",
-    )
-    .unwrap();
+    for (path, text) in notes {
+        std::fs::write(kiln.path().join(path), text).unwrap();
+    }
+    let (_daemon, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let state = build_state(client);
+    let app = build_test_app(state);
 
     let uri = format!(
         "/api/backlinks?kiln={}&note=focused",
@@ -379,18 +385,18 @@ async fn backlinks_returns_linked_and_filtered_unlinked() {
         .unwrap()
         .ends_with("notes/linker.md"));
 
-    // The mock returns two suggestions; the self-mention ("Focused Note")
-    // must be filtered, leaving only "Other Note".
+    // The self-mention ("Focused Note") must be filtered, leaving only
+    // "Other Note".
     let unlinked = json["unlinked"].as_array().unwrap();
-    assert_eq!(unlinked.len(), 1);
+    assert_eq!(unlinked.len(), 1, "{json}");
     assert_eq!(unlinked[0]["target"], "Other Note");
-    assert_eq!(unlinked[0]["offset"], 0);
+    assert_eq!(unlinked[0]["offset"], FOCUSED.find("Other Note").unwrap());
 }
 
 #[tokio::test]
 async fn raw_file_rejects_path_traversal() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
     let (status, _) = get_json(app, "/api/file/raw?path=/x/../../etc/passwd").await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
@@ -400,7 +406,7 @@ async fn raw_file_outside_any_root_is_404() {
     // Mock daemon reports no kilns and no projects, so any real path is
     // outside every root and must be refused (fail-closed).
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
     let (status, _) = get_json(app, "/api/file/raw?path=/etc/hostname").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -410,7 +416,7 @@ async fn raw_file_outside_any_root_is_404() {
 #[tokio::test]
 async fn backlinks_do_not_read_a_note_outside_every_root() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
     let kiln = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(kiln.path().join("notes")).unwrap();
     std::fs::write(
@@ -431,7 +437,7 @@ async fn backlinks_do_not_read_a_note_outside_every_root() {
 #[tokio::test]
 async fn backlinks_missing_note_file_degrades_to_empty_unlinked() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     // Kiln path exists as a query param only — notes/focused.md is not on
@@ -488,8 +494,8 @@ async fn kiln_with_note(text: &str) -> (tempfile::TempDir, std::path::PathBuf, S
 async fn a_patch_with_a_stale_base_is_refused_even_when_its_anchors_apply() {
     let before = "- [ ] task\n\nagent paragraph\n";
     let (kiln, note, current_hash) = kiln_with_note(before).await;
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_state(client));
 
     let (status, body) = patch_file(
         app,
@@ -520,8 +526,8 @@ async fn a_patch_with_no_base_applies_against_the_current_text() {
     let before = "- [ ] task\n\nagent paragraph\n";
     let after = "- [x] task\n\nagent paragraph\n";
     let (kiln, note, _) = kiln_with_note(before).await;
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_state(client));
 
     let (status, body) = patch_file(
         app,
@@ -571,8 +577,8 @@ async fn put_file(app: axum::Router, body: Value) -> (StatusCode, Value) {
 async fn a_put_with_a_stale_base_and_no_base_text_is_refused() {
     let disk = "A\nB2\nC\n";
     let (kiln, note, current_hash) = kiln_with_note(disk).await;
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_state(client));
 
     let (status, body) = put_file(
         app,
@@ -602,8 +608,8 @@ async fn a_put_with_a_stale_base_and_base_text_merges_and_writes() {
     let disk = "A\nB2\nC\n";
     let merged = "A\nB2\nC\nD\n";
     let (kiln, note, _) = kiln_with_note(disk).await;
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_state(client));
 
     let (status, body) = put_file(
         app,
@@ -634,8 +640,8 @@ async fn a_put_whose_merge_has_regions_writes_nothing_and_answers_them() {
     let base = "A\nB\nC\n";
     let disk = "A\ntheirs\nC\n";
     let (kiln, note, current_hash) = kiln_with_note(disk).await;
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_state(client));
 
     let (status, body) = put_file(
         app,
@@ -671,8 +677,8 @@ async fn a_put_whose_merge_has_regions_writes_nothing_and_answers_them() {
 async fn a_base_text_that_does_not_hash_to_the_base_is_refused_with_422() {
     let disk = "A\nB2\nC\n";
     let (kiln, note, _) = kiln_with_note(disk).await;
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_state(client));
 
     let (status, body) = put_file(
         app,
@@ -712,8 +718,8 @@ fn two_concurrent_puts_to_one_note_serialize() {
         let base = "A\nB\nC\nD\nE\n";
         let disk = "A\nB\nC\nD\nE2\n";
         let (kiln, note, _) = kiln_with_note(disk).await;
-        let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-        let app = build_test_app(build_mock_state(client));
+        let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+        let app = build_test_app(build_state(client));
 
         let body = |content: &str| {
             json!({
@@ -765,8 +771,8 @@ fn a_patch_and_a_put_to_one_note_take_one_lock() {
         let base = "A\nB\nC\n";
         let disk = "A\nB\nC2\n";
         let (kiln, note, _) = kiln_with_note(disk).await;
-        let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-        let app = build_test_app(build_mock_state(client));
+        let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+        let app = build_test_app(build_state(client));
 
         let blocker = tokio::task::spawn_blocking(|| {
             std::thread::sleep(std::time::Duration::from_millis(50));
@@ -810,8 +816,8 @@ fn a_patch_and_a_put_to_one_note_take_one_lock() {
 async fn a_put_whose_base_is_current_writes_its_own_text_and_merged_is_false() {
     let disk = "A\nB\nC\n";
     let (kiln, note, current_hash) = kiln_with_note(disk).await;
-    let (_mock, client) = start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()]).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+    let app = build_test_app(build_state(client));
 
     let (status, body) = put_file(
         app,
@@ -865,14 +871,14 @@ async fn every_file_route_refuses_a_link_out_of_the_innermost_kiln() {
         format!("/api/file/raw?path={}", link.display()),
         format!("/api/canvas?path={}", canvas_link.display()),
     ] {
-        let (_mock, client) = start_mock_daemon_with_kilns(kilns.clone()).await;
-        let (status, body) = get_json(build_test_app(build_mock_state(client)), &uri).await;
+        let (_mock, client) = start_real_daemon_with_kilns(&kilns).await;
+        let (status, body) = get_json(build_test_app(build_state(client)), &uri).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
     }
 
-    let (_mock, client) = start_mock_daemon_with_kilns(kilns).await;
+    let (_mock, client) = start_real_daemon_with_kilns(&kilns).await;
     let (status, body) = put_file(
-        build_test_app(build_mock_state(client)),
+        build_test_app(build_state(client)),
         json!({ "path": link, "content": "overwritten" }),
     )
     .await;

@@ -174,9 +174,10 @@ fn refuse(status: StatusCode, message: &str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{build_mock_state, start_mock_daemon};
+    use crate::test_support::{build_state, start_mock_daemon};
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use crucible_core::protocol::rpc::RpcMethod;
     use crucible_daemon::webhook::{
         sign, sign_body_only, WebhookSecrets, GITHUB_SIGNATURE_HEADER, SIGNATURE_HEADER,
         STRIPE_SIGNATURE_HEADER,
@@ -226,7 +227,7 @@ mod tests {
         client: crucible_daemon::DaemonClient,
     ) -> axum::Router {
         let (router, _document) = webhook_routes_with_secrets(secrets).split_for_parts();
-        router.with_state(build_mock_state(client))
+        router.with_state(build_state(client))
     }
 
     fn now() -> i64 {
@@ -428,7 +429,7 @@ mod tests {
         assert_eq!(app.oneshot(request).await.unwrap().status(), StatusCode::OK);
 
         let forwarded = mock
-            .received_params("webhook.receive")
+            .received_params(RpcMethod::WebhookReceive)
             .expect("webhook.receive was called");
         let headers = &forwarded["headers"];
         assert!(headers.get("authorization").is_none(), "{headers}");
@@ -458,7 +459,7 @@ mod tests {
         assert_eq!(app.oneshot(request).await.unwrap().status(), StatusCode::OK);
 
         let forwarded = mock
-            .received_params("webhook.receive")
+            .received_params(RpcMethod::WebhookReceive)
             .expect("webhook.receive was called");
         assert_eq!(forwarded["body"], body);
     }

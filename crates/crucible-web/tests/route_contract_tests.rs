@@ -1,8 +1,9 @@
 //! Contract tests for crucible-web HTTP routes.
 //!
-//! Tests the HTTP API contract (status codes, response shapes, content types)
-//! WITHOUT requiring a running daemon. Uses a mock Unix socket daemon to handle
-//! JSON-RPC calls from the DaemonClient.
+//! Tests the HTTP API contract (status codes, response shapes, content types).
+//! A test that needs only normal daemon behavior runs against a real daemon in
+//! this process (`start_real_daemon_with_kilns`). A test that needs a failure
+//! or a fixed reply shape runs against the mock daemon (`start_mock_daemon`).
 
 #[path = "route_contract_tests/shared.rs"]
 mod shared;

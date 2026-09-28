@@ -797,10 +797,8 @@ mod tests {
         tokio::fs::write(&shot, bytes).await.unwrap();
 
         let (_mock, client) =
-            crate::test_support::start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()])
-                .await;
-        let app =
-            crate::test_support::build_test_app(crate::test_support::build_mock_state(client));
+            crate::test_support::start_real_daemon_with_kilns(&[kiln.path().to_path_buf()]).await;
+        let app = crate::test_support::build_test_app(crate::test_support::build_state(client));
 
         use tower::ServiceExt;
         let response = app

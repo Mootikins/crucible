@@ -5,12 +5,12 @@ use axum::http::{Request, StatusCode};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{build_state, build_test_app, start_mock_daemon};
 
 #[tokio::test]
 async fn set_precognition_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -37,7 +37,7 @@ async fn set_precognition_returns_200() {
 #[tokio::test]
 async fn get_precognition_returns_200_with_enabled_field() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app

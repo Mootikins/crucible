@@ -11,12 +11,14 @@ use axum::http::{Request, StatusCode};
 use serde_json::Value;
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon_with_errors, MockErrors};
+use crucible_core::protocol::rpc::RpcMethod;
 
-fn errors_for(methods: &[&str]) -> MockErrors {
+use super::shared::{build_state, build_test_app, start_mock_daemon_with_errors, MockErrors};
+
+fn errors_for(methods: &[RpcMethod]) -> MockErrors {
     methods
         .iter()
-        .map(|m| (m.to_string(), (-32000i64, format!("{m} exploded"))))
+        .map(|m| (*m, (-32000i64, format!("{m} exploded"))))
         .collect()
 }
 
@@ -29,8 +31,8 @@ async fn body_json(response: axum::response::Response) -> Value {
 
 #[tokio::test]
 async fn session_get_daemon_error_maps_to_502_with_error_body() {
-    let (_mock, client) = start_mock_daemon_with_errors(errors_for(&["session.get"])).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_mock_daemon_with_errors(errors_for(&[RpcMethod::SessionGet])).await;
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -57,8 +59,8 @@ async fn session_get_daemon_error_maps_to_502_with_error_body() {
 #[tokio::test]
 async fn chat_send_daemon_error_maps_to_502() {
     let (_mock, client) =
-        start_mock_daemon_with_errors(errors_for(&["session.send_message"])).await;
-    let app = build_test_app(build_mock_state(client));
+        start_mock_daemon_with_errors(errors_for(&[RpcMethod::SessionSendMessage])).await;
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -79,8 +81,9 @@ async fn chat_send_daemon_error_maps_to_502() {
 
 #[tokio::test]
 async fn set_mode_daemon_error_maps_to_502() {
-    let (_mock, client) = start_mock_daemon_with_errors(errors_for(&["session.set_mode"])).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) =
+        start_mock_daemon_with_errors(errors_for(&[RpcMethod::SessionSetMode])).await;
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -99,8 +102,9 @@ async fn set_mode_daemon_error_maps_to_502() {
 
 #[tokio::test]
 async fn session_list_daemon_error_maps_to_502() {
-    let (_mock, client) = start_mock_daemon_with_errors(errors_for(&["session.list"])).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) =
+        start_mock_daemon_with_errors(errors_for(&[RpcMethod::SessionList])).await;
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -123,14 +127,14 @@ async fn session_list_daemon_error_maps_to_502() {
 async fn fs_list_refusal_maps_to_422_with_the_daemons_sentence() {
     let mut errors = MockErrors::new();
     errors.insert(
-        "fs.list_dir".to_string(),
+        RpcMethod::FsListDir,
         (
             -32602,
             "root is not a registered project or a session's own workspace folder".to_string(),
         ),
     );
     let (_mock, client) = start_mock_daemon_with_errors(errors).await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -157,14 +161,14 @@ async fn fs_list_refusal_maps_to_422_with_the_daemons_sentence() {
 async fn session_create_refusal_maps_to_422_with_the_reason() {
     let mut errors = MockErrors::new();
     errors.insert(
-        "session.create".to_string(),
+        RpcMethod::SessionCreate,
         (
             -32602,
             "workspace target 'worktree:feat/x' could not be resolved: no plugin provides workspace targets named 'worktree'".to_string(),
         ),
     );
     let (_mock, client) = start_mock_daemon_with_errors(errors).await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -193,8 +197,8 @@ async fn session_create_refusal_maps_to_422_with_the_reason() {
 /// per-method, so one failing RPC doesn't poison unrelated routes.
 #[tokio::test]
 async fn unscripted_methods_still_succeed_alongside_errors() {
-    let (_mock, client) = start_mock_daemon_with_errors(errors_for(&["session.get"])).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_mock, client) = start_mock_daemon_with_errors(errors_for(&[RpcMethod::SessionGet])).await;
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -215,7 +219,7 @@ async fn unscripted_methods_still_succeed_alongside_errors() {
 #[tokio::test]
 async fn a_busy_proposal_decision_maps_to_409() {
     let errors: MockErrors = [(
-        "proposal.accept".to_string(),
+        RpcMethod::ProposalAccept,
         (
             i64::from(crucible_core::protocol::BUSY),
             "proposal 0b8f4a0e-7c1d-4c55-9a39-5d1f0a2e6b11 is busy; retry after the current decision finishes"
@@ -224,7 +228,7 @@ async fn a_busy_proposal_decision_maps_to_409() {
     )]
     .into();
     let (_mock, client) = start_mock_daemon_with_errors(errors).await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(

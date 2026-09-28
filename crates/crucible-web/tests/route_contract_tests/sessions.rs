@@ -1,16 +1,18 @@
 //! Session Route Contract Tests (with mock daemon)
 
+use crucible_core::protocol::rpc::RpcMethod;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{build_state, build_test_app, start_mock_daemon, start_real_daemon_with_kilns};
 
 #[tokio::test]
 async fn list_sessions_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -29,7 +31,7 @@ async fn list_sessions_returns_200() {
 #[tokio::test]
 async fn get_session_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -48,7 +50,7 @@ async fn get_session_returns_200() {
 #[tokio::test]
 async fn pause_session_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -68,7 +70,7 @@ async fn pause_session_returns_200() {
 #[tokio::test]
 async fn end_session_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -88,7 +90,7 @@ async fn end_session_returns_200() {
 #[tokio::test]
 async fn cancel_session_returns_200_with_cancelled_field() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -117,7 +119,7 @@ async fn cancel_session_returns_200_with_cancelled_field() {
 #[tokio::test]
 async fn list_models_returns_200_with_models_array() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -145,7 +147,7 @@ async fn list_models_returns_200_with_models_array() {
 #[tokio::test]
 async fn switch_model_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -166,7 +168,7 @@ async fn switch_model_returns_200() {
 #[tokio::test]
 async fn set_mode_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -187,7 +189,7 @@ async fn set_mode_returns_200() {
 #[tokio::test]
 async fn set_session_title_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -212,7 +214,7 @@ async fn set_session_title_returns_200() {
 #[tokio::test]
 async fn create_session_returns_200_with_session_id() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -253,16 +255,8 @@ async fn create_session_returns_200_with_session_id() {
 /// that into a 422 that names the reason.
 #[tokio::test]
 async fn create_session_with_private_ip_endpoint_returns_422() {
-    let home = tempfile::tempdir().expect("a temp home");
-    let socket = home.path().join("daemon.sock");
-    let server = crucible_daemon::Server::bind_with_data_home(&socket, home.path().join("data"))
-        .await
-        .expect("the daemon binds");
-    tokio::spawn(async move {
-        let _ = server.run().await;
-    });
-    let client = connect(&socket).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_daemon, client) = start_real_daemon_with_kilns(&[]).await;
+    let app = build_test_app(build_state(client));
 
     for endpoint in [
         "http://10.0.0.1/v1",
@@ -301,24 +295,10 @@ async fn create_session_with_private_ip_endpoint_returns_422() {
     }
 }
 
-/// Connect once the daemon accepts, rather than after a fixed sleep.
-async fn connect(socket: &std::path::Path) -> crucible_daemon::DaemonClient {
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        match crucible_daemon::DaemonClient::connect_to(socket).await {
-            Ok(client) => return client,
-            Err(e) if tokio::time::Instant::now() >= deadline => {
-                panic!("the daemon never accepted a connection: {e}")
-            }
-            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
-        }
-    }
-}
-
 #[tokio::test]
 async fn create_session_with_defaults_uses_ollama() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     // Only required field is kilns — provider and model use defaults
@@ -346,7 +326,7 @@ async fn create_session_with_defaults_uses_ollama() {
 #[tokio::test]
 async fn export_session_returns_markdown_content_type() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -384,7 +364,7 @@ async fn export_session_returns_markdown_content_type() {
 #[tokio::test]
 async fn get_session_returns_session_data() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -419,7 +399,7 @@ async fn get_session_returns_session_data() {
 #[tokio::test]
 async fn delete_session_returns_200_with_deleted_field() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -445,7 +425,7 @@ async fn delete_session_returns_200_with_deleted_field() {
 #[tokio::test]
 async fn archive_session_returns_200_with_archived_true() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -474,7 +454,7 @@ async fn archive_session_returns_200_with_archived_true() {
 #[tokio::test]
 async fn unarchive_session_returns_200_with_archived_false() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -503,7 +483,7 @@ async fn unarchive_session_returns_200_with_archived_false() {
 #[tokio::test]
 async fn list_sessions_with_include_archived_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -530,7 +510,7 @@ async fn list_sessions_with_include_archived_returns_200() {
 /// Drive one request through a fresh mock-daemon-backed app and decode JSON.
 async fn send_json(method: &str, uri: &str, body: Value) -> (StatusCode, Value) {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -621,7 +601,7 @@ async fn set_workspace_null_detaches_to_kiln() {
 /// Drive one GET through a fresh mock-daemon-backed app and decode JSON.
 async fn get_json(uri: &str) -> (StatusCode, Value) {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -682,7 +662,7 @@ async fn a_session_with_no_plugin_slots_returns_an_empty_status_array() {
 /// POST a create body and return the params `session.create` saw on the wire.
 async fn create_session_wire_params(body: Value) -> Value {
     let (mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -698,7 +678,7 @@ async fn create_session_wire_params(body: Value) -> Value {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    mock.received_params("session.create")
+    mock.received_params(RpcMethod::SessionCreate)
         .expect("session.create was called")
 }
 

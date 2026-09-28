@@ -149,18 +149,19 @@ fn kiln_path_for_client(effective: &serde_json::Value, own: impl FnOnce() -> Str
 mod tests {
     use super::*;
     use crate::test_support::{
-        build_mock_state_with_config, build_test_app, start_mock_daemon, MOCK_DAEMON_KILN_PATH,
+        build_state_with_config, build_test_app, start_mock_daemon, MOCK_DAEMON_KILN_PATH,
         MOCK_LOCATION_REASON, MOCK_PINNED_KEY, MOCK_PIN_FILE,
     };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use crucible_core::config::CliAppConfig;
+    use crucible_core::protocol::rpc::RpcMethod;
     use serde_json::Value;
     use tower::ServiceExt;
 
     async fn get_config_json(config: CliAppConfig) -> Value {
         let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state_with_config(client, config));
+        let app = build_test_app(build_state_with_config(client, config));
         let response = app
             .oneshot(
                 Request::builder()
@@ -180,10 +181,7 @@ mod tests {
     /// POST a body and answer with the status and the parsed body.
     async fn post_config(values: Value) -> (StatusCode, Value, Option<Value>) {
         let (mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state_with_config(
-            client,
-            CliAppConfig::default(),
-        ));
+        let app = build_test_app(build_state_with_config(client, CliAppConfig::default()));
         let response = app
             .oneshot(
                 Request::builder()
@@ -204,7 +202,7 @@ mod tests {
         (
             status,
             serde_json::from_slice(&bytes).unwrap(),
-            mock.received_params("config.save"),
+            mock.received_params(RpcMethod::ConfigSave),
         )
     }
 

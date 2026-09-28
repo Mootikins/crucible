@@ -10,8 +10,9 @@ use axum::http::{Request, StatusCode};
 use axum::Router;
 use crucible_core::protocol::requests::SessionCreateParams;
 use crucible_core::protocol::RpcMethod;
-use crucible_daemon::{DaemonClient, Server};
-use crucible_web::test_support::{build_mock_state, build_test_app};
+use crucible_daemon::test_support::{InProcessDaemon, InProcessDaemonBuilder};
+use crucible_daemon::DaemonClient;
+use crucible_web::test_support::{build_state, build_test_app};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use tower::ServiceExt;
@@ -19,6 +20,7 @@ use tower::ServiceExt;
 /// A daemon with one registered kiln, and a web app over it.
 struct Fixture {
     _home: tempfile::TempDir,
+    _server: InProcessDaemon,
     kiln: PathBuf,
     daemon: DaemonClient,
     app: Router,
@@ -27,39 +29,19 @@ struct Fixture {
 async fn fixture() -> Fixture {
     let home = tempfile::tempdir().expect("a temp home");
     let kiln = home.path().join("kiln");
-    std::fs::create_dir_all(&kiln).expect("the kiln");
-    let socket = home.path().join("daemon.sock");
-    let server = Server::bind_with_data_home_and_kilns(
-        &socket,
-        home.path().join("data"),
-        &[("kiln", &kiln)],
-    )
-    .await
-    .expect("the daemon binds");
-    tokio::spawn(async move {
-        let _ = server.run().await;
-    });
-    let daemon = connect(&socket).await;
-    let app = build_test_app(build_mock_state(connect(&socket).await));
+    let server = InProcessDaemonBuilder::at_data_home(home.path().join("data"))
+        .with_kiln_at("kiln", &kiln)
+        .start()
+        .await
+        .expect("the daemon starts");
+    let daemon = server.connect().await;
+    let app = build_test_app(build_state(server.connect().await));
     Fixture {
         _home: home,
+        _server: server,
         kiln,
         daemon,
         app,
-    }
-}
-
-/// Connect once the daemon accepts, rather than after a fixed sleep.
-async fn connect(socket: &Path) -> DaemonClient {
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        match DaemonClient::connect_to(socket).await {
-            Ok(client) => return client,
-            Err(e) if tokio::time::Instant::now() >= deadline => {
-                panic!("the daemon never accepted a connection: {e}")
-            }
-            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(20)).await,
-        }
     }
 }
 

@@ -14,6 +14,8 @@ use crucible_core::protocol::requests::{
     DiffFileRequest, DiffGetRequest, DiffResolveCommentRequest,
 };
 #[cfg(any(test, feature = "test-utils"))]
+use crucible_core::protocol::rpc::RpcMethod;
+#[cfg(any(test, feature = "test-utils"))]
 use crucible_daemon::DaemonClient;
 #[cfg(any(test, feature = "test-utils"))]
 use serde_json::{json, Value};
@@ -63,18 +65,15 @@ pub struct MockDaemon {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl MockDaemon {
-    /// Snapshot of the JSON-RPC method names received so far, in order.
-    pub fn received_methods(&self) -> Vec<String> {
+    /// The JSON-RPC methods received so far, in order. A request whose name
+    /// no [`RpcMethod`] carries is not in the list.
+    pub fn received_methods(&self) -> Vec<RpcMethod> {
         self.calls
             .lock()
             .unwrap()
             .iter()
-            .map(|req| {
-                req.get("method")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("")
-                    .to_string()
-            })
+            .filter_map(|req| req.get("method").and_then(|m| m.as_str()))
+            .filter_map(RpcMethod::parse)
             .collect()
     }
 
@@ -85,21 +84,21 @@ impl MockDaemon {
     /// the value it was handed reaches the daemon unrewritten, and only the
     /// serialized form can show that a field was omitted rather than sent as
     /// `null`.
-    pub fn received_params(&self, method: &str) -> Option<Value> {
+    pub fn received_params(&self, method: RpcMethod) -> Option<Value> {
         self.calls
             .lock()
             .unwrap()
             .iter()
-            .find(|req| req.get("method").and_then(|m| m.as_str()) == Some(method))
+            .find(|req| req.get("method").and_then(|m| m.as_str()) == Some(method.as_str()))
             .map(|req| req.get("params").cloned().unwrap_or(Value::Null))
     }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-/// Per-method scripted error envelopes: method name → (code, message).
+/// Per-method scripted error envelopes: method → (code, message).
 /// Methods present here answer `{"error": {...}}` instead of a result, so
 /// tests can exercise the daemon-error → HTTP-status surface.
-pub type MockErrors = HashMap<String, (i64, String)>;
+pub type MockErrors = HashMap<RpcMethod, (i64, String)>;
 
 #[cfg(any(test, feature = "test-utils"))]
 /// Start a mock daemon on a temporary Unix socket. Returns the mock daemon
@@ -109,26 +108,62 @@ pub async fn start_mock_daemon() -> (MockDaemon, DaemonClient) {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// A real daemon in this process, with each directory of `kilns` registered
+/// as an eager kiln, and a client connected to it.
+///
+/// A route test that reads or writes a real file needs the daemon's own root
+/// rule, its readers and its writers. The mock does not copy them. Before this
+/// function returns, the daemon indexes each markdown note that the kilns hold,
+/// so the index routes see the notes that the test wrote. Keep the returned
+/// daemon alive for the duration of the test, because the drop removes its
+/// data home.
+pub async fn start_real_daemon_with_kilns(
+    kilns: &[PathBuf],
+) -> (crucible_daemon::test_support::InProcessDaemon, DaemonClient) {
+    let builder = kilns.iter().enumerate().fold(
+        crucible_daemon::test_support::InProcessDaemonBuilder::new()
+            .expect("a temporary data home for the daemon"),
+        |builder, (index, kiln)| builder.with_kiln_at(&format!("kiln{index}"), kiln),
+    );
+    let daemon = builder.start().await.expect("start the in-process daemon");
+    let client = daemon.connect().await;
+    for kiln in kilns {
+        let notes = markdown_notes(kiln);
+        if !notes.is_empty() {
+            client
+                .process_batch(kiln, &notes)
+                .await
+                .expect("the daemon indexes the notes of the kiln");
+        }
+    }
+    (daemon, client)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// Each markdown note under `dir`, at any depth. A dot directory, such as the
+/// `.crucible` directory of the daemon, is not read.
+fn markdown_notes(dir: &std::path::Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+        .flat_map(|entry| {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => markdown_notes(&path),
+                Ok(kind) if kind.is_file() && crucible_core::is_note_file(&path) => vec![path],
+                _ => Vec::new(),
+            }
+        })
+        .collect()
+}
+
+#[cfg(any(test, feature = "test-utils"))]
 /// Like [`start_mock_daemon`], but methods listed in `errors` respond with a
 /// JSON-RPC error envelope instead of their canned result.
 pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, DaemonClient) {
-    start_mock_daemon_scripted(errors, Vec::new()).await
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-/// Like [`start_mock_daemon`], but `kiln.list` answers these directories as
-/// open kilns. `fs.read` and `fs.write` run the daemon's own reader and
-/// writer with these kilns as the only roots, so a test that reads or writes
-/// a real file through the file routes needs a kiln that holds it.
-pub async fn start_mock_daemon_with_kilns(kilns: Vec<PathBuf>) -> (MockDaemon, DaemonClient) {
-    start_mock_daemon_scripted(MockErrors::new(), kilns).await
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-async fn start_mock_daemon_scripted(
-    errors: MockErrors,
-    kilns: Vec<PathBuf>,
-) -> (MockDaemon, DaemonClient) {
     let tmp = tempfile::tempdir().expect("Failed to create temp dir");
     let socket_path = tmp.path().join("mock-daemon.sock");
 
@@ -136,13 +171,11 @@ async fn start_mock_daemon_scripted(
 
     // Spawn mock daemon server
     let errors = Arc::new(errors);
-    let kilns = Arc::new(kilns);
     let calls: Arc<std::sync::Mutex<Vec<Value>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let calls_srv = calls.clone();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             let errors = errors.clone();
-            let kilns = kilns.clone();
             let calls = calls_srv.clone();
             tokio::spawn(async move {
                 let (read, mut write) = stream.into_split();
@@ -158,55 +191,8 @@ async fn start_mock_daemon_scripted(
                                 Ok(m) => m,
                                 Err(_) => continue,
                             };
-
-                            let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
-
                             calls.lock().unwrap().push(msg.clone());
-
-                            let scripted_error = errors
-                                .get(method)
-                                .cloned()
-                                .or_else(|| mock_rpc_error(method, &msg));
-                            let response = if let Some((code, message)) = scripted_error {
-                                json!({
-                                    "jsonrpc": "2.0",
-                                    "id": id,
-                                    "error": { "code": code, "message": message }
-                                })
-                            } else {
-                                let result = if method == "fs.write" {
-                                    let request =
-                                        serde_json::from_value(msg["params"].clone()).unwrap();
-                                    crucible_daemon::file_write::write_for_roots(
-                                        request,
-                                        &kilns,
-                                        &[],
-                                    )
-                                    .await
-                                } else if method == "fs.read" {
-                                    let request =
-                                        serde_json::from_value(msg["params"].clone()).unwrap();
-                                    crucible_daemon::file_write::read_for_roots(
-                                        request,
-                                        &kilns,
-                                        &[],
-                                    )
-                                    .await
-                                } else if method == "kiln.list" && !kilns.is_empty() {
-                                    json!(kilns
-                                        .iter()
-                                        .map(|k| json!({ "path": k }))
-                                        .collect::<Vec<_>>())
-                                } else {
-                                    mock_rpc_response(method, &msg)
-                                };
-                                json!({
-                                    "jsonrpc": "2.0",
-                                    "id": id,
-                                    "result": result
-                                })
-                            };
+                            let response = mock_rpc_envelope(&msg, &errors).await;
 
                             let mut resp_str = serde_json::to_string(&response).unwrap();
                             resp_str.push('\n');
@@ -233,6 +219,39 @@ async fn start_mock_daemon_scripted(
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// The JSON-RPC envelope the mock daemon answers `msg` with.
+///
+/// A method name that [`RpcMethod`] does not know gets the "method not found"
+/// error of the real daemon. A known method gets its scripted error, or else
+/// its canned reply.
+async fn mock_rpc_envelope(msg: &Value, errors: &MockErrors) -> Value {
+    let id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+    let name = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+    let error = |code: i64, message: String| {
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": code, "message": message }
+        })
+    };
+    let Some(method) = RpcMethod::parse(name) else {
+        return error(-32601, format!("Method not found: {name}"));
+    };
+    if let Some((code, message)) = errors
+        .get(&method)
+        .cloned()
+        .or_else(|| mock_rpc_error(method, msg))
+    {
+        return error(code, message);
+    }
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": mock_rpc_response(method, msg).await
+    })
+}
+
+#[cfg(any(test, feature = "test-utils"))]
 /// Param-dependent scripted errors that the per-method [`MockErrors`] map can't
 /// express. Mirrors the real daemon: `session.create` now owns agent
 /// resolution, so an unresolvable agent fails atomically with `INVALID_PARAMS`
@@ -243,8 +262,8 @@ async fn start_mock_daemon_scripted(
 /// agent card otherwise — the deprecated alias this crate is the last caller of
 /// (`routes/session/mod.rs` sends a card name in `agent_name`). Collapsing the
 /// two here would let the web's card path pass a test the daemon fails.
-pub fn mock_rpc_error(method: &str, msg: &Value) -> Option<(i64, String)> {
-    if method != "session.create" {
+fn mock_rpc_error(method: RpcMethod, msg: &Value) -> Option<(i64, String)> {
+    if method != RpcMethod::SessionCreate {
         return None;
     }
     let params = msg.get("params")?;
@@ -546,72 +565,20 @@ pub fn mock_proposal_for(
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-/// The mock daemon's answer to a `proposal.*` method.
-///
-/// The answer echoes the id, the reason and the paths of the request, so a
-/// route test sees what the route sent. The title names the paths of a
-/// decision on some of the files.
-fn mock_proposal_response(method: &str, params: &Value) -> Value {
-    use crucible_core::proposal::ProposalState;
-    use crucible_core::protocol::requests::{
-        ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
-        ProposalResolveRequest,
-    };
-    let titled = |mut proposal: crucible_core::proposal::Proposal, paths: &[String]| {
-        if !paths.is_empty() {
-            proposal.title = format!("Change {}", paths.join(", "));
-        }
-        as_rpc_result(proposal)
-    };
-    let parse = |what: &str| -> ProposalIdRequest {
-        serde_json::from_value(params.clone()).unwrap_or_else(|e| panic!("{what} params: {e}"))
-    };
-    match method {
-        "proposal.list" => {
-            let request: ProposalListRequest =
-                serde_json::from_value(params.clone()).expect("proposal.list params");
-            let mut listed = vec![mock_proposal_for(mock_proposal_id(), ProposalState::Open)];
-            if request.all {
-                listed.push(mock_proposal_for(
-                    crucible_core::proposal::ProposalId::generate(),
-                    ProposalState::Dismissed,
-                ));
-            }
-            as_rpc_result(listed)
-        }
-        "proposal.get" => as_rpc_result(mock_proposal_for(parse(method).id, ProposalState::Open)),
-        "proposal.accept" => {
-            let request: ProposalAcceptRequest =
-                serde_json::from_value(params.clone()).expect("proposal.accept params");
-            titled(
-                mock_proposal_for(request.id, ProposalState::Accepted),
-                &request.paths,
-            )
-        }
-        "proposal.dismiss" => as_rpc_result(mock_proposal_for(
-            parse(method).id,
-            ProposalState::Dismissed,
-        )),
-        "proposal.reject" => {
-            let request: ProposalRejectRequest =
-                serde_json::from_value(params.clone()).expect("proposal.reject params");
-            titled(
-                mock_proposal_for(
-                    request.id,
-                    ProposalState::Rejected {
-                        reason: request.reason,
-                    },
-                ),
-                &request.paths,
-            )
-        }
-        "proposal.resolve" => {
-            let request: ProposalResolveRequest =
-                serde_json::from_value(params.clone()).expect("proposal.resolve params");
-            as_rpc_result(mock_proposal_for(request.id, ProposalState::Accepted))
-        }
-        other => panic!("the mock daemon has no proposal method {other}"),
+/// `proposal`, with a title that names `paths` when a decision covers only
+/// some of the files. Thus a route test sees the paths that the route sent.
+fn titled_proposal(mut proposal: crucible_core::proposal::Proposal, paths: &[String]) -> Value {
+    if !paths.is_empty() {
+        proposal.title = format!("Change {}", paths.join(", "));
     }
+    as_rpc_result(proposal)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The typed params of a mock request. A route that sends a wrong shape
+/// fails the test here.
+fn mock_params<T: serde::de::DeserializeOwned>(method: RpcMethod, msg: &Value) -> T {
+    serde_json::from_value(msg["params"].clone()).unwrap_or_else(|e| panic!("{method} params: {e}"))
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -621,8 +588,14 @@ fn as_rpc_result<T: serde::Serialize>(value: T) -> Value {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-/// Generate mock RPC responses based on method name.
-pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
+/// The canned reply of the mock daemon for `method`.
+///
+/// The `match` is exhaustive over [`RpcMethod`] and has no wildcard arm. Thus a
+/// new method does not compile until this mock gives it a reply, or names it
+/// in the `null` arm at the end.
+#[deny(clippy::wildcard_enum_match_arm)]
+#[deny(clippy::match_wildcard_for_single_variants)]
+async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
     match method {
         // Two rows, because `handle_kiln_list` writes two kinds: a registry
         // entry, named and attachable, and an open directory no entry names,
@@ -630,7 +603,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // are deliberately absent from disk, so every containment check that
         // canonicalizes still finds no root and the file routes behave as
         // they did when this answered nothing.
-        "kiln.list" => json!([
+        RpcMethod::KilnList => json!([
             {
                 "path": MOCK_DAEMON_KILN_PATH,
                 "name": "daemon-kiln",
@@ -648,7 +621,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "git": false,
             },
         ]),
-        "kiln.graph" => json!({
+        RpcMethod::KilnGraph => json!({
             "notes": [
                 { "path": "Alpha.md", "title": "Alpha", "tags": ["rust"] },
                 { "path": "Beta.md", "title": "Beta", "tags": [] }
@@ -661,7 +634,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // The daemon's `NoteListRow`, all six fields. One note carries a
         // title, tags and frontmatter; the other carries none of them, so a
         // reader that treats an absent title as a missing key fails here.
-        "list_notes" => json!([
+        RpcMethod::ListNotes => json!([
             {
                 "name": "Kilns",
                 "path": "notes/kilns.md",
@@ -681,7 +654,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         ]),
         // Note name "missing" resolves to nothing (the 404 path); anything
         // else resolves to a note with both link spellings the daemon writes.
-        "get_note_by_name" => {
+        RpcMethod::GetNoteByName => {
             if param_str(msg, "name") == "missing" {
                 Value::Null
             } else {
@@ -697,7 +670,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }
         // Note name "missing" resolves to nothing (404 path); anything else
         // resolves to a focused note with one linked mention.
-        "get_backlinks" => {
+        RpcMethod::GetBacklinks => {
             let name = msg
                 .get("params")
                 .and_then(|p| p.get("name"))
@@ -717,17 +690,17 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }
         // Includes a self-mention ("Focused Note") that the backlinks route
         // must filter out of `unlinked`.
-        "suggest_links" => json!({
+        RpcMethod::SuggestLinks => json!({
             "suggestions": [
                 {"mention": "Other Note", "target": "Other Note", "offset": 0},
                 {"mention": "Focused Note", "target": "Focused Note", "offset": 20}
             ]
         }),
-        "note.upsert" => json!({}),
-        "embed.query" => json!({ "vector": [0.1, 0.2, 0.3] }),
+        RpcMethod::NoteUpsert => json!({}),
+        RpcMethod::EmbedQuery => json!({ "vector": [0.1, 0.2, 0.3] }),
         // Three block hits, best first. Two of them sit in one note, so the
         // semantic route must fold them into one row.
-        "search_vectors" => json!([
+        RpcMethod::SearchVectors => json!([
             {
                 "document_id": "notes/kilns.md",
                 "score": 0.91,
@@ -747,7 +720,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "snippet": "Projects"
             }
         ]),
-        "search_grep" => json!({
+        RpcMethod::SearchGrep => json!({
             "hits": [
                 {
                     "path": "/tmp/test-kiln/a.md",
@@ -762,7 +735,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         // Sentinel session_type "__no_session_id__" yields a create response
         // WITHOUT a session_id, to exercise the protocol-drift guard.
-        "session.create" => {
+        RpcMethod::SessionCreate => {
             // The wire field is `type` (SessionCreateRequest renames it).
             let session_type = msg
                 .get("params")
@@ -794,7 +767,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // (`server/plugins.rs`), never omitted: `null` for a state slot,
         // a fraction for one mid-work. "oci" mirrors the state case, "weather"
         // the fraction case, matching how each is described above.
-        "session.status" => {
+        RpcMethod::SessionStatus => {
             let session_id = msg
                 .get("params")
                 .and_then(|p| p.get("session_id"))
@@ -811,12 +784,12 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             }
         }
         // `{sessions, total}`, as `server/session/list.rs:145` builds it.
-        "session.list" => json!({"sessions": [], "total": 0}),
+        RpcMethod::SessionList => json!({"sessions": [], "total": 0}),
         // The daemon's own projection (`server/session/list.rs:302`): the wire
         // name is `type`, the model is nested under `agent`, and
         // `event_count`, `last_activity` and `archived` are absent — all three
         // of which `session.list` sends.
-        "session.get" => json!({
+        RpcMethod::SessionGet => json!({
             "session_id": "test-session-001",
             "plugin_turn_limit": 5,
             "type": "chat",
@@ -838,35 +811,35 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         // `server/session/lifecycle.rs:13` and `:33` answer the state change,
         // `:116` answers the session's kilns instead of a previous state.
-        "session.pause" => json!({
+        RpcMethod::SessionPause => json!({
             "session_id": "test-session-001",
             "previous_state": "active",
             "state": "paused"
         }),
-        "session.resume" => json!({
+        RpcMethod::SessionResume => json!({
             "session_id": "test-session-001",
             "previous_state": "paused",
             "state": "active"
         }),
-        "session.end" => json!({
+        RpcMethod::SessionEnd => json!({
             "session_id": "test-session-001",
             "state": "ended",
             "kilns": ["test-kiln"]
         }),
-        "session.cancel" => json!({"cancelled": true}),
-        "session.clear" => json!({"session_id": "test-session-001"}),
-        "session.delete" => json!({"deleted": true}),
-        "session.archive" => json!({"archived": true}),
-        "session.unarchive" => json!({"archived": false}),
-        "session.subscribe" => json!(null),
-        "session.configure_agent" => json!(null),
-        "session.send_message" => json!({
+        RpcMethod::SessionCancel => json!({"cancelled": true}),
+        RpcMethod::SessionClear => json!({"session_id": "test-session-001"}),
+        RpcMethod::SessionDelete => json!({"deleted": true}),
+        RpcMethod::SessionArchive => json!({"archived": true}),
+        RpcMethod::SessionUnarchive => json!({"archived": false}),
+        RpcMethod::SessionSubscribe => json!(null),
+        RpcMethod::SessionConfigureAgent => json!(null),
+        RpcMethod::SessionSendMessage => json!({
             "session_id": "test-session-001",
             "outcome": "turn",
             "message_id": "msg-001"
         }),
         // The built-in commands, then one plugin command.
-        "session.commands" => {
+        RpcMethod::SessionCommands => {
             let mut commands: Vec<Value> = crucible_core::types::BuiltinCommand::entries()
                 .into_iter()
                 .map(|c| serde_json::to_value(c).unwrap())
@@ -877,20 +850,20 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             }));
             json!({ "session_id": "test-session-001", "commands": commands })
         }
-        "session.undo" => json!({ "undone": [] }),
-        "session.interaction_respond" => json!(null),
-        "session.list_models" => json!({"models": ["llama3.2", "mistral"]}),
-        "session.switch_model" => json!(null),
-        "session.set_mode" => json!(null),
+        RpcMethod::SessionUndo => json!({ "undone": [] }),
+        RpcMethod::SessionInteractionRespond => json!(null),
+        RpcMethod::SessionListModels => json!({"models": ["llama3.2", "mistral"]}),
+        RpcMethod::SessionSwitchModel => json!(null),
+        RpcMethod::SessionSetMode => json!(null),
         // `{knobs: [{id, supported}]}`, one entry per `SessionKnob::ALL`
         // member. The route answered `null` here until it named its reply.
-        "session.list_knobs" => json!({"knobs": [
+        RpcMethod::SessionListKnobs => json!({"knobs": [
             {"id": "model", "supported": true},
             {"id": "mode", "supported": true},
             {"id": "context_strategy", "supported": true},
             {"id": "precognition", "supported": true},
         ]}),
-        "session.list_modes" => json!({
+        RpcMethod::SessionListModes => json!({
             "session_id": "test-session-001",
             "current_mode_id": "ask",
             "modes": [
@@ -902,8 +875,8 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                  "icon": null, "color": null, "writes": "propose"},
             ],
         }),
-        "session.set_title" => json!(null),
-        "session.generate_title" => json!({
+        RpcMethod::SessionSetTitle => json!(null),
+        RpcMethod::SessionGenerateTitle => json!({
             "session_id": "test-session-001",
             "title": "Merkle tree sync design"
         }),
@@ -911,7 +884,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // (`server/session/list.rs:277`). A search with no kiln scope searched
         // nothing, and the daemon says so in a `note` rather than answering a
         // bare empty list (`:206`).
-        "session.search" => {
+        RpcMethod::SessionSearch => {
             let scoped = msg
                 .get("params")
                 .and_then(|p| p.get("kilns"))
@@ -948,7 +921,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // Mirrors the daemon's real response shape: a `history` array of
         // SessionEventMessage entries, NOT a `messages` array. Session id
         // "empty-session-001" yields an empty history for fallback tests.
-        "session.resume_from_storage" | "session.history" => {
+        RpcMethod::SessionResumeFromStorage | RpcMethod::SessionHistory => {
             let mut reply = mock_history_reply(msg);
             // The daemon folds the stored log; the mock folds its own with
             // the same core fold.
@@ -964,7 +937,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // "test-session-001": a two-turn transcript, seqs 1-4, filtered by the
         // caller's cursor exactly as the daemon's reader does. Other sessions
         // answer the same empty tail an unknown id does.
-        "session.events_after" => {
+        RpcMethod::SessionEventsAfter => {
             let session_id = msg
                 .get("params")
                 .and_then(|p| p.get("session_id"))
@@ -1007,23 +980,23 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 json!([])
             }
         }
-        "project.list" => as_rpc_result(vec![mock_project()]),
-        "diff.get" => {
+        RpcMethod::ProjectList => as_rpc_result(vec![mock_project()]),
+        RpcMethod::DiffGet => {
             let request: DiffGetRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.get params");
             as_rpc_result(mock_diffset_for(request.source))
         }
-        "diff.file" => {
+        RpcMethod::DiffFile => {
             let request: DiffFileRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.file params");
             as_rpc_result(mock_diff_file_text_for(&request))
         }
-        "diff.comment" => {
+        RpcMethod::DiffComment => {
             let request: DiffCommentRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.comment params");
             as_rpc_result(mock_diff_comment_for(&request))
         }
-        "diff.resolve_comment" => {
+        RpcMethod::DiffResolveComment => {
             let request: DiffResolveCommentRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.resolve_comment params");
             json!({
@@ -1032,7 +1005,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "resolved": true,
             })
         }
-        "diff.delete_comment" => {
+        RpcMethod::DiffDeleteComment => {
             let request: DiffDeleteCommentRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.delete_comment params");
             json!({
@@ -1043,7 +1016,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }
         // One comment whose quoted text is gone: the `outdated` flag reaches
         // the browser only if the route keeps it.
-        "diff.comments" => {
+        RpcMethod::DiffComments => {
             let request: DiffCommentsRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.comments params");
             json!({
@@ -1054,19 +1027,77 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 }],
             })
         }
-        "proposal.list" | "proposal.get" | "proposal.accept" | "proposal.reject"
-        | "proposal.dismiss" | "proposal.resolve" => mock_proposal_response(method, &msg["params"]),
-        "fs.list_dir" => as_rpc_result(mock_fs_listing()),
-        "fs.move" => as_rpc_result(mock_fs_move_reply()),
-        "fs.mkdir" => json!({"created": true}),
-        "fs.trash" => as_rpc_result(mock_fs_trash_reply()),
-        "scm.clone" => as_rpc_result(mock_scm_clone()),
-        "project.register" => as_rpc_result(mock_project()),
-        "project.unregister" => json!(null),
+        // The proposal answers echo the id, the reason and the paths of the
+        // request, so a route test sees what the route sent.
+        RpcMethod::ProposalList => {
+            use crucible_core::proposal::{ProposalId, ProposalState};
+            let request: crucible_core::protocol::requests::ProposalListRequest =
+                mock_params(method, msg);
+            let mut listed = vec![mock_proposal_for(mock_proposal_id(), ProposalState::Open)];
+            if request.all {
+                listed.push(mock_proposal_for(
+                    ProposalId::generate(),
+                    ProposalState::Dismissed,
+                ));
+            }
+            as_rpc_result(listed)
+        }
+        RpcMethod::ProposalGet => {
+            let request: crucible_core::protocol::requests::ProposalIdRequest =
+                mock_params(method, msg);
+            as_rpc_result(mock_proposal_for(
+                request.id,
+                crucible_core::proposal::ProposalState::Open,
+            ))
+        }
+        RpcMethod::ProposalAccept => {
+            let request: crucible_core::protocol::requests::ProposalAcceptRequest =
+                mock_params(method, msg);
+            titled_proposal(
+                mock_proposal_for(request.id, crucible_core::proposal::ProposalState::Accepted),
+                &request.paths,
+            )
+        }
+        RpcMethod::ProposalDismiss => {
+            let request: crucible_core::protocol::requests::ProposalIdRequest =
+                mock_params(method, msg);
+            as_rpc_result(mock_proposal_for(
+                request.id,
+                crucible_core::proposal::ProposalState::Dismissed,
+            ))
+        }
+        RpcMethod::ProposalReject => {
+            let request: crucible_core::protocol::requests::ProposalRejectRequest =
+                mock_params(method, msg);
+            titled_proposal(
+                mock_proposal_for(
+                    request.id,
+                    crucible_core::proposal::ProposalState::Rejected {
+                        reason: request.reason,
+                    },
+                ),
+                &request.paths,
+            )
+        }
+        RpcMethod::ProposalResolve => {
+            let request: crucible_core::protocol::requests::ProposalResolveRequest =
+                mock_params(method, msg);
+            as_rpc_result(mock_proposal_for(
+                request.id,
+                crucible_core::proposal::ProposalState::Accepted,
+            ))
+        }
+        RpcMethod::FsListDir => as_rpc_result(mock_fs_listing()),
+        RpcMethod::FsMove => as_rpc_result(mock_fs_move_reply()),
+        RpcMethod::FsMkdir => json!({"created": true}),
+        RpcMethod::FsTrash => as_rpc_result(mock_fs_trash_reply()),
+        RpcMethod::ScmClone => as_rpc_result(mock_scm_clone()),
+        RpcMethod::ProjectRegister => as_rpc_result(mock_project()),
+        RpcMethod::ProjectUnregister => json!(null),
         // The daemon answers null for a path no project is registered for, so
         // the mock answers for ITS project and null for anything else. A mock
         // that answered for every path would make the route's 404 untestable.
-        "project.get" => {
+        RpcMethod::ProjectGet => {
             let asked = msg
                 .get("params")
                 .and_then(|p| p.get("path"))
@@ -1079,17 +1110,17 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 Value::Null
             }
         }
-        "session.connect_kiln" => json!({
+        RpcMethod::SessionConnectKiln => json!({
             "session_id": "test-session-001",
             "kilns": ["test-kiln", "extra-kiln"],
             "workspace": "/tmp/test-kiln",
         }),
-        "session.disconnect_kiln" => json!({
+        RpcMethod::SessionDisconnectKiln => json!({
             "session_id": "test-session-001",
             "kilns": ["test-kiln"],
             "workspace": "/tmp/test-kiln",
         }),
-        "session.set_workspace" => {
+        RpcMethod::SessionSetWorkspace => {
             let workspace = msg
                 .get("params")
                 .and_then(|p| p.get("workspace"))
@@ -1105,7 +1136,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // `server/session/modes.rs` sends them: one option per control shape,
         // because the kind tag and the value belong together and a client that
         // read `current` without it would draw the wrong control.
-        "session.list_agent_options" => json!({
+        RpcMethod::SessionListAgentOptions => json!({
             "session_id": param_str(msg, "session_id"),
             "options": [
                 {
@@ -1130,38 +1161,27 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 },
             ],
         }),
-        "session.set_agent_option" => json!({ "ok": true }),
-        "session.set_precognition" => json!(null),
-        "session.get_precognition" => json!({"precognition_enabled": true}),
-        "session.set_precognition_results" => json!(null),
-        "session.get_precognition_results" => json!({"precognition_results": 5}),
-        // The nine knobs the web could not reach before, plus `session.get_mode`.
-        // Each getter answers under the DAEMON's wire field name with a value
-        // distinct from every other knob's, so a web response struct wired to
-        // the wrong knob (or to the knob name where the wire name differs)
-        // reads `null` instead of coincidentally matching.
-        "session.set_autocompact_threshold" => json!(null),
-        "session.get_autocompact_threshold" => json!({"autocompact_threshold": 0.75}),
-        // `timeout_secs`, NOT `execution_timeout` — the asymmetry the web
-        // request/response structs have to honour.
-        "session.set_validation_retries" => json!(null),
-        "session.get_validation_retries" => json!({"validation_retries": 5}),
-        "session.set_context_strategy" => json!(null),
-        "session.get_context_strategy" => json!({"context_strategy": "recent"}),
-        "session.set_plugin_approval" => json!({"plugin": "alpha", "approval": "ask"}),
-        "session.set_plugin_turn_limit" => json!(null),
-        "session.get_plugin_approval" => json!({"plugin": "alpha", "approval": "ask"}),
-        "session.list_plugin_approvals" => json!({"approvals": {"alpha": "ask", "beta": "stop"}}),
-        "session.set_output_validation" => json!(null),
-        "session.get_output_validation" => json!({"output_validation": "strict"}),
-        "session.get_mode" => json!({"mode": "plan"}),
-        "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
-        "providers.list" => json!({"providers": []}),
-        "models.list" => json!({"models": ["ollama/llama3.2", "openai/gpt-4o"]}),
+        RpcMethod::SessionSetAgentOption => json!({ "ok": true }),
+        RpcMethod::SessionSetPrecognition => json!(null),
+        RpcMethod::SessionGetPrecognition => json!({"precognition_enabled": true}),
+        RpcMethod::SessionSetContextStrategy => json!(null),
+        RpcMethod::SessionGetContextStrategy => json!({"context_strategy": "recent"}),
+        RpcMethod::SessionSetPluginApproval => json!({"plugin": "alpha", "approval": "ask"}),
+        RpcMethod::SessionSetPluginTurnLimit => json!(null),
+        RpcMethod::SessionGetPluginApproval => json!({"plugin": "alpha", "approval": "ask"}),
+        RpcMethod::SessionListPluginApprovals => {
+            json!({"approvals": {"alpha": "ask", "beta": "stop"}})
+        }
+        RpcMethod::SessionGetMode => json!({"mode": "plan"}),
+        RpcMethod::SessionRenderMarkdown => {
+            json!({"markdown": "# Test Session\n\nExported content"})
+        }
+        RpcMethod::ProvidersList => json!({"providers": []}),
+        RpcMethod::ModelsList => json!({"models": ["ollama/llama3.2", "openai/gpt-4o"]}),
         // SERIALISED from the daemon's own reply type, never hand-written, so
         // a route test that reads the rows back is a round trip rather than an
         // agreement between this file and the route.
-        "agents.list_profiles" => as_rpc_result(crucible_daemon::AgentProfilesReply {
+        RpcMethod::AgentsListProfiles => as_rpc_result(crucible_daemon::AgentProfilesReply {
             profiles: vec![
                 crucible_daemon::AgentProfileEntry {
                     name: "claude".to_string(),
@@ -1180,7 +1200,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             ],
         }),
         // Name "missing" is unknown (null); anything else resolves.
-        "agents.resolve_profile" => {
+        RpcMethod::AgentsResolveProfile => {
             let name = msg
                 .get("params")
                 .and_then(|p| p.get("name"))
@@ -1203,7 +1223,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // effective config carries one leaf a human's `init.lua` holds, and
         // `config.origin` reports that same leaf, so a route test can see a
         // value and its provenance travel together.
-        "config.effective" => json!({
+        RpcMethod::ConfigEffective => json!({
             "config": {
                 "kiln_path": MOCK_DAEMON_KILN_PATH,
                 "chat": { "model": "daemon-model" },
@@ -1222,7 +1242,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // link the Lua VM that owns it, and the route only forwards. The
         // group name is a sentinel, so the route test sees the daemon's answer
         // travel rather than a shape this file and the route agreed on.
-        "config.controls" => json!({
+        RpcMethod::ConfigControls => json!({
             "options": {
                 "type": "group",
                 "name": "Crucible",
@@ -1249,7 +1269,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // SERIALISED from the daemon's own row type. A literal here had no
         // `pinned` key, which the daemon always writes, so a route test could
         // not have noticed the route dropping the whole row.
-        "config.origin" => json!({
+        RpcMethod::ConfigOrigin => json!({
             "origins": [as_rpc_result(crucible_daemon::ConfigOriginRow {
                 key: "chat.model".to_string(),
                 value: json!("daemon-model"),
@@ -1267,7 +1287,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // A top-level [`MOCK_PINNED_KEY`] is the sentinel for "a human's line
         // holds this", so a route test sees a refusal envelope without a
         // second implementation of the layering rule living here.
-        "config.save" => {
+        RpcMethod::ConfigSave => {
             let pinned = msg
                 .get("params")
                 .and_then(|p| p.get("values"))
@@ -1295,7 +1315,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // undeclared command arrives as `write` rather than as nothing — so
         // the fixture writes it too. Without it the route's reply struct
         // could not be exercised at all.
-        "plugin.commands" => json!({
+        RpcMethod::PluginCommands => json!({
             "commands": [{
                 "plugin": "mock-plugin",
                 "name": "mock_command",
@@ -1308,7 +1328,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "effect": "write",
             }]
         }),
-        "plugin.publications" => {
+        RpcMethod::PluginPublications => {
             let key = msg
                 .get("params")
                 .and_then(|p| p.get("key"))
@@ -1325,7 +1345,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 }),
             }
         }
-        "plugin.list" => json!({
+        RpcMethod::PluginList => json!({
             "plugins": ["mock-plugin"],
             "plugin_info": [{
                 "name": "mock-plugin",
@@ -1344,7 +1364,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         // Shaped like a real tree so the contract test exercises pass-through
         // rather than a hand-built stub: a group, a leaf, and a button.
-        "plugin.options" => json!({
+        RpcMethod::PluginOptions => json!({
             "options": {
                 "mock-plugin": {
                     "type": "group",
@@ -1367,7 +1387,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // them marked. The route answered nothing for this method before, so
         // the fallthrough `null` read back as an empty list and no contract
         // test could see a row at all.
-        "surface.list" => json!({
+        RpcMethod::SurfaceList => json!({
             "surfaces": [{
                 "plugin": "mock-plugin",
                 "name": "sessions",
@@ -1383,14 +1403,14 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         // Echoes the name it was asked for, beside an opaque result, exactly
         // as `handle_plugin_run_command` does.
-        "plugin.run_command" => json!({
+        RpcMethod::PluginRunCommand => json!({
             "name": param_str(msg, "name"),
             "result": { "branches": ["main", "next"] },
         }),
-        "plugin.option_get" => json!({ "value": "alpine" }),
-        "plugin.option_set" => json!({ "ok": true }),
-        "plugin.option_execute" => json!({ "ok": true }),
-        "plugin.reload" => json!({
+        RpcMethod::PluginOptionGet => json!({ "value": "alpine" }),
+        RpcMethod::PluginOptionSet => json!({ "ok": true }),
+        RpcMethod::PluginOptionExecute => json!({ "ok": true }),
+        RpcMethod::PluginReload => json!({
             "name": "mock-plugin",
             "reloaded": true,
             "tools": 3,
@@ -1398,7 +1418,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "handlers": 2,
             "services": 0,
         }),
-        "plugin.install" => json!({
+        RpcMethod::PluginInstall => json!({
             "name": "installed-plugin",
             "outcome": { "kind": "cloned", "dest": "/tmp/installed-plugin" },
             "manifest": "/tmp/plugins.installed.json",
@@ -1410,14 +1430,14 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "error": Value::Null,
             "watch": "not hot-watched until restart",
         }),
-        "plugin.remove" => json!({
+        RpcMethod::PluginRemove => json!({
             "name": "removed-plugin",
             "manifest": "/tmp/plugins.installed.json",
             "purge_error": Value::Null,
             "kept_dir": Value::Null,
             "purged_dir": Value::Null,
         }),
-        "skills.list" => as_rpc_result(crucible_daemon::SkillsReply {
+        RpcMethod::SkillsList => as_rpc_result(crucible_daemon::SkillsReply {
             skills: vec![crucible_daemon::SkillSummary {
                 name: "test-skill".to_string(),
                 scope: "user".to_string(),
@@ -1425,7 +1445,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 shadowed_count: 0,
             }],
         }),
-        "skills.get" => as_rpc_result(crucible_daemon::SkillDetail {
+        RpcMethod::SkillsGet => as_rpc_result(crucible_daemon::SkillDetail {
             name: "test-skill".to_string(),
             scope: "user".to_string(),
             description: "A test skill".to_string(),
@@ -1434,7 +1454,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             license: None,
             body: "# Test Skill\n\nContent.".to_string(),
         }),
-        "skills.search" => as_rpc_result(crucible_daemon::SkillsReply {
+        RpcMethod::SkillsSearch => as_rpc_result(crucible_daemon::SkillsReply {
             skills: vec![crucible_daemon::SkillSummary {
                 name: "matched-skill".to_string(),
                 scope: "user".to_string(),
@@ -1445,16 +1465,16 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // A daemon with no MCP server running. The stopped arm writes ONE key,
         // which is what makes the route test's "and nothing else" assertion
         // mean something.
-        "mcp.status" => as_rpc_result(crucible_daemon::McpStatus::Stopped(
+        RpcMethod::McpStatus => as_rpc_result(crucible_daemon::McpStatus::Stopped(
             crucible_daemon::McpStopped { running: false },
         )),
-        "webhook.receive" => as_rpc_result(crucible_daemon::WebhookReceiveReply {
+        RpcMethod::WebhookReceive => as_rpc_result(crucible_daemon::WebhookReceiveReply {
             status: "ok".to_string(),
         }),
         // One permission request, in the daemon's own wire shape, so the web
         // route's normalisation is exercised on a real `InteractionRequest`
         // rather than on a shape this file invented.
-        "session.pending_interactions" => json!({
+        RpcMethod::SessionPendingInteractions => json!({
             "pending": [
                 {
                     "session_id": "session-001",
@@ -1466,21 +1486,109 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 }
             ]
         }),
-        _ => json!(null),
+
+        // The mock holds no kiln and no project, so every path is outside
+        // every root. The reader and the writer of the daemon give that
+        // refusal. A test that needs a real root uses
+        // [`start_real_daemon_with_kilns`].
+        RpcMethod::FsRead => {
+            let request = serde_json::from_value(msg["params"].clone()).unwrap();
+            crucible_daemon::file_write::read_for_roots(request, &[], &[]).await
+        }
+        RpcMethod::FsWrite => {
+            let request = serde_json::from_value(msg["params"].clone()).unwrap();
+            crucible_daemon::file_write::write_for_roots(request, &[], &[]).await
+        }
+        // No route test reads a reply of these methods. The mock answers
+        // `null` for each one. To give one a reply, move its variant to an
+        // arm above.
+        RpcMethod::Ping
+        | RpcMethod::DaemonCapabilities
+        | RpcMethod::Shutdown
+        | RpcMethod::KilnOpen
+        | RpcMethod::KilnClose
+        | RpcMethod::KilnRegister
+        | RpcMethod::KilnRegistryList
+        | RpcMethod::KilnForget
+        | RpcMethod::LlmRegisterProvider
+        | RpcMethod::SearchText
+        | RpcMethod::BaseList
+        | RpcMethod::BaseViews
+        | RpcMethod::BaseQuery
+        | RpcMethod::BaseCreateEntry
+        | RpcMethod::BaseSetProperty
+        | RpcMethod::BaseReorderGroups
+        | RpcMethod::NoteGet
+        | RpcMethod::NoteDelete
+        | RpcMethod::NoteList
+        | RpcMethod::ProcessFile
+        | RpcMethod::ProcessBatch
+        | RpcMethod::SessionCompact
+        | RpcMethod::SessionUnsubscribe
+        | RpcMethod::SessionCacheStats
+        | RpcMethod::SessionAddNotification
+        | RpcMethod::SessionListNotifications
+        | RpcMethod::SessionDismissNotification
+        | RpcMethod::NotificationList
+        | RpcMethod::NotificationDismiss
+        | RpcMethod::SessionGetPluginTurnLimit
+        | RpcMethod::SessionInjectContext
+        | RpcMethod::SessionTestInteraction
+        | RpcMethod::SessionFork
+        | RpcMethod::SessionListPersisted
+        | RpcMethod::SessionExportToFile
+        | RpcMethod::SessionReplay
+        | RpcMethod::SessionCleanup
+        | RpcMethod::SessionReindex
+        | RpcMethod::SessionCanUndo
+        | RpcMethod::SessionUndoDepth
+        | RpcMethod::SurfaceGet
+        | RpcMethod::LuaInitSession
+        | RpcMethod::LuaShutdownSession
+        | RpcMethod::LuaDiscoverPlugins
+        | RpcMethod::LuaPluginHealth
+        | RpcMethod::LuaGenerateStubs
+        | RpcMethod::LuaRunPluginTests
+        | RpcMethod::LuaRegisterCommands
+        | RpcMethod::LuaEval
+        | RpcMethod::ConfigGet
+        | RpcMethod::ConfigSet
+        | RpcMethod::ConfigReset
+        | RpcMethod::ConfigPop
+        | RpcMethod::ConfigUnset
+        | RpcMethod::UiConfig
+        | RpcMethod::UiSetTheme
+        | RpcMethod::ProjectOpenKilns
+        | RpcMethod::ProjectRegistryList
+        | RpcMethod::NoteRename
+        | RpcMethod::NoteMove
+        | RpcMethod::StorageVerify
+        | RpcMethod::StorageCleanup
+        | RpcMethod::StorageBackup
+        | RpcMethod::StorageRestore
+        | RpcMethod::McpStart
+        | RpcMethod::McpStop
+        | RpcMethod::AgentsListCards
+        | RpcMethod::EmbeddingsModels
+        | RpcMethod::SubagentCollect
+        | RpcMethod::WorkflowStart
+        | RpcMethod::WorkflowApproveGate
+        | RpcMethod::WorkflowStatus
+        | RpcMethod::WorkflowCancel => Value::Null,
     }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 /// Build an AppState using a mock daemon client.
-pub fn build_mock_state(client: DaemonClient) -> AppState {
-    build_mock_state_with_config(client, CliAppConfig::default())
+pub fn build_state(client: DaemonClient) -> AppState {
+    build_state_with_config(client, CliAppConfig::default())
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 /// Build an AppState using a mock daemon client and a caller-supplied config.
 /// For routes that read `state.config` rather than the daemon (`/api/config`),
 /// where the default config can only ever produce empty answers.
-pub fn build_mock_state_with_config(client: DaemonClient, config: CliAppConfig) -> AppState {
+pub fn build_state_with_config(client: DaemonClient, config: CliAppConfig) -> AppState {
     let broker = Arc::new(EventBroker::new());
     // Mock client has no live event stream; a dropped sender ends the router.
     let (_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<crucible_daemon::SessionEvent>();
@@ -1554,12 +1662,11 @@ pub async fn request_json(
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-/// [`request_json`], against a mock daemon that lists `kilns` as open.
+/// [`request_json`], against a real daemon that holds `kilns` open.
 ///
 /// The knowledge routes serve only a path inside an open root, so a test that
 /// reads or writes a real file through one needs a kiln that holds it. The
-/// plain [`request_json`] cannot supply one: its mock lists only directories
-/// that are not on disk.
+/// plain [`request_json`] cannot supply one: its mock holds no root.
 pub async fn request_json_in_kilns(
     method: &str,
     uri: &str,
@@ -1568,8 +1675,8 @@ pub async fn request_json_in_kilns(
 ) -> (axum::http::StatusCode, Value) {
     use tower::ServiceExt;
 
-    let (_mock, client) = start_mock_daemon_with_kilns(kilns).await;
-    let app = build_test_app(build_mock_state(client));
+    let (_daemon, client) = start_real_daemon_with_kilns(&kilns).await;
+    let app = build_test_app(build_state(client));
 
     let builder = axum::http::Request::builder().method(method).uri(uri);
     let request = match body {
@@ -1590,7 +1697,7 @@ pub async fn request_json_in_kilns(
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-/// [`shape`], against a mock daemon that lists `kilns` as open. See
+/// [`shape`], against a real daemon that holds `kilns` open. See
 /// [`request_json_in_kilns`].
 pub async fn shape_in_kilns<T: serde::de::DeserializeOwned>(
     method: &str,
@@ -1619,7 +1726,7 @@ pub async fn request_json_as(
     use tower::ServiceExt;
 
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let mut builder = axum::http::Request::builder().method(method).uri(uri);

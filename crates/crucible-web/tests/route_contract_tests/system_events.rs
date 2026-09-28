@@ -13,7 +13,7 @@ use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{build_state, build_test_app, start_mock_daemon};
 
 const PROPOSAL_ID: &str = "0b8f4a0e-7c1d-4c55-9a39-5d1f0a2e6b11";
 
@@ -38,7 +38,7 @@ async fn read_until(body: &mut Body, done: impl Fn(&str) -> bool) -> String {
 /// system session, and answer the text that the stream carried.
 async fn stream_after_both_events(uri: &str) -> String {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state.clone());
     let mut body = app
         .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
@@ -88,7 +88,7 @@ async fn the_system_stream_carries_proposal_changed() {
 
 async fn assert_gap_reaches_projection(uri: &str, event: &str, data: serde_json::Value) {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let mut body = build_test_app(state.clone())
         .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
         .await

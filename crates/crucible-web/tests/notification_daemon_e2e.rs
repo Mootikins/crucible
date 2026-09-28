@@ -100,9 +100,8 @@ async fn the_web_route_lists_the_notifications_of_one_session() {
         ids.push(id);
     }
 
-    let app = crucible_web::test_support::build_test_app(
-        crucible_web::test_support::build_mock_state(client),
-    );
+    let app =
+        crucible_web::test_support::build_test_app(crucible_web::test_support::build_state(client));
     let response = app
         .oneshot(
             Request::builder()
@@ -182,9 +181,8 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     .await
     .expect("the hub never stored the notice");
 
-    let app = crucible_web::test_support::build_test_app(
-        crucible_web::test_support::build_mock_state(client),
-    );
+    let app =
+        crucible_web::test_support::build_test_app(crucible_web::test_support::build_state(client));
     let request = |method: &str, uri: String| {
         Request::builder()
             .method(method)

@@ -5,7 +5,7 @@ use axum::http::{Request, StatusCode};
 use serde_json::Value;
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{build_state, build_test_app, start_mock_daemon};
 
 async fn response_json(response: axum::response::Response) -> Value {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -17,7 +17,7 @@ async fn response_json(response: axum::response::Response) -> Value {
 #[tokio::test]
 async fn list_plugins_returns_rich_plugin_info() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -51,7 +51,7 @@ async fn list_plugins_returns_rich_plugin_info() {
 #[tokio::test]
 async fn reload_plugin_returns_counts() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -79,7 +79,7 @@ async fn reload_plugin_returns_counts() {
 #[tokio::test]
 async fn install_plugin_returns_200_with_outcome() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -109,7 +109,7 @@ async fn install_plugin_returns_200_with_outcome() {
 #[tokio::test]
 async fn install_plugin_rejects_empty_url() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -131,7 +131,7 @@ async fn install_plugin_rejects_empty_url() {
 #[tokio::test]
 async fn remove_plugin_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -157,7 +157,7 @@ async fn remove_plugin_returns_200() {
 #[tokio::test]
 async fn remove_plugin_with_purge_query_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -185,7 +185,7 @@ async fn remove_plugin_with_purge_query_returns_200() {
 #[tokio::test]
 async fn plugin_options_reach_the_client_verbatim() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -231,7 +231,7 @@ async fn an_option_read_write_and_press_each_reach_the_daemon() {
         ),
     ] {
         let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state(client));
+        let app = build_test_app(build_state(client));
 
         let response = app
             .oneshot(
@@ -264,7 +264,7 @@ async fn an_option_read_write_and_press_each_reach_the_daemon() {
 #[tokio::test]
 async fn an_option_call_naming_no_path_is_rejected() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -293,7 +293,7 @@ async fn an_option_call_naming_no_path_is_rejected() {
 #[tokio::test]
 async fn a_publications_key_reaches_the_daemon() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -324,7 +324,7 @@ async fn a_publications_key_reaches_the_daemon() {
 #[tokio::test]
 async fn publications_without_a_key_still_answers_everything() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -351,7 +351,7 @@ async fn publications_without_a_key_still_answers_everything() {
 #[tokio::test]
 async fn plugin_commands_are_enumerable_with_their_parameters() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
@@ -445,7 +445,7 @@ fn request_as(
 async fn a_request_naming_no_caller_is_refused_on_every_gated_route() {
     for (method, uri, body) in gated_routes() {
         let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state(client));
+        let app = build_test_app(build_state(client));
 
         let response = app
             .oneshot(request_as(None, method, uri, body))
@@ -465,7 +465,7 @@ async fn a_request_naming_no_caller_is_refused_on_every_gated_route() {
 #[tokio::test]
 async fn an_empty_caller_header_names_nobody() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(request_as(
@@ -486,7 +486,7 @@ async fn an_empty_caller_header_names_nobody() {
 async fn the_app_reaches_every_gated_route() {
     for (method, uri, body) in gated_routes() {
         let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state(client));
+        let app = build_test_app(build_state(client));
 
         let response = app
             .oneshot(request_as(Some("app"), method, uri, body))
@@ -506,7 +506,7 @@ async fn the_app_reaches_every_gated_route() {
 #[tokio::test]
 async fn a_plugin_may_invoke_its_own_command() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(request_as(
@@ -524,7 +524,7 @@ async fn a_plugin_may_invoke_its_own_command() {
 #[tokio::test]
 async fn a_plugin_may_not_invoke_another_plugins_command() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(request_as(
@@ -543,7 +543,7 @@ async fn a_plugin_may_not_invoke_another_plugins_command() {
 #[tokio::test]
 async fn a_plugin_may_not_invoke_a_command_nobody_owns() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(request_as(
@@ -568,7 +568,7 @@ async fn a_plugin_reaches_its_own_settings_and_no_others() {
         ("other-plugin", StatusCode::FORBIDDEN),
     ] {
         let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state(client));
+        let app = build_test_app(build_state(client));
 
         let response = app
             .oneshot(request_as(
@@ -603,7 +603,7 @@ async fn the_lifecycle_routes_refuse_a_plugin() {
         }
 
         let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state(client));
+        let app = build_test_app(build_state(client));
 
         // `mock-plugin` is the plugin the route names, so this is not refused
         // for naming someone else — a plugin has no business here at all.
@@ -626,7 +626,7 @@ async fn the_lifecycle_routes_refuse_a_plugin() {
 #[tokio::test]
 async fn a_plugin_reads_only_its_own_publications() {
     let (_mock, client) = start_mock_daemon().await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(request_as(

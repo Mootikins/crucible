@@ -311,7 +311,7 @@ async fn get_project(
 mod tests {
     use super::*;
     use crate::test_support::{
-        build_mock_state_with_config, build_test_app, mock_project, shape, start_mock_daemon,
+        build_state_with_config, build_test_app, mock_project, shape, start_mock_daemon,
     };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
@@ -335,7 +335,7 @@ mod tests {
 
     async fn register(config: CliAppConfig, path: &Path) -> StatusCode {
         let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state_with_config(client, config));
+        let app = build_test_app(build_state_with_config(client, config));
         let response = app
             .oneshot(
                 Request::builder()

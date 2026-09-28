@@ -5,12 +5,12 @@ use axum::http::{Request, StatusCode};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{build_state, build_test_app, start_mock_daemon};
 
 #[tokio::test]
 async fn list_projects_returns_200_with_array() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -45,7 +45,7 @@ async fn register(roots: &[&std::path::Path], path: &std::path::Path) -> (Status
         }),
         ..CliAppConfig::default()
     };
-    let app = build_test_app(crucible_web::test_support::build_mock_state_with_config(
+    let app = build_test_app(crucible_web::test_support::build_state_with_config(
         client, config,
     ));
 
@@ -111,7 +111,7 @@ async fn register_project_returns_403_for_the_filesystem_root() {
 #[tokio::test]
 async fn unregister_project_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -132,7 +132,7 @@ async fn unregister_project_returns_200() {
 #[tokio::test]
 async fn get_project_missing_returns_404() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app

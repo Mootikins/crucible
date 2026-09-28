@@ -15,6 +15,8 @@
 //! demand the same JSON back — so naming the reply cannot have dropped a
 //! field or added one.
 
+use crucible_core::protocol::rpc::RpcMethod;
+
 use super::*;
 use crate::routes::helpers::ModelsResponse;
 use crate::test_support::request_json;
@@ -125,18 +127,18 @@ async fn resume_session_answers_the_declared_shape() {
 /// field, because that is the mistake it exists to catch.
 #[tokio::test]
 async fn a_cold_resume_answers_the_restored_history() {
-    use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon_with_errors};
+    use crate::test_support::{build_state, build_test_app, start_mock_daemon_with_errors};
     use tower::ServiceExt;
 
     // A session the daemon no longer holds: the warm `session.resume` fails
     // and the route reloads it from the store.
     let mut errors = crate::test_support::MockErrors::new();
     errors.insert(
-        "session.resume".to_string(),
+        RpcMethod::SessionResume,
         (-32000, "Session is not resident".to_string()),
     );
     let (_mock, client) = start_mock_daemon_with_errors(errors).await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(

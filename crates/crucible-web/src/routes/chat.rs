@@ -366,6 +366,7 @@ mod tests {
     use super::*;
     use crate::test_support::request_json;
     use crucible_core::interaction::InteractionResponse;
+    use crucible_core::protocol::rpc::RpcMethod;
 
     /// The SSE body that `to_sse` gives for `events`, as text.
     async fn sse_text(events: Vec<crucible_daemon::SessionEvent>) -> String {
@@ -442,7 +443,7 @@ mod tests {
     /// The daemon, not the route, builds their context.
     #[tokio::test]
     async fn send_message_forwards_the_attached_comments() {
-        use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon};
+        use crate::test_support::{build_state, build_test_app, start_mock_daemon};
         use tower::ServiceExt;
 
         let comments = serde_json::json!([{
@@ -450,7 +451,7 @@ mod tests {
             "source": { "kind": "session_record", "session": "s-1" },
         }]);
         let (mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_mock_state(client));
+        let app = build_test_app(build_state(client));
         let response = app
             .oneshot(
                 axum::http::Request::builder()
@@ -474,7 +475,7 @@ mod tests {
             axum::http::StatusCode::OK,
             "a message with only a comment is not empty"
         );
-        let params = mock.received_params("session.send_message").unwrap();
+        let params = mock.received_params(RpcMethod::SessionSendMessage).unwrap();
         assert_eq!(params["comments"], comments);
 
         let (status, _) = request_json(

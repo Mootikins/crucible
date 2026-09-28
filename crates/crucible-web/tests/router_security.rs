@@ -7,7 +7,7 @@ use axum::{
 use crucible_web::{
     middleware::auth::{ApiKeyState, HostPolicy},
     server::{build_router, WebConfig},
-    test_support::{build_mock_state, start_mock_daemon},
+    test_support::{build_state, start_mock_daemon},
 };
 use std::{net::SocketAddr, sync::Arc};
 use tower::ServiceExt;
@@ -49,7 +49,7 @@ fn app(
 #[tokio::test]
 async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap_public() {
     let (mock, client) = start_mock_daemon().await;
-    let router = app(build_mock_state(client), false, Some("secret"));
+    let router = app(build_state(client), false, Some("secret"));
     for path in [
         "/api/agents",
         "/api/chat/send",
@@ -142,7 +142,7 @@ async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap
 #[tokio::test]
 async fn assembled_terminal_requires_the_remote_opt_in_credentials_and_a_safe_origin() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     for (remote, key, local, token, origin, expected) in [
         (
             false,

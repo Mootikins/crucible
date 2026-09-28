@@ -1,12 +1,14 @@
 //! ChatEvent Contract Tests and Chat Route Contract Tests
 
+use crucible_core::protocol::rpc::RpcMethod;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use crucible_web::ChatEvent;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{build_state, build_test_app, start_mock_daemon};
 
 // =========================================================================
 // ChatEvent Contract Tests
@@ -201,7 +203,7 @@ fn chat_event_from_daemon_unknown_maps_to_session_event() {
 #[tokio::test]
 async fn chat_send_empty_message_returns_400() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -224,7 +226,7 @@ async fn chat_send_empty_message_returns_400() {
 #[tokio::test]
 async fn chat_send_valid_message_returns_200() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -256,7 +258,7 @@ async fn chat_send_valid_message_returns_200() {
 #[tokio::test]
 async fn chat_send_missing_fields_returns_422() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     // Missing content field
@@ -278,7 +280,7 @@ async fn chat_send_missing_fields_returns_422() {
 #[tokio::test]
 async fn chat_send_invalid_json_returns_error() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -323,7 +325,7 @@ async fn read_stream(
     String,
     axum::body::Body,
 ) {
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state.clone());
     let mut request = Request::builder().method("GET").uri(uri);
     for (name, value) in headers {
@@ -397,7 +399,7 @@ async fn chat_events_replays_past_the_cursor_and_stamps_seq_ids() {
 
     // The cursor reached the daemon as the wire `after`, not a rewrite.
     let params = mock
-        .received_params("session.events_after")
+        .received_params(RpcMethod::SessionEventsAfter)
         .expect("the route replayed");
     assert_eq!(params["after"], json!(1));
     assert_eq!(params["session_id"], json!("test-session-001"));
@@ -479,7 +481,7 @@ async fn chat_events_accepts_the_last_event_id_header_as_the_cursor() {
     assert_eq!(frame_ids(&text), vec!["4"], "frames: {text}");
 
     let params = mock
-        .received_params("session.events_after")
+        .received_params(RpcMethod::SessionEventsAfter)
         .expect("the route replayed");
     assert_eq!(params["after"], json!(3));
 }
@@ -490,7 +492,7 @@ async fn chat_events_accepts_the_last_event_id_header_as_the_cursor() {
 #[tokio::test]
 async fn chat_events_without_a_cursor_replays_nothing() {
     let (mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     // The handler runs to the point of building the stream; the body needs
@@ -507,7 +509,8 @@ async fn chat_events_without_a_cursor_replays_nothing() {
         .unwrap();
 
     assert!(
-        mock.received_params("session.events_after").is_none(),
+        mock.received_params(RpcMethod::SessionEventsAfter)
+            .is_none(),
         "a cursor-less request must not replay"
     );
 }

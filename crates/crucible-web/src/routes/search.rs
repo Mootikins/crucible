@@ -1022,26 +1022,33 @@ mod tests {
         assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
     }
 
-    /// Unlinked mentions are scanned out of the focused note's own file, so
-    /// this one needs the note on disk, in a kiln that the daemon's `fs.read`
-    /// admits. Linked mentions come from the index and would answer without it.
+    /// The real daemon indexes three notes. The linker note links to the
+    /// focused note. The focused note names another note and itself in plain
+    /// text. Unlinked mentions are scanned out of the file of the focused
+    /// note, so this test also needs the note in a kiln that `fs.read` admits.
     #[tokio::test]
     async fn get_backlinks_answers_the_declared_shape() {
+        const FOCUSED: &str =
+            "---\ntitle: Focused Note\n---\nOther Note is worth reading. Focused Note is this one.\n";
+        const LINKER: &str = "---\ntitle: Linker Note\n---\nSee [[focused]].\n";
         let kiln = TempDir::new().unwrap();
         tokio::fs::create_dir(kiln.path().join("notes"))
             .await
             .unwrap();
-        tokio::fs::write(
-            kiln.path().join("notes/focused.md"),
-            "Other Note is worth reading. Focused Note is this one.\n",
-        )
-        .await
-        .unwrap();
+        for (path, text) in [
+            ("notes/focused.md", FOCUSED),
+            ("notes/linker.md", LINKER),
+            ("notes/Other Note.md", "Another note.\n"),
+        ] {
+            tokio::fs::write(kiln.path().join(path), text)
+                .await
+                .unwrap();
+        }
         let root = kiln.path().display();
 
         let answer: BacklinksResponse = shape_in_kilns(
             "GET",
-            &format!("/api/backlinks?kiln={root}&note=Focused"),
+            &format!("/api/backlinks?kiln={root}&note=focused"),
             None,
             vec![kiln.path().to_path_buf()],
         )
@@ -1057,19 +1064,28 @@ mod tests {
 
         let linker = &answer.linked[0];
         assert_eq!(linker.name, "linker");
+        assert_eq!(linker.title.as_deref(), Some("Linker Note"));
         assert_eq!(
             linker.abs_path,
             kiln.path().join("notes/linker.md").to_string_lossy()
         );
+        let span = linker
+            .span_start
+            .zip(linker.span_end)
+            .expect("an indexed link has a span");
         assert_eq!(
-            linker.span_start, None,
-            "a span-less index row leaves the key out rather than sending null"
+            &LINKER[span.0 as usize..span.1 as usize],
+            "focused",
+            "the span is the byte range of the link target in the linker note"
         );
 
         // The focused note mentions itself; that suggestion is filtered out.
         assert_eq!(answer.unlinked.len(), 1, "{:?}", answer.unlinked);
         assert_eq!(answer.unlinked[0].target, "Other Note");
-        assert_eq!(answer.unlinked[0].offset, 0);
+        assert_eq!(
+            answer.unlinked[0].offset,
+            FOCUSED.find("Other Note").unwrap()
+        );
     }
 
     #[tokio::test]
@@ -1270,6 +1286,20 @@ mod tests {
         };
 
         survives::<UnlinkedMentionRow>(&suggestion);
+    }
+
+    /// A legacy index row has no span. The row leaves both keys out and does
+    /// not send `null`.
+    #[test]
+    fn a_span_less_backlink_row_leaves_the_span_keys_out() {
+        let row = serde_json::json!({
+            "name": "linker",
+            "path": "notes/linker.md",
+            "title": "Linker Note",
+            "abs_path": "/kiln/notes/linker.md",
+        });
+
+        survives::<BacklinkRow>(&row);
     }
 
     #[tokio::test]

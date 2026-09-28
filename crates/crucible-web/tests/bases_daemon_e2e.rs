@@ -4,8 +4,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use crucible_daemon::{DaemonClient, Server};
-use crucible_web::test_support::{build_mock_state, build_test_app};
+use crucible_daemon::test_support::InProcessDaemonBuilder;
+use crucible_web::test_support::{build_state, build_test_app};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
@@ -38,18 +38,13 @@ async fn bases_http_queries_and_refuses_stale_edits_through_real_daemon() {
     std::fs::write(kiln.join("Host.md"), "![[Tasks.base#Tasks]]").unwrap();
     std::fs::write(kiln.join("boards/Tasks.base"), "filters: 'file.ext == \"md\"'\nformulas: {day: \"date('2026-09-27')\"}\nviews: [{type: table, name: Tasks, order: [file.name, note.status, formula.day]}]").unwrap();
     std::fs::write(kiln.join("Board.base"), "views:\n  - type: kanban\n    name: Board\n    groupBy: {property: note.status, direction: ASC}\n").unwrap();
-    let socket = home.path().join("daemon.sock");
-    let server = Server::bind_with_data_home_and_kilns(
-        &socket,
-        home.path().join("data"),
-        &[("Work", &kiln)],
-    )
-    .await
-    .unwrap();
-    let shutdown = server.shutdown_handle();
-    let task = tokio::spawn(async move { server.run().await });
-    let client = DaemonClient::connect_to(&socket).await.unwrap();
-    let app = build_test_app(build_mock_state(client));
+    let server = InProcessDaemonBuilder::at_data_home(home.path().join("data"))
+        .with_kiln_at("Work", &kiln)
+        .start()
+        .await
+        .unwrap();
+    let client = server.connect().await;
+    let app = build_test_app(build_state(client));
     let (status, created) = request(&app, "POST", "/api/bases/entries", json!({"kiln":"Work", "source":{"path":"Tasks.base"}, "name":"First", "content":"# Body\n"})).await;
     assert_eq!(status, StatusCode::OK, "{created}");
     assert_eq!(created["status"], "applied");
@@ -153,6 +148,5 @@ async fn bases_http_queries_and_refuses_stale_edits_through_real_daemon() {
     let (status, body) = request(&app, "POST", "/api/bases/entries", json!({"kiln":"Work", "source":{"path":"Board.base"}, "view":"Absent", "name":"Nope", "group":"todo"})).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert!(!kiln.join("Nope.md").exists());
-    let _ = shutdown.send(());
-    task.await.unwrap().unwrap();
+    server.shutdown().await;
 }

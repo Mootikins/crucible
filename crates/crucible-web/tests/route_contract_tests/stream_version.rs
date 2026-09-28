@@ -11,13 +11,13 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
+use super::shared::{build_state, build_test_app, start_mock_daemon};
 
 /// Opens one stream endpoint and answers its headers plus the first body
 /// bytes, under a short deadline (an SSE body never ends).
 async fn open(uri: &str) -> (Option<String>, String) {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let response = app
@@ -101,7 +101,7 @@ async fn the_handshake_frame_is_an_ignorable_named_event() {
 #[tokio::test]
 async fn the_chat_stream_replays_behind_the_handshake() {
     let (_mock, client) = start_mock_daemon().await;
-    let state = build_mock_state(client);
+    let state = build_state(client);
     let app = build_test_app(state);
 
     let mut body = app

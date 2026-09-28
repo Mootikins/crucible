@@ -4,21 +4,23 @@
 //! `src/routes/comment_rows_tests.rs`. These tests pin the status that a
 //! daemon error gives, because a client acts on the status.
 
+use crucible_core::protocol::rpc::RpcMethod;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use super::shared::{build_mock_state, build_test_app, start_mock_daemon_with_errors, MockErrors};
+use super::shared::{build_state, build_test_app, start_mock_daemon_with_errors, MockErrors};
 
 /// Post one comment to an app whose daemon answers `diff.comment` with
 /// `(code, message)`.
 async fn comment_refused(code: i64, message: &str) -> (StatusCode, Value) {
-    let errors: MockErrors = [("diff.comment".to_string(), (code, message.to_string()))]
+    let errors: MockErrors = [(RpcMethod::DiffComment, (code, message.to_string()))]
         .into_iter()
         .collect();
     let (_mock, client) = start_mock_daemon_with_errors(errors).await;
-    let app = build_test_app(build_mock_state(client));
+    let app = build_test_app(build_state(client));
     let body = json!({
         "source": { "kind": "session_record", "session": "s1" },
         "root": "/tmp/test-project",

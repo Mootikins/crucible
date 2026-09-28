@@ -15,7 +15,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use crucible_daemon::{BindWithPluginConfigParams, DaemonClient, Server};
-use crucible_web::test_support::{build_mock_state_with_config, build_test_app};
+use crucible_web::test_support::{build_state_with_config, build_test_app};
 use serde_json::Value;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -179,7 +179,7 @@ async fn serve_daemon_over_web(home: &std::path::Path, config_source: &std::path
     let client = connect(&socket).await;
     // The helper only wraps an `AppState` around a client; the client here is
     // a real daemon's rather than the mock's.
-    build_test_app(build_mock_state_with_config(
+    build_test_app(build_state_with_config(
         client,
         crucible_core::config::CliAppConfig::default(),
     ))

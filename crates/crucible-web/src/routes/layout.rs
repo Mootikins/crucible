@@ -249,7 +249,7 @@ mod tests {
     async fn layout_test_app() -> (tempfile::TempDir, axum::Router) {
         let tmp = tempfile::tempdir().expect("tempdir");
         let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let mut state = crate::test_support::build_mock_state(client);
+        let mut state = crate::test_support::build_state(client);
         state.layout_path = Arc::new(tmp.path().join("web-layout.json"));
         let app = axum::Router::from(layout_routes()).with_state(state);
         (tmp, app)

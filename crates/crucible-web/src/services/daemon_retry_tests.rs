@@ -317,10 +317,14 @@ async fn refused_subscription_releases_its_local_receiver() {
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
     let (_mock, client) = crate::test_support::start_mock_daemon_with_errors(
-        [("session.subscribe".into(), (-32602, "refused".into()))].into(),
+        [(
+            crucible_core::protocol::rpc::RpcMethod::SessionSubscribe,
+            (-32602, "refused".into()),
+        )]
+        .into(),
     )
     .await;
-    let state = crate::test_support::build_mock_state(client);
+    let state = crate::test_support::build_state(client);
     let broker = state.events.clone();
     let response = crate::test_support::build_test_app(state)
         .oneshot(

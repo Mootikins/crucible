@@ -177,8 +177,9 @@ fn from_wire(change: FileChange) -> Result<(LockedChange, ExpectedBase), Value> 
     })
 }
 
-/// Resolve registered roots and perform a text write. HTTP contract fixtures can
-/// supply isolated roots while exercising the production writer.
+/// Perform a text write within `kilns` and `projects`. The mock daemon of the
+/// web route tests calls it with no root, so it gives the refusal of the real
+/// daemon for a path outside every root.
 pub async fn write_for_roots(
     req: FileWriteRequest,
     kilns: &[PathBuf],
@@ -504,9 +505,9 @@ async fn read_content(path: &Path, encoding: FileEncoding) -> Result<Option<File
     }))
 }
 
-/// Read one file through the same enclosing-root rule as the writes. HTTP
-/// contract fixtures can supply isolated roots while they exercise the
-/// production reader.
+/// Read one file through the same enclosing-root rule as the writes. The mock
+/// daemon of the web route tests calls it with no root, so it gives the
+/// refusal of the real daemon for a path outside every root.
 ///
 /// A root whose policy refuses reads answers `not_found`, as a path in no
 /// root does.

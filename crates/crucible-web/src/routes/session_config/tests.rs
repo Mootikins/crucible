@@ -19,12 +19,14 @@
 //!     the web's response key, with a per-knob-distinct value so a route wired
 //!     to the wrong knob cannot pass by coincidence.
 
+use crucible_core::protocol::rpc::RpcMethod;
+
 use axum::http::StatusCode;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use crate::routes::session_routes;
-use crate::test_support::{build_mock_state, start_mock_daemon, MockDaemon};
+use crate::test_support::{build_state, start_mock_daemon, MockDaemon};
 
 use super::basic::{AgentOptionKindRow, AgentOptionsResponse};
 
@@ -33,7 +35,7 @@ async fn call(method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Valu
     let (mock, client) = start_mock_daemon().await;
     // The group carries an OpenAPI document now, and only the axum half of it
     // answers a request.
-    let app = axum::Router::from(session_routes()).with_state(build_mock_state(client));
+    let app = axum::Router::from(session_routes()).with_state(build_state(client));
 
     let builder = axum::http::Request::builder().method(method).uri(uri);
     let request = match body {
@@ -64,7 +66,12 @@ fn shaped<T: serde::de::DeserializeOwned>(uri: &str, body: &Value) -> T {
 }
 
 /// PUT the knob and assert the value reached the daemon under `wire_field`.
-async fn assert_put_reaches_daemon(tail: &str, rpc_method: &str, wire_field: &str, value: Value) {
+async fn assert_put_reaches_daemon(
+    tail: &str,
+    rpc_method: RpcMethod,
+    wire_field: &str,
+    value: Value,
+) {
     let uri = format!("/api/session/s1/config/{tail}");
     let body = json!({ wire_field: value.clone() });
     let (status, _, mock) = call("PUT", &uri, Some(body)).await;
@@ -109,7 +116,7 @@ async fn assert_get_returns(tail: &str, web_key: &str, expected: Value) {
 async fn context_strategy_round_trips_its_string_spelling() {
     assert_put_reaches_daemon(
         "context-strategy",
-        "session.set_context_strategy",
+        RpcMethod::SessionSetContextStrategy,
         "context_strategy",
         json!("truncate"),
     )
@@ -122,7 +129,9 @@ async fn plugin_approval_routes_forward_plugin_and_value() {
     let uri = "/api/session/s1/config/plugins/alpha/approval";
     let (status, _, mock) = call("PUT", uri, Some(json!({"approval": "ask"}))).await;
     assert_eq!(status, StatusCode::OK);
-    let params = mock.received_params("session.set_plugin_approval").unwrap();
+    let params = mock
+        .received_params(RpcMethod::SessionSetPluginApproval)
+        .unwrap();
     assert_eq!(params["session_id"], "s1");
     assert_eq!(params["plugin"], "alpha");
     assert_eq!(params["approval"], "ask");
@@ -131,7 +140,8 @@ async fn plugin_approval_routes_forward_plugin_and_value() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"plugin": "alpha", "approval": "ask"}));
     assert_eq!(
-        mock.received_params("session.get_plugin_approval").unwrap()["plugin"],
+        mock.received_params(RpcMethod::SessionGetPluginApproval)
+            .unwrap()["plugin"],
         "alpha"
     );
 
@@ -146,7 +156,7 @@ async fn plugin_turn_limit_routes_forward_and_read_session_value() {
     let (status, _, mock) = call("PUT", uri, Some(json!({"limit": 7}))).await;
     assert_eq!(status, StatusCode::OK);
     let params = mock
-        .received_params("session.set_plugin_turn_limit")
+        .received_params(RpcMethod::SessionSetPluginTurnLimit)
         .unwrap();
     assert_eq!(params["session_id"], "s1");
     assert_eq!(params["limit"], 7);
@@ -217,7 +227,7 @@ async fn set_agent_option_answers_the_declared_shape() {
     assert_eq!(body, json!({ "ok": true }));
 
     let params = mock
-        .received_params("session.set_agent_option")
+        .received_params(RpcMethod::SessionSetAgentOption)
         .expect("the POST calls session.set_agent_option");
     assert_eq!(params.get("option_id"), Some(&json!("reasoning")));
     assert_eq!(params.get("value"), Some(&json!("high")));
