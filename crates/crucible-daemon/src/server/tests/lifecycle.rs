@@ -85,6 +85,46 @@ async fn test_session_resume_rpc_success_and_missing_param_error() {
     server.shutdown().await;
 }
 
+/// A session that an earlier daemon recorded is on disk only. `session.resume`
+/// resumes it from storage, as it resumes a paused session in memory: a
+/// client must not know where the daemon holds a session.
+#[tokio::test]
+async fn resume_reads_a_session_that_this_daemon_never_held() {
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+    let held = create_chat_session(&mut client, TestServer::KILN, 44_000).await;
+
+    // The held session's record under a new id: this daemon never loaded it.
+    let recorded = format!("{held}-rec");
+    let sessions = server.sessions_root();
+    let meta = std::fs::read_to_string(sessions.join(&held).join("meta.json")).unwrap();
+    std::fs::create_dir_all(sessions.join(&recorded)).unwrap();
+    std::fs::write(
+        sessions.join(&recorded).join("meta.json"),
+        meta.replace(&held, &recorded),
+    )
+    .unwrap();
+
+    let response = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 44_001,
+            "method": "session.resume",
+            "params": { "session_id": recorded }
+        }),
+    )
+    .await;
+    assert!(
+        response["error"].is_null(),
+        "session.resume failed: {response:?}"
+    );
+    assert_eq!(response["result"]["state"], "active");
+    assert_eq!(response["result"]["session_id"], recorded.as_str());
+
+    server.shutdown().await;
+}
+
 #[tokio::test]
 async fn test_session_lifecycle_create_pause_resume_end() {
     let server = TestServer::start().await;

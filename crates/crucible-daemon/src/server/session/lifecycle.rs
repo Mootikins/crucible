@@ -1,10 +1,12 @@
 use super::super::*;
 use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::session_lifecycle::{SessionLifecycle, StopCause, StopError, Stopped};
+use crate::SessionError;
 use crucible_core::protocol::requests::SessionReplayRequest;
 use crucible_core::protocol::requests::{
     SessionHistoryRequest, SessionIdRequest, SessionResumeFromStorageRequest,
 };
+use crucible_core::session::{SessionId, SessionState};
 
 pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecycle) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
@@ -51,7 +53,15 @@ pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
     };
     let session_id = &params.session_id;
 
-    match sm.resume_session(session_id).await {
+    // A session that this daemon does not hold (an earlier daemon recorded
+    // it) resumes from storage. The client asks once, and the daemon decides
+    // where the session is. The dispatcher runs the start checks after
+    // either path.
+    let resumed = match sm.resume_session(session_id).await {
+        Err(SessionError::NotFound(_)) => resume_stored(sm, session_id).await,
+        resumed => resumed,
+    };
+    match resumed {
         Ok(previous_state) => Response::success(
             req.id,
             serde_json::json!({
@@ -62,6 +72,22 @@ pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
         ),
         Err(e) => invalid_state_error(req.id, "resume", e),
     }
+}
+
+/// Resume a session from its stored record, and answer its stored state.
+async fn resume_stored(
+    sm: &Arc<SessionManager>,
+    session_id: &str,
+) -> Result<SessionState, SessionError> {
+    let id =
+        SessionId::parse(session_id).map_err(|_| SessionError::NotFound(session_id.to_string()))?;
+    let previous = sm
+        .read_session(session_id)
+        .await?
+        .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?
+        .state;
+    sm.resume_session_from_storage(&id).await?;
+    Ok(previous)
 }
 
 pub(crate) async fn handle_session_resume_from_storage(

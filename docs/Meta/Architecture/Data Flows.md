@@ -106,7 +106,12 @@ sequenceDiagram
    floor on every load. `enforce_plugin_session_start` in
    `crates/crucible-daemon/src/rpc/dispatch.rs` runs the same
    `SessionLifecycle::enforce_session_start` gate on a `session.resume` reply
-   as it does on `session.create`: only the id extraction differs. A message
+   as it does on `session.create`: only the id extraction differs.
+   `session.resume` also resumes a session that this daemon does not hold,
+   for example one that an earlier daemon recorded: `handle_session_resume`
+   in `crates/crucible-daemon/src/server/session/lifecycle.rs` falls back to
+   `resume_session_from_storage`. `cru acp`'s `session/load` needs this after
+   a daemon restart. A message
    sent to an ended or paused session revives it and runs the same gate
    without a `session.resume` call at all — see step 3 of the next flow.
 

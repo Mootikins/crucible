@@ -192,13 +192,24 @@ fn session_load_replays_the_recorded_transcript() {
         id
     });
 
-    // The recorded turn, byte-shaped like `persist_event` writes it.
-    let session_dir = temp
-        .path()
-        .join("home")
-        .join("sessions")
-        .join(&daemon_session);
+    // A session that an earlier daemon recorded: the paused session's
+    // record under a new id, with one recorded turn. This daemon never held
+    // it, so it folds the log on load. A session that this daemon holds
+    // answers its live fold, and a log written behind its back is not in it.
+    let sessions = temp.path().join("home").join("sessions");
+    let created_session = daemon_session;
+    let daemon_session = format!("{created_session}-rec");
+    let session_dir = sessions.join(&daemon_session);
     std::fs::create_dir_all(&session_dir).expect("session dir");
+    let meta = std::fs::read_to_string(sessions.join(&created_session).join("meta.json"))
+        .expect("the paused session's record");
+    std::fs::write(
+        session_dir.join("meta.json"),
+        meta.replace(&created_session, &daemon_session),
+    )
+    .expect("write record");
+
+    // The recorded turn, byte-shaped like `persist_event` writes it.
     let envelope = |seq: u64, event: &str, data: Value| {
         json!({
             "type": "event",

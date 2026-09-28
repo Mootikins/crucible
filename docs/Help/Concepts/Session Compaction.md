@@ -21,7 +21,7 @@ itself does not.
 > summarizing or trimming happens and nothing transitions the session back out
 > on its own. Chatting still works — the send path has no lifecycle-state
 > guard — but the state is stuck: `session.pause` and a second `session.compact`
-> both require state `active`, `session.resume` requires `paused`, so all three
+> both require state `active`, `session.resume` requires `paused` for a session in memory, so all three
 > fail with an invalid-state error. Two exits exist: `session.end` (accepts any
 > non-ended state) and `session.resume_from_storage`, which revives a session
 > in any persisted state — including `compacting` — back to `active`. The
