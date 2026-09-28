@@ -1,47 +1,8 @@
 //! Named-kiln operations backed by the daemon's Bases and review owners.
 use super::*;
+use crucible_core::bases::BaseOperation;
 use strum::IntoEnumIterator;
 
-/// Every Bases operation. The daemon's RPC methods and the `cru.kiln`
-/// functions both dispatch through this one set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
-pub enum BaseOperation {
-    List,
-    Views,
-    Query,
-    SetProperty,
-    CreateEntry,
-    ReorderGroups,
-    EnsureBase,
-    PendingWrites,
-}
-impl BaseOperation {
-    /// The `cru.kiln` function name. `list` and `views` carry a `base`
-    /// qualifier because `cru.kiln.list` already lists notes.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::List => "list_bases",
-            Self::Views => "base_views",
-            Self::Query => "query",
-            Self::SetProperty => "set_property",
-            Self::CreateEntry => "create_entry",
-            Self::ReorderGroups => "reorder_groups",
-            Self::EnsureBase => "ensure_base",
-            Self::PendingWrites => "pending_writes",
-        }
-    }
-    /// Whether the operation changes files, and so needs a session.
-    pub const fn writes(self) -> bool {
-        match self {
-            Self::List | Self::Views | Self::Query | Self::PendingWrites => false,
-            Self::SetProperty | Self::CreateEntry | Self::ReorderGroups | Self::EnsureBase => true,
-        }
-    }
-    /// The `cru.kiln` names this module binds.
-    pub fn names() -> impl Iterator<Item = &'static str> {
-        Self::iter().map(Self::name)
-    }
-}
 pub type BasesResolver = Arc<
     dyn Fn(
             BaseOperation,
@@ -113,6 +74,40 @@ pub fn register(lua: &Lua, resolver: Option<BasesResolver>) -> Result<(), LuaErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each `cru.kiln` Bases function gives its own operation to the
+    /// resolver, with the kiln name and the options of the Lua call.
+    #[tokio::test]
+    async fn each_kiln_function_sends_its_operation_to_the_resolver() {
+        let lua = Lua::new();
+        super::super::register_vault_module(&lua).unwrap();
+        let resolver: BasesResolver = Arc::new(|operation, session, kiln, options| {
+            Box::pin(async move {
+                Ok(serde_json::json!({
+                    "operation": operation.name(),
+                    "session": session,
+                    "kiln": kiln,
+                    "options": options,
+                }))
+            })
+        });
+        register(&lua, Some(resolver)).unwrap();
+        for operation in BaseOperation::iter() {
+            let name = operation.name();
+            let script =
+                format!("return cru.kiln.{name}('notes', {{ session = 's1', key = 'k' }})");
+            let answer: serde_json::Value = lua
+                .from_value(lua.load(&script).eval_async::<Value>().await.unwrap())
+                .unwrap();
+            assert_eq!(
+                answer["operation"], name,
+                "cru.kiln.{name} sent another operation"
+            );
+            assert_eq!(answer["session"], "s1");
+            assert_eq!(answer["kiln"], "notes");
+            assert_eq!(answer["options"]["key"], "k");
+        }
+    }
 
     #[test]
     fn a_call_inside_a_session_cannot_name_another_session() {

@@ -5,10 +5,12 @@
 //! compile loads with its error, and each cell that uses it shows that error,
 //! as Obsidian does.
 mod expression;
+mod operation;
 pub use expression::{
     js_number_text, BaseValue, BinaryOp, DurationValue, DurationWire, Expr, Function, Namespace,
     UnaryOp, MAX_DEPTH, MAX_NODES,
 };
+pub use operation::BaseOperation;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

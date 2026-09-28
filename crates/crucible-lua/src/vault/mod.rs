@@ -241,7 +241,7 @@ fn kiln_path(
 fn host_bound() -> impl Iterator<Item = &'static str> {
     ["blocks", "note", "notes", "links", "search", "path"]
         .into_iter()
-        .chain(bases::BaseOperation::names())
+        .chain(crucible_core::bases::BaseOperation::names())
 }
 
 /// Register the named reads — `cru.kiln.blocks`, `note`, `notes`, `links`

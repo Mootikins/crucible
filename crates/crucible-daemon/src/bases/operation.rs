@@ -2,7 +2,7 @@
 //! and the dispatcher that the RPC methods and `cru.kiln` both call.
 use super::disposition::Writer;
 use super::*;
-pub use crucible_lua::bases_api::BaseOperation;
+pub use crucible_core::bases::BaseOperation;
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 
