@@ -1,71 +1,32 @@
 //! Shared test fixture for rpc_integration tests.
+//!
+//! A thin wrapper over the shared in-process daemon harness
+//! (`crucible_daemon::test_support::InProcessDaemon`), keeping the public
+//! `socket_path` field this suite's submodules read directly.
 
+use crate::common::{InProcessDaemon, InProcessDaemonBuilder};
 use anyhow::Result;
-use crucible_daemon::Server;
 use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
 /// Test fixture that starts a real daemon server for integration testing
 pub struct TestServer {
-    _temp_dir: TempDir,
+    inner: InProcessDaemon,
     pub socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
 impl TestServer {
     pub async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval — under load
-        // the socket may not accept before a fixed timer elapses.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if tokio::net::UnixStream::connect(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "server did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
+        // One registered kiln named `kiln`, directly under the data home
+        // (not under a `kilns/` subdirectory): `bases.rs` derives the kiln's
+        // path from the socket's parent rather than through an accessor.
+        let builder = InProcessDaemonBuilder::new()?;
+        let kiln = builder.data_home().join("kiln");
+        let inner = builder.with_kiln_at("kiln", kiln).start().await?;
+        let socket_path = inner.socket_path().to_path_buf();
+        Ok(Self { inner, socket_path })
     }
 
     pub async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        self.inner.shutdown().await;
     }
 }

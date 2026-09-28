@@ -3,86 +3,28 @@
 //! Tests set/get round-trips for precognition, and
 //! session.configure_agent / session.list_models.
 
-use anyhow::Result;
+mod common;
+
 use crucible_core::config::BackendType;
 use crucible_core::session::SessionAgent;
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-/// In-process test server (mirrors rpc_integration.rs pattern)
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is this suite's intermittent-failure source.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+/// The shared in-process test daemon, with one registered kiln named `kiln`.
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// Helper: create a session and configure an agent with known defaults.
 /// Returns (session_id, client).
-async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient) {
+async fn setup_session_with_agent(server: &common::InProcessDaemon) -> (String, DaemonClient) {
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -143,7 +85,7 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
 
 #[tokio::test]
 async fn test_precognition_round_trip() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let (session_id, client) = setup_session_with_agent(&server).await;
 
     client
@@ -180,10 +122,10 @@ async fn test_precognition_round_trip() {
 
 #[tokio::test]
 async fn test_configure_agent_sets_agent() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -258,7 +200,7 @@ async fn test_configure_agent_sets_agent() {
 
 #[tokio::test]
 async fn test_list_models_returns_list() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let (session_id, client) = setup_session_with_agent(&server).await;
 
     // list_models should succeed and return a list (may be empty without real LLM)
@@ -283,7 +225,7 @@ async fn test_list_models_returns_list() {
 
 #[tokio::test]
 async fn test_precognition_default_value() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let (session_id, client) = setup_session_with_agent(&server).await;
 
     // Agent was configured with precognition_enabled: true
@@ -311,7 +253,7 @@ async fn test_precognition_default_value() {
 /// gate's CONFIG_METHODS table must round-trip a non-default value below.
 #[tokio::test]
 async fn all_config_knobs_round_trip_over_the_wire() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let (sid, client) = setup_session_with_agent(&server).await;
     let mut failures: Vec<String> = Vec::new();
 
@@ -366,9 +308,9 @@ async fn all_config_knobs_round_trip_over_the_wire() {
 
 #[tokio::test]
 async fn test_config_get_on_nonexistent_session_fails() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 

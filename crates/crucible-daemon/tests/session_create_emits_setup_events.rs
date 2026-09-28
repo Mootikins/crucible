@@ -13,84 +13,22 @@
 //! not missed. The integration test uses an in-process test server following
 //! the same pattern as `rpc_session_e2e.rs`.
 
-use anyhow::Result;
+mod common;
+
 use crucible_daemon::rpc_client::SessionCreateParams;
-use crucible_daemon::{DaemonClient, Server, SessionEvent};
+use crucible_daemon::{DaemonClient, SessionEvent};
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::time::Duration;
-use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-/// Install the rustls CryptoProvider before any TLS usage (provider listing).
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is the source of this suite's intermittent failures.
-        // 60s, not 5s: this is a deadlock detector, not synchronisation — the
-        // loop leaves on the first successful connect, polling every 10ms, so a
-        // generous ceiling costs a fast box nothing. 5s failed in the first full
-        // `just ci` to include the gated tier (8,156 tests contending, cold
-        // binaries) while passing in 1s alone, which is the load this comment
-        // above already anticipated.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 60s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_ready_timeout(std::time::Duration::from_secs(60))
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// Collect setup events for `session_id` from `event_rx`, returning early
@@ -152,13 +90,13 @@ async fn collect_setup_events(
 /// absence.
 #[tokio::test]
 async fn session_create_emits_setup_events_for_internal_agent() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
     std::fs::write(kiln_dir.path().join("note.md"), "# hello\n").expect("write note");
 
     // Subscribe BEFORE creating the session — the setup task fires the
     // moment `session.create` returns and we must not miss events.
-    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(server.socket_path())
         .await
         .expect("connect_with_events failed");
 
@@ -257,10 +195,10 @@ async fn session_create_emits_setup_events_for_internal_agent() {
 /// `context_limit_resolved` (those are internal-agent only).
 #[tokio::test]
 async fn session_create_omits_llm_events_for_acp_agent() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(server.socket_path())
         .await
         .expect("connect_with_events failed");
 

@@ -3,6 +3,8 @@
 //! These tests verify that the client library correctly communicates
 //! with a real daemon process.
 
+mod common;
+
 #[path = "rpc_integration/server.rs"]
 mod server;
 

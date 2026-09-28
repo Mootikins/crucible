@@ -667,3 +667,236 @@ pub fn scratch_snapshot_root() -> std::path::PathBuf {
         .path()
         .join("review-snapshots")
 }
+
+/// A real [`crate::Server`] bound in process, run on a spawned task, over an
+/// isolated data root.
+///
+/// Every daemon integration test used to carry its own copy of this: a temp
+/// dir, a socket path, one of the `bind_with_data_home*` constructors, a
+/// spawned `server.run()`, a readiness poll and a shutdown. The copies drifted
+/// (a 5s deadline here, a 60s one there; `assert!` in one, `bail!` in
+/// another) without any of the difference being a deliberate test decision.
+/// [`InProcessDaemonBuilder`] is the one place that setup lives now; a test
+/// asks for the kilns and the socket kind it needs and gets the daemon back.
+pub struct InProcessDaemon {
+    // `None` when the caller supplied its own `data_home` (and therefore owns
+    // whatever temp directory backs it) rather than asking the builder for a
+    // fresh one.
+    _temp_dir: Option<tempfile::TempDir>,
+    // Held only to keep `XDG_RUNTIME_DIR` set for the daemon's lifetime; nothing
+    // reads it back.
+    _env_guard: Option<crucible_core::test_support::EnvVarGuard>,
+    data_home: std::path::PathBuf,
+    socket_path: std::path::PathBuf,
+    kilns: Vec<(String, std::path::PathBuf)>,
+    server_handle: tokio::task::JoinHandle<()>,
+    shutdown_handle: tokio::sync::broadcast::Sender<()>,
+}
+
+impl InProcessDaemon {
+    /// Start with no kilns and a fresh temp data home. Most callers want
+    /// [`InProcessDaemonBuilder`] instead, to register a kiln or two first.
+    pub async fn start() -> anyhow::Result<Self> {
+        InProcessDaemonBuilder::new()?.start().await
+    }
+
+    pub fn socket_path(&self) -> &std::path::Path {
+        &self.socket_path
+    }
+
+    pub fn data_home(&self) -> &std::path::Path {
+        &self.data_home
+    }
+
+    /// Where a session's own files land under this daemon's data home —
+    /// never inside a kiln, which is the thing more than one fixture asserts.
+    pub fn sessions_root(&self) -> std::path::PathBuf {
+        self.data_home.join("sessions")
+    }
+
+    /// The directory registered under `name`. Panics if the builder never
+    /// registered that name — a fixture asking for an unregistered kiln has a
+    /// bug, not a missing-value case to handle.
+    pub fn kiln_dir(&self, name: &str) -> std::path::PathBuf {
+        self.kilns
+            .iter()
+            .find(|(registered, _)| registered == name)
+            .map(|(_, path)| path.clone())
+            .unwrap_or_else(|| panic!("no kiln named {name:?} was registered on this daemon"))
+    }
+
+    /// Connect a [`crate::DaemonClient`] to this daemon over its socket.
+    pub async fn connect(&self) -> crate::DaemonClient {
+        crate::DaemonClient::connect_to(&self.socket_path)
+            .await
+            .expect("connect to the in-process test daemon")
+    }
+
+    /// Send the shutdown signal and wait for `server.run()` to actually
+    /// return, rather than a fixed sleep guessing how long that takes.
+    pub async fn shutdown(self) {
+        let _ = self.shutdown_handle.send(());
+        let _ = tokio::time::timeout(Duration::from_secs(5), self.server_handle).await;
+    }
+}
+
+/// Builds an [`InProcessDaemon`]. See that type for what it replaces.
+pub struct InProcessDaemonBuilder {
+    temp_dir: Option<tempfile::TempDir>,
+    data_home: std::path::PathBuf,
+    // name, path, lazy
+    kilns: Vec<(String, std::path::PathBuf, bool)>,
+    ready_timeout: Duration,
+    xdg_runtime_socket: bool,
+}
+
+impl InProcessDaemonBuilder {
+    /// A fresh temp directory as the data home.
+    pub fn new() -> anyhow::Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let data_home = temp_dir.path().to_path_buf();
+        Ok(Self {
+            temp_dir: Some(temp_dir),
+            data_home,
+            kilns: Vec::new(),
+            ready_timeout: Duration::from_secs(5),
+            xdg_runtime_socket: false,
+        })
+    }
+
+    /// Bind over a `data_home` the caller already owns, instead of a fresh
+    /// temp directory — for a fixture that seeds files (an `llm.json`, a
+    /// settings file) into the data home before the daemon reads it, and
+    /// therefore has to hold the `TempDir` itself.
+    pub fn at_data_home(data_home: std::path::PathBuf) -> Self {
+        Self {
+            temp_dir: None,
+            data_home,
+            kilns: Vec::new(),
+            ready_timeout: Duration::from_secs(5),
+            xdg_runtime_socket: false,
+        }
+    }
+
+    pub fn data_home(&self) -> &std::path::Path {
+        &self.data_home
+    }
+
+    /// Register an eager kiln named `name`, in a directory this builder
+    /// creates under the data home.
+    pub fn with_kiln(self, name: &str) -> Self {
+        let path = self.data_home.join("kilns").join(name);
+        self.with_kiln_at(name, path)
+    }
+
+    /// Register an eager kiln named `name` at a caller-chosen path, creating
+    /// the directory if it does not already exist. The path may lie outside
+    /// the data home, and usually should: the registration floor refuses a
+    /// kiln inside the data root it is protecting.
+    pub fn with_kiln_at(mut self, name: &str, path: impl Into<std::path::PathBuf>) -> Self {
+        let path = path.into();
+        std::fs::create_dir_all(&path).expect("create the kiln directory for a test fixture");
+        self.kilns.push((name.to_string(), path, false));
+        self
+    }
+
+    /// As [`Self::with_kiln_at`], registered LAZY: boot does not open it, so
+    /// a fixture proving "nothing opened this kiln" has one to point at that
+    /// isn't opened by the daemon's own startup.
+    pub fn with_lazy_kiln_at(mut self, name: &str, path: impl Into<std::path::PathBuf>) -> Self {
+        let path = path.into();
+        std::fs::create_dir_all(&path).expect("create the kiln directory for a test fixture");
+        self.kilns.push((name.to_string(), path, true));
+        self
+    }
+
+    /// How long to poll for the socket to accept connections before giving
+    /// up. Most fixtures keep the 5s default; a suite that runs under heavy
+    /// contention (many daemons at once, cold binaries) may need longer.
+    pub fn with_ready_timeout(mut self, timeout: Duration) -> Self {
+        self.ready_timeout = timeout;
+        self
+    }
+
+    /// Resolve the socket path through `XDG_RUNTIME_DIR` and
+    /// [`crate::rpc_client::lifecycle::default_socket_path`], the way a real
+    /// `cru` client resolves it, instead of a path this builder picks
+    /// itself. For a fixture proving that a CLI-side helper finds the daemon
+    /// the same way the daemon bound it.
+    pub fn using_xdg_runtime_socket(mut self) -> Self {
+        self.xdg_runtime_socket = true;
+        self
+    }
+
+    pub async fn start(self) -> anyhow::Result<InProcessDaemon> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let env_guard = if self.xdg_runtime_socket {
+            Some(crucible_core::test_support::EnvVarGuard::set(
+                "XDG_RUNTIME_DIR",
+                self.data_home
+                    .to_str()
+                    .expect("a UTF-8 data home path")
+                    .to_string(),
+            ))
+        } else {
+            None
+        };
+
+        let socket_path = if self.xdg_runtime_socket {
+            crate::rpc_client::lifecycle::default_socket_path()
+        } else {
+            self.data_home.join("daemon.sock")
+        };
+
+        let entries: Vec<(&str, &std::path::Path, bool)> = self
+            .kilns
+            .iter()
+            .map(|(name, path, lazy)| (name.as_str(), path.as_path(), *lazy))
+            .collect();
+
+        let server = crate::Server::bind_with_data_home_and_kiln_entries(
+            &socket_path,
+            self.data_home.clone(),
+            &entries,
+        )
+        .await?;
+        let shutdown_handle = server.shutdown_handle();
+
+        let server_handle = tokio::spawn(async move {
+            let _ = server.run().await;
+        });
+
+        // Poll for readiness rather than sleeping a fixed interval. Under a
+        // loaded box the socket may not be accepting when a fixed timer
+        // elapses, which is the standard intermittent-failure source these
+        // fixtures used to hit independently.
+        let deadline = tokio::time::Instant::now() + self.ready_timeout;
+        loop {
+            if crate::DaemonClient::connect_to(&socket_path).await.is_ok() {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                anyhow::bail!(
+                    "daemon did not start accepting connections within {:?}",
+                    self.ready_timeout
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        Ok(InProcessDaemon {
+            _temp_dir: self.temp_dir,
+            _env_guard: env_guard,
+            data_home: self.data_home,
+            socket_path,
+            kilns: self
+                .kilns
+                .into_iter()
+                .map(|(name, path, _)| (name, path))
+                .collect(),
+            server_handle,
+            shutdown_handle,
+        })
+    }
+}

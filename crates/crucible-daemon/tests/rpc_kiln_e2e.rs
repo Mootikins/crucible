@@ -3,7 +3,8 @@
 //! Covers the full round-trip: client → daemon → storage → response
 //! for kiln.open, kiln.list, kiln.close, list_notes, and get_note_by_name.
 
-use anyhow::Result;
+mod common;
+
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::NoteRecord;
 use crucible_daemon::storage::sqlite::{create_sqlite_client, SqliteConfig};
@@ -12,74 +13,15 @@ use crucible_daemon::Server;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-/// Install the rustls CryptoProvider before any TLS usage. rustls 0.23 refuses
-/// to auto-pick a provider when the dependency graph offers more than one, so
-/// the in-process daemon panics on its first TLS handshake unless we install
-/// one explicitly (idempotent; ignored if already set).
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-/// In-process test server (mirrors TestServer from rpc_integration.rs).
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is this suite's intermittent-failure source.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+/// The shared in-process test daemon, with one registered kiln named `kiln`.
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// Create a kiln directory with pre-seeded notes in the SQLite database.
@@ -151,10 +93,10 @@ async fn open_kiln_paths(client: &DaemonClient, expected: usize) -> Vec<String> 
 
 #[tokio::test]
 async fn test_kiln_open_with_temp_dir() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -173,10 +115,10 @@ async fn test_kiln_open_with_temp_dir() {
 
 #[tokio::test]
 async fn test_kiln_list_shows_opened_kiln() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -211,10 +153,10 @@ async fn test_kiln_list_shows_opened_kiln() {
 
 #[tokio::test]
 async fn test_kiln_close_removes_from_list() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -268,10 +210,10 @@ async fn test_kiln_close_removes_from_list() {
 
 #[tokio::test]
 async fn test_list_notes_returns_seeded_notes() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = create_seeded_kiln().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -307,10 +249,10 @@ async fn test_list_notes_returns_seeded_notes() {
 
 #[tokio::test]
 async fn test_get_note_by_name_returns_matching_note() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = create_seeded_kiln().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -351,10 +293,10 @@ async fn test_get_note_by_name_returns_matching_note() {
 
 #[tokio::test]
 async fn test_kiln_lifecycle_open_query_close() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = create_seeded_kiln().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -431,10 +373,10 @@ async fn test_kiln_lifecycle_open_query_close() {
 /// are the same `Arc` today; nothing but this test says they must stay so.
 #[tokio::test]
 async fn a_registered_name_is_usable_without_restarting_the_daemon() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let late = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -495,9 +437,11 @@ async fn a_registered_name_is_usable_without_restarting_the_daemon() {
 /// data home reads `kilns.json` at startup and must already know the name.
 #[tokio::test]
 async fn a_registered_name_survives_a_daemon_restart() {
+    // This test binds its own two servers directly, rather than through
+    // `start_server`, so it installs the crypto provider itself too.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let data_home = tempfile::tempdir().expect("Failed to create data home");
     let late = tempfile::tempdir().expect("Failed to create kiln dir");
-    ensure_crypto_provider();
 
     for round in 0..2 {
         let socket_path = data_home.path().join(format!("daemon-{round}.sock"));
@@ -557,11 +501,11 @@ async fn a_registered_name_survives_a_daemon_restart() {
 /// must not open a different corpus after a second registration.
 #[tokio::test]
 async fn registering_a_held_name_over_another_directory_is_refused() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let first = tempfile::tempdir().expect("Failed to create kiln dir");
     let second = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 

@@ -4,77 +4,19 @@
 //! session.resume, session.end, session.delete, session.archive,
 //! session.unarchive — the full session lifecycle.
 
-use anyhow::Result;
+mod common;
+
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::PathBuf;
 use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-/// In-process test server (same pattern as rpc_integration.rs).
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Wait for server to be ready
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is the source of this suite's intermittent failures.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+/// The shared in-process test daemon, with one registered kiln named `kiln`.
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// Helper: create a session and return its ID.
@@ -105,10 +47,10 @@ async fn create_session(client: &DaemonClient, _kiln: &std::path::Path) -> Strin
 /// session.create returns a non-empty session ID.
 #[tokio::test]
 async fn test_session_create_returns_id() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -136,10 +78,10 @@ async fn test_session_create_returns_id() {
 /// session.list includes a previously created session.
 #[tokio::test]
 async fn test_session_list_includes_created() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -171,10 +113,10 @@ async fn test_session_list_includes_created() {
 /// session.get returns details matching the created session.
 #[tokio::test]
 async fn test_session_get_returns_details() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -203,10 +145,10 @@ async fn test_session_get_returns_details() {
 /// session.pause transitions the session state to paused.
 #[tokio::test]
 async fn test_session_pause_changes_state() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -239,10 +181,10 @@ async fn test_session_pause_changes_state() {
 /// session.resume transitions a paused session back to active.
 #[tokio::test]
 async fn test_session_resume_changes_state() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -287,10 +229,10 @@ async fn test_session_resume_changes_state() {
 /// session.end removes the session from the active list.
 #[tokio::test]
 async fn test_session_end_removes_from_list() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -362,10 +304,10 @@ async fn test_session_end_removes_from_list() {
 /// Full lifecycle: create → get → pause → resume → end.
 #[tokio::test]
 async fn test_session_full_lifecycle() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -436,10 +378,10 @@ async fn test_session_full_lifecycle() {
 /// session.delete removes the session and confirms deletion.
 #[tokio::test]
 async fn test_session_delete_removes_session() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -489,9 +431,9 @@ async fn test_session_delete_removes_session() {
 /// session.delete with a nonexistent session ID returns an error.
 #[tokio::test]
 async fn test_session_delete_nonexistent_returns_error() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -519,10 +461,10 @@ async fn test_session_delete_nonexistent_returns_error() {
 /// session.archive marks a session as archived.
 #[tokio::test]
 async fn test_session_archive_marks_archived() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -546,10 +488,10 @@ async fn test_session_archive_marks_archived() {
 /// session.unarchive restores an archived session.
 #[tokio::test]
 async fn test_session_unarchive_restores_session() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -584,10 +526,10 @@ async fn test_session_unarchive_restores_session() {
 /// session.list excludes archived sessions by default.
 #[tokio::test]
 async fn test_session_list_excludes_archived_by_default() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -630,10 +572,10 @@ async fn test_session_list_excludes_archived_by_default() {
 /// session.list includes archived sessions when include_archived=true.
 #[tokio::test]
 async fn test_session_list_includes_archived_when_requested() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 

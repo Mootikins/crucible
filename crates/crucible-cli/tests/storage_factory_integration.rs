@@ -5,93 +5,24 @@
 //!
 //! These tests modify `XDG_RUNTIME_DIR` and use `#[serial]` to prevent conflicts.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use crucible_cli::config::CliAppConfig;
 use crucible_cli::factories::get_storage;
 use crucible_core::test_support::EnvVarGuard;
-use crucible_daemon::rpc_client::lifecycle;
-use crucible_daemon::Server;
+use crucible_daemon::test_support::{InProcessDaemon, InProcessDaemonBuilder};
 use serial_test::serial;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
-use tempfile::TempDir;
-use tokio::net::UnixStream;
-use tokio::task::JoinHandle;
-use tokio::time::Instant;
 
-const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(2);
-const DAEMON_READY_POLL: Duration = Duration::from_millis(10);
-
-/// Poll until the daemon socket accepts connections, or timeout.
-async fn wait_for_daemon_ready(socket_path: &Path) -> Result<()> {
-    let deadline = Instant::now() + DAEMON_READY_TIMEOUT;
-    loop {
-        if UnixStream::connect(socket_path).await.is_ok() {
-            return Ok(());
-        }
-        if Instant::now() > deadline {
-            bail!(
-                "daemon at {} did not become connectable within {:?}",
-                socket_path.display(),
-                DAEMON_READY_TIMEOUT
-            );
-        }
-        tokio::time::sleep(DAEMON_READY_POLL).await;
-    }
-}
-
-/// Test fixture that starts a real daemon server for integration testing.
-///
-/// Important: This sets XDG_RUNTIME_DIR to ensure `lifecycle::default_socket_path()`
-/// returns the correct path. This must happen before calling `get_storage`.
-struct TestServer {
-    _env_guard: EnvVarGuard,
-    _temp_dir: TempDir,
-    server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-impl TestServer {
-    /// Start a daemon at the path that `lifecycle::default_socket_path()` will return.
-    ///
-    /// This works by setting XDG_RUNTIME_DIR first, then binding the server at that path.
-    async fn start() -> Result<Self> {
-        let temp_dir = tempfile::tempdir()?;
-
-        // Set XDG_RUNTIME_DIR BEFORE computing socket path
-        // This ensures lifecycle::default_socket_path() returns the right path
-        let _env_guard = EnvVarGuard::set(
-            "XDG_RUNTIME_DIR",
-            temp_dir.path().to_str().unwrap().to_string(),
-        );
-
-        // Now get the path that get_storage will look for
-        let socket_path = lifecycle::default_socket_path();
-
-        // Inject an isolated data root (no CRUCIBLE_HOME env) so the in-process
-        // daemon never reads the developer's real ~/.crucible registry.
-        let server =
-            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        wait_for_daemon_ready(&socket_path).await?;
-
-        Ok(Self {
-            _env_guard,
-            _temp_dir: temp_dir,
-            server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.server_handle).await;
-    }
+/// Start a daemon at the path `lifecycle::default_socket_path()` will
+/// return, by setting `XDG_RUNTIME_DIR` before binding — the same path
+/// `get_storage` resolves to when it looks for a running daemon.
+async fn start_server() -> Result<InProcessDaemon> {
+    InProcessDaemonBuilder::new()?
+        .using_xdg_runtime_socket()
+        .with_ready_timeout(Duration::from_secs(2))
+        .start()
+        .await
 }
 
 /// Create a test config (daemon mode is always used)
@@ -110,7 +41,7 @@ fn create_daemon_config(kiln_path: PathBuf) -> CliAppConfig {
 #[tokio::test]
 #[serial]
 async fn test_get_storage_connects_to_daemon() {
-    let server = TestServer::start().await.expect("Failed to start daemon");
+    let server = start_server().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let config = create_daemon_config(kiln_dir.path().to_path_buf());
@@ -133,7 +64,7 @@ async fn test_get_storage_connects_to_daemon() {
 #[tokio::test]
 #[serial]
 async fn test_storage_handle_query_through_daemon() {
-    let server = TestServer::start().await.expect("Failed to start daemon");
+    let server = start_server().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let config = create_daemon_config(kiln_dir.path().to_path_buf());
@@ -157,7 +88,7 @@ async fn test_storage_handle_query_through_daemon() {
 #[tokio::test]
 #[serial]
 async fn test_storage_handle_mode_detection() {
-    let server = TestServer::start().await.expect("Failed to start daemon");
+    let server = start_server().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
     let config = create_daemon_config(kiln_dir.path().to_path_buf());
     let storage = get_storage(&config).await.expect("get_storage failed");
@@ -209,7 +140,7 @@ async fn test_get_storage_fails_when_no_daemon() {
 #[tokio::test]
 #[serial]
 async fn test_multiple_storage_handles_same_daemon() {
-    let server = TestServer::start().await.expect("Failed to start daemon");
+    let server = start_server().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let config = create_daemon_config(kiln_dir.path().to_path_buf());
@@ -237,7 +168,7 @@ async fn test_multiple_storage_handles_same_daemon() {
 #[tokio::test]
 #[serial]
 async fn test_concurrent_queries_through_daemon() {
-    let server = TestServer::start().await.expect("Failed to start daemon");
+    let server = start_server().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let config = create_daemon_config(kiln_dir.path().to_path_buf());

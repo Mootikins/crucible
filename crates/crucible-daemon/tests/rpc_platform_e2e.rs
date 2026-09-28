@@ -3,76 +3,18 @@
 //! Tests lua.*, plugin.*, project.*, storage.*, mcp.*, skills.*, and agents.*
 //! RPC methods through a real daemon server with DaemonClient.
 
-use anyhow::Result;
+mod common;
+
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
 /// In-process test server (same pattern as rpc_integration.rs)
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is this suite's intermittent-failure source.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 // =============================================================================
@@ -82,9 +24,9 @@ impl TestServer {
 /// Test lua.init_session + lua.shutdown_session lifecycle
 #[tokio::test]
 async fn test_lua_session_lifecycle() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -157,9 +99,9 @@ async fn test_lua_session_lifecycle() {
 /// Test plugin.list returns a list (may be empty or populated)
 #[tokio::test]
 async fn test_plugin_list_returns_list() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -192,9 +134,9 @@ async fn test_plugin_list_returns_list() {
 /// Test project.list returns a list (empty in test environment)
 #[tokio::test]
 async fn test_project_list_returns_list() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -220,9 +162,9 @@ async fn test_project_list_returns_list() {
 /// Test storage.verify returns expected response shape
 #[tokio::test]
 async fn test_storage_verify_returns_status() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -253,9 +195,9 @@ async fn test_storage_verify_returns_status() {
 /// Test mcp.status returns server status
 #[tokio::test]
 async fn test_mcp_status_returns_status() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -282,9 +224,9 @@ async fn test_mcp_status_returns_status() {
 /// Test skills.list returns a skills array
 #[tokio::test]
 async fn test_skills_list_returns_list() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -321,9 +263,9 @@ async fn test_skills_list_returns_list() {
 /// Test agents.list_profiles returns a profiles array
 #[tokio::test]
 async fn test_agents_list_profiles_returns_list() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -362,9 +304,9 @@ async fn test_agents_list_profiles_returns_list() {
 /// Test agents.resolve_profile for a known built-in agent
 #[tokio::test]
 async fn test_agents_resolve_profile_builtin() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -411,9 +353,9 @@ async fn test_agents_resolve_profile_builtin() {
 /// Test storage.cleanup returns expected response
 #[tokio::test]
 async fn test_storage_cleanup_returns_status() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 

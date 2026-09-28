@@ -23,83 +23,22 @@
 //! `crucible_home()` fallback bug, which was fixed and the attributes removed
 //! without anyone updating the prose.
 
-use anyhow::Result;
+mod common;
+
+use common::{InProcessDaemon, InProcessDaemonBuilder};
 use crucible_daemon::rpc_client::SessionCreateParams;
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-struct TestServer {
-    _temp_dir: TempDir,
-    /// The isolated data root injected into the daemon (the tempdir path).
-    /// A kiln-less `session.create` must NOT resolve it as a kiln — it is the
-    /// parent of the sessions root — but it is still where the per-session
-    /// scratch workspace lands.
-    data_home: PathBuf,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let data_home = temp_dir.path().to_path_buf();
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln, so the scope mutations below have a NAME to
-        // attach. Its directory is outside the data root the registration
-        // floor refuses.
-        let extra = temp_dir.path().join("extra-kiln");
-        std::fs::create_dir_all(&extra)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            data_home.clone(),
-            &[("extra-kiln", &extra)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is this suite's intermittent-failure source.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            data_home,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+/// One registered kiln, so the scope mutations below have a NAME to attach.
+/// Its directory is outside the data root the registration floor refuses.
+async fn start_server() -> InProcessDaemon {
+    let builder = InProcessDaemonBuilder::new().expect("a test daemon builder");
+    let extra = builder.data_home().join("extra-kiln");
+    builder
+        .with_kiln_at("extra-kiln", extra)
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// Create a session with an empty kiln set — the tools-only path.
@@ -120,8 +59,8 @@ async fn create_kilnless_session(client: &DaemonClient) -> serde_json::Value {
 
 #[tokio::test]
 async fn kilnless_create_succeeds_and_returns_active_session() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -150,8 +89,8 @@ async fn kilnless_create_succeeds_and_returns_active_session() {
 
 #[tokio::test]
 async fn kilnless_session_persists_an_empty_kiln_set() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -166,7 +105,7 @@ async fn kilnless_session_persists_an_empty_kiln_set() {
         session["kilns"].as_array().map(Vec::as_slice),
         Some(&[][..]),
         "a kiln-less session must persist an empty kiln set, not {}",
-        server.data_home.display()
+        server.data_home().display()
     );
 
     server.shutdown().await;
@@ -174,8 +113,8 @@ async fn kilnless_session_persists_an_empty_kiln_set() {
 
 #[tokio::test]
 async fn kilnless_no_workspace_gets_session_scratch_dir() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 
@@ -189,7 +128,7 @@ async fn kilnless_no_workspace_gets_session_scratch_dir() {
     assert!(session["kilns"].as_array().unwrap().is_empty());
     let workspace = session["workspace"].as_str().expect("workspace present");
 
-    let expected = server.data_home.join("workspaces").join(&session_id);
+    let expected = server.data_home().join("workspaces").join(&session_id);
     assert_eq!(
         workspace,
         expected.to_str().unwrap(),
@@ -205,10 +144,10 @@ async fn kilnless_no_workspace_gets_session_scratch_dir() {
 
 #[tokio::test]
 async fn kilnless_session_composes_with_scope_mutations() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let extra_kiln = crucible_core::config::KilnName::parse("extra-kiln").unwrap();
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 

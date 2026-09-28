@@ -5,75 +5,19 @@
 //! ripgrep walk the agent tools use. That path already worked the whole time
 //! `cru search` was broken, so a test there passes and proves nothing.
 
-use anyhow::Result;
+mod common;
+
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::timeout(Duration::from_secs(5), self._server_handle)
-            .await
-            .unwrap()
-            .unwrap();
-    }
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// Wait until the note is in the metadata index, so a later empty text search
@@ -98,9 +42,11 @@ async fn wait_until_indexed(client: &DaemonClient, kiln: &Path, name: &str) {
 
 #[tokio::test]
 async fn text_search_preserves_body_title_file_kind_and_query_semantics() {
-    let server = TestServer::start().await.unwrap();
+    let server = start_server().await;
     let kiln = tempfile::tempdir().unwrap();
-    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    let client = DaemonClient::connect_to(server.socket_path())
+        .await
+        .unwrap();
     client.kiln_open(kiln.path()).await.unwrap();
     for (name, content) in [
         (

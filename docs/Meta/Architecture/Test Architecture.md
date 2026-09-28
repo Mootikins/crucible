@@ -49,7 +49,7 @@ This subsystem must not own:
   actual crossing" when behavior crosses a process or language boundary — the
   rule itself belongs to the owning subsystem's page.
 - A second write pipeline or a second config store. Every harness on this
-  page (`TestDaemon`, `TestServer`, `TuiTestSession`) drives the real
+  page (`TestDaemon`, `InProcessDaemon`, `TuiTestSession`) drives the real
   `crucible-daemon::Server`, the real `CliAppConfig`/Lua config-store, or a
   real `cru` binary; none constructs its own parallel agent, storage, or
   config path — matching AGENTS.md's "clients send intent; they must not
@@ -177,14 +177,14 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-cli/tests/model_flow_log_tests.rs` | 161 | The `model_flow` tracing target logs `FetchModels`/`Loading`/`Loaded`/`Failed` transitions with correct fields. |
 | `crates/crucible-cli/tests/oneshot_precognition_query_e2e.rs` | 264 | `cru chat -q` passes the user's unaltered question to the daemon; precognition searches with that question, not a CLI-prepended block. |
 | `crates/crucible-cli/tests/plugin_cli_contract.rs` | 82 | `cru plugin test`/`stubs`/`check`: suite results, type errors and Luau type-checking reach the CLI. |
-| `crates/crucible-cli/tests/process_command_tests.rs` | 514 | `cru process`: pipeline execution, persistent storage, change detection, force flag, single-file mode, verbose/dry-run. |
+| `crates/crucible-cli/tests/process_command_tests.rs` | 465 | `cru process`: pipeline execution, persistent storage, change detection, force flag, single-file mode, verbose/dry-run. |
 | `crates/crucible-cli/tests/process_explicit_path_regression.rs` | 163 | Regression: `cru process <path>` indexes the named path, not the configured `kiln_path`. |
 | `crates/crucible-cli/tests/replay_cru_session_replay_still_works.rs` | 42 | Compile-time guard: `DaemonClient::session_replay` keeps its signature after the TUI-only replay refactor. |
 | `crates/crucible-cli/tests/replay_flag_validation.rs` | 121 | `cru chat --replay` flag-combination validation, run before daemon work in `chat::execute`. |
 | `crates/crucible-cli/tests/replay_no_daemon.rs` | 97 | Regression: `cru chat --replay` makes zero socket or network `connect()` calls (Linux-only, `strace`). |
 | `crates/crucible-cli/tests/replay_rendering.rs` | 94 | Regression: replaying the demo fixture renders with no RPC-error strings or warning badges (spawns `cru` in a PTY). |
 | `crates/crucible-cli/tests/standalone_integration.rs` | 213 | `cru --standalone`: flag parsing, in-process daemon startup, isolation from a running daemon, persistence-directory creation. |
-| `crates/crucible-cli/tests/storage_factory_integration.rs` | 273 | `get_storage()` factory connects through the daemon, preventing database-lock errors; serialized to avoid env-var conflicts. |
+| `crates/crucible-cli/tests/storage_factory_integration.rs` | 204 | `get_storage()` factory connects through the daemon, preventing database-lock errors; serialized to avoid env-var conflicts. |
 | `crates/crucible-cli/tests/tui_e2e_harness.rs` | 914 | `TuiTestSession`: PTY spawn/send/expect/capture, vt100 screen parsing, recording, and `home()` (the hermetic `HOME` of the child, for reaching its socket and data root directly) — the foundation every `tui_e2e_tests/` file builds on. |
 | `crates/crucible-cli/tests/tui_e2e_tests.rs` | 76 | Mounts `tui_e2e_harness` and the eleven `tui_e2e_tests/` submodules. |
 
@@ -263,7 +263,8 @@ Roles are condensed from the file's own doc comment or its test names.
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-daemon/tests/common/mod.rs` | 636 | `RpcConn` (buffered JSON-RPC socket connection) and `TestDaemon` (spawned `cru daemon serve` subprocess); shared by every subprocess-based daemon E2E test via `mod common;`. Also seeds a named `MOCK_ACP_PROFILE` for the mock agent binary when it is built. |
+| `crates/crucible-daemon/tests/common/mod.rs` | 640 | `RpcConn` (buffered JSON-RPC socket connection) and `TestDaemon` (spawned `cru daemon serve` subprocess); shared by every subprocess-based daemon E2E test via `mod common;`. Also seeds a named `MOCK_ACP_PROFILE` for the mock agent binary when it is built. Re-exports `InProcessDaemon`/`InProcessDaemonBuilder` from `in_process.rs`. |
+| `crates/crucible-daemon/tests/common/in_process.rs` | 9 | Re-exports `InProcessDaemon`/`InProcessDaemonBuilder` from `crucible_daemon::test_support`, so every daemon E2E test reaches the shared in-process harness through `mod common;`, the same path it reaches `TestDaemon`. |
 
 ### `crates/crucible-daemon/tests/rpc_integration/`
 
@@ -276,7 +277,7 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-daemon/tests/rpc_integration/notes.rs` | 524 | `list_notes`, `get_note_by_name`, `search_vectors`, including a seeded SQLite fixture. |
 | `crates/crucible-daemon/tests/rpc_integration/recording.rs` | 101 | Recording modes accepted at `session.create`. The recording-footer path is exercised where it is actually driven, in `crates/crucible-cli/src/session.rs`'s own tests (`ending_a_live_session_sends_session_end`). |
 | `crates/crucible-daemon/tests/rpc_integration/scope.rs` | 114 | Post-C2: a client-supplied `scope` param is accepted for backward compatibility but ignored — the server derives authority from `kiln_path`. |
-| `crates/crucible-daemon/tests/rpc_integration/server.rs` | 71 | Shared `TestServer` fixture — one kiln named `kiln` — for every file in this directory. |
+| `crates/crucible-daemon/tests/rpc_integration/server.rs` | 32 | A thin `TestServer` wrapper — a public `socket_path` field over the shared `InProcessDaemon`, with one kiln named `kiln` at the data home's top level (not under `kilns/`, which `bases.rs` assumes when it derives the kiln path from the socket's parent) — for every file in this directory. |
 | `crates/crucible-daemon/tests/rpc_integration/sessions.rs` | 396 | Session CRUD: create, list, subscribe/unsubscribe, configure, send, cancel, clear — all against `DaemonClient` directly. |
 | `crates/crucible-daemon/tests/rpc_integration/tui_flow.rs` | 182 | TUI-representative flows: `cru sessions`, `cru resume`, and a full daemon-agent lifecycle, driven by `DaemonClient` calls rather than a client-side agent handle. |
 
@@ -336,31 +337,31 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-daemon/tests/replay_e2e.rs` | 263 | Replayed sessions preserve event order, exact markdown, turn boundaries, model switches and tool pairing. |
 | `crates/crucible-daemon/tests/replay_harness.rs` | 148 | `create_test_recording` and per-event-type constructors for synthetic JSONL recording fixtures. |
 | `crates/crucible-daemon/tests/review_plugin.rs` | 116 | The shipped `review` plugin offers every review operation (changes, file, comment, comments, resolve_comment, proposals, accept_proposal, reject_proposal — 8 tools) as a session-scoped tool, backed by `diff.*`/`proposal.*` JSON-RPC instead of the removed `review.*` gate/undo/rebase RPCs. |
-| `crates/crucible-daemon/tests/rpc_config_agent_e2e.rs` | 384 | `session.set_precognition`/`get_precognition` and `session.configure_agent` round trips. |
+| `crates/crucible-daemon/tests/rpc_config_agent_e2e.rs` | 326 | `session.set_precognition`/`get_precognition` and `session.configure_agent` round trips. |
 | `crates/crucible-daemon/tests/rpc_integration.rs` | 27 | Module aggregator for the ten `rpc_integration/` submodules. |
-| `crates/crucible-daemon/tests/rpc_kiln_e2e.rs` | 590 | Kiln and note RPC methods over the socket: open/list/close, `list_notes`, `get_note_by_name`. |
-| `crates/crucible-daemon/tests/rpc_llm_state_e2e.rs` | 145 | Recorded provider state in `<data_home>/llm.json` reaches the daemon's provider table and the client. |
-| `crates/crucible-daemon/tests/rpc_platform_e2e.rs` | 428 | Platform RPC methods: `lua.*`, `plugin.*`, `project.*`, `storage.*`, `mcp.*`, `skills.*`, `agents.*`. |
-| `crates/crucible-daemon/tests/rpc_session_create_agent_e2e.rs` | 692 | Daemon-owned agent resolution in `session.create`, searching every attached kiln (not only the first) for a card; mutual exclusion of `agent_card`/`agent_name`; and the daemon's own SSRF endpoint policy (refusing internal/loopback addresses unless operator-configured) enforced identically for `session.create` and `session.configure_agent`. |
-| `crates/crucible-daemon/tests/rpc_session_e2e.rs` | 681 | Session lifecycle RPC: create, list, get, pause, resume, end, delete, archive, unarchive. |
-| `crates/crucible-daemon/tests/rpc_session_kilnless_e2e.rs` | 257 | A kiln-less session (zero kilns) is a legitimate tools-only state, not a fallback to `data_home`. |
-| `crates/crucible-daemon/tests/rpc_session_scope_e2e.rs` | 289 | Mid-session `connect_kiln`/`disconnect_kiln`/`set_workspace`, and trust-based kiln-attach refusal. |
-| `crates/crucible-daemon/tests/rpc_session_storage_root_e2e.rs` | 222 | Session files live under injected `data_home`, never inside a kiln, even across kilns sharing one root. |
-| `crates/crucible-daemon/tests/rpc_ui_config_e2e.rs` | 241 | `ui.config` delivers a Lua-evaluated theme in authoring form; the client resolves adaptive colors, not the daemon. |
+| `crates/crucible-daemon/tests/rpc_kiln_e2e.rs` | 534 | Kiln and note RPC methods over the socket: open/list/close, `list_notes`, `get_note_by_name`. |
+| `crates/crucible-daemon/tests/rpc_llm_state_e2e.rs` | 104 | Recorded provider state in `<data_home>/llm.json` reaches the daemon's provider table and the client. |
+| `crates/crucible-daemon/tests/rpc_platform_e2e.rs` | 370 | Platform RPC methods: `lua.*`, `plugin.*`, `project.*`, `storage.*`, `mcp.*`, `skills.*`, `agents.*`. |
+| `crates/crucible-daemon/tests/rpc_session_create_agent_e2e.rs` | 623 | Daemon-owned agent resolution in `session.create`, searching every attached kiln (not only the first) for a card; mutual exclusion of `agent_card`/`agent_name`; and the daemon's own SSRF endpoint policy (refusing internal/loopback addresses unless operator-configured) enforced identically for `session.create` and `session.configure_agent`. |
+| `crates/crucible-daemon/tests/rpc_session_e2e.rs` | 623 | Session lifecycle RPC: create, list, get, pause, resume, end, delete, archive, unarchive. |
+| `crates/crucible-daemon/tests/rpc_session_kilnless_e2e.rs` | 196 | A kiln-less session (zero kilns) is a legitimate tools-only state, not a fallback to `data_home`. |
+| `crates/crucible-daemon/tests/rpc_session_scope_e2e.rs` | 231 | Mid-session `connect_kiln`/`disconnect_kiln`/`set_workspace`, and trust-based kiln-attach refusal. |
+| `crates/crucible-daemon/tests/rpc_session_storage_root_e2e.rs` | 155 | Session files live under injected `data_home`, never inside a kiln, even across kilns sharing one root. |
+| `crates/crucible-daemon/tests/rpc_ui_config_e2e.rs` | 185 | `ui.config` delivers a Lua-evaluated theme in authoring form; the client resolves adaptive colors, not the daemon. |
 | `crates/crucible-daemon/tests/security_enforcement.rs` | 606 | `[permissions]`/`[security.shell]` config, filesystem containment, glob escapes, and card-vs-config allow/deny precedence for internal agents. |
-| `crates/crucible-daemon/tests/session_create_emits_setup_events.rs` | 370 | `session.create` emits its setup-event sequence in order, with a different set for internal vs. ACP agents. |
-| `crates/crucible-daemon/tests/session_lifecycle_events.rs` | 233 | Daemon-wide `session:created`/`session:ended` events reach the broadcast bus addressed to the system session. |
+| `crates/crucible-daemon/tests/session_create_emits_setup_events.rs` | 308 | `session.create` emits its setup-event sequence in order, with a different set for internal vs. ACP agents. |
+| `crates/crucible-daemon/tests/session_lifecycle_events.rs` | 184 | Daemon-wide `session:created`/`session:ended` events reach the broadcast bus addressed to the system session. |
 | `crates/crucible-daemon/tests/session_proptest.rs` | 251 | Fuzzes session state-machine operation sequences; checks idempotence and concurrency safety. |
 | `crates/crucible-daemon/tests/skills_discovery_tests.rs` | 134 | Skill discovery from directories; a same-named skill in two scopes both stay reachable (bare name to the highest priority, `scope:name` for the rest, not shadowed/hidden); runtime discovery from the `crucible-help` plugin. |
 | `crates/crucible-daemon/tests/skills_parser_tests.rs` | 136 | The SKILL.md YAML+markdown parser: required fields, `allowed-tools`, missing/unclosed frontmatter. |
 | `crates/crucible-daemon/tests/skills_storage_tests.rs` | 64 | Skill-storage shape, `#[ignore = "requires: live database"]`; runs only under the `external` test tier. |
 | `crates/crucible-daemon/tests/streaming_mock.rs` | 122 | `TestHarness`: reusable session/agent-manager/event-broadcast setup for streaming-agent test files. |
-| `crates/crucible-daemon/tests/text_search.rs` | 154 | Full-text search finds body and title text, skips unindexed file kinds (`.png`), and handles phrase vs. word queries. |
+| `crates/crucible-daemon/tests/text_search.rs` | 99 | Full-text search finds body and title text, skips unindexed file kinds (`.png`), and handles phrase vs. word queries. |
 | `crates/crucible-daemon/tests/tool_unification_test.rs` | 67 | The MCP surface an ACP client sees carries only kiln and delegation tools, not workspace tools ACP already has; shares the in-process MCP host starter and MCP HTTP client in `acp_support/mcp_http.rs`. |
-| `crates/crucible-daemon/tests/user_flow_e2e.rs` | 465 | The complete daemon session lifecycle over JSON-RPC: open kiln → create → configure → message → pause/resume → export → end; pause is refused (not queued) while the session's turn is still running, distinct from end/archive/delete, which cancel the turn first. |
+| `crates/crucible-daemon/tests/user_flow_e2e.rs` | 400 | The complete daemon session lifecycle over JSON-RPC: open kiln → create → configure → message → pause/resume → export → end; pause is refused (not queued) while the session's turn is still running, distinct from end/archive/delete, which cancel the turn first. |
 | `crates/crucible-daemon/tests/watch_file_changed_emission_tests.rs` | 324 | `IndexingHandler::handle()` maps `FileEvent` kinds to `SessionEvent::FileChanged` correctly. |
 | `crates/crucible-daemon/tests/watch_file_deleted_emission_tests.rs` | 375 | `IndexingHandler::handle()` emits `SessionEvent::FileDeleted` across path-type scenarios. |
-| `crates/crucible-daemon/tests/watch_indexing.rs` | 199 | Notes created/deleted in an open kiln are indexed/deindexed with no explicit RPC, through the daemon's own registry — see [Findings](#findings). |
+| `crates/crucible-daemon/tests/watch_indexing.rs` | 144 | Notes created/deleted in an open kiln are indexed/deindexed with no explicit RPC, through the daemon's own registry — see [Findings](#findings). |
 | `crates/crucible-daemon/tests/watch_notify_filter_tests.rs` | 216 | `EventFilter` extension and directory exclusion applied to real `notify`-backend file events. |
 | `crates/crucible-daemon/tests/workspace_targets_e2e.rs` | 288 | Workspace-target publication, enumeration and session creation through the git-worktree plugin against a real daemon and git repo. |
 
@@ -456,15 +457,23 @@ Roles are condensed from the file's own doc comment or its test names.
   by `Drop`; `restart()` kills, deletes the socket and spawns again. Every
   subprocess-based daemon test file gets these through `mod common;` — one
   canonical copy, not a per-file rewrite.
-- **`TestServer`** (defined separately in `crates/crucible-daemon/tests/rpc_kiln_e2e.rs`,
-  `rpc_session_e2e.rs`, `rpc_platform_e2e.rs`, and twelve more top-level
-  daemon test files, plus once more, shared, in
-  `crates/crucible-daemon/tests/rpc_integration/server.rs`). Binds a real
-  `crucible-daemon::Server` in-process (no subprocess) against a temp socket
-  with one registered kiln named `kiln`, so a scoped RPC request has
-  something to address. Unlike `TestDaemon`, this pattern has no single
-  shared definition across top-level test binaries — see
-  [Findings](#findings).
+- **`InProcessDaemon` / `InProcessDaemonBuilder`** (`crucible_daemon::test_support`,
+  behind the crate's `test-utils` feature). Binds a real `crucible-daemon::Server`
+  in-process (no subprocess), against a temp socket by default or the
+  `XDG_RUNTIME_DIR`-resolved path a real `cru` client would use
+  (`using_xdg_runtime_socket`). The builder registers zero or more named
+  kilns (eager or lazy), installs the `rustls` crypto provider once, and
+  polls the socket for readiness instead of sleeping a fixed interval. Every
+  daemon E2E test reaches it through `mod common;`
+  (`crates/crucible-daemon/tests/common/in_process.rs` re-exports it); the
+  two `crucible-cli` E2E files that also bind an in-process daemon
+  (`storage_factory_integration.rs`, `process_command_tests.rs`) reach it
+  directly through `crucible_daemon::test_support`, since a crate cannot
+  reach another crate's `tests/common`. This replaces the fifteen-plus
+  per-file `struct TestServer` copies the [Findings](#findings) section used
+  to describe; `crates/crucible-daemon/tests/rpc_integration/server.rs` keeps
+  a thin `TestServer` wrapper (a public `socket_path` field over the shared
+  type) so its nine sibling files did not each need editing.
 - **`MockScript` / `Step`** (`crates/crucible-daemon/tests/acp_support/mock_agent.rs`).
   One scripted agent on the real `agent_client_protocol::Agent` role serves
   every ACP test. A `MockScript` declares what the agent advertises
@@ -554,14 +563,14 @@ Roles are condensed from the file's own doc comment or its test names.
 
 ### A real-daemon RPC end-to-end test
 
-Crosses `crates/crucible-daemon/tests/common/mod.rs` (or a file-local
-`TestServer`), `crucible-daemon::Server`, `crucible-daemon::DaemonClient`,
-and the daemon's own storage/session code (outside this page; see
-[[Daemon Server]] and [[Session Services]]).
+Crosses `crates/crucible-daemon/tests/common/mod.rs`,
+`crucible_daemon::test_support::InProcessDaemon`, `crucible-daemon::Server`,
+`crucible-daemon::DaemonClient`, and the daemon's own storage/session code
+(outside this page; see [[Daemon Server]] and [[Session Services]]).
 
 ```mermaid
 flowchart LR
-    A["TestDaemon::start / TestServer::start<br/>(spawns or binds a real Server)"] --> B["socket ready<br/>(polled, not slept)"]
+    A["TestDaemon::start / InProcessDaemonBuilder::start<br/>(spawns or binds a real Server)"] --> B["socket ready<br/>(polled, not slept)"]
     B --> C["DaemonClient::connect<br/>(or RpcConn::connect)"]
     C --> D["one RPC call<br/>(session.create, kiln.open, ...)"]
     D --> E["real daemon handler<br/>(outside this page)"]
@@ -571,7 +580,8 @@ flowchart LR
 ```
 
 1. The fixture starts a real daemon: either a subprocess (`TestDaemon`,
-   shared) or an in-process bind (`TestServer`, redefined per file — see
+   shared) or an in-process bind (`InProcessDaemon`, built by
+   `InProcessDaemonBuilder` — one shared definition; see
    [Findings](#findings)).
 2. The fixture polls the socket path rather than sleeping, so the test never
    races a slow CI runner.
@@ -681,9 +691,9 @@ or parser the gate exists to prove docs agree with.
   go further and run in their own test binary entirely, because
   `crucible-lua`'s app-config store is process-global — a second boot
   evaluation in the same process would replace the first one's store.
-- **Cleanup.** `TestDaemon`/`TestServer` kill their subprocess or shut down
-  their bind in `Drop`, including on an early `?` return from a readiness
-  failure. `crates/crucible-core/tests/dev_kiln.rs`'s `ScratchFile` is a
+- **Cleanup.** `TestDaemon`/`InProcessDaemon` kill their subprocess or shut
+  down their bind in `Drop`, including on an early `?` return from a
+  readiness failure. `crates/crucible-core/tests/dev_kiln.rs`'s `ScratchFile` is a
   `Drop`-guarded real file written under the live `docs/` tree for one test
   that proves the git-index gate, cleaning itself up even on panic.
 - **Concurrency inside a fixture.** `RpcConn::call()` matches a reply's `id`
@@ -841,10 +851,10 @@ harnesses correct, and what runs them.
   `every_lua_request_type_is_in_the_wire_table` are completeness checks on
   the gate's own ledgers, catching a new knob or wire type that nobody
   added a row for.
-- **Gap:** the in-process `TestServer` harness (see [Findings](#findings))
-  has no test of its own proving its fifteen-plus copies stay behaviorally
-  identical; a divergence would surface only as an unrelated-looking
-  failure in whichever E2E test hit it first.
+- **Fixed:** the in-process `TestServer` harness (see [Findings](#findings))
+  no longer has fifteen-plus copies to drift. `InProcessDaemonBuilder`
+  (`crucible_daemon::test_support`) is the one definition every daemon and
+  CLI in-process E2E test now shares.
 - **Gap:** the one scripted `MockScript`/`Step` agent
   (`crates/crucible-daemon/tests/acp_support/mock_agent.rs`) has no test of
   its own proving the framework correct, unlike the deleted per-mock
@@ -857,24 +867,40 @@ harnesses correct, and what runs them.
 
 ## Findings
 
-- `crates/crucible-daemon/tests/rpc_kiln_e2e.rs`,
+- **Resolved.** `crates/crucible-daemon/tests/rpc_kiln_e2e.rs`,
   `rpc_llm_state_e2e.rs`, `rpc_platform_e2e.rs`,
   `rpc_session_create_agent_e2e.rs`, `rpc_session_e2e.rs`,
   `rpc_session_kilnless_e2e.rs`, `rpc_session_scope_e2e.rs`,
   `rpc_session_storage_root_e2e.rs`, `rpc_ui_config_e2e.rs`,
   `rpc_config_agent_e2e.rs`, `session_create_emits_setup_events.rs`,
-  `session_lifecycle_events.rs`, `text_search.rs`, `user_flow_e2e.rs` and
-  `watch_indexing.rs` — fifteen separate top-level test binaries — each
-  redefine an identical `struct TestServer`; fourteen of the fifteen also
-  redefine `fn ensure_crypto_provider`, and `rpc_session_storage_root_e2e.rs`
-  installs the same `rustls` default provider inline instead. Each is an
-  in-process daemon-bind harness. `crates/crucible-daemon/tests/user_flow_e2e.rs`'s
-  own doc comment names this "the TestServer pattern from
-  rpc_integration.rs," so the duplication is deliberate, not accidental —
+  `session_lifecycle_events.rs`, `text_search.rs`, `user_flow_e2e.rs`,
+  `watch_indexing.rs`, `crates/crucible-daemon/tests/rpc_integration/server.rs`
+  and the two `crucible-cli` files
+  (`storage_factory_integration.rs`, `process_command_tests.rs`) used to
+  each define their own `struct TestServer` (mostly identical, a few with a
+  caller-supplied `data_home`, an `XDG_RUNTIME_DIR` guard, or extra kilns)
+  plus, in fourteen of the daemon files, their own `fn
+  ensure_crypto_provider`. `crates/crucible-daemon/tests/user_flow_e2e.rs`'s
+  own doc comment named this "the TestServer pattern from
+  rpc_integration.rs," so the duplication was deliberate, not accidental —
   but unlike the subprocess-based `TestDaemon`/`RpcConn` harness, which
-  twelve files share through one `mod common;`, no equivalent shared
-  module exists for this in-process variant, and no comment documents why
-  one pattern is shared and the other is not.
+  files already shared through one `mod common;`, no equivalent shared
+  module existed for this in-process variant. The one definition now lives
+  in `InProcessDaemonBuilder`/`InProcessDaemon`
+  (`crates/crucible-daemon/src/test_support.rs`, behind the crate's
+  `test-utils` feature): a builder that registers named kilns (eager or
+  lazy, at a caller-chosen path or a default one under the data home),
+  binds over a fresh temp data home or one the caller seeded itself, resolves
+  the socket the default way or through `XDG_RUNTIME_DIR` (for the two
+  `crucible-cli` files, which reach it directly rather than through
+  `tests/common`, since a crate cannot use another crate's `tests/`
+  tree), installs the crypto provider once, and polls for readiness.
+  `crates/crucible-daemon/tests/common/in_process.rs` re-exports it for
+  every daemon test file that does `mod common;`.
+  `crates/crucible-daemon/tests/rpc_integration/server.rs` keeps its own
+  `TestServer` name as a thin wrapper — a public `socket_path` field over
+  the shared type — so its nine sibling files in that directory did not
+  each need a call-site rewrite.
 - `crates/crucible-lua/tests/integration/mocks.rs` leaves
   `eprintln!("DEBUG: {:?}", content);` in
   `test_mock_globals_exist`, committed debug output with no `#[ignore]` or
@@ -891,7 +917,7 @@ harnesses correct, and what runs them.
   still proves a cancel reaches the agent, but not that the transport itself
   closes on that path.
 - No conflict with AGENTS.md's ownership table was found beyond the
-  `TestServer` duplication above: every harness on this page drives a real
+  (now resolved) `TestServer` duplication above: every harness on this page drives a real
   daemon, a real config loader, or a real `cru` binary rather than building
   a second implementation, and the deliberately-mocked layer
   (`route_contract_tests/`) is explicitly paired with the real-daemon tests

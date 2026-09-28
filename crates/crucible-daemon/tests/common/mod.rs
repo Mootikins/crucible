@@ -1,5 +1,9 @@
 //! Common test utilities for daemon E2E tests
 
+pub mod in_process;
+#[allow(unused_imports)] // re-exported for every test binary that does `mod common;`
+pub use in_process::{InProcessDaemon, InProcessDaemonBuilder};
+
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};

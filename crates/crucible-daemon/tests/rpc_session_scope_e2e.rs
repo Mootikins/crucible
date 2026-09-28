@@ -1,94 +1,36 @@
 //! End-to-end tests for mid-session scope mutations:
 //! session.connect_kiln, session.disconnect_kiln, session.set_workspace.
 
-use anyhow::Result;
+mod common;
+
+use common::InProcessDaemonBuilder;
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
+/// The three registered kilns this suite needs: the one every session is
+/// created with, a second to attach mid-session, and one classified
+/// Confidential so the trust gate has something to refuse.
+///
+/// `classified` is registered LAZY on purpose. Boot opens every eager
+/// registered kiln, so an eager entry here would be open before the test ran
+/// and the "a refused attach opened nothing" assertion would be reading the
+/// daemon's own startup rather than the attach.
+async fn start_server() -> common::InProcessDaemon {
+    let builder = InProcessDaemonBuilder::new().expect("a test daemon builder");
+    let classified = builder.data_home().join("kilns").join("classified");
+    std::fs::create_dir_all(classified.join(".crucible")).expect("classified kiln dir");
+    std::fs::write(
+        classified.join(".crucible").join("project.toml"),
+        "[[kilns]]\npath = \".\"\ndata_classification = \"confidential\"\n",
+    )
+    .expect("classified kiln project.toml");
 
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // Three registered kilns: the one every session is created with, a
-        // second to attach mid-session, and one classified Confidential so the
-        // trust gate has something to refuse. All outside the data root, which
-        // the registration floor denies.
-        let kiln = temp_dir.path().join("kilns").join("kiln");
-        let extra = temp_dir.path().join("kilns").join("extra-kiln");
-        let classified = temp_dir.path().join("kilns").join("classified");
-        for dir in [&kiln, &extra, &classified] {
-            std::fs::create_dir_all(dir)?;
-        }
-        std::fs::create_dir_all(classified.join(".crucible"))?;
-        std::fs::write(
-            classified.join(".crucible").join("project.toml"),
-            "[[kilns]]\npath = \".\"\ndata_classification = \"confidential\"\n",
-        )?;
-
-        // `classified` is registered LAZY on purpose. Boot opens every eager
-        // registered kiln, so an eager entry here would be open before the
-        // test ran and the "a refused attach opened nothing" assertion would
-        // be reading the daemon's own startup rather than the attach.
-        let server = Server::bind_with_data_home_and_kiln_entries(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[
-                ("kiln", &kiln, false),
-                ("extra-kiln", &extra, false),
-                ("classified", &classified, true),
-            ],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is this suite's intermittent-failure source.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    builder
+        .with_kiln("kiln")
+        .with_kiln("extra-kiln")
+        .with_lazy_kiln_at("classified", classified)
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 fn kiln_name(name: &str) -> crucible_core::config::KilnName {
@@ -117,9 +59,9 @@ async fn create_session(client: &DaemonClient) -> String {
 
 #[tokio::test]
 async fn connect_then_disconnect_kiln_roundtrips() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
     let session_id = create_session(&client).await;
@@ -159,8 +101,8 @@ async fn connect_then_disconnect_kiln_roundtrips() {
 /// distinction, and this is the test that used to assert it.
 #[tokio::test]
 async fn the_kiln_a_session_was_created_with_detaches_like_any_other() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
     let session_id = create_session(&client).await;
@@ -193,11 +135,11 @@ async fn the_kiln_a_session_was_created_with_detaches_like_any_other() {
 /// changes nothing: not to another directory, and not to none.
 #[tokio::test]
 async fn set_workspace_is_refused_and_the_session_keeps_its_workspace() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     let created_in = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
     let result = client
@@ -244,12 +186,12 @@ async fn set_workspace_is_refused_and_the_session_keeps_its_workspace() {
 
 #[tokio::test]
 async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await;
     // A kiln classified Confidential (requires Local trust), registered by the
     // fixture. The session below has no agent, so its provider trust resolves
     // to Cloud, which cannot satisfy Confidential — the attach must be refused.
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
     let session_id = create_session(&client).await;

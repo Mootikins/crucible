@@ -9,86 +9,30 @@
 //! conversion, NOT by breaking the parser. A parser-level break would also fail
 //! the unit tests, which proves nothing about delivery.
 
-use anyhow::Result;
-use crucible_daemon::{DaemonClient, Server};
+mod common;
+
+use crucible_daemon::DaemonClient;
 use serde_json::json;
-use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
 /// In-process test server. Mirrors the pattern in `rpc_config_agent_e2e.rs`:
 /// the data root is injected as a *value* via `bind_with_data_home`, never by
 /// mutating process env, so parallel runs stay hermetic and a developer's real
 /// `~/.crucible` is never read.
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. A fixed
-        // startup sleep is the standard flake source here: under a loaded box
-        // the socket may not be accepting yet when the timer elapses.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            if tokio::time::Instant::now() >= deadline {
-                anyhow::bail!("daemon did not start accepting connections within 5s");
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// The daemon evaluates the theme in Lua; a client must be able to fetch it.
 /// Before this transport existed, a client had no way to reach it at all.
 #[tokio::test]
 async fn ui_config_delivers_the_lua_theme_to_a_client() {
-    let server = TestServer::start().await.expect("server starts");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("client connects");
 
@@ -131,8 +75,8 @@ async fn ui_config_delivers_the_lua_theme_to_a_client() {
 ///      handshake. Shipping a resolved colour would defeat it.
 #[tokio::test]
 async fn ui_config_ships_colors_unresolved_in_authoring_form() {
-    let server = TestServer::start().await.expect("server starts");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("client connects");
 
@@ -164,8 +108,8 @@ async fn ui_config_ships_colors_unresolved_in_authoring_form() {
 /// theme, or a typo looks like the command did nothing.
 #[tokio::test]
 async fn ui_set_theme_rejects_an_unknown_name() {
-    let server = TestServer::start().await.expect("server starts");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("client connects");
 
@@ -185,8 +129,8 @@ async fn ui_set_theme_rejects_an_unknown_name() {
 /// mistake or an attempt to read an arbitrary file.
 #[tokio::test]
 async fn ui_set_theme_refuses_path_traversal() {
-    let server = TestServer::start().await.expect("server starts");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("client connects");
 
@@ -211,8 +155,8 @@ async fn ui_set_theme_refuses_path_traversal() {
 /// resolves daemon-side fails loudly here.
 #[tokio::test]
 async fn ui_config_does_not_resolve_adaptive_colors_daemon_side() {
-    let server = TestServer::start().await.expect("server starts");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server().await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("client connects");
 

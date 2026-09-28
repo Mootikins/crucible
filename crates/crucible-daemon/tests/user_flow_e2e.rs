@@ -4,93 +4,28 @@
 //!   open kiln → create session → configure agent → send message →
 //!   verify event flow → pause → resume → export → end session → close kiln
 //!
-//! Uses an in-process daemon server (TestServer pattern from rpc_integration.rs).
+//! Uses the shared in-process daemon harness (`crucible_daemon::test_support::InProcessDaemon`).
 //! The send_message step validates the RPC round-trip; without a real LLM provider
 //! the daemon returns a provider error which is expected and explicitly asserted.
 
+mod common;
+
 use anyhow::Result;
+use common::{InProcessDaemon, InProcessDaemonBuilder};
 use crucible_core::config::BackendType;
 use crucible_core::session::SessionAgent;
-use crucible_daemon::{DaemonClient, Server};
-use std::path::PathBuf;
+use crucible_daemon::DaemonClient;
 use std::sync::Arc;
 use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-/// Install the rustls CryptoProvider once for all tests in this binary.
-/// Required because the daemon's internal reqwest/TLS usage needs it.
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-// ---------------------------------------------------------------------------
-// Test server fixture (in-process daemon, same pattern as rpc_integration.rs)
-// ---------------------------------------------------------------------------
-
-struct TestServer {
-    _temp_dir: TempDir,
-    /// The directory the registry knows as `kiln` — the one a session attaches
-    /// by name, and therefore the one `kiln.open`/`kiln.close` has to act on if
-    /// the listing is to come back empty.
-    kiln_path: PathBuf,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        // One registered kiln named `kiln`: sessions address kilns by name, so
-        // a fixture that registers none has a daemon that refuses every scoped
-        // request.
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Wait for server to be ready
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is this suite's intermittent-failure source.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            kiln_path: kiln,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+/// One registered kiln named `kiln`: sessions address kilns by name, so a
+/// fixture that registers none has a daemon that refuses every scoped
+/// request. `kiln` is also the directory `kiln.open`/`kiln.close` acts on.
+async fn start_server() -> Result<InProcessDaemon> {
+    InProcessDaemonBuilder::new()?
+        .with_kiln("kiln")
+        .start()
+        .await
 }
 
 /// Build a SessionAgent configured for a mock/test provider.
@@ -148,11 +83,11 @@ fn assert_state(result: &serde_json::Value, expected: &str, context: &str) {
 /// 10. Close kiln
 #[tokio::test]
 async fn test_complete_user_flow() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = server.kiln_path.clone();
+    let server = start_server().await.expect("Failed to start server");
+    let kiln_dir = server.kiln_dir("kiln");
 
     // Connect with event support
-    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(server.socket_path())
         .await
         .expect("Failed to connect with events");
     let client = Arc::new(client);
@@ -386,10 +321,10 @@ async fn test_complete_user_flow() {
 /// Creates a session, pauses it, verifies state in list, resumes, and ends.
 #[tokio::test]
 async fn test_user_flow_session_list_reflects_state() {
-    let server = TestServer::start().await.expect("Failed to start server");
+    let server = start_server().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("Failed to connect");
 

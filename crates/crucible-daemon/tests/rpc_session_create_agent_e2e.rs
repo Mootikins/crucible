@@ -20,98 +20,29 @@
 //! root via `Server::bind_with_data_home` (a value, no `CRUCIBLE_HOME` env
 //! mutation) and installs the rustls crypto provider.
 
+mod common;
+
 use anyhow::Result;
+use common::{InProcessDaemon, InProcessDaemonBuilder};
 use crucible_daemon::rpc_client::{SessionAgentSpec, SessionCreateParams};
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
+/// Two registered kilns: `kiln`, the one a card fixture goes under
+/// (`<kiln>/.crucible/agents/`, seeded after start — discovery runs per
+/// create, so seeding after start is fine), and `second`, for the tests that
+/// need a kiln with no card.
+async fn start_server() -> Result<InProcessDaemon> {
+    InProcessDaemonBuilder::new()?
+        .with_kiln("kiln")
+        .with_kiln("second")
+        .start()
+        .await
 }
 
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let data_home = temp_dir.path().to_path_buf();
-        let socket_path = temp_dir.path().join("daemon.sock");
-
-        let kiln = data_home.join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let second = data_home.join("second");
-        std::fs::create_dir_all(&second)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            data_home,
-            &[("kiln", &kiln), ("second", &second)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleeping a fixed interval. Under a
-        // loaded box the socket may not be accepting when a fixed timer
-        // elapses, which is this suite's intermittent-failure source.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    /// A kiln inside the injected data root: `<kiln>/.crucible/agents/` is
-    /// where a card fixture goes, and a session sees it only by ATTACHING the
-    /// kiln. A kiln-less session has no kiln card directory to read at all —
-    /// that is §4.1's "an empty kiln set degrades capabilities", and it is why
-    /// these tests name the kiln instead of leaning on a data-root fallback.
-    /// Discovery runs per create, so seeding after start is fine.
-    fn card_kiln(&self) -> PathBuf {
-        self._temp_dir.path().join("kiln")
-    }
-
-    /// The registry name `card_kiln` is registered under — what a request has
-    /// to say to attach it.
-    fn card_kiln_name(&self) -> crucible_core::config::KilnName {
-        crucible_core::config::KilnName::parse("kiln").expect("a valid kiln name")
-    }
-
-    async fn connect(&self) -> DaemonClient {
-        DaemonClient::connect_to(&self.socket_path)
-            .await
-            .expect("Failed to connect")
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+/// The registry name a card kiln is registered under — what a request has to
+/// say to attach it.
+fn card_kiln_name() -> crucible_core::config::KilnName {
+    crucible_daemon::test_support::kiln_name("kiln")
 }
 
 /// Base params for a kiln-less internal session — the daemon resolves the kiln
@@ -162,8 +93,8 @@ const CLAUDE_CARD: &str =
 
 #[tokio::test]
 async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
-    let server = TestServer::start().await.expect("start server");
-    write_card(&server.card_kiln(), "researcher.md", RESEARCHER_CARD);
+    let server = start_server().await.expect("start server");
+    write_card(&server.kiln_dir("kiln"), "researcher.md", RESEARCHER_CARD);
     let client = server.connect().await;
 
     let created = client
@@ -171,7 +102,7 @@ async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln_name()],
+                "kilns": [card_kiln_name()],
                 "configure_agent": true,
                 "agent_card": "researcher",
             }),
@@ -203,8 +134,8 @@ async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
 /// source, not only the first one.
 #[tokio::test]
 async fn agent_card_resolves_a_card_from_the_second_attached_kiln() {
-    let server = TestServer::start().await.expect("start server");
-    let second = server._temp_dir.path().join("second");
+    let server = start_server().await.expect("start server");
+    let second = server.kiln_dir("second");
     write_card(&second, "researcher.md", RESEARCHER_CARD);
     let client = server.connect().await;
 
@@ -213,7 +144,7 @@ async fn agent_card_resolves_a_card_from_the_second_attached_kiln() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln_name(), "second"],
+                "kilns": [card_kiln_name(), "second"],
                 "configure_agent": true,
                 "agent_card": "researcher",
             }),
@@ -229,8 +160,8 @@ async fn agent_card_resolves_a_card_from_the_second_attached_kiln() {
 /// deprecated alias has to keep resolving cards.
 #[tokio::test]
 async fn agent_name_without_agent_type_still_resolves_a_card() {
-    let server = TestServer::start().await.expect("start server");
-    write_card(&server.card_kiln(), "researcher.md", RESEARCHER_CARD);
+    let server = start_server().await.expect("start server");
+    write_card(&server.kiln_dir("kiln"), "researcher.md", RESEARCHER_CARD);
     let client = server.connect().await;
 
     let created = client
@@ -238,7 +169,7 @@ async fn agent_name_without_agent_type_still_resolves_a_card() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln_name()],
+                "kilns": [card_kiln_name()],
                 "configure_agent": true,
                 "agent_name": "researcher",
             }),
@@ -255,8 +186,8 @@ async fn agent_name_without_agent_type_still_resolves_a_card() {
 
 #[tokio::test]
 async fn agent_card_and_agent_name_together_are_rejected() {
-    let server = TestServer::start().await.expect("start server");
-    write_card(&server.card_kiln(), "researcher.md", RESEARCHER_CARD);
+    let server = start_server().await.expect("start server");
+    write_card(&server.kiln_dir("kiln"), "researcher.md", RESEARCHER_CARD);
     let client = server.connect().await;
 
     let before = session_count(&client).await;
@@ -266,7 +197,7 @@ async fn agent_card_and_agent_name_together_are_rejected() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln_name()],
+                "kilns": [card_kiln_name()],
                 "configure_agent": true,
                 "agent_card": "researcher",
                 "agent_name": "researcher",
@@ -290,8 +221,8 @@ async fn agent_card_and_agent_name_together_are_rejected() {
 
 #[tokio::test]
 async fn unknown_agent_card_errors_without_creating_a_session() {
-    let server = TestServer::start().await.expect("start server");
-    write_card(&server.card_kiln(), "researcher.md", RESEARCHER_CARD);
+    let server = start_server().await.expect("start server");
+    write_card(&server.kiln_dir("kiln"), "researcher.md", RESEARCHER_CARD);
     let client = server.connect().await;
 
     let before = session_count(&client).await;
@@ -301,7 +232,7 @@ async fn unknown_agent_card_errors_without_creating_a_session() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln_name()],
+                "kilns": [card_kiln_name()],
                 "configure_agent": true,
                 "agent_card": "no-such-card",
             }),
@@ -338,9 +269,11 @@ async fn unknown_agent_card_errors_without_creating_a_session() {
 /// built-in profile's name must not shadow it — the profile launches.
 #[tokio::test]
 async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
-    let server = TestServer::start().await.expect("start server");
-    write_card(&server.card_kiln(), "claude.md", CLAUDE_CARD);
-    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    let server = start_server().await.expect("start server");
+    write_card(&server.kiln_dir("kiln"), "claude.md", CLAUDE_CARD);
+    let client = DaemonClient::connect_to(server.socket_path())
+        .await
+        .unwrap();
 
     let spec = SessionAgentSpec {
         agent_name: Some("claude".to_string()),
@@ -348,7 +281,7 @@ async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
         ..Default::default()
     };
     let created = client
-        .session_create_with_agent(base_params_in("acp", server.card_kiln_name()), spec)
+        .session_create_with_agent(base_params_in("acp", card_kiln_name()), spec)
         .await
         .expect("create with an ACP profile failed");
 
@@ -387,12 +320,12 @@ async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
 /// ACP profile name verbatim.
 #[tokio::test]
 async fn configure_agent_keeps_an_acp_profile_name() {
-    let server = TestServer::start().await.expect("start server");
-    write_card(&server.card_kiln(), "claude.md", CLAUDE_CARD);
+    let server = start_server().await.expect("start server");
+    write_card(&server.kiln_dir("kiln"), "claude.md", CLAUDE_CARD);
     let client = server.connect().await;
 
     let created = client
-        .session_create(base_params_in("internal", server.card_kiln_name()))
+        .session_create(base_params_in("internal", card_kiln_name()))
         .await
         .expect("plain create failed");
     let session_id = created["session_id"].as_str().unwrap().to_string();
@@ -432,7 +365,7 @@ async fn configure_agent_keeps_an_acp_profile_name() {
 
 #[tokio::test]
 async fn internal_spec_configures_agent_with_config_defaults() {
-    let server = TestServer::start().await.expect("start server");
+    let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
     // An internal spec with no overrides ⇒ config-derived defaults. With no
@@ -472,7 +405,7 @@ async fn internal_spec_configures_agent_with_config_defaults() {
 
 #[tokio::test]
 async fn internal_spec_applies_provider_and_model_overrides() {
-    let server = TestServer::start().await.expect("start server");
+    let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
     let spec = SessionAgentSpec {
@@ -500,7 +433,7 @@ async fn internal_spec_applies_provider_and_model_overrides() {
 
 #[tokio::test]
 async fn unknown_acp_profile_errors_without_creating_a_session() {
-    let server = TestServer::start().await.expect("start server");
+    let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
     let before = session_count(&client).await;
@@ -529,14 +462,14 @@ async fn unknown_acp_profile_errors_without_creating_a_session() {
 
 #[tokio::test]
 async fn create_without_spec_leaves_agent_unconfigured() {
-    let server = TestServer::start().await.expect("start server");
+    let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
     // Back-compat: the plain `session_create` (no agent spec) must behave
     // exactly as before — a session is created with no agent, to be configured
     // by a later `session.configure_agent`.
     let created = client
-        .session_create(base_params_in("internal", server.card_kiln_name()))
+        .session_create(base_params_in("internal", card_kiln_name()))
         .await
         .expect("plain create failed");
     assert!(
@@ -573,7 +506,7 @@ const INTERNAL_ENDPOINTS: &[&str] = &[
 /// `INVALID_PARAMS` because the caller can fix it, and no session is left.
 #[tokio::test]
 async fn create_refuses_an_internal_endpoint_without_creating_a_session() {
-    let server = TestServer::start().await.expect("start server");
+    let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
     for endpoint in INTERNAL_ENDPOINTS {
@@ -611,7 +544,7 @@ async fn create_refuses_an_internal_endpoint_without_creating_a_session() {
 /// TUI's `cru session configure --endpoint` and a Lua plugin both use it.
 #[tokio::test]
 async fn configure_agent_refuses_an_internal_endpoint() {
-    let server = TestServer::start().await.expect("start server");
+    let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
     let created = client
@@ -659,7 +592,7 @@ async fn configure_agent_refuses_an_internal_endpoint() {
 /// is refused.
 #[tokio::test]
 async fn the_default_ollama_endpoint_is_accepted_but_an_unconfigured_loopback_port_is_not() {
-    let server = TestServer::start().await.expect("start server");
+    let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
     let spec = SessionAgentSpec {

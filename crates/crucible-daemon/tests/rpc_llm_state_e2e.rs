@@ -6,57 +6,20 @@
 //! the socket. A correct overlay function that nothing calls looks identical
 //! from inside `llm_state.rs`.
 
-use anyhow::Result;
+mod common;
+
+use common::{InProcessDaemon, InProcessDaemonBuilder};
 use crucible_daemon::DaemonClient;
-use crucible_daemon::Server;
-use std::path::PathBuf;
-use std::time::Duration;
 use tempfile::TempDir;
-use tokio::task::JoinHandle;
 
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-struct TestServer {
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-impl TestServer {
-    async fn start(data_home: &std::path::Path) -> Result<Self> {
-        ensure_crypto_provider();
-        let socket_path = data_home.join("daemon.sock");
-        let server = Server::bind_with_data_home(&socket_path, data_home.to_path_buf()).await?;
-        let shutdown_handle = server.shutdown_handle();
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+/// Bind over `data_home`, which the caller seeds with an `llm.json` (or
+/// leaves untouched) before the daemon reads it at bind — the overlay this
+/// suite is proving runs then, not later.
+async fn start_server(data_home: &std::path::Path) -> InProcessDaemon {
+    InProcessDaemonBuilder::at_data_home(data_home.to_path_buf())
+        .start()
+        .await
+        .expect("start server")
 }
 
 /// A provider recorded in `llm.json` is one the daemon serves.
@@ -80,10 +43,8 @@ async fn a_recorded_provider_reaches_the_daemons_provider_table() {
         )
         .expect("record the selection");
 
-    let server = TestServer::start(data_home.path())
-        .await
-        .expect("start server");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server(data_home.path()).await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("connect");
 
@@ -120,10 +81,8 @@ async fn a_recorded_provider_reaches_the_daemons_provider_table() {
 #[tokio::test]
 async fn a_daemon_with_no_recorded_selection_starts_normally() {
     let data_home = TempDir::new().expect("data home");
-    let server = TestServer::start(data_home.path())
-        .await
-        .expect("a daemon with no llm.json starts");
-    let client = DaemonClient::connect_to(&server.socket_path)
+    let server = start_server(data_home.path()).await;
+    let client = DaemonClient::connect_to(server.socket_path())
         .await
         .expect("connect");
 

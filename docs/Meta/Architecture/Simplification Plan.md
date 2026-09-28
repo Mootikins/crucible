@@ -242,7 +242,28 @@ next to `RpcMethod` in `crates/crucible-daemon/src/rpc/dispatch.rs`.
 
 ## Step 7. One test server
 
-**Now.** The crates define `struct TestServer` 19 times. The shared harness
+**Status: done for the in-process harness (change items 1 and 2), item 3 open.**
+`InProcessDaemonBuilder`/`InProcessDaemon` (`crates/crucible-daemon/src/test_support.rs`,
+behind the crate's `test-utils` feature) is now the one definition. It
+replaces the eighteen `struct TestServer` copies under
+`crates/crucible-daemon/tests/` (fifteen top-level files, plus
+`rpc_integration/server.rs`, which keeps its own name as a thin wrapper so
+its nine sibling files needed no edit) and `crates/crucible-cli/tests/`
+(`storage_factory_integration.rs`, `process_command_tests.rs`, which reach
+the harness directly through `crucible_daemon::test_support`, since a crate
+cannot use another crate's `tests/common`). `crates/crucible-daemon/tests/common/in_process.rs`
+re-exports it for the daemon's own test files. The nineteenth copy,
+`crates/crucible-daemon/src/server/tests/mod.rs`'s `pub(super) struct
+TestServer`, stays: it sits inside the crate's unit tests, which cannot
+reach `tests/common`. It is out of scope for this step.
+
+Remaining, and NOT part of this step: `crates/crucible-web/src/test_support.rs`,
+the web crate's hand-written mock daemon. It is a different kind of
+duplicate — a mock that answers about 99 RPC methods by hand, not a copy of
+an in-process real-daemon bind — and change item 3 below still describes
+work to do there.
+
+**Now.** The shared harness
 in `crates/crucible-daemon/tests/common/` existed before most of the copies.
 `crates/crucible-web/src/test_support.rs` (1722 lines) answers about 99 RPC
 methods by hand. Each RPC change must also update it.

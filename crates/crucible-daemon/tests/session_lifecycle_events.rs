@@ -12,73 +12,24 @@
 //! is redundant, and the gap between them is where `webhook:received` lived for
 //! its whole life, broadcast to nobody.
 
-use anyhow::Result;
+mod common;
+
 use crucible_daemon::rpc_client::SessionCreateParams;
-use crucible_daemon::{DaemonClient, Server, SessionEvent};
-use std::path::PathBuf;
+use crucible_daemon::{DaemonClient, SessionEvent};
 use std::time::Duration;
-use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 
 /// The session id every daemon-wide event is addressed to.
 const SYSTEM_SESSION: &str = "system";
 
-struct TestServer {
-    _temp_dir: TempDir,
-    socket_path: PathBuf,
-    _server_handle: JoinHandle<()>,
-    shutdown_handle: tokio::sync::broadcast::Sender<()>,
-}
-
-fn ensure_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
-impl TestServer {
-    async fn start() -> Result<Self> {
-        ensure_crypto_provider();
-        let temp_dir = tempfile::tempdir()?;
-        let socket_path = temp_dir.path().join("daemon.sock");
-        let kiln = temp_dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln)?;
-        let server = Server::bind_with_data_home_and_kilns(
-            &socket_path,
-            temp_dir.path().to_path_buf(),
-            &[("kiln", &kiln)],
-        )
-        .await?;
-        let shutdown_handle = server.shutdown_handle();
-        let server_handle = tokio::spawn(async move {
-            let _ = server.run().await;
-        });
-
-        // Poll for readiness rather than sleep: a fixed timer is this suite's
-        // documented source of intermittent failure under a loaded box.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-        loop {
-            if DaemonClient::connect_to(&socket_path).await.is_ok() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 60s"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        Ok(Self {
-            _temp_dir: temp_dir,
-            socket_path,
-            _server_handle: server_handle,
-            shutdown_handle,
-        })
-    }
-
-    async fn shutdown(self) {
-        let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+async fn start_server() -> common::InProcessDaemon {
+    common::InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .with_ready_timeout(std::time::Duration::from_secs(60))
+        .with_kiln("kiln")
+        .start()
+        .await
+        .expect("Failed to start server")
 }
 
 /// Wait for one named event, returning it, or `None` once the deadline passes.
@@ -125,8 +76,8 @@ async fn create_session(client: &DaemonClient) -> String {
 
 #[tokio::test]
 async fn session_create_emits_session_created_daemon_wide() {
-    let server = TestServer::start().await.expect("server starts");
-    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let server = start_server().await;
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(server.socket_path())
         .await
         .expect("connect with events");
     client
@@ -155,8 +106,8 @@ async fn session_create_emits_session_created_daemon_wide() {
 
 #[tokio::test]
 async fn session_end_emits_session_ended_daemon_wide() {
-    let server = TestServer::start().await.expect("server starts");
-    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let server = start_server().await;
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(server.socket_path())
         .await
         .expect("connect with events");
     client
@@ -191,8 +142,8 @@ async fn session_end_emits_session_ended_daemon_wide() {
 /// duplicate row in every session list.
 #[tokio::test]
 async fn session_fork_emits_session_created_for_the_fork() {
-    let server = TestServer::start().await.expect("server starts");
-    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let server = start_server().await;
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(server.socket_path())
         .await
         .expect("connect with events");
     client
