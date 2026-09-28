@@ -854,3 +854,51 @@ fn table_at_narrow_width_has_complete_box_drawing() {
         );
     }
 }
+
+/// A reader of plain output cannot follow a link that it cannot see, so the
+/// renderer writes the URL after the text.
+#[test]
+fn a_link_shows_its_url_after_its_text() {
+    let out = markdown_to_string("See [the docs](https://example.com/a).", 80, false);
+    assert_eq!(out, "See the docs (https://example.com/a).");
+}
+
+#[test]
+fn a_link_whose_text_is_its_url_shows_the_url_once() {
+    let out = markdown_to_string("[https://example.com/a](https://example.com/a)", 80, false);
+    assert_eq!(out, "https://example.com/a");
+}
+
+#[test]
+fn a_thematic_break_draws_a_rule_across_the_text_width() {
+    let out = markdown_to_string("above\n\n---\n\nbelow", 20, false);
+    assert_eq!(out, format!("above\n\n{}\n\nbelow", "─".repeat(20)));
+}
+
+#[test]
+fn a_thematic_break_stays_inside_the_margins() {
+    let node = markdown_to_node_styled(
+        "---",
+        RenderStyle::viewport_with_margins(20, Margins::assistant_continuation()),
+    );
+    let out = crucible_oil::render::render_to_plain_text(&node, 20);
+    assert_eq!(out.trim_end(), format!("   {}", "─".repeat(14)));
+}
+
+/// Plain output goes to a pipe or a file. It has no escape sequence, no
+/// carriage return and no space at the end of a line. This is also true
+/// after a heading, which fills its row with styled spaces.
+#[test]
+fn markdown_to_string_without_style_is_plain_text() {
+    let out = markdown_to_string("# Title\n\nSome **bold** text.", 40, false);
+    assert_eq!(out, "Title\n\nSome bold text.");
+}
+
+#[test]
+fn markdown_to_string_with_style_keeps_the_escapes() {
+    let _colors = crucible_core::test_support::EnvVarGuard::remove("NO_COLOR");
+    let out = markdown_to_string("Some **bold** text.\n\nNext.", 40, true);
+    assert!(out.contains("\u{1b}[1mbold"), "{out:?}");
+    assert!(out.ends_with("\n\nNext."), "{out:?}");
+    assert!(!out.contains('\r'), "{out:?}");
+}

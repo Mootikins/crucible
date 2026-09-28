@@ -13,6 +13,7 @@ use markdown_it::plugins::cmark::block::blockquote::Blockquote;
 use markdown_it::plugins::cmark::block::code::CodeBlock as MdCodeBlock;
 use markdown_it::plugins::cmark::block::fence::CodeFence;
 use markdown_it::plugins::cmark::block::heading::ATXHeading;
+use markdown_it::plugins::cmark::block::hr::ThematicBreak;
 use markdown_it::plugins::cmark::block::list::{BulletList, ListItem, OrderedList};
 use markdown_it::plugins::cmark::block::paragraph::Paragraph;
 use markdown_it::plugins::cmark::inline::backticks::CodeInline;
@@ -98,6 +99,11 @@ pub(super) fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     if node.cast::<Table>().is_some() {
         render_table(node, ctx);
+        return;
+    }
+
+    if node.cast::<ThematicBreak>().is_some() {
+        render_thematic_break(ctx);
         return;
     }
 
@@ -245,17 +251,39 @@ pub(super) fn render_paragraph(node: &markdown_it::Node, ctx: &mut RenderContext
     ctx.mark_block_end();
 }
 
+/// Render a link as its text, then its URL in parentheses. A terminal and a
+/// pipe cannot open a hidden target, so the reader must see the URL. When
+/// the text is the URL, the URL shows once.
 pub(super) fn render_link(node: &markdown_it::Node, link: &Link, ctx: &mut RenderContext) {
+    let t = theme::active();
+    let link_style = Style::new().fg(t.resolve_color(t.colors.link)).underline();
     let link_text = extract_all_text(node);
-    let display = if link_text.is_empty() {
-        link.url.clone()
+    if link_text.is_empty() || link_text == link.url {
+        ctx.current_spans.push((link.url.clone(), link_style));
+        return;
+    }
+    ctx.current_spans.push((link_text, link_style));
+    ctx.current_spans
+        .push((format!(" ({})", link.url), ctx.current_style().dim()));
+}
+
+/// Render a thematic break as a rule across the text width, inside the
+/// margins.
+fn render_thematic_break(ctx: &mut RenderContext) {
+    ctx.flush_line();
+    ctx.ensure_block_spacing();
+    let t = theme::active();
+    let rule = styled(
+        "─".repeat(ctx.width),
+        Style::new().fg(t.resolve_color(t.colors.blockquote_prefix)),
+    );
+    let margins = ctx.margins;
+    if margins.left > 0 {
+        ctx.push_block(row([margin_node(margins.left), rule]));
     } else {
-        link_text
-    };
-    ctx.current_spans.push((display, {
-        let t = theme::active();
-        Style::new().fg(t.resolve_color(t.colors.link)).underline()
-    }));
+        ctx.push_block(rule);
+    }
+    ctx.mark_block_end();
 }
 
 pub(super) fn heading_style(level: u8) -> Style {

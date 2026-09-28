@@ -832,7 +832,14 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
 
     match answer {
         Ok(text) => {
-            println!("{}", crate::formatting::render_markdown(&text));
+            // The TUI renderer draws the answer: with styles on a terminal,
+            // as plain text to a pipe.
+            let terminal = std::io::IsTerminal::is_terminal(&std::io::stdout());
+            let width = crate::commands::diff::stdout_width(terminal);
+            println!(
+                "{}",
+                crate::tui::oil::markdown::markdown_to_string(&text, width, terminal)
+            );
             Ok(())
         }
         Err(err) => {

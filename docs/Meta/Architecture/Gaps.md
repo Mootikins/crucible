@@ -190,7 +190,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G147 | render | Render state is injectable for tests (hermeticity) | Five process-wide `RwLock` theme stores leak between tests; `AdaptiveColor::resolve` reads `NO_COLOR` (`style.rs:313`) | code-wrong | S |
 | G148 | render | `:set` keys have typed defaults (F110) | `RuntimeConfig::new` is never called; every `ShortcutTarget::Path` default is `""` and numbers stay strings (`config/overlay.rs:59`); `parse_bool` calls `expect` on user input | code-wrong | S |
 | G149 | render | Keybindings with a readline set are remappable (F135) | Keybinding remaps remain unimplemented | not-built | - |
-| G150 | render | Two markdown renderers do not exist (4.27) | `formatting/markdown_renderer.rs` and `tui/oil/markdown/`; `formatting/` imports `tui/oil` | code-wrong | S |
+| G150 | render | ~~Two markdown renderers do not exist (4.27)~~ | RESOLVED 2026-09-28: `formatting/markdown_renderer.rs` is gone. `cru chat -q` renders through `tui/oil/markdown/` (`markdown_to_string`). `formatting/syntax.rs` still imports `tui/oil` for the theme | resolved | — |
 | G151 | render | Web types are generated from the daemon contract (9.15) | `types.ts` mirrors eleven types by hand; `FsEntry` is mirrored at `types.ts:244` | both-acceptable | - |
 | G152 | render | `McpServerInfo` is one type (F124) | `types/mcp_status.rs:15`, `traits/mcp.rs:138` and `McpServerDisplay` | code-wrong | S |
 | G153 | render | Dead components do not ship (7) | `template/node_spec.rs` (1008 lines) dead apart from `parse_color`; `OilRunner`, `run_sync`, `ComposerConfig`, `detect_dark_terminal`, `with_alternate_screen` have no caller | code-wrong | S |

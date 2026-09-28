@@ -195,9 +195,8 @@ Findings).
   any extras) before `parse()` produces useful output.
   `crates/crucible-core/src/parser/basic_markdown_it.rs`'s
   `BasicMarkdownItExtension::new` builds one `md` once, behind an `Arc`,
-  and reuses it for every parse. `crates/crucible-cli/src/formatting/markdown_renderer.rs`'s `create_parser` and `crates/crucible-cli/src/tui/oil/markdown/context.rs`'s `create_parser` instead build a fresh
-  `MarkdownIt` on every call (once per `render_markdown` call, and once
-  per parse-and-render call respectively).
+  and reuses it for every parse. `crates/crucible-cli/src/tui/oil/markdown/context.rs`'s `create_parser` instead builds a fresh
+  `MarkdownIt` on every parse-and-render call.
 - **`Node`** (`vendor/markdown-it/src/parser/node.rs`) — the one AST node
   type: `children: Vec<Node>`, `srcmap: Option<SourcePos>`, `ext:
   NodeExtSet`, `attrs: Vec<(&'static str, String)>`, and two
@@ -275,7 +274,7 @@ Findings).
 1. A caller builds one `MarkdownIt` with `MarkdownIt::new()`, then calls
    `plugins::cmark::add(&mut md)` and any extras it wants
    (`crates/crucible-core/src/parser/basic_markdown_it.rs` adds `cmark` and
-   `extra::tables`; `crates/crucible-cli/src/formatting/markdown_renderer.rs` and `crates/crucible-cli/src/tui/oil/markdown/context.rs` add the same pair).
+   `extra::tables`; `crates/crucible-cli/src/tui/oil/markdown/context.rs` adds the same pair).
 2. `MarkdownIt::parse(src)` wraps `src` in a `Root` node with a
    whole-document `SourcePos`, then runs every registered core rule in
    `Ruler`-sorted order over that one node.
@@ -331,13 +330,10 @@ structs) to build [[Parser]]'s `Block`/`BlockKind` values — a node kind this
 converter does not recognize is skipped rather than guessed at.
 `crates/crucible-cli/src/tui/oil/markdown/render.rs` (`render_node`, with
 sibling files `table.rs`'s `render_table` and `list.rs`'s
-`render_list_item`) and `crates/crucible-cli/src/formatting/markdown_renderer.rs` (its own `render_node` and `render_table` methods,
-with list items handled inline rather than through a separate function)
-instead read the same `Node` tree directly, matching against the same
-cmark/tables `NodeValue` structs rather than going through `AstConverter`.
-Both call sites are outside this page's file list; see [[Parser]] for the
-first and [[TUI Components]] for the shape of the second's output, though
-the render code itself lives in `crucible-cli`.
+`render_list_item`) instead reads the same `Node` tree directly, matching
+against the same cmark/tables `NodeValue` structs rather than going through
+`AstConverter`. That call site is outside this page's file list; see
+[[TUI Components]] for the shape of its output.
 
 ## State, concurrency and lifecycle
 
@@ -472,7 +468,6 @@ this crate, not a change here.
   (`default = ["linkify", "syntect"]` in `vendor/markdown-it/Cargo.toml`)
   and their crate dependencies stay out of the build. Every Crucible caller
   (`crates/crucible-core/src/parser/basic_markdown_it.rs`,
-  `crates/crucible-cli/src/formatting/markdown_renderer.rs`,
   `crates/crucible-cli/src/tui/oil/markdown/context.rs`) calls only
   `plugins::cmark::add` and `plugins::extra::tables::add`. The crate's own
   tests still build with its defaults, because the vendored crate is outside

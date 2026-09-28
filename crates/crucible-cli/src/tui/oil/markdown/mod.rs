@@ -132,6 +132,34 @@ pub fn markdown_to_node_styled(markdown: &str, style: RenderStyle) -> Node {
     )
 }
 
+/// Render finished markdown to a string `width` columns wide, for output
+/// outside the TUI, for example `cru chat -q`.
+///
+/// With `ansi`, the string keeps the styles for a terminal. Without it, the
+/// string is plain text for a pipe or a file: it has no escape sequence and
+/// no space at the end of a line. A styled row, for example a heading, fills
+/// its width with styled spaces, and plain text has no style to keep.
+/// Lines end with `\n`, not with `\r\n`.
+pub fn markdown_to_string(markdown: &str, width: usize, ansi: bool) -> String {
+    use crucible_oil::render::{render_to_plain_text, render_to_string};
+
+    let node = markdown_to_node_styled(markdown, RenderStyle::viewport(width));
+    if ansi {
+        render_to_string(&node, width)
+            .replace('\r', "")
+            .trim_end()
+            .to_string()
+    } else {
+        render_to_plain_text(&node, width)
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim_end()
+            .to_string()
+    }
+}
+
 /// Convert markdown that is still streaming, so a trailing table stays as
 /// source lines until its block closes. Laying that table out on every delta
 /// would reshape rows the terminal has already scrolled away.

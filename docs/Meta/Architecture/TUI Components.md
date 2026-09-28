@@ -168,14 +168,14 @@ the client.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-cli/src/tui/oil/markdown/mod.rs` | 160 | Public entry point: `markdown_to_node*` functions, `Margins`, `RenderStyle`. |
+| `crates/crucible-cli/src/tui/oil/markdown/mod.rs` | 188 | Public entry point: `markdown_to_node*` functions, `markdown_to_string` for output outside the TUI, `Margins`, `RenderStyle`. |
 | `crates/crucible-cli/src/tui/oil/markdown/context.rs` | 207 | `RenderContext`: the mutable render-time state, plus the cached, panic-safe `parse_and_render_internal`. |
-| `crates/crucible-cli/src/tui/oil/markdown/render.rs` | 289 | `render_node`: the recursive `markdown-it` AST-to-`Node` dispatcher; owns `margin_node`, the shared gutter-marked left-margin helper. |
+| `crates/crucible-cli/src/tui/oil/markdown/render.rs` | 317 | `render_node`: the recursive `markdown-it` AST-to-`Node` dispatcher; owns `margin_node`, the shared gutter-marked left-margin helper. A link shows its URL after its text. A thematic break draws a rule across the text width. |
 | `crates/crucible-cli/src/tui/oil/markdown/blockquote.rs` | 44 | Renders a blockquote with a `│ ` prefix; the prefix and left margin are marked as gutters so a full-screen selection/copy skips them. |
 | `crates/crucible-cli/src/tui/oil/markdown/code.rs` | 106 | Renders fenced/indented code blocks as one pre-formatted, syntax-highlighted text node; each line's left margin is marked a gutter. |
 | `crates/crucible-cli/src/tui/oil/markdown/list.rs` | 94 | Renders one bulleted/numbered list item, recursing into nested sub-lists; continuation lines carry the wrap's dropped whitespace so a full-screen copy rejoins a wrapped item exactly. |
 | `crates/crucible-cli/src/tui/oil/markdown/table.rs` | 349 | `render_table`: GFM table rendering with column-width negotiation; also `wrap_text_with_gaps` (with `wrap_text` as a gap-discarding wrapper over it), used crate-wide in this module. |
-| `crates/crucible-cli/src/tui/oil/markdown/tests.rs` | 856 | Black-box unit-test suite for the whole markdown renderer. |
+| `crates/crucible-cli/src/tui/oil/markdown/tests.rs` | 904 | Black-box unit-test suite for the whole markdown renderer. |
 
 ### `crates/crucible-cli/src/tui/oil/theme/`
 
@@ -586,6 +586,14 @@ the wrap dropped. `fullscreen/selection.rs` (this page) reads both marks so a
 full-screen selection/copy skips decoration and rejoins a wrapped line
 exactly as it was written.
 
+This renderer is the only markdown renderer for the terminal. To print
+markdown outside the TUI, a command calls `markdown_to_string` (`mod.rs`).
+It lays out the same `Node` and renders it with `crucible_oil::render`.
+With styles, the string keeps the ANSI codes for a terminal. Without styles,
+the string is plain text for a pipe or a file, with no space at a line end.
+`cru chat -q` uses it, at the width that `commands/diff.rs::stdout_width`
+gives.
+
 ### Full-screen frame from kept rows
 
 ```mermaid
@@ -862,6 +870,7 @@ target text.
   `crates/crucible-cli/src/tui/oil/markdown/tests.rs`, a black-box suite over
   the public `markdown_to_node*` functions covering structural spacing,
   width-fitting, `<br>` handling, and syntax-highlighting ANSI-code presence.
+  It also covers `markdown_to_string`, link URLs and thematic breaks.
 - **Theme store tests** — embedded per file in `theme/*.rs`; `remote.rs`'s
   own tests note they rely on nextest's process-per-test isolation of the
   global stores, since a shared-process `cargo test` run would interfere

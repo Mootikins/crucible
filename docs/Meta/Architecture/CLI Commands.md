@@ -115,7 +115,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | `crates/crucible-cli/src/commands/completions.rs` | 51 | `cru completions <shell>` via `clap_complete`. |
 | `crates/crucible-cli/src/commands/config.rs` | 162 | `cru config init/show/migrate/dump`. |
 | `crates/crucible-cli/src/commands/daemon.rs` | 371 | `cru daemon start/stop/restart/status/logs/serve` — daemon process lifecycle from the CLI side. |
-| `crates/crucible-cli/src/commands/diff.rs` | 514 | `cru diff branch`/`cru diff comments` — prints a daemon-computed diffset (branch, session record or proposal) as text/JSON, and its open review comments as a quickfix list. |
+| `crates/crucible-cli/src/commands/diff.rs` | 515 | `cru diff branch`/`cru diff comments` — prints a daemon-computed diffset (branch, session record or proposal) as text/JSON, and its open review comments as a quickfix list. |
 | `crates/crucible-cli/src/commands/doctor.rs` | 1146 | `cru doctor` — ~10 categories of installation health checks, including a name-clash check over every card and skill source, kiln directories included (`Source names`). |
 | `crates/crucible-cli/src/commands/eval.rs` | 815 | `cru eval precognition` — offline retrieval measurement (hit@1/hit@k/MRR/recall) against a golden query set. |
 | `crates/crucible-cli/src/commands/init.rs` | 813 | `cru init` — initializes a directory as a kiln or project; writes no legacy config, registers via daemon RPC. |
@@ -152,7 +152,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-cli/src/commands/chat/mod.rs` | 1018 | `cru chat` end to end: flag-to-mode resolution, full-screen-by-default TUI launch (looping over `/resume`), oneshot path (direct RPCs plus `collect_turn_text`), replay. `cru chat -q` prints a `SendOutcome::Command`'s result instead of waiting for a turn. |
+| `crates/crucible-cli/src/commands/chat/mod.rs` | 1022 | `cru chat` end to end: flag-to-mode resolution, full-screen-by-default TUI launch (looping over `/resume`), oneshot path (direct RPCs plus `collect_turn_text`), replay. `cru chat -q` prints a `SendOutcome::Command`'s result instead of waiting for a turn. The TUI markdown renderer draws the answer through `markdown_to_string`: with styles on a terminal, as plain text to a pipe. |
 | `crates/crucible-cli/src/commands/chat/tests.rs` | 320 | Unit tests for `chat/mod.rs`'s pure helpers (env parsing, mode selection, piped-query folding, `chat_screen`'s inline/full-screen decision). |
 
 ### `src/commands/config/`
@@ -221,8 +221,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-cli/src/formatting/mod.rs` | 154 | `OutputFormat`, `TextFormat` — the shared `--format` enums every command uses. |
-| `crates/crucible-cli/src/formatting/markdown_renderer.rs` | 559 | `render_markdown` — Markdown-to-ANSI rendering for chat display. |
+| `crates/crucible-cli/src/formatting/mod.rs` | 151 | `OutputFormat`, `TextFormat` — the shared `--format` enums every command uses. |
 | `crates/crucible-cli/src/formatting/syntax.rs` | 436 | `SyntaxHighlighter` — syntect-backed code highlighting, theme derivable from the active UI colorscheme. |
 | `crates/crucible-cli/src/formatting/syntax_theme.rs` | 256 | Builds a syntect `Theme` from the active UI palette; the palette-index-through-alpha-channel encoding trick. |
 
@@ -766,7 +765,7 @@ doc for test-isolation reasons.
 - **An unused declared CLI field.** `commands/workflow.rs`'s
   `WorkflowSubcommand::Start.session` is parsed by clap but discarded
   (`_session`) in `run_start` — accepted syntax with no current effect.
-- **Two independent bordered-table renderers.** `formatting/markdown_renderer.rs`'s
+- **Two independent bordered-table renderers.** `tui/oil/markdown/table.rs`'s
   `render_table` (box-drawing characters, for Markdown-in-chat) and
   `output.rs`'s `comfy_table`-based `records_table` (for command-line
   `--format table` output) duplicate "render a bordered table" with

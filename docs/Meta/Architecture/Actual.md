@@ -1105,8 +1105,8 @@ sync; `process_action` runs side effects, then `on_message`, then recurses;
   `acp::streaming::humanize_tool_title` (`components/tool_render.rs:77,408`).
 - Two levenshtein implementations (`command_handling.rs:44`,
   `crucible-lua/src/handlers/crucible_on.rs:12`); two bool parsers
-  (`commands/set.rs:449`, `config/value.rs:127`); two markdown renderers in
-  the CLI (`formatting/markdown_renderer.rs`, `tui/oil/markdown/`).
+  (`commands/set.rs:449`, `config/value.rs:127`). The CLI has one markdown
+  renderer, `tui/oil/markdown/` (2026-09-28).
 
 Still true from the older notes: `statusline_items::builtin_default()` and
 `ThemeConfig::default_dark()` are the embedded defaults, both in `crucible-lua`;

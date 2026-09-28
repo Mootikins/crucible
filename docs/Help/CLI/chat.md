@@ -25,6 +25,10 @@ Running `cru` with no arguments starts chat mode.
 |----------|-------------|
 | `[QUERY]` | Optional one-shot query. If omitted, starts interactive mode. |
 
+A one-shot query prints the answer as the TUI draws it. On a terminal, the
+answer has colors and wraps at the terminal width. To a pipe or a file, the
+answer is plain text that wraps at 100 columns.
+
 ## Description
 
 The chat command connects an AI agent to your knowledge base. The agent can search, read, and explore your notes. In normal mode it has full tool access. Switch to plan mode for read-only exploration, or auto mode to skip tool confirmation prompts.

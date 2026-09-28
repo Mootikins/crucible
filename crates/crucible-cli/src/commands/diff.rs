@@ -178,7 +178,8 @@ pub(crate) fn stdout_diff_options() -> DiffOptions {
     opts
 }
 
-fn stdout_width(terminal: bool) -> usize {
+/// The width of stdout: the terminal width, or [`PIPE_WIDTH`] for a pipe.
+pub(crate) fn stdout_width(terminal: bool) -> usize {
     if terminal {
         crossterm::terminal::size().map_or(PIPE_WIDTH, |(w, _)| w as usize)
     } else {

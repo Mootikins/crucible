@@ -3,9 +3,6 @@
 // This module provides common formatting functions and types to eliminate
 // duplication across command implementations, following the DRY principle.
 
-mod markdown_renderer;
-pub use markdown_renderer::render_markdown;
-
 pub mod syntax;
 pub mod syntax_theme;
 pub use syntax::SyntaxHighlighter;
