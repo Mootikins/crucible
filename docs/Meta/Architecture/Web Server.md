@@ -1,0 +1,735 @@
+---
+title: Web Server
+description: The crucible-web Axum backend — router assembly, auth/host defense, daemon RPC forwarding, and SSE projection for the SolidJS frontend.
+tags: [meta, architecture, web, daemon]
+status: as-built
+as_of: 582c5e6c1
+---
+
+# Web Server
+
+`crucible-web` is the Axum HTTP backend for `cru web`. It serves the
+SolidJS frontend under `crates/crucible-web/web/`, answers the browser's
+REST and SSE calls, and forwards every one of them to `crucible-daemon`
+over the daemon's Unix socket. `crates/crucible-cli/src/commands/web.rs`
+calls `crucible_web::start_server` (`crates/crucible-web/src/server.rs`);
+that is the crate's one production entry point.
+
+## Purpose and ownership
+
+Per `AGENTS.md`, `crucible-cli`/`crucible-web` own "Input, presentation,
+client-local state"; `crucible-daemon` owns "Sessions, admission, tools,
+storage, retrieval, review, plugin lifecycle." `crucible-web` must not
+construct a second agent configuration or a second write pipeline; it sends
+intent to the daemon and renders the daemon's answer.
+
+The crate holds to this rule as a thin proxy layer: almost every handler
+under `crates/crucible-web/src/routes/` calls one `state.daemon.*` method
+(`crates/crucible-web/src/services/daemon.rs`) and either returns the
+daemon's own type verbatim or reshapes it through a locally declared,
+`utoipa`-annotated row type via `crates/crucible-web/src/routes/session/mod.rs`'s
+`daemon_shape`. Three files carry real, explicitly justified web-side logic
+instead of pure forwarding:
+
+- `crates/crucible-web/src/routes/canvas.rs` enforces `.canvas` reference
+  containment and redaction *within the root the daemon names* (a
+  "three-layer scheme" its own module doc names); it no longer resolves
+  which kiln or project encloses a canvas — that decision is the daemon's
+  `fs.read`/`fs.write` root rule, shared with every other file route (see
+  the "Kiln/canvas file write" flow below).
+- `crates/crucible-web/src/routes/layout.rs` persists the pane layout and
+  recent-files list as an opaque JSON blob — genuinely client-local
+  presentation state (per `AGENTS.md`'s "Display state... stays in the
+  client" rule), kept server-side only because `localStorage` does not
+  survive across ports and debug instances.
+- `crates/crucible-web/src/routes/project.rs` layers an untrusted-caller-only
+  root-safety policy (`untrusted_root_refusal`) on top of the daemon's own
+  floor check, because an HTTP caller is not the same principal as a local
+  `cru` invocation.
+
+`crates/crucible-web/src/routes/search.rs`'s `resolve_note` still walks the
+filesystem directly (a walk that deliberately bypasses the note index), but
+now resolves its root through the daemon's `fs.read` rather than a local
+walk-up. `put_note` is now a much thinner proxy than it once was: it still
+checks content size and note-name traversal locally, but containment and the
+optimistic-concurrency `base_hash` compare are entirely the daemon's
+`fs.write`'s job. `crates/crucible-web/src/routes/shell.rs` runs a local
+`sh -c` command inside the web process rather than through a daemon RPC — a
+documented, temporary stopgap, not a design the crate defends (see
+Findings).
+
+## Module map
+
+Paths are relative to the repository root. Line counts are as recorded at
+`582c5e6c1`.
+
+### `crates/crucible-web/src/` (crate root)
+
+| File | Lines | Role |
+| --- | --- | --- |
+| `crates/crucible-web/src/assets.rs` | 201 | Serves the embedded SolidJS bundle or a `--static-dir` override. |
+| `crates/crucible-web/src/error.rs` | 246 | `WebError`, the crate's one error enum (now including `Conflict`), and its HTTP/JSON projection. |
+| `crates/crucible-web/src/events.rs` | 1240 | `ChatEvent` (now including `TurnFinished` and per-call `render` fields), the browser-facing SSE event enum, and its projection from the daemon's `SessionEvent`/`SessionEventPayload`. |
+| `crates/crucible-web/src/fs_events.rs` | 133 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
+| `crates/crucible-web/src/server.rs` | 717 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases route groups. |
+| `crates/crucible-web/src/test_support.rs` | 1722 | Shared mock-daemon and fixture library for every route test in this crate. |
+
+### `crates/crucible-web/src/middleware/`
+
+| File | Lines | Role |
+| --- | --- | --- |
+| `crates/crucible-web/src/middleware/mod.rs` | 1 | Declares the `auth` submodule tree. |
+| `crates/crucible-web/src/middleware/auth/api_key.rs` | 149 | Resolves and verifies the server's API key (config, persisted file, or generated). |
+| `crates/crucible-web/src/middleware/auth/mod.rs` | 409 | `bearer_auth`/`host_guard`, the ordering contract, and the auth-submodule re-exports. |
+| `crates/crucible-web/src/middleware/auth/session.rs` | 326 | `SessionStore` — persisted browser session tokens minted by login. |
+| `crates/crucible-web/src/middleware/auth/shell.rs` | 464 | WebSocket `Origin` guard (CSWSH defense) and the loopback-only shell/terminal gate. |
+| `crates/crucible-web/src/middleware/auth/tests.rs` | 623 | Integration tests for `bearer_auth`/`enforce_host`/loopback/session-cookie behavior. |
+| `crates/crucible-web/src/middleware/auth/host/mod.rs` | 636 | `HostPolicy` — the DNS-rebinding defense (`accepts`, `local_names`, `normalize_authority`). |
+| `crates/crucible-web/src/middleware/auth/host/tests.rs` | 441 | Regression tests for `HostPolicy` against known Host-header vulnerability shapes. |
+
+### `crates/crucible-web/src/routes/`
+
+| File | Lines | Role |
+| --- | --- | --- |
+| `crates/crucible-web/src/routes/mod.rs` | 62 | Module tree and public re-export surface for every route group. |
+| `crates/crucible-web/src/routes/agents.rs` | 147 | `GET /api/agents`, `GET /api/models` — the session-creation agent picker. |
+| `crates/crucible-web/src/routes/auth.rs` | 497 | `POST /api/auth/login`/`logout` — exchanges an API key for a session cookie. |
+| `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
+| `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with strict containment and reference redaction, within the root the daemon's `fs.read` names. |
+| `crates/crucible-web/src/routes/chat.rs` | 542 | Chat turn intake (with attached diff comments), the session SSE event stream, and pending-interaction routes. |
+| `crates/crucible-web/src/routes/comment_rows.rs` | 107 | Named, OpenAPI-visible wire rows (`LineRangeRow`, `CommentAuthorRow`, `CommentAnchorRow`, `CommentSideRow`, `ReviewCommentRow`) for the `/api/diff/comment*` routes. |
+| `crates/crucible-web/src/routes/comment_rows_tests.rs` | 84 | Round-trip tests proving each comment row reads every shape the daemon's `Comment` type can serialize. |
+| `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. |
+| `crates/crucible-web/src/routes/diff.rs` | 661 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
+| `crates/crucible-web/src/routes/events.rs` | 180 | `GET /api/events/system` — `publication_changed` and `proposal_changed` pushed on the daemon's system session; also the shared `system_stream` helper `fs.rs` and `surface.rs` reuse. |
+| `crates/crucible-web/src/routes/fs.rs` | 487 | File-tree explorer routes: list, move, mkdir, trash, and a live SSE stream built on the shared `system_stream` helper. |
+| `crates/crucible-web/src/routes/health.rs` | 49 | `/health` liveness and `/ready` readiness probes. |
+| `crates/crucible-web/src/routes/helpers.rs` | 115 | Shared stream-versioning, note-projection, and note-name-validation helpers. |
+| `crates/crucible-web/src/routes/kiln.rs` | 1346 | Kiln/project file listing, the note-link graph, and text/raw file read-write, all through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers. |
+| `crates/crucible-web/src/routes/layout.rs` | 470 | Web UI layout persistence and the recently-opened-files list. |
+| `crates/crucible-web/src/routes/mcp.rs` | 97 | `GET /api/mcp/status`. |
+| `crates/crucible-web/src/routes/plugin.rs` | 1228 | The nine plugin HTTP endpoints: list, install, remove, reload, options, commands, publications. It has no SSE stream of its own; see the "SSE subscribe-before-forward" flow below. |
+| `crates/crucible-web/src/routes/plugin_caller.rs` | 144 | `PluginCaller` — the caller-identity extractor gating six plugin routes. |
+| `crates/crucible-web/src/routes/project.rs` | 625 | `/api/project/*` routes and the untrusted-caller root-safety policy. |
+| `crates/crucible-web/src/routes/proposals.rs` | 318 | `/api/proposals*` — accept/reject/dismiss/resolve a note-tool proposal, a thin proxy with no session in its path. |
+| `crates/crucible-web/src/routes/scm.rs` | 93 | `POST /api/scm/clone` — thin proxy for a git clone. |
+| `crates/crucible-web/src/routes/search.rs` | 1633 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. |
+| `crates/crucible-web/src/routes/session_commands.rs` | 362 | `/api/commands` catalogue and `/api/session/{id}/command` execution, including a daemon-backed `/clear` and a readable `/search`. |
+| `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
+| `crates/crucible-web/src/routes/shell.rs` | 378 | `POST /api/shell/exec` — local shell execution streamed over SSE. |
+| `crates/crucible-web/src/routes/skills.rs` | 171 | `/api/skills*` — proxies to daemon skill discovery. |
+| `crates/crucible-web/src/routes/surface.rs` | 402 | `GET /api/surfaces` and its SSE change stream, built on the shared `system_stream` helper. |
+| `crates/crucible-web/src/routes/terminal.rs` | 504 | `GET /api/terminal/ws` — WebSocket-to-PTY bridge. |
+| `crates/crucible-web/src/routes/webhook.rs` | 465 | `POST /api/webhook/{name}` — signed webhook ingress. |
+
+### `crates/crucible-web/src/routes/session/`
+
+| File | Lines | Role |
+| --- | --- | --- |
+| `crates/crucible-web/src/routes/session/mod.rs` | 1388 | `/api/session*` CRUD, lifecycle, scope, modes/knobs, providers, and the session notifications read/dismiss routes. |
+| `crates/crucible-web/src/routes/session/search_scope_tests.rs` | 55 | Tests for the session-search kiln-scope query parsing. |
+| `crates/crucible-web/src/routes/session/shape_tests.rs` | 430 | Shape/round-trip tests for the session handlers. |
+| `crates/crucible-web/src/routes/session/tests.rs` | 651 | `create_session` (forwarding its endpoint to the daemon unchecked), scope, export, session-history, and provider-listing tests. |
+
+### `crates/crucible-web/src/routes/session_config/`
+
+| File | Lines | Role |
+| --- | --- | --- |
+| `crates/crucible-web/src/routes/session_config/approval.rs` | 129 | Per-session, per-plugin approval mode (`ask`/`stop`/…) and the plugin-turn-limit knob. |
+| `crates/crucible-web/src/routes/session_config/basic.rs` | 192 | Precognition get/set and agent-self-advertised option list/set. |
+| `crates/crucible-web/src/routes/session_config/mod.rs` | 79 | Assembles the config-knob router from `approval.rs`, `basic.rs` and `prompt.rs`. |
+| `crates/crucible-web/src/routes/session_config/prompt.rs` | 77 | The `context-strategy` session knob. |
+| `crates/crucible-web/src/routes/session_config/tests.rs` | 270 | Round-trip tests proving each knob's wire field name in both directions. |
+
+### `crates/crucible-web/src/services/`
+
+| File | Lines | Role |
+| --- | --- | --- |
+| `crates/crucible-web/src/services/mod.rs` | 8 | Declares the `services` module tree; imports the `forward_rpc!` macro crate-wide. |
+| `crates/crucible-web/src/services/catalog.rs` | 251 | `SwrCache` — stale-while-revalidate cache for the slow agent-profile and provider calls. |
+| `crates/crucible-web/src/services/daemon.rs` | 1042 | `AppState`, `ReconnectingDaemon`, `EventBroker`, `EventStream` — the daemon RPC client wrapper, SSE fan-out, and the `base.*`/`diff.*`/`proposal`-adjacent forwarders. |
+| `crates/crucible-web/src/services/daemon_config.rs` | 91 | Forwards `config.*` RPCs and redacts credentials at the crate boundary. |
+| `crates/crucible-web/src/services/daemon_event_stream.rs` | 252 | `EventStream`, `Interest` — per-session upstream subscribe/unsubscribe reconciliation and SSE lag-to-`stream_gap` translation. |
+| `crates/crucible-web/src/services/daemon_plugins.rs` | 101 | Forwards `plugin.*` RPCs for the plugin panel and settings pane. |
+| `crates/crucible-web/src/services/daemon_proposals.rs` | 50 | Forwards `proposal.*` RPCs (list, get, accept, reject, dismiss, resolve) with the daemon's `Proposal` type. |
+| `crates/crucible-web/src/services/daemon_retry_tests.rs` | 548 | Real-Unix-socket tests for `ReconnectingDaemon`'s reconnect/replay machinery and the `Interest`/`EventStream` upstream-subscription protocol, driven through both the raw client and the assembled router's SSE routes. |
+| `crates/crucible-web/src/services/daemon_session_config.rs` | 17 | Forwards the two session-context-strategy RPCs. |
+| `crates/crucible-web/src/services/forwarding.rs` | 32 | `ReplayPolicy` and the `forward_rpc!` macro shared by every `daemon_*.rs` forwarder. |
+
+## Key types and traits
+
+- **`AppState`** (`crates/crucible-web/src/services/daemon.rs`) — the shared
+  Axum state every handler extracts. Holds `daemon: Arc<ReconnectingDaemon>`,
+  `events: Arc<EventBroker>`, `config: Arc<CliAppConfig>`, an `http_client`,
+  `layout_path`, `remote_shell`, `swr: Arc<SwrCache>`, and `recents_lock`.
+  Built once by `init_daemon` and cloned per request; `build_router` in `crates/crucible-web/src/server.rs`
+  is the only place that mutates it after construction (setting
+  `remote_shell` and, for a standalone instance, `layout_path`). Being an
+  `Arc` is load-bearing for `daemon`: `ReconnectingDaemon::subscribe_events`
+  takes `self: &Arc<Self>` and hands `EventStream` a `Weak` clone so a
+  dropped stream can still reach the daemon to release its interest.
+- **`ReconnectingDaemon`** (`crates/crucible-web/src/services/daemon.rs`) —
+  wraps a live `crucible_daemon::DaemonClient` behind `Arc<RwLock<DaemonClient>>`
+  plus a generation counter. Every RPC forwarder (`forward_rpc!`-generated,
+  or hand-written for `scm_clone`) calls its `forward_rpc` method, which
+  retries once on a connection-shaped error only when the call's
+  `ReplayPolicy` is `Safe`. `session_subscribe`/`session_unsubscribe` are
+  private now, called only by `daemon_event_stream.rs`'s `reconcile`, never
+  directly from a route.
+- **`EventBroker`** (same file) — the SSE fan-out: its per-session
+  `broadcast::Sender` lives in `sessions`; `dispatch` routes an event to one
+  session's sender, or to every session's sender for the daemon's wildcard
+  session id. `subscribe(session_id)` (a raw `broadcast::Receiver`) is now
+  `#[cfg(any(test, feature = "test-utils"))]` — production code never calls
+  it directly; it calls `ReconnectingDaemon::subscribe_events`, which returns
+  an `EventStream` and reconciles the daemon subscription to match reader
+  demand as a side effect.
+- **`EventStream`**/**`Interest`** (`crates/crucible-web/src/services/daemon_event_stream.rs`)
+  — `EventStream` is the `Stream<Item = SessionEvent>` every browser SSE
+  route now reads (via `ReconnectingDaemon::subscribe_events`); its own
+  `poll_next` turns a local broadcast lag (`Lagged(n)`) into a synthetic
+  `stream_gap` event rather than propagating the error, and dropping it
+  releases the session's upstream `session.subscribe` once no other reader
+  remains — through an unbounded channel, so the release reaches the daemon
+  even with no Tokio runtime on the dropping thread. `Interest` holds one
+  `Upstream` mutex per session id and serializes that release/re-subscribe
+  as one flight per session, so a slow RPC for one session cannot block
+  another's.
+- **`WebError`** (`crates/crucible-web/src/error.rs`) — the crate's one
+  error enum (`Config`, `Io`, `Chat`, `Daemon`, `Validation`, `NotFound`,
+  `UnsupportedMediaType`, `Forbidden`, `Conflict`, `Internal`, `StaleBase`).
+  Every route returns `crate::Result<T>`; `WebResultExt::daemon_err()` turns
+  a daemon RPC failure into the right variant, reclassifying an
+  `INVALID_PARAMS` JSON-RPC error as `Validation` (422) and a `BUSY` error
+  (`crucible_core::protocol::rpc::BUSY`, in `crates/crucible-core/src/protocol/rpc/mod.rs`)
+  as `Conflict` (409) — a proposal decision or a bases write already in
+  flight — rather than `Daemon` (502). `rpc_error_parts` (same file) is
+  `pub(crate)` so `routes/bases.rs` can reuse the same JSON-RPC code/message
+  split to map the daemon's bases-specific `NOT_FOUND` code to 404.
+- **`ChatEvent`** (`crates/crucible-web/src/events.rs`) and **`FsEvent`**
+  (`crates/crucible-web/src/fs_events.rs`) — the browser-facing SSE
+  vocabularies. `ChatEvent::from_daemon_event` and `FsEvent::from_daemon_event`
+  are the one-way projection from the daemon's canonical `SessionEvent`/
+  `SessionEventPayload`; the web layer never invents its own wording (see
+  `stop_notice` in Boundaries and invariants). `ChatEvent::TurnFinished`
+  carries the turn's terminal `status`/`stop_reason`/`error`, and the
+  browser ends a turn on it rather than on `message_complete`.
+  `ChatEvent::ToolCall.display` (the daemon's `CanonicalToolCall` JSON) now
+  carries the call's proposed diffs itself, so `ToolCall` no longer has a
+  separate `diffs` field; `ChatEvent::ToolResult`/`ToolResultError` each
+  gained a `render` field, the finished call's `crucible_core::types::ToolRender`.
+- **`ApiKeyState`**, **`HostPolicy`**, **`SessionStore`**, **`ShellGateState`**
+  (`crates/crucible-web/src/middleware/auth/mod.rs`, `host/mod.rs`,
+  `session.rs`, `shell.rs`) — the auth/host/session state consumed by
+  `bearer_auth`, built once at startup in `build_router` in `crates/crucible-web/src/server.rs`
+  and carried through the router as `Arc` extractor state.
+- **`PluginCaller`** (`crates/crucible-web/src/routes/plugin_caller.rs`) —
+  an Axum `FromRequestParts` extractor reading the `x-crucible-plugin`
+  header; created per-request, consumed by six handlers in
+  `crates/crucible-web/src/routes/plugin.rs`. Documented as not a security
+  boundary.
+- **`ReplayPolicy`** (`crates/crucible-web/src/services/forwarding.rs`) —
+  `Safe` or `Once`, declared per RPC forwarder; consumed by
+  `ReconnectingDaemon::forward_rpc`.
+- **`SessionRow`**/`ResumeSessionResponse`/`daemon_shape`
+  (`crates/crucible-web/src/routes/session/mod.rs`) — the session reply
+  decoder shared by every session handler; `ResumeSessionResponse` is a
+  `#[serde(untagged)]` enum whose variant order is load-bearing (`Restored`
+  must precede `Live`, tested by `shape_tests.rs`). `daemon_shape` is also
+  the decoder `crates/crucible-web/src/routes/diff.rs`'s `reply_row` calls
+  for every diffset/comment reply. `ModeRow.writes: WriteModeRow`
+  (`Apply`/`Propose`, mirroring `crucible_core::types::WriteMode` in
+  `crates/crucible-core/src/types/mode.rs`) replaced `ModeRow.review_policy:
+  ReviewPolicyRow`, since a mode now declares what a write *does*
+  (`apply`/`propose`), not how much review gates it.
+- **`DiffsetSource`** (`crucible_core::diff::DiffsetSource`, in
+  `crates/crucible-core/src/diff.rs`) — a branch diff (`root`/`base`/`head`),
+  a session record's base text against the current files on disk
+  (`session`), or one proposal's base-of-each-write against its new text
+  (`proposal`); the query shape `crates/crucible-web/src/routes/diff.rs`
+  turns a caller's query or body into, and the key
+  `crates/crucible-web/src/services/daemon.rs`'s `Diff*` forwarders send to
+  the daemon.
+- **`ReviewCommentRow`**/`CommentAnchorRow`/`CommentSideRow`/`CommentAuthorRow`
+  (`crates/crucible-web/src/routes/comment_rows.rs`) — the named,
+  OpenAPI-visible wire rows for `/api/diff/comment*`, mirroring
+  `crucible_core::session::Comment`/`CommentAnchor`/`CommentSide`/`CommentAuthor`;
+  `comment_rows_tests.rs` round-trips each row against the daemon's real
+  type so a field `crucible-core` adds cannot silently drop before it
+  reaches the browser.
+- **`Proposal`**/`ProposalId` (`crucible_core::proposal`, in
+  `crates/crucible-core/src/proposal.rs`) — forwarded verbatim by
+  `crates/crucible-web/src/routes/proposals.rs` and
+  `crates/crucible-web/src/services/daemon_proposals.rs`; the web declares
+  no row type of its own for a proposal.
+- **`WriteOutcome`** (`crucible_daemon::bases::WriteOutcome`, in
+  `crates/crucible-daemon/src/bases/operation.rs`) — the three-way answer a
+  bases write gives; `crates/crucible-web/src/routes/bases.rs`'s
+  `write_answer` maps `Stale { current_hash }` to `WebError::StaleBase`
+  (409), `Refused { reason }` to `WebError::Forbidden` (403), and
+  `Applied`/`Unchanged`/`Proposed` to 200.
+
+## Flows
+
+### Startup
+
+`crates/crucible-cli/src/commands/web.rs` calls
+`crucible_web::start_server` (`crates/crucible-web/src/server.rs`), which:
+
+1. Builds `HostPolicy::from_web_config`, before any port is bound, so a
+   malformed `allowed_hosts` entry costs no bound port. This does not run
+   before the daemon is touched: `crates/crucible-cli/src/commands/web.rs`'s
+   own handler already connected or auto-spawned a daemon before it calls
+   `start_server`, so a refusal here can still leave a daemon running.
+2. Calls `daemon::init_daemon`, which connects (or auto-spawns) a
+   `crucible_daemon::DaemonClient`, builds the `EventBroker` and
+   `ReconnectingDaemon`, best-effort registers the configured kiln as a
+   project, and returns `AppState`.
+3. For a standalone instance, swaps `state.layout_path` to an isolated path.
+4. Calls `crate::services::catalog::warm(state.clone())` to pre-fill the
+   slow `agents`/`providers` catalog probes.
+5. Resolves the API key (`middleware::auth::resolve_api_key`) and builds
+   `ApiKeyState`.
+6. Calls `build_router`, which composes the CORS allow-list from
+   `HostPolicy`, decides `remote_shell`, builds `ShellGateState`, nests
+   `api_router` behind `bearer_auth`, merges `health_routes`/`auth_routes`/
+   `static_routes` as public routes, and wraps the whole app in
+   `with_security_headers(with_app_wide_layers(...))`.
+7. Binds a `TcpListener` and runs `axum::serve(...)`.
+
+### Request auth flow
+
+Every `/api/*` request passes `bearer_auth`
+(`crates/crucible-web/src/middleware/auth/mod.rs`), which runs
+`HostPolicy::accepts` (`enforce_host`) first, then relaxes in order: auth
+disabled, loopback caller (`caller_is_loopback`), a matching `Authorization:
+Bearer` header (`api_key::verify_api_key`), or a valid session cookie
+(`session::SessionStore::verify`) — else 401/403 via
+`crate::error::error_response`. The shell and terminal routes add a second,
+stricter gate: `shell::localhost_only_shell_auth` plus
+`websocket_origin_guard`, because `bearer_auth`'s loopback bypass is unsafe
+for a PTY once DNS rebinding and same-origin trust combine; that second gate
+lifts only under the fail-closed `remote_shell_active` opt-in.
+
+### SSE subscribe-before-forward
+
+Every browser SSE route reads an `EventStream` from
+`ReconnectingDaemon::subscribe_events` (`crates/crucible-web/src/services/daemon.rs`,
+implemented in `crates/crucible-web/src/services/daemon_event_stream.rs`),
+which subscribes the local `EventBroker` channel before it reconciles the
+daemon's own `session.subscribe`, so an event emitted between the two steps
+is not lost. `crates/crucible-web/src/routes/events.rs`'s `system_stream`
+is the one shared implementation of this rule for the daemon's system
+channel: `crates/crucible-web/src/routes/fs.rs`'s file-watcher stream and
+`crates/crucible-web/src/routes/surface.rs`'s surface-change stream both
+call it rather than assembling their own subscribe/forward/SSE pipeline.
+`crates/crucible-web/src/routes/chat.rs`'s per-session stream is not
+system-scoped, so it does not call `system_stream`; it calls
+`subscribe_events` directly, collapsing what used to be two separate calls
+(a local broker subscribe, then a daemon `session.subscribe` RPC) into one.
+`crates/crucible-web/src/routes/plugin.rs` has no SSE stream of its own left
+at all — its former `GET /api/plugins/events` route is deleted, superseded
+by `GET /api/events/system`.
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Route as routes/chat.rs::event_stream
+    participant Reconnecting as services/daemon.rs::ReconnectingDaemon
+    participant Interest as services/daemon_event_stream.rs::reconcile
+    participant CoreDaemon as crucible-daemon
+
+    Browser->>Route: GET /api/chat/events/{id}
+    Route->>Reconnecting: subscribe_events(session_id)
+    Reconnecting->>Reconnecting: EventBroker subscribe (local, first)
+    Reconnecting->>Interest: reconcile(session_id)
+    Interest->>CoreDaemon: RPC session.subscribe (if not already On)
+    CoreDaemon-->>Interest: events begin forwarding
+    Interest-->>Reconnecting: EventStream
+    Reconnecting-->>Route: EventStream yields SessionEvent
+    Route->>Route: ChatEvent::from_daemon_event
+    Route-->>Browser: SSE frame
+```
+
+Three paths can raise a `stream_gap` event, and each names why.
+`EventStream`'s `Stream` implementation
+(`crates/crucible-web/src/services/daemon_event_stream.rs`) turns a local
+broadcast lag (`Lagged(n)`) into a synthetic `stream_gap` event for that one
+reader, rather than dropping it silently.
+`ReconnectingDaemon::rewire_events` (`crates/crucible-web/src/services/daemon.rs`)
+raises a `stream_gap` addressed to the wildcard session id after a daemon
+reconnect, once the dead connection's event-router task has been stopped
+and awaited to completion, so no event the dead connection still held can
+follow the gap; `EventBroker::dispatch` fans a wildcard-addressed event out
+to every session's sender, since no per-session sender is keyed to the
+wildcard. `crates/crucible-web/src/routes/chat.rs`'s replay-cursor filter
+treats either gap as ending its "hide already-replayed events" window
+(resetting its `floor` to 0), because a reconnected daemon renumbers events
+from its own persisted log, so a seq at or below the old floor can be a
+genuinely new event.
+
+### Browser-side stream recovery
+
+The backend's `ReconnectingDaemon` reconnect covers only the web server's
+own link to the daemon. The SolidJS frontend adds a second, separate
+recovery layer for the browser's own link to the web server: the
+`EventSource` an SSE route serves can drop for a reason `ReconnectingDaemon`
+never sees, such as an HTTP 5xx or a wrong content type, which leaves a
+browser `EventSource` permanently `CLOSED` with no further retry of its own.
+`openReconnectingSource` (`crates/crucible-web/web/src/lib/api.ts`) closes a
+failed source itself and opens a new one after an exponential backoff, so
+each of the four browser streams — chat, surface, filesystem and system —
+recovers on its own after such an error. An open resets the backoff to its
+first step; a manual `reconnect()` on the shared root in
+`crates/crucible-web/web/src/lib/query/sse.ts` skips the backoff outright.
+
+On a reconnect or a `stream_gap`, a consumer must not lose a change that
+arrived while its first fetch of the same data was still in flight.
+`refreshQueries` (`crates/crucible-web/web/src/lib/query/recovery.ts`) waits
+for any fetch already in flight for a matched query to settle before it
+invalidates that query, rather than cancelling the in-flight fetch; a cancel
+would fail every caller of `fetchQuery` that is waiting on a query with no
+data yet. `sessionNotifications` (`crates/crucible-web/web/src/lib/query/daemon-notification.ts`)
+answers the related toast case: a notification whose display timer already
+hid it keeps its entry in `showDaemonNotification`'s `shownIn` map, so a
+reconnect's or a gap's re-read of the same notification snapshot does not
+show the toast again.
+`crates/crucible-web/web/src/lib/query/__tests__/stream-recovery.test.ts`
+and `crates/crucible-web/web/e2e/system-stream-recovery.spec.ts` pin both
+the backoff-reopen behavior and the wait-before-invalidate behavior.
+
+### Upstream subscription reconciliation
+
+Every browser SSE stream drives its own daemon subscription, not one
+hard-coded `"system"`-channel entry. `ReconnectingDaemon::subscribe_events`
+(`crates/crucible-web/src/services/daemon_event_stream.rs`) gets-or-creates
+the session's broadcast sender in `EventBroker`, wraps a new receiver in an
+`EventStream`, then calls `reconcile(session_id)`, which computes
+`wants_events` (true iff the broadcast sender still has a receiver) and,
+holding the session's `Upstream` mutex from `Interest`, issues exactly one
+`session.subscribe` or `session.unsubscribe` RPC to bring the daemon into
+agreement — one flight at a time, so a slow RPC for one session cannot
+block another session's `reconcile`. Dropping an `EventStream` sends a
+release through an unbounded channel a lazily-started `serve_releases` task
+drains, so the release reaches the daemon even if the drop happens with no
+Tokio runtime on the current thread.
+`ReconnectingDaemon::close_event_streams` (called by
+`end_session`/`archive_session`/`delete_session` in
+`crates/crucible-web/src/routes/session/mod.rs`) removes the broker entry
+and reconciles away the upstream subscription through the same path an
+ordinary last-reader drop uses.
+
+### Daemon reconnect and replay
+
+`ReconnectingDaemon::forward_rpc` calls the current `DaemonClient`; on a
+connection-shaped error (broken pipe, connection reset/refused) and a
+`Safe`-policy call, it calls `reconnect_if_stale` (a double-checked
+generation compare under a write lock). `reconnect_if_stale` reconnects in
+event mode, then — before it commits the new connection to `*daemon` —
+calls `session_subscribe` on the new connection for every session whose
+broadcast sender in `EventBroker` still has at least one receiver; a
+failure here refuses the whole reconnect (leaving `generation` unchanged,
+so the next `Safe` call retries) rather than committing a half-restored
+connection that looks healthy while its browser streams stay silent. Once
+restoration succeeds, `rewire_events` stops the old event-router task and
+awaits its join before broadcasting the reconnect's `stream_gap` and
+spawning the new router. The original call is then retried exactly once. A
+`Once`-policy call (any daemon-side write) is returned immediately on error
+rather than retried, because a lost response to a write is ambiguous.
+`crates/crucible-web/src/services/daemon_retry_tests.rs` exercises this —
+and the `Interest`/`EventStream` protocol above — against a real,
+failure-injecting Unix-socket peer, driving both the raw client and, for
+several tests, the fully assembled router's real SSE bodies.
+
+### Kiln/canvas file read and write
+
+Every file route resolves its root and content through the daemon rather
+than locally. `get_kiln_file`/`get_raw_file` (`crates/crucible-web/src/routes/kiln.rs`)
+and `get_canvas`/`put_canvas` (`crates/crucible-web/src/routes/canvas.rs`)
+call the shared `read_through_daemon` helper (`crates/crucible-web/src/routes/kiln.rs`),
+which sends the caller's path to the daemon's `fs.read` RPC and reads back
+the resolved root and content, or `None` if absent; `text_of`
+(`crates/crucible-web/src/routes/kiln.rs`) extracts `(text, content_hash)`
+for a text read. `put_canvas` forwards the new content, and the original
+path string unchanged, to `state.daemon.fs_write`; `put_kiln_file`/
+`patch_kiln_file` do the same directly — a comment on `put_kiln_file`
+states "the daemon owns containment, policy, compare, merge and write."
+`check_file_answer` (renamed from `check_write`, and now called by the
+*read* path too) in `crates/crucible-web/src/routes/kiln.rs` translates the
+daemon's JSON reply into a typed 200/409/403 response for all of these
+handlers (`write_response` wraps it for the write routes).
+`crates/crucible-web/src/routes/search.rs`'s `put_note` follows the same
+pattern: it still checks content size and note-name traversal locally, but
+joins the path and calls `state.daemon.fs_write` directly for containment
+and the optimistic-concurrency `base_hash` compare. The daemon decides
+which root — the innermost kiln, else the innermost project or session
+workspace folder — encloses a path, whether that root's policy permits the
+operation, and whether a symlink escapes it; none of these routes resolve
+or check that themselves, matching the containment split described in
+[[Knowledge Storage and Retrieval]].
+
+### Diffset and proposal review
+
+`crates/crucible-web/src/routes/diff.rs` is a thin proxy over the daemon's
+`diff.get`/`diff.file`/`diff.comment`/`diff.resolve_comment`/
+`diff.delete_comment`/`diff.comments` RPCs. A query names exactly one
+`DiffsetSource`: a git branch diff (`root`, with an optional `base`/`head`),
+a session record's base text against the current files on disk (`session`),
+or a proposal's base-of-each-write against its new text (`proposal`); a
+session-record or proposal source takes no `base`/`head`, and additionally
+accepts an explicit `root` (either can span more than one root, unlike a
+branch source, which names its own). Comment rows
+(`crates/crucible-web/src/routes/comment_rows.rs`) mirror
+`crucible_core::session::Comment`/`CommentAuthor`/`CommentAnchor`/
+`CommentSide`, and `comment_rows_tests.rs` round-trips each row against the
+daemon's real type. `crates/crucible-web/src/routes/proposals.rs` serves
+`/api/proposals*` — a proposal belongs to no session, so its routes are not
+nested under `/api/session/{id}`. `accept_proposal`/`reject_proposal` take
+optional `paths`/root-qualified `files` so a caller can decide only some
+files of a proposal; the daemon moves the rest into a new proposal of the
+same author. A decision already in flight for a proposal answers
+`WebError::Conflict` (409) — the daemon's `BUSY` JSON-RPC code — rather than
+losing or duplicating the decision.
+
+## State, concurrency and lifecycle
+
+- **Locks.** `ReconnectingDaemon` guards its `DaemonClient` with
+  `Arc<RwLock<DaemonClient>>`. `Interest`
+  (`crates/crucible-web/src/services/daemon_event_stream.rs`) guards each
+  session's `Upstream` state in its own `Arc<tokio::sync::Mutex<Upstream>>`,
+  so a slow `session.subscribe`/`session.unsubscribe` RPC for one session
+  holds only that session's flight; `forget_idle` drops a session's flight
+  entry only when nothing else holds a clone (`Arc::strong_count == 2`) and
+  it is locked and `Off`. `SessionStore`
+  (`crates/crucible-web/src/middleware/auth/session.rs`) guards its session
+  list with `Arc<Mutex<Vec<Session>>>`, pruning expired sessions lazily on
+  every access — no background timer. `AppState.recents_lock` serializes the
+  read-modify-write of the recent-files JSON file
+  (`record_recent` in `crates/crucible-web/src/routes/layout.rs`). `SwrCache`
+  (`crates/crucible-web/src/services/catalog.rs`) guards its entry map with
+  a `tokio::sync::Mutex<HashMap<String, Entry>>`.
+- **Background tasks.** `SwrCache::get_or_fetch` spawns an untracked
+  `tokio::spawn` refresh task on a stale hit, wrapped in `catch_unwind` so a
+  panicking fetch cannot leave the entry stuck `refreshing`.
+  `services/daemon.rs::spawn_event_router` runs the daemon-to-broker event
+  pump as a `JoinHandle`; `rewire_events` aborts it and awaits its join
+  before it spawns the replacement on a reconnect, so no event of the dead
+  connection can follow the reconnect's `stream_gap`.
+  `daemon_event_stream.rs`'s `serve_releases` spawns one `tokio::spawn` per
+  dropped `EventStream`'s release, so a slow `session.unsubscribe` RPC for
+  one session does not delay another's.
+  `routes/terminal.rs::handle_terminal` spawns a dedicated blocking OS thread
+  (`std::thread::spawn`) for PTY reads, bridged into an `mpsc::channel` that
+  the WebSocket bridge loop reads inline; the bridge loop itself runs in the
+  task Axum's `on_upgrade` already spawns, not a second `tokio::spawn` inside
+  `handle_terminal`. `routes/shell.rs::shell_exec` spawns a detached
+  `tokio::spawn` running the local shell command.
+- **Bounded resources.** `routes/terminal.rs` caps concurrent PTYs at
+  `MAX_TERMINALS` (8) via a process-wide `Semaphore`; a permit is dropped
+  only after the child process is killed and reaped, specifically to avoid
+  releasing a slot while its process still lives.
+- **Caches.** `SwrCache` holds agent-profile and provider-list answers for
+  `CATALOG_TTL` (30s), serving stale data while a background refresh runs.
+- **Startup.** `HostPolicy::from_web_config` performs a synchronous
+  `getaddrinfo(AI_CANONNAME)` call to learn this machine's own reachable
+  names, which can block startup briefly on a slow resolver.
+  `catalog::warm` pre-fills the SWR cache so the first browser render is not
+  the one paying the daemon probe latency.
+- **Shutdown/cleanup.** `end_session`/`archive_session`/`delete_session`
+  call `state.daemon.close_event_streams(session_id)`, which drops the SSE
+  registry entry and reconciles away the daemon's `session.subscribe` if no
+  other reader is still attached — the same path an ordinary last-reader
+  drop of an `EventStream` uses.
+  `terminal.rs` kills the PTY's whole process group (`killpg(SIGKILL)` on
+  unix, awaited on a blocking thread) rather than only the shell, because a
+  PTY session leader can leave backgrounded grandchildren holding the slave
+  open. `shell.rs`'s spawned child uses `kill_on_drop(true)` and is
+  explicitly killed and reaped on timeout, SSE-client disconnect, or normal
+  exit.
+
+## Boundaries and invariants
+
+- **Host defense runs before every relaxation.** `bearer_auth` checks
+  `HostPolicy::accepts` first; every later relaxation (auth disabled,
+  loopback, same-origin WebSocket) assumes the request named an authority
+  this server actually answers to. `HostVerified` is a marker inserted only
+  on a genuine match, never on the remote-caller relaxation, since the
+  WebSocket origin guard reads that marker as license for same-origin trust.
+- **Path/root containment is centralized in the daemon, not the web.**
+  Every file route — `routes/canvas.rs`'s `get_canvas`/`put_canvas`,
+  `routes/kiln.rs`'s `get_kiln_file`/`get_raw_file`/`put_kiln_file`/
+  `patch_kiln_file` (via the shared `read_through_daemon` helper), and
+  `routes/search.rs`'s `put_note` — sends the caller's path straight to the
+  daemon's `fs.read` or `fs.write` RPC and uses the root and content in the
+  daemon's answer; the daemon decides which root encloses the path, whether
+  that root's policy permits the operation, and whether a symlink escapes
+  it. `routes/helpers.rs` keeps only `validate_note_name` (note-name
+  validation, unrelated to file-path containment) and the content-size
+  constants; it holds no containment check of its own.
+- **`PluginCaller` is explicitly not a security boundary.** Any same-origin
+  script can set the `x-crucible-plugin` header and call itself `app`; the
+  extractor exists as an honest-error seam for the accidental case and a
+  future sandboxed-iframe boundary, not an authorization check.
+- **Config redaction happens once, at the crate boundary.**
+  `services/daemon_config.rs` calls `redact_credentials` on every
+  `config.*` read before it leaves the crate, rather than in each route,
+  because the daemon's own RPC does not redact (its socket is per-uid 0700)
+  and a route that forgot to redact would ship secrets to the browser.
+- **SSRF validation runs in the daemon, for every client.** `configure_agent`
+  in `crates/crucible-daemon/src/agent_manager/session_config.rs` calls
+  `check_request_endpoint` (`crates/crucible-daemon/src/provider/endpoint_check.rs`)
+  to reject a custom provider endpoint that resolves to a non-global-unicast
+  or embedded-IPv4 address, unless the endpoint's origin is one the operator
+  configured (an `llm.providers` endpoint, a backend default, `OLLAMA_HOST`,
+  or `chat.endpoint`); the check runs for the TUI, direct RPC callers and
+  Lua plugins as well as the web, not the web alone. `create_session`
+  (`routes/session/mod.rs`) forwards `endpoint` unvalidated; a daemon
+  refusal comes back as `INVALID_PARAMS` (-32602), which `daemon_err()` maps
+  to 422. `crucible-web` no longer declares an `EndpointPolicy` or any
+  endpoint validator of its own — see [[Providers and LLM]].
+- **Write replay safety is declared, not inferred.** Every daemon forwarder
+  in `services/daemon*.rs` states `ReplayPolicy::Safe` or `Once` explicitly;
+  only reads and idempotent listings may replay after a reconnect.
+- **Diffset and proposal disposition stay daemon-owned.**
+  `routes/diff.rs` forwards a `DiffsetSource` and a `comment_id` to the
+  daemon unvalidated; `routes/proposals.rs` forwards a `paths`/`files`
+  selection to `proposal.accept`/`proposal.reject` the same way. Neither
+  route holds a local copy of what a comment's anchor or a proposal's state
+  can be — a local copy could only ever refuse a case the daemon had newly
+  learned, per [[Review]].
+
+## Extension seams
+
+- **A new HTTP/SSE route** lands in a new or existing file under
+  `crates/crucible-web/src/routes/`, is re-exported from
+  `crates/crucible-web/src/routes/mod.rs`, and is merged into the router in
+  `build_router` in `crates/crucible-web/src/server.rs`. It needs a
+  `#[utoipa::path]` annotation (or it is invisible to the generated
+  TypeScript and to `crates/crucible-web/tests/openapi_contract.rs`'s
+  route/document consistency gate) and, if it forwards to the daemon, a
+  `forward_rpc!` entry in the matching `services/daemon*.rs` file with an
+  explicit `ReplayPolicy`.
+- **A new SSE event vocabulary member** is added to `ChatEvent`
+  (`crates/crucible-web/src/events.rs`), `FsEvent`
+  (`crates/crucible-web/src/fs_events.rs`), or a dedicated side-channel type
+  like `PublicationChangedEvent` (`crates/crucible-web/src/routes/plugin.rs`),
+  `SurfaceChangedEvent` (`crates/crucible-web/src/routes/surface.rs`), or
+  `ProposalChangedEvent` (`crates/crucible-web/src/routes/events.rs`). A
+  side-channel event name must have a matching entry in the frontend's
+  `SIDE_CHANNEL_EVENTS` table (`crates/crucible-web/web/src/lib/api.ts`),
+  checked by `events.rs`'s `every_side_channel_event_name_has_a_frontend_listener`,
+  which parses that table rather than grepping for `addEventListener` calls.
+- **A new session knob** lands under
+  `crates/crucible-web/src/routes/session_config/`, registered in
+  `session_config/mod.rs::config_routes`; a knob the daemon advertises but
+  this module does not reach fails gate A2e
+  (`crucible-cli/tests/architecture_tests.rs`). Its wire field name, not its
+  route name, is the contract to test (see `session_config/tests.rs`).
+- **A new daemon RPC forwarder** is a `forward_rpc!` line in
+  `services/daemon.rs` or a sibling `daemon_*.rs` file, choosing `Safe` only
+  for a call whose replay after a lost response is harmless.
+
+## Tests
+
+- **Inline unit tests** (`#[cfg(test)] mod tests` in nearly every
+  production file) cover per-file behavior: asset serving
+  (`assets.rs`), error mapping including the new `BUSY`-to-`Conflict`
+  classification (`error.rs`), event projection and a cross-language drift
+  guard against the frontend source (`events.rs`), diffset/comment-row
+  round-tripping against the daemon's real `Comment` type
+  (`comment_rows_tests.rs`), CORS/CSP/Host-header layering (`server.rs`),
+  auth/session/host/shell logic (all of `middleware/auth/`), and per-route
+  shape and validation behavior across `routes/*.rs`.
+- **`crates/crucible-web/src/test_support.rs`** is the single shared
+  mock-JSON-RPC-daemon harness (a real `UnixListener` answering scripted
+  replies built from the daemon's own serializable types), used by every
+  route test in this crate. It compiles under `#[cfg(any(test, feature =
+  "test-utils"))]`; `crucible-web`'s own `Cargo.toml` enables `test-utils`
+  as a dev-dependency on itself so `crates/crucible-web/tests/` can
+  reach it. `crucible-cli` does not enable this feature and does not
+  reference `crucible_web::test_support` anywhere in its own tests. It now
+  also mocks `fs.read` and the `diff.*`/`proposal.*`/`base.*` RPC families;
+  the whole `review.*` mock branch is gone.
+- **`crates/crucible-web/src/services/daemon_retry_tests.rs`** proves the
+  reconnect/replay machinery, and the `Interest`/`EventStream`
+  upstream-subscription protocol (reconnect restoring every still-open
+  browser stream, cancellation-safe release, one flight per session), against
+  a real, failure-injecting Unix-socket peer — the only place that verifies
+  `Once` calls are never replayed and `Safe` calls retry exactly once, and
+  the only place that drives both the raw client and the fully assembled
+  router's real SSE bodies for this machinery.
+- **`crates/crucible-web/tests/config_daemon_e2e.rs`** and
+  **`config_secret_redaction_e2e.rs`** boot a real daemon from a real
+  `init.lua` (not the mock) to prove the config pin/refuse gate and
+  credential redaction hold end to end through `/api/config`; each is its
+  own test binary because the app-config store is process-global.
+- **`crates/crucible-web/tests/file_root_daemon_e2e.rs`** puts a real
+  daemon behind the real web file routes to prove a session's own generated
+  folder is a root for every file route, and a session workspace unregistered
+  from its project is a root for none — the enclosing-root agreement a mock
+  cannot show disagreement with.
+- **`crates/crucible-web/tests/bases_daemon_e2e.rs`** proves the HTTP
+  transport preserves the daemon's bases query values and stale-write
+  refusals (a stale `ancestor_hash` on a property/group-order write answers
+  409, not 200) against a real daemon.
+- **`crates/crucible-web/tests/proposal_daemon_e2e.rs`** proves a proposal
+  decision crosses HTTP and the real daemon socket unchanged.
+- **`crates/crucible-web/tests/notification_daemon_e2e.rs`** proves a
+  daemon-side plugin notification reaches the web server's per-session
+  event stream in the shape the browser reads, and that the notifications
+  list/dismiss routes read and close it against a real daemon.
+- **`crates/crucible-web/tests/openapi_contract.rs`** is a static-analysis
+  suite that keeps the committed `openapi.json`, the router's actually
+  registered routes, and the frontend's literal `/api` path usage mutually
+  consistent, via a hand-rolled Rust/TypeScript source scan.
+- **`crates/crucible-web/tests/route_contract_tests.rs`** is a
+  module-declaration shim for 16 submodules of mock-daemon-backed HTTP
+  contract tests (plus a `shared.rs` helper module) — including
+  `diff_comments.rs` and `system_events.rs`, the successors to the deleted
+  review-route contract tests; those submodules are outside this page's
+  file set, so their individual assertions are not itemized here.
+- **`crates/crucible-web/tests/router_security.rs`** drives the fully
+  assembled router (`build_router`) end to end, proving every sensitive
+  route demands credentials before the daemon is ever reached, and that the
+  terminal WebSocket upgrade path enforces its opt-in/credential/origin
+  gates before the upgrade extractor runs.
+
+**Gaps.** `routes/shell.rs`'s local-execution stopgap has no test proving
+parity with a future daemon `shell.exec` RPC, because that RPC does not
+exist yet. `routes/plugin.rs`'s note that no route serves a plugin's own web
+assets means the plugin-web-delivery bridge referenced in its comments has
+no test coverage here either, since the code does not exist. The
+`route_contract_tests/*` submodules that exercise `sessions`, `kilns`,
+`fs`, `daemon_errors`, and similar per-route contracts are not part of this
+page's file set and are not summarized above.
+
+## Findings
+
+- **`session_config`'s module docs outrun its code.** `session_config/mod.rs`
+  and `session_config/prompt.rs` both cite an "execution timeout" knob
+  (`session.set_execution_timeout`) and a second string-spelling enum knob
+  as the motivating examples for this module's wire-field-name testing
+  discipline, but no file in this page implements that knob, and
+  `session_config/tests.rs` has three section-header comments
+  (`// ── Context ──`, `// ── Execution ──`, `// ── Nullable knobs ──`) with
+  no test beneath any of them. Either the knob lives outside this page's
+  file set or the documentation is stale; as written, the motivating example
+  for the module's own design rationale does not exist in it.
+- **`routes/shell.rs` executes shell commands in the web process, not the
+  daemon.** Its own comment calls this a stopgap "until an RPC is actually
+  wired in," and a prior version of the capability check was inverted (ran
+  local execution only while the daemon lacked the capability, backwards
+  from the intended fail-safe). This is a live, acknowledged deviation from
+  the daemon-owns-business-logic boundary in `AGENTS.md`, not a design the
+  file's own comments defend as final.
+- **A known, named frontend/backend drift.** `routes/plugin.rs`'s
+  `PluginInstallResponse.manifest` doc notes the hand-written TypeScript
+  type still reads a stale `plugins_toml` key; the file's own comment flags
+  this for a tracked follow-up ("A12"), not as an unnoticed bug.
+- **`test_support.rs::request_json_as` omits a `#[cfg(...)]` gate** that
+  every other test/test-utils helper in the file repeats above itself. It
+  still compiles correctly today because the items it calls remain visible
+  within the same conditional compilation unit, but the inconsistency is
+  worth fixing before a refactor relies on the gate being present.
+- No other conflict with `AGENTS.md`'s ownership table, dead code, or
+  duplicate write/config pipeline was found in this page's file set.

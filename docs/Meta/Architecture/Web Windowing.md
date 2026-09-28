@@ -3,6 +3,7 @@ title: Web Windowing
 description: The domainless windowing core under src/windowing, its WindowPolicy seam, its edge modes, and its own harness and specs.
 tags: [meta, architecture, web, windowing]
 status: as-built
+as_of: 582c5e6c1
 ---
 
 # Web Windowing
@@ -11,7 +12,9 @@ The web frontend's window manager — edge panels, split panes, tabs, floating
 windows — lives in `crates/crucible-web/web/src/windowing/`. It knows no
 product concept: no session, no file, no terminal. The app configures it once
 with one `WindowPolicy` object, from `stores/windowStore.ts`. Paths below are
-relative to `crates/crucible-web/web/`.
+relative to `crates/crucible-web/web/`. See [[Crate Map]] for this crate's
+place among the others. See [[Web Server]] for the backend that serves this
+frontend. That backend also stores the saved layout.
 
 ## The folder
 
@@ -111,23 +114,28 @@ The app builds all five in `src/components/shell/windowSlots.tsx`
 
 ## Edge modes
 
-Each edge panel (`left`, `right`) carries an `EdgeMode`:
+Each edge panel (`left`, `right`) carries an `EdgeMode`. The table names the
+mode each state stands for; only `docked` differs in rendering today, as the
+paragraph after it explains:
 
 | Mode | Ribbon | Body |
 |---|---|---|
 | `docked` | shown | in the flow, sized by the layout |
 | `strip` | shown | collapsed out of the flow |
-| `flyout` | shown | floats over the centre until its button is clicked again |
-| `hidden` | hidden | hidden; a hot zone on the screen edge reveals the host as a flyout |
+| `flyout` | shown | planned: floats over the centre until its button is clicked again |
+| `hidden` | planned: hidden | planned: hidden; a hot zone on the screen edge reveals the host as a flyout |
 
 `EdgeHost` (`windowing/components/EdgeHost.tsx`) reads `mode` and sets
-`data-edge-mode` on its root. `docked` and `strip` share one tree: `DockedBody`
-stays mounted in every mode, clipped to zero width in `strip`, so a toggle
-slides it and never remounts it — a terminal keeps its scrollback and a file
-tree keeps its scroll position across a collapse. `flyout` and `hidden`
-currently render the same as `strip`; `EdgeHost` already branches on all four
-modes, so the next session's presentation work grows from a proven seam
-rather than adding one.
+`data-edge-mode` on its root, but always renders the ribbon and `DockedBody`;
+no current selector or component branch reads that attribute. `docked` and
+every other mode share one tree: `DockedBody` stays mounted in every mode,
+clipped to zero width once `isEdgeCollapsed` is true (every mode but
+`docked`), so a toggle slides it and never remounts it — a terminal keeps its
+scrollback and a file tree keeps its scroll position across a collapse.
+`flyout` and `hidden` currently render exactly the same as `strip`: only the
+`data-edge-mode` value on the DOM tells them apart. That attribute is the seam
+the next session's presentation work attaches to, not a rendering branch that
+already exists.
 
 `flyout` and `hidden` are typed, stored and placed, but not yet presented:
 
@@ -155,9 +163,12 @@ rather than adding one.
   pin for touch, where hover does not exist. It will drive both the rail hot
   zone and a pane's collapsed band.
 
-`PaneNode` also gained `reveal?: 'click' | 'hover'` (`model/types.ts`), for a
-pane collapsed to its band inside a rail column; only the type and the field
-exist so far, not the hover behavior.
+`PaneNode` also gained `reveal?: 'click' | 'hover'` (the `PaneReveal` type,
+`model/types.ts`), for a pane collapsed to its band inside a rail column.
+`layoutActions.setPaneReveal(paneId, reveal)` writes the field on a pane in
+the centre or in a rail. No app code calls it yet. No component reads
+`reveal` to change how a collapsed pane opens. The write path and the field
+exist; the hover behavior does not.
 
 ## The saved layout
 
@@ -176,14 +187,23 @@ types that only existed at the time.
 - `stores/layoutMigrations.ts`: the v1-to-v9 migration chain, the always-on
   prune of unregistered content types and legacy session-less chat tabs
   (`pruneRestored` — this is what drops a persisted tab for a panel the
-  registry no longer has, such as the retired Explorer/Search/Source-Control
-  placeholders), and `appLayoutHooks`, the `LayoutCodecHooks` implementation
-  (`upgradeLegacy`, `prune`) that the app hands the core through
-  `WindowPolicy.layoutHooks`.
+  registry no longer has, such as a panel removed after a layout was saved),
+  and `appLayoutHooks`, the `LayoutCodecHooks` implementation (`upgradeLegacy`,
+  `prune`) that the app hands the core through `WindowPolicy.layoutHooks`.
 
 `layoutActions.importLayout` is the only production caller of the reader. It
 passes `policy().layoutHooks`, and a function that calls `policy().iconFor`
 for each restored tab.
+
+The app persists the exported layout on the server, not in the browser.
+`lib/query/layout.ts`'s `setupLayoutAutoSave` reads
+`windowActions.exportLayout()` inside a reactive effect. It saves the
+result through `lib/api.ts`'s `saveLayout`, 500ms after the last change.
+`crates/crucible-web/src/routes/layout.rs` stores that JSON blob as-is and
+returns it unread on `GET /api/layout`. A pane type the server has never
+seen still survives the round trip. See [[Web Server]] for the route.
+`loadLayoutOnStartup`, in the same module, calls `windowActions.importLayout`
+with the loaded blob once, at boot, before auto-save arms.
 
 ## How to add a windowing feature
 

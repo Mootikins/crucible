@@ -3,6 +3,7 @@ title: Config Boot
 description: The one-VM Lua config boot — seed, evaluate, extract — and the ordering contract that follows from it.
 tags: [meta, architecture, config, lua]
 status: as-built
+as_of: 582c5e6c1
 ---
 
 # Config Boot
@@ -18,20 +19,25 @@ Before the inversion, the daemon bound with a config parsed from TOML, loaded
 plugins, and evaluated `init.lua` last — so the user's file could only
 decorate a daemon that was already shaped. Now the order is reversed: the
 daemon creates THE plugin VM first, evaluates `init.lua` once inside it, and
-binds with the config that evaluation produced
-(`crucible-daemon/src/daemon_plugins/boot.rs:1-10`).
+binds with the config that evaluation produced (module doc comment on
+`crucible-daemon/src/daemon_plugins/boot.rs`). See [[Luau Host]] for the VM
+and its lifecycle.
 
 One VM, one evaluation. There is no separate config VM and no second pass:
-the VM that evaluated `init.lua` is the VM the plugins run in, handed to
-`Server::bind_with_plugin_config` inside `BootConfig` (`boot.rs:169`,
-`crucible-daemon/src/server/mod.rs:152`).
+the VM that evaluated `init.lua` is the VM the plugins run in. Its loader
+rides in `BootConfig::loader` (`crucible-daemon/src/daemon_plugins/boot.rs`)
+into `BindWithPluginConfigParams::with_loader`, and every boot caller then
+calls `Server::bind_with_plugin_config` with it
+(`crucible-daemon/src/server/mod.rs`, see [[Daemon Server]]).
 
 ## The sequence
 
-`evaluate_boot_config` (`boot.rs:203`, injectable-paths variant at `:219`):
+`evaluate_boot_config_with_paths` (`crucible-daemon/src/daemon_plugins/boot.rs`;
+`evaluate_boot_config` is its production wrapper: it supplies the plugin-path
+resolver and `runtime_defaults::machine_runtime_roots()`):
 
 1. **Resolve the config root.** An explicitly named `--config` file must
-   exist; the default path may be absent (`boot.rs:227-238`).
+   exist; the default path may be absent.
 2. **Seed the store.** The defaults, and nothing else from a file: the
    `config.toml` reader is gone. A leftover file is warned about once per
    boot, with a pointer at `cru config migrate`, and sets nothing. An
@@ -43,36 +49,57 @@ the VM that evaluated `init.lua` is the VM the plugins run in, handed to
    skipped — see below.
 3. **Create the VM with a live search path.** Module search membership is
    seeded from the config root's `lua/` convention, the default plugin
-   locations, and the seed's own `runtimepath` (`seed_boot_search_path`,
-   `boot.rs:508`). A `runtimepath` write during the evaluation extends the
-   search space *inside* the `cru.config.set` call, before it returns —
-   Neovim's invalidate-and-rebuild, installed as the runtimepath extender
-   (`crucible-lua/src/config.rs`, `set_runtimepath_extender`).
-4. **Evaluate `init.lua` once**, top to bottom, under a 30-second budget
-   (`BOOT_EVAL_BUDGET`, `boot.rs:30`).
-5. **Extract.** The effective config is what the store holds when the
+   locations, and the seed's own `runtimepath`
+   (`seed_boot_search_path`, `crucible-daemon/src/daemon_plugins/boot.rs`). A
+   `runtimepath` write during the evaluation extends the search space
+   *inside* the `cru.config.set` call, before it returns — Neovim's
+   invalidate-and-rebuild, installed as the runtimepath extender
+   (`crucible-lua/src/config.rs`, `set_runtimepath_extender`). See
+   [[Luau APIs]] for the `cru.*` namespace surface.
+4. **Load the shipped defaults, before `init.lua`.** `load_shipped_defaults`
+   (`crucible-daemon/src/daemon_plugins/boot.rs`) runs the entry file under
+   `runtime/defaults/` — shipped as `init.luau`, an `init.lua` beside it also
+   resolves — from the highest-ranked root of `runtime_roots`.
+   `$CRUCIBLE_RUNTIME`, at level `env`, outranks the
+   `runtimepath` entries. Those outrank the `cru setup` copy, then the
+   exe-relative and bundled roots, then the compiled-in copy
+   (`crucible-daemon/src/runtime_defaults.rs`, see [[Luau Host]]).
+   `evaluate_boot_config_with_paths` takes this list as its `runtime_roots`
+   value, the same pattern as the plugin-path resolver. Production supplies
+   `machine_runtime_roots()`. A test supplies its own list, so it cannot read
+   an installed Crucible's runtime tree (see [[Test Architecture]]).
+5. **Evaluate `init.lua` once**, top to bottom, under a 30-second budget
+   (`BOOT_EVAL_BUDGET`, `crucible-daemon/src/daemon_plugins/boot.rs`).
+6. **Extract.** The effective config is what the store holds when the
    evaluation finishes; per-leaf provenance (`file:line` for Lua writes)
-   travels with it as `source_map` (`boot.rs:351-364`).
+   travels with it as `source_map`, read off `ConfigStore::provenance` inside
+   `evaluate_boot_config_with_paths`
+   (`crucible-daemon/src/daemon_plugins/boot.rs`). See [[Core Config]] for
+   the store this step reads.
 
 Plugin **activation** is a deferred phase after the file finishes, and it has
-one body: `activate` (`crucible-daemon/src/daemon_plugins/activate.rs`). The
-spec-driven pass at boot (`load_plugins_from_spec`, `daemon_plugins/mod.rs`),
-a `require` from `init.lua`, a runtime install and a reload all end there.
-`activate` refuses a plugin whose resolved `enabled` is `false`
-(`daemon_plugins/resolve.rs`). It runs `init.luau` once in the daemon VM and
-reads the returned module table with `spec_from_table`. It registers the
-tools, the commands and the services. It seeds the module cache, so a later
+one body: `activate` (`crucible-daemon/src/daemon_plugins/activate.rs`, see
+[[Luau Host]]). The spec-driven pass at boot (`load_plugins_from_spec`,
+`crucible-daemon/src/daemon_plugins/mod.rs`), a `require` from `init.lua`, a
+runtime install and a reload all end there. `activate` refuses a plugin whose
+resolved `enabled` is `false`
+(`crucible-daemon/src/daemon_plugins/resolve.rs`). It runs `init.luau` once
+in the daemon VM and reads the returned module table with `spec_from_table`.
+It registers the tools, the commands and the services. It seeds the module
+cache, so a later
 `require` answers the same table. Then it runs the entry's `config`, else
 the module's `setup(opts)`. `on_load` follows. `docs/Meta/CONTEXT.md`
 defines the words.
 
 A `require` of a plugin entry module during the evaluation cannot await
 `activate`: `require` is a sync Rust function and the module hook is a sync
-closure with no loader handle. So the boot hook (`install_boot_hook`,
-`boot.rs`) runs the module body sync under `LuaSource::Plugin(name)` and
-nothing else, and the resolver records which file answered the name.
-`activate` later matches that instance by file, skips the body eval and the
-source clear, and runs declarations, registration, hooks and `config`. The
+closure with no loader handle. So the boot hook
+(`install_boot_require_hook`, `crucible-daemon/src/daemon_plugins/boot.rs`)
+runs the module body sync, through `boot_require_entry`, under
+`LuaSource::Plugin(name)` and nothing else, and the resolver records which
+file answered the name. `activate` later matches that instance by file,
+skips the body eval and the source clear, and runs declarations,
+registration, hooks and `config`. The
 host's `config` therefore runs after `init.lua` has finished, so a
 `require("x").setup{}` line in `init.lua` runs `setup` twice, the user's call
 first. An operator who wants custom setup writes
@@ -82,7 +109,8 @@ activates anyway, with a warning that names both sites. The alternative, a
 sync `activate` behind a `try_lock`, was refused because it would stop a
 `setup` that awaits a `cru.*` API.
 
-The spec itself is Lua: `cru.plugin.setup` in `init.lua` writes the store
+The spec itself is Lua: `cru.plugin.setup` (see [[Luau APIs]]) in `init.lua`
+writes the store
 (`crucible-lua/src/plugin_spec_store.rs`), ranked by the `LuaSource` in
 force. The shipped defaults' entry list in `runtime/defaults/init.luau` lands
 at `SpecRank::Builtin`, and so does the installed manifest; the operator's
@@ -97,11 +125,12 @@ through the config store, because a `cru.config.set` under
 ## The layer decides the leaf, not the merge order
 
 The boot order inverts the layer order. `settings.json` merges at step 2, and
-a plugin's `cru.config.set` runs during step 4 — so the lower layer writes
+a plugin's `cru.config.set` runs during step 5 — so the lower layer writes
 LAST on every boot. The store therefore ranks each write instead of taking the
 last one: `ConfigStore::merge` compares `ConfigSource::rank` against the rank
 recorded for that leaf, and drops a write that ranks below it
-(`crucible-core/src/config/store.rs`). The order is `default` < `plugin` <
+(`crucible-core/src/config/store.rs`, see [[Core Config]] for the whole
+`ConfigStore`). The order is `default` < `plugin` <
 `settings` < `toml` < `lua` < `registered` < `cli` < `rpc`, and
 `rank` is its one definition (`crucible-core/src/config/provenance.rs`).
 
@@ -241,12 +270,14 @@ output is a report.
 
 The store has two phases (`crucible-core/src/config/store.rs`). During the
 boot evaluation, `LocationPolicy::Accept`: any line of `init.lua` may set any
-key, locations included. When the boot ends (`end_boot_phase`), the seven
-`LOCATION_CONFIG_KEYS` (`crucible-core/src/config/config/cli_app.rs:40`) are
-dropped from the plugin-visible value and withheld from every later merge,
-with a warning naming the key and the Lua call site. The RPC socket has no
-authentication; these keys answer *where the daemon acts*, so they freeze at
-boot.
+key, locations included. When the boot ends (`end_boot_phase`), the eight
+`LOCATION_CONFIG_KEYS` (`crucible-core/src/config/config/cli_app.rs`, see
+[[Core Config]]) are dropped from the plugin-visible value and withheld from
+every later merge, with a warning naming the key and the Lua call site. The
+RPC socket has no authentication; these keys answer *where the daemon acts*,
+so they freeze at boot. `sources` is one of the eight. It names no place, but
+it decides which directory's text reaches a system prompt. It is boot-only,
+like `runtimepath` and `kiln_path`.
 
 The drop takes the keys out of the **value** only. Their provenance rows and
 their pins stay, because they answer a different question: *did anybody
@@ -259,11 +290,11 @@ so a rebuild must restore its row. The value is stripped once at the end of
 the rebuild, which reproduces `end_boot_phase`'s post-condition. A runtime
 `config.set` of a location key is still refused whole, at every replay.
 
-## Four verbs, one store
+## Five verbs, one store
 
 Five RPC methods change the app-config store, and they hold different
-authority (`crucible-daemon/src/rpc/dispatch.rs`). Two write a layer; three
-drop one.
+authority (`crucible-daemon/src/rpc/dispatch.rs`, see [[Core Config]] for the
+`ConfigStore` methods they call). Two write a layer; three drop one.
 
 | Verb | Layer it changes | Persists | Refuses a pin | Caller |
 |---|---|---|---|---|
@@ -271,7 +302,7 @@ drop one.
 | `config.save` | writes `ConfigSource::Settings`, drops `Rpc` on the leaves it writes | Yes — `settings.json` | Yes | a settings UI |
 | `config.reset` | drops `ConfigSource::Rpc` | No | n/a | `:set key&` |
 | `config.pop` | drops the highest layer holding the leaf | No | n/a | `:set key^` |
-| `config.unset` | drops `ConfigSource::Rpc`, for the key AND everything under it | No | n/a | removing a stale map entry |
+| `config.unset` | drops `ConfigSource::Rpc`, for the key AND everything under it | No | n/a | `:set key=`, an empty assignment |
 
 `config.set` is the runtime knob. It never refuses, because a user must be
 able to raise a value `init.lua` holds for one turn without editing a file,
@@ -408,7 +439,8 @@ file the row never named.
 A store and a provenance row are not yet a settings pane. The pane needs to
 know, per leaf, what kind of widget it is, what it defaults to, what it means,
 and — for a leaf whose value is one of a fixed set — what each choice does.
-That description lives in `crucible-lua/src/options/app_config.rs`.
+That description lives in `crucible-lua/src/options/app_config.rs` (see
+[[Luau Host]] for the options-tree engine it shares with plugin options).
 
 It reuses the plugin control vocabulary rather than starting a second one:
 `Control` (`options/control.rs`) already names the eleven kinds, already
@@ -452,30 +484,32 @@ key that draws no control still draws a row that says why.
 ## Acquisition per command
 
 - A **daemon-backed command** fetches `config.effective`
-  (`crucible-cli/src/config.rs:20`, handler at
-  `crucible-daemon/src/rpc/dispatch.rs:1705`). Two client-side checks ride
-  along: the root-mismatch refusal (an invocation resolving a different
+  (`fetch_effective_config`, `crucible-cli/src/config.rs`; handler
+  `handle_config_effective`, `crucible-daemon/src/rpc/dispatch.rs`; see
+  [[CLI Commands]] and [[RPC Client]]). Two client-side checks ride along:
+  the root-mismatch refusal (an invocation resolving a different
   config root than the daemon's is refused, naming both roots) and the
   staleness warning (a changed `boot_input_hash` over the config root's
   `init.lua`, `init.luau` and `settings.json` warns "restart to apply",
-  `boot.rs`). `settings.json` is in that hash because `load_settings_layer`
-  reads it at every boot and a hand edit survives a rewrite; without it,
-  `cru doctor` called a stale daemon current. `config.toml` is deliberately
-  NOT in it: the boot does not read that file, so editing it is not a reason
-  to restart.
+  `crucible-daemon/src/daemon_plugins/boot.rs`). `settings.json` is in that
+  hash because `load_settings_layer` reads it at every boot and a hand edit
+  survives a rewrite; without it, `cru doctor` called a stale daemon current.
+  `config.toml` is deliberately NOT in it: the boot does not read that file,
+  so editing it is not a reason to restart.
 - A **bootstrap command** (daemon start itself, and commands that may run
   daemonless) runs one throwaway evaluation through the same construction
   (`local_evaluation`, `crucible-cli/src/config.rs`). Same code path, so the
   values agree with a daemon boot by construction.
-- The **browser** reads `GET /api/config`, which forwards `config.effective`,
-  `config.origin` and `config.controls`, and serves the effective config, its
-  `config_root`, one origin row per leaf and the control tree
-  (`crucible-web/src/routes/config.rs`). It writes `POST /api/config`, which
-  forwards `config.save` and hands the answer back unchanged, refusals
-  included: the web layer holds no copy of the store, the layer order or the
-  refusal rule. The settings dialog draws the tree with one generic renderer
-  (`web/src/components/settings/AppConfigSettings.tsx`), locks a leaf whose row
-  says `pinned`, and offers a jump that opens the file at the line.
+- The **browser** (see [[Web Server]]) reads `GET /api/config`, which
+  forwards `config.effective`, `config.origin` and `config.controls`, and
+  serves the effective config, its `config_root`, one origin row per leaf and
+  the control tree (`crucible-web/src/routes/config.rs`). It writes
+  `POST /api/config`, which forwards `config.save` and hands the answer back
+  unchanged, refusals included: the web layer holds no copy of the store,
+  the layer order or the refusal rule. The settings dialog draws the tree
+  with one generic renderer
+  (`crucible-web/web/src/components/settings/AppConfigSettings.tsx`), locks
+  a leaf whose row says `pinned`, and offers a jump that opens the file at the line.
   **Credentials do not cross this door.** Every answer the web layer reads is
   redacted first (`crucible-web/src/services/daemon_config.rs`, rule in
   `crucible-core/src/config/redact.rs`): a leaf whose name ends in `_key`, or
@@ -494,18 +528,22 @@ throwaway evaluation. Actions belong in hooks; values are free.
 ## Which front end reaches the durable verb
 
 `config.save` and `config.controls` reach a user through the **web console
-only**. The TUI reaches the three verbs that write no file — `config.set`,
-`config.reset` and `config.pop` — plus the two reads `config.get` and
-`config.origin`, which answer `:set key?` and `:set key??`.
-`cru config` has `init`, `show`, `migrate` and `dump`, and no write verb. One
-CLI command saves: `cru models embeddings use`, which calls `config.save` with
-two keys (`crucible-cli/src/commands/models/embeddings.rs`).
+only** (see [[Web Server]]). The TUI reaches the four verbs that write no
+file — `config.set`, `config.reset`, `config.pop` and `config.unset` — plus
+the two reads `config.get` and `config.origin`, which answer `:set key?` and
+`:set key??` (`crucible-cli/src/tui/oil/commands/set.rs`, see
+[[TUI Components]]). `cru config` has `init`, `show`, `migrate` and `dump`,
+and no write verb (see [[CLI Commands]]). One CLI command saves:
+`cru models embeddings use`, which calls `config.save` with two keys
+(`crucible-cli/src/commands/models/embeddings.rs`).
 
-`config.unset` is a fourth memory-only verb, and **no front end spells it yet**.
-It is reachable over the socket by any RPC client. The TUI has no `:set`
-spelling for it, and the web console draws no control for it; giving it one is
-its own change, because `:set` grammar and the settings pane both need a shape
-for "remove a key" that neither has today.
+`config.unset` is a fourth memory-only verb. `:set key=` — an assignment with
+nothing after the `=` — spells it in the TUI, because Vim has no such
+spelling (its option set is fixed and nothing can be removed from it) but
+Crucible's is not (`crucible-cli/src/tui/oil/commands/set.rs`,
+`DropKind::Unset`). **The web console still draws no control for it**: the
+settings pane's generic renderer has no shape for "remove a key" today, so a
+browser user still reaches it only through a raw RPC call.
 
 CLAUDE.md asks a feature that ships to one front end and not the other to say
 which, and why. This is that statement.
@@ -528,15 +566,16 @@ Both are visible in `cru config show --sources`, which renders the per-leaf
 source, but that is a read, not a write.
 
 A TUI settings pane is a TUI feature. It needs a story in
-[[TUI User Stories]] and T1 plus T2 coverage, and it is deliberately not part
-of the config unification.
+[[TUI User Stories]] and T1 plus T2 coverage, and it is
+deliberately not part of the config unification.
 
 ## What this note is not
 
 The kiln-local `.crucible/init.lua` is not part of this boot. It loads into
 per-session Lua runtimes (`crucible-lua/src/config.rs`, `ConfigLoader`), and
 whether a kiln-local file gets config-layer rights is an explicitly deferred
-trust question. `kiln.toml` and `project.toml` stay TOML identity manifests.
+trust question. `kiln.toml` and `project.toml` stay TOML identity manifests
+(see [[Core Config]]).
 
-See also [[State Stores]], [[Actual]], and `docs/Help/Configuration.md` for
-the user-facing story.
+See also [[State Stores]], [[Actual]], [[Core Config]], [[Luau Host]], and
+`docs/Help/Configuration.md` for the user-facing story.
