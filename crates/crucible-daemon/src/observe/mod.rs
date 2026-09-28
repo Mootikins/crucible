@@ -78,6 +78,4 @@ pub mod session;
 pub use events::{stored_events, LogEvent, SessionLogLine, TokenUsage};
 pub use id::{SessionId, SessionIdError, SessionType};
 pub use markdown::{render_to_markdown, RenderOptions};
-pub use session::{
-    events_after, load_transcript, transcript_of_log, transcript_summary, SessionError,
-};
+pub use session::{events_after, load_transcript, transcript_of_log, transcript_summary};

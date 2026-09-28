@@ -184,6 +184,12 @@ Grouped by directory. Lines are as of `582c5e6c1`.
   (outside this page's files); delegation's trust checks use neither
   `KilnFilter` nor `KilnScope` — they call `AgentManager::refuse_untrusted`
   with the parent kilns (see Flows: Delegation).
+- **`SessionError`** (`crates/crucible-daemon/src/session_manager.rs`) is
+  the one error of the session domain. Its variants are `NotFound`,
+  `AlreadyEnded`, `InvalidState`, `IoError` and `NotContext`. The session
+  storage, `SessionLifecycle`, `AgentManager` and the log readers in
+  `observe/session.rs` return it. An I/O failure becomes `IoError`, and its
+  text starts with `IO error:`.
 - **`SessionStorage` trait** and **`FileSessionStorage`**
   (`crates/crucible-daemon/src/session_storage.rs`) — `save`/`load`/`list`/
   `append_event`/`append_markdown`/`load_events`/`count_events`. Created once

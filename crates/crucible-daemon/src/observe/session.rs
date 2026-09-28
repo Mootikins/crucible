@@ -6,19 +6,10 @@
 //! reads. See [`crate::observe`] for the two line shapes a log can hold.
 
 use crate::protocol::SessionEventMessage;
+use crate::session_manager::SessionError;
 use crucible_core::transcript::{ItemBody, Transcript, TranscriptFold};
 use std::path::Path;
 use tokio::fs;
-
-/// Errors that can occur during session operations.
-///
-/// Not to be confused with `session_manager::SessionError`, a different type
-/// with its own `NotFound(String)`.
-#[derive(Debug, thiserror::Error)]
-pub enum SessionError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-}
 
 /// The transcript of a stored log: each line in its current wire form
 /// ([`crate::observe::stored_events`]), then the one fold of core.

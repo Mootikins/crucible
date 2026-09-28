@@ -209,7 +209,7 @@ and persistence.
 | `GateSubject` | `crucible-daemon/src/agent_manager/messaging/review_gate.rs:53` | What the review gate holds against |
 | `ToolCallTracker` | `crucible-daemon/src/agent_manager/tool_tracking.rs:3` | Counts repeated identical tool calls |
 | `SessionManager` | `crucible-daemon/src/session_manager.rs:147` | In-memory session map plus persistence |
-| `SessionError` | `crucible-daemon/src/session_manager.rs:925` | NotFound, AlreadyEnded, InvalidState, IoError |
+| `SessionError` | `crucible-daemon/src/session_manager.rs` | The one session error: NotFound, AlreadyEnded, InvalidState, IoError, NotContext |
 | `SessionLifecycle` | `crucible-daemon/src/session_lifecycle.rs` | Plugin start and end hooks for create (RPC and Lua), fork, delegation, resume and revive-on-send; refuses an unenforceable isolation claim and a persisted isolation request or claim record that no plugin claimed. `stop(id, StopCause)` is the one owner of every stop: pause, end, archive, auto-archive, delete, refusal and the end of a delegated child |
 | `StopCause`, `Stopped`, `StopError` | `crucible-daemon/src/session_lifecycle.rs` | Why a session stops, what the state change returned, why a stop was refused |
 | `DelegationService` | `crucible-daemon/src/delegation.rs:93` | Spawn, await, cancel, list child sessions |

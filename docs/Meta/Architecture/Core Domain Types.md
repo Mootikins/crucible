@@ -355,7 +355,8 @@ one. What stays here is `Agent` (`crates/crucible-core/src/turn/mod.rs`):
 `turn`/`switch_model`/`cancel`, the lower-level surface `AgentHandle` is a
 supertrait of.
 `KnowledgeRepository` (`traits/knowledge.rs`) decouples note retrieval from
-SQLite storage. `ToolExecutor`/`ToolSurface` (`traits/tools.rs`) is the
+SQLite storage. Its methods return `anyhow::Result`, because no caller
+matches a variant. The crate root defines no error type. `ToolExecutor`/`ToolSurface` (`traits/tools.rs`) is the
 tool-execution and security-classification boundary; `ToolSurface`
 deliberately has no `Default`, so an unclassified tool cannot be silently
 treated as safe. `ContextMessage`/`Range` (`traits/context_ops/mod.rs`) is

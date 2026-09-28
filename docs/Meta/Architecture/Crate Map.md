@@ -47,7 +47,7 @@ the base; `cli` and `web` are the two frontends):
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-core/src/lib.rs` | 152 | Crate root for `crucible-core`. Declares every domain submodule — including `diff`, `git`, `note_frontmatter`, `proposal`, `sources`, `status_color` and `bases` — and re-exports the canonical types every other crate imports. Defines the legacy `CrucibleError`/`Result<T>` pair. |
+| `crates/crucible-core/src/lib.rs` | 139 | Crate root for `crucible-core`. Declares every domain submodule — including `diff`, `git`, `note_frontmatter`, `proposal`, `sources`, `status_color` and `bases` — and re-exports the canonical types every other crate imports. It defines no error type. |
 | `crates/crucible-oil/src/lib.rs` | 84 | Crate root for `crucible-oil`. Declares the rendering submodules — including `screen`, for the full-screen `ScreenDiff`/`PresentStats` row-diff surface — and re-exports the `Node`/`Style`/`Terminal`/render-pipeline surface, plus `ScreenMode` from `terminal`; states the "Lean-JSON contract" (default-valued fields omitted on serialize). |
 | `crates/crucible-lua/src/lib.rs` | 280 | Crate root for `crucible-lua`. Declares around sixty-five Luau-host submodules, re-exports the crate's full host API — including a `vault::bases` API re-exported as `bases_api`, and `tool:render` in place of the old `tool:display_start`/`tool:display_complete` hook pair — embeds the fallback `init.luau` as `BUILTIN_INIT_LUA`, and gates the build against `panic = "abort"`. |
 | `crates/crucible-daemon/src/lib.rs` | 166 | Crate root for `crucible-daemon`. Declares around seventy submodules — including `diff`, `proposals`, `bases` and the crate-private `lossless_queue`, and no longer `permission_bridge` — and re-exports the RPC, session, plugin-lifecycle and wire-type surface that `crucible-cli` and `crucible-web` consume. Sets `#![recursion_limit = "256"]`. |
@@ -72,14 +72,6 @@ into any binary):
 
 ## Key types and traits
 
-- `CrucibleError` / `Result<T>` (`crates/crucible-core/src/lib.rs`) — a
-  three-variant `thiserror` error type (`DocumentNotFound`, `InvalidOperation`,
-  `DatabaseError`) defined at the crate root. Later submodules define more
-  specific `thiserror` enums (`HttpError`, `JobError`, and so on); this type
-  is the oldest one, but it still has live callers outside this crate:
-  `crucible-daemon`'s `storage/sqlite/repository.rs` and `rpc_client/storage.rs`
-  construct `CrucibleError::DatabaseError`, and `crucible-lua`'s `vault/mod.rs`
-  converts it into an `mlua::Error`.
 - `BUILTIN_INIT_LUA: &str` (`crates/crucible-lua/src/lib.rs`) — the compiled-in
   default `init.luau` text (`include_str!`), created once at compile time and
   held as a crate constant. It is the last-resort baseline behind the
@@ -95,11 +87,9 @@ into any binary):
   lifetime of one `cru web` process; `crucible-cli`'s `cru web` command and
   the SolidJS frontend's generated types consume `ChatEvent`.
 
-One exception aside — `crucible-core/src/lib.rs`'s own `CrucibleError` enum,
-which `crucible-daemon` and `crucible-lua` construct at runtime (see Key types
-and traits, above) — no other crate-root file in this page defines a struct,
-trait or enum that another module constructs, holds or mutates at runtime;
-every other one is declaration and re-export. The types that matter at
+No crate-root file in this page defines a struct, trait or enum that another
+module constructs, holds or mutates at runtime. Each one is declaration and
+re-export. The types that matter at
 runtime (`AgentManager`, `Server`, `DaemonClient`, `Cli`, node/style types)
 are defined in the submodules these roots declare, and are covered on the
 pages named above.
