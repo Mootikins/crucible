@@ -270,14 +270,17 @@ test.describe('live seq-cursor replay', () => {
     await expect(page.getByTestId('chat-input').first()).toBeVisible({ timeout: 20_000 });
 
     // Replay ≡ reload, measured while the turn is STILL RUNNING: the reloaded
-    // pane hydrated ONE history document and opened ONE stream — a refetch
-    // storm would show as more of either before anything ended.
+    // pane opened ONE stream and read the history at most twice. The pane
+    // reads the snapshot and opens the stream at the same time. Mid-turn, an
+    // event can come between the two, and the gap check
+    // (`checkLiveGap` in `transcriptStore.ts`) then reads one more snapshot.
+    // A refetch storm would show as more reads than that.
     await expect(page.getByTestId('message-assistant').first()).toContainText(
       'the stones remember',
       { timeout: 90_000 },
     );
     const HISTORY = new RegExp(`/api/session/${id}/history`);
-    expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBe(1);
+    expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBeLessThanOrEqual(2);
     expect(
       log.count('GET', `/api/chat/events/${id}`),
       describeRequests(log, `/api/chat/events/${id}`),
@@ -290,7 +293,7 @@ test.describe('live seq-cursor replay', () => {
       timeout: 90_000,
     });
     await apiQuiet(log);
-    expect(log.count('GET', HISTORY)).toBeLessThanOrEqual(2);
+    expect(log.count('GET', HISTORY)).toBeLessThanOrEqual(3);
     expect(log.count('GET', `/api/chat/events/${id}`)).toBe(1);
 
     // And the reloaded transcript drew the turn exactly once.
