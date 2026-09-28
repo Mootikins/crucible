@@ -175,7 +175,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G132 | lua | One plugin path computation (8.15) | `daemon_plugin_paths` and `PluginManager::with_standard_paths` both compute it (`bootstrap.rs:33`, `lifecycle/mod.rs:112`) | code-wrong | S |
 | G133 | lua | ~~A plugin spec loads once (3.20)~~ | RESOLVED 2026-09-13: discovery reads `spec.luau` in the daemon VM and runs no plugin code; `activate` (`daemon_plugins/activate.rs`) runs `init.luau` once. The throwaway VM is gone | resolved | — |
 | G134 | lua | No dead cross-crate path (4.17) | `SessionCommand`, `ChannelSessionRpc` and the CLI `handle_session_command` form a dead path; `with_session_command_receiver` has no caller | code-wrong | S |
-| G135 | lua | One Lua tool shape (9.2) | `LuaTool`/`DiscoveredTool` and `ToolParam`/`DiscoveredParam` duplicate; `execute_tool`, `execute_file`, `execute_source` have no caller | code-wrong | S |
+| G135 | lua | ~~One Lua tool shape (9.2)~~ | RESOLVED 2026-09-28: `LuaTool` and `ToolParam` are gone. `DiscoveredTool` and `DiscoveredParam` are the one shape. `execute_tool` and `execute_file` are gone. Only tests call `execute_source` | resolved | — |
 | G136 | lua | Plugin commands reach the web palette (9.13) | The web shows plugin commands as a count only | not-built | - |
 | G137 | lua | `cru.plugin.set_status` renders in both clients (F105) | The web has no renderer for status slots | not-built | - |
 | G138 | lua | `StubGenerator::verify` uses a temp dir the caller gives (tests) | It writes under `std::env::temp_dir()` (`stubs.rs:82`) | code-wrong | S |

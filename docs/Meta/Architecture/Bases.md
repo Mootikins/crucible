@@ -38,10 +38,11 @@ This subsystem follows that split exactly:
   formatter (`date_format.rs`), a JavaScript-semantics regex wrapper
   (`regexp.rs`), inline-fence resolution (`inline.rs`), and the
   wire-facing view-options projection (`view_options.rs`).
-- **`crucible-lua/src/vault/bases.rs`** owns `BaseOperation` (the closed set
-  of Bases operations) and the `cru.kiln.*` Lua registration; the daemon
-  re-exports and dispatches on that enum rather than declaring its own,
-  so the "one enum" the RPC and Lua paths share crosses a crate boundary.
+- **`crucible-core/src/bases/operation.rs`** owns `BaseOperation`, the
+  closed set of Bases operations. The daemon RPC dispatch and the Lua
+  binding both import it from `crucible_core::bases`.
+- **`crucible-lua/src/vault/bases.rs`** owns the `cru.kiln.*` Lua
+  registration of each `BaseOperation`.
 - **`crucible-web/src/routes/bases.rs`** is a thin HTTP proxy over the
   daemon's `base.*` RPCs, mapping `WriteOutcome`/`Failure` onto HTTP status
   codes; it holds no Bases business logic of its own.
@@ -93,7 +94,8 @@ them).
 
 | Path | Role |
 | --- | --- |
-| `crates/crucible-lua/src/vault/bases.rs` | `BaseOperation` and the `cru.kiln.*` Lua registration; see [[Luau APIs]]. |
+| `crates/crucible-core/src/bases/operation.rs` | `BaseOperation`, the closed set of Bases operations. |
+| `crates/crucible-lua/src/vault/bases.rs` | The `cru.kiln.*` Lua registration of each `BaseOperation`; see [[Luau APIs]]. |
 | `crates/crucible-web/src/routes/bases.rs` | The `/api/bases/*` HTTP routes; see [[Web Server]]. |
 | `crates/crucible-cli/src/commands/base.rs` | The `cru base` command family; see [[CLI Commands]]. |
 
@@ -156,12 +158,11 @@ them).
   tagged enum every write answers with: `Applied`, `Unchanged`, `Proposed`,
   `Stale` (an `ancestor_hash` mismatch), or `Refused` (a permission rule or
   policy hook refused the write).
-- **`BaseOperation`** (`crates/crucible-lua/src/vault/bases.rs`) is the
-  closed set of eight Bases operations (`List`, `Views`, `Query`,
+- **`BaseOperation`** (`crates/crucible-core/src/bases/operation.rs`) is
+  the closed set of eight Bases operations (`List`, `Views`, `Query`,
   `SetProperty`, `CreateEntry`, `ReorderGroups`, `EnsureBase`,
-  `PendingWrites`); `operation.rs` re-exports it rather than declaring a
-  daemon-local copy, so the RPC dispatcher and the `cru.kiln` Lua
-  registration share one enum across the crate boundary.
+  `PendingWrites`). `operation.rs` re-exports it from the core crate, so the
+  RPC dispatcher and the `cru.kiln` Lua registration use one enum.
 - **`ViewOptions`** (`crates/crucible-daemon/src/bases/view_options.rs`) is
   the typed, always-defaulted projection of a view's free-form Obsidian
   presentation options (card size, image fit, row height, column widths,
@@ -373,7 +374,7 @@ interval, not left contested. See [[Agent Manager]] for the bracket and
   completeness gate) and an arm in `crates/crucible-daemon/src/bases/mod.rs`'s
   `builtin_summary`.
 - **A new Bases operation** adds a `BaseOperation` variant in
-  `crates/crucible-lua/src/vault/bases.rs`, an arm in
+  `crates/crucible-core/src/bases/operation.rs`, an arm in
   `crates/crucible-daemon/src/bases/operation.rs`'s `execute`, and, if it
   writes, a function in `crates/crucible-daemon/src/bases/write.rs`. It
   reaches the CLI and web only through their own dedicated files
@@ -451,6 +452,6 @@ daemon, but it is out of this page's file set (see [[Web Server]]).
 - No AGENTS.md ownership conflict found in this page's file set: the
   document/expression AST stays in `crucible-core`, evaluation and write
   disposition stay in the daemon, `BaseOperation` is owned by
-  `crucible-lua` and only re-exported by the daemon, and every write funnels
+  `crucible-core` and imported by the daemon and the Lua binding, and every write funnels
   through the daemon's existing permission, scope, and review machinery
   rather than a duplicate of it.

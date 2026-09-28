@@ -1,4 +1,4 @@
-use mlua::{Function, Lua, LuaSerdeExt, Result as LuaResult, Table, Value};
+use mlua::{Function, IntoLua, Lua, LuaSerdeExt, Result as LuaResult, Table, Value};
 use serde_json::Value as JsonValue;
 use tracing::debug;
 
@@ -27,17 +27,24 @@ pub enum PermissionHookResult {
     Prompt,
 }
 
-/// A permission request passed to Lua hooks
+/// The request that a Lua permission hook receives.
+///
+/// This is a Lua-side view, not a copy of a core type. The call is the core
+/// [`CanonicalToolCall`](crucible_core::types::CanonicalToolCall). The view
+/// adds only the facts of the gate that no core type holds: the arguments,
+/// the read-only class and the session mode. Its one job is the conversion
+/// to the hook table (`IntoLua` below). The core `PermRequest` is the prompt
+/// that the daemon builds after the hooks answer, and it has no mode and no
+/// read-only class.
 #[derive(Debug, Clone)]
 pub struct PermissionRequest {
     /// The canonical call. The hook reads its tool name, kind, command line,
     /// paths, URL, query and agent, so one hook decides a Crucible tool and
     /// the tool of each ACP agent.
     pub call: crucible_core::types::CanonicalToolCall,
-    /// Tool arguments as JSON
+    /// Tool arguments as JSON. The conversion also reads `file_path` from
+    /// them.
     pub args: JsonValue,
-    /// File path if applicable
-    pub file_path: Option<String>,
     /// Whether the daemon classifies this tool as read-only.
     ///
     /// Safe tools normally short-circuit before the gate, so a hook would not
@@ -51,6 +58,17 @@ pub struct PermissionRequest {
     /// is itself just a default hook in `defaults/init.lua`. `None` where no
     /// mode is in scope (direct API callers, tests).
     pub mode: Option<String>,
+}
+
+impl PermissionRequest {
+    /// The file that the call names: the `path` argument, else the `file`
+    /// argument.
+    fn file_path(&self) -> Option<&str> {
+        self.args
+            .get("path")
+            .or_else(|| self.args.get("file"))
+            .and_then(JsonValue::as_str)
+    }
 }
 
 /// Register the cru.permissions.on_request() API for permission hooks
@@ -136,40 +154,39 @@ pub fn register_permission_hook_api(
 
 /// The table a permission hook receives.
 ///
-/// One function so `PermissionRequest` in `host_api` has something to be
+/// One conversion so `PermissionRequest` in `host_api` has something to be
 /// checked against. The declaration was a hand-written constant beside a
 /// hand-written table and nothing held the two together: a field added here
 /// and missing there becomes a false type error at every correct read of it,
 /// and a field dropped here leaves the declaration lying the other way.
 /// `the_permission_payload_matches_its_declaration` compares them.
-pub(crate) fn build_request_table(
-    lua: &Lua,
-    request: &crate::PermissionRequest,
-) -> LuaResult<Table> {
-    let call = &request.call;
-    let request_table = lua.create_table()?;
-    request_table.set("tool_name", call.tool.as_str())?;
-    request_table.set("args", lua.to_value(&request.args)?)?;
-    request_table.set("kind", call.kind.as_str())?;
-    request_table.set("paths", lua.to_value(&call.paths)?)?;
-    for (key, value) in [
-        ("command", &call.command),
-        ("url", &call.url),
-        ("query", &call.query),
-        ("agent", &call.agent),
-    ] {
-        if let Some(value) = value {
-            request_table.set(key, value.as_str())?;
+impl IntoLua for &PermissionRequest {
+    fn into_lua(self, lua: &Lua) -> LuaResult<Value> {
+        let call = &self.call;
+        let request_table = lua.create_table()?;
+        request_table.set("tool_name", call.tool.as_str())?;
+        request_table.set("args", lua.to_value(&self.args)?)?;
+        request_table.set("kind", call.kind.as_str())?;
+        request_table.set("paths", lua.to_value(&call.paths)?)?;
+        for (key, value) in [
+            ("command", &call.command),
+            ("url", &call.url),
+            ("query", &call.query),
+            ("agent", &call.agent),
+        ] {
+            if let Some(value) = value {
+                request_table.set(key, value.as_str())?;
+            }
         }
+        if let Some(path) = self.file_path() {
+            request_table.set("file_path", path)?;
+        }
+        if let Some(ref mode) = self.mode {
+            request_table.set("mode", mode.as_str())?;
+        }
+        request_table.set("is_safe", self.is_safe)?;
+        Ok(Value::Table(request_table))
     }
-    if let Some(ref path) = request.file_path {
-        request_table.set("file_path", path.as_str())?;
-    }
-    if let Some(ref mode) = request.mode {
-        request_table.set("mode", mode.as_str())?;
-    }
-    request_table.set("is_safe", request.is_safe)?;
-    Ok(request_table)
 }
 
 /// Execute permission hooks and return the result
@@ -223,7 +240,7 @@ pub fn execute_permission_hooks(
         return Ok(PermissionHookResult::Prompt);
     }
 
-    let request_table = build_request_table(lua, request)?;
+    let request_table = request.into_lua(lua)?;
     // The session this gate belongs to, so a hook that registers another
     // handler for it resolves the id from the host. Held for the whole loop,
     // as the source bracket inside it is held for each hook.
@@ -277,6 +294,58 @@ pub fn execute_permission_hooks(
 mod payload_contract {
     use super::*;
 
+    fn payload(lua: &Lua, request: &PermissionRequest) -> Table {
+        match request.into_lua(lua).expect("build the payload") {
+            Value::Table(table) => table,
+            other => panic!("the payload must be a table, got {other:?}"),
+        }
+    }
+
+    fn request_with(args: JsonValue, mode: Option<&str>, is_safe: bool) -> PermissionRequest {
+        PermissionRequest {
+            call: crucible_core::types::CanonicalToolCall::crucible_tool("write", &args),
+            args,
+            mode: mode.map(str::to_string),
+            is_safe,
+        }
+    }
+
+    /// The conversion gives each value of the view to its table key.
+    /// `file_path` is the `path` argument, else the `file` argument, else
+    /// absent.
+    #[test]
+    fn the_payload_carries_each_value_of_the_request() {
+        let lua = Lua::new();
+        let table = payload(
+            &lua,
+            &request_with(
+                serde_json::json!({ "path": "a.md", "file": "b.md" }),
+                Some("auto"),
+                true,
+            ),
+        );
+        assert_eq!(table.get::<String>("tool_name").unwrap(), "write");
+        assert_eq!(table.get::<String>("file_path").unwrap(), "a.md");
+        assert_eq!(table.get::<String>("mode").unwrap(), "auto");
+        assert!(table.get::<bool>("is_safe").unwrap());
+        let args: Table = table.get("args").unwrap();
+        assert_eq!(args.get::<String>("file").unwrap(), "b.md");
+
+        let table = payload(
+            &lua,
+            &request_with(serde_json::json!({ "file": "b.md" }), None, false),
+        );
+        assert_eq!(table.get::<String>("file_path").unwrap(), "b.md");
+        assert!(table.get::<Option<String>>("mode").unwrap().is_none());
+        assert!(!table.get::<bool>("is_safe").unwrap());
+
+        let table = payload(
+            &lua,
+            &request_with(serde_json::json!({ "command": "ls" }), None, false),
+        );
+        assert!(table.get::<Option<String>>("file_path").unwrap().is_none());
+    }
+
     /// The payload table and its declared type must name the SAME fields.
     ///
     /// B1 asked for a payload record checked at registration the way a
@@ -302,12 +371,11 @@ mod payload_contract {
                     &serde_json::json!({ "command": "ls" }),
                 )
             },
-            args: serde_json::json!({ "command": "ls" }),
-            file_path: Some("/tmp/x".to_string()),
+            args: serde_json::json!({ "command": "ls", "path": "/tmp/x" }),
             mode: Some("plan".to_string()),
             is_safe: false,
         };
-        let table = build_request_table(&lua, &request).expect("build the payload");
+        let table = payload(&lua, &request);
 
         let built: std::collections::BTreeSet<String> = table
             .pairs::<String, mlua::Value>()

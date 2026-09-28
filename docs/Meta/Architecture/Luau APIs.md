@@ -201,17 +201,18 @@ string): the daemon's turn-start reads it into the session slot, so a note
 write during a `"propose"`-mode turn is recorded as a proposal rather than
 written to disk.
 
-**`BaseOperation`** and **`BasesResolver`** (`crates/crucible-lua/src/vault/bases.rs`)
-back the eight `cru.kiln.*` Bases functions. `BaseOperation` (a
-`strum::EnumIter`: `List`, `Views`, `Query`, `SetProperty`, `CreateEntry`,
-`ReorderGroups`, `EnsureBase`, `PendingWrites`) is the one closed set both
-the daemon's Bases RPC methods and `cru.kiln.*` dispatch through —
-`crates/crucible-daemon/src/bases/operation.rs` re-exports it (`pub use
-crucible_lua::bases_api::BaseOperation`) rather than declaring its own,
-the same "one closed set, two callers" discipline this page already
-documents for `SESSION_FNS`/`TOOL_FNS`. `BasesResolver` is the resolver-closure
-type alias the daemon binds once, at boot, over `crucible_lua::bases_api::register`
-— `crates/crucible-lua/src/lib.rs` re-exports `crates/crucible-lua/src/vault/bases.rs`
+**`BaseOperation`** (`crates/crucible-core/src/bases/operation.rs`) and
+**`BasesResolver`** (`crates/crucible-lua/src/vault/bases.rs`) back the eight
+`cru.kiln.*` Bases functions. `BaseOperation` is a `strum::EnumIter` with the
+variants `List`, `Views`, `Query`, `SetProperty`, `CreateEntry`,
+`ReorderGroups`, `EnsureBase` and `PendingWrites`. It is the one closed set
+that the daemon's Bases RPC methods and `cru.kiln.*` use. The core crate owns
+it. The Lua binding and `crates/crucible-daemon/src/bases/operation.rs` import
+it from `crucible_core::bases`. The conversion to Lua is
+`BaseOperation::name`: `vault/bases.rs` binds one `cru.kiln` function for each
+variant under that name. `BasesResolver` is the resolver-closure type alias
+that the daemon binds once, at boot, over `crucible_lua::bases_api::register`.
+`crates/crucible-lua/src/lib.rs` re-exports `crates/crucible-lua/src/vault/bases.rs`
 as `bases_api`.
 
 **`ThemeConfig`** and its wire pair (`crates/crucible-lua/src/theme.rs`,
@@ -478,7 +479,7 @@ cancelled," never "the timeout elapsed."
   and its paired wire function in `theme_wire.rs`, so a forgotten field
   degrades to a default rather than silently vanishing across the wire.
 - **A new Bases operation** adds one variant to `BaseOperation`
-  (`crates/crucible-lua/src/vault/bases.rs`), which supplies both its
+  (`crates/crucible-core/src/bases/operation.rs`), which supplies both its
   `cru.kiln.*` name (`BaseOperation::name`) and whether it needs a session
   (`BaseOperation::writes`); the daemon's Bases RPC dispatch reads the same
   enum, so a variant that forgets one of these two `match` arms is a
@@ -524,29 +525,20 @@ as a regression test for a past release where these functions shipped
 returning an empty table (`graph_tests`); and named-kiln reads plus the
 host-bound-members-survive-a-storage-upgrade regression (`blocks_tests`).
 
-Gaps: `crates/crucible-lua/src/types.rs` (outside this page) defines an
-older `LuaTool`/`ToolParam` shape with no test coverage found in this
-review and an unclear relationship to `tools_api.rs`'s `TOOL_FNS` contract —
-flagged in Findings, not resolved here. `crates/crucible-lua/src/vault/bases.rs`
-is the one exception to "every daemon-backed namespace has both a
-stub-registration test and a store/API-backed test" within this page's own
-files: its only `#[cfg(test)]` covers the pure `acting_session` function,
-not `register`'s Lua bindings; the Lua-facing coverage
-(`crates/crucible-daemon/src/agent_manager/tests/bases_attribution.rs`)
-lives in `crucible-daemon` instead — flagged in Findings.
+`crates/crucible-lua/src/vault/bases.rs` tests the pure `acting_session`
+function. It also proves the conversion across the Lua boundary: each
+`cru.kiln` Bases function sends its own `BaseOperation`, the kiln name and
+the options to the resolver. The daemon tests the real resolver
+(`crates/crucible-daemon/src/agent_manager/tests/bases_attribution.rs`,
+`crates/crucible-daemon/src/bases/plugin_tests.rs`).
 
 ## Findings
 
-- **Two tool-definition surfaces with an unclear relationship.**
-  `crates/crucible-lua/src/types.rs` (outside this page, but consumed by it)
-  defines `LuaTool`/`ToolParam`/`ToolResult`, which the chunked review of
-  that file flagged as possibly predating the `TOOL_FNS`/`DaemonToolsApi`
-  contract this page's `crates/crucible-lua/src/tools_api.rs` uses. A grep
-  pass confirms `crates/crucible-lua/src/discovered.rs`'s
-  `impl From<DiscoveredTool> for LuaTool` still constructs one, so it is not
-  simply dead, but its exact relationship to the daemon-backed tool-call
-  path is not proven in this page's files. Worth a second reader's pass
-  focused specifically on that seam.
+- **One tool-definition shape.** `LuaTool` and `ToolParam` were a second
+  copy of `DiscoveredTool` and `DiscoveredParam`
+  (`crates/crucible-lua/src/discovered.rs`). No code read them, and no Lua
+  value used them. They are gone. A plugin tool has one shape,
+  `DiscoveredTool`, and `discovered_params_to_json_schema` gives its schema.
 - **A colocation, not a conflict.** `crates/crucible-lua/src/sessions/tests/ui.rs`
   tests `crate::ui` rather than `crate::sessions`, placed there to reuse
   `MockDaemonApi` rather than duplicate a large mock. The file's own header

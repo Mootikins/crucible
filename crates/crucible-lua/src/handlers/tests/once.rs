@@ -52,7 +52,6 @@ fn bash_request() -> PermissionRequest {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({ "command": "ls" }),
-        file_path: None,
         mode: None,
         is_safe: false,
     }

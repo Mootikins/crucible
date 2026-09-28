@@ -788,16 +788,9 @@ impl AgentManager {
         };
         let tool_name = call.tool.as_str();
 
-        let file_path = args
-            .get("path")
-            .or_else(|| args.get("file"))
-            .and_then(|v| v.as_str())
-            .map(String::from);
-
         let request = PermissionRequest {
             call: call.clone(),
             args: args.clone(),
-            file_path,
             mode: Some(session_mode.to_string()),
             // A tool name that an agent sends is not Crucible's tool.
             is_safe: call.runs_in_crucible()

@@ -54,7 +54,6 @@ fn test_permission_hook_returns_allow() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({"command": "npm install"}),
-        file_path: None,
         mode: None,
         is_safe: false,
     };
@@ -95,7 +94,6 @@ fn test_permission_hook_returns_deny() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({"path": "/important/file"}),
-        file_path: Some("/important/file".to_string()),
         mode: None,
         is_safe: false,
     };
@@ -133,7 +131,6 @@ fn test_permission_hook_returns_nil_for_prompt() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({"path": "test.txt"}),
-        file_path: Some("test.txt".to_string()),
         mode: None,
         is_safe: false,
     };
@@ -160,7 +157,6 @@ fn test_permission_hook_no_hooks_returns_prompt() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({}),
-        file_path: None,
         mode: None,
         is_safe: false,
     };
@@ -201,7 +197,6 @@ fn test_permission_hook_receives_args() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({"command": "npm install express"}),
-        file_path: None,
         mode: None,
         is_safe: false,
     };
@@ -242,7 +237,6 @@ fn test_permission_hook_receives_file_path() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({"path": "src/foo.test.ts"}),
-        file_path: Some("src/foo.test.ts".to_string()),
         mode: None,
         is_safe: false,
     };
@@ -283,7 +277,6 @@ fn test_permission_hook_first_decision_wins() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({}),
-        file_path: None,
         mode: None,
         is_safe: false,
     };
@@ -321,7 +314,6 @@ fn a_pattern_scopes_a_hook_to_matching_tools() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({}),
-        file_path: None,
         mode: None,
         is_safe: false,
     };
@@ -374,7 +366,6 @@ fn a_pattern_uses_the_same_glob_syntax_as_crucible_on() {
             &serde_json::Value::Null,
         ),
         args: serde_json::json!({}),
-        file_path: None,
         mode: None,
         is_safe: false,
     };

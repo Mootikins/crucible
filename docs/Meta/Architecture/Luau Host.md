@@ -157,7 +157,7 @@ count at `582c5e6c1`.
 | `crates/crucible-lua/src/stubs.rs` | 407 | Generates plugin-author stub files (`cru.lua`, `cru.d.luau`, `cru-docs.json`) by walking a live `cru` table. |
 | `crates/crucible-lua/src/test_support.rs` | 375 | Test-only builder for minimal Lua VMs with a chosen subset of `cru.*` modules, an in-memory `PropertyStore` fixture, and `MockSessionRpc`, the in-memory `SessionConfigRpc` that session handle tests bind. |
 | `crates/crucible-lua/src/discovered.rs` | 109 | The plain-data shapes a plugin's spec table parses into (`DiscoveredTool`, `DiscoveredCommand`, `DiscoveredHandler`, `DiscoveredService`); `lifecycle/spec.rs` does the parsing. |
-| `crates/crucible-lua/src/types.rs` | 62 | Small serde DTOs for Lua-defined tools and results (`LuaTool`, `ToolParam`, `LuaExecutionResult`, `ToolResult`). |
+| `crates/crucible-lua/src/types.rs` | 22 | `LuaExecutionResult`, the result of `LuaExecutor::execute_source`. |
 | `crates/crucible-lua/src/error.rs` | 155 | `LuaError`, the crate's error type, its `mlua` interop conversions, and `format_lua_error` for user-facing display. |
 | `crates/crucible-lua/src/error_ext.rs` | 14 | `LuaResultExt` — a one-line extension trait converting any displayable error into `LuaResult`. |
 | `crates/crucible-lua/src/lua_util.rs` | 94 | Small shared helpers for the `cru` namespace tables, and the deprecated `cru.sessions` alias. |
@@ -170,7 +170,7 @@ count at `582c5e6c1`.
 | `crates/crucible-lua/src/handlers/hook_name.rs` | 694 | `EventName`/`StageId`/`HookName` — the closed, exhaustively-checked vocabulary of names `cru.on` and related APIs accept. |
 | `crates/crucible-lua/src/handlers/cru_on.rs` | 216 | Implements `cru.on(event_type, [opts,] handler)`, the primary registration API. |
 | `crates/crucible-lua/src/handlers/cru_clear.rs` | 81 | Implements `cru.clear`, the retirement counterpart to `cru.on`. |
-| `crates/crucible-lua/src/handlers/permission.rs` | 332 | Implements `cru.permissions.on_request`, the synchronous permission-gate hook; the request table carries one `CanonicalToolCall`. |
+| `crates/crucible-lua/src/handlers/permission.rs` | 400 | Implements `cru.permissions.on_request`, the synchronous permission-gate hook; the request view carries one `CanonicalToolCall`, and its `IntoLua` conversion makes the hook table. |
 | `crates/crucible-lua/src/handlers/before_execute.rs` | 91 | Implements the `tool:before_execute` hook: Lua-injected environment variables for the tool call about to run. |
 | `crates/crucible-lua/src/handlers/render.rs` | 62 | Implements `tool:render`: display data for one tool call, called again with its finished result; last-registered-handler-wins, unlike other stages' first-wins rule. |
 | `crates/crucible-lua/src/handlers/conversion.rs` | 127 | The single projection from `SessionEvent` to the flat JSON/Lua table every handler sees, and its inverse. |
@@ -464,8 +464,11 @@ function calls each hook's body with `handler.call::<Value>` inside one
 first hook to answer `{allow=true}` or `{deny=true}` wins; an exhausted
 list, or no hooks at all, answers `Prompt`. Each hook's `PermissionRequest`
 carries one `crucible_core::types::CanonicalToolCall` (field `call`, not a
-bare `tool_name`), and `build_request_table` projects it into the Lua table
-a handler receives: `tool_name`, `kind`, `paths` (always present), and
+bare `tool_name`). `PermissionRequest` is a Lua-side view: it adds only the
+arguments, the read-only class and the session mode, which no core type
+holds. Its `IntoLua` conversion makes the Lua table that a handler receives.
+The conversion reads `file_path` from the `path` or `file` argument. The
+table has `tool_name`, `kind`, `paths` (always present), and
 `command`/`url`/`query`/`agent` when the call has them. One hook can thus
 decide a Crucible tool call and an ACP agent's tool call from the same
 shape.
@@ -724,14 +727,11 @@ example both `options/mod.rs` and `options/admit.rs` cite).
 
 ## Findings
 
-- **`crucible_lua::types::ToolResult` (`crates/crucible-lua/src/types.rs`)
-  has no call site.** `LuaTool`/`ToolParam` are used by
-  `discovered.rs`'s `From<DiscoveredTool>` and `schema.rs`'s
-  `generate_input_schema`, and `LuaExecutionResult` is used by
-  `executor.rs`'s test-only `execute_source`. `ToolResult`'s `ok`/`err`
-  constructors are defined, re-exported from `lib.rs`, and never
-  constructed or matched anywhere else in the workspace (confirmed by
-  grep). It is a plausible removal candidate.
+- **`crates/crucible-lua/src/types.rs` holds only `LuaExecutionResult`.**
+  `ToolResult`, `LuaTool` and `ToolParam` are gone. `LuaTool` and
+  `ToolParam` copied `DiscoveredTool` and `DiscoveredParam`, and no code
+  read them. `LuaExecutionResult` serves `executor.rs`'s `execute_source`,
+  which only tests call.
 - **`PluginSpec::source` (`crates/crucible-lua/src/lifecycle/spec.rs`) is
   declared and never assigned.** `spec_from_table` builds every other
   field of `PluginSpec` but leaves `source` at `PluginSpec::default()`'s

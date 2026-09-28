@@ -104,7 +104,6 @@ fn tool_request(mode: &str) -> PermissionRequest {
             &serde_json::json!({ "command": "rm -rf build" }),
         ),
         args: serde_json::json!({ "command": "rm -rf build" }),
-        file_path: None,
         mode: Some(mode.to_string()),
         is_safe: false,
     }
