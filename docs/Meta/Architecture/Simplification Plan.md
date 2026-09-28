@@ -115,8 +115,18 @@ session files can hold them; sub-step 2 replaces that type.
 **Change.**
 1. Make every client decode `SessionEventPayload` only. Delete the string
    matches on event names.
-2. Replace `LogEvent` with the persisted subset of `SessionEventPayload`.
-   Keep one writer of event history.
+2. Store only wire-shaped lines. Most of `session.jsonl` is already wire
+   events that `persist_event` writes, and `wire_to_log_event` turns them
+   into `LogEvent` when a reader loads them. So `LogEvent` is the read
+   model, not the stored majority. Two writers still store `LogEvent`
+   lines directly: the clear marker and the accepted context injection in
+   `crates/crucible-daemon/src/agent_manager/messaging/send.rs`. They write
+   directly, and in order, because the broadcast writer can store an event
+   later than the turn that it belongs to. The wire vocabulary cannot
+   carry their data yet: `context_cleared` is not stored, and
+   `ContextInjected` has no tags, kind, source or anchor. So this sub-step
+   first widens those wire events, then writes them in wire shape on the
+   same direct path, and keeps the `LogEvent` reader for old lines.
 3. Move the transcript fold into the daemon. Serve the folded transcript
    with the session history. Let the TUI and the web client render it, not
    fold it.
