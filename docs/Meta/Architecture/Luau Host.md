@@ -157,7 +157,7 @@ count at `582c5e6c1`.
 | `crates/crucible-lua/src/stubs.rs` | 407 | Generates plugin-author stub files (`cru.lua`, `cru.d.luau`, `cru-docs.json`) by walking a live `cru` table. |
 | `crates/crucible-lua/src/test_support.rs` | 313 | Test-only builder for minimal Lua VMs with a chosen subset of `cru.*` modules, plus an in-memory `PropertyStore` fixture. |
 | `crates/crucible-lua/src/discovered.rs` | 109 | The plain-data shapes a plugin's spec table parses into (`DiscoveredTool`, `DiscoveredCommand`, `DiscoveredHandler`, `DiscoveredService`); `lifecycle/spec.rs` does the parsing. |
-| `crates/crucible-lua/src/types.rs` | 63 | Small serde DTOs for Lua-defined tools and results (`LuaTool`, `ToolParam`, `LuaExecutionResult`, `ToolResult`). |
+| `crates/crucible-lua/src/types.rs` | 62 | Small serde DTOs for Lua-defined tools and results (`LuaTool`, `ToolParam`, `LuaExecutionResult`, `ToolResult`). |
 | `crates/crucible-lua/src/error.rs` | 155 | `LuaError`, the crate's error type, its `mlua` interop conversions, and `format_lua_error` for user-facing display. |
 | `crates/crucible-lua/src/error_ext.rs` | 14 | `LuaResultExt` — a one-line extension trait converting any displayable error into `LuaResult`. |
 | `crates/crucible-lua/src/lua_util.rs` | 94 | Small shared helpers for the `cru` namespace tables, and the deprecated `cru.sessions` alias. |

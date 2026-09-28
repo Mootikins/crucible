@@ -1,8 +1,7 @@
 #[cfg(test)]
 use crate::ansi::visible_width;
-use crate::cell_grid::{cells_to_string, StyledCell};
+use crate::cell_grid::{cells_to_string, CellGrid};
 use crate::node::{Node, OverlayNode};
-use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(
@@ -14,64 +13,17 @@ pub enum OverlayAnchor {
     FromBottom(usize),
 }
 
-fn parse_line_to_cells(line: &str, width: usize) -> Vec<StyledCell> {
-    let mut cells = vec![StyledCell::space(); width];
-    let mut current_style = String::new();
-    let mut col = 0;
-    let mut chars = line.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if col >= width {
-            break;
-        }
-
-        if c == '\x1b' {
-            if chars.peek() == Some(&'[') {
-                let mut escape = String::from("\x1b[");
-                chars.next();
-                while let Some(&next) = chars.peek() {
-                    escape.push(chars.next().unwrap());
-                    if next.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-                if escape.contains('m') {
-                    if escape == "\x1b[0m" || escape == "\x1b[m" {
-                        current_style.clear();
-                    } else {
-                        current_style = escape;
-                    }
-                }
-            }
-        } else {
-            let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
-            if col + char_width <= width {
-                cells[col] = StyledCell::new(c, current_style.clone());
-                for i in 1..char_width {
-                    if col + i < width {
-                        cells[col + i] = StyledCell::new('\0', String::new());
-                    }
-                }
-                col += char_width;
-            }
-        }
-    }
-
-    cells
-}
-
+/// Draw `overlay` over `base` from column `start_col`. A blank cell of the
+/// overlay lets the base show through.
+///
+/// Both lines are read by [`CellGrid`], the one ANSI and grapheme reader of
+/// the renderer, so a wide or joined grapheme keeps its cells here too.
 fn composite_line(base: &str, overlay: &str, start_col: usize, width: usize) -> String {
-    let mut base_cells = parse_line_to_cells(base, width);
-    let overlay_cells = parse_line_to_cells(overlay, width);
-
-    for (i, overlay_cell) in overlay_cells.iter().enumerate() {
-        let target_col = start_col + i;
-        if target_col < width && !overlay_cell.is_transparent() {
-            base_cells[target_col] = overlay_cell.clone();
-        }
-    }
-
-    cells_to_string(&base_cells)
+    let mut line = CellGrid::from_line(base, width);
+    let mut layer = CellGrid::new(width, 1);
+    layer.blit_line(overlay, start_col, 0);
+    line.overlay_row_from(0, &layer, 0);
+    cells_to_string(line.row(0))
 }
 
 pub fn extract_overlays(node: &Node) -> Vec<OverlayNode> {
@@ -129,7 +81,10 @@ impl Overlay {
 }
 
 pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -> Vec<String> {
-    let mut result: Vec<String> = base.iter().map(|l| truncate_to_width(l, width)).collect();
+    let mut result: Vec<String> = base
+        .iter()
+        .map(|l| crate::utils::truncate_to_width(l, width, false).into_owned())
+        .collect();
 
     for overlay in overlays {
         match overlay.anchor {
@@ -165,40 +120,12 @@ pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -
 fn pad_or_truncate(line: &str, width: usize) -> String {
     let vis_width = visible_width(line);
     match vis_width.cmp(&width) {
-        std::cmp::Ordering::Greater => truncate_to_width(line, width),
+        std::cmp::Ordering::Greater => {
+            crate::utils::truncate_to_width(line, width, false).into_owned()
+        }
         std::cmp::Ordering::Less => format!("{}{}", line, " ".repeat(width - vis_width)),
         std::cmp::Ordering::Equal => line.to_string(),
     }
-}
-
-fn truncate_to_width(s: &str, max_width: usize) -> String {
-    let mut result = String::new();
-    let mut current_width = 0;
-    let mut chars = s.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            result.push(c);
-            if chars.peek() == Some(&'[') {
-                result.push(chars.next().unwrap());
-                while let Some(&next) = chars.peek() {
-                    result.push(chars.next().unwrap());
-                    if next.is_ascii_alphabetic() {
-                        break;
-                    }
-                }
-            }
-        } else {
-            let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
-            if current_width + char_width > max_width {
-                break;
-            }
-            result.push(c);
-            current_width += char_width;
-        }
-    }
-
-    result
 }
 
 #[cfg(test)]
@@ -288,10 +215,20 @@ mod tests {
         assert_eq!(pad_or_truncate("abcdefghij", 3), "abc");
     }
 
+    /// A joined grapheme in an overlay keeps its cells: a ZWJ sequence is
+    /// one wide glyph, not its code points one per cell.
+    #[test]
+    fn an_overlay_keeps_a_joined_grapheme_whole() {
+        let coder = "\u{1F469}\u{200D}\u{1F4BB}";
+        let line = composite_line("abcdef", &format!("{coder}x"), 0, 6);
+        assert!(line.starts_with(&format!("{coder}x")), "{line:?}");
+        assert_eq!(visible_width(&line), 6, "{line:?}");
+    }
+
     #[test]
     fn truncate_preserves_ansi_codes() {
         let styled = "\x1b[31mred text\x1b[0m";
-        let truncated = truncate_to_width(styled, 3);
+        let truncated = crate::utils::truncate_to_width(styled, 3, false);
         assert!(truncated.starts_with("\x1b[31m"));
         assert_eq!(visible_width(&truncated), 3);
     }
@@ -299,7 +236,7 @@ mod tests {
     #[test]
     fn truncate_handles_unicode_box_chars() {
         let border = "▄".repeat(100);
-        let truncated = truncate_to_width(&border, 10);
+        let truncated = crate::utils::truncate_to_width(&border, 10, false);
         assert_eq!(visible_width(&truncated), 10);
     }
 

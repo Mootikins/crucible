@@ -48,8 +48,8 @@ performs that conversion.
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-core/src/parser/mod.rs` | 78 | Module root; declares submodules and re-exports the parser's public API |
-| `crates/crucible-core/src/parser/implementation.rs` | 553 | `CrucibleParser`, the one parser type: file/content read, frontmatter split, extension run, `ParsedNote` assembly |
+| `crates/crucible-core/src/parser/mod.rs` | 75 | Module root; declares submodules and re-exports the parser's public API |
+| `crates/crucible-core/src/parser/implementation.rs` | 453 | `CrucibleParser`, the one parser type: file/content read, frontmatter split, extension run, `ParsedNote` assembly |
 | `crates/crucible-core/src/parser/extensions.rs` | 191 | The closed `Extension` enum and `ExtensionRegistry` that runs its variants in order |
 | `crates/crucible-core/src/parser/traits.rs` | 68 | `ParserCapabilities`, the descriptor of what `CrucibleParser` supports |
 | `crates/crucible-core/src/parser/error.rs` | 225 | `ParserError` (fatal), `ParseError`/`ParseErrorType`/`ErrorSeverity` (non-fatal, collected) |
@@ -73,8 +73,8 @@ performs that conversion.
 | `crates/crucible-core/src/parser/types/frontmatter.rs` | 75 | `Frontmatter`, `FrontmatterFormat` |
 | `crates/crucible-core/src/parser/types/inline_metadata.rs` | 225 | `InlineMetadata`, `extract_inline_metadata`; Dataview-style `[key:: value]` |
 | `crates/crucible-core/src/parser/types/lists.rs` | 110 | `CheckboxStatus` |
-| `crates/crucible-core/src/parser/types/task.rs` | 1181 | `TaskItem`, `TaskFile`, `TaskGraph`, `GraphError`: `TASKS.md`-format parsing and dependency graph |
-| `crates/crucible-core/src/parser/types/workflow.rs` | 802 | `WorkflowDoc`, `WorkflowStep`, `Gate`, `ValidationEntry`, `WorkflowParseWarning`: `type: workflow` note parsing, parse-only |
+| `crates/crucible-core/src/parser/types/task.rs` | 1180 | `TaskItem`, `TaskFile`, `TaskGraph`, `GraphError`: `TASKS.md`-format parsing and dependency graph |
+| `crates/crucible-core/src/parser/types/workflow.rs` | 790 | `WorkflowDoc`, `WorkflowStep`, `Gate`, `ValidationEntry`, `WorkflowParseWarning`: `type: workflow` note parsing, parse-only |
 | `crates/crucible-core/src/parser/types/workflow/tests.rs` | 904 | Unit test suite for `workflow.rs`, loaded via `#[cfg(test)] mod tests;` |
 | `crates/crucible-core/src/note_edit.rs` | 243 | `AnchoredEdit`, `EditRefusal`, `EditOutcome`, `apply_anchored_edits`, `disk_hash`: anchored line edits |
 | `crates/crucible-core/src/note_merge.rs` | 517 | `Region`, `Merge`, `merge3`: three-way line merge for concurrent note writes |

@@ -108,7 +108,7 @@ functions plus `template/html.rs` for embedded markup strings.
 | `crates/crucible-oil/src/render.rs` | 715 | Four public entry points into the Taffy layout pipeline: `render_tree` (ANSI string plus cursor, shared by the viewport, graduation, and overlay paths), `render_to_rows` (one string per row, for a caller that keeps rendered content across frames), `render_to_text_rows` (rows plus each row's `RowText`, for full-screen selection), and `render_tree_to_grid` (a `CellGrid` plus cursor, for the full-screen presenter). |
 | `crates/crucible-oil/src/render_helpers.rs` | 177 | `pub(crate)` text-formatting helpers (wrap-and-pad, spinner frame selection, popup item line format) shared by the render paths. The wrap-and-pad helper returns a `WrappedText{lines, gaps}` pair; `gaps` carries the source text a wrap dropped between two rows. |
 | `crates/crucible-oil/src/planning.rs` | 354 | `FramePlanner` — orchestrates one frame: strips overlays from the tree, renders viewport, overlays, and graduation through `render_tree`, returns a `FrameSnapshot`. |
-| `crates/crucible-oil/src/overlay.rs` | 324 | `Overlay`/`OverlayAnchor` and `composite_overlays` — merges floating overlay content onto base lines at a screen anchor. |
+| `crates/crucible-oil/src/overlay.rs` | 261 | `Overlay`/`OverlayAnchor` and `composite_overlays` — merges floating overlay content onto base lines at a screen anchor. |
 
 ### Terminal driver
 
@@ -438,11 +438,10 @@ next frame's row diff rewrites every row at the new width.
   `blit_into`) in `crates/crucible-oil/src/cell_grid.rs` bounds its
   parallel skip at 256 characters. Both files cross-reference each other
   and name a "Stage B (render path unification)" convergence that has not
-  happened. A third, simpler CSI-only parser, `parse_line_to_cells` in
-  `crates/crucible-oil/src/overlay.rs`, is independent of both and, unlike
-  `blit_into`/`blit_text`/`put_grapheme`, is not grapheme-aware: it still
-  writes one `char` per cell, so it also diverges from the other two on
-  ZWJ sequences and combining marks.
+  happened. Overlay compositing in `crates/crucible-oil/src/overlay.rs`
+  reads both lines through `CellGrid` (`from_line`, `blit_line`,
+  `overlay_row_from`), so a joined grapheme keeps its cells there too, and
+  it truncates through `truncate_to_width` in `crates/crucible-oil/src/utils.rs`.
 - **Color encoding is table-driven, not name-mapped.** `style.rs::Color`
   documents and tests a specific regression: crossterm's own named colors are
   shifted from ANSI convention, so `to_crossterm`/`to_ansi_fg`/`to_ansi_bg`
@@ -597,16 +596,6 @@ next frame's row diff rewrites every row at the new width.
   `render_box_content` code fills the background for a borderless box
   whenever `style.bg.is_some()`, so the comment describes a bug the code has
   already fixed; it is a stale description, not a live defect.
-- `parse_line_to_cells` in `crates/crucible-oil/src/overlay.rs` reimplements a
-  simpler, CSI-only version of the ANSI-run parsing that `blit_line` (via
-  `blit_into`) in `crates/crucible-oil/src/cell_grid.rs` already does (no
-  OSC/APC/DCS handling). It is not named in either file's own "Stage B"
-  convergence note, but it is a third ANSI-run parser in a crate that already
-  documents two others as pending unification. It also stayed on the old
-  one-`char`-per-cell model when `blit_into`/`blit_text`/`put_grapheme`
-  moved to one grapheme cluster per cell, so it now diverges from
-  `cell_grid.rs` on ZWJ sequences and combining marks too — a new,
-  undocumented divergence neither file's own convergence note names.
 - `HtmlError::UnsupportedElement` in `crates/crucible-oil/src/template/html.rs`
   is declared but no code path in the file constructs it — dead until a
   strict-mode validation path is added. Child-node parse errors inside
