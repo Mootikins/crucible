@@ -268,7 +268,7 @@ local function create_session_mock(fixtures)
     local f = fixtures.sessions
     local counter = 0
     -- A handle carries the id plus the methods the real `Session` userdata
-    -- binds (`session_method!` in session_api.rs). A plugin that configures
+    -- binds (`session_method!` in sessions/handle.rs). A plugin that configures
     -- the session it created calls them with `:`, so each one takes `self`
     -- and answers `(true, nil)` the way the real op does. The call is
     -- recorded under the session module with the handle's id first, so a

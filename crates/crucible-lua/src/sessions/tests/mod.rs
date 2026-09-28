@@ -2,6 +2,7 @@ use super::*;
 use std::sync::Mutex as StdMutex;
 
 mod completion;
+mod config;
 mod crud;
 mod delegate;
 mod diff;

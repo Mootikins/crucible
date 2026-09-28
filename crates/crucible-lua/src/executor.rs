@@ -10,7 +10,7 @@ use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
 use crate::modules::{ModuleRegistry, PrivateRootGuard, RootKind};
 use crate::oil::register_oil_module;
-use crate::session_api::{register_session_module, CurrentSession, Session};
+use crate::sessions::{register_session_module, CurrentSession, Session};
 #[cfg(any(test, feature = "test-utils"))]
 use crate::types::LuaExecutionResult;
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value};
@@ -517,7 +517,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fire_hooks_calls_registered_hooks() {
-        use crate::session_api::Session;
+        use crate::sessions::Session;
 
         let executor = LuaExecutor::new().unwrap();
         executor
@@ -534,7 +534,7 @@ mod tests {
             .unwrap();
 
         let session = Session::new("test".to_string());
-        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        session.bind(Box::new(crate::test_support::MockSessionRpc::new()));
         executor.fire_session_start_hooks(&session).await.unwrap();
 
         let called: bool = executor.lua().load("return test_called").eval().unwrap();
@@ -559,7 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fire_session_end_hooks_calls_registered_hooks() {
-        use crate::session_api::Session;
+        use crate::sessions::Session;
 
         let executor = LuaExecutor::new().unwrap();
         executor
@@ -576,7 +576,7 @@ mod tests {
             .unwrap();
 
         let session = Session::new("test".to_string());
-        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        session.bind(Box::new(crate::test_support::MockSessionRpc::new()));
         executor.fire_session_end_hooks(&session).await.unwrap();
 
         let called: bool = executor
@@ -593,7 +593,7 @@ mod tests {
     /// stored during the session gets nothing.
     #[tokio::test]
     async fn session_end_hook_runs_in_the_context_of_its_plugin() {
-        use crate::session_api::Session;
+        use crate::sessions::Session;
         use crate::test_support::MemoryPropertyStore;
         use crucible_core::storage::PropertyStore;
         use std::sync::Arc;
@@ -633,7 +633,7 @@ mod tests {
             .unwrap();
 
         let session = Session::new("test".to_string());
-        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        session.bind(Box::new(crate::test_support::MockSessionRpc::new()));
         executor.fire_session_end_hooks(&session).await.unwrap();
 
         let read: Option<String> = executor.lua().load("return end_hook_read").eval().unwrap();
@@ -650,7 +650,7 @@ mod tests {
     /// reading its own state at session start got nothing.
     #[tokio::test]
     async fn session_start_hook_runs_in_the_context_of_its_plugin() {
-        use crate::session_api::Session;
+        use crate::sessions::Session;
         use crate::test_support::MemoryPropertyStore;
         use crucible_core::storage::PropertyStore;
         use std::sync::Arc;
@@ -689,7 +689,7 @@ mod tests {
             .unwrap();
 
         let session = Session::new("test".to_string());
-        session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+        session.bind(Box::new(crate::test_support::MockSessionRpc::new()));
         executor.fire_session_start_hooks(&session).await.unwrap();
 
         let read: Option<String> = executor

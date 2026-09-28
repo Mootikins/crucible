@@ -155,7 +155,7 @@ count at `582c5e6c1`.
 | `crates/crucible-lua/src/config_syntax.rs` | 61 | Distinguishes "this config file does not parse" (fatal) from "this file parsed and then raised" (rolled back), across the `cru.include`/`require` Rust-callback boundary. |
 | `crates/crucible-lua/src/check.rs` | 1402 | Implements `cru plugin check`: parse, declarations, optional `luau-lsp`/`luau-analyze` typecheck, and on-VM top-level-effect detection. |
 | `crates/crucible-lua/src/stubs.rs` | 407 | Generates plugin-author stub files (`cru.lua`, `cru.d.luau`, `cru-docs.json`) by walking a live `cru` table. |
-| `crates/crucible-lua/src/test_support.rs` | 313 | Test-only builder for minimal Lua VMs with a chosen subset of `cru.*` modules, plus an in-memory `PropertyStore` fixture. |
+| `crates/crucible-lua/src/test_support.rs` | 375 | Test-only builder for minimal Lua VMs with a chosen subset of `cru.*` modules, an in-memory `PropertyStore` fixture, and `MockSessionRpc`, the in-memory `SessionConfigRpc` that session handle tests bind. |
 | `crates/crucible-lua/src/discovered.rs` | 109 | The plain-data shapes a plugin's spec table parses into (`DiscoveredTool`, `DiscoveredCommand`, `DiscoveredHandler`, `DiscoveredService`); `lifecycle/spec.rs` does the parsing. |
 | `crates/crucible-lua/src/types.rs` | 62 | Small serde DTOs for Lua-defined tools and results (`LuaTool`, `ToolParam`, `LuaExecutionResult`, `ToolResult`). |
 | `crates/crucible-lua/src/error.rs` | 155 | `LuaError`, the crate's error type, its `mlua` interop conversions, and `format_lua_error` for user-facing display. |

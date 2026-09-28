@@ -67,7 +67,6 @@ this page's files.
 | `crates/crucible-lua/src/publications.rs` | 390 | `cru.plugin.publish` — a plugin-scoped JSON channel any client can read back. |
 | `crates/crucible-lua/src/ratelimit.rs` | 280 | `cru.ratelimit.new` — a token-bucket rate limiter exposed as Lua userdata. |
 | `crates/crucible-lua/src/schedule.rs` | 564 | `cru.schedule`/`cru.schedule.cancel` — a Lua callback that runs on an interval, on a task the crate spawns (feature `send`). |
-| `crates/crucible-lua/src/session_api.rs` | 999 | The `Session` Lua userdata, `SessionConfigRpc` trait, `SessionVariables`, `CurrentSession`, and every lifecycle-verb method. |
 | `crates/crucible-lua/src/shell.rs` | 1157 | `cru.shell.exec`/`spawn`/`which` — plugin command execution under `PluginShellPolicy` (fail-open sandbox), stripping inherited git-repository environment variables first. |
 | `crates/crucible-lua/src/source_files.rs` | 196 | Single source of truth for `.lua`/`.luau` extension preference and collision refusal, used by `require` and discovery. |
 | `crates/crucible-lua/src/statusline_exprs.rs` | 657 | `StatuslineExprRegistry` — session-scoped, plugin-attributed values behind `cru.statusline.set`/`clear`. |
@@ -88,17 +87,20 @@ this page's files.
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-lua/src/sessions/mod.rs` | 519 | Declares `DaemonSessionApi` (the trait `crucible-daemon` implements), `DiffOp`, `ProposalDecision` and `ResponsePart`; no runtime logic. |
+| `crates/crucible-lua/src/sessions/mod.rs` | 529 | Declares `DaemonSessionApi` (the trait `crucible-daemon` implements), `DiffOp`, `ProposalDecision` and `ResponsePart`; no runtime logic. This module owns the whole Lua session API. |
+| `crates/crucible-lua/src/sessions/handle.rs` | 494 | The `Session` Lua userdata, the `SessionConfigRpc` trait, `UnsupportedSessionRpc`, `SessionVariables`, and every lifecycle-verb method (`session_method!`). |
+| `crates/crucible-lua/src/sessions/current.rs` | 96 | `CurrentSession`, the session that one VM executes for, and `register_session_module`, which registers `cru.session.current`, the deprecated `cru.get_session` and the `cru.sessions` alias. |
 | `crates/crucible-lua/src/sessions/diff.rs` | 102 | Registers `cru.diff.*` (`get`, `file`, `comment`, `resolve_comment`, `comments`), one function per `DiffOp` variant, over `DaemonSessionApi::diff`. |
 | `crates/crucible-lua/src/sessions/proposals.rs` | 156 | Registers `cru.proposals.*` (`rejected`, `list`, `accept`, `reject`) over `DaemonSessionApi`'s proposal methods. |
 | `crates/crucible-lua/src/sessions/register.rs` | 1225 | The stub and daemon-backed registration of every `cru.session.*` verb (and, as a side effect, `cru.diff`/`cru.proposals`), and the shared `*_op` bodies both free functions and `Session` methods call. |
-| `crates/crucible-lua/src/sessions/tests/mod.rs` | 653 | Shared `MockDaemonApi` fixture and the `sessions` test-tree module list. |
+| `crates/crucible-lua/src/sessions/tests/mod.rs` | 654 | Shared `MockDaemonApi` fixture and the `sessions` test-tree module list. |
 | `crates/crucible-lua/src/sessions/tests/completion.rs` | 80 | Tests `cru.session.complete`, the one-shot completion primitive. |
+| `crates/crucible-lua/src/sessions/tests/config.rs` | 277 | Tests the `Session` properties and variables over a bound `SessionConfigRpc`, the single bind, `cru.session.current` and `cru.get_session`, and `UnsupportedSessionRpc`. |
 | `crates/crucible-lua/src/sessions/tests/crud.rs` | 460 | Tests `create`/`get`/`list`: whole-table forwarding, kiln handling, `configure_agent` implication, legacy positional form. |
 | `crates/crucible-lua/src/sessions/tests/delegate.rs` | 193 | Tests the `delegate = true` create path: parentage stamping and refusal semantics, and that `create` stamps the running plugin's name onto the session. |
 | `crates/crucible-lua/src/sessions/tests/diff.rs` | 64 | Tests every `cru.diff` function forwards its whole params object to the `DiffOp` of its name and translates a JSON `null` to Lua `nil`; tests the stub path answers "no daemon connected" for every op. |
 | `crates/crucible-lua/src/sessions/tests/graph.rs` | 217 | Tests `inject`, `fork`, `collect_subagents`, `cache_stats`, and the undo family. |
-| `crates/crucible-lua/src/sessions/tests/handles.rs` | 280 | Tests the `Session` userdata handle's methods against the free-function equivalents, including that a `get` handle reads `workspace`, `isolation` and `plugin` from its record. |
+| `crates/crucible-lua/src/sessions/tests/handles.rs` | 348 | Tests the `Session` userdata handle's methods against the free-function equivalents, including that a `get` handle reads `workspace`, `isolation` and `plugin` from its record, and that an unknown property is an error and not a panic. |
 | `crates/crucible-lua/src/sessions/tests/messages.rs` | 89 | Tests `cru.session.messages` (role filter, limit, tools flag). |
 | `crates/crucible-lua/src/sessions/tests/messaging.rs` | 64 | Smoke tests for `send_message`/`cancel`/`end_session` free functions. |
 | `crates/crucible-lua/src/sessions/tests/namespace.rs` | 189 | Tests the stub/daemon key-set parity gate, the deprecated `cru.sessions` alias, and `cru.session.clear`'s prompt/plugin plumbing. |
@@ -141,7 +143,7 @@ equivalent trait for `cru.tools.*` (`call_tool`, `list_tools`,
 `DaemonToolsBridge` (`crates/crucible-daemon/src/tools_bridge.rs`)
 implements it over the real `WorkspaceTools`.
 
-**`Session`** (`crates/crucible-lua/src/session_api.rs`) is the `cru.session`
+**`Session`** (`crates/crucible-lua/src/sessions/handle.rs`) is the `cru.session`
 Lua userdata: `id`, an optional `Arc<dyn DaemonSessionApi>`, a `HostHook`-
 bound `SessionConfigRpc`, the session's `workspace` and `isolation` (set at
 `create` time and also filled in from the daemon record on any handle
@@ -158,7 +160,7 @@ verb (`send_message`, `fork`, `undo`, `clear`, `review_list_hunks`, …) by
 calling the matching `*_op` function in `sessions/register.rs`, so a handle
 method and its free-function equivalent share one body.
 
-**`SessionConfigRpc`** (`crates/crucible-lua/src/session_api.rs`) is the
+**`SessionConfigRpc`** (`crates/crucible-lua/src/sessions/handle.rs`) is the
 trait a `Session`'s `model`/`mode`/`system_prompt` property reads and writes
 through. Every method is required — no default — because a defaulted
 setter once answered success while writing nothing.
@@ -452,7 +454,7 @@ cancelled," never "the timeout elapsed."
   `DaemonSessionApi` (`crates/crucible-lua/src/sessions/mod.rs`), one `*_op`
   function, and — if it should read on a `Session` handle too — one line in
   the `session_method!` macro invocation in
-  `crates/crucible-lua/src/session_api.rs`.
+  `crates/crucible-lua/src/sessions/handle.rs`.
 - **A new `cru.tools.*` verb** adds one entry to `TOOL_FNS`
   (`crates/crucible-lua/src/tools_api.rs`) and one method on
   `DaemonToolsApi`.

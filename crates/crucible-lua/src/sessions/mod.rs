@@ -1,8 +1,16 @@
-//! Multi-session management API for Lua scripts
+//! The Lua session API: `cru.session.*`, the `Session` handle and the
+//! current session of a VM.
 //!
-//! Provides `cru.session.*` functions for managing daemon sessions from Lua
-//! plugins, and the shared operation bodies (`_op` functions in `register`)
-//! that the `Session` handle's methods also call. This module defines a
+//! This module owns all of the Lua session surface:
+//!
+//! - `register` registers the `cru.session.*` functions. It also holds the
+//!   shared operation bodies (the `_op` functions).
+//! - `handle` defines the `Session` userdata. Its methods call the same
+//!   `_op` bodies. Its properties go through [`SessionConfigRpc`].
+//! - `current` defines [`CurrentSession`]. It registers
+//!   `cru.session.current` and `cru.get_session`.
+//!
+//! This module also defines a
 //! [`DaemonSessionApi`] trait that the daemon crate implements, avoiding a
 //! circular dependency (crucible-lua cannot depend on crucible-daemon).
 //!
@@ -51,12 +59,14 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
-// `pub(crate)` so `session_api` can reach the shared `_op` bodies the handle
-// methods and the free functions both call.
-pub(crate) mod diff;
-pub(crate) mod proposals;
-pub(crate) mod register;
+mod current;
+mod diff;
+mod handle;
+mod proposals;
+mod register;
 
+pub use current::{register_session_module, CurrentSession};
+pub use handle::{Session, SessionConfigRpc, SessionVariables, UnsupportedSessionRpc};
 pub use register::{
     register_sessions_module, register_sessions_module_with_api,
     register_sessions_module_with_api_and_current,
@@ -234,7 +244,7 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// wants.
     ///
     /// It is a verb rather than a `session.mode = …` setter because a handle
-    /// from `create` binds no [`crate::session_api::SessionConfigRpc`], so the
+    /// from `create` binds no [`SessionConfigRpc`], so the
     /// assignment would answer "Session not connected" on exactly the handle
     /// a plugin has.
     ///

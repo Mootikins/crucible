@@ -1,13 +1,12 @@
 use super::MockDaemonApi;
-use crate::session_api::Session;
-use crate::sessions::DaemonSessionApi;
+use crate::sessions::{CurrentSession, DaemonSessionApi, Session};
 use crate::test_support::TestLuaBuilder;
 use mlua::Value;
 use std::sync::Arc;
 
 /// A VM with the daemon-backed session module registered against a current
 /// session holder, mirroring how the daemon wires one.
-fn delegate_vm(api: Arc<dyn DaemonSessionApi>) -> (mlua::Lua, crate::session_api::CurrentSession) {
+fn delegate_vm(api: Arc<dyn DaemonSessionApi>) -> (mlua::Lua, CurrentSession) {
     let (lua, current) = TestLuaBuilder::new().build_with_current_session();
     crate::sessions::register_sessions_module_with_api_and_current(&lua, api, current.clone())
         .expect("register sessions module with current");

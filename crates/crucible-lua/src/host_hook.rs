@@ -14,7 +14,7 @@
 //!
 //! This doc used to say "three registries", and the count was the whole
 //! description. Two more slots of exactly this shape were therefore invisible
-//! until someone counted again: [`crate::session_api::Session`]'s config RPC
+//! until someone counted again: [`crate::Session`]'s config RPC
 //! and the plugin loader's `DaemonSessionApi`. Both are now here. A stated
 //! count is a completeness claim, and this one had none to make, so the rule is
 //! the shape rather than the list: **a host handle a lower crate holds, that

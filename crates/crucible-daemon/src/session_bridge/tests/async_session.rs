@@ -281,10 +281,8 @@ async fn lua_collection_covers_child_outcomes_and_mixed_job_ids() {
         .await
         .unwrap();
     lua.globals().set("parent", parent.id.to_string()).unwrap();
-    let current = crucible_lua::session_api::CurrentSession::new();
-    current.set_current(crucible_lua::session_api::Session::new(
-        parent.id.to_string(),
-    ));
+    let current = crucible_lua::CurrentSession::new();
+    current.set_current(crucible_lua::Session::new(parent.id.to_string()));
     crucible_lua::register_sessions_module_with_api_and_current(&lua, bridge.clone(), current)
         .unwrap();
     for (model, expected) in [

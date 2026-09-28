@@ -28,7 +28,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use crate::session_api::{SessionConfigRpc, SessionVariables, UnsupportedSessionRpc};
+use crate::sessions::{SessionConfigRpc, SessionVariables, UnsupportedSessionRpc};
 
 /// Session settings that carry a global default. Every field is `Option`
 /// because "unset" is meaningful: a `None` default leaves whatever the agent

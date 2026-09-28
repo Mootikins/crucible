@@ -324,7 +324,7 @@ Each item is small and independent. Merge each one into the owner named here.
 | Two `SessionError` types, and the legacy `CrucibleError` | one error for each domain | [[Session Services]] |
 | **Done.** `from_toml` copied in four plugins under `runtime/plugins/`. Each copy read the absent `crucible` global, so the `plugins.<name>` section never answered a key before `setup()`. `cru.service` had a fifth copy | `cru.settings.new` in `crates/crucible-lua/src/prelude/stdlib.rs` | [[Luau APIs]] |
 | Lua twins of core types in `crates/crucible-lua/src/` (`PermissionRequest`, `LuaTool`, `BaseOperation`) | the core type, with a conversion | [[Luau APIs]] |
-| `session_api.rs` next to `sessions/` in `crates/crucible-lua/src/` | `sessions/` | [[Luau APIs]] |
+| **Done.** `session_api.rs` next to `sessions/` in `crates/crucible-lua/src/`. Both registered on `cru.session`, and each file imported the other | `sessions/`: `handle.rs` holds the `Session` userdata, `current.rs` holds `CurrentSession`. One helper answers `current` and `get_session` | [[Luau APIs]] |
 | **Done.** `perm.autoconfirm_session`, a session-named flag that one client holds. It repeated the session mode `auto`, which the daemon owns, and `cru chat` ignored it in one-shot mode | removed; the `auto` mode (`Shift+Tab`) approves each call | [[TUI Components]] |
 
 ## Step 9. Dead code

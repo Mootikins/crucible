@@ -1,7 +1,7 @@
 use super::MockDaemonApi;
-use crate::sessions::DaemonSessionApi;
+use crate::sessions::{DaemonSessionApi, Session};
 use crate::test_support::TestLuaBuilder;
-use mlua::Value;
+use mlua::{Lua, Value};
 use std::sync::Arc;
 
 /// A handle's method runs the shared operation body with the handle's own
@@ -67,7 +67,7 @@ async fn handle_methods_cover_lifecycle_and_review_verbs() {
 async fn an_unconnected_handle_method_reports_it() {
     let lua = TestLuaBuilder::new().build();
 
-    let bare = crate::session_api::Session::new("s1".to_string());
+    let bare = Session::new("s1".to_string());
     lua.globals()
         .set("bare_session", lua.create_userdata(bare).unwrap())
         .unwrap();
@@ -173,7 +173,7 @@ async fn plugin_on_a_get_handle_names_the_creating_plugin_or_nil() {
 async fn model_on_a_get_handle_is_nil_when_the_record_has_none() {
     let lua = TestLuaBuilder::new().build();
 
-    let bare = crate::session_api::Session::new("s1".to_string())
+    let bare = Session::new("s1".to_string())
         .with_record(serde_json::json!({ "id": "s1", "model": null }));
     lua.globals()
         .set("bare_session", lua.create_userdata(bare).unwrap())
@@ -277,4 +277,72 @@ async fn an_unknown_mode_answers_the_error_pair() {
 
     assert!(matches!(value, Value::Nil), "{value:?}");
     assert!(err.contains("unknown mode 'zoom'"), "{err}");
+}
+
+/// A session handle carrying the record `session_json` builds.
+fn handle_with_record() -> Session {
+    Session::new("chat-test".to_string()).with_record(serde_json::json!({
+        "id": "chat-test",
+        "session_type": "chat",
+        "kilns": ["Crucible Help"],
+        "state": "Active",
+        "title": "A session",
+        "model": "claude-sonnet-5",
+        "started_at": "2026-09-16T00:00:00Z",
+        "event_count": 3,
+    }))
+}
+
+/// Reading a name the record does not carry must come back as an
+/// `mlua::Error`, not as a panic and not as a dead process.
+///
+/// This is the shape that took the daemon down. `session-board` read
+/// `s.agent_model`, the record spells it `model`, the `Index` metamethod
+/// answered `Err(mlua::Error::runtime(..))` exactly as it should — and the
+/// release build died, because Luau raises that `Err` by throwing out of
+/// this very callback and the profile said `panic = "abort"`. The `Err`
+/// was never the bug. The profile was, and `lib.rs` now refuses to
+/// compile under it.
+///
+/// `catch_unwind` is the point of the test, not decoration: it is what
+/// separates "returned an error" from "unwound out of the callback", and
+/// the two read identically to `is_err()`.
+#[test]
+fn an_unknown_property_is_an_error_and_not_a_panic() {
+    let outcome = std::panic::catch_unwind(|| {
+        let lua = Lua::new();
+        let ud = lua.create_userdata(handle_with_record()).unwrap();
+        lua.globals().set("s", ud).unwrap();
+        lua.load("return s.agent_model").eval::<mlua::Value>()
+    });
+
+    let result = outcome.expect("reading an unknown property must not panic");
+    let err = result.expect_err("an unknown property must not read as nil");
+    assert!(
+        err.to_string().contains("unknown property: agent_model"),
+        "the error must name the property that was not found, got: {err}"
+    );
+}
+
+/// The names the record does carry still read, so the gate above is a
+/// gate and not a wall.
+#[test]
+fn every_name_the_record_carries_reads_back() {
+    let lua = Lua::new();
+    let ud = lua.create_userdata(handle_with_record()).unwrap();
+    lua.globals().set("s", ud).unwrap();
+
+    for (expr, expected) in [
+        ("s.id", "chat-test"),
+        ("s.session_type", "chat"),
+        ("s.state", "Active"),
+        ("s.title", "A session"),
+        ("s.model", "claude-sonnet-5"),
+    ] {
+        let got: String = lua
+            .load(format!("return {expr}"))
+            .eval()
+            .unwrap_or_else(|e| panic!("{expr} must read: {e}"));
+        assert_eq!(got, expected, "{expr}");
+    }
 }

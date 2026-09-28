@@ -1,7 +1,6 @@
-use super::DaemonSessionApi;
+use super::{CurrentSession, DaemonSessionApi, Session};
 use crate::error::LuaError;
 use crate::lua_util::{gate_module_keys, get_or_create_module, install_sessions_alias};
-use crate::session_api::{CurrentSession, Session};
 use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
 
@@ -23,11 +22,11 @@ use std::sync::Arc;
 /// Every function answers with the `(value, err)` pair the Lua error
 /// convention uses, so the first return is nil on failure and the second is
 /// `string?` throughout. A session HANDLE is a userdata
-/// ([`crate::session_api::Session`]), which the declarations have no name
+/// ([`Session`]), which the declarations have no name
 /// for, so the functions that answer with one say `any`.
 ///
 /// `current` is deliberately absent: it is registered by
-/// [`crate::session_api::register_session_module`], which owns the
+/// [`super::register_session_module`], which owns the
 /// `CurrentSession` instance the daemon binds to. The sessions registrations
 /// merge their functions into the same table rather than replacing it, so
 /// registration order cannot drop it.

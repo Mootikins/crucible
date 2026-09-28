@@ -241,7 +241,7 @@ fn a_once_permission_hook_the_gate_never_reaches_keeps_its_registration() {
 /// one-shot on, because `on_session_start` fires again on every resume.
 #[tokio::test]
 async fn a_once_session_start_hook_runs_once_and_leaves_the_store() {
-    use crate::session_api::Session;
+    use crate::sessions::Session;
 
     let executor = crate::executor::LuaExecutor::new().expect("executor");
     enter_plugin(executor.lua(), "ralph");
@@ -255,7 +255,7 @@ async fn a_once_session_start_hook_runs_once_and_leaves_the_store() {
     assert_eq!(registry.all().len(), 1);
 
     let session = Session::new("s1".to_string());
-    session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+    session.bind(Box::new(crate::test_support::MockSessionRpc::new()));
 
     executor
         .fire_session_start_hooks(&session)
@@ -283,7 +283,7 @@ async fn a_once_session_start_hook_runs_once_and_leaves_the_store() {
 /// separate gate.
 #[tokio::test]
 async fn a_once_session_end_hook_runs_once_and_leaves_the_store() {
-    use crate::session_api::Session;
+    use crate::sessions::Session;
 
     let executor = crate::executor::LuaExecutor::new().expect("executor");
     enter_plugin(executor.lua(), "ralph");
@@ -295,7 +295,7 @@ async fn a_once_session_end_hook_runs_once_and_leaves_the_store() {
 
     let registry = crate::handlers::registry_of(executor.lua()).expect("the store");
     let session = Session::new("s1".to_string());
-    session.bind(Box::new(crate::session_api::tests::MockRpc::new()));
+    session.bind(Box::new(crate::test_support::MockSessionRpc::new()));
 
     executor
         .fire_session_end_hooks(&session)

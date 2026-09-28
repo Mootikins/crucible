@@ -311,3 +311,65 @@ impl PropertyStore for MemoryPropertyStore {
             .is_some())
     }
 }
+
+/// A [`crate::SessionConfigRpc`] that keeps each knob in memory.
+///
+/// The session handle tests, the executor tests and the `once` hook tests
+/// bind it to a `Session`. It answers every knob except `mode`.
+#[derive(Clone)]
+pub struct MockSessionRpc {
+    model: Arc<std::sync::RwLock<Option<String>>>,
+    system_prompt: Arc<std::sync::RwLock<String>>,
+    variables: Arc<std::sync::RwLock<std::collections::HashMap<String, serde_json::Value>>>,
+}
+
+impl Default for MockSessionRpc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MockSessionRpc {
+    pub fn new() -> Self {
+        Self {
+            model: Arc::new(std::sync::RwLock::new(Some("test-model".to_string()))),
+            system_prompt: Arc::new(std::sync::RwLock::new(
+                crucible_core::prompts::DEFAULT_SYSTEM_PROMPT.to_string(),
+            )),
+            variables: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+        }
+    }
+}
+
+impl crate::SessionConfigRpc for MockSessionRpc {
+    fn get_model(&self) -> Option<String> {
+        self.model.read().unwrap().clone()
+    }
+    fn switch_model(&self, model: &str) -> Result<(), String> {
+        *self.model.write().unwrap() = Some(model.to_string());
+        Ok(())
+    }
+    fn get_mode(&self) -> String {
+        "act".to_string()
+    }
+    fn get_system_prompt(&self) -> Option<String> {
+        Some(self.system_prompt.read().unwrap().clone())
+    }
+    fn set_system_prompt(&self, prompt: &str) -> Result<(), String> {
+        *self.system_prompt.write().unwrap() = prompt.to_string();
+        Ok(())
+    }
+    fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
+        self.variables
+            .write()
+            .unwrap()
+            .insert(key.to_string(), value);
+        Ok(())
+    }
+    fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
+        self.variables.read().unwrap().get(key).cloned()
+    }
+    fn set_mode(&self, mode: &str) -> Result<(), String> {
+        crate::UnsupportedSessionRpc.set_mode(mode)
+    }
+}
