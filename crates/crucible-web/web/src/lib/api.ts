@@ -235,6 +235,7 @@ export const SSE_EVENT_TYPES = [
   'mode_changed',
   'title_changed',
   'commands_changed',
+  'transcript',
 ] as const satisfies readonly Schemas['ChatEvent']['type'][];
 
 /** Every daemon event name the tuple above forgot. Empty, or the build stops. */

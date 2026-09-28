@@ -231,7 +231,7 @@ function ensureStream(sessionId: string): void {
   const unsubscribe = sessionEvents(sessionId).subscribe(
     (event) => {
       const seq = event.seq;
-      if (seq !== undefined) {
+      if (seq != null) {
         // The seq comparison replaces the identity set for stamped events:
         // it covers every event kind (not only the one-shots) and every
         // replay boundary, because the cursor and the seq share one scale.

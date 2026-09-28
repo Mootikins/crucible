@@ -5994,9 +5994,39 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "What one daemon event changed in the folded transcript of the\nsession. The server sends it as a second frame after the frame of the\nevent, with the same `id:`. The browser applies `ops` to the snapshot\nthat the history route gave, and drops an op when `seq` is not above\nthe `as_of_seq` of that snapshot.",
+            "required": [
+              "ops",
+              "type"
+            ],
+            "properties": {
+              "seq": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "ops": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TranscriptOp"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "transcript"
+                ]
+              }
+            }
           }
         ],
-        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
+        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
       "CloneRequest": {
         "type": "object",
@@ -11528,6 +11558,13 @@
         ],
         "description": "One frame of the system stream. The SSE `event:` name tells the two\nshapes apart."
       },
+      "TextField": {
+        "type": "string",
+        "enum": [
+          "text",
+          "thinking"
+        ]
+      },
       "TitleResponse": {
         "type": "object",
         "description": "Response for title operations.",
@@ -11626,6 +11663,69 @@
           }
         ],
         "description": "One thing that a client draws."
+      },
+      "TranscriptOp": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Add the item, or replace the item with its id.",
+            "required": [
+              "item",
+              "op"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/TranscriptItem"
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "For a new item: the id of the item it goes before. `None` puts it\nat the end."
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "upsert"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Add text to a field of a segment. `at` is the length of the field\nbefore the text, so a client that missed an op sees the gap.",
+            "required": [
+              "id",
+              "field",
+              "at",
+              "text",
+              "op"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "field": {
+                "$ref": "#/components/schemas/TextField"
+              },
+              "at": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "append"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One change to a transcript."
       },
       "UnlinkedMentionRow": {
         "type": "object",

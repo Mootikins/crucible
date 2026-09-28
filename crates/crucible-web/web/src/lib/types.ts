@@ -411,9 +411,10 @@ export type ChatEvent = Schemas['ChatEvent'] | ConnectionEvent;
  * bookkeeping, not event data), so `subscribeToEvents` copies it off
  * `MessageEvent.lastEventId` onto the decoded event. Absent on client-minted
  * events (`connection`), on the synthetic `stream_gap`, and from a server
- * predating the cursor protocol.
+ * predating the cursor protocol. `null` is absent too: the `transcript`
+ * frame states its seq in its payload, and a frame with no seq states `null`.
  */
-export type SequencedChatEvent = ChatEvent & { seq?: number };
+export type SequencedChatEvent = ChatEvent & { seq?: number | null };
 
 // =============================================================================
 // Interaction Request/Response Types (from Rust core interaction.rs)

@@ -146,7 +146,7 @@ ops. The commits, in order:
    the op replay, with golden files for five recordings.
 2. **(done)** `session.history` returns the snapshot as `transcript`. `SessionManager::load_transcript` folds the whole stored log, after the migration of old lines.
 3. **(done)** The daemon event bus folds each event and sends its ops in the `transcript` field of the live copy. The journal copy has no ops.
-4. The web backend forwards the ops.
+4. **(done)** The web backend forwards the ops: `to_sse` sends a `transcript` SSE frame after each live event that has ops.
 5. The web client renders the snapshot and the ops. Its own fold goes.
 6. **(done)** The TUI renders the snapshot and the ops. Its own fold
    goes: `turn_msgs` makes no transcript messages, and `SessionEventStream`

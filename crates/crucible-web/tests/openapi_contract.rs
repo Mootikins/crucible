@@ -284,6 +284,10 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
             event: String::new(),
             data: serde_json::Value::Null,
         },
+        ChatEvent::Transcript {
+            seq: None,
+            ops: Vec::new(),
+        },
     ]
 }
 

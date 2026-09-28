@@ -288,7 +288,7 @@ describe('the session resume cursor', () => {
   });
 
   it('carries the seq a frame stamped, and nothing when it did not', () => {
-    const seen: Array<{ seq?: number; type: string }> = [];
+    const seen: Array<{ seq?: number | null; type: string }> = [];
     sessionEvents('s1').subscribe((event) => seen.push(event));
 
     onlySource().emit('token', { type: 'token', content: 'a' }, { lastEventId: '12' });

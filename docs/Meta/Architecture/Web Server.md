@@ -223,6 +223,9 @@ Paths are relative to the repository root. Line counts are as recorded at
   carries the call's proposed diffs itself, so `ToolCall` no longer has a
   separate `diffs` field; `ChatEvent::ToolResult`/`ToolResultError` each
   gained a `render` field, the finished call's `crucible_core::types::ToolRender`.
+  `ChatEvent::Transcript { seq, ops }` carries the ops of the daemon's
+  transcript fold (`crucible_core::transcript::TranscriptOp`). The daemon
+  puts them on the live copy of an event only.
 - **`ApiKeyState`**, **`HostPolicy`**, **`SessionStore`**, **`ShellGateState`**
   (`crates/crucible-web/src/middleware/auth/mod.rs`, `host/mod.rs`,
   `session.rs`, `shell.rs`) — the auth/host/session state consumed by
@@ -354,7 +357,17 @@ sequenceDiagram
     Reconnecting-->>Route: EventStream yields SessionEvent
     Route->>Route: ChatEvent::from_daemon_event
     Route-->>Browser: SSE frame
+    Route-->>Browser: transcript frame (when the event has ops)
 ```
+
+`to_sse` in `crates/crucible-web/src/routes/chat.rs` turns one daemon event
+into one or two SSE frames. The first frame is the `ChatEvent` projection.
+When the live event has transcript ops, a second frame follows. Its name is
+`transcript`, its `id:` is the seq of the event, and its data is
+`{"type": "transcript", "seq": <seq or null>, "ops": [...]}`. A replayed
+event comes from the stored log, so it has no ops and no second frame. The
+test `a_live_event_sends_its_transcript_ops_as_a_second_frame` in the same
+file reads the SSE body.
 
 Three paths can raise a `stream_gap` event, and each names why.
 `EventStream`'s `Stream` implementation

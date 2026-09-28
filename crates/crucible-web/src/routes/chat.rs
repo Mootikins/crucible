@@ -181,9 +181,9 @@ async fn event_stream(
             }
             futures::future::ready(event.seq.is_none_or(|seq| seq > floor))
         })
-        .map(|event| to_sse(&event));
+        .flat_map(|event| iter(to_sse(&event)));
     let stream = iter([Ok(stream_version_frame())])
-        .chain(iter(replayed).map(|event| to_sse(&event)))
+        .chain(iter(replayed).flat_map(|event| iter(to_sse(&event))))
         .chain(live);
 
     // Keep-alive comments stop idle proxies/load balancers from dropping the
@@ -193,20 +193,27 @@ async fn event_stream(
     ))
 }
 
-/// One daemon event as one SSE frame, its seq (when stamped) as the `id:`.
+/// One daemon event as SSE frames, its seq (when stamped) as the `id:`.
 ///
 /// The seq is the cursor's vocabulary: the client reads it back off
 /// `MessageEvent.lastEventId` and states it on reconnect, and nothing else on
 /// the frame needs it.
-fn to_sse(event: &crucible_daemon::SessionEvent) -> Result<Event, Infallible> {
-    let chat_event = ChatEvent::from_daemon_event(event);
-    let event_name = chat_event.event_name();
-    let data = serde_json::to_string(&chat_event).unwrap_or_default();
-    let frame = Event::default().event(event_name).data(data);
-    Ok(match event.seq {
-        Some(seq) => frame.id(seq.to_string()),
-        None => frame,
-    })
+///
+/// A live event that changed the transcript gives a second frame,
+/// `transcript`, with the same `id:`. The first frame stays until the client
+/// stops reading it.
+fn to_sse(event: &crucible_daemon::SessionEvent) -> Vec<Result<Event, Infallible>> {
+    std::iter::once(ChatEvent::from_daemon_event(event))
+        .chain(ChatEvent::transcript_of(event))
+        .map(|chat_event| {
+            let data = serde_json::to_string(&chat_event).unwrap_or_default();
+            let frame = Event::default().event(chat_event.event_name()).data(data);
+            Ok(match event.seq {
+                Some(seq) => frame.id(seq.to_string()),
+                None => frame,
+            })
+        })
+        .collect()
 }
 
 /// One interaction a session is waiting on an answer to.
@@ -359,6 +366,57 @@ mod tests {
     use super::*;
     use crate::test_support::request_json;
     use crucible_core::interaction::InteractionResponse;
+
+    /// The SSE body that `to_sse` gives for `events`, as text.
+    async fn sse_text(events: Vec<crucible_daemon::SessionEvent>) -> String {
+        use axum::response::IntoResponse;
+        use http_body_util::BodyExt;
+        let frames = iter(events).flat_map(|event| iter(to_sse(&event)));
+        let body = Sse::new(frames).into_response().into_body();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    /// A live event with ops gives its own frame, then a `transcript` frame
+    /// with the same id. A stored event, which has no ops, gives one frame.
+    #[tokio::test]
+    async fn a_live_event_sends_its_transcript_ops_as_a_second_frame() {
+        use crucible_core::transcript::{TextField, TranscriptOp};
+        let mut live = crucible_daemon::SessionEvent::new(
+            "chat",
+            "text_delta",
+            serde_json::json!({"content": "hi"}),
+        );
+        live.seq = Some(7);
+        live.transcript = vec![TranscriptOp::Append {
+            id: "t1-seg-0".into(),
+            field: TextField::Text,
+            at: 0,
+            text: "hi".into(),
+        }];
+        let mut stored = live.clone();
+        stored.seq = Some(8);
+        stored.transcript.clear();
+
+        let text = sse_text(vec![live, stored]).await;
+        let frames: Vec<&str> = text.split("\n\n").filter(|f| !f.is_empty()).collect();
+        assert_eq!(frames.len(), 3, "{text}");
+        assert!(frames[0].contains("event: token") && frames[0].contains("id: 7"));
+        assert!(frames[1].contains("event: transcript"), "{text}");
+        assert!(frames[1].contains("id: 7"), "{text}");
+        let data = frames[1]
+            .lines()
+            .find_map(|l| l.strip_prefix("data: "))
+            .unwrap();
+        let data: serde_json::Value = serde_json::from_str(data).unwrap();
+        assert_eq!(
+            data,
+            serde_json::json!({"type": "transcript", "seq": 7, "ops": [
+                {"op": "append", "id": "t1-seg-0", "field": "text", "at": 0, "text": "hi"}
+            ]})
+        );
+        assert!(frames[2].contains("event: token") && frames[2].contains("id: 8"));
+    }
 
     #[tokio::test]
     async fn send_message_answers_the_declared_shape() {

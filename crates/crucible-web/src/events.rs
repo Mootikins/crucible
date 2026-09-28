@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// The browser's view of a session event, streamed by `GET
 /// /api/chat/events/{session_id}`.
 ///
-/// `ToSchema` publishes the 22 tag values to the OpenAPI document, so the
+/// `ToSchema` publishes the tag values to the OpenAPI document, so the
 /// browser reads the union from the enum instead of repeating it.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -179,6 +179,16 @@ pub enum ChatEvent {
         event: String,
         data: serde_json::Value,
     },
+
+    /// What one daemon event changed in the folded transcript of the
+    /// session. The server sends it as a second frame after the frame of the
+    /// event, with the same `id:`. The browser applies `ops` to the snapshot
+    /// that the history route gave, and drops an op when `seq` is not above
+    /// the `as_of_seq` of that snapshot.
+    Transcript {
+        seq: Option<u64>,
+        ops: Vec<crucible_core::transcript::TranscriptOp>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -211,6 +221,7 @@ impl ChatEvent {
             ChatEvent::TitleChanged { .. } => "title_changed",
             ChatEvent::CommandsChanged { .. } => "commands_changed",
             ChatEvent::SessionEvent { .. } => "session_event",
+            ChatEvent::Transcript { .. } => "transcript",
         }
     }
 
@@ -237,6 +248,15 @@ impl ChatEvent {
             serde_json::Value::String(s) => Some(s.clone()),
             other => Some(other.to_string()),
         }
+    }
+
+    /// The transcript frame of `event`, when the event changed the
+    /// transcript. Only a live event carries ops.
+    pub fn transcript_of(event: &SessionEvent) -> Option<Self> {
+        (!event.transcript.is_empty()).then(|| ChatEvent::Transcript {
+            seq: event.seq,
+            ops: event.transcript.clone(),
+        })
     }
 
     pub fn from_daemon_event(event: &SessionEvent) -> Self {

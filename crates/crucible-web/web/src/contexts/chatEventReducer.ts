@@ -568,6 +568,11 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
       case 'commands_changed':
         break;
 
+      // The ops of the daemon's transcript fold. The server sends them
+      // beside the event; this pane still folds the event itself.
+      case 'transcript':
+        break;
+
       case 'session_event': {
         // A new canonical form of a call that a prior `tool_call` announced:
         // an ACP agent can send the arguments or the diff of a call in a

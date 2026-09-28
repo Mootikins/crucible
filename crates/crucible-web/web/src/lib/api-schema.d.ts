@@ -2423,7 +2423,7 @@ export interface components {
          * @description The browser's view of a session event, streamed by `GET
          *     /api/chat/events/{session_id}`.
          *
-         *     `ToSchema` publishes the 22 tag values to the OpenAPI document, so the
+         *     `ToSchema` publishes the tag values to the OpenAPI document, so the
          *     browser reads the union from the enum instead of repeating it.
          */
         ChatEvent: {
@@ -2579,6 +2579,12 @@ export interface components {
             event: string;
             /** @enum {string} */
             type: "session_event";
+        } | {
+            ops: components["schemas"]["TranscriptOp"][];
+            /** Format: int64 */
+            seq?: number | null;
+            /** @enum {string} */
+            type: "transcript";
         };
         CloneRequest: {
             /**
@@ -5141,6 +5147,8 @@ export interface components {
          *     shapes apart.
          */
         SystemEvent: components["schemas"]["PublicationChangedEvent"] | components["schemas"]["ProposalChangedEvent"];
+        /** @enum {string} */
+        TextField: "text" | "thinking";
         /** @description Response for title operations. */
         TitleResponse: {
             title: string;
@@ -5175,6 +5183,24 @@ export interface components {
             id: string;
             /** @description The turn that the item belongs to, when it belongs to one. */
             turn_id?: string | null;
+        };
+        /** @description One change to a transcript. */
+        TranscriptOp: {
+            /**
+             * @description For a new item: the id of the item it goes before. `None` puts it
+             *     at the end.
+             */
+            before?: string | null;
+            item: components["schemas"]["TranscriptItem"];
+            /** @enum {string} */
+            op: "upsert";
+        } | {
+            at: number;
+            field: components["schemas"]["TextField"];
+            id: string;
+            /** @enum {string} */
+            op: "append";
+            text: string;
         };
         /**
          * @description A plain-text mention of another note inside the focused note — a candidate
@@ -5532,11 +5558,13 @@ export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
 export type SchemaSurfaceShapeRow = components['schemas']['SurfaceShapeRow'];
 export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
+export type SchemaTextField = components['schemas']['TextField'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaToolStatus = components['schemas']['ToolStatus'];
 export type SchemaTranscript = components['schemas']['Transcript'];
 export type SchemaTranscriptItem = components['schemas']['TranscriptItem'];
+export type SchemaTranscriptOp = components['schemas']['TranscriptOp'];
 export type SchemaUnlinkedMentionRow = components['schemas']['UnlinkedMentionRow'];
 export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
