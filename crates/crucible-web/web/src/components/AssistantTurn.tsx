@@ -23,20 +23,15 @@ import type { Message as MessageType, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownChatAsync, proseClass } from '@/lib/markdown';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { statusBarStore } from '@/stores/statusBarStore';
-import { formatAbsoluteTime, formatDuration } from '@/lib/format-time';
+import { formatAbsoluteTime } from '@/lib/format-time';
 
 export type TurnPartSpec =
   | { kind: 'text'; id: string }
   | { kind: 'tools'; key: string; ids: string[] };
 
-/** Format token usage as a compact string, e.g. "150 tokens (25 cached)" */
+/** Format token usage as a compact string, e.g. "150 tokens" */
 function formatTokenUsage(usage: TokenUsage): string {
-  const parts: string[] = [`${usage.totalTokens.toLocaleString()} tokens`];
-  const cached = (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
-  if (cached > 0) {
-    parts.push(`(${cached.toLocaleString()} cached)`);
-  }
-  return parts.join(' ');
+  return `${usage.totalTokens.toLocaleString()} tokens`;
 }
 
 // Also shown by DraftSessionPanel's instant pending-preview — one dots
@@ -81,19 +76,18 @@ const TextSegment: Component<{
 
   const thinking = () => message()?.thinking;
 
-  // A textless segment normally means "text is on its way" — hence the dots.
-  // A SETTLED thinking-only segment is the exception: the model reasoned and
-  // then went straight to a tool, so the reducer closed this segment at the
-  // boundary. It is finished, not pending, and dots here would spin for the
-  // rest of the transcript. (Mid-turn the thinking block is still marked
-  // streaming, so the gap between "thinking ended" and "first token" is
-  // unaffected.)
-  const settledThinkingOnly = () => {
-    const t = thinking();
-    return !!t && !t.isStreaming && t.content.length > 0;
-  };
+  // A textless segment that can still grow means "text is on its way" —
+  // hence the dots. The daemon closes a segment that ends with no text (the
+  // model reasoned and went straight to a tool), and a closed segment draws
+  // no dots. While the reasoning streams, the thinking block shows it.
+  const awaitingText = () => message()?.streaming === true && !thinking()?.isStreaming;
+  // A closed segment with no text and no reasoning only carries the usage of
+  // the turn (the answer ended at a tool). It draws nothing.
+  const drawn = () =>
+    content() !== '' || (thinking()?.content ?? '') !== '' || message()?.streaming === true;
 
   return (
+    <Show when={drawn()}>
     <div data-testid="message-assistant" data-role="assistant">
       <Show when={thinking() && thinking()!.content.length > 0 && statusBarStore.showThinking()}>
         <ThinkingBlock
@@ -105,7 +99,7 @@ const TextSegment: Component<{
       <Show
         when={content() !== ''}
         fallback={
-          <Show when={!thinking()?.isStreaming && !settledThinkingOnly()}>
+          <Show when={awaitingText()}>
             <WorkingDots />
           </Show>
         }
@@ -122,6 +116,7 @@ const TextSegment: Component<{
         />
       </Show>
     </div>
+    </Show>
   );
 };
 
@@ -149,6 +144,8 @@ export const AssistantTurn: Component<{
 
   // Turn-level meta: ONE timestamp (turn start) and ONE usage line (whichever
   // part carries it — the daemon attaches usage to the turn's final segment).
+  // A transcript item carries no time, so a turn draws a time only when
+  // its first part has one.
   const firstMessage = createMemo<MessageType | undefined>(() => {
     for (const part of props.parts) {
       const id = part.kind === 'text' ? part.id : part.ids[0];
@@ -176,20 +173,6 @@ export const AssistantTurn: Component<{
   };
 
   const turnInFlight = () => chat.isStreaming() && props.isLast;
-
-  /** Start of the first segment to the daemon's completion stamp. */
-  const turnDuration = (): string | null => {
-    const start = firstMessage()?.timestamp;
-    let end: number | undefined;
-    for (let i = props.parts.length - 1; i >= 0; i--) {
-      const part = props.parts[i];
-      if (part.kind !== 'text') continue;
-      end = byId(part.id)?.completedAt;
-      if (end) break;
-    }
-    if (!start || !end || end < start) return null;
-    return formatDuration(end - start);
-  };
 
   const endsWithEmptyText = () => {
     const last = props.parts[props.parts.length - 1];
@@ -306,12 +289,11 @@ export const AssistantTurn: Component<{
                 </IconButton>
               </Show>
             </div>
-            {/* How long the turn took, when the daemon told us when it ended.
-                A turn rebuilt from history has no end, so it keeps the clock
-                time; the tooltip carries the full date either way. */}
+            {/* The clock time of the turn, when its first part has one. The
+                tooltip carries the full date. */}
             <Show when={firstMessage()?.timestamp}>
               <span title={new Date(firstMessage()!.timestamp).toLocaleString()}>
-                {turnDuration() ?? formatAbsoluteTime(firstMessage()!.timestamp)}
+                {formatAbsoluteTime(firstMessage()!.timestamp)}
               </span>
             </Show>
             <Show when={usage()}>

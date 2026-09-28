@@ -143,7 +143,7 @@ describe('api ownership discipline', () => {
     const src = [
       `import { client } from '@/lib/api-client';`,
       `import { login } from '@/lib/query/auth';`,
-      `import { turnResponseId } from '@/lib/turn';`,
+      `import { generateMessageId } from '@/lib/turn';`,
       `import { rawFileUrl } from './paths';`,
       `import { Session } from '../types';`,
     ].join('\n');

@@ -15,7 +15,6 @@ const sessionOf = (id: string) => ({
   session_id: id, type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
   agent: { model: null }, started_at: '', event_count: 0, archived: false,
 });
-const historyOf = (id: string) => ({ session_id: id, history: [], total_events: 0 });
 
 import { resetTranscriptsForTests } from '../transcriptStore';
 import { ChatProvider, useChat } from '../ChatContext';
@@ -23,6 +22,7 @@ import type { ChatContextValue } from '@/lib/types/context';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import { resetSseForTests } from '@/lib/query/sse';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { emitOps, historyOf, segment, toolCard, upsert } from '@/test-utils/transcript';
 
 let env: TestQueryEnv;
 beforeEach(() => {
@@ -31,8 +31,8 @@ beforeEach(() => {
     'GET /api/interactions/pending': () => ({ pending: [] }),
     'GET /api/session/session-a': () => sessionOf('session-a'),
     'GET /api/session/session-b': () => sessionOf('session-b'),
-    'GET /api/session/session-a/history': () => historyOf('session-a'),
-    'GET /api/session/session-b/history': () => historyOf('session-b'),
+    'GET /api/session/session-a/history': () => historyOf('session-a', [], 0),
+    'GET /api/session/session-b/history': () => historyOf('session-b', [], 0),
   });
 });
 
@@ -100,8 +100,8 @@ describe('two providers, two sessions', () => {
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
     const [srcA, srcB] = FakeEventSource.instances;
 
-    srcA!.emit('message_complete', { type: 'message_complete', id: 'turn-a', content: 'answer for A' });
-    srcB!.emit('message_complete', { type: 'message_complete', id: 'turn-b', content: 'answer for B' });
+    emitOps(srcA!, 1, [upsert(segment('turn-a', 0, 'answer for A'))]);
+    emitOps(srcB!, 1, [upsert(segment('turn-b', 0, 'answer for B'))]);
 
     // One event to each: neither session's transcript may leak into the other.
     await waitFor(() => expect(aSeen).toEqual(['answer for A']));
@@ -116,7 +116,7 @@ describe('two providers, two sessions', () => {
     expect(aSeen).toEqual(['answer for A']);
   });
 
-  it('folds a replayed one-shot event once', async () => {
+  it('applies a replayed frame once', async () => {
     let ctx!: ChatContextValue;
     const Probe = () => { ctx = useChat(); return null; };
     render(() => (
@@ -126,10 +126,10 @@ describe('two providers, two sessions', () => {
     ));
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    const toolCall = { type: 'tool_call', id: 'call-1', title: 'update_note', arguments: {} };
-    FakeEventSource.instances[0]!.emit('tool_call', toolCall);
-    // The same event again — a replay must not draw the tool a second time.
-    FakeEventSource.instances[0]!.emit('tool_call', toolCall);
+    const frame = [upsert(toolCard('turn-a', 'call-1', { name: 'update_note', status: 'running' }))];
+    emitOps(FakeEventSource.instances[0]!, 1, frame);
+    // The same frame again — a replay must not draw the tool a second time.
+    emitOps(FakeEventSource.instances[0]!, 1, frame);
 
     await waitFor(() => expect(ctx.messages().filter((m) => m.role === 'tool')).toHaveLength(1));
     expect(ctx.messages().filter((m) => m.role === 'tool')).toHaveLength(1);

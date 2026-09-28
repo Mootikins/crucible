@@ -21,15 +21,11 @@ import { keys } from './keys';
  * answers every pane, and a bind is a key change rather than an abort and a
  * second request.
  *
- * The document here is NOT the transcript a pane draws. `contexts/
- * chatEventReducer.ts` folds the live stream into the messages of ONE pane:
- * the streaming bubble, the thinking block, the system notice a failed send
- * left. This key holds what the daemon persisted, which every pane and every
- * later bind reads. `contexts/ChatContext.tsx` folds it into its own store
- * once per bind, and the stream carries what follows to all panes at once.
- *
- * `lib/query/routes/session.ts` keeps this key current: it appends the user
- * turn the daemon echoes, and invalidates the document when a turn ends.
+ * The document carries `transcript`, the daemon's fold of the stored log.
+ * `contexts/transcriptStore.ts` puts it on screen, and applies the ops of the
+ * `transcript` frames of the stream after it. When an op does not fit, or the
+ * stream lost frames, the store reads the document again with
+ * `refetchSessionHistory`.
  */
 
 /**
@@ -87,14 +83,25 @@ export function fetchSessionHistoryOnce(sessionId: string): Promise<SessionHisto
 }
 
 /**
+ * A new read of the transcript, for the store that found its copy behind.
+ *
+ * It ignores the cached answer, because the cached answer is what fell
+ * behind. A read already in flight for the key answers both callers.
+ */
+export function refetchSessionHistory(sessionId: string): Promise<SessionHistoryResponse> {
+  return getQueryClient().fetchQuery({
+    queryKey: keys.sessionHistory(sessionId),
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchHistory(sessionId, signal),
+    staleTime: 0,
+  });
+}
+
+/**
  * Sends one turn, and answers the id the daemon minted for it.
  *
- * It patches no cache. The daemon echoes the turn on the chat stream under
- * that same id, and `routes/session.ts` appends it to this session's history
- * under a message-id guard; a second append here would be the same write in
- * two modules, and it could not run any earlier, because the id it needs
- * arrives with the answer to this request. The sending pane shows its own
- * message from its optimistic entry, which the canonical id then replaces.
+ * It patches no cache. The daemon echoes the turn as a transcript op under
+ * that same id. The sending pane shows its own message from its optimistic
+ * entry, and the daemon's item with that id then replaces the entry.
  */
 export function useSendChatMessage(): UseMutationResult<
   SendOutcome,

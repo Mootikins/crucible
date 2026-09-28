@@ -416,6 +416,59 @@ show the toast again.
 and `crates/crucible-web/web/e2e/system-stream-recovery.spec.ts` pin both
 the backoff-reopen behavior and the wait-before-invalidate behavior.
 
+### The client transcript
+
+The web client does not fold events into a transcript. The daemon folds
+them once (`crates/crucible-core/src/transcript/`). The web client draws the
+result. `crates/crucible-web/web/src/contexts/transcriptStore.ts` holds one
+transcript for each session, and every pane of that session reads it.
+
+- **Seed.** The history route answers `transcript`, the fold of the stored
+  log. `ChatContext` gives each answer to `seedTranscript`. The store keeps
+  its own copy when that copy has a higher `as_of_seq`.
+- **Apply.** The store applies the ops of each `transcript` frame in order
+  with `applyTranscriptOp` (`crates/crucible-web/web/src/lib/transcript.ts`).
+  This function is a port of `Transcript::apply`. The `at` of an append
+  counts UTF-8 bytes, as the Rust string does. The store drops a frame whose
+  `seq` is not above `as_of_seq`.
+- **Snapshot.** For a resident session, `SessionManager::load_transcript`
+  answers the live fold of the event bus (`EventBus::transcript`). That fold
+  holds the text that a running turn streamed, which the log does not store.
+  Thus a page that loads while a turn runs can apply the next ops.
+- **Resync.** An op that does not fit, a `stream_gap` and a reopen of the
+  stream make the store read the history again with
+  `refetchSessionHistory`. A replayed event has no ops, so the store must
+  read a snapshot after a reconnect. The daemon gives each event of a
+  session the next seq. Thus a fresh stream compares its first live seq
+  with the `as_of_seq` of the snapshot. When the first live seq is above
+  `as_of_seq + 1`, an event fell between the two reads, and the store reads
+  a snapshot again. A stream that resumes at a cursor reads a snapshot on
+  its first open when the snapshot in the store is older than the
+  subscription. The store
+  keeps the frames since the last snapshot. After a new snapshot, it applies
+  the frames above the `as_of_seq` of that snapshot again. When an op still
+  does not fit, the store skips it and reads a snapshot again at
+  `turn_finished`.
+- **Draw.** `itemToMessage` maps one item to the `Message` view model of the
+  existing components. It is a pure map: the order, the merges and the
+  status of each item come from the daemon. `renderTranscript` adds the
+  rows that only this browser knows: the optimistic entry of a sent message,
+  and the notice of a failed send. The daemon's user turn with the id that
+  the send answered replaces the optimistic entry.
+- **Removed.** The client fold is gone: `foldHistory` in `ChatContext.tsx`,
+  the transcript cases of `chatEventReducer.ts`, and the id helpers of
+  `lib/turn.ts`. `chatEventReducer.ts` now keeps only the state around the
+  transcript: streaming and loading, errors, the open interaction, the mode
+  and the title. The route of the chat stream no longer writes the echoed
+  user message into the cached history, and a turn end no longer
+  invalidates the history.
+
+`crates/crucible-web/web/src/lib/__tests__/transcript.test.tsx` draws each
+golden fold of `assets/fixtures/golden/transcript/` and checks the turns,
+segments and tool cards in order.
+`crates/crucible-web/web/src/contexts/__tests__/transcriptStore.test.tsx`
+pins the seed, the apply, the resync and the optimistic entry.
+
 ### Upstream subscription reconciliation
 
 Every browser SSE stream drives its own daemon subscription, not one

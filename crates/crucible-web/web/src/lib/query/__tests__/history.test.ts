@@ -2,12 +2,14 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createRoot, createSignal } from 'solid-js';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { queryClientOptions } from '@/lib/query/client';
-import { installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
 import type { SessionHistoryResponse } from '@/lib/types';
 import { keys } from '../keys';
-import { sessionEvents } from '../sse';
-import { installSessionEventRoute } from '../routes/session';
-import { useSessionHistory, fetchSessionHistoryOnce, useSendChatMessage } from '../history';
+import {
+  useSessionHistory,
+  fetchSessionHistoryOnce,
+  refetchSessionHistory,
+  useSendChatMessage,
+} from '../history';
 
 const FIRST = 'GET /api/session/s-1/history';
 const SECOND = 'GET /api/session/s-2/history';
@@ -125,28 +127,18 @@ describe('useSessionHistory', () => {
     expect(env.fetch.calls(SECOND)).toBe(1);
   });
 
-  it('shows the turn another pane sent, which the stream echoes into the cache', async () => {
-    // The cross-pane patch: `routes/session.ts` appends the echoed user
-    // message to this key, and the reader sees it without a fetch of its own.
-    installFakeEventSource();
+});
+
+describe('refetchSessionHistory', () => {
+  it('reads the transcript again although the cache holds it', async () => {
+    // The transcript store asks when its copy fell behind the daemon, so the
+    // cached answer is the one that is wrong.
     env = createTestQueryEnv({ [FIRST]: () => history('s-1') });
-    installSessionEventRoute();
+    env.client.setQueryData(keys.sessionHistory('s-1'), { ...history('s-1'), total_events: 99 });
 
-    const query = inRoot(() => useSessionHistory(() => 's-1'));
-    await vi.waitFor(() => expect(query.data).toEqual(history('s-1')));
+    const answered = await refetchSessionHistory('s-1');
 
-    const stop = sessionEvents('s-1').subscribe(() => {});
-    onlyEventSource().emit('session_event', {
-      type: 'session_event',
-      event: 'user_message',
-      data: { message_id: 'msg-1', content: 'from the other pane' },
-    });
-    stop();
-
-    await vi.waitFor(() => expect(query.data?.history).toHaveLength(1));
-    expect((query.data?.history[0].data as { content?: string }).content).toBe(
-      'from the other pane',
-    );
+    expect(answered).toEqual(history('s-1'));
     expect(env.fetch.calls(FIRST)).toBe(1);
   });
 });

@@ -410,6 +410,11 @@ impl SessionManager {
 
         // Persist to storage
         self.storage.save(&session).await?;
+        // A new session has an empty log, so its live fold starts empty and
+        // is the fold of the log. `load_transcript` reads it.
+        if let Some(events) = &self.events {
+            events.seed_transcript(session_id.as_str(), Default::default);
+        }
 
         // Store in active sessions
         let session_clone = session.clone();
@@ -694,15 +699,25 @@ impl SessionManager {
         ))
     }
 
-    /// The whole stored log of a session, folded into what a client draws.
+    /// The transcript of a session: what a client draws.
     ///
-    /// The fold reads every event, not one page: a page can start in the
-    /// middle of a turn. A line that is not an event (an old view line the
-    /// migration could not turn into one) is not part of the transcript.
+    /// A resident session answers the live fold of the event bus. It holds
+    /// the text that a running turn streamed, which the log does not store,
+    /// so the next live ops fit it. Any other session folds its whole stored
+    /// log. The fold reads every event, not one page: a page can start in
+    /// the middle of a turn. A line that is not an event (an old view line
+    /// the migration could not turn into one) is not part of the transcript.
     pub async fn load_transcript(
         &self,
         session_id: &SessionId,
     ) -> Result<crucible_core::transcript::Transcript, SessionError> {
+        if let Some(live) = self
+            .events
+            .as_ref()
+            .and_then(|events| events.transcript(session_id.as_str()))
+        {
+            return Ok(live);
+        }
         let events: Vec<crucible_core::protocol::SessionEventMessage> = self
             .load_session_events(session_id, None, None)
             .await?

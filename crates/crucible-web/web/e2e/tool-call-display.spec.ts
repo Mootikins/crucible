@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
-import { createSSEStream } from './helpers/mock-sse';
+import { createSSEStream, TranscriptFrames } from './helpers/mock-sse';
+import { segment, toolCard, upsert, userTurn } from '../src/test-utils/transcript';
 import { openSessionsList } from './helpers/nav';
 
 /**
@@ -20,8 +21,19 @@ import { openSessionsList } from './helpers/nav';
 
 test.describe('Tool call display', () => {
   test('displays tool call card during execution', async ({ page }) => {
-    // Build SSE events with type embedded in data (matching real backend format)
+    // Build SSE events with type embedded in data (matching real backend
+    // format), and the transcript frames the daemon sends with them.
+    const transcript = new TranscriptFrames();
+    const call = toolCard('msg-001', 'tool-001', {
+      name: 'read_file',
+      args: { path: '/test.txt' } as never,
+      status: 'running',
+    });
     const sseBody = createSSEStream([
+      transcript.ops([upsert(userTurn('msg-001', 'Read the file'))]),
+      transcript.ops([upsert(call)]),
+      transcript.ops([upsert({ ...call, status: 'complete', result: 'File contents here' } as typeof call)]),
+      transcript.upsert(segment('msg-001', 0, 'I read the file for you.')),
       // Real backend shape: event `tool_call` with `title` (src/web/events.rs)
       { type: 'tool_call', data: { type: 'tool_call', id: 'tool-001', title: 'read_file', arguments: { path: '/test.txt' } } },
       { type: 'tool_result_delta', data: { type: 'tool_result_delta', id: 'tool-001', delta: 'File contents here' } },
@@ -33,7 +45,6 @@ test.describe('Tool call display', () => {
           type: 'message_complete',
           id: 'msg-002',
           content: 'I read the file for you.',
-          // Include tool_calls so the Message component renders a persistent ToolCard
           tool_calls: [{ id: 'tool-001', title: 'read_file' }],
         },
       },
@@ -102,10 +113,10 @@ test.describe('Tool call display', () => {
     );
     await page.getByTestId('send-button').click();
 
-    // Wait for POST to complete (ensures currentStreamingMessageId is set)
+    // Wait for the POST to complete
     await sendPromise;
 
-    // Release SSE events — streaming message placeholder exists
+    // Release the SSE events
     resolveSSE!();
 
     // Assert: user message appears
@@ -114,8 +125,7 @@ test.describe('Tool call display', () => {
     await expect(userMessage.first()).toContainText('Read the file');
 
     // Assert: ToolCard appears with tool name "read_file"
-    // After message_complete, the Message component renders a persistent ToolCard
-    // from tool_calls in the event data (name mapped from tool.title)
+    // The transcript frames carry the tool card, which stays after the turn.
     await expect(page.locator('text=read_file')).toBeVisible({ timeout: 5000 });
 
     // Assert: tool result — expand the ToolCard to verify expanded content renders.

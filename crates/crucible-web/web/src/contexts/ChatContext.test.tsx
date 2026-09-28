@@ -11,36 +11,23 @@ import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
 import { getBus } from '@/lib/bus';
 import { statusBarActions } from '@/stores/statusBarStore';
+import {
+  emitOps,
+  historyOf,
+  notice,
+  segment,
+  toolCard,
+  upsert,
+  userTurn,
+} from '@/test-utils/transcript';
 
-// The turn helpers now live in `lib/turn.ts`; the deterministic ids they
-// are mocked for live there too.
+// The optimistic entries take ids from `lib/turn.ts`; deterministic here.
 vi.mock('@/lib/turn', async (original) => ({
   ...await original<object>(),
-  // Monotonic — sendMessage mints two temp ids back-to-back, and a
-  // Date.now()-based id would collide within one millisecond.
   generateMessageId: (() => {
     let n = 0;
     return () => `msg_${++n}_test`;
   })(),
-  turnResponseId: (id: string) => `${id}-response`,
-  turnSegmentId: (id: string, index: number) => `${id}-seg-${index}`,
-  turnThinkingId: (id: string) => `${id}-thinking`,
-  stripFrozenPrefix: (full: string, segs: string[]) => {
-    let rest = full;
-    for (const seg of segs) {
-      if (rest.startsWith(seg)) {
-        rest = rest.slice(seg.length);
-        continue;
-      }
-      const trimmed = seg.replace(/\s+$/, '');
-      if (trimmed !== '' && rest.startsWith(trimmed)) {
-        rest = rest.slice(trimmed.length);
-        continue;
-      }
-      return full;
-    }
-    return rest;
-  },
 }));
 
 // No `vi.mock('@/lib/api')`. The provider reads the daemon through the query
@@ -232,15 +219,15 @@ describe('ChatContext', () => {
     ));
 
     // Let the mount-time bootstrap (empty history) fire its load first — the
-    // merge in loadHistory must not clobber the optimistic messages. Anchor on
-    // the actual history read rather than an arbitrary sleep.
+    // snapshot must not clobber the optimistic entry. Anchor on the actual
+    // history read rather than an arbitrary sleep.
     await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
 
     const sendButton = screen.getByText('Send');
     sendButton.click();
 
     await waitFor(() => {
-      expect(screen.getByTestId('count').textContent).toBe('2');
+      expect(screen.getByTestId('count').textContent).toBe('1');
     });
 
     const items = screen.getAllByRole('listitem');
@@ -249,7 +236,7 @@ describe('ChatContext', () => {
   });
 
   // A plugin command runs in the daemon and opens no turn. The optimistic
-  // user and assistant entries go, and the result shows as a system line.
+  // entry goes, and the result shows as a system line.
   it('shows a command result instead of a turn', async () => {
     sendAnswer = () => ({ outcome: 'command', command: 'reflect', result: 'reflected' });
 
@@ -308,11 +295,7 @@ describe('ChatContext', () => {
       expect(screen.getByTestId('loading').textContent).toBe('loading');
     });
 
-    FakeEventSource.instances[0]!.emit('message_complete', {
-      type: 'message_complete',
-      id: 'msg_server_1',
-      content: 'Response from assistant',
-    });
+    FakeEventSource.instances[0]!.emit('turn_finished', { type: 'turn_finished', status: 'completed' });
 
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('idle');
@@ -320,11 +303,12 @@ describe('ChatContext', () => {
   });
 });
 
-describe('streaming reconciliation', () => {
-  it('reconciles a message minted by a token that beat the send POST (no orphan bubble)', async () => {
-    // Hold the POST open so a token can arrive mid-flight.
+describe('the daemon transcript replaces the optimistic entry', () => {
+  it('shows the echo once when it beats the send answer', async () => {
+    // Hold the POST open so the echo arrives mid-flight.
     const held = deferred<{ outcome: 'turn'; message_id: string }>();
     sendAnswer = () => held.promise;
+    historyAnswer = () => historyOf(ID, [], 0);
 
     render(() => (
       <TestWrapper>
@@ -332,96 +316,55 @@ describe('streaming reconciliation', () => {
       </TestWrapper>
     ));
 
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
     screen.getByText('Send').click();
     await waitFor(() => expect(env.fetch.calls(SEND_ROUTE)).toBe(1));
+    expect(screen.getByTestId('count').textContent).toBe('1');
 
-    // Token arrives before the POST resolves → reducer mints a random-id
-    // assistant and streams into it.
-    FakeEventSource.instances[0]!.emit('token', { type: 'token', content: 'partial ' });
+    const stream = FakeEventSource.instances[0]!;
+    emitOps(stream, 1, [upsert(userTurn('msg-turn-1', 'test message'))]);
+    await waitFor(() => expect(screen.queryByTestId('msg-msg-turn-1')).not.toBeNull());
+    // The echo replaced the optimistic entry before the send answered.
+    expect(screen.getByTestId('count').textContent).toBe('1');
 
-    // POST resolves with the canonical turn id. The early streaming message
-    // must be reconciled into `${id}-response`, not left orphaned beside a new
-    // empty placeholder.
     held.resolve({ outcome: 'turn', message_id: 'msg-turn-1' });
-    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
-
-    FakeEventSource.instances[0]!.emit('message_complete', {
-      type: 'message_complete',
-      id: 'msg-turn-1',
-      content: 'partial answer',
-    });
+    emitOps(stream, 2, [upsert(segment('msg-turn-1', 0, 'partial answer', { streaming: true }))]);
 
     await waitFor(() => {
       const items = screen.getAllByRole('listitem');
-      const assistant = items.find((i) => i.getAttribute('data-role') === 'assistant');
-      expect(assistant?.textContent).toBe('partial answer');
+      expect(items.map((i) => i.getAttribute('data-role'))).toEqual(['user', 'assistant']);
+      expect(items[1].textContent).toBe('partial answer');
     });
-    // Still exactly user + one assistant — the orphan bug would make it three.
-    expect(screen.getByTestId('count').textContent).toBe('2');
   });
 });
 
 describe('a reply the provider cut off', () => {
-  // The daemon names the reason on `message_complete` and WORDS the note
-  // beside it. This is where a reader meets it: a system line under the reply.
-  //
-  // The text below is deliberately not a wording the daemon ships. The page
-  // must draw the string it received, so a test that used the real wording
-  // could pass while the page derived the words itself.
+  // The daemon words the note, and it is an item of the transcript. The text
+  // below is deliberately not a wording the daemon ships: the page must draw
+  // the string it received.
   it('draws the note the daemon worded', async () => {
-    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
+    historyAnswer = () =>
+      historyOf(ID, [
+        userTurn('msg-turn-1', 'q'),
+        segment('msg-turn-1', 0, 'Half an ans'),
+        notice(
+          'msg-turn-1-stop',
+          { kind: 'stop_reason', reason: 'max_tokens', text: 'a note only the daemon can word' },
+          'msg-turn-1',
+        ),
+      ]);
 
     render(() => (
       <TestWrapper>
         <TestConsumer />
       </TestWrapper>
     ));
-
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    screen.getByText('Send').click();
-    await waitFor(() => expect(env.fetch.calls(SEND_ROUTE)).toBe(1));
-
-    FakeEventSource.instances[0]!.emit('message_complete', {
-      type: 'message_complete',
-      id: 'msg-turn-1',
-      content: 'Half an ans',
-      stop_reason: 'max_tokens',
-      stop_notice: 'a note only the daemon can word',
-    });
 
     await waitFor(() => {
       const items = screen.getAllByRole('listitem');
       const system = items.find((i) => i.getAttribute('data-role') === 'system');
-      expect(system?.textContent).toContain('a note only the daemon can word');
+      expect(system?.textContent).toBe('a note only the daemon can word');
     });
-  });
-
-  // No `stop_notice`, so no note — even though the reason is one the page used
-  // to keep a wording for. The page derives nothing.
-  it('draws nothing extra when the reply finished', async () => {
-    sendAnswer = () => ({ message_id: 'msg-turn-2' });
-
-    render(() => (
-      <TestWrapper>
-        <TestConsumer />
-      </TestWrapper>
-    ));
-
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    screen.getByText('Send').click();
-    await waitFor(() => expect(env.fetch.calls(SEND_ROUTE)).toBe(1));
-
-    FakeEventSource.instances[0]!.emit('message_complete', {
-      type: 'message_complete',
-      id: 'msg-turn-2',
-      content: 'A whole answer',
-      stop_reason: 'end_turn',
-    });
-
-    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
-    const items = screen.getAllByRole('listitem');
-    expect(items.some((i) => i.getAttribute('data-role') === 'system')).toBe(false);
   });
 });
 
@@ -452,12 +395,10 @@ describe('draft first-message handoff', () => {
       </TestWrapper>
     ));
 
-    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
     const items = screen.getAllByRole('listitem');
     expect(items[0].getAttribute('data-role')).toBe('user');
     expect(items[0].textContent).toBe('first message from draft');
-    expect(items[1].getAttribute('data-role')).toBe('assistant');
-    expect(items[1].textContent).toBe('');
     expect(screen.getByTestId('loading').textContent).toBe('loading');
     // The POST is still gated — only the rendering is immediate.
     expect(env.fetch.calls(SEND_ROUTE)).toBe(0);
@@ -488,7 +429,7 @@ describe('draft first-message handoff', () => {
     ));
 
     // The staged turn goes up at once, as the case above proves.
-    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
     // The bootstrap writes the title before it reads the history, so a history
     // read is the mark that the write has happened. Then let every effect the
     // write queued run.
@@ -501,7 +442,7 @@ describe('draft first-message handoff', () => {
       .getAllByRole('listitem')
       .filter((item) => item.getAttribute('data-role') === 'user');
     expect(userTurns.length).toBe(1);
-    expect(screen.getByTestId('count').textContent).toBe('2');
+    expect(screen.getByTestId('count').textContent).toBe('1');
   });
 });
 
@@ -541,7 +482,7 @@ describe('session switching', () => {
     screen.getByText('Send').click();
 
     await waitFor(() => {
-      expect(screen.getByTestId('count').textContent).toBe('2');
+      expect(screen.getByTestId('count').textContent).toBe('1');
     });
   });
 
@@ -557,7 +498,7 @@ describe('session switching', () => {
     screen.getByText('Send').click();
 
     await waitFor(() => {
-      expect(screen.getByTestId('count').textContent).toBe('2');
+      expect(screen.getByTestId('count').textContent).toBe('1');
     });
 
     screen.getByTestId('switch-session').click();
@@ -641,16 +582,13 @@ describe('isLoadingHistory', () => {
     );
   }
 
-  it('keeps both sides of a clear marker on history reload', async () => {
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        { type: 'event', session_id: ID, event: 'user_message', data: { message_id: 'before', content: 'before' } },
-        { type: 'event', session_id: ID, event: 'context_cleared', data: { plugin: 'alpha' } },
-        { type: 'event', session_id: ID, event: 'user_message', data: { message_id: 'after', content: 'after' } },
-      ],
-      total_events: 3,
-    });
+  it('draws the clear marker the snapshot holds between two turns', async () => {
+    historyAnswer = () =>
+      historyOf(ID, [
+        userTurn('before', 'before'),
+        notice('clear-1', { kind: 'context_cleared', plugin: 'alpha' }),
+        userTurn('after', 'after'),
+      ]);
     render(() => <TestWrapper><HistoryTestConsumer /></TestWrapper>);
     await waitFor(() => expect(screen.getByTestId('msg-count').textContent).toBe('3'));
     expect(screen.getByTestId('hist-msg-before').textContent).toBe('before');
@@ -658,28 +596,24 @@ describe('isLoadingHistory', () => {
     expect(screen.getByTestId('hist-msg-after').textContent).toBe('after');
   });
 
-  it('restores a plugin turn as a named system message', async () => {
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [{ type: 'event', session_id: ID, event: 'user_message', data: {
-        message_id: 'plugin-turn', content: 'continue with details', origin: { kind: 'plugin', name: 'alpha' },
-      } }],
-      total_events: 1,
-    });
+  it('draws a plugin turn as a named system message', async () => {
+    historyAnswer = () =>
+      historyOf(ID, [
+        userTurn('plugin-turn', 'continue with details', {
+          origin: { kind: 'plugin', name: 'alpha' } as never,
+        }),
+      ]);
     render(() => <TestWrapper><HistoryTestConsumer /></TestWrapper>);
     await waitFor(() => expect(screen.getByTestId('hist-msg-plugin-turn')).toBeInTheDocument());
     expect(screen.getByTestId('hist-msg-plugin-turn')).toHaveAttribute('data-role', 'system');
     expect(screen.getByTestId('hist-msg-plugin-turn')).toHaveAttribute('data-plugin', 'alpha');
   });
 
-  it('restores a relayed message as a user message that names its relay', async () => {
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [{ type: 'event', session_id: ID, event: 'user_message', data: {
-        message_id: 'relayed', content: 'hi', origin: { kind: 'relay', name: 'discord' },
-      } }],
-      total_events: 1,
-    });
+  it('draws a relayed message as a user message that names its relay', async () => {
+    historyAnswer = () =>
+      historyOf(ID, [
+        userTurn('relayed', 'hi', { origin: { kind: 'relay', name: 'discord' } as never }),
+      ]);
     render(() => <TestWrapper><HistoryTestConsumer /></TestWrapper>);
     await waitFor(() => expect(screen.getByTestId('hist-msg-relayed')).toBeInTheDocument());
     expect(screen.getByTestId('hist-msg-relayed')).toHaveAttribute('data-role', 'user');
@@ -721,26 +655,8 @@ describe('isLoadingHistory', () => {
     });
   });
 
-  it('populates messages from session history events', async () => {
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'user_message',
-          data: { content: 'hello', message_id: 'msg1' },
-        },
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'message_complete',
-          data: { full_response: 'hi there', message_id: 'msg2' },
-        },
-      ],
-      total_events: 2,
-    });
-
+  it('draws the turns of the snapshot', async () => {
+    historyAnswer = () => historyOf(ID, [userTurn('msg1', 'hello'), segment('msg1', 0, 'hi there')]);
 
     render(() => (
       <TestWrapper>
@@ -759,110 +675,17 @@ describe('isLoadingHistory', () => {
     expect(items[1].textContent?.trim()).toBe('hi there');
   });
 
-  it('restores the precognition badge from history', async () => {
-    // The badge used to vanish on reload because precognition was a live-only
-    // event. Now that the daemon persists it, replay must reattach it to the
-    // user message that triggered it — same target the live reducer picks.
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'user_message',
-          data: { content: 'tell me about the kiln', message_id: 'msg1' },
-        },
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'precognition_complete',
-          data: {
-            notes_count: 2,
-            notes: [
-              { title: 'Kilns', kiln: 'docs', score: 0.91 },
-              { title: 'Wikilinks', kiln: 'docs', score: 0.72 },
-            ],
-          },
-        },
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'message_complete',
-          data: { full_response: 'A kiln is…', message_id: 'msg1' },
-        },
-      ],
-      total_events: 3,
+  it('draws the precognition badge of each turn', async () => {
+    const precognition = (title: string, score: number) => ({
+      notes_count: 1,
+      notes: [{ title, kiln: 'docs', score }] as never,
     });
-
-    render(() => (
-      <TestWrapper>
-        <HistoryTestConsumer />
-      </TestWrapper>
-    ));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('precog').textContent).toBe('msg1:2:Kilns|Wikilinks');
-    });
-    // The event itself is metadata, not a transcript bubble.
-    expect(screen.getByTestId('msg-count').textContent).toBe('2');
-  });
-
-  it('ignores a precognition event with no preceding user message', async () => {
-    // Truncated/paginated history can start mid-turn; attaching to nothing
-    // must not throw or invent a message.
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'precognition_complete',
-          data: { notes_count: 1, notes: [{ title: 'Orphan', score: 0.5 }] },
-        },
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'message_complete',
-          data: { full_response: 'hi', message_id: 'msg9' },
-        },
-      ],
-      total_events: 2,
-    });
-
-    render(() => (
-      <TestWrapper>
-        <HistoryTestConsumer />
-      </TestWrapper>
-    ));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('msg-count').textContent).toBe('1');
-    });
-    expect(screen.getByTestId('precog').textContent).toBe('');
-  });
-
-  it('attaches precognition to its own turn when the history holds several', async () => {
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'first', message_id: 'u1' } },
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'precognition_complete',
-          data: { notes_count: 1, notes: [{ title: 'Alpha', score: 0.9 }] },
-        },
-        { type: 'event', session_id: 'test-session-1', event: 'message_complete', data: { full_response: 'a', message_id: 'u1' } },
-        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'second', message_id: 'u2' } },
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'precognition_complete',
-          data: { notes_count: 1, notes: [{ title: 'Beta', score: 0.8 }] },
-        },
-      ],
-      total_events: 5,
-    });
+    historyAnswer = () =>
+      historyOf(ID, [
+        userTurn('u1', 'first', { precognition: precognition('Alpha', 0.9) }),
+        segment('u1', 0, 'a'),
+        userTurn('u2', 'second', { precognition: precognition('Beta', 0.8) }),
+      ]);
 
     render(() => (
       <TestWrapper>
@@ -873,25 +696,17 @@ describe('isLoadingHistory', () => {
     await waitFor(() => {
       expect(screen.getByTestId('precog').textContent).toBe('u1:1:Alpha,u2:1:Beta');
     });
+    expect(screen.getByTestId('msg-count').textContent).toBe('3');
   });
 
-  it('reconstructs a segmented turn into canonical segment + final bubbles matching the live reducer', async () => {
-    // A text → tool → text turn persists a segment_complete plus a
-    // message_complete carrying the WHOLE turn. Reconstruction must split it
-    // into a segment bubble + a trailing bubble with the SAME canonical ids
-    // the live reducer streams (turnSegmentId / turnResponseId) — that identity
-    // is what makes live and reloaded transcripts converge.
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'find it', message_id: 'msg1' } },
-        { type: 'event', session_id: 'test-session-1', event: 'segment_complete', data: { message_id: 'msg1', index: 0, content: 'Let me look. ' } },
-        { type: 'event', session_id: 'test-session-1', event: 'tool_call', data: { call_id: 'tc-1', tool: 'search', args: {} } },
-        { type: 'event', session_id: 'test-session-1', event: 'tool_result', data: { call_id: 'tc-1', result: 'notes' } },
-        { type: 'event', session_id: 'test-session-1', event: 'message_complete', data: { full_response: 'Let me look. Here it is.', message_id: 'msg1' } },
-      ],
-      total_events: 5,
-    });
+  it('draws the segments and the tool card of a turn in the order of the snapshot', async () => {
+    historyAnswer = () =>
+      historyOf(ID, [
+        userTurn('msg1', 'find it'),
+        segment('msg1', 0, 'Let me look. '),
+        toolCard('msg1', 'tc-1', { name: 'search', result: 'notes' }),
+        segment('msg1', 1, 'Here it is.'),
+      ]);
 
     render(() => (
       <TestWrapper>
@@ -910,64 +725,15 @@ describe('isLoadingHistory', () => {
       'tool',
       'assistant',
     ]);
-    // Canonical ids identical to the live-streamed transcript.
+    // The ids are the daemon's.
     expect(screen.getByTestId('hist-msg-msg1-seg-0').textContent?.trim()).toBe('Let me look.');
-    expect(screen.getByTestId('hist-msg-msg1-response').textContent?.trim()).toBe('Here it is.');
-  });
-
-  it('omits the trailing bubble when segments cover the whole turn (matches the live reducer)', async () => {
-    // text → tool with no trailing narration: the whole turn is the single
-    // segment, so message_complete's stripped content is empty and no final
-    // bubble is added — the same shape the live reducer produces.
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'go', message_id: 'msg1' } },
-        { type: 'event', session_id: 'test-session-1', event: 'segment_complete', data: { message_id: 'msg1', index: 0, content: 'All done via tool.' } },
-        { type: 'event', session_id: 'test-session-1', event: 'tool_call', data: { call_id: 'tc-1', tool: 'search', args: {} } },
-        { type: 'event', session_id: 'test-session-1', event: 'tool_result', data: { call_id: 'tc-1', result: 'notes' } },
-        { type: 'event', session_id: 'test-session-1', event: 'message_complete', data: { full_response: 'All done via tool.', message_id: 'msg1' } },
-      ],
-      total_events: 5,
-    });
-
-    render(() => (
-      <TestWrapper>
-        <HistoryTestConsumer />
-      </TestWrapper>
-    ));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('msg-count').textContent).toBe('3');
-    });
-
-    const items = screen.getAllByRole('listitem');
-    expect(items.map((el) => el.getAttribute('data-role'))).toEqual(['user', 'assistant', 'tool']);
-    expect(screen.getByTestId('hist-msg-msg1-seg-0').textContent?.trim()).toBe('All done via tool.');
-    // No canonical response bubble was added.
-    expect(screen.queryByTestId('hist-msg-msg1-response')).toBeNull();
+    expect(screen.getByTestId('hist-msg-msg1-seg-1').textContent?.trim()).toBe('Here it is.');
   });
 
   it('falls back to persisted history when getSession fails', async () => {
     sessionAnswer = () => refusal(404, 'no such session');
-    historyAnswer = () => ({
-      session_id: ID,
-      history: [
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'user_message',
-          data: { content: 'persisted user', message_id: 'msg-user' },
-        },
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'message_complete',
-          data: { full_response: 'persisted assistant', message_id: 'msg-assistant' },
-        },
-      ],
-      total_events: 2,
-    });
+    historyAnswer = () =>
+      historyOf(ID, [userTurn('msg-user', 'persisted user'), segment('msg-user', 0, 'persisted assistant')]);
 
     render(() => (
       <TestWrapper>
@@ -985,47 +751,6 @@ describe('isLoadingHistory', () => {
     expect(historyLimits).toContain('10000');
   });
 
-  it('dedups a live canonical user message against a pre-canonical reconstructed one', async () => {
-    // Hold history open so a live SSE echo lands in the message list first.
-    const held = deferred<unknown>();
-    historyAnswer = () => held.promise;
-
-    render(() => (
-      <TestWrapper>
-        <HistoryTestConsumer />
-      </TestWrapper>
-    ));
-
-    // Live echo adds the prompt under its canonical id.
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    FakeEventSource.instances[0]!.emit('session_event', {
-      type: 'session_event',
-      event: 'user_message',
-      data: { message_id: 'msg-live', content: 'hello' },
-    });
-    await waitFor(() => expect(screen.getByTestId('msg-count').textContent).toBe('1'));
-    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
-
-    // History replays the SAME prompt from an old event that predates canonical
-    // message_ids → reconstructed under a fallback id (user-0).
-    held.resolve({
-      session_id: ID,
-      history: [
-        {
-          type: 'event',
-          session_id: 'test-session-1',
-          event: 'user_message',
-          data: { content: 'hello' },
-        },
-      ],
-      total_events: 1,
-    });
-
-    // Wait for the merge to complete (history-loading flips to idle AFTER the
-    // setMessages merge), then assert the prompt did not render twice.
-    await waitFor(() => expect(screen.getByTestId('history-loading').textContent).toBe('idle'));
-    expect(screen.getByTestId('msg-count').textContent).toBe('1');
-  });
 });
 
 describe('mode hydration', () => {
@@ -1138,19 +863,15 @@ describe('mode hydration', () => {
   });
 });
 
-// A history load that lands ON TOP of a finished live turn is the shape that
-// doubled the transcript: `loadHistory` merges by id alone, so the live answer
-// and the reconstructed answer collapse into one bubble only while the live
-// one carries `turnResponseId`. A turn that opens with reasoning and goes
-// straight to a tool used to leave that id on the retired placeholder.
-describe('a slow history load cannot duplicate a finished turn', () => {
+// A history read that lands ON TOP of a live turn must not move the
+// transcript back: the store keeps its copy when the snapshot is older.
+describe('a slow history load cannot move the transcript back', () => {
   const ANSWER = 'Here is what a new user does first.';
 
-  it('merges the reconstructed answer onto the live one', async () => {
+  it('keeps the live ops when an older snapshot arrives', async () => {
     // Held open until the live turn has finished.
     const held = deferred<unknown>();
     historyAnswer = () => held.promise;
-    sendAnswer = () => ({ outcome: 'turn', message_id: 'msg-turn-1' });
 
     render(() => (
       <TestWrapper>
@@ -1159,41 +880,25 @@ describe('a slow history load cannot duplicate a finished turn', () => {
     ));
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    const stream = () => FakeEventSource.instances[0]!;
-    screen.getByText('Send').click();
-    // The send POST returns the turn id, which renames the optimistic
-    // placeholder to the canonical response id.
-    await waitFor(() => expect(screen.queryByTestId('msg-msg-turn-1-response')).not.toBeNull());
-
-    // Live turn: reason, call a tool, reason again, then answer.
-    stream().emit('thinking', { type: 'thinking', content: 'The user wants the guide. ' });
-    stream().emit('tool_call', { type: 'tool_call', id: 'call-a', title: 'read_note', arguments: { path: 'g.md' } });
-    stream().emit('tool_result', { type: 'tool_result', id: 'call-a', result: '{}' });
-    stream().emit('thinking', { type: 'thinking', content: 'Now I can answer. ' });
-    stream().emit('token', { type: 'token', content: ANSWER });
-    stream().emit('message_complete', { type: 'message_complete', id: 'msg-turn-1', content: ANSWER, total_tokens: 6707 });
-
+    const stream = FakeEventSource.instances[0]!;
+    // The first snapshot arrives, then the live turn.
+    held.resolve(historyOf(ID, [], 0));
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'));
+    emitOps(stream, 1, [upsert(userTurn('msg-turn-1', 'test message'))]);
+    emitOps(stream, 2, [upsert(segment('msg-turn-1', 0, '', { streaming: true }))]);
+    emitOps(stream, 3, [{ op: 'append', id: 'msg-turn-1-seg-0', field: 'text', at: 0, text: ANSWER }]);
     await waitFor(() =>
-      expect(screen.getAllByRole('listitem').some((li) => li.textContent === ANSWER)).toBe(true)
+      expect(screen.getAllByRole('listitem').some((li) => li.textContent === ANSWER)).toBe(true),
     );
 
-    // The daemon's own record of the same turn arrives now.
-    held.resolve({
-      session_id: ID,
-      history: [
-        { event: 'user_message', data: { message_id: 'msg-turn-1', content: 'test message' } },
-        { event: 'tool_call', data: { call_id: 'call-a', tool: 'read_note', args: { path: 'g.md' } } },
-        { event: 'tool_result', data: { call_id: 'call-a', result: '{}' } },
-        { event: 'message_complete', data: { message_id: 'msg-turn-1', full_response: ANSWER } },
-      ],
-      total_events: 4,
-    });
+    // A refetch answers a snapshot from before the answer.
+    env.client.setQueryData(keys.sessionHistory(ID), historyOf(ID, [userTurn('msg-turn-1', 'test message')], 1));
 
-    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
-    await waitFor(() => {
-      const answers = screen.getAllByRole('listitem').filter((li) => li.textContent === ANSWER);
-      expect(answers).toHaveLength(1);
-    });
+    await Promise.resolve();
+    const answers = screen.getAllByRole('listitem').filter((li) => li.textContent === ANSWER);
+    expect(answers).toHaveLength(1);
+    expect(screen.getByTestId('count').textContent).toBe('2');
   });
 });
 
@@ -1285,7 +990,7 @@ describe('the shared session stream', () => {
     screen.getByTestId('retry').click();
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
 
-    FakeEventSource.instances[1]!.emit('token', { type: 'token', content: 'still here' });
+    emitOps(FakeEventSource.instances[1]!, 1, [upsert(userTurn('t1', 'still here'))]);
 
     await waitFor(() => expect(seen.length).toBeGreaterThan(0));
   });
@@ -1404,12 +1109,12 @@ describe('palette Clear Chat', () => {
     ));
     await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
     screen.getByText('Send').click();
-    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
 
     getBus().emit('clearChat', {});
 
     await waitFor(() => expect(sentCommands).toEqual(['/clear']));
-    expect(screen.getByTestId('count').textContent).toBe('2');
+    expect(screen.getByTestId('count').textContent).toBe('1');
     statusBarActions.setActiveSessionId(null);
   });
 });

@@ -39,7 +39,10 @@ test('WS-253: native view options and typed values survive narrow layouts', asyn
   await expect(base.getByRole('img',{name:'Entry image'})).toHaveCSS('aspect-ratio','1.5 / 1');
   await expect.poll(() => base.getByRole('img',{name:'Entry image'}).evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(120);
   await expect(base.getByRole('checkbox')).toBeChecked();
-  await expect(base.locator('svg[aria-label="plus"]')).toBeVisible();
+  // The icon comes from one lazy bundle of every lucide icon. The dev server
+  // transforms each icon file on the first import, which can take more than
+  // the default five seconds while other workers load the server too.
+  await expect(base.locator('svg[aria-label="plus"]')).toBeVisible({ timeout: 30_000 });
   await expect(base.getByText('Safe text')).toBeVisible();
   await expect(base.locator('script')).toHaveCount(0);
   await page.screenshot({path:'/tmp/crucible-bases-cards-options.png',fullPage:true});

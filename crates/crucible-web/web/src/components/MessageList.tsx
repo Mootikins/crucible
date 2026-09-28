@@ -77,7 +77,7 @@ function interactionRecord(request: InteractionRequest): string {
 }
 
 export const MessageList: Component = () => {
-  const { messages, pendingInteraction } = useChatSafe();
+  const { messages, pendingInteraction, isStreaming } = useChatSafe();
   const { currentSession } = useSessionSafe();
   let containerRef: HTMLDivElement | undefined;
   let bottomRef: HTMLDivElement | undefined;
@@ -142,6 +142,7 @@ export const MessageList: Component = () => {
     // Build structural specs first.
     const specs: TranscriptRow[] = [];
     let turn: { parts: TurnPartSpec[] } | null = null;
+    const queued = new Set<string>();
 
     const closeTurn = () => {
       if (!turn) return;
@@ -152,6 +153,8 @@ export const MessageList: Component = () => {
     };
 
     for (const message of messages()) {
+      // A delegation draws in the strip below the transcript (ChatContent).
+      if (message.type === 'delegation') continue;
       if (message.role === 'assistant') {
         turn ??= { parts: [] };
         turn.parts.push({ kind: 'text', id: message.id });
@@ -165,10 +168,23 @@ export const MessageList: Component = () => {
         }
       } else {
         closeTurn();
+        if (message.queued) queued.add(message.id);
         specs.push({ kind: 'message', id: message.id });
       }
     }
     closeTurn();
+    // A turn that runs and has no part yet (the answer did not start) still
+    // draws its turn block, which shows the working indicator. It goes before
+    // the queued prompts, which wait below the running turn.
+    if (isStreaming()) {
+      let at = specs.length;
+      while (at > 0 && specs[at - 1].kind === 'message' && queued.has((specs[at - 1] as { id: string }).id)) {
+        at -= 1;
+      }
+      if (specs[at - 1]?.kind !== 'turn') {
+        specs.splice(at, 0, { kind: 'turn', key: 'turn-pending', parts: [] });
+      }
+    }
 
     // Reuse cached wrappers with identical structure.
     const signature = (row: TranscriptRow): string =>

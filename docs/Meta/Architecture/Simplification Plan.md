@@ -144,10 +144,10 @@ history carries the folded snapshot. A client applies the snapshot, then the
 ops. The commits, in order:
 1. **(done)** `crates/crucible-core/src/transcript/`: the types, the fold and
    the op replay, with golden files for five recordings.
-2. **(done)** `session.history` returns the snapshot as `transcript`. `SessionManager::load_transcript` folds the whole stored log, after the migration of old lines.
+2. **(done)** `session.history` returns the snapshot as `transcript`. `SessionManager::load_transcript` folds the whole stored log, after the migration of old lines. A resident session answers the live fold of the event bus instead, which also holds the streamed text.
 3. **(done)** The daemon event bus folds each event and sends its ops in the `transcript` field of the live copy. The journal copy has no ops.
 4. **(done)** The web backend forwards the ops: `to_sse` sends a `transcript` SSE frame after each live event that has ops.
-5. The web client renders the snapshot and the ops. Its own fold goes.
+5. **(done)** The web client renders the snapshot and the ops. Its own fold goes: `transcriptStore` applies the ops with a port of `Transcript::apply`, and `itemToMessage` maps each item to the view model. See [[Web Server]].
 6. **(done)** The TUI renders the snapshot and the ops. Its own fold
    goes: `turn_msgs` makes no transcript messages, and `SessionEventStream`
    keeps no turn state. The old stream messages of `ChatAppMsg`

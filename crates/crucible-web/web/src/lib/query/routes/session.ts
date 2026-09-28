@@ -1,12 +1,11 @@
 /**
  * The route of the chat stream: one event, one cache write.
  *
- * Two folds read the same stream, and they are not the same fold.
- * `contexts/chatEventReducer.ts` keeps the transcript ONE pane draws: the
- * streaming bubble, the tool rows, the thinking block. This module keeps what
- * EVERY pane reads: the cached history, the session list, the mode list, the
- * pending interactions and the review. A token belongs to the first and never
- * to the second, which is why most of the 22 event types write nothing here.
+ * The transcript is not a cache key. `contexts/transcriptStore.ts` applies
+ * the ops of the `transcript` frames, and reads the history document again
+ * when it needs a new snapshot. This module keeps the other things EVERY pane
+ * reads: the session list, the mode list, the pending interactions and the
+ * review. Most event types therefore write nothing here.
  *
  * The plan's Part D "Event to key mapping" table is the contract. Three rows
  * of it are read wider than they are written, and each says so at its case:
@@ -17,7 +16,6 @@
  */
 import type { QueryClient } from '@tanstack/solid-query';
 import type { ChatEvent } from '@/lib/types';
-import type { SessionHistoryResponse } from '@/lib/types';
 import { keys } from '../keys';
 import { diffsetKey } from '@/lib/diffset';
 import { setEventRoute, type SessionRouteContext } from '../sse';
@@ -55,52 +53,6 @@ export function resetReviewInvalidationForTests(): void {
   reviewTimers.clear();
 }
 
-/** One persisted event of the history document, as the daemon records it. */
-type HistoryEvent = SessionHistoryResponse['history'][number];
-
-/** The payload of `session_event`, which carries no type of its own. */
-type SessionEventData = { message_id?: string; content?: string; origin?: unknown } | null;
-
-/** One recorded event's payload. `data` is `unknown` on the wire, so a read
- * of it narrows here rather than trusting a field. */
-const payloadOf = (event: HistoryEvent): { message_id?: string } =>
-  (event.data ?? {}) as { message_id?: string };
-
-/**
- * Adds the echoed user message to the cached history.
- *
- * The daemon echoes the turn over the stream with the id the send answered, so
- * a pane that is reading the history sees its own message without a refetch.
- * It is a patch and not an invalidation because the turn is still running: a
- * refetch here would race the tokens that follow it.
- */
-function appendUserMessage(client: QueryClient, sessionId: string, data: SessionEventData): void {
-  const messageId = data?.message_id;
-  const content = data?.content;
-  if (!messageId || content === undefined) return;
-
-  client.setQueryData<SessionHistoryResponse>(keys.sessionHistory(sessionId), (held) => {
-    // Nothing read the history, so there is nothing to keep current. Minting a
-    // document from one event would answer the next reader a transcript of one
-    // message and call it whole.
-    if (!held) return held;
-    if (held.history.some((event) => payloadOf(event).message_id === messageId)) return held;
-
-    const echoed: HistoryEvent = {
-      type: 'event',
-      session_id: sessionId,
-      event: 'user_message',
-      data: { message_id: messageId, content, origin: data?.origin },
-      timestamp: new Date().toISOString(),
-    };
-    return {
-      ...held,
-      history: [...held.history, echoed],
-      total_events: held.total_events + 1,
-    };
-  });
-}
-
 /** Routes the events the daemon forwards under one `session_event` type. */
 function routeSessionSubEvent(
   event: Extract<ChatEvent, { type: 'session_event' }>,
@@ -116,17 +68,11 @@ function routeSessionSubEvent(
       break;
     }
 
-    case 'context_cleared':
-      void client.invalidateQueries({ queryKey: keys.sessionHistory(sessionId) });
-      break;
     case 'plugin_turn_limit_changed':
       void client.invalidateQueries({ queryKey: keys.sessionPluginTurnLimit(sessionId) });
       break;
     case 'plugin_approval_changed':
       void client.invalidateQueries({ queryKey: keys.sessionPluginApprovals(sessionId) });
-      break;
-    case 'user_message':
-      appendUserMessage(client, sessionId, event.data as SessionEventData);
       break;
 
     // The table debounces this one, and the debounce is load-bearing. An
@@ -142,8 +88,8 @@ function routeSessionSubEvent(
       void client.invalidateQueries({ queryKey: keys.sessionStatus(sessionId) });
       break;
 
-    // `stream_gap` tells the user their transcript has a hole, which the pane
-    // reducer surfaces. No cached key is wrong because of it.
+    // `stream_gap` makes the transcript store read the snapshot again. No
+    // cached key is wrong because of it.
     default:
       break;
   }
@@ -154,18 +100,9 @@ function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void
   const { client, bus, sessionId } = context;
 
   switch (event.type) {
-    // A turn ended, whichever way. The daemon persisted it, and the cached
-    // document predates it.
-    //
-    // The table qualifies the error row with "on critical error". The route
-    // cannot tell a critical error from a recoverable one: `code` is the
-    // daemon's own string and no list of it exists here. It invalidates for
-    // every error instead, which costs one refetch of a document the failed
-    // turn changed anyway.
+    // A turn ended. Its edits can move the session record.
     case 'message_complete':
-    case 'error':
-      void client.invalidateQueries({ queryKey: keys.sessionHistory(sessionId) });
-      if (event.type === 'message_complete') scheduleReviewInvalidation(client, sessionId);
+      scheduleReviewInvalidation(client, sessionId);
       break;
 
     // No event says "the agent changed a file": `review_changed` fires for
@@ -209,10 +146,9 @@ function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void
       routeSessionSubEvent(event, context);
       break;
 
-    // The rest are the stream itself (`token`, `thinking`, the other tool
-    // events, `segment_complete`) or per-pane state (the
-    // subagent and delegation events, `precognition_result`).
-    // One pane's reducer owns each of them.
+    // The rest are the transcript (the `transcript` frame, and the events
+    // whose ops it carries) or the session state that
+    // `contexts/chatEventReducer.ts` keeps.
     default:
       break;
   }

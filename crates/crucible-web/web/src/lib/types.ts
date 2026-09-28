@@ -16,17 +16,15 @@ type Schemas = components['schemas'];
 
 /** Token usage data for a completed message.
  *
- * Client-local: the reducer folds `message_complete`'s snake_case counters into
- * this camelCase record, and nothing sends it back. */
+ * Client-local: `itemToMessage` maps the `usage` of a transcript segment
+ * into this camelCase record, and nothing sends it back. */
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
 }
 
-/** Message in the chat */
+/** One row that the chat transcript draws. */
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -46,16 +44,12 @@ export interface Message {
   via?: string;
   /** Thinking block data (extended thinking / reasoning) */
   thinking?: ThinkingBlock;
-  /** Token usage data (populated on message_complete) */
+  /** Token usage data, on the last segment of a turn. */
   usage?: TokenUsage;
-  /** When the daemon closed the turn (set on message_complete). A message
-   * rebuilt from history has no value: history timestamps are synthetic. */
-  completedAt?: number;
-  /** True on the empty assistant bubble the client mints when a turn is
-   * sent, before any token arrives. Only such a bubble may give up the
-   * canonical response id at `message_complete`; a bubble from history that
-   * happens to be empty is an answer, not a placeholder. */
-  placeholder?: boolean;
+  /** For role "assistant": the segment can still grow. */
+  streaming?: boolean;
+  /** For type "delegation": the delegated task. */
+  delegation?: SubagentEvent;
   /** True on a user message typed while a turn was streaming: it renders at
    * the end of the streaming block but has NOT been sent yet. The queue
    * dispatches it as its own turn when the stream goes idle; the flag drops
@@ -201,16 +195,16 @@ export type FsEvent = Schemas['FsEvent'];
 // TUI Feature Types (for web port)
 // =============================================================================
 
-/** Thinking block with streaming state. Client-local: the reducer builds it
- * from `thinking` deltas and nothing sends it back. */
+/** Thinking block with streaming state. Client-local: `itemToMessage` builds
+ * it from a transcript segment, and nothing sends it back. */
 interface ThinkingBlock {
   content: string;
   isStreaming: boolean;
   tokenCount?: number;
 }
 
-/** Tool call display with execution status. Client-local: the reducer folds
- * several stream events into one card, so no route answers this shape. */
+/** Tool call display with execution status. Client-local: `itemToMessage`
+ * maps a transcript tool card into it, so no route answers this shape. */
 export interface ToolCallDisplay {
   id: string;
   name: string;
@@ -289,8 +283,8 @@ interface RawToolCall {
   _meta?: unknown;
 }
 
-/** A delegated task. Client-local: the store collapses the three
- * `delegation_*` stream events into one row. */
+/** A delegated task. Client-local: `itemToMessage` maps a transcript
+ * delegation item into it. */
 export interface SubagentEvent {
   id: string;
   prompt: string;
@@ -829,18 +823,11 @@ export type SessionSearchResponse = Schemas['SessionSearchResponse'];
 export type SessionScope = Schemas['SessionScopeResponse'];
 
 /**
- * One recorded daemon event from `session.jsonl`.
- *
- * `data` is `unknown` on the wire: the payload differs per `event`, the daemon
- * owns the vocabulary, and a reader narrows what it needs.
- */
-export type DaemonHistoryEvent = Schemas['SessionHistoryEvent'];
-
-/**
  * What `GET /api/session/{id}/history` answers.
  *
  * It carries the session's `type`, `state` and `kilns` beside the events, so a
- * resume does not need a second `session.get` to learn what it resumed.
+ * resume does not need a second `session.get` to learn what it resumed. The
+ * web client draws its `transcript`, the daemon's fold of the events.
  */
 export type SessionHistoryResponse = Schemas['SessionHistoryResponse'];
 

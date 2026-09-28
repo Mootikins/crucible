@@ -157,41 +157,21 @@ describe('AssistantTurn — one meta row per turn', () => {
     expect(screen.getByText(`${(1234).toLocaleString()} tokens`)).toBeInTheDocument();
     expect(screen.queryByText(`${(999).toLocaleString()} tokens`)).not.toBeInTheDocument();
   });
-
-  it('appends the cached count when cache tokens are present', () => {
-    messagesAccessor = () => [
-      textMsg('a1', 'body', {
-        usage: {
-          promptTokens: 100,
-          completionTokens: 50,
-          totalTokens: 1500,
-          cacheReadTokens: 200,
-          cacheCreationTokens: 50,
-        },
-      }),
-    ];
-    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
-    expect(
-      screen.getByText(
-        `${(1500).toLocaleString()} tokens (${(250).toLocaleString()} cached)`,
-      ),
-    ).toBeInTheDocument();
-  });
 });
 
 // ── In-flight states: dots, caret, no meta ─────────────────────────────
 
 describe('AssistantTurn — in-flight indicators', () => {
-  it('shows working dots when the trailing text segment is empty', () => {
-    messagesAccessor = () => [textMsg('a1', '')];
+  it('shows working dots when the trailing text segment is empty and still streams', () => {
+    messagesAccessor = () => [textMsg('a1', '', { streaming: true })];
     const { getByTestId } = render(() => (
       <AssistantTurn parts={[textPart('a1')]} isLast={true} />
     ));
     expect(getByTestId('working-indicator')).toBeInTheDocument();
   });
 
-  it('shows no dots for a settled thinking-only segment', () => {
-    // The reducer closes a thinking-only segment at a tool boundary (model
+  it('shows no dots for a closed thinking-only segment', () => {
+    // The daemon closes a thinking-only segment at a tool boundary (model
     // reasoned, then called a tool without narrating). That segment is
     // finished; dots on it would spin for the rest of the transcript.
     messagesAccessor = () => [
@@ -202,11 +182,10 @@ describe('AssistantTurn — in-flight indicators', () => {
     expect(screen.queryByTestId('working-indicator')).not.toBeInTheDocument();
   });
 
-  it('still shows dots while thinking is streaming and no text has arrived', () => {
-    // Guard the narrow fix: only a SETTLED thinking block suppresses dots.
+  it('shows no dots while thinking streams and no text has arrived', () => {
     streamingAccessor = () => true;
     messagesAccessor = () => [
-      textMsg('a1', '', { thinking: { content: 'reasoning', isStreaming: true } }),
+      textMsg('a1', '', { streaming: true, thinking: { content: 'reasoning', isStreaming: true } }),
     ];
     render(() => <AssistantTurn parts={[textPart('a1')]} isLast={true} />);
     // Thinking is live, so the ThinkingBlock carries the activity, not dots.
@@ -448,28 +427,32 @@ describe('AssistantTurn — the meta row', () => {
     expect(turn.className).not.toMatch(/-bottom-5/);
   });
 
-  it('puts the actions first, then the elapsed time, then the token usage', async () => {
+  it('puts the actions first, then the time, then the token usage', async () => {
     const start = Date.now() - 60_000;
     messagesAccessor = () => [
       textMsg('a1', 'done', {
         timestamp: start,
-        completedAt: start + 4_200,
         usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       }),
     ];
     render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    const { formatAbsoluteTime } = await import('@/lib/format-time');
     const meta = screen.getByTestId('turn-meta');
     const copy = screen.getByTitle('Copy response');
-    const elapsed = screen.getByText('4.2 s');
+    const time = screen.getByText(formatAbsoluteTime(start));
     const tokens = screen.getByText(/2 tokens/);
-    expect(meta).toContainElement(elapsed);
+    expect(meta).toContainElement(time);
     // ONE meta row: the usage is no longer a second strip of its own.
     expect(meta).toContainElement(tokens);
     // DOM order decides the reading order: what you can do, then what it cost.
-    expect(copy.compareDocumentPosition(elapsed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(elapsed.compareDocumentPosition(tokens) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const { formatAbsoluteTime } = await import('@/lib/format-time');
-    expect(screen.queryByText(formatAbsoluteTime(start))).toBeNull();
+    expect(copy.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(time.compareDocumentPosition(tokens) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('draws no time for a turn whose parts carry none', () => {
+    messagesAccessor = () => [textMsg('a1', 'done', { timestamp: 0 })];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    expect(screen.getByTestId('turn-meta').textContent).not.toMatch(/\d:\d\d/);
   });
 
   it('announces the author as a heading for a screen reader only', () => {

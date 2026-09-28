@@ -8,10 +8,11 @@ let mockMessages: Message[] = [];
 // Indirection so a test can swap in a reactive accessor (a signal) to drive
 // re-renders; static tests keep reading the plain module-level array.
 let messagesAccessor: () => Message[] = () => mockMessages;
+let streaming = false;
 vi.mock('@/contexts/ChatContext', () => ({
   useChatSafe: () => ({
     messages: () => messagesAccessor(),
-    isStreaming: () => false,
+    isStreaming: () => streaming,
     sessionId: () => 's1',
     sendMessage: async () => {},
     pendingInteraction: () => null,
@@ -39,6 +40,40 @@ afterEach(() => {
   cleanup();
   mockMessages = [];
   messagesAccessor = () => mockMessages;
+  streaming = false;
+});
+
+// ── A turn that runs before its answer starts ─────────────────
+//
+// The daemon adds the first segment of an answer only when text or reasoning
+// arrives. Until then the running turn draws its block with the working
+// indicator, above the prompts that wait for it.
+
+describe('MessageList — a running turn with no part yet', () => {
+  it('draws the working indicator after the prompt, above a queued prompt', () => {
+    streaming = true;
+    mockMessages = [
+      msg('u1', 'user', 'first'),
+      { ...msg('q1', 'user', 'queued'), queued: true },
+    ];
+    const { getByTestId, container } = render(() => <MessageList />);
+    const turn = getByTestId('assistant-turn');
+    expect(getByTestId('working-indicator')).toBeInTheDocument();
+    const rows = [...container.querySelectorAll('[data-testid="message-user"], [data-testid="assistant-turn"]')];
+    expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
+      'message-user',
+      'assistant-turn',
+      'message-user',
+    ]);
+    expect(rows[1]).toBe(turn);
+  });
+
+  it('draws no extra block when the turn has its answer', () => {
+    streaming = true;
+    mockMessages = [msg('u1', 'user', 'first'), { ...msg('a1', 'assistant', 'partial'), streaming: true }];
+    const { getAllByTestId } = render(() => <MessageList />);
+    expect(getAllByTestId('assistant-turn')).toHaveLength(1);
+  });
 });
 
 // ── The rhythm between turns ──────────────────────────────────

@@ -936,3 +936,52 @@ async fn a_resumed_session_continues_its_seq_above_the_log() {
     ));
     assert_eq!(live.try_recv().unwrap().seq, Some(9));
 }
+
+/// A client that reads the transcript while a turn streams gets the text
+/// that already streamed. The log stores no text delta, so a fold of the log
+/// alone would lack it, and the next live append would not fit.
+#[tokio::test]
+async fn a_running_turn_reads_its_streamed_text_and_the_next_op_fits() {
+    use crucible_core::protocol::SessionEventMessage;
+    let storage = temp_session_storage();
+    let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);
+    storage.save(&session).await.unwrap();
+
+    let (bus, mut live) = crate::EventBus::channel(8);
+    let manager = SessionManager::with_storage(storage).with_event_bus(bus.clone());
+    manager
+        .resume_session_from_storage(&session.id)
+        .await
+        .unwrap();
+    let echo = serde_json::json!({"message_id": "turn-1", "content": "hi"});
+    bus.emit(SessionEventMessage::new(&session.id, "user_message", echo));
+    let mut journal_line = live.try_recv().unwrap();
+    journal_line.transcript.clear();
+    manager
+        .storage
+        .append_event(&session, &serde_json::to_string(&journal_line).unwrap())
+        .await
+        .unwrap();
+    // A text delta goes to the client, not to the log.
+    bus.emit(SessionEventMessage::text_delta(&session.id, "Hel"));
+    live.try_recv().unwrap();
+
+    let mut snapshot = manager.load_transcript(&session.id).await.unwrap();
+    let text = |t: &crucible_core::transcript::Transcript| {
+        t.items.iter().find_map(|item| match &item.body {
+            crucible_core::transcript::ItemBody::AssistantSegment { text, .. } => {
+                Some(text.clone())
+            }
+            _ => None,
+        })
+    };
+    assert_eq!(text(&snapshot).as_deref(), Some("Hel"));
+
+    bus.emit(SessionEventMessage::text_delta(&session.id, "lo"));
+    let next = live.try_recv().unwrap();
+    assert!(next.seq.unwrap() > snapshot.as_of_seq);
+    for op in &next.transcript {
+        assert!(snapshot.apply(op), "the live op does not fit: {op:?}");
+    }
+    assert_eq!(text(&snapshot).as_deref(), Some("Hello"));
+}

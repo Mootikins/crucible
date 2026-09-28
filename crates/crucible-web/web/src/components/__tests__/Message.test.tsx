@@ -34,7 +34,6 @@ vi.mock('@/contexts/ChatContext', () => ({
     setChatMode: () => {},
     sendMessage: (...args: unknown[]) => sendMessageMock(...args),
     respondToInteraction: async () => {},
-    clearMessages: () => {},
     cancelStream: async () => {},
     addSystemMessage: () => {},
   }),

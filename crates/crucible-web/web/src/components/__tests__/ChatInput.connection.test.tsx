@@ -29,7 +29,6 @@ vi.mock('@/contexts/ChatContext', () => ({
     switchMode: vi.fn(),
     sessionId: () => 'test-session',
     addSystemMessage: vi.fn(),
-    clearMessages: vi.fn(),
     subagentEvents: () => [],
     pendingInteraction: () => null,
     respondToInteraction: vi.fn(),

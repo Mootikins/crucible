@@ -5,11 +5,12 @@ import type { ChatContextValue } from '@/lib/types/context';
 import { resetTranscriptsForTests } from '../transcriptStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
+import { emitOps, historyOf, segment, upsert, userTurn } from '@/test-utils/transcript';
 
 // Mid-turn input is a queue, not a rejection and not an interleave. A message
-// typed while the agent's turn streams joins the transcript at the end of the
-// current block (below the streaming bubble), waits there unsent, and becomes
-// its own turn the moment the stream goes idle — in the order it was queued.
+// typed while the agent's turn streams shows at the end of the transcript,
+// waits there unsent, and becomes its own turn the moment the stream goes
+// idle — in the order it was queued. The daemon's transcript arrives as ops.
 
 const SESSION = {
   session_id: 's1', type: 'chat', title: 'T', state: 'active', kilns: ['k'],
@@ -42,7 +43,7 @@ beforeEach(() => {
   env = createTestQueryEnv({
     'GET /api/interactions/pending': () => ({ pending: [] }),
     'GET /api/session/s1': () => SESSION,
-    'GET /api/session/s1/history': () => ({ session_id: 's1', history: [], total_events: 0 }),
+    'GET /api/session/s1/history': () => historyOf('s1', [], 0),
     [SEND]: async (request) => {
       sentTurns.push((await request.clone().json()) as { session_id: string; content: string });
       if (holdSend) {
@@ -78,14 +79,30 @@ const stream = () => {
   return FakeEventSource.instances[FakeEventSource.instances.length - 1]!;
 };
 
+/** The seq of the next frame the fake daemon sends. */
+let seq = 0;
+/** The daemon echoes the turn `id` and streams its first segment. */
+function daemonTurn(id: string, prompt: string, text: string): void {
+  emitOps(stream(), ++seq, [upsert(userTurn(id, prompt))]);
+  emitOps(stream(), ++seq, [upsert(segment(id, 0, text, { streaming: true }))]);
+  stream().emit('token', { type: 'token', content: text });
+}
+/** The daemon ends the turn `id`. */
+function daemonTurnEnds(id: string, text: string): void {
+  emitOps(stream(), ++seq, [upsert(segment(id, 0, text))]);
+  stream().emit('message_complete', { type: 'message_complete', id, content: text });
+}
+
 describe('ChatContext queues mid-turn sends', () => {
   it('holds a message typed mid-turn at the end of the streaming block and sends it when the turn ends', async () => {
     const ctx = mountProvider();
 
     // Turn one is in flight.
+    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
+    seq = 0;
     void ctx.sendMessage('first');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first']));
-    stream().emit('token', { type: 'token', content: 'working' });
+    daemonTurn('turn-1', 'first', 'working');
 
     // The user types again mid-turn.
     void ctx.sendMessage('second');
@@ -96,40 +113,44 @@ describe('ChatContext queues mid-turn sends', () => {
     );
     expect(sentTurns.map((t) => t.content)).toEqual(['first']);
 
-    // It renders at the end of the streaming block — below the in-flight
-    // assistant bubble — marked queued.
+    // It renders at the end of the transcript — below the in-flight
+    // assistant segment — marked queued.
     const msgs = ctx.messages();
     const userIdx = msgs.findIndex((m) => m.role === 'user' && m.content === 'second');
-    const asstIdx = msgs.findIndex((m) => m.id === 'turn-1-response');
+    const asstIdx = msgs.findIndex((m) => m.id === 'turn-1-seg-0');
+    expect(asstIdx).toBeGreaterThan(-1);
     expect(userIdx).toBeGreaterThan(asstIdx);
     expect(msgs[userIdx]?.queued).toBe(true);
 
     // The turn ends; the queued message becomes its own turn.
-    stream().emit('message_complete', { type: 'message_complete', id: 'turn-1', content: 'working', total_tokens: 8 });
+    daemonTurnEnds('turn-1', 'working');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first', 'second']));
     await waitFor(() =>
-      expect(ctx.messages().find((m) => m.content === 'second')?.queued).toBe(false),
+      expect(ctx.messages().find((m) => m.content === 'second')?.queued).toBeUndefined(),
     );
 
-    stream().emit('token', { type: 'token', content: 'second answer' });
-    stream().emit('message_complete', { type: 'message_complete', id: 'turn-2', content: 'second answer', total_tokens: 13 });
+    daemonTurn('turn-2', 'second', 'second answer');
+    daemonTurnEnds('turn-2', 'second answer');
 
-    // Transcript order: the queued prompt sits between the two turns.
+    // Transcript order: the queued prompt sits between the two turns, and the
+    // daemon's user turn replaced the optimistic entry.
     await waitFor(() => expect(ctx.messages()).toHaveLength(4));
     expect(ctx.messages().map((m) => `${m.role}:${m.id}`)).toEqual([
       'user:turn-1',
-      'assistant:turn-1-response',
+      'assistant:turn-1-seg-0',
       'user:turn-2',
-      'assistant:turn-2-response',
+      'assistant:turn-2-seg-0',
     ]);
   });
 
   it('queues several messages and dispatches them in order, one turn at a time', async () => {
     const ctx = mountProvider();
 
+    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
+    seq = 0;
     void ctx.sendMessage('first');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first']));
-    stream().emit('token', { type: 'token', content: 'working' });
+    daemonTurn('turn-1', 'first', 'working');
 
     void ctx.sendMessage('second');
     void ctx.sendMessage('third');
@@ -140,17 +161,20 @@ describe('ChatContext queues mid-turn sends', () => {
 
     // Turn one ends: only the FIRST queued message may dispatch — the daemon
     // takes one turn at a time, and firing both would race the slot again.
-    stream().emit('message_complete', { type: 'message_complete', id: 'turn-1', content: 'working', total_tokens: 8 });
+    daemonTurnEnds('turn-1', 'working');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first', 'second']));
     expect(sentTurns).toHaveLength(2);
 
     // Turn two ends: now the third goes.
-    stream().emit('message_complete', { type: 'message_complete', id: 'turn-2', content: 'second answer', total_tokens: 13 });
+    daemonTurn('turn-2', 'second', 'second answer');
+    daemonTurnEnds('turn-2', 'second answer');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first', 'second', 'third']));
   });
 
   it('re-queues a send the daemon refused as concurrent instead of surfacing an error', async () => {
     const ctx = mountProvider();
+    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
+    seq = 0;
     await runTurn(ctx, 'first', 'first answer');
 
     // Hold our POST, and let a foreign client's turn take the stream while
@@ -182,7 +206,7 @@ describe('ChatContext queues mid-turn sends', () => {
     );
 
     // ...and once the foreign turn ends, the flush dispatches it.
-    stream().emit('message_complete', { type: 'message_complete', id: 'turn-2', content: 'foreign answer', total_tokens: 10 });
+    stream().emit('turn_finished', { type: 'turn_finished', status: 'completed' });
     await waitFor(() => expect(sentTurns.some((t) => t.content === 'raced')).toBe(true));
   });
 });
@@ -190,10 +214,12 @@ describe('ChatContext queues mid-turn sends', () => {
 describe('ChatContext closes a cancelled turn cleanly', () => {
   it('closes the turn when the daemon broadcasts ended, freeing the next send', async () => {
     const ctx = mountProvider();
+    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
 
     void ctx.sendMessage('first');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first']));
-    stream().emit('thinking', { type: 'thinking', content: 'deep in thought' });
+    const thinking = segment('turn-1', 0, '', { streaming: true, thinking: 'deep in thought' });
+    emitOps(stream(), 1, [upsert(userTurn('turn-1', 'first')), upsert(thinking)]);
     await waitFor(() =>
       expect(ctx.messages().some((m) => m.thinking?.content === 'deep in thought')).toBe(true),
     );
@@ -201,14 +227,12 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
 
     await ctx.cancelStream();
     // The daemon records `turn_finished` BEFORE the cancel call resolves,
-    // and every subscriber receives it. The reducer's `turn_finished` case
-    // closes the turn, not this client's cancel button. Emit the frame the
-    // daemon sends.
+    // and every subscriber receives it, with the ops that close the turn.
     stream().emit('turn_finished', { type: 'turn_finished', status: 'cancelled' });
+    emitOps(stream(), 2, [upsert(segment('turn-1', 0, '', { thinking: 'deep in thought' }))]);
 
-    // No message_complete arrives for a cancelled turn, so the thinking
-    // block must still not be left streaming — it would render "Thinking…"
-    // with the animated wave for the rest of the transcript.
+    // The daemon closed the segment, so the thinking block is not left
+    // streaming — it would render "Thinking…" for the rest of the transcript.
     const thought = ctx.messages().find((m) => m.thinking);
     expect(thought?.thinking?.isStreaming).toBe(false);
     expect(thought?.thinking?.tokenCount).toBe(4); // ~4 tokens at chars/4 for 15 chars
@@ -237,13 +261,12 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
   });
 });
 
-/** One full turn: send, think, answer, complete. */
+/** One full turn: send, answer, complete. */
 async function runTurn(ctx: ChatContextValue, content: string, answer: string) {
   void ctx.sendMessage(content);
   await waitFor(() => expect(sentTurns.some((t) => t.content === content)).toBe(true));
   const id = `turn-${turnCounter}`;
-  stream().emit('thinking', { type: 'thinking', content: `reasoning about ${content} ` });
-  stream().emit('token', { type: 'token', content: answer });
-  stream().emit('message_complete', { type: 'message_complete', id, content: answer, total_tokens: 10 });
+  daemonTurn(id, content, answer);
+  daemonTurnEnds(id, answer);
   await waitFor(() => expect(ctx.isStreaming()).toBe(false));
 }

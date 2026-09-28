@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
-import { createSSEStream, SSE_HEADERS } from './helpers/mock-sse';
+import { createSSEStream, SSE_HEADERS, TranscriptFrames } from './helpers/mock-sse';
+import { segment, upsert, userTurn } from '../src/test-utils/transcript';
 import { MOCK_SESSION } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
 
@@ -14,8 +15,13 @@ import { openSessionsList } from './helpers/nav';
  * matching that wire format here.
  */
 
-/** Build SSE events matching the real backend format (type in data payload). */
+/**
+ * Build SSE events matching the real backend format (type in data payload):
+ * the events of one turn, and the transcript frames the daemon sends with
+ * them.
+ */
 function buildChatEvents(
+  prompt: string,
   content: string,
   messageId = 'msg-001',
 ): Array<{ type: string; data: object }> {
@@ -23,11 +29,17 @@ function buildChatEvents(
   for (let i = 0; i < content.length; i += 10) {
     chunks.push(content.slice(i, i + 10));
   }
+  const transcript = new TranscriptFrames();
+  const open = segment(messageId, 0, '', { streaming: true });
   return [
+    transcript.ops([upsert(userTurn(messageId, prompt))]),
+    transcript.upsert(open),
     ...chunks.map((chunk) => ({
       type: 'token',
       data: { type: 'token', content: chunk },
     })),
+    ...transcript.appends(open.id, content, 10),
+    transcript.upsert(segment(messageId, 0, content)),
     {
       type: 'message_complete',
       data: { type: 'message_complete', id: messageId, content, tool_calls: [] },
@@ -38,7 +50,7 @@ function buildChatEvents(
 test.describe('Chat happy path', () => {
   test('sends a message and displays streamed response', async ({ page }) => {
     const responseText = 'Hello! How can I help you today?';
-    const sseBody = createSSEStream(buildChatEvents(responseText));
+    const sseBody = createSSEStream(buildChatEvents('Hello there', responseText));
 
     // Set up mocks with empty SSE (we control SSE delivery separately)
     await setupBasicMocks(page, { sseEvents: [] });
@@ -101,10 +113,10 @@ test.describe('Chat happy path', () => {
     // Click send
     await page.getByTestId('send-button').click();
 
-    // Wait for the POST to complete (ensures currentStreamingMessageId is set)
+    // Wait for the POST to complete
     await sendPromise;
 
-    // Now release SSE events — streaming message placeholder exists
+    // Now release the SSE events
     resolveSSE!();
 
     // Assert: user message appears
@@ -129,7 +141,7 @@ test.describe('Chat happy path', () => {
     // first test does — delivering tokens on session open races the fold and leaves
     // the composer in a streaming state with no user turn.
     const longContent = 'A'.repeat(200);
-    const sseBody = createSSEStream(buildChatEvents(longContent));
+    const sseBody = createSSEStream(buildChatEvents('Tell me something long', longContent));
 
     await setupBasicMocks(page, { sseEvents: [] });
 

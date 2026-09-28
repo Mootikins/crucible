@@ -19,7 +19,6 @@ const mockCancelCurrentOperation = vi.fn();
 const mockSetChatMode = vi.fn();
 const mockSwitchMode = vi.fn();
 const mockAddSystemMessage = vi.fn();
-const mockClearMessages = vi.fn();
 const mockSwitchModel = vi.fn();
 const mockRefreshModels = vi.fn();
 
@@ -37,7 +36,6 @@ vi.mock('@/contexts/ChatContext', () => ({
     switchMode: mockSwitchMode,
     sessionId: () => 'test-session',
     addSystemMessage: mockAddSystemMessage,
-    clearMessages: mockClearMessages,
     activeTools: () => [],
     subagentEvents: () => [],
     pendingInteraction: pending,
@@ -213,7 +211,6 @@ describe('ChatInput', () => {
     fireEvent.submit(screen.getByTestId('chat-input-form'));
     await waitFor(() => expect(mockAddSystemMessage).toHaveBeenCalledWith('Context cleared'));
     expect((await kilnEnv.fetch.sent(kilnEnv.fetch.mock.calls.length - 1)).body).toEqual({ command: '/clear' });
-    expect(mockClearMessages).not.toHaveBeenCalled();
   });
 
   // Only a built-in command runs on the command route. The daemon routes any

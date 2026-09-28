@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
-import { createSSEStream } from '../helpers/mock-sse';
+import { createSSEStream, TranscriptFrames } from '../helpers/mock-sse';
+import { segment, toolCard, upsert, userTurn } from '../../src/test-utils/transcript';
 import { createStory } from './_helpers/story';
 import { waitForFonts } from './_helpers/fonts';
 import { openSessionsList } from '../helpers/nav';
@@ -10,8 +11,9 @@ import { openSessionsList } from '../helpers/nav';
  * complete; and the mid-turn queue (2026-09-18): a message typed while the
  * turn streams renders below the block, marked queued, unsent.
  *
- * Uses the real chat pipeline (ChatContext + chatEventReducer + Message/
- * ThinkingBlock/ToolCard). Pinned visual baselines:
+ * Uses the real chat pipeline (ChatContext + transcriptStore + Message/
+ * ThinkingBlock/ToolCard). Each stream carries the events and the transcript
+ * frames of the daemon's fold. Pinned visual baselines:
  *   - chat-mid-stream.png: turn in flight (working indicator), SSE held open.
  *   - chat-thinking.png:   thinking streaming — the block is OPEN, the text
  *                          visible with its caret (it used to sit collapsed
@@ -30,7 +32,35 @@ function tokenFrames(text: string): Frame[] {
   return chunks.map((content) => ({ type: 'token', data: { type: 'token', content } }));
 }
 
+const PROMPT = 'What is the answer?';
+const ANSWER = 'Here is the answer.';
+const USAGE = { prompt_tokens: 900, completion_tokens: 334, total_tokens: 1234 };
+
+/**
+ * The daemon's fold of COMPLETE_STREAM: the answer and its reasoning in one
+ * segment, which the tool call closes, then the tool card, then an empty
+ * segment that carries the usage of the turn.
+ */
+function completeTranscript(): Frame[] {
+  const t = new TranscriptFrames();
+  const open = segment('msg-1', 0, '', { streaming: true });
+  const call = toolCard('msg-1', 't1', { name: 'read_file', args: { path: 'notes/x.md' } as never, status: 'running' });
+  return [
+    t.ops([upsert(userTurn('msg-1', PROMPT))]),
+    t.upsert(open),
+    ...t.appends(open.id, ANSWER, 8),
+    t.ops([{ op: 'append', id: open.id, field: 'thinking', at: 0, text: 'Considering the options carefully.' }]),
+    t.ops([
+      upsert(segment('msg-1', 0, ANSWER, { thinking: 'Considering the options carefully.' })),
+      upsert(call),
+    ]),
+    t.ops([upsert({ ...call, status: 'complete', result: 'file contents' } as typeof call)]),
+    t.upsert(segment('msg-1', 1, '', { usage: USAGE })),
+  ];
+}
+
 const COMPLETE_STREAM: Frame[] = [
+  ...completeTranscript(),
   ...tokenFrames('Here is the answer.'),
   { type: 'thinking', data: { type: 'thinking', content: 'Considering the options carefully.' } },
   // Real backend shape: ChatEvent::ToolCall serializes as event `tool_call`
@@ -124,7 +154,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
     await setupBasicMocks(page, { sseEvents: [] });
 
     // The app subscribes to the event stream on session load — before send — so
-    // hold the stream until the send POST lands (currentStreamingMessageId set),
+    // hold the stream until the send POST lands,
     // then deliver the whole turn. Post-completion reconnects hang (no churn).
     let markSent: (() => void) | null = null;
     const sent = new Promise<void>((r) => (markSent = r));
@@ -187,10 +217,20 @@ test.describe('WS-101/102/103 streaming chat', () => {
     });
 
     let hit = 0;
+    // The daemon's fold: the reasoning streams into an open segment, the
+    // answer follows it in the same segment, and the end closes it.
+    const REASONING = 'The user asks about the answer. I should weigh the options before replying, starting with the kiln.';
+    const t = new TranscriptFrames();
+    const open = segment('msg-1', 0, '', { streaming: true });
     const THINKING_ONLY: Frame[] = [
-      { type: 'thinking', data: { type: 'thinking', content: 'The user asks about the answer. I should weigh the options before replying, starting with the kiln.' } },
+      t.ops([upsert(userTurn('msg-1', PROMPT))]),
+      t.upsert(open),
+      t.ops([{ op: 'append', id: open.id, field: 'thinking', at: 0, text: REASONING }]),
+      { type: 'thinking', data: { type: 'thinking', content: REASONING } },
     ];
     const REST: Frame[] = [
+      ...t.appends(open.id, ANSWER, 8),
+      t.upsert(segment('msg-1', 0, ANSWER, { thinking: REASONING, usage: USAGE })),
       ...tokenFrames('Here is the answer.'),
       {
         type: 'message_complete',

@@ -53,7 +53,6 @@ export interface ChatContextValue {
    */
   sendMessage: (content: string, comments?: CommentRef[]) => Promise<void>;
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
-  clearMessages: () => void;
   cancelStream: () => Promise<void>;
   addSystemMessage: (content: string) => void;
 }

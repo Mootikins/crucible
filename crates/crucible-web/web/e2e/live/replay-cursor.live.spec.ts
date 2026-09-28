@@ -283,9 +283,9 @@ test.describe('live seq-cursor replay', () => {
       describeRequests(log, `/api/chat/events/${id}`),
     ).toBe(1);
 
-    // The turn ends; the stream's own route invalidates the history document
-    // once for it (the sanctioned second read — the document the next bind
-    // reads), and the stream count never moves.
+    // The turn ends; the ops keep the transcript current, so the end reads
+    // at most one more document (a read after a lost event), and the stream
+    // count never moves.
     await expect(page.getByTestId('message-assistant').first()).toContainText(SLOW_REPLY_END, {
       timeout: 90_000,
     });

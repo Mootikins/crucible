@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
-import { createSSEStream } from '../helpers/mock-sse';
+import { createSSEStream, TranscriptFrames } from '../helpers/mock-sse';
+import { segment, upsert, userTurn } from '../../src/test-utils/transcript';
 import { createStory } from './_helpers/story';
 import { waitForFonts } from './_helpers/fonts';
 import { openSessionsList } from '../helpers/nav';
@@ -27,7 +28,17 @@ const NOTE_CONTENT = '# Kiln Note\n\nStored knowledge that grounds the agent.\n'
 
 type Frame = { type: string; data: object };
 
+const transcript = new TranscriptFrames();
 const STREAM: Frame[] = [
+  // The daemon's fold of the turn: the prompt, and one segment with its usage.
+  transcript.ops([
+    upsert(userTurn('msg-1', 'Where is that written down?')),
+    upsert(
+      segment('msg-1', 0, 'See [[Kiln Note]] for the details.', {
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+      }),
+    ),
+  ]),
   { type: 'token', data: { type: 'token', content: 'See [[Kiln Note]] for the details.' } },
   {
     type: 'message_complete',

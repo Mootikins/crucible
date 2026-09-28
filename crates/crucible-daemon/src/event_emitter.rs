@@ -22,6 +22,9 @@ struct Inner {
 struct SessionStream {
     seq: u64,
     fold: crucible_core::transcript::TranscriptFold,
+    /// The fold started from the stored log. A fold that an event started
+    /// holds only the events since then.
+    seeded: bool,
 }
 
 impl std::fmt::Debug for EventBus {
@@ -125,9 +128,24 @@ impl EventBus {
                 SessionStream {
                     seq: 0,
                     fold: fold(),
+                    seeded: true,
                 },
             );
         }
+    }
+
+    /// The live fold of `session_id`, when it started from the stored log.
+    ///
+    /// It holds each event that the bus folded, the text deltas too, which
+    /// the log does not store. A client that reads this snapshot while a turn
+    /// runs can apply the next live ops to it.
+    pub(crate) fn transcript(
+        &self,
+        session_id: &str,
+    ) -> Option<crucible_core::transcript::Transcript> {
+        let sessions = self.lock();
+        let stream = sessions.get(session_id).filter(|stream| stream.seeded)?;
+        Some(stream.fold.snapshot())
     }
 
     /// Continue the seq of `session_id` above `persisted`, the highest seq in

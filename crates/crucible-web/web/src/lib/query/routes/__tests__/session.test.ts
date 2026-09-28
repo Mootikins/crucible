@@ -68,7 +68,7 @@ describe('the session event route', () => {
     });
     expect(invalidated).toEqual([keys.sessionStatus(SESSION)]);
   });
-  it('leaves the cache alone for a token, which only the pane reducer folds', () => {
+  it('leaves the cache alone for a token', () => {
     const source = openStream();
 
     source.emit('token', { type: 'token', content: 'hi' });
@@ -76,20 +76,26 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([]);
   });
 
-  it('invalidates the history when a turn completes', () => {
+  // The transcript store keeps the transcript current from the ops, so the
+  // end of a turn invalidates no history.
+  it('reads the review again when a turn completes, and leaves the history alone', async () => {
     const source = openStream();
 
     source.emit('message_complete', { type: 'message_complete', id: 'msg-1', content: 'done' });
+    source.emit('error', { type: 'error', code: 'provider', message: 'no' });
+    await new Promise((resolve) => setTimeout(resolve, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
 
-    expect(invalidated).toEqual([keys.sessionHistory(SESSION)]);
+    expect(invalidated).toEqual([keys.diffset(`session-${SESSION}`)]);
   });
 
-  it('invalidates the history when the turn fails', () => {
+  it('writes nothing for a transcript frame, which the transcript store applies', () => {
+    env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
     const source = openStream();
 
-    source.emit('error', { type: 'error', code: 'provider', message: 'no' });
+    source.emit('transcript', { type: 'transcript', seq: 1, ops: [] });
 
-    expect(invalidated).toEqual([keys.sessionHistory(SESSION)]);
+    expect(invalidated).toEqual([]);
+    expect(env.client.getQueryData<SessionHistoryResponse>(keys.sessionHistory(SESSION))).toEqual(history([]));
   });
 
   it('invalidates both session lists and tells the bus about a new title', () => {
@@ -139,27 +145,6 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([keys.pendingInteractions()]);
   });
 
-  it('appends the echoed user message to the history it already holds', () => {
-    env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
-    const source = openStream();
-
-    source.emit('session_event', {
-      type: 'session_event',
-      event: 'user_message',
-      data: { message_id: 'msg-1', content: 'hello' },
-    });
-
-    const held = env.client.getQueryData<SessionHistoryResponse>(keys.sessionHistory(SESSION));
-    expect(held?.history).toHaveLength(1);
-    expect(held?.history[0]).toMatchObject({
-      session_id: SESSION,
-      event: 'user_message',
-      data: { message_id: 'msg-1', content: 'hello' },
-    });
-    expect(held?.total_events).toBe(1);
-    expect(invalidated).toEqual([]);
-  });
-
   // The loop limit and the TUI change the approval too, so the web
   // control reads it again.
   it('invalidates the plugin approvals when the daemon changes one', () => {
@@ -169,41 +154,17 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([keys.sessionPluginApprovals(SESSION)]);
   });
 
-  it('keeps the origin of an echoed plugin turn, so a rebind shows the plugin', () => {
+  it('writes no echoed user message into the history', () => {
     env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
-    const data = { message_id: 'msg-1', content: 'go on', origin: { kind: 'plugin', name: 'goal' } };
-    openStream().emit('session_event', { type: 'session_event', event: 'user_message', data });
-
-    const held = env.client.getQueryData<SessionHistoryResponse>(keys.sessionHistory(SESSION));
-    expect(held?.history[0]?.data).toEqual(data);
-  });
-
-  it('adds the echoed user message once, whatever the number of echoes', () => {
-    env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
-    const source = openStream();
-    const frame = {
-      type: 'session_event',
-      event: 'user_message',
-      data: { message_id: 'msg-1', content: 'hello' },
-    };
-
-    source.emit('session_event', frame);
-    source.emit('session_event', frame);
-
-    const held = env.client.getQueryData<SessionHistoryResponse>(keys.sessionHistory(SESSION));
-    expect(held?.history).toHaveLength(1);
-  });
-
-  it('mints no history entry when nothing read the history yet', () => {
-    const source = openStream();
-
-    source.emit('session_event', {
+    openStream().emit('session_event', {
       type: 'session_event',
       event: 'user_message',
       data: { message_id: 'msg-1', content: 'hello' },
     });
 
-    expect(env.client.getQueryData(keys.sessionHistory(SESSION))).toBeUndefined();
+    const held = env.client.getQueryData<SessionHistoryResponse>(keys.sessionHistory(SESSION));
+    expect(held?.history).toEqual([]);
+    expect(invalidated).toEqual([]);
   });
 
   /**
@@ -237,7 +198,7 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([]);
   });
 
-  it('writes nothing for a dropped-event warning, which the pane surfaces', () => {
+  it('writes nothing for a dropped-event warning, which the transcript store answers', () => {
     const source = openStream();
 
     source.emit('session_event', {

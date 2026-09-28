@@ -69,13 +69,12 @@ test.describe('Error handling', () => {
     await chatInput.fill('Hello');
     await page.getByTestId('send-button').click();
 
-    // Assert: error from SSE error event surfaces in the UI.
-    // handleEvent sets error AND updates the streaming assistant message to
-    // "Error: <message>". The error banner may be overwritten by
-    // "Reconnecting..." from EventSource onerror, but the assistant message
-    // content persists as the reliable indicator.
-    const assistantMessage = page.getByTestId('message-assistant');
-    await expect(assistantMessage.first()).toContainText('Agent failed to process request', {
+    // Assert: error from SSE error event surfaces in the UI. The reducer sets
+    // the error line AND adds an "Error: <message>" notice to the transcript.
+    // The error line may be overwritten by "Reconnecting..." from EventSource
+    // onerror, but the notice persists as the reliable indicator.
+    const notice = page.getByTestId('message-system');
+    await expect(notice.first()).toContainText('Agent failed to process request', {
       timeout: 10000,
     });
   });

@@ -1,41 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import fc from 'fast-check';
-import type {
-  ChatEvent,
-  Message,
-  ToolCallDisplay,
-  SubagentEvent,
-  ChatMode,
-  InteractionRequest,
-  ConnectionStatus,
-} from '@/lib/types';
+import type { ChatEvent, ChatMode, InteractionRequest, ConnectionStatus } from '@/lib/types';
 
 vi.mock('@/stores/statusBarStore', () => ({
   statusBarActions: {
     setChatMode: vi.fn(),
   },
 }));
-
-vi.mock('@/stores/notificationStore', () => ({
-  notificationActions: {
-    addNotification: vi.fn(),
-    dropOrigin: vi.fn(),
-  },
-}));
-
-vi.mock('@/lib/turn', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/turn')>();
-  // Unique per call: a segmented turn (text → tool → text → tool → text)
-  // materializes a fresh streaming assistant message per segment, and a fixed
-  // id would collide so updateMessage would target the wrong bubble.
-  let counter = 0;
-  return {
-    ...actual,
-    generateMessageId: () => `gen-msg-id-${counter++}`,
-  };
-});
 
 // Import AFTER the mocks so the reducer picks them up.
 import { createChatEventReducer } from './chatEventReducer';
@@ -48,123 +21,53 @@ const mockedStatusBar = statusBarActions as unknown as {
 
 // ============================================================================
 // Test harness: builds a deps record whose getters reflect mutable state.
+//
+// The reducer keeps the state AROUND the transcript. The transcript is the
+// daemon's fold, which `transcriptStore` applies; see `lib/transcript.test.ts`.
 // ============================================================================
 
 interface ReducerHarness {
   reducer: (event: ChatEvent) => void;
-  /** Tool transcript entries (role "tool"), in transcript order. */
-  tools: () => ToolCallDisplay[];
   state: {
-    messages: Message[];
-    currentStreamingMessageId: string | null;
-    subagentEvents: SubagentEvent[];
     chatMode: ChatMode;
     pendingInteraction: InteractionRequest | null;
     error: string | null;
+    notices: string[];
     connectionStatus: ConnectionStatus;
     isLoading: boolean;
     isStreaming: boolean;
   };
   spies: {
     onTitleChanged: ReturnType<typeof vi.fn>;
-    addMessage: ReturnType<typeof vi.fn>;
-    updateMessage: ReturnType<typeof vi.fn>;
-    appendToMessage: ReturnType<typeof vi.fn>;
     onUnknownMode: ReturnType<typeof vi.fn>;
-  };
-  /** Mutate state for setup (e.g. install a streaming message before token). */
-  setUp: {
-    streamingMessage: (id: string) => void;
   };
 }
 
 function createHarness(): ReducerHarness {
   const state: ReducerHarness['state'] = {
-    messages: [],
-    currentStreamingMessageId: null,
-    subagentEvents: [],
     chatMode: 'ask',
     pendingInteraction: null,
     error: null,
+    notices: [],
     connectionStatus: 'connected',
     isLoading: false,
     isStreaming: false,
   };
-  const spies = {
-    onTitleChanged: vi.fn(),
-    onUnknownMode: vi.fn(),
-    addMessage: vi.fn((message: Message) => {
-      state.messages.push(message);
-    }),
-    updateMessage: vi.fn((id: string, updates: Partial<Message>) => {
-      const idx = state.messages.findIndex((m) => m.id === id);
-      if (idx >= 0) state.messages[idx] = { ...state.messages[idx], ...updates };
-    }),
-    appendToMessage: vi.fn((id: string, content: string) => {
-      const idx = state.messages.findIndex((m) => m.id === id);
-      if (idx >= 0) {
-        state.messages[idx] = {
-          ...state.messages[idx],
-          content: state.messages[idx].content + content,
-        };
-      }
-    }),
-  };
-
+  const spies = { onTitleChanged: vi.fn(), onUnknownMode: vi.fn() };
   const reducer = createChatEventReducer({
-    sessionId: 's1',
-    messages: () => state.messages,
-    currentStreamingMessageId: () => state.currentStreamingMessageId,
-    setCurrentStreamingMessageId: (id) => {
-      state.currentStreamingMessageId = id;
-    },
-    onTitleChanged: spies.onTitleChanged,
-    onUnknownMode: spies.onUnknownMode,
-    addMessage: spies.addMessage,
-    insertMessageAfter: (index, message) => {
-      state.messages.splice(index + 1, 0, message);
-    },
-    updateMessage: spies.updateMessage,
-    appendToMessage: spies.appendToMessage,
-    // Mirrors ChatContext.addToolMessage: insert before the still-empty
-    // streaming assistant placeholder, else append.
-    addToolMessage: (tool) => {
-      const toolMessage: Message = {
-        id: `tool-${tool.callId ?? tool.id}`,
-        role: 'tool',
-        content: '',
-        timestamp: 0,
-        toolCall: tool,
-      };
-      const streamingId = state.currentStreamingMessageId;
-      const idx = streamingId ? state.messages.findIndex((m) => m.id === streamingId) : -1;
-      if (idx !== -1 && state.messages[idx].content === '') {
-        state.messages.splice(idx, 0, toolMessage);
-      } else {
-        state.messages.push(toolMessage);
-      }
-    },
-    updateToolMessage: (callId, updater) => {
-      for (const m of state.messages) {
-        const tool = m.toolCall;
-        if (m.role === 'tool' && tool && tool.callId === callId) {
-          m.toolCall = updater(tool);
-        }
-      }
-    },
-    setSubagentEvents: (value) => {
-      state.subagentEvents = typeof value === 'function'
-        ? value([...state.subagentEvents])
-        : value;
-    },
     setChatMode: (mode) => {
       state.chatMode = mode;
     },
-    setPendingInteraction: (req) => {
-      state.pendingInteraction = req;
+    onUnknownMode: spies.onUnknownMode,
+    onTitleChanged: spies.onTitleChanged,
+    setPendingInteraction: (request) => {
+      state.pendingInteraction = request;
     },
     setError: (value) => {
       state.error = value;
+    },
+    addErrorNotice: (message) => {
+      state.notices.push(message);
     },
     setConnectionStatus: (value) => {
       state.connectionStatus = value;
@@ -172,699 +75,104 @@ function createHarness(): ReducerHarness {
     setIsLoading: (value) => {
       state.isLoading = value;
     },
+    isStreaming: () => state.isStreaming,
     setIsStreaming: (value) => {
       state.isStreaming = value;
     },
   });
-
-  return {
-    reducer,
-    tools: () => state.messages
-      .filter((m) => m.role === 'tool' && m.toolCall)
-      .map((m) => m.toolCall!),
-    state,
-    spies,
-    setUp: {
-      streamingMessage: (id: string) => {
-        state.currentStreamingMessageId = id;
-        if (!state.messages.find((m) => m.id === id)) {
-          state.messages.push({
-            id,
-            role: 'assistant',
-            content: '',
-            timestamp: 0,
-            placeholder: true,
-          });
-        }
-      },
-    },
-  };
+  return { reducer, state, spies };
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-// ============================================================================
-// Event-shape coverage matrix
-// One example-based test per ChatEvent variant. New variants (e.g. terminate
-// flag, plugin events) MUST add a row here so the matrix stays exhaustive.
-// ============================================================================
+/** The state as JSON, for a check that an event changed nothing. */
+const snapshot = (h: ReducerHarness) => JSON.stringify(h.state);
 
 describe('event matrix — covers every ChatEvent variant', () => {
-  it('places a live plugin turn as a named system message', () => {
-    const h = createHarness();
-    h.reducer({ type: 'session_event', event: 'user_message', data: {
-      message_id: 'm-plugin', content: 'continue with details', origin: { kind: 'plugin', name: 'alpha' },
-    } });
-    expect(h.state.messages).toMatchObject([{ id: 'm-plugin', role: 'system', plugin: 'alpha', content: 'continue with details' }]);
-  });
-  it('places a live relayed message as a user message that names its relay', () => {
-    const h = createHarness();
-    h.reducer({ type: 'session_event', event: 'user_message', data: {
-      message_id: 'm-relay', content: 'hi', origin: { kind: 'relay', name: 'discord' },
-    } });
-    expect(h.state.messages).toMatchObject([{ id: 'm-relay', role: 'user', via: 'discord', content: 'hi' }]);
-  });
-  it('shows a live context clear divider with the plugin name', () => {
-    const h = createHarness();
-    h.reducer({ type: 'session_event', event: 'context_cleared', data: { plugin: 'alpha' } });
-    expect(h.state.messages).toMatchObject([{ role: 'system', content: '↻ alpha cleared the context' }]);
-  });
-  // ---- Parameterized clusters (homogeneous shape across many variants) ----
-
-  // tool_call: dispatch one tool-call event, assert the ToolCallDisplay
-  // shape that lands in the transcript.
   it.each([
-    {
-      name: 'tool_call: adds a running ToolCallDisplay with title and arguments',
-      event: { type: 'tool_call', id: 'tc-1', title: 'list_files', arguments: { path: '/tmp' } },
-      expected: {
-        id: 'tc-1', name: 'list_files',
-        args: JSON.stringify({ path: '/tmp' }), status: 'running', callId: 'tc-1',
-      },
-    },
-    {
-      name: 'tool_call: handles missing arguments gracefully',
-      event: { type: 'tool_call', id: 'tc-3', title: 'noop' },
-      expected: { args: '' },
-    },
-    {
-      name: 'tool_call: arguments present but undefined stringifies to ""',
-      event: { type: 'tool_call', id: 'tc-4', title: 'noop', arguments: undefined },
-      expected: { args: '""' },
-    },
-  ])('$name', ({ event, expected }) => {
+    { type: 'token', content: 'a' },
+    { type: 'thinking', content: 'a' },
+    { type: 'tool_call', id: 'c', title: 'read' },
+    { type: 'tool_result', id: 'c', result: 'r' },
+    { type: 'tool_result_delta', id: 'c', delta: 'r' },
+    { type: 'tool_result_complete', id: 'c' },
+    { type: 'tool_result_error', id: 'c', error: 'e' },
+    { type: 'segment_complete', message_id: 'm', index: 0, content: 'a' },
+  ] as ChatEvent[])('$type: marks a turn of another client as streaming', (event) => {
     const h = createHarness();
-    h.reducer(event as ChatEvent);
-    expect(h.tools()[0]).toMatchObject(expected);
+    h.reducer(event);
+    expect(h.state.isStreaming).toBe(true);
   });
 
-  // tool_result* lifecycle: each row sets up a tool_call then dispatches the
-  // listed result events and asserts the resulting ToolCallDisplay state.
-  it.each([
-    {
-      name: 'tool_result: marks tool complete and stores result',
-      events: [{ type: 'tool_result', id: 'tc-1', result: 'done' }],
-      expected: { result: 'done', status: 'complete' },
-    },
-    {
-      name: 'tool_result: defaults empty string when result is missing',
-      events: [{ type: 'tool_result', id: 'tc-1' }],
-      expected: { result: '', status: 'complete' },
-    },
-    {
-      name: 'tool_result: stores terminate=true when the daemon signaled early-stop',
-      events: [{ type: 'tool_result', id: 'tc-1', result: 'final', terminate: true }],
-      expected: { result: 'final', status: 'complete', terminate: true },
-    },
-    {
-      name: 'tool_result: terminate defaults to false when omitted (backward compat)',
-      events: [{ type: 'tool_result', id: 'tc-1', result: 'done' }],
-      expected: { terminate: false },
-    },
-    {
-      name: 'tool_result_delta: appends to existing result',
-      events: [
-        { type: 'tool_result_delta', id: 'tc-1', delta: 'partial-' },
-        { type: 'tool_result_delta', id: 'tc-1', delta: 'output' },
-      ],
-      expected: { result: 'partial-output' },
-    },
-    {
-      name: 'tool_result_delta: tools without a result accumulate from empty',
-      events: [{ type: 'tool_result_delta', id: 'tc-1', delta: 'x' }],
-      expected: { result: 'x' },
-    },
-    {
-      name: 'tool_result_complete: marks tool complete without changing result',
-      events: [
-        { type: 'tool_result_delta', id: 'tc-1', delta: 'stream' },
-        { type: 'tool_result_complete', id: 'tc-1' },
-      ],
-      expected: { result: 'stream', status: 'complete' },
-    },
-    {
-      name: 'tool_result_error: marks tool error and stores message',
-      events: [{ type: 'tool_result_error', id: 'tc-1', error: 'boom' }],
-      expected: { result: 'boom', status: 'error' },
-    },
-  ])('$name', ({ events, expected }) => {
+  it('message_complete: ends the busy state', () => {
     const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    for (const e of events) h.reducer(e as ChatEvent);
-    expect(h.tools()[0]).toMatchObject(expected);
-  });
-
-  // The render of a finished call replaces the render of the card, for a
-  // success and for a failure.
-  it.each([
-    { type: 'tool_result', id: 'tc-1', result: 'a\nb', render: { line: 'a.rs', summary: '2 lines' } },
-    { type: 'tool_result_error', id: 'tc-1', error: 'boom', render: { line: 'a.rs', summary: '2 lines' } },
-  ])('$type: the render of the result replaces the render of the card', (event) => {
-    const h = createHarness();
-    h.reducer({
-      type: 'tool_call',
-      id: 'tc-1',
-      title: 'read_file',
-      display: { kind: 'file_read', tool: 'read_file', render: { line: 'a.rs' } },
-    } as ChatEvent);
-    h.reducer(event as ChatEvent);
-    expect(h.tools()[0].display?.render).toEqual({ line: 'a.rs', summary: '2 lines' });
-  });
-
-  // delegation_*: every variant mutates h.state.subagentEvents
-  // via the same upsert path. Each row lists the events to dispatch and the
-  // expected final array (strict equality preserves the array-length check).
-  it.each([
-    {
-      name: 'delegation_completed: creates a new entry when no matching spawn',
-      events: [{ type: 'delegation_completed', id: 'd-orphan', summary: 'done' }],
-      expected: [{ id: 'd-orphan', prompt: '', status: 'completed', summary: 'done' }],
-    },
-    {
-      name: 'delegation_failed: creates new entry when no matching spawn',
-      events: [{ type: 'delegation_failed', id: 'd-orphan', error: 'oom' }],
-      expected: [{ id: 'd-orphan', prompt: '', status: 'failed', error: 'oom' }],
-    },
-    {
-      name: 'delegation_spawned: adds spawned event with targetAgent',
-      events: [{ type: 'delegation_spawned', id: 'd-1', prompt: 'analyze', target_agent: 'claude' }],
-      expected: [{ id: 'd-1', prompt: 'analyze', status: 'spawned', targetAgent: 'claude' }],
-    },
-    {
-      name: 'delegation_completed: upserts summary',
-      events: [
-        { type: 'delegation_spawned', id: 'd-1', prompt: 'analyze' },
-        { type: 'delegation_completed', id: 'd-1', summary: 'finished' },
-      ],
-      expected: [{ id: 'd-1', prompt: 'analyze', status: 'completed', summary: 'finished' }],
-    },
-    {
-      name: 'delegation_failed: upserts error',
-      events: [
-        { type: 'delegation_spawned', id: 'd-1', prompt: 'x' },
-        { type: 'delegation_failed', id: 'd-1', error: 'agent unreachable' },
-      ],
-      expected: [{ id: 'd-1', prompt: 'x', status: 'failed', error: 'agent unreachable' }],
-    },
-  ])('$name', ({ events, expected }) => {
-    const h = createHarness();
-    for (const e of events) h.reducer(e as ChatEvent);
-    expect(h.state.subagentEvents).toEqual(expected);
-  });
-
-  // ---- Individual tests (heterogeneous setup/assertion shapes) ----
-
-  it('token: appends content to current streaming message', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'Hello ' });
-    h.reducer({ type: 'token', content: 'world' });
-    expect(h.state.messages[0].content).toBe('Hello world');
-    expect(h.spies.appendToMessage).toHaveBeenCalledTimes(2);
-  });
-
-  it('token: materializes a streaming assistant message when none is active (mid-turn attach)', () => {
-    const h = createHarness();
-    h.reducer({ type: 'token', content: 'late ' });
-    h.reducer({ type: 'token', content: 'viewer' });
-    expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0]).toMatchObject({ role: 'assistant', content: 'late viewer' });
-    expect(h.state.currentStreamingMessageId).toBe(h.state.messages[0].id);
-  });
-
-  it('tool_call: inserts before the empty streaming assistant placeholder so transcript order is user → tools → answer', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    expect(h.state.messages.map((m) => m.role)).toEqual(['tool', 'assistant']);
-  });
-
-  it('tool_call: appends after the assistant message once it has content', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'answer so far' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool']);
-  });
-
-  it('text → tool → text yields separate assistant segments; narration renders exactly once', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'Let me look that up.' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes...' });
-    h.reducer({ type: 'token', content: 'Here is what I found.' });
-    // The real daemon accumulates the WHOLE turn's text and sends it in
-    // message_complete — pre-tool narration INCLUDED — not just the post-tool
-    // tail. The reducer must strip the already-frozen prefix so the final
-    // bubble holds only the trailing segment.
-    h.reducer({
-      type: 'message_complete',
-      id: 'srv',
-      content: 'Let me look that up.Here is what I found.',
-    });
-
-    expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'assistant']);
-    expect(h.state.messages[0].content).toBe('Let me look that up.');
-    // Final bubble is ONLY the trailing segment, not the full accumulated text.
-    expect(h.state.messages[2]).toMatchObject({
-      id: 'srv-response',
-      content: 'Here is what I found.',
-    });
-    // The narration appears exactly once across the whole transcript.
-    const transcript = h.state.messages.map((m) => m.content).join('');
-    expect(transcript.split('Let me look that up.').length - 1).toBe(1);
-  });
-
-  it('session_event user_message: adopts an optimistic temp entry instead of duplicating it', () => {
-    // The echo can win the race against the send POST's canonicalization —
-    // e.g. when a remounted provider rendered the pending first message
-    // optimistically but a sibling dispatcher sent it. Same content + a
-    // client-minted `msg_` id ⇒ rename, never a second user bubble.
-    const h = createHarness();
-    h.state.messages.push({ id: 'msg_123_temp', role: 'user', content: 'hello there', timestamp: 1 });
-    h.reducer({
-      type: 'session_event',
-      event: 'user_message',
-      data: { message_id: 'msg-canonical-1', content: 'hello there' },
-    });
-    const users = h.state.messages.filter((m) => m.role === 'user');
-    expect(users).toHaveLength(1);
-    expect(users[0].id).toBe('msg-canonical-1');
-  });
-
-  it('message_complete finalizes thinking left streaming on a frozen segment', () => {
-    // Thinking streamed before a tool boundary lives on the frozen segment,
-    // which the messageId-targeted finalization in message_complete never
-    // touches (the streaming id was cleared at the boundary). Regression: the
-    // segment rendered "Thinking…" forever instead of "Thought for N tokens".
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'Here is the answer.' });
-    h.reducer({ type: 'thinking', content: 'Considering the options.' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'read_file' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'contents' });
-    // Whole-turn text == the frozen segment: no trailing bubble is added.
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is the answer.' });
-
-    const frozen = h.state.messages.find((m) => m.role === 'assistant' && m.thinking);
-    expect(frozen?.thinking).toMatchObject({
-      isStreaming: false,
-      tokenCount: 6,
-    });
-  });
-
-  it('text → tool → text → tool → text strips every frozen prefix (each narration once)', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'First. ' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'r1' });
-    h.reducer({ type: 'token', content: 'Second. ' });
-    h.reducer({ type: 'tool_call', id: 'tc-2', title: 'search' });
-    h.reducer({ type: 'tool_result', id: 'tc-2', result: 'r2' });
-    h.reducer({ type: 'token', content: 'Third.' });
-    h.reducer({
-      type: 'message_complete',
-      id: 'srv',
-      content: 'First. Second. Third.',
-    });
-
-    expect(h.state.messages.map((m) => m.role)).toEqual([
-      'assistant', 'tool', 'assistant', 'tool', 'assistant',
-    ]);
-    expect(h.state.messages[0].content).toBe('First. ');
-    expect(h.state.messages[2].content).toBe('Second. ');
-    expect(h.state.messages[4]).toMatchObject({ id: 'srv-response', content: 'Third.' });
-    // Full concatenation equals the daemon payload — no text lost, none doubled.
-    expect(h.state.messages.map((m) => m.content).join('')).toBe('First. Second. Third.');
-  });
-
-  it('segment_complete: freezes the open streaming message and renames it to the canonical id', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'Let me look that up.' });
-    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-1', index: 0, content: 'Let me look that up.' });
-    expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0]).toMatchObject({
-      id: 'msg-turn-1-seg-0',
-      role: 'assistant',
-      content: 'Let me look that up.',
-    });
-    expect(h.state.currentStreamingMessageId).toBeNull();
-  });
-
-  it('segment_complete: new-daemon text→tool→text converges on canonical ids without double-freezing', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'Let me look that up.' });
-    // The daemon emits segment_complete BEFORE the tool_call.
-    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-1', index: 0, content: 'Let me look that up.' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes...' });
-    h.reducer({ type: 'token', content: 'Here is what I found.' });
-    h.reducer({
-      type: 'message_complete',
-      id: 'msg-turn-1',
-      content: 'Let me look that up.Here is what I found.',
-    });
-
-    expect(h.state.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'assistant']);
-    expect(h.state.messages[0]).toMatchObject({ id: 'msg-turn-1-seg-0', content: 'Let me look that up.' });
-    expect(h.state.messages[2]).toMatchObject({ id: 'msg-turn-1-response', content: 'Here is what I found.' });
-    // The tool_call fallback must NOT have frozen the segment a second time.
-    const transcript = h.state.messages.map((m) => m.content).join('');
-    expect(transcript.split('Let me look that up.').length - 1).toBe(1);
-  });
-
-  it('segment_complete: late attach with no streaming message adds the segment bubble under the canonical id', () => {
-    const h = createHarness();
-    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-9', index: 1, content: 'earlier narration' });
-    expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0]).toMatchObject({
-      id: 'msg-turn-9-seg-1',
-      role: 'assistant',
-      content: 'earlier narration',
-    });
-  });
-
-  it('segment_complete: a replayed signal does not duplicate an existing segment bubble', () => {
-    const h = createHarness();
-    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-9', index: 0, content: 'seg' });
-    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-9', index: 0, content: 'seg' });
-    expect(h.state.messages).toHaveLength(1);
-  });
-
-  it('segment_complete: adopts the canonical id on a segment the tool_call fallback already froze', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'narration' });
-    // Fallback path (unusual ordering): tool_call freezes the text first, under
-    // the random streaming id.
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    // segment_complete for the same text: adopt the canonical id, do NOT add a
-    // second bubble or double-count the frozen prefix.
-    h.reducer({ type: 'segment_complete', message_id: 'msg-turn-1', index: 0, content: 'narration' });
-    const assistants = () => h.state.messages.filter((m) => m.role === 'assistant');
-    expect(assistants()).toHaveLength(1);
-    expect(assistants()[0].id).toBe('msg-turn-1-seg-0');
-    h.reducer({ type: 'token', content: 'tail' });
-    h.reducer({ type: 'message_complete', id: 'msg-turn-1', content: 'narrationtail' });
-    // Two bubbles, each rendered once: the frozen segment and the trailing text.
-    expect(assistants().map((m) => m.content).join('|')).toBe('narration|tail');
-  });
-
-  it('message_complete: uses event.content verbatim when it does not start with the frozen prefix', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'Frozen narration.' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'r' });
-    h.reducer({ type: 'token', content: 'tail' });
-    // Payload that does NOT begin with the frozen segment (shape drift): the
-    // reducer must not crash or mangle it — it keeps event.content as-is.
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'completely different' });
-    expect(h.state.messages[2]).toMatchObject({
-      id: 'srv-response',
-      content: 'completely different',
-    });
-  });
-
-  // message_complete dangling-tool finalization: a still-running tool at turn
-  // end is finalized based on whether it has any partial result.
-  it.each([
-    {
-      name: 'message_complete finalizes a still-running tool with no result as an error',
-      preEvents: [],
-      expected: { status: 'error', result: 'tool did not complete' },
-    },
-    {
-      name: 'message_complete finalizes a still-running tool that has a partial result as complete',
-      preEvents: [{ type: 'tool_result_delta', id: 'tc-1', delta: 'partial output' }],
-      expected: { status: 'complete', result: 'partial output' },
-    },
-  ])('$name', ({ preEvents, expected }) => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    for (const e of preEvents) h.reducer(e as ChatEvent);
-    // No tool_result_complete arrives; the turn ends with status still running.
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'done' });
-    expect(h.tools()[0]).toMatchObject(expected);
-  });
-
-  it('tool entries persist in the transcript after message_complete', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'search' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'found it' });
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'done' });
-    expect(h.tools()).toHaveLength(1);
-    expect(h.tools()[0]).toMatchObject({ status: 'complete', result: 'found it' });
-  });
-
-  it('thinking: appends to thinking block when streaming', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'thinking', content: 'first chunk ' });
-    h.reducer({ type: 'thinking', content: 'second chunk' });
-    expect(h.state.messages[0].thinking).toEqual({
-      content: 'first chunk second chunk',
-      isStreaming: true,
-    });
-  });
-
-  it('thinking interleaved with tools keeps transcript order and starts a new block per segment', () => {
-    // Reasoning models emit think → tool → think → tool with no narration
-    // between. The tool boundary only closed the open segment when it had
-    // TEXT, so a thinking-only segment stayed open: every later thinking
-    // delta appended to the first block, and one accumulated block rendered
-    // beside a single collapsed run of tool cards. The real interleaving —
-    // which reasoning led to which call — was lost.
-    const h = createHarness();
-    h.reducer({ type: 'thinking', content: 'first I should list the files' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'list_files', arguments: { path: '/' } });
-    h.reducer({ type: 'thinking', content: 'now I should read one' });
-    h.reducer({ type: 'tool_call', id: 'tc-2', title: 'read_file', arguments: { path: '/a' } });
-
-    const order = h.state.messages.map((m) =>
-      m.role === 'tool' ? `tool:${m.toolCall?.name}` : `think:${m.thinking?.content ?? ''}`,
-    );
-    expect(order).toEqual([
-      'think:first I should list the files',
-      'tool:list_files',
-      'think:now I should read one',
-      'tool:read_file',
-    ]);
-  });
-
-  it('a thinking-only segment is frozen (not left streaming) at a tool boundary', () => {
-    // Left marked isStreaming, the closed block would render a live spinner
-    // for reasoning that finished before the tool even ran.
-    const h = createHarness();
-    h.reducer({ type: 'thinking', content: 'pondering' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-
-    const segment = h.state.messages.find((m) => m.role === 'assistant');
-    expect(segment?.thinking).toMatchObject({ content: 'pondering', isStreaming: false });
-  });
-
-  it('a thinking-only segment does not consume the final bubble of the turn', () => {
-    // The closed segment carries no text, so message_complete's trailing text
-    // must still land somewhere rather than being swallowed as "already
-    // frozen".
-    const h = createHarness();
-    h.reducer({ type: 'thinking', content: 'reasoning' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'noop' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'ok' });
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'Here is the answer.' });
-
-    const texts = h.state.messages
-      .filter((m) => m.role === 'assistant' && m.content !== '')
-      .map((m) => m.content);
-    expect(texts).toEqual(['Here is the answer.']);
-  });
-
-  it('thinking: materializes a streaming assistant message when none is active', () => {
-    const h = createHarness();
-    h.reducer({ type: 'thinking', content: 'pondering' });
-    expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0].thinking).toEqual({ content: 'pondering', isStreaming: true });
-  });
-
-  it('message_complete: finalizes the streaming message and clears streaming state', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('msg-stream');
-    h.reducer({ type: 'thinking', content: 'reasoning' });
-
-    h.reducer({
-      type: 'message_complete',
-      id: 'msg-server-1',
-      content: 'final',
-      prompt_tokens: 100,
-      completion_tokens: 50,
-      total_tokens: 150,
-      cache_read_tokens: 10,
-      cache_creation_tokens: 20,
-    });
-
-    expect(h.state.messages[0]).toMatchObject({
-      id: 'msg-server-1-response',
-      content: 'final',
-      usage: {
-        promptTokens: 100,
-        completionTokens: 50,
-        totalTokens: 150,
-        cacheReadTokens: 10,
-        cacheCreationTokens: 20,
-      },
-      thinking: { content: 'reasoning', isStreaming: false, tokenCount: 3 },
-    });
-    expect(h.state.isStreaming).toBe(false);
+    h.state.isLoading = true;
+    h.state.isStreaming = true;
+    h.reducer({ type: 'message_complete', id: 'm', content: 'answer' });
     expect(h.state.isLoading).toBe(false);
-    expect(h.tools()).toEqual([]);
-    expect(h.state.currentStreamingMessageId).toBeNull();
-  });
-
-  it('message_complete: omits usage when total_tokens is missing/zero', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('msg-stream');
-    h.reducer({
-      type: 'message_complete',
-      id: 'msg-server-1',
-      content: 'final',
-    });
-    expect(h.state.messages[0].usage).toBeUndefined();
-  });
-
-  it('message_complete: with no streaming message, appends the completed turn (late attach)', () => {
-    const h = createHarness();
-    h.reducer({
-      type: 'message_complete',
-      id: 'srv',
-      content: 'full text',
-    });
-    expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0]).toMatchObject({
-      id: 'srv-response',
-      role: 'assistant',
-      content: 'full text',
-    });
-    // Replayed completion (reconnect) must not duplicate.
-    h.reducer({ type: 'message_complete', id: 'srv', content: 'full text' });
-    expect(h.state.messages).toHaveLength(1);
     expect(h.state.isStreaming).toBe(false);
   });
 
-  it('session_event user_message: adds the prompt for mid-turn attachers, exact-id dedupe', () => {
+  it('turn_finished: ends the busy state of a cancelled turn', () => {
     const h = createHarness();
-    const evt = {
-      type: 'session_event',
-      event: 'user_message',
-      data: { message_id: 'msg-turn-9', content: 'the prompt' },
-    } as ChatEvent;
-    h.reducer(evt);
-    expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0]).toMatchObject({ id: 'msg-turn-9', role: 'user' });
-    // Echo received by the sender (id already present) is a no-op.
-    h.reducer(evt);
-    expect(h.state.messages).toHaveLength(1);
-  });
-
-  it('error: sets error string and updates streaming message content', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({
-      type: 'error',
-      code: 'rate_limit',
-      message: 'Slow down',
-    });
-    expect(h.state.error).toBe('Slow down (rate_limit)');
-    expect(h.state.messages[0].content).toBe('Error: Slow down');
-    expect(h.state.isStreaming).toBe(false);
+    h.state.isLoading = true;
+    h.state.isStreaming = true;
+    h.reducer({ type: 'turn_finished', status: 'cancelled' });
     expect(h.state.isLoading).toBe(false);
-    expect(h.state.currentStreamingMessageId).toBeNull();
-  });
-
-  it('error: works without an active streaming message', () => {
-    const h = createHarness();
-    h.reducer({ type: 'error', code: 'x', message: 'y' });
-    expect(h.state.error).toBe('y (x)');
-  });
-
-  it('connection: reconnect does NOT corrupt the in-flight streaming turn', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'partial answer' });
-
-    // A transport reconnect mid-stream must not touch the message or its id.
-    h.reducer({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' });
-    expect(h.state.messages[0].content).toBe('partial answer');
-    expect(h.state.currentStreamingMessageId).toBe('asst-1');
-    expect(h.state.error).toBe('Reconnecting…');
-
-    // Reconnecting clears the transient banner without disturbing the stream.
-    h.reducer({ type: 'connection', status: 'connected' });
+    expect(h.state.isStreaming).toBe(false);
     expect(h.state.error).toBeNull();
-    expect(h.state.currentStreamingMessageId).toBe('asst-1');
-    expect(h.state.messages[0].content).toBe('partial answer');
   });
 
-  it('interaction_requested: stores request stripped of type discriminator', () => {
+  it('turn_finished: a failed turn shows its error', () => {
+    const h = createHarness();
+    h.reducer({ type: 'turn_finished', status: 'failed', error: 'provider down' });
+    expect(h.state.error).toBe('provider down (turn_failed)');
+  });
+
+  it('turn_finished: a turn that a handler cancelled shows its reason', () => {
+    const h = createHarness();
+    h.reducer({ type: 'turn_finished', status: 'handler_cancelled', error: 'loop guard' });
+    expect(h.state.error).toBe('loop guard (turn_handler_cancelled)');
+  });
+
+  it('error: shows the daemon error and ends the busy state', () => {
+    const h = createHarness();
+    h.state.isStreaming = true;
+    h.reducer({ type: 'error', code: 'E1', message: 'boom' });
+    expect(h.state.error).toBe('boom (E1)');
+    // A reconnect banner can replace the error line, so the transcript keeps it.
+    expect(h.state.notices).toEqual(['Error: boom']);
+    expect(h.state.isStreaming).toBe(false);
+  });
+
+  it('connection: a reconnect is a banner, and an open clears it', () => {
+    const h = createHarness();
+    h.state.isStreaming = true;
+    h.reducer({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' });
+    expect(h.state.connectionStatus).toBe('reconnecting');
+    expect(h.state.error).toBe('Reconnecting…');
+    // The turn is still in flight.
+    expect(h.state.isStreaming).toBe(true);
+    h.reducer({ type: 'connection', status: 'connected' });
+    expect(h.state.connectionStatus).toBe('connected');
+    expect(h.state.error).toBeNull();
+  });
+
+  it('interaction_requested: stores the request without its type tag', () => {
     const h = createHarness();
     h.reducer({
       type: 'interaction_requested',
       id: 'req-1',
       kind: 'ask',
-      question: 'Continue?',
+      question: 'Proceed?',
     } as ChatEvent);
-    expect(h.state.pendingInteraction).toEqual({
-      id: 'req-1',
-      kind: 'ask',
-      question: 'Continue?',
-    });
+    expect(h.state.pendingInteraction).toEqual({ id: 'req-1', kind: 'ask', question: 'Proceed?' });
   });
 
-  it('precognition_result: attaches metadata to the most recent user message', () => {
-    const h = createHarness();
-    h.state.messages.push({
-      id: 'user-1',
-      role: 'user',
-      content: 'tell me about widgets',
-      timestamp: 0,
-    });
-    h.reducer({
-      type: 'precognition_result',
-      notes_count: 2,
-      notes: [
-        { name: 'Note A', relevance: 0.9 },
-        { name: 'Note B', relevance: 0.7 },
-      ],
-    });
-    // No synthetic system message — metadata lives on the user message.
-    expect(h.state.messages).toHaveLength(1);
-    expect(h.state.messages[0].precognition).toEqual({
-      notesCount: 2,
-      notes: [
-        { name: 'Note A', relevance: 0.9 },
-        { name: 'Note B', relevance: 0.7 },
-      ],
-    });
-  });
-
-  it('precognition_result: no-op when there is no user message yet', () => {
-    const h = createHarness();
-    h.reducer({ type: 'precognition_result', notes_count: 0, notes: [] });
-    expect(h.state.messages).toHaveLength(0);
-  });
-
-  it('mode_changed: updates local mode AND statusBar', () => {
+  it('mode_changed: sets the mode and tells the status bar', () => {
     const h = createHarness();
     h.reducer({ type: 'mode_changed', mode: 'plan' });
     expect(h.state.chatMode).toBe('plan');
     expect(mockedStatusBar.setChatMode).toHaveBeenCalledWith('plan');
+    expect(h.spies.onUnknownMode).toHaveBeenCalledWith('plan');
   });
 
   it('title_changed: forwards the daemon-generated title', () => {
@@ -873,226 +181,37 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.spies.onTitleChanged).toHaveBeenCalledWith('Merkle tree sync design');
   });
 
-  it('commands_changed: changes nothing in the pane', () => {
+  // The transcript items carry these. The reducer changes nothing for them.
+  it.each([
+    { type: 'commands_changed' },
+    { type: 'transcript', seq: 1, ops: [] },
+    { type: 'delegation_spawned', id: 'd', prompt: 'p' },
+    { type: 'delegation_completed', id: 'd', summary: 's' },
+    { type: 'delegation_failed', id: 'd', error: 'e' },
+    { type: 'precognition_result', notes_count: 1, notes: [] },
+    { type: 'session_event', event: 'user_message', data: { message_id: 'm', content: 'q' } },
+    { type: 'session_event', event: 'stream_gap', data: { dropped: 3 } },
+  ] as ChatEvent[])('$type: changes nothing in the pane', (event) => {
     const h = createHarness();
-    const before = JSON.stringify(h.state);
-    h.reducer({ type: 'commands_changed' });
-    expect(JSON.stringify(h.state)).toBe(before);
-  });
-
-  it('transcript: changes nothing in the pane', () => {
-    const h = createHarness();
-    const before = JSON.stringify(h.state);
-    h.reducer({ type: 'transcript', seq: 1, ops: [] });
-    expect(JSON.stringify(h.state)).toBe(before);
-  });
-
-  it('session_event stream_gap: surfaces the loss with its count', () => {
-    const h = createHarness();
-    h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 12 } });
-    expect(h.state.error).toContain('12');
-    expect(h.state.error).toMatch(/incomplete/i);
-  });
-
-  it('session_event stream_gap: still surfaces without a count', () => {
-    const h = createHarness();
-    h.reducer({ type: 'session_event', event: 'stream_gap', data: {} });
-    expect(h.state.error).toMatch(/incomplete/i);
-  });
-
-  it('session_event stream_gap: reconnect does not claim zero events were lost', () => {
-    const h = createHarness();
-    h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 0 } });
-    expect(h.state.error).toMatch(/incomplete/i);
-    expect(h.state.error).not.toContain('0 events');
-  });
-
-  it('tool_call: carries the daemon display, with its diffs, and auto-approval onto the card', () => {
-    const h = createHarness();
-    const display = {
-      kind: 'file_edit',
-      tool: 'Edit',
-      paths: ['a.rs'],
-      diffs: [{ path: 'a.rs', old_content: 'x', new_content: 'y' }],
-      render: { line: 'a.rs' },
-    };
-    h.reducer({
-      type: 'tool_call',
-      id: 'call-1',
-      title: 'Edit',
-      arguments: { file_path: 'a.rs' },
-      display,
-      auto_approved: 'auto mode',
-    });
-    const tool = h.tools()[0];
-    expect(tool.display).toEqual(display);
-    expect(tool.autoApproved).toBe('auto mode');
-  });
-
-  it('session_event tool_call_update: replaces the canonical call and the args of the card', () => {
-    // ACP agents can announce a call without rawInput and supply the args and
-    // the diffs later; the update carries the call's new canonical form.
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'call-7', title: 'acp_edit' });
-    const display = {
-      kind: 'file_edit',
-      tool: 'Edit',
-      diffs: [{ path: 'b.rs', old_content: null, new_content: 'new' }],
-    };
-    h.reducer({
-      type: 'session_event',
-      event: 'tool_call_update',
-      data: { call_id: 'call-7', args: { file_path: 'b.rs' }, display },
-    });
-    expect(h.tools()[0].display).toEqual(display);
-    expect(h.tools()[0].args).toBe(JSON.stringify({ file_path: 'b.rs' }));
-  });
-
-  // Rule 7: an ACP agent asks after it announced the call, so the layer that
-  // allowed the call arrives in an update.
-  it('session_event tool_call_update: carries the layer that allowed the call onto the card', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'call-9', title: 'Edit' });
-    h.reducer({
-      type: 'session_event',
-      event: 'tool_call_update',
-      data: { call_id: 'call-9', auto_approved: 'permissions config' },
-    });
-    expect(h.tools()[0].autoApproved).toBe('permissions config');
-  });
-
-  it('session_event tool_call_update: empty or missing args and no display leave the card alone', () => {
-    const h = createHarness();
-    const display = {
-      kind: 'file_edit',
-      tool: 'Edit',
-      diffs: [{ path: 'b.rs', old_content: 'keep', new_content: 'me' }],
-    };
-    h.reducer({ type: 'tool_call', id: 'call-8', title: 'Edit', display });
-    for (const args of [{}, null, undefined]) {
-      h.reducer({
-        type: 'session_event',
-        event: 'tool_call_update',
-        data: { call_id: 'call-8', args },
-      });
-    }
-    expect(h.tools()[0].args).toBe('');
-    expect(h.tools()[0].display).toEqual(display);
-  });
-
-  it('turn_finished: a failed turn shows its error', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'turn_finished', status: 'failed', error: 'agent turn error: LLM timeout' });
-    expect(h.state.error).toBe('agent turn error: LLM timeout (turn_failed)');
-    expect(h.state.messages[0].content).toBe('Error: agent turn error: LLM timeout');
-    expect(h.state.isStreaming).toBe(false);
-  });
-
-  it('turn_finished: a turn that a handler cancelled shows its reason', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({
-      type: 'turn_finished',
-      status: 'handler_cancelled',
-      error: "Tool 'Read' is blocked for this stream after repeated failures.",
-    });
-    expect(h.state.error).toBe(
-      "Tool 'Read' is blocked for this stream after repeated failures. (turn_handler_cancelled)",
-    );
-    expect(h.state.isStreaming).toBe(false);
-  });
-
-  it('turn_finished: sweeps thinking, dangling tools, and stream flags', () => {
-    // A cancelled turn never sees message_complete. The `turn_finished` must
-    // leave the same clean state a completion would: no bubble streaming
-    // "Thinking…", no tool stuck "running", no stale streaming id.
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.state.isStreaming = true;
-    h.reducer({ type: 'thinking', content: 'mid-reasoning' });
-    h.reducer({ type: 'tool_call', id: 'call-9', title: 'bash' });
-
-    h.reducer({ type: 'turn_finished', status: 'cancelled' });
-    expect(h.state.messages.find((m) => m.thinking)?.thinking).toMatchObject({
-      isStreaming: false,
-      tokenCount: 4,
-    });
-    expect(h.tools()[0].status).not.toBe('running');
-    expect(h.state.isStreaming).toBe(false);
-    expect(h.state.isLoading).toBe(false);
-    expect(h.state.currentStreamingMessageId).toBeNull();
-  });
-
-  it('session_event stream_gap: finalizes a thinking block left streaming', () => {
-    // A gap means events are GONE — the turn may have ended in the lost
-    // span, so nothing later is guaranteed to sweep the bubble. A block left
-    // streaming here renders "Thinking…" with the animated wave forever.
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'thinking', content: 'mid-reasoning' });
-    h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 3 } });
-    const thinking = h.state.messages.find((m) => m.thinking)?.thinking;
-    expect(thinking).toMatchObject({ isStreaming: false, tokenCount: 4 });
-  });
-
-  it('session_event user_message: an echo landing mid-turn is placed after the streaming message', () => {
-    // The daemon admits one turn at a time, so an echo that arrives while a
-    // turn is still streaming belongs to a turn that QUEUED behind it (the
-    // cancel window). Blind end-append drops it INSIDE the open turn —
-    // after tool cards that stream later — instead of at the end of the
-    // streaming block.
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    // Our own mid-turn queue entry already sits below the streaming bubble.
-    h.state.messages.push({
-      id: 'msg_9_local', role: 'user', content: 'queued locally', timestamp: 0,
-    });
-    h.reducer({
-      type: 'session_event',
-      event: 'user_message',
-      data: { message_id: 'msg-foreign', content: 'sent from another client' },
-    });
-    const ids = h.state.messages.map((m) => m.id);
-    expect(ids).toEqual(['asst-1', 'msg-foreign', 'msg_9_local']);
-  });
-
-  it('session_event: no-op (acknowledged but not surfaced)', () => {
-    const h = createHarness();
-    expect(() =>
-      h.reducer({
-        type: 'session_event',
-        event: 'state_changed',
-        data: { state: 'paused' },
-      }),
-    ).not.toThrow();
-    expect(h.state.messages).toHaveLength(0);
+    const before = snapshot(h);
+    h.reducer(event);
+    expect(snapshot(h)).toBe(before);
   });
 });
 
 // ============================================================================
-// Property tests — invariants over random event sequences
+// Property-based tests
 // ============================================================================
 
-// Compact arbitrary builder: every ChatEvent variant is `fc.constant(type)`
-// plus a handful of fields — the helper removes the per-variant boilerplate.
 const evt = <T extends string>(type: T, fields: Record<string, fc.Arbitrary<unknown>> = {}) =>
   fc.record({ type: fc.constant(type), ...fields });
 
 const strId = fc.string({ minLength: 1, maxLength: 10 });
 
-// Hoisted interaction arbitraries — used both inside arbChatEvent and by the
-// "interaction_requested has kind" property test below.
 const interactionAsk = evt('interaction_requested', {
   id: strId,
   kind: fc.constant('ask' as const),
   question: fc.string({ maxLength: 100 }),
-});
-const interactionPopup = evt('interaction_requested', {
-  id: strId,
-  kind: fc.constant('popup' as const),
-  title: fc.string({ maxLength: 50 }),
-  entries: fc.array(fc.record({ label: fc.string({ maxLength: 20 }) }), { maxLength: 5 }),
 });
 const interactionPerm = evt('interaction_requested', {
   id: strId,
@@ -1101,199 +220,51 @@ const interactionPerm = evt('interaction_requested', {
   tokens: fc.array(fc.string({ maxLength: 20 }), { maxLength: 5 }),
 });
 
-// Generator for any ChatEvent. Kept small but covers every variant so totality
-// holds across the union.
 const arbChatEvent = (): fc.Arbitrary<ChatEvent> => fc.oneof(
   evt('token', { content: fc.string() }),
   evt('tool_call', { id: strId, title: fc.string() }),
-  evt('tool_result', { id: strId, result: fc.string() }),
-  evt('tool_result_delta', { id: strId, delta: fc.string() }),
-  evt('tool_result_complete', { id: strId }),
-  evt('tool_result_error', { id: strId, error: fc.string() }),
   evt('thinking', { content: fc.string() }),
   evt('message_complete', { id: strId, content: fc.string() }),
-  evt('segment_complete', {
-    message_id: strId,
-    index: fc.nat({ max: 5 }),
-    content: fc.string(),
-  }),
+  evt('turn_finished', { status: fc.constantFrom('completed', 'cancelled', 'failed') }),
   evt('error', { code: fc.string({ minLength: 1, maxLength: 20 }), message: fc.string() }),
-  fc.oneof(interactionAsk, interactionPopup, interactionPerm),
-  evt('delegation_spawned', { id: strId, prompt: fc.string() }),
-  evt('delegation_completed', { id: strId, summary: fc.string() }),
-  evt('delegation_failed', { id: strId, error: fc.string() }),
-  evt('precognition_result', {
-    notes_count: fc.nat({ max: 20 }),
-    notes: fc.array(
-      fc.record({ name: fc.string(), relevance: fc.float({ min: 0, max: 1 }) }),
-      { maxLength: 10 },
-    ),
-  }),
+  fc.oneof(interactionAsk, interactionPerm),
   evt('mode_changed', { mode: fc.constantFrom('ask' as const, 'plan' as const, 'auto' as const) }),
   evt('session_event', { event: fc.string(), data: fc.anything() }),
+  evt('transcript', { seq: fc.nat(), ops: fc.constant([]) }),
 ) as fc.Arbitrary<ChatEvent>;
 
 describe('property: totality', () => {
-  it('any sequence of events runs to completion without throwing (pre-seeded state)', () => {
+  it('any sequence of events runs to completion without throwing', () => {
     fc.assert(
       fc.property(fc.array(arbChatEvent(), { maxLength: 50 }), (events) => {
         const h = createHarness();
-        h.setUp.streamingMessage('asst-1');
-        for (const event of events) {
-          h.reducer(event);
-        }
+        for (const event of events) h.reducer(event);
       }),
       { numRuns: 100 },
     );
   });
 
-  it('any sequence of events runs to completion without throwing (clean state)', () => {
-    // No setUp calls — this exercises the un-initialized state space where
-    // currentStreamingMessageId is null. A reducer regression that forgets
-    // to guard for missing streaming context (e.g. a future variant that
-    // dereferences messages() without null-checking) would surface here.
+  it('the busy state is off after the last turn_finished', () => {
     fc.assert(
-      fc.property(fc.array(arbChatEvent(), { maxLength: 50 }), (events) => {
+      fc.property(fc.array(arbChatEvent(), { maxLength: 30 }), (events) => {
         const h = createHarness();
-        for (const event of events) {
-          h.reducer(event);
-        }
+        for (const event of events) h.reducer(event);
+        h.reducer({ type: 'turn_finished', status: 'completed' });
+        expect(h.state.isStreaming).toBe(false);
+        expect(h.state.isLoading).toBe(false);
       }),
-      { numRuns: 100 },
-    );
-  });
-
-  it('every interaction_requested produces a pendingInteraction with a kind field', () => {
-    // Totality + well-formedness: if the reducer ever stops preserving `kind`,
-    // downstream interaction components crash at runtime — this catches that
-    // class of regression before it ships.
-    fc.assert(
-      fc.property(
-        fc.oneof(interactionAsk, interactionPopup, interactionPerm),
-        (event) => {
-          const h = createHarness();
-          h.reducer(event as ChatEvent);
-          expect(h.state.pendingInteraction).not.toBeNull();
-          expect(h.state.pendingInteraction!.kind).toBeDefined();
-        },
-      ),
       { numRuns: 50 },
-    );
-  });
-});
-
-describe('property: message_complete second call is a safe no-op', () => {
-  // After the first message_complete, currentStreamingMessageId is null. The
-  // reducer's second call enters the early-skip branch. This property pins
-  // that "second call doesn't crash and doesn't mutate" — useful regression
-  // gate, but NOT a test of updateMessage idempotency.
-  it('applying message_complete twice never throws or mutates state', () => {
-    fc.assert(
-      fc.property(
-        fc.string({ minLength: 1, maxLength: 50 }),
-        fc.string({ minLength: 1, maxLength: 50 }),
-        (msgId, content) => {
-          const h = createHarness();
-          h.setUp.streamingMessage('asst-1');
-          const event: ChatEvent = {
-            type: 'message_complete',
-            id: msgId,
-            content,
-          };
-          h.reducer(event);
-          const firstSnapshot = JSON.stringify(h.state.messages);
-          h.reducer(event);
-          expect(JSON.stringify(h.state.messages)).toBe(firstSnapshot);
-        },
-      ),
-      { numRuns: 50 },
-    );
-  });
-});
-
-// NOTE: a "true idempotency under re-seed" test was attempted here but the
-// reducer's contract is "message_complete CONSUMES the streaming placeholder
-// by mutating its id to the server-assigned id." Re-seeding a placeholder
-// with the same local id between calls creates a second placeholder (since
-// the first one no longer matches the local id), and the reducer correctly
-// updates that second one — producing two messages. That's the right behavior,
-// not a regression. The "second call is safe no-op" property above is the
-// meaningful idempotency claim for this reducer.
-
-describe('property: streaming order preserved', () => {
-  it('token chunks accumulate in arrival order regardless of interleaved non-token events', () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.string({ maxLength: 8 }), { minLength: 1, maxLength: 15 }),
-        fc.array(arbChatEvent(), { maxLength: 10 }),
-        (chunks, interleaved) => {
-          const h = createHarness();
-          h.setUp.streamingMessage('asst-1');
-          // Filter out events that would corrupt the assertion: tokens add to
-          // the stream (changing expected content); message_complete and error
-          // clear currentStreamingMessageId so later tokens become no-ops.
-          const safeInterleaved = interleaved.filter(
-            (e) =>
-              e.type !== 'message_complete' &&
-              e.type !== 'error' &&
-              e.type !== 'token',
-          );
-          // Interleave tokens with random other events.
-          const allEvents: ChatEvent[] = [];
-          for (let i = 0; i < chunks.length; i++) {
-            allEvents.push({ type: 'token', content: chunks[i] });
-            if (safeInterleaved[i]) allEvents.push(safeInterleaved[i]);
-          }
-          for (const event of allEvents) h.reducer(event);
-          // Interleaved tool_call events legitimately SEGMENT the stream
-          // (text → tool → text becomes separate assistant messages), so the
-          // invariant is that the concatenation of all assistant segments
-          // preserves token arrival order.
-          const assistantContent = h.state.messages
-            .filter((m) => m.role === 'assistant')
-            .map((m) => m.content)
-            .join('');
-          expect(assistantContent).toBe(chunks.join(''));
-        },
-      ),
-      { numRuns: 50 },
-    );
-  });
-});
-
-describe('property: tool lifecycle reaches terminal state', () => {
-  it('tool_result and tool_result_error both terminate a tool', () => {
-    fc.assert(
-      fc.property(
-        fc.string({ minLength: 1, maxLength: 10 }),
-        fc.boolean(),
-        (id, useError) => {
-          const h = createHarness();
-          h.reducer({ type: 'tool_call', id, title: 'noop' });
-          if (useError) {
-            h.reducer({ type: 'tool_result_error', id, error: 'boom' });
-            expect(h.tools()[0].status).toBe('error');
-          } else {
-            h.reducer({ type: 'tool_result', id, result: 'ok' });
-            expect(h.tools()[0].status).toBe('complete');
-          }
-        },
-      ),
-      { numRuns: 30 },
     );
   });
 });
 
 // ============================================================================
 // Contract checks: the SSE subscription list (api.ts) must match the set the
-// reducer actually handles. Drift between the two means events arrive on the
-// wire but are silently dropped, or vice versa.
+// reducer handles. Drift between the two means events arrive on the wire but
+// are silently dropped, or the reverse.
 // ============================================================================
 
 describe('contract: SSE subscription parity with reducer handlers', () => {
-  // The set of variants the reducer's switch handles. Update this when adding
-  // a new ChatEvent variant — the parity test below will catch any mismatch
-  // with the SSE_EVENT_TYPES constant in api.ts.
   const REDUCER_HANDLED_TYPES = [
     'token',
     'tool_call',
@@ -1319,260 +290,17 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
   ] as const;
 
   it('SSE_EVENT_TYPES and reducer-handled types are identical', () => {
-    // Independent comparison — if either drifts, the diff makes the missing
-    // variant obvious.
-    const sseSorted = [...SSE_EVENT_TYPES].sort();
-    const reducerSorted = [...REDUCER_HANDLED_TYPES].sort();
-    expect(sseSorted).toEqual(reducerSorted);
+    expect([...SSE_EVENT_TYPES].sort()).toEqual([...REDUCER_HANDLED_TYPES].sort());
   });
 
   it('every reducer-handled type has a matrix test above', () => {
-    // Each reducer-handled variant must appear as a quoted literal somewhere
-    // in the matrix block — covering `it('variant: ...')` names, `describe`
-    // blocks, and parameterized `it.each` tables where the variant is a
-    // `type:` field or row value. A newly-handled variant added without any
-    // matrix coverage FAILS here — the old version only matched `it('prefix:`,
-    // which silently passed when an `it.each` row was the only mention.
     const source = fs.readFileSync(path.join(__dirname, 'chatEventReducer.test.ts'), 'utf-8');
     const matrixStart = source.indexOf("describe('event matrix");
     const matrixEnd = source.indexOf("describe('property: totality'");
     expect(matrixStart).toBeGreaterThanOrEqual(0);
     expect(matrixEnd).toBeGreaterThan(matrixStart);
     const matrixBlock = source.slice(matrixStart, matrixEnd);
-
     const missing = REDUCER_HANDLED_TYPES.filter((t) => !matrixBlock.includes(`'${t}'`));
     expect(missing).toEqual([]);
-
-    // Belt-and-suspenders: each handled type also survives a minimal example
-    // through the real reducer without throwing.
-    for (const t of REDUCER_HANDLED_TYPES) {
-      const h = createHarness();
-      // Build a minimal placeholder event — most variants need at least an id.
-      const minimal: Record<string, unknown> = { type: t };
-      if (t !== 'token' && t !== 'thinking' &&
-          t !== 'precognition_result' && t !== 'mode_changed' &&
-          t !== 'title_changed' && t !== 'session_event' && t !== 'error') {
-        minimal.id = 'placeholder';
-      }
-      if (t === 'token' || t === 'thinking') minimal.content = '';
-      if (t === 'precognition_result') { minimal.notes_count = 0; minimal.notes = []; }
-      if (t === 'mode_changed') minimal.mode = 'ask';
-      if (t === 'title_changed') minimal.title = 'A generated title';
-      if (t === 'session_event') { minimal.event = 'x'; minimal.data = null; }
-      if (t === 'error') { minimal.code = 'x'; minimal.message = ''; }
-      if (t === 'message_complete') { minimal.content = ''; }
-      if (t === 'segment_complete') { minimal.message_id = 'placeholder'; minimal.index = 0; minimal.content = ''; }
-      if (t === 'tool_call') minimal.title = minimal.name = 'noop';
-      if (t === 'tool_result_delta') minimal.delta = '';
-      if (t === 'tool_result_error' || t === 'delegation_failed') {
-        minimal.error = '';
-      }
-      if (t === 'delegation_completed') minimal.summary = '';
-      if (t === 'delegation_spawned') minimal.prompt = '';
-      expect(() => h.reducer(minimal as ChatEvent)).not.toThrow();
-    }
-  });
-});
-
-// An ACP session's modes belong to the external agent, and the daemon does
-// not learn them until it connects. A connection comes up on the first knob
-// read (mode/model lists fetch it themselves) or the first message; a list
-// fetched even earlier, or one raced against the handshake, can be offering
-// Crucible's own three, all of which the agent rejects.
-//
-// `mode_changed` is the only thing that says otherwise, so the reducer has to
-// hand every one of them to `onUnknownMode`. ChatContext refetches the list
-// when the id is not in the one it holds; if the reducer swallowed the event
-// the mode chip would stay wrong until the page reloaded.
-describe('mode_changed announces the mode for a staleness check', () => {
-  it('reports the mode so an unfamiliar one can trigger a refetch', () => {
-    const h = createHarness();
-
-    h.reducer({ type: 'mode_changed', mode: 'acceptEdits' } as ChatEvent);
-
-    expect(h.state.chatMode).toBe('acceptEdits');
-    expect(h.spies.onUnknownMode).toHaveBeenCalledWith('acceptEdits');
-  });
-
-  it('reports a familiar mode too, leaving the decision to the caller', () => {
-    const h = createHarness();
-
-    h.reducer({ type: 'mode_changed', mode: 'plan' } as ChatEvent);
-
-    expect(h.spies.onUnknownMode).toHaveBeenCalledWith('plan');
-  });
-});
-
-// ============================================================================
-// The turn's ANSWER owns the canonical response id.
-//
-// `turnResponseId` is the contract between the live stream and history
-// reconstruction: `loadHistory` rebuilds a turn's `message_complete` bubble
-// under `${turn_id}-response`, and the merge in ChatContext dedupes by id
-// alone. A live answer under any other id therefore renders a SECOND time the
-// moment history is loaded over it.
-//
-// The turn that broke it (GLM-4.7 through the daemon): thinking → tool → tool
-// → thinking → text. The reducer closes the thinking-only segment at the first
-// tool boundary and materializes a fresh bubble for the trailing text, while
-// `dispatchTurn` has already renamed the now-retired placeholder to the
-// canonical response id. The answer was left under a client-minted id.
-// ============================================================================
-describe('the canonical response id follows the answer, not the placeholder', () => {
-  /** Live shape of the reported turn, minus the token-by-token detail. */
-  const replayThinkingFirstTurn = (h: ReducerHarness, answer: string) => {
-    h.reducer({ type: 'thinking', content: 'The user wants the guide. ' });
-    h.reducer({ type: 'tool_call', id: 'call-a', title: 'read_note' });
-    h.reducer({ type: 'tool_result', id: 'call-a', result: '{"content":"..."}' });
-    h.reducer({ type: 'tool_call', id: 'call-b', title: 'list_notes' });
-    h.reducer({ type: 'tool_result', id: 'call-b', result: '{"notes":[]}' });
-    h.reducer({ type: 'thinking', content: 'Now I can answer. ' });
-    h.reducer({ type: 'token', content: answer });
-    h.reducer({
-      type: 'message_complete',
-      id: 'msg-turn-1',
-      content: answer,
-      prompt_tokens: 6472,
-      completion_tokens: 235,
-      total_tokens: 6707,
-    });
-  };
-
-  it('thinking → tool → tool → thinking → text keeps the answer on the canonical id', () => {
-    const h = createHarness();
-    // dispatchTurn canonicalized the optimistic placeholder as soon as the
-    // send POST returned the turn id — long before this slow turn ended.
-    h.setUp.streamingMessage('msg-turn-1-response');
-
-    replayThinkingFirstTurn(h, 'Here is the answer.');
-
-    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
-    expect(answers).toHaveLength(1);
-    expect(answers[0].id).toBe('msg-turn-1-response');
-    // The retired thinking-only segment keeps its reasoning but must not sit
-    // on the id the answer owns.
-    const others = h.state.messages.filter(
-      (m) => m.role === 'assistant' && m.id !== 'msg-turn-1-response',
-    );
-    expect(others.every((m) => m.content === '')).toBe(true);
-    expect(others.some((m) => m.thinking?.content === 'The user wants the guide. ')).toBe(true);
-  });
-
-  it('a history load over the finished turn cannot duplicate the answer', () => {
-    // Reproduces the screenshot: the reconstructed bubble (no thinking, no
-    // usage) landed beside the live one and the answer rendered twice.
-    const h = createHarness();
-    h.setUp.streamingMessage('msg-turn-1-response');
-    const answer = 'Here is the answer.';
-    replayThinkingFirstTurn(h, answer);
-
-    // What ChatContext.loadHistory reconstructs for this turn, keyed the same
-    // way, and its id-exact merge.
-    const reconstructedId = 'msg-turn-1-response';
-    const live = h.state.messages.filter((m) => m.id !== reconstructedId);
-    const merged = [
-      { id: reconstructedId, role: 'assistant' as const, content: answer, timestamp: 0 },
-      ...live,
-    ];
-    expect(merged.filter((m) => m.role === 'assistant' && m.content === answer)).toHaveLength(1);
-  });
-
-  it('claims the canonical id even when the turn never opened a new bubble', () => {
-    // Thinking-only segment, then tools, then text with no second thinking
-    // run: the token deltas materialize the trailing bubble instead.
-    const h = createHarness();
-    h.setUp.streamingMessage('msg-turn-2-response');
-    h.reducer({ type: 'thinking', content: 'reasoning' });
-    h.reducer({ type: 'tool_call', id: 'call-a', title: 'read_note' });
-    h.reducer({ type: 'tool_result', id: 'call-a', result: 'ok' });
-    h.reducer({ type: 'token', content: 'The answer.' });
-    h.reducer({ type: 'message_complete', id: 'msg-turn-2', content: 'The answer.' });
-
-    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
-    expect(answers).toHaveLength(1);
-    expect(answers[0].id).toBe('msg-turn-2-response');
-  });
-
-  it('thinking that arrives after the text deltas does not move the answer', () => {
-    // Providers that interleave the other way round: text first, reasoning
-    // appended to the same open bubble.
-    const h = createHarness();
-    h.setUp.streamingMessage('msg-turn-3-response');
-    h.reducer({ type: 'token', content: 'The answer.' });
-    h.reducer({ type: 'thinking', content: 'why that answer' });
-    h.reducer({ type: 'message_complete', id: 'msg-turn-3', content: 'The answer.' });
-
-    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
-    expect(answers).toHaveLength(1);
-    expect(answers[0]).toMatchObject({
-      id: 'msg-turn-3-response',
-      content: 'The answer.',
-      thinking: { content: 'why that answer', isStreaming: false },
-    });
-  });
-
-  it('a real answer already under the canonical id is never displaced', () => {
-    // History reconstructed the turn first (the bubble HAS text). A replayed
-    // message_complete must not collide two messages onto one id.
-    const h = createHarness();
-    h.state.messages.push({
-      id: 'msg-turn-4-response',
-      role: 'assistant',
-      content: 'Reconstructed answer.',
-      timestamp: 0,
-    });
-    h.setUp.streamingMessage('gen-live-1');
-    h.reducer({ type: 'token', content: 'Reconstructed answer.' });
-    h.reducer({ type: 'message_complete', id: 'msg-turn-4', content: 'Reconstructed answer.' });
-
-    const ids = h.state.messages.map((m) => m.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(h.state.messages.find((m) => m.id === 'msg-turn-4-response')?.content)
-      .toBe('Reconstructed answer.');
-  });
-
-  it('the trailing text still lands when the placeholder holds the id and nothing streamed', () => {
-    // Late attach (second pane, reload mid-turn): no streaming bubble of our
-    // own, and the placeholder squatting on the canonical id is empty.
-    const h = createHarness();
-    h.state.messages.push({
-      id: 'msg-turn-5-response',
-      role: 'assistant',
-      content: '',
-      timestamp: 0,
-      placeholder: true,
-      thinking: { content: 'reasoning', isStreaming: false, tokenCount: 3 },
-    });
-    h.reducer({ type: 'message_complete', id: 'msg-turn-5', content: 'The answer.' });
-
-    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
-    expect(answers).toHaveLength(1);
-    expect(answers[0].id).toBe('msg-turn-5-response');
-  });
-});
-
-// ============================================================================
-// Frozen-prefix drift: the daemon's `full_response` and the streamed segment
-// can disagree by trailing whitespace. A whitespace-exact strip then returns
-// the WHOLE turn verbatim and the narration renders twice — once as the frozen
-// segment bubble, once inside the final bubble.
-// ============================================================================
-describe('frozen segments survive trailing-whitespace drift in full_response', () => {
-  it('strips the segment even when the accumulated text trimmed its trailing space', () => {
-    const h = createHarness();
-    h.setUp.streamingMessage('asst-1');
-    h.reducer({ type: 'token', content: 'Let me look that up. ' });
-    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
-    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes' });
-    h.reducer({ type: 'token', content: 'Here is what I found.' });
-    // Daemon copy: same text, trailing space gone.
-    h.reducer({
-      type: 'message_complete',
-      id: 'srv',
-      content: 'Let me look that up.Here is what I found.',
-    });
-
-    const transcript = h.state.messages.map((m) => m.content).join('\n');
-    expect(transcript.split('Let me look that up.').length - 1).toBe(1);
   });
 });

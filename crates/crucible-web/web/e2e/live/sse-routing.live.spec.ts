@@ -152,18 +152,16 @@ test.describe('live SSE routing', () => {
       describeRequests(log, `/api/chat/events/${id}`),
     ).toBe(1);
 
-    // The transcript is read TWICE for the whole turn, and twice is the
-    // number for one pane as much as for two. One read binds the pane; the
-    // second is `lib/query/routes/session.ts`, which invalidates
-    // `keys.sessionHistory(id)` when the turn ends, so the canonical
-    // transcript replaces the one the stream assembled. Both panes share that
-    // one entry, so they share that one refetch — a pane with a cache of its
-    // own would make the count four.
+    // The transcript is read ONCE for the whole turn, and once is the number
+    // for one pane as much as for two. The read binds the pane; the ops of
+    // the stream keep the daemon's transcript current after it, so the end of
+    // the turn reads nothing. Both panes share the one session store — a pane
+    // with a store of its own would make the count two.
     await apiQuiet(log, 3000);
     expect(
       log.count('GET', /^\/api\/session\/[^/]+\/history$/),
       describeRequests(log, /^\/api\/session\/[^/]+\/history$/),
-    ).toBe(2);
+    ).toBe(1);
 
     await api.dispose();
   });

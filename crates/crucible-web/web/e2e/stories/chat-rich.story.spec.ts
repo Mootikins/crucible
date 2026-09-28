@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
-import { createSSEStream } from '../helpers/mock-sse';
+import { createSSEStream, TranscriptFrames } from '../helpers/mock-sse';
+import { segment, toolCard, upsert, userTurn } from '../../src/test-utils/transcript';
 import { waitForFonts } from './_helpers/fonts';
 import { openSessionsList } from '../helpers/nav';
 
@@ -60,7 +61,51 @@ function toolFrames(id: string, title: string, args: object, result: string): Fr
   ];
 }
 
+const THINKING = 'Mapping the deploy steps to daemon internals.';
+const TOOLS: [string, string, object, string][] = [
+  ['t1', 'read_file', { path: 'crates/crucible-daemon/src/server/core.rs' }, 'ok'],
+  [
+    't2',
+    'search_codebase',
+    { pattern: 'resolve_socket' },
+    JSON.stringify({
+      content: [
+        { type: 'text', text: JSON.stringify({ matches: 3, files: ['server/core.rs', 'rpc/dispatch.rs'] }) },
+      ],
+    }),
+  ],
+  ['t3', 'bash_exec', { command: 'just build' }, 'Compiling crucible-daemon v0.11.4'],
+  ['t4', 'write_note', { note: 'memory/deploy-flow.md' }, 'ok'],
+];
+
+/**
+ * The daemon's fold of RICH_STREAM: the answer and its reasoning in one
+ * segment, which the first tool call closes, the four tool cards, then an
+ * empty segment that carries the usage of the turn.
+ */
+function richTranscript(): Frame[] {
+  const t = new TranscriptFrames();
+  const open = segment('msg-1', 0, '', { streaming: true });
+  const frames: Frame[] = [
+    t.ops([upsert(userTurn('msg-1', 'How do I ship a daemon change?'))]),
+    t.upsert(open),
+    ...t.appends(open.id, ANSWER, 12),
+    t.ops([{ op: 'append', id: open.id, field: 'thinking', at: 0, text: THINKING }]),
+    t.upsert(segment('msg-1', 0, ANSWER, { thinking: THINKING })),
+  ];
+  for (const [id, name, args, result] of TOOLS) {
+    const call = toolCard('msg-1', id, { name, args: args as never, status: 'running' });
+    frames.push(t.ops([upsert(call)]));
+    frames.push(t.ops([upsert({ ...call, status: 'complete', result } as typeof call)]));
+  }
+  frames.push(
+    t.upsert(segment('msg-1', 1, '', { usage: { prompt_tokens: 1800, completion_tokens: 420, total_tokens: 2220 } })),
+  );
+  return frames;
+}
+
 const RICH_STREAM: Frame[] = [
+  ...richTranscript(),
   ...tokenFrames(ANSWER),
   { type: 'thinking', data: { type: 'thinking', content: 'Mapping the deploy steps to daemon internals.' } },
   ...toolFrames('t1', 'read_file', { path: 'crates/crucible-daemon/src/server/core.rs' }, 'ok'),
