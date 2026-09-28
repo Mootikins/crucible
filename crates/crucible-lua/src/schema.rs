@@ -31,9 +31,6 @@
 
 use crate::discovered::DiscoveredParam;
 use crate::signature::{LuaType, Param, Signature};
-use crate::types::LuaTool;
-#[cfg(test)]
-use crate::types::ToolParam;
 use serde_json::Value as JsonValue;
 
 /// Read one declared type, falling back to `any` for text the model refuses.
@@ -46,62 +43,30 @@ fn declared_type(text: &str) -> LuaType {
     LuaType::parse(text).unwrap_or(LuaType::Any)
 }
 
-/// Build the signature a set of `(name, type, description, required)` tuples
-/// describes.
-fn signature_of<'a>(params: impl Iterator<Item = (&'a str, &'a str, &'a str, bool)>) -> Signature {
+/// Build the signature that a list of declared parameters describes.
+fn signature_of(params: &[DiscoveredParam]) -> Signature {
     Signature {
         params: params
-            .map(|(name, ty, description, required)| Param {
-                name: name.to_string(),
-                ty: declared_type(ty),
-                description: Some(description.to_string()),
-                optional: !required,
+            .iter()
+            .map(|p| Param {
+                name: p.name.clone(),
+                ty: declared_type(&p.param_type),
+                description: Some(p.description.clone()),
+                optional: p.optional,
             })
             .collect(),
         returns: Vec::new(),
     }
 }
 
-/// Generate a JSON Schema for a tool's input parameters
-pub fn generate_input_schema(tool: &LuaTool) -> JsonValue {
-    signature_of(tool.params.iter().map(|p| {
-        (
-            p.name.as_str(),
-            p.param_type.as_str(),
-            p.description.as_str(),
-            p.required,
-        )
-    }))
-    .to_input_schema()
-}
-
 /// Generate a JSON Schema from spec-declared params.
-///
-/// [`DiscoveredParam`] flags `optional` where [`crate::types::ToolParam`] flags
-/// `required` — the two declaration syntaxes are inverses, so they cannot share
-/// one struct without lying about one of them.
 pub fn discovered_params_to_json_schema(params: &[DiscoveredParam]) -> JsonValue {
-    signature_of(params.iter().map(|p| {
-        (
-            p.name.as_str(),
-            p.param_type.as_str(),
-            p.description.as_str(),
-            !p.optional,
-        )
-    }))
-    .to_input_schema()
+    signature_of(params).to_input_schema()
 }
 
 /// The Luau signature a declared tool has, for the generated declarations.
 pub fn tool_signature(params: &[DiscoveredParam], returns: Option<&str>) -> Signature {
-    let mut signature = signature_of(params.iter().map(|p| {
-        (
-            p.name.as_str(),
-            p.param_type.as_str(),
-            p.description.as_str(),
-            !p.optional,
-        )
-    }));
+    let mut signature = signature_of(params);
     if let Some(returns) = returns {
         signature.returns = vec![declared_type(returns)];
     }
@@ -112,31 +77,19 @@ pub fn tool_signature(params: &[DiscoveredParam], returns: Option<&str>) -> Sign
 mod tests {
     use super::*;
 
+    /// A required parameter goes in `required`. An optional one does not.
     #[test]
-    fn test_generate_input_schema() {
-        let tool = LuaTool {
-            name: "search".to_string(),
-            description: "Search the knowledge base".to_string(),
-            params: vec![
-                ToolParam {
-                    name: "query".to_string(),
-                    param_type: "string".to_string(),
-                    description: "Search query".to_string(),
-                    required: true,
-                    default: None,
-                },
-                ToolParam {
-                    name: "limit".to_string(),
-                    param_type: "number".to_string(),
-                    description: "Max results".to_string(),
-                    required: false,
-                    default: None,
-                },
-            ],
-            source_path: "tools/search.lua".to_string(),
+    fn only_a_required_parameter_is_required() {
+        let param = |name: &str, param_type: &str, optional| DiscoveredParam {
+            name: name.to_string(),
+            param_type: param_type.to_string(),
+            description: String::new(),
+            optional,
         };
-
-        let schema = generate_input_schema(&tool);
+        let schema = discovered_params_to_json_schema(&[
+            param("query", "string", false),
+            param("limit", "number", true),
+        ]);
 
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["query"].is_object());

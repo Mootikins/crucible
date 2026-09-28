@@ -195,14 +195,14 @@ pub use plugin_spec_store::{
 pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;
 pub use schedule::{cancel_source, register_schedule_module};
-pub use schema::{discovered_params_to_json_schema, generate_input_schema};
+pub use schema::discovered_params_to_json_schema;
 pub use shell::{register_shell_module, ExecResult, PluginShellPolicy};
 pub use statusline_exprs::{
     register_statusline_exprs, ExprRejection, StatuslineExprRegistry, MAX_KEYS_PER_SESSION,
 };
 pub use storage_api::{register_storage_module, register_storage_module_with_store};
 pub use timer::register_timer_module;
-pub use types::{LuaExecutionResult, LuaTool, ToolParam};
+pub use types::LuaExecutionResult;
 pub use vault::{
     register_kiln_path_resolver, register_kiln_repository_resolver, register_vault_module,
     register_vault_module_with_store, register_vault_module_with_store_scoped, KilnPathResolver,

@@ -14,7 +14,6 @@
 //! shapes its declarations land in.
 
 use crate::command_effect::CommandEffect;
-use crate::types::{LuaTool, ToolParam};
 
 /// Discovered tool from Luau source
 #[derive(Debug, Clone)]
@@ -85,25 +84,4 @@ pub struct DiscoveredService {
     pub source_path: String,
     /// Name of the service function in the Lua spec table
     pub service_fn: String,
-}
-
-impl From<DiscoveredTool> for LuaTool {
-    fn from(tool: DiscoveredTool) -> Self {
-        LuaTool {
-            name: tool.name,
-            description: tool.description,
-            params: tool
-                .params
-                .into_iter()
-                .map(|p| ToolParam {
-                    name: p.name,
-                    param_type: p.param_type,
-                    description: p.description,
-                    required: !p.optional,
-                    default: None,
-                })
-                .collect(),
-            source_path: tool.source_path,
-        }
-    }
 }
