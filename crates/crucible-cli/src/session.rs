@@ -179,6 +179,9 @@ pub struct OpenedSession {
     pub live: LiveSession,
     pub events: UnboundedReceiver<SessionEvent>,
     pub pending: Vec<InteractionEvent>,
+    /// Where the session acts. A resumed session keeps the workspace it was
+    /// created in, which need not be this process's directory.
+    pub workspace: Option<std::path::PathBuf>,
 }
 
 /// Create or resume a daemon session, and subscribe to its events.
@@ -210,13 +213,30 @@ pub async fn open_session(
         .await
         .map_err(|e| anyhow::anyhow!("failed to subscribe to session {id}: {e}"))?;
     let pending = pending_interactions(&client, &id).await;
+    let workspace = match client.session_get(&id).await {
+        Ok(session) => session_workspace(&session),
+        Err(e) => {
+            tracing::warn!(session_id = %id, error = %e, "Could not read the session's workspace");
+            None
+        }
+    };
     info!(session_id = %id, "Daemon session ready");
 
     Ok(OpenedSession {
         live: LiveSession { client, id },
         events,
         pending,
+        workspace,
     })
+}
+
+/// The workspace of a `session.get` reply, when the session has one.
+fn session_workspace(session: &serde_json::Value) -> Option<std::path::PathBuf> {
+    session
+        .get("workspace")
+        .and_then(|w| w.as_str())
+        .filter(|w| !w.is_empty())
+        .map(std::path::PathBuf::from)
 }
 
 /// The prompts of `session_id` that wait for an answer.
@@ -491,6 +511,22 @@ mod tests {
         assert_eq!(calls.len(), 1, "{calls:?}");
         assert_eq!(calls[0].0, "session.end");
         assert_eq!(calls[0].1["session_id"], "chat-1");
+    }
+
+    #[test]
+    fn the_workspace_comes_from_the_session_reply() {
+        let with = serde_json::json!({ "workspace": "/work/project" });
+        assert_eq!(
+            session_workspace(&with),
+            Some(std::path::PathBuf::from("/work/project"))
+        );
+        for without in [
+            serde_json::json!({ "workspace": null }),
+            serde_json::json!({ "workspace": "" }),
+            serde_json::json!({}),
+        ] {
+            assert_eq!(session_workspace(&without), None, "{without}");
+        }
     }
 
     #[test]

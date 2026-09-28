@@ -80,10 +80,10 @@ Directory `crates/crucible-daemon/src/observe/` (session-log read side):
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-daemon/src/observe/events.rs` | 890 | `LogEvent`/`SessionLogLine` and the `session.jsonl` parser (`parse_session_log`, `replay_session_log`); `LogEvent::System` now carries `tags`/`injection`, `LogEvent::User` carries `plugin`, and a `LogEvent::Clear` variant marks a context clear. |
+| `crates/crucible-daemon/src/observe/events.rs` | 1176 | `LogEvent`/`SessionLogLine` and the `session.jsonl` parser (`parse_session_log`, `replay_session_log`); `LogEvent::System` now carries `tags`/`injection`, `LogEvent::User` carries `plugin`, and a `LogEvent::Clear` variant marks a context clear. |
 | `crates/crucible-daemon/src/observe/id.rs` | 53 | Re-export shim for `SessionId`/`SessionType`, replacing a former duplicate validator. |
 | `crates/crucible-daemon/src/observe/markdown.rs` | 524 | Renders a `Vec<LogEvent>` to Markdown (`session.md` export); shows a plugin turn as `## ↻ <plugin>` and a `Clear` marker as a `Context cleared` line. |
-| `crates/crucible-daemon/src/observe/mod.rs` | 80 | Module root; re-exports the observe read API. |
+| `crates/crucible-daemon/src/observe/mod.rs` | 71 | Module root; re-exports the observe read API. |
 | `crates/crucible-daemon/src/observe/rebuild.rs` | 326 | Reconstructs a `ConversationTree` from a session log for resume-time history; a `LogEvent::Clear` restarts the tree without erasing the log, and a plugin-authored user turn rebuilds as `NodeContent::Plugin`. |
 | `crates/crucible-daemon/src/observe/session.rs` | 344 | `load_events`/`events_after`: the file-backed loaders behind `session.load_events`/`session.events_after`. |
 
@@ -152,7 +152,7 @@ Directory `crates/crucible-daemon/src/server/session/` (session RPC surface):
 | `crates/crucible-daemon/src/server/session/create.rs` | 836 | `session.create`: kiln/workspace/agent admission (SSRF check, then one shared trust gate) before persisting. |
 | `crates/crucible-daemon/src/server/session/lifecycle.rs` | 319 | pause/resume/resume_from_storage/history/end/delete/archive/unarchive/replay/compact, with pause/end/delete/archive funneling through `SessionLifecycle::stop`. |
 | `crates/crucible-daemon/src/server/session/list.rs` | 762 | `session.list`/`search`/`get` (the `get` reply now includes `plugin_approvals`/`plugin_turn_limit`). |
-| `crates/crucible-daemon/src/server/session/messaging.rs` | 535 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. |
+| `crates/crucible-daemon/src/server/session/messaging.rs` | 532 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. |
 | `crates/crucible-daemon/src/server/session/mod.rs` | 273 | Module aggregator plus the post-create background `spawn_setup_task` (typed `SetupPayload` events). |
 | `crates/crucible-daemon/src/server/session/models.rs` | 200 | `switch_model`/`list_models`/`models.list`/`providers.list`/`fork` (fork now refuses an ACP-run parent by name). |
 | `crates/crucible-daemon/src/server/session/modes.rs` | 430 | `list_modes`/`list_knobs`/`list_agent_options`/`set_agent_option`; each mode descriptor now carries a `writes: WriteMode` (`Apply`/`Propose`). |

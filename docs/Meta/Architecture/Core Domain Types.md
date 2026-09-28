@@ -159,8 +159,8 @@ behavior on top of them.
 | `crates/crucible-core/src/protocol/session_events/mod.rs` | 461 | `SessionEventPayload`/`Group`/`EventDecodeError` and the `event_payload!` macro — the typed contract layered over the untyped envelope; `migrate`/`migrate_history` keep an old transcript decodable. |
 | `crates/crucible-core/src/protocol/session_events/settings.rs` | 80 | `SettingsPayload` — model/mode/scope/title/system-prompt/precognition/context-strategy/plugin-approval/plugin-turn-limit change events. |
 | `crates/crucible-core/src/protocol/session_events/setup.rs` | 153 | `SetupPayload` group — the eight session-setup-phase payloads; `acp_resume_fallback` is the one variant an ACP connection, not the setup task, produces. |
-| `crates/crucible-core/src/protocol/session_events/tests.rs` | 807 | Mechanism, completeness, fixture-sweep, and persistence tests for the typed payload contract; a golden `session_event_wire_names.txt` list pins every declared name. |
-| `crates/crucible-core/src/protocol/session_events/turn.rs` | 373 | `TurnPayload` (15 variants: adds `context_cleared`/`turn_finished`, merges the split ACP-update pair into one `tool_call_update`, and drops `ended`/`injection_pending`) and `ToolResultBody` — the per-turn event stream. |
+| `crates/crucible-core/src/protocol/session_events/tests.rs` | 816 | Mechanism, completeness, fixture-sweep, and persistence tests for the typed payload contract; a golden `session_event_wire_names.txt` list pins every declared name. |
+| `crates/crucible-core/src/protocol/session_events/turn.rs` | 397 | `TurnPayload` (15 variants: adds `context_cleared`/`turn_finished`, merges the split ACP-update pair into one `tool_call_update`, and drops `ended`/`injection_pending`) and `ToolResultBody` — the per-turn event stream. |
 
 ### `crates/crucible-core/src/runtime_path/`
 

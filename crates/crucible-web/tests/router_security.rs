@@ -67,7 +67,6 @@ async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap
         "/api/layout",
         "/api/skills",
         "/api/webhook/probe",
-        "/api/shell/exec",
         "/api/terminal/ws",
     ] {
         for token in [None, Some("wrong")] {

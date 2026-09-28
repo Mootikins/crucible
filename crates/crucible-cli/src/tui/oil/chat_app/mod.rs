@@ -142,6 +142,10 @@ pub struct OilChatApp {
     /// The folder where the shell modal saves the output of a command. The
     /// client owns it; it is not in the daemon's session store.
     shell_output_dir: Option<PathBuf>,
+    /// Where the session acts, as the daemon reports it. A `!` command runs
+    /// here, as it does in the web terminal. `None` in a replay, which has no
+    /// session: the command then runs in this process's directory.
+    session_workspace: Option<PathBuf>,
     /// Runtime configuration (`:set` overrides)
     runtime_config: RuntimeConfig,
     /// Workspace file paths (for @-file autocomplete)
@@ -442,6 +446,10 @@ impl OilChatApp {
 
     pub(crate) fn set_shell_output_dir(&mut self, path: PathBuf) {
         self.shell_output_dir = Some(path);
+    }
+
+    pub(crate) fn set_session_workspace(&mut self, path: Option<PathBuf>) {
+        self.session_workspace = path;
     }
 
     pub(crate) fn set_mcp_servers(&mut self, servers: Vec<McpServerDisplay>) {

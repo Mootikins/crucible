@@ -53,10 +53,10 @@ now resolves its root through the daemon's `fs.read` rather than a local
 walk-up. `put_note` is now a much thinner proxy than it once was: it still
 checks content size and note-name traversal locally, but containment and the
 optimistic-concurrency `base_hash` compare are entirely the daemon's
-`fs.write`'s job. `crates/crucible-web/src/routes/shell.rs` runs a local
-`sh -c` command inside the web process rather than through a daemon RPC — a
-documented, temporary stopgap, not a design the crate defends (see
-Findings).
+`fs.write`'s job. The one shell that the web client has is the PTY terminal
+in `crates/crucible-web/src/routes/terminal.rs`, the browser's terminal
+transport. It starts in the workspace of the session that the client sends,
+which is where the TUI's `!` commands run too.
 
 ## Module map
 
@@ -71,7 +71,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/error.rs` | 246 | `WebError`, the crate's one error enum (now including `Conflict`), and its HTTP/JSON projection. |
 | `crates/crucible-web/src/events.rs` | 1222 | `ChatEvent` (now including `TurnFinished` and per-call `render` fields), the browser-facing SSE event enum, and its projection from the daemon's `SessionEvent`/`SessionEventPayload`. |
 | `crates/crucible-web/src/fs_events.rs` | 138 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
-| `crates/crucible-web/src/server.rs` | 717 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases route groups. |
+| `crates/crucible-web/src/server.rs` | 710 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases route groups. |
 | `crates/crucible-web/src/test_support.rs` | 1722 | Shared mock-daemon and fixture library for every route test in this crate. |
 
 ### `crates/crucible-web/src/middleware/`
@@ -91,7 +91,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 
 | File | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-web/src/routes/mod.rs` | 62 | Module tree and public re-export surface for every route group. |
+| `crates/crucible-web/src/routes/mod.rs` | 60 | Module tree and public re-export surface for every route group. |
 | `crates/crucible-web/src/routes/agents.rs` | 147 | `GET /api/agents`, `GET /api/models` — the session-creation agent picker. |
 | `crates/crucible-web/src/routes/auth.rs` | 497 | `POST /api/auth/login`/`logout` — exchanges an API key for a session cookie. |
 | `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
@@ -116,7 +116,6 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/search.rs` | 1633 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. |
 | `crates/crucible-web/src/routes/session_commands.rs` | 362 | `/api/commands` catalogue and `/api/session/{id}/command` execution, including a daemon-backed `/clear` and a readable `/search`. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
-| `crates/crucible-web/src/routes/shell.rs` | 378 | `POST /api/shell/exec` — local shell execution streamed over SSE. |
 | `crates/crucible-web/src/routes/skills.rs` | 171 | `/api/skills*` — proxies to daemon skill discovery. |
 | `crates/crucible-web/src/routes/surface.rs` | 402 | `GET /api/surfaces` and its SSE change stream, built on the shared `system_stream` helper. |
 | `crates/crucible-web/src/routes/terminal.rs` | 504 | `GET /api/terminal/ws` — WebSocket-to-PTY bridge. |
@@ -522,8 +521,7 @@ losing or duplicating the decision.
   (`std::thread::spawn`) for PTY reads, bridged into an `mpsc::channel` that
   the WebSocket bridge loop reads inline; the bridge loop itself runs in the
   task Axum's `on_upgrade` already spawns, not a second `tokio::spawn` inside
-  `handle_terminal`. `routes/shell.rs::shell_exec` spawns a detached
-  `tokio::spawn` running the local shell command.
+  `handle_terminal`.
 - **Bounded resources.** `routes/terminal.rs` caps concurrent PTYs at
   `MAX_TERMINALS` (8) via a process-wide `Semaphore`; a permit is dropped
   only after the child process is killed and reaped, specifically to avoid
@@ -543,9 +541,7 @@ losing or duplicating the decision.
   `terminal.rs` kills the PTY's whole process group (`killpg(SIGKILL)` on
   unix, awaited on a blocking thread) rather than only the shell, because a
   PTY session leader can leave backgrounded grandchildren holding the slave
-  open. `shell.rs`'s spawned child uses `kill_on_drop(true)` and is
-  explicitly killed and reaped on timeout, SSE-client disconnect, or normal
-  exit.
+  open.
 
 ## Boundaries and invariants
 
@@ -694,9 +690,7 @@ losing or duplicating the decision.
   terminal WebSocket upgrade path enforces its opt-in/credential/origin
   gates before the upgrade extractor runs.
 
-**Gaps.** `routes/shell.rs`'s local-execution stopgap has no test proving
-parity with a future daemon `shell.exec` RPC, because that RPC does not
-exist yet. `routes/plugin.rs`'s note that no route serves a plugin's own web
+**Gaps.** `routes/plugin.rs`'s note that no route serves a plugin's own web
 assets means the plugin-web-delivery bridge referenced in its comments has
 no test coverage here either, since the code does not exist. The
 `route_contract_tests/*` submodules that exercise `sessions`, `kilns`,
@@ -715,13 +709,6 @@ page's file set and are not summarized above.
   no test beneath any of them. Either the knob lives outside this page's
   file set or the documentation is stale; as written, the motivating example
   for the module's own design rationale does not exist in it.
-- **`routes/shell.rs` executes shell commands in the web process, not the
-  daemon.** Its own comment calls this a stopgap "until an RPC is actually
-  wired in," and a prior version of the capability check was inverted (ran
-  local execution only while the daemon lacked the capability, backwards
-  from the intended fail-safe). This is a live, acknowledged deviation from
-  the daemon-owns-business-logic boundary in `AGENTS.md`, not a design the
-  file's own comments defend as final.
 - **A known, named frontend/backend drift.** `routes/plugin.rs`'s
   `PluginInstallResponse.manifest` doc notes the hand-written TypeScript
   type still reads a stale `plugins_toml` key; the file's own comment flags

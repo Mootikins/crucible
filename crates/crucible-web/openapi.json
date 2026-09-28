@@ -4217,35 +4217,6 @@
         }
       }
     },
-    "/api/shell/exec": {
-      "post": {
-        "summary": "Run one command and stream its output.",
-        "description": "The router nests under `/api/shell`, so the document reads this path as\n`/api/shell/exec`. The body schema describes one SSE `data:` payload, not\nthe whole stream.",
-        "operationId": "shell_exec",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ShellExecRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShellEvent"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/skills": {
       "get": {
         "summary": "The skills a kiln discovers, optionally narrowed to one scope.",
@@ -10548,102 +10519,6 @@
               "null"
             ],
             "description": "Omitted/null → detach: the session is then left with no workspace."
-          }
-        }
-      },
-      "ShellEvent": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "stdout"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "stderr"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "code",
-              "type"
-            ],
-            "properties": {
-              "code": {
-                "type": "integer",
-                "format": "int32"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "exit"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "message",
-              "type"
-            ],
-            "properties": {
-              "message": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "error"
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "ShellExecRequest": {
-        "type": "object",
-        "required": [
-          "command"
-        ],
-        "properties": {
-          "command": {
-            "type": "string"
-          },
-          "timeout_secs": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 0
           }
         }
       },

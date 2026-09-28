@@ -1923,28 +1923,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/shell/exec": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Run one command and stream its output.
-         * @description The router nests under `/api/shell`, so the document reads this path as
-         *     `/api/shell/exec`. The body schema describes one SSE `data:` payload, not
-         *     the whole stream.
-         */
-        post: operations["shell_exec"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/skills": {
         parameters: {
             query?: never;
@@ -4807,29 +4785,6 @@ export interface components {
             /** @description Omitted/null → detach: the session is then left with no workspace. */
             workspace?: string | null;
         };
-        ShellEvent: {
-            data: string;
-            /** @enum {string} */
-            type: "stdout";
-        } | {
-            data: string;
-            /** @enum {string} */
-            type: "stderr";
-        } | {
-            /** Format: int32 */
-            code: number;
-            /** @enum {string} */
-            type: "exit";
-        } | {
-            message: string;
-            /** @enum {string} */
-            type: "error";
-        };
-        ShellExecRequest: {
-            command: string;
-            /** Format: int64 */
-            timeout_secs?: number | null;
-        };
         /** @description What `skills.get` answers: one skill, with the body a summary omits. */
         SkillDetail: {
             /** @description The agent the skill declares, when it declares one. Always written. */
@@ -5405,8 +5360,6 @@ export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitio
 export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
 export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
-export type SchemaShellEvent = components['schemas']['ShellEvent'];
-export type SchemaShellExecRequest = components['schemas']['ShellExecRequest'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillsReply = components['schemas']['SkillsReply'];
 export type SchemaSkillSummary = components['schemas']['SkillSummary'];
@@ -9470,29 +9423,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    shell_exec: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ShellExecRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ShellEvent"];
-                };
             };
         };
     };

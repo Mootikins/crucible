@@ -59,6 +59,7 @@ impl Default for OilChatApp {
 
             // I/O / Lifecycle
             shell_output_dir: None,
+            session_workspace: None,
             runtime_config: RuntimeConfig::empty(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),

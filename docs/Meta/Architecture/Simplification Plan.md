@@ -39,7 +39,7 @@ at the same time. Each step leaves the tree working.
 | 2. One event path to the clients (sub-steps 1 and 2 done) | three event projections, one event type | L | step 1 helps |
 | 3. One command registry | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client | an in-process daemon in the CLI | M | none |
-| 5. Shell commands run in the daemon | two process spawners | M | none |
+| 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
 | 6. Wire types live in core | a second home for wire types | M | steps 1 and 4 |
 | 7. One test server | 18 test-server copies, a hand mock | M | step 6 helps |
 | 8. Local duplicates | about ten small copies | S each | none |
@@ -188,19 +188,27 @@ requires. The compiler rejects a new in-process copy.
 **Proof.** The plugin install and doctor flows run against a real daemon.
 See [[CLI Commands]] and [[Luau Host]].
 
-## Step 5. Shell commands run in the daemon
+## Step 5. Shell commands run in the session workspace
 
-**Now.** The daemon owns the `bash` tool and background jobs. The web server
-spawns `sh` in `crates/crucible-web/src/routes/shell.rs`, and its own comment
-calls this a stopgap. The TUI spawns a shell in
-`crates/crucible-cli/src/tui/oil/components/shell_modal.rs`.
+**Status: done.** A user's shell command runs where the session acts,
+whichever client starts it, as in other harnesses.
 
-**Change.** Run a user shell command as a daemon job. Stream its output to
-the client. Delete both client-side spawners. Keep the editor launch in the
-TUI, because it needs the terminal of the user.
+**Before.** The TUI ran a `!` command in its own process directory, so a
+session resumed from another directory ran commands in the wrong place. The
+web client's PTY terminal already started in the session's workspace. The
+web server also had a `POST /api/shell/exec` route that ran `sh -c` in the
+web process, and no client called it.
 
-**Proof.** The same command from the TUI and the web client appears as one
-daemon job, and cancel stops it. See [[Tools and Admission]].
+**Change.**
+1. `open_session` reads the session's workspace from the daemon. The TUI
+   runs a `!` command there. A replay has no session, so it uses the
+   process directory.
+2. Delete the unused `/api/shell/exec` route.
+
+The PTY terminal stays in the web process: it is the browser's terminal
+transport, and it streams raw terminal bytes that the daemon's event bus
+does not carry. The TUI modal also stays in the TUI, because it draws in
+the user's terminal.
 
 ## Step 6. Wire types live in core
 

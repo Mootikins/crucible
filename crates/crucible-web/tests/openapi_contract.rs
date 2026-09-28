@@ -370,7 +370,6 @@ fn every_stream_route_answers_with_an_event_stream() {
         ("get", "/api/fs/events", "FsEvent"),
         ("get", "/api/events/system", "SystemEvent"),
         ("get", "/api/surfaces/events", "SurfaceChangedEvent"),
-        ("post", "/api/shell/exec", "ShellEvent"),
     ] {
         let operation = &spec["paths"][path][method];
         assert!(
@@ -392,10 +391,6 @@ fn every_stream_route_answers_with_an_event_stream() {
 }
 
 /// The four versioned streams document their protocol header (Task G6).
-///
-/// `shell/exec` is deliberately not in this set: it is a POST that streams
-/// one command's output, not one of the four long-lived streams the browser
-/// holds open, and versioning it buys nothing a caller could act on.
 #[test]
 fn every_versioned_stream_documents_the_protocol_header() {
     let spec = spec_json();
@@ -726,8 +721,8 @@ fn nested_function_name(arguments: &str) -> Option<String> {
 /// Each nested router function is defined once in the whole scan.
 ///
 /// The prefix map is keyed by function name, and `enclosing_function` answers
-/// with a name too. Two files that both defined `shell_routes` would make
-/// every route in the wrong one inherit `/api/shell`, and the gate would then
+/// with a name too. Two files that both defined `terminal_routes` would make
+/// every route in the wrong one inherit `/api/terminal`, and the gate would then
 /// demand an operation at a path no router serves while missing the real one.
 fn assert_nested_names_are_unique(
     sources: &[(PathBuf, String)],

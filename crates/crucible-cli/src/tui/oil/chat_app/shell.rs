@@ -15,6 +15,15 @@ use crate::tui::oil::components::{
 };
 
 impl OilChatApp {
+    /// Where a `!` command runs: the session's workspace, as in every other
+    /// client, or this process's directory when there is no session.
+    pub(crate) fn shell_working_dir(&self) -> PathBuf {
+        self.session_workspace
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
     pub(super) fn handle_shell_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
         let shell_cmd = cmd[1..].trim().to_string();
         if shell_cmd.is_empty() {
@@ -24,7 +33,7 @@ impl OilChatApp {
             return Action::Continue;
         }
 
-        let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let working_dir = self.shell_working_dir();
 
         match ShellModal::spawn(shell_cmd.clone(), working_dir) {
             Ok(modal) => {
@@ -218,5 +227,28 @@ impl OilChatApp {
 
     pub(super) fn notify_toast(&mut self, msg: impl Into<String>) {
         self.add_notification(crucible_core::types::Notification::toast(msg));
+    }
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::*;
+
+    /// A `!` command runs where the session acts, as it does in the web
+    /// terminal, and not where the TUI process started: a resumed session
+    /// can live in another directory.
+    #[test]
+    fn a_shell_command_runs_in_the_session_workspace() {
+        let mut app = OilChatApp::default();
+        let workspace = tempfile::TempDir::new().unwrap();
+        app.set_session_workspace(Some(workspace.path().to_path_buf()));
+        assert_eq!(app.shell_working_dir(), workspace.path());
+    }
+
+    /// Without a session (a replay) there is no workspace to ask for.
+    #[test]
+    fn without_a_session_a_shell_command_runs_in_the_process_directory() {
+        let app = OilChatApp::default();
+        assert_eq!(app.shell_working_dir(), std::env::current_dir().unwrap());
     }
 }

@@ -196,7 +196,9 @@ impl OilChatRunner {
             live: session,
             events,
             pending,
+            workspace,
         } = open_session(selection).await?;
+        app.set_session_workspace(workspace);
         // The model list is session-scoped: `session.list_models` answers an
         // ACP agent's own selector and the provider catalogue (narrowed by
         // the session's classification) for an internal one. The

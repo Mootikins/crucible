@@ -64,7 +64,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | `crates/crucible-cli/src/output.rs` | 450 | `format_search_results`, `records_table`, and `info`/`warning`/`error`/`success` print helpers shared across command handlers. |
 | `crates/crucible-cli/src/provider_detect.rs` | 533 | `detect_providers[_probed]` — local, pre-daemon LLM provider detection used by `cru init` and `chat_preflight.rs`; `wizard.rs` uses its own fixed provider list, not this module. |
 | `crates/crucible-cli/src/status_line.rs` | 59 | `StatusLine` — a self-overwriting terminal status indicator for long-running startup steps. |
-| `crates/crucible-cli/src/session.rs` | 599 | `AgentType`, `AgentInitParams`, `resolve_is_acp`, `LiveSession`, `OpenedSession`, and `open_session` — opens or resumes a daemon session (subscribe, then create/resume, then a best-effort pending-interaction read) and hands the caller the `DaemonClient`, the session id, and the event receiver. Holds no agent handle: the daemon owns the agent. |
+| `crates/crucible-cli/src/session.rs` | 635 | `AgentType`, `AgentInitParams`, `resolve_is_acp`, `LiveSession`, `OpenedSession`, and `open_session` — opens or resumes a daemon session (subscribe, then create/resume, then a best-effort pending-interaction read) and hands the caller the `DaemonClient`, the session id, and the event receiver. Holds no agent handle: the daemon owns the agent. |
 | `crates/crucible-cli/src/test_daemon.rs` | 117 | `#[cfg(test)]`-only. `FakeDaemon` — a Unix-socket JSON-RPC fake that records each method and params and answers through a closure, so a test drives a real `DaemonClient` against it instead of a mock trait object. |
 
 ### `src/cli/` — clap argument definitions

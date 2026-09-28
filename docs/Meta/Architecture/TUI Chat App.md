@@ -84,15 +84,15 @@ This subsystem must not own:
 | `crates/crucible-cli/src/tui/oil/chat_app/autocomplete.rs` | 998 | Popup-autocomplete: trigger detection (`/resume`, `@path:line`), fuzzy filtering, completion insertion. |
 | `crates/crucible-cli/src/tui/oil/chat_app/command_handling.rs` | 1024 | `/` slash and `:` REPL dispatch, the `:set` subsystem, mode switching, the `/resume`, status and plugin-approval pickers. |
 | `crates/crucible-cli/src/tui/oil/chat_app/command_handling_tests.rs` | 1324 | The dispatch-matrix test suite for `command_handling.rs`, attached via `#[path]`. |
-| `crates/crucible-cli/src/tui/oil/chat_app/defaults.rs` | 69 | `impl Default for OilChatApp` — the one constructor. |
+| `crates/crucible-cli/src/tui/oil/chat_app/defaults.rs` | 70 | `impl Default for OilChatApp` — the one constructor. |
 | `crates/crucible-cli/src/tui/oil/chat_app/input_handling.rs` | 387 | Key-event dispatch, ordered by which modal or mode owns the screen. |
 | `crates/crucible-cli/src/tui/oil/chat_app/message_handlers.rs` | 576 | The four `on_message` sub-dispatchers: stream, config, delegation, UI. |
 | `crates/crucible-cli/src/tui/oil/chat_app/messages.rs` | 528 | `ChatAppMsg` and `MsgCategory` — the wire vocabulary. |
-| `crates/crucible-cli/src/tui/oil/chat_app/mod.rs` | 1115 | The `OilChatApp` struct; `view()`/`frame_view()`/`compose()`/`chrome()`, `update()`, `on_message()`; module root. |
+| `crates/crucible-cli/src/tui/oil/chat_app/mod.rs` | 1123 | The `OilChatApp` struct; `view()`/`frame_view()`/`compose()`/`chrome()`, `update()`, `on_message()`; module root. |
 | `crates/crucible-cli/src/tui/oil/chat_app/model_state.rs` | 65 | `ModelListState`, `SessionChoice`, `SessionListState`, `McpServerDisplay`, `KilnSummary`; re-exports `PluginStatusEntry`. |
 | `crates/crucible-cli/src/tui/oil/chat_app/popup_state.rs` | 60 | `PopupState`, `PermissionState`, `PrecognitionState`. |
 | `crates/crucible-cli/src/tui/oil/chat_app/repl_command.rs` | 307 | `ReplCommand` — the one table every `:` command reads from. |
-| `crates/crucible-cli/src/tui/oil/chat_app/shell.rs` | 222 | The `!cmd` shell modal, and permission/interaction-modal key routing. |
+| `crates/crucible-cli/src/tui/oil/chat_app/shell.rs` | 254 | The `!cmd` shell modal, and permission/interaction-modal key routing. |
 | `crates/crucible-cli/src/tui/oil/chat_app/state.rs` | 142 | Mode-badge helpers (`mode_label`/`mode_badge`), `AutocompleteKind`, `PickSource`, `MessageQueueState`. |
 
 ## Key types and traits
