@@ -464,8 +464,8 @@ transcript for each session, and every pane of that session reads it.
   invalidates the history.
 
 `crates/crucible-web/web/src/lib/__tests__/transcript.test.tsx` draws each
-golden fold of `assets/fixtures/golden/transcript/` and checks the turns,
-segments and tool cards in order.
+golden fold of `assets/fixtures/golden/transcript/` and compares its rows
+with the file in `rows/`, which the TUI and `cru acp` tests also read.
 `crates/crucible-web/web/src/contexts/__tests__/transcriptStore.test.tsx`
 pins the seed, the apply, the resync and the optimistic entry.
 

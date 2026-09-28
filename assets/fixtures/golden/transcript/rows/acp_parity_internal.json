@@ -1,0 +1,6 @@
+[
+  "user:fix the greeting",
+  "segment:Illfixthegreeting",
+  "tool:call-edit-1",
+  "segment:Done"
+]

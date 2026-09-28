@@ -36,7 +36,7 @@ at the same time. Each step leaves the tree working.
 | Step | Deletes | Size | Depends on |
 |---|---|---|---|
 | 1. Remove the client-side agent proxy (done) | one client API layer | L | none |
-| 2. One event path to the clients (sub-steps 1 and 2 done, sub-step 3 started) | three event projections, one event type | L | step 1 helps |
+| 2. One event path to the clients (done) | three event projections, one event type | L | step 1 helps |
 | 3. One command registry (done) | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client (done) | a swapped pair of type names | S | none |
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
@@ -102,7 +102,11 @@ daemon in `crates/crucible-daemon/src/observe/markdown.rs`, the TUI in
 history uses a separate type, `LogEvent` in
 `crates/crucible-daemon/src/observe/events.rs`.
 
-**Status: sub-step 1 done.** `cru acp`, `cru session`, the TUI stream and
+**Status: done.** Sub-step 3 finished with the parity test: the daemon
+folds each session once, and the TUI, the web client and `cru acp` draw
+its transcript. The notes below describe sub-step 1 as it ended.
+
+**Sub-step 1.** `cru acp`, `cru session`, the TUI stream and
 the web file events decode `SessionEventPayload` and match its typed
 variants. The TUI and the web client no longer handle the three
 `subagent_*` names, which no producer sent: delegation reaches both
@@ -113,7 +117,7 @@ stored history. `LogEvent` still has `subagent_*` variants, because old
 session files can hold them; sub-step 2 replaces that type.
 
 **Change.**
-1. Make every client decode `SessionEventPayload` only. Delete the string
+1. **(done)** Make every client decode `SessionEventPayload` only. Delete the string
    matches on event names.
 2. **(done)** Store only wire-shaped lines. Most of `session.jsonl` is already wire
    events that `persist_event` writes, and `wire_to_log_event` turns them
@@ -130,7 +134,7 @@ session files can hold them; sub-step 2 replaces that type.
    fork also writes wire lines: it copies each wire line of the parent, and
    converts the old view lines. An old plain system line has no wire form,
    so a fork copies it as it is.
-3. Move the transcript fold into the daemon. Serve the folded transcript
+3. **(done)** Move the transcript fold into the daemon. Serve the folded transcript
    with the session history. Let the TUI and the web client render it, not
    fold it.
 
@@ -154,7 +158,16 @@ ops. The commits, in order:
    (`TextDelta`, `ToolCall` and the rest) are gone. Their tests send wire
    events through `EventFeed`, which runs the core fold, as the daemon does.
 7. **(done)** `cru acp` replays the snapshot on `session/load`, and maps the ops (`HostProjection` in `crates/crucible-cli/src/commands/acp/project.rs`).
-8. A parity test renders one fixture in all three clients.
+8. **(done)** A parity test renders each golden transcript in all three
+   clients. `each_golden_transcript_has_its_client_rows` in
+   `crates/crucible-core/src/transcript/tests.rs` writes the rows of each
+   file to `assets/fixtures/golden/transcript/rows/`: the prompts, the
+   segments, the tool cards and the notices. The web test
+   (`lib/__tests__/transcript.test.tsx`), the TUI test
+   (`tui/oil/tests/transcript_parity_tests.rs`) and the ACP test
+   (`a_load_draws_the_rows_of_each_golden_transcript` in
+   `commands/acp/project.rs`) compare their drawn rows with the same file.
+   ACP has no update for a notice, so its test leaves the notices out.
 9. **(done)** The markdown export and the Lua history read the snapshot.
    `render_to_markdown` (`observe/markdown.rs`), `message_rows`
    (`session_bridge.rs`), `session.list_persisted`, `session.cleanup` and

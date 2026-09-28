@@ -33,4 +33,5 @@ mod rendering_regression_tests;
 mod replay_mode_tests;
 mod session_event_stream_tests;
 mod spacing_tests;
+mod transcript_parity_tests;
 mod user_story_tests;

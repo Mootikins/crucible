@@ -148,25 +148,9 @@ const goldens = readdirSync(GOLDEN_DIR).filter((name) => name.endsWith('.json'))
 
 /**
  * The start of a text, as letters and digits. The markdown render drops the
- * marks, so the rows compare the words.
+ * marks, so the rows compare the words. The core test uses the same rule.
  */
 const words = (text: string) => text.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 32);
-
-/** What the web client should draw for an item, in the order of the fold. */
-function expectedRow(item: TranscriptItem): string | null {
-  switch (item.type) {
-    case 'user_turn':
-      return `user:${item.content}`;
-    case 'assistant_segment':
-      return item.text.trim() === '' && !item.thinking ? null : `segment:${words(item.text)}`;
-    case 'tool_card':
-      return `tool:${item.call_id}`;
-    case 'notice':
-      return 'notice';
-    default:
-      return null;
-  }
-}
 
 /** What the transcript drew, in document order. */
 function drawnRows(container: HTMLElement): string[] {
@@ -198,7 +182,10 @@ describe('the golden transcripts', () => {
 
     const { container } = render(() => <MessageList />);
 
-    const expected = golden.items.map(expectedRow).filter((row): row is string => row !== null);
+    // The rows that every client draws. The core test
+    // `each_golden_transcript_has_its_client_rows` writes them, and the TUI
+    // and `cru acp` compare with the same file.
+    const expected = JSON.parse(readFileSync(resolvePath(GOLDEN_DIR, 'rows', name), 'utf8')) as string[];
     expect(drawnRows(container)).toEqual(expected);
     // Each turn of the fold is one turn block after its prompt.
     const turns = new Set(

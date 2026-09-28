@@ -1,0 +1,10 @@
+[
+  "user:edit the library",
+  "tool:c1",
+  "segment:Done",
+  "user:fix main",
+  "tool:c2",
+  "notice",
+  "user:try again",
+  "notice"
+]

@@ -413,6 +413,73 @@ fn the_fold_of_each_recording_matches_its_golden_file() {
     }
 }
 
+/// The rows that every client draws for each golden transcript: the TUI, the
+/// web client and `cru acp`. Each client test draws the golden transcript
+/// and compares its own rows with this file, so the three clients agree on
+/// the turns, the segments and the tool cards. The rules:
+///
+/// - a user turn is `user:<content>`;
+/// - an answer segment is `segment:<words>`, the first 32 letters and digits
+///   of its text, because a client renders markdown; a segment with no text
+///   and no reasoning draws nothing;
+/// - a tool card is `tool:<call id>`;
+/// - a notice is `notice`;
+/// - a delegation and injected context draw no row.
+///
+/// `CRUCIBLE_WRITE_GOLDEN=1` writes the files instead of comparing them.
+#[test]
+fn each_golden_transcript_has_its_client_rows() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/golden/transcript");
+    let write = std::env::var_os("CRUCIBLE_WRITE_GOLDEN").is_some();
+    let mut names: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    names.sort();
+    assert!(!names.is_empty());
+    for path in names {
+        let transcript: Transcript =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let rows: Vec<String> = transcript.items.iter().filter_map(client_row).collect();
+        let got = serde_json::to_string_pretty(&rows).unwrap();
+        let rows_path = dir.join("rows").join(path.file_name().unwrap());
+        if write {
+            std::fs::create_dir_all(rows_path.parent().unwrap()).unwrap();
+            std::fs::write(&rows_path, format!("{got}\n")).unwrap();
+            continue;
+        }
+        let golden = std::fs::read_to_string(&rows_path).unwrap_or_default();
+        assert_eq!(
+            got.trim(),
+            golden.trim(),
+            "{} differs. The rows are:\n{got}",
+            rows_path.display()
+        );
+    }
+}
+
+fn client_row(item: &TranscriptItem) -> Option<String> {
+    match &item.body {
+        ItemBody::UserTurn { content, .. } => Some(format!("user:{content}")),
+        ItemBody::AssistantSegment { text, thinking, .. } => {
+            if text.trim().is_empty() && thinking.is_empty() {
+                return None;
+            }
+            let words: String = text
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .take(32)
+                .collect();
+            Some(format!("segment:{words}"))
+        }
+        ItemBody::ToolCard { call_id, .. } => Some(format!("tool:{call_id}")),
+        ItemBody::Notice { .. } => Some("notice".to_string()),
+        ItemBody::Delegation { .. } | ItemBody::InjectedContext { .. } => None,
+    }
+}
+
 /// Each recording that carries an end-of-stream reasoning replay keeps
 /// exactly its other thoughts. Each number is the count of `thinking` events
 /// in the fixture minus its replays, counted against the raw JSONL:

@@ -302,6 +302,66 @@ mod tests {
         assert_eq!(failed.fields.status, Some(ToolCallStatus::Failed));
     }
 
+    /// A host draws the same rows of each golden transcript as the TUI and the
+    /// web client. The core test `each_golden_transcript_has_its_client_rows`
+    /// writes the rows. ACP has no update for a notice, so a host draws none.
+    #[test]
+    fn a_load_draws_the_rows_of_each_golden_transcript() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/fixtures/golden/transcript");
+        let mut names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+            .collect();
+        names.sort();
+        assert!(!names.is_empty());
+        let words = |text: &str| -> String {
+            text.chars()
+                .filter(|c| c.is_alphanumeric())
+                .take(32)
+                .collect()
+        };
+        for path in names {
+            let transcript: Transcript =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let rows_path = dir.join("rows").join(path.file_name().unwrap());
+            let expected: Vec<String> =
+                serde_json::from_str::<Vec<String>>(&std::fs::read_to_string(&rows_path).unwrap())
+                    .unwrap()
+                    .into_iter()
+                    .filter(|row| row != "notice")
+                    .collect();
+
+            // A thought chunk opens a segment, and the answer chunk after it
+            // gives the segment its words.
+            let mut rows: Vec<String> = Vec::new();
+            let mut open = false;
+            for update in HostProjection::default().snapshot(&transcript) {
+                match (&update, text(&update)) {
+                    (_, Some(("user", content))) => rows.push(format!("user:{content}")),
+                    (_, Some(("thought", _))) => {
+                        rows.push("segment:".to_string());
+                        open = true;
+                    }
+                    (_, Some(("answer", content))) => {
+                        if open {
+                            rows.pop();
+                        }
+                        rows.push(format!("segment:{}", words(&content)));
+                        open = false;
+                    }
+                    (SessionUpdate::ToolCall(call), _) => {
+                        rows.push(format!("tool:{}", call.tool_call_id.0));
+                        open = false;
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(rows, expected, "{}", path.display());
+        }
+    }
+
     /// A load replays the prompts too, labels a plugin turn, and skips an
     /// empty prompt. A later upsert of the same segment sends nothing twice.
     #[test]
