@@ -69,7 +69,6 @@ into any binary):
 | `crates/crucible-cli/examples/fullscreen_demo.rs` | 177 | Runs `FullscreenShell` (two fake chat panes plus a 10,000-line plugin buffer) against a real `crucible_oil::terminal::Terminal` with no daemon, to check scroll, selection and copy under `ScreenMode::Fullscreen`. |
 | `crates/crucible-cli/examples/test_mcp_server.rs` | 78 | Spawns `cru mcp` as a child process, lists its tools over the MCP stdio transport, and asserts the count is exactly 12. |
 | `crates/crucible-daemon/benches/llm_embedding_comparison.rs` | 130 | Criterion benchmark of the FastEmbed embedding provider's throughput across batch sizes (1, 10, 50, 100, 500) and single-call versus batch-call embedding. |
-| `crates/crucible-daemon/examples/llm_discover_models.rs` | 129 | Runs `ModelDiscovery` against local GGUF models, prints capability and cache-hit information, and calls `invalidate_cache()`. |
 
 ## Key types and traits
 
@@ -235,9 +234,8 @@ reverse edge.
   modules, which are already public from `crates/crucible-cli/src/lib.rs`; no
   change to the root file itself is normally needed. See [[CLI Commands]].
 - A new manual smoke test follows the pattern in
-  `crates/crucible-cli/examples/test_mcp_server.rs`,
-  `crates/crucible-cli/examples/fullscreen_demo.rs` and
-  `crates/crucible-daemon/examples/llm_discover_models.rs`: an `examples/`
+  `crates/crucible-cli/examples/test_mcp_server.rs` and
+  `crates/crucible-cli/examples/fullscreen_demo.rs`: an `examples/`
   binary that is never linked into `cru` and is run by hand via
   `cargo run --example <name>`. A new throughput measurement follows
   `crates/crucible-daemon/benches/llm_embedding_comparison.rs` and runs only

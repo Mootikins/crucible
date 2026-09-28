@@ -57,7 +57,7 @@ mod parse {
     }
 
     pub fn color(value: &str, prop_name: &str) -> LuaResult<crucible_oil::Color> {
-        parse_color(value).map_err(|_| {
+        parse_color(value).ok_or_else(|| {
             mlua::Error::RuntimeError(format!(
                 "invalid color '{}' for '{}'. Use named colors (red, green, blue, yellow, \
                  cyan, magenta, white, black) or hex (#ff0000)",

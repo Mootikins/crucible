@@ -1,7 +1,6 @@
 //! Session logging and observability for Crucible
 //!
-//! This crate provides session persistence as append-only JSONL files
-//! with optional SQLite indexing for fast queries.
+//! This module reads session persistence: append-only JSONL files.
 //!
 //! # Architecture
 //!

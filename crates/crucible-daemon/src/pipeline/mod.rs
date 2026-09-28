@@ -12,11 +12,11 @@
 //!
 //! ## Clear Separation of Concerns
 //!
-//! Infrastructure crates (DO NOT orchestrate):
-//! - `crucible-parser`: Just parses markdown to AST
-//! - `enrichment module`: Provides enrichment services
-//! - `crucible-llm`: Just provides embedding generation
-//! - `storage backends`: Provide storage operations
+//! Infrastructure modules (DO NOT orchestrate):
+//! - the parser in `crucible-core`: parses markdown to an AST
+//! - the enrichment module: provides enrichment services
+//! - `crate::llm::embeddings`: provides embedding generation
+//! - the storage backends: provide storage operations
 //!
 //! This module (pipeline):
 //! - Coordinates all four phases in the right order

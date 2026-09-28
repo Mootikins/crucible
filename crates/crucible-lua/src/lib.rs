@@ -203,7 +203,7 @@ pub use statusline_exprs::{
 };
 pub use storage_api::{register_storage_module, register_storage_module_with_store};
 pub use timer::register_timer_module;
-pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
+pub use types::{LuaExecutionResult, LuaTool, ToolParam};
 pub use vault::{
     register_kiln_path_resolver, register_kiln_repository_resolver, register_vault_module,
     register_vault_module_with_store, register_vault_module_with_store_scoped, KilnPathResolver,

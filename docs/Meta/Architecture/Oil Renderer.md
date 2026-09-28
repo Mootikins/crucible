@@ -44,14 +44,12 @@ The root `AGENTS.md` ownership table names `crucible-oil` as the owner of
   (`crates/crucible-oil/src/utils.rs`), line clamping
   (`crates/crucible-oil/src/viewport.rs`), and a keyboard-focus registry
   (`crates/crucible-oil/src/focus.rs`).
-- Two markup front ends that terminate in `Node`: an HTML subset
-  (`crates/crucible-oil/src/template/html.rs`) and a hiccup-style JSON value
-  (`crates/crucible-oil/src/template/node_spec.rs`). Only the HTML subset is
-  wired into the Luau plugin host today, for `cru.oil.markup(...)`; the Luau
-  host builds most UI through direct Node-builder function bindings
-  (`cru.oil.text`, `cru.oil.col`, and so on) instead. `spec_to_node` has no
-  caller outside this crate's own module and tests as of this revision (see
-  Findings).
+- One markup front end that terminates in `Node`: an HTML subset
+  (`crates/crucible-oil/src/template/html.rs`), which the Luau plugin host
+  uses for `cru.oil.markup(...)`. The Luau host builds most UI through
+  direct Node-builder function bindings (`cru.oil.text`, `cru.oil.col`, and
+  so on) instead. `parse_color` in the same file is the color parser of both
+  the HTML subset and the `cru.oil` bindings.
 
 What this subsystem must not own: it holds no session state, no client
 input handling, and no daemon RPC. `AGENTS.md` assigns "Input,
@@ -140,9 +138,8 @@ functions plus `template/html.rs` for embedded markup strings.
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-oil/src/template/mod.rs` | 7 | Re-export shim for `html` and `node_spec`. |
-| `crates/crucible-oil/src/template/html.rs` | 361 | `html_to_node` — converts a small HTML subset into a `Node` tree. |
-| `crates/crucible-oil/src/template/node_spec.rs` | 1008 | `NodeSpec`/`spec_to_node` — a hiccup-style JSON value (`["tag", {attrs}, ...children]`) interpreted into a `Node` tree. No caller outside this file's own tests was found by grep as of this revision; the Luau host builds UI through direct `Node`-builder bindings and `template/html.rs` instead (see Findings). |
+| `crates/crucible-oil/src/template/mod.rs` | 3 | Re-export shim for `html`. |
+| `crates/crucible-oil/src/template/html.rs` | 421 | `html_to_node` — converts a small HTML subset into a `Node` tree. |
 
 ## Key types and traits
 
@@ -329,9 +326,7 @@ on). For an embedded HTML string, `cru.oil.markup` calls `html_to_node`
 (`crates/crucible-oil/src/template/html.rs`). Either way the result is a
 plain `Node`, so the rest of the pipeline (layout, render, terminal or, on
 the web side, JSON serialization) treats plugin-built and Rust-built trees
-identically. `spec_to_node` (`crates/crucible-oil/src/template/node_spec.rs`)
-offers a hiccup-style JSON alternative but is not currently called from
-`crucible-lua` or anywhere outside this crate (see Findings).
+identically.
 
 ### Full-screen presentation
 
@@ -493,10 +488,9 @@ next frame's row diff rewrites every row at the new width.
   `crates/crucible-oil/src/layout/tree_render.rs`,
   `crates/crucible-oil/src/layout/debug.rs`, and
   `crates/crucible-oil/src/layout/query.rs`) plus, if plugin-facing, a
-  tag in `crates/crucible-oil/src/template/node_spec.rs` and
-  `crates/crucible-oil/src/template/html.rs`. `Node::Rows` is the seam's
-  own most recent instance: it added an arm in every file this bullet
-  names except the two template front ends, since a kept-rows leaf is a
+  tag in `crates/crucible-oil/src/template/html.rs`. `Node::Rows` is the
+  seam's own most recent instance: it added an arm in every file this bullet
+  names except the template front end, since a kept-rows leaf is a
   rendering optimization, not something a plugin author writes directly.
 - **A new overlay anchor** extends `OverlayAnchor` in
   `crates/crucible-oil/src/overlay.rs` (today it has one variant,
@@ -509,9 +503,7 @@ next frame's row diff rewrites every row at the new width.
   `crates/crucible-oil/src/components/mod.rs`; the CLI wraps it with its own
   `Component` trait adapter (see [[TUI Components]]) rather than
   `crucible-oil` implementing that trait itself.
-- **A new template tag** (hiccup) lands in
-  `crates/crucible-oil/src/template/node_spec.rs`'s tag dispatch inside
-  `parse_element`; an HTML-subset equivalent lands in
+- **A new template tag** lands in
   `crates/crucible-oil/src/template/html.rs`'s `element_to_node`.
 - **A new color or border style** lands in
   `crates/crucible-oil/src/style.rs`; a border must also add its char set to
@@ -621,14 +613,6 @@ next frame's row diff rewrites every row at the new width.
   `html_to_node` are silently dropped (`.filter_map(|c| ... .ok())`) rather
   than aggregated, which can hide malformed plugin markup rather than surface
   it, in tension with `AGENTS.md`'s "every error variant a distinct handler."
-- `crates/crucible-oil/src/template/node_spec.rs`'s `spec_to_node` and its
-  `NodeSpec` type are exported from the crate but grep finds no caller
-  outside `node_spec.rs`'s own recursive calls and its own `#[cfg(test)]`
-  module, in `crucible-oil`, `crucible-lua`, or `crucible-web`. The Luau
-  plugin host (`crates/crucible-lua/src/oil.rs`) builds UI through direct
-  `Node`-builder function bindings and `html_to_node`, not through this
-  hiccup-JSON front end; it looks like unused surface area rather than a
-  live Lua-facing path.
 - The two documented ANSI-skip-bound divergences between `ansi.rs` and
   `cell_grid.rs` (see Boundaries) and the render-path "Stage B" convergence
   they both name are unresolved as of this revision; they are intentional,

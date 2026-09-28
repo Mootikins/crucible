@@ -1,5 +1,3 @@
-// crates/crucible-mcp/src/embeddings/ollama.rs
-
 //! Ollama embedding provider implementation
 
 use async_trait::async_trait;

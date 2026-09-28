@@ -19,8 +19,6 @@ pub struct PluginSpec {
     pub handlers: Vec<DiscoveredHandler>,
     pub services: Vec<DiscoveredService>,
     pub has_setup: bool,
-    /// Where the plugin was discovered from (user, runtime, kiln, etc.)
-    pub source: Option<String>,
 }
 
 /// Refuse a parameter whose declared type the host cannot read.

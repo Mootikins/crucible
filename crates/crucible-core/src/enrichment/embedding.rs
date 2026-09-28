@@ -8,8 +8,8 @@
 //!
 //! By defining this trait in the core layer with minimal dependencies,
 //! we allow the domain logic to depend on abstractions rather than
-//! concrete implementations. The infrastructure layer (crucible-llm)
-//! depends on the core layer and provides concrete implementations.
+//! concrete implementations. The daemon (`crucible_daemon::llm::embeddings`)
+//! depends on the core layer and provides the concrete implementations.
 
 use anyhow::Result;
 
@@ -19,8 +19,8 @@ use anyhow::Result;
 /// It supports single and batch embedding, metadata queries, health checking,
 /// and model discovery.
 ///
-/// Implementations are provided in the crucible-llm crate (FastEmbed, Ollama,
-/// OpenAI, Burn, etc.).
+/// The daemon provides the implementations in `crucible_daemon::llm::embeddings`
+/// (FastEmbed, Ollama, OpenAI and the fixture provider).
 ///
 /// # Object Safety
 ///
@@ -109,7 +109,7 @@ pub trait EmbeddingProvider: Send + Sync {
     ///
     /// Queries the provider to discover what embedding models are available.
     /// Returns model identifiers as strings. For richer metadata, use
-    /// provider-specific APIs in crucible-llm.
+    /// the provider-specific APIs in `crucible_daemon::llm::embeddings`.
     ///
     /// # Returns
     ///

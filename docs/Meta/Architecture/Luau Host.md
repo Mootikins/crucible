@@ -157,7 +157,7 @@ count at `582c5e6c1`.
 | `crates/crucible-lua/src/stubs.rs` | 407 | Generates plugin-author stub files (`cru.lua`, `cru.d.luau`, `cru-docs.json`) by walking a live `cru` table. |
 | `crates/crucible-lua/src/test_support.rs` | 313 | Test-only builder for minimal Lua VMs with a chosen subset of `cru.*` modules, plus an in-memory `PropertyStore` fixture. |
 | `crates/crucible-lua/src/discovered.rs` | 109 | The plain-data shapes a plugin's spec table parses into (`DiscoveredTool`, `DiscoveredCommand`, `DiscoveredHandler`, `DiscoveredService`); `lifecycle/spec.rs` does the parsing. |
-| `crates/crucible-lua/src/types.rs` | 105 | Small serde DTOs for Lua-defined tools and results (`LuaTool`, `ToolParam`, `LuaExecutionResult`, `ToolResult`). |
+| `crates/crucible-lua/src/types.rs` | 63 | Small serde DTOs for Lua-defined tools and results (`LuaTool`, `ToolParam`, `LuaExecutionResult`, `ToolResult`). |
 | `crates/crucible-lua/src/error.rs` | 155 | `LuaError`, the crate's error type, its `mlua` interop conversions, and `format_lua_error` for user-facing display. |
 | `crates/crucible-lua/src/error_ext.rs` | 14 | `LuaResultExt` — a one-line extension trait converting any displayable error into `LuaResult`. |
 | `crates/crucible-lua/src/lua_util.rs` | 94 | Small shared helpers for the `cru` namespace tables, and the deprecated `cru.sessions` alias. |
@@ -200,8 +200,8 @@ count at `582c5e6c1`.
 | `crates/crucible-lua/src/lifecycle/mod.rs` | 294 | `PluginManager` — the registry of discovered plugins and each one's lifecycle state; holds no VM. |
 | `crates/crucible-lua/src/lifecycle/discovery.rs` | 252 | Walks search paths, identifies plugin directories/single files, reads each fragment, runs no plugin code. |
 | `crates/crucible-lua/src/lifecycle/fragment.rs` | 448 | Reads and validates `spec.luau` in a read-only sandboxed environment, producing a `Fragment` with no behavior run. |
-| `crates/crucible-lua/src/lifecycle/spec.rs` | 220 | Parses `tools`/`commands`/`handlers`/`services`/`setup` out of the table a plugin's `init.luau` returned, after the daemon ran it. |
-| `crates/crucible-lua/src/lifecycle/error.rs` | 37 | `LifecycleError`, the lifecycle subsystem's error type. |
+| `crates/crucible-lua/src/lifecycle/spec.rs` | 218 | Parses `tools`/`commands`/`handlers`/`services`/`setup` out of the table a plugin's `init.luau` returned, after the daemon ran it. |
+| `crates/crucible-lua/src/lifecycle/error.rs` | 28 | `LifecycleError`, the lifecycle subsystem's error type. |
 | `crates/crucible-lua/src/lifecycle/error_log.rs` | 106 | A bounded ring-buffer log of plugin runtime errors, stored as per-VM app data, read by `cru.errors.recent`. |
 
 ### `crates/crucible-lua/src/lifecycle/tests/`

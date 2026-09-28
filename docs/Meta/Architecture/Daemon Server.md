@@ -83,7 +83,7 @@ Directory `crates/crucible-daemon/src/observe/` (session-log read side):
 | `crates/crucible-daemon/src/observe/events.rs` | 1176 | `LogEvent`/`SessionLogLine` and the `session.jsonl` parser (`parse_session_log`, `replay_session_log`); `LogEvent::System` now carries `tags`/`injection`, `LogEvent::User` carries `plugin`, and a `LogEvent::Clear` variant marks a context clear. |
 | `crates/crucible-daemon/src/observe/id.rs` | 53 | Re-export shim for `SessionId`/`SessionType`, replacing a former duplicate validator. |
 | `crates/crucible-daemon/src/observe/markdown.rs` | 524 | Renders a `Vec<LogEvent>` to Markdown (`session.md` export); shows a plugin turn as `## ↻ <plugin>` and a `Clear` marker as a `Context cleared` line. |
-| `crates/crucible-daemon/src/observe/mod.rs` | 71 | Module root; re-exports the observe read API. |
+| `crates/crucible-daemon/src/observe/mod.rs` | 70 | Module root; re-exports the observe read API. |
 | `crates/crucible-daemon/src/observe/rebuild.rs` | 326 | Reconstructs a `ConversationTree` from a session log for resume-time history; a `LogEvent::Clear` restarts the tree without erasing the log, and a plugin-authored user turn rebuilds as `NodeContent::Plugin`. |
 | `crates/crucible-daemon/src/observe/session.rs` | 344 | `load_events`/`events_after`: the file-backed loaders behind `session.load_events`/`session.events_after`. |
 

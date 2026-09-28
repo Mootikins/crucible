@@ -43,7 +43,7 @@ at the same time. Each step leaves the tree working.
 | 6. Wire types live in core | a second home for wire types | M | steps 1 and 4 |
 | 7. One test server | 18 test-server copies, a hand mock | M | step 6 helps |
 | 8. Local duplicates | about ten small copies | S each | none |
-| 9. Dead code | unused modules and features | S | none |
+| 9. Dead code (done) | unused modules and features | S | none |
 | 10. Group the daemon modules | 87 flat entries | M | steps 1 to 6 |
 
 Size: S is days, M is one to two weeks, L is three to six weeks.
@@ -262,20 +262,25 @@ Each item is small and independent. Merge each one into the owner named here.
 
 ## Step 9. Dead code
 
-Delete each item, or finish it if a product need exists.
-- The `storage.*` RPCs that answer `not_implemented`:
-  `crates/crucible-daemon/src/server/storage.rs`.
-- `ModelDiscovery`, used only by an example:
-  `crates/crucible-daemon/src/llm/model_discovery.rs`.
-- `NodeSpec` and `spec_to_node`: `crates/crucible-oil/src/template/node_spec.rs`.
-- The `FullscreenShell` prototype:
-  `crates/crucible-cli/src/tui/oil/fullscreen/shell.rs`.
-- Unused Lua and RPC types and variants in `crates/crucible-lua/src/types.rs`
-  and `crates/crucible-lua/src/lifecycle/`.
-- The `linkify` and `syntect` features of `vendor/markdown-it`, which no
-  Crucible code uses.
-- Comments that still name merged crates, and the stale draft
-  `crates/crucible-cli/AGENTS.md`.
+**Status: done.** Deleted:
+- `ModelDiscovery`, a local GGUF catalog that only an example used.
+- `NodeSpec` and `spec_to_node`, a second markup front end that nothing
+  called. Its color parser moved to `crates/crucible-oil/src/template/html.rs`
+  and serves both the HTML subset and `cru.oil`.
+- The `linkify` and `syntect` features of `vendor/markdown-it`: the
+  workspace builds the crate with `default-features = false`.
+- `ToolResult` in `crates/crucible-lua/src/types.rs`, `PluginSpec::source`,
+  and three `LifecycleError` variants that nothing built.
+- Comments that named merged crates.
+
+Kept, with the reason:
+- The `storage.*` RPCs that answer `not_implemented`: storage maintenance
+  is a P0 item in [[Meta/Product]], so the product decides whether they
+  get built or go.
+- The `FullscreenShell` prototype: the full-screen user story names its
+  pane code as tested prototype work.
+- `lua.register_commands`: no client sends it, but step 3 owns the command
+  RPCs.
 
 ## Step 10. Group the daemon modules
 

@@ -57,15 +57,14 @@ and handle.
 | `crates/crucible-daemon/src/embedding.rs` | 230 | Process-global cache of `EmbeddingProvider` instances keyed by config identity; lazy, not on the boot path |
 | `crates/crucible-daemon/src/empty_providers.rs` | 100 | Null-object `KnowledgeRepository` and `EmbeddingProvider` for a session with no kiln or embedding configured |
 | `crates/crucible-daemon/src/llm_state.rs` | 643 | Reader/writer for `<data_home>/llm.json` (recorded provider selection) plus `LiveLlmConfig`, the live provider table trust checks read |
-| `crates/crucible-daemon/src/llm/mod.rs` | 69 | Module root for `llm`; re-exports `embeddings` and `model_discovery` types |
-| `crates/crucible-daemon/src/llm/model_discovery.rs` | 608 | Scans configured directories for local `.gguf` model files and classifies them |
+| `crates/crucible-daemon/src/llm/mod.rs` | 62 | Module root for `llm`; re-exports the `embeddings` types |
 | `crates/crucible-daemon/src/llm/embeddings/mod.rs` | 102 | Embeddings module root; `create_provider`, the one factory entry point |
 | `crates/crucible-daemon/src/llm/embeddings/config.rs` | 112 | Re-exports `crucible_core::config::EmbeddingProviderConfig` as `EmbeddingConfig`; expected-dimensions lookup |
 | `crates/crucible-daemon/src/llm/embeddings/error.rs` | 154 | `EmbeddingError`/`EmbeddingResult`, shared by every provider; retry classification |
 | `crates/crucible-daemon/src/llm/embeddings/provider.rs` | 524 | Shared value types: `ModelFamily`, `ParameterSize`, `ModelInfo`/`ModelInfoBuilder`, `EmbeddingResponse` |
 | `crates/crucible-daemon/src/llm/embeddings/fastembed.rs` | 498 | Local ONNX/CPU provider, feature-gated behind `fastembed` |
-| `crates/crucible-daemon/src/llm/embeddings/ollama.rs` | 667 | Ollama HTTP provider with retry/backoff and native batch requests |
-| `crates/crucible-daemon/src/llm/embeddings/openai.rs` | 409 | OpenAI HTTP embedding provider |
+| `crates/crucible-daemon/src/llm/embeddings/ollama.rs` | 665 | Ollama HTTP provider with retry/backoff and native batch requests |
+| `crates/crucible-daemon/src/llm/embeddings/openai.rs` | 407 | OpenAI HTTP embedding provider |
 | `crates/crucible-daemon/src/llm/embeddings/mock.rs` | 168 | `FixtureEmbeddingProvider`, the deterministic runtime provider for `BackendType::Mock` |
 | `crates/crucible-daemon/src/llm/embeddings/catalog.rs` | 419 | Curated local-model catalog: names, published scores, HuggingFace cache probing, download |
 | `crates/crucible-daemon/src/llm/embeddings/catalog/tests.rs` | 198 | Unit tests for `catalog.rs` name resolution and cache probing |
@@ -489,10 +488,6 @@ A curated local embedding model addition lands in
   perform real model downloads to a temporary cache directory — network- and
   disk-dependent, not marked `#[ignore]` and without a named external
   prerequisite comment, which AGENTS.md's testing guidance asks for.
-- Gap: `crates/crucible-daemon/src/llm/model_discovery.rs` has thorough unit
-  tests for its own classification and caching logic, but no test anywhere
-  exercises it from an RPC handler or session flow, because no such caller
-  exists (see Findings).
 - Gap: `crates/crucible-daemon/src/llm_state.rs`'s `LlmStateStore` and
   `LiveLlmConfig` are unit-tested in isolation; no test in this page's file
   set exercises `overlay_onto` merging into a live daemon boot alongside
@@ -511,11 +506,6 @@ A curated local embedding model addition lands in
   in contrast to `crates/crucible-daemon/src/provider/adapter_mapping.rs`'s
   `backend_to_adapter`, which is genuinely exhaustive over the same enum in
   the same crate.
-- `crates/crucible-daemon/src/llm/model_discovery.rs`'s `ModelDiscovery` is
-  re-exported from `crates/crucible-daemon/src/llm/mod.rs` but has no caller
-  anywhere in the workspace except `crates/crucible-daemon/examples/llm_discover_models.rs`.
-  No RPC handler, session flow, or test wires it into the running daemon; it
-  is effectively unreachable production code behind a public re-export.
 - `crates/crucible-daemon/src/llm/embeddings/ollama.rs` and
   `crates/crucible-daemon/src/llm/embeddings/openai.rs` each carry a stale
   file-header comment naming a path in the `crucible-mcp` crate, a crate

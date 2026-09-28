@@ -9,15 +9,6 @@ pub enum LifecycleError {
     #[error("Plugin not found: {0}")]
     NotFound(String),
 
-    #[error("Plugin already loaded: {0}")]
-    AlreadyLoaded(String),
-
-    #[error("Dependency not satisfied: {plugin} requires {dependency}")]
-    DependencyNotSatisfied { plugin: String, dependency: String },
-
-    #[error("Circular dependency detected: {0}")]
-    CircularDependency(String),
-
     #[error("Load error: {0}")]
     LoadError(String),
 

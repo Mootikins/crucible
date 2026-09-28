@@ -18,7 +18,6 @@
 //! ## Modules
 //!
 //! - [`embeddings`]: Text embedding generation and management
-//! - [`model_discovery`]: Local GGUF model discovery and cataloging
 //!
 //! ## Example
 //!
@@ -45,7 +44,6 @@
 #![warn(clippy::all)]
 
 pub mod embeddings;
-pub mod model_discovery;
 
 // Re-export commonly used types at crate root
 pub use embeddings::{
@@ -61,9 +59,4 @@ pub use embeddings::{
 pub use crucible_core::enrichment::{
     EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig,
     OpenAIConfig, PipelineConfig,
-};
-
-// Re-export model discovery
-pub use model_discovery::{
-    DiscoveredModel, DiscoveredModelType, ModelDiscovery, ModelDiscoveryConfig,
 };

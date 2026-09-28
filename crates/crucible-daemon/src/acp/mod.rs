@@ -2,7 +2,7 @@
 //!
 //! Thin protocol adapter for spawning and communicating with ACP-compatible
 //! AI agents. Orchestration (history, context, streaming aggregation) lives
-//! in `crucible-daemon`; this crate handles only the wire protocol.
+//! elsewhere in `crucible-daemon`; this module handles only the wire protocol.
 
 // Module declarations
 pub mod client;

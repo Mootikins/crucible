@@ -73,7 +73,9 @@ notify-debouncer-full = "0.7"
 globset = "0.4"
 num_cpus = "1.17"
 flume = "0.12"
-markdown-it = "0.6"
+# Crucible uses the `tables` plugin only, so the vendored `linkify` and
+# `syntect` plugins stay out of the build.
+markdown-it = { version = "0.6", default-features = false }
 toml = "1.0"
 toml_edit = "0.22"
 futures-util = "0.3"

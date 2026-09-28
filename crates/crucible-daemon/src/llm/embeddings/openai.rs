@@ -1,5 +1,3 @@
-// crates/crucible-mcp/src/embeddings/openai.rs
-
 //! OpenAI embedding provider implementation
 
 use async_trait::async_trait;

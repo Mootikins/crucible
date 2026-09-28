@@ -1,4 +1,3 @@
-use super::parse_color;
 use crate::node::*;
 use crate::style::*;
 use html_parser::{Dom, Element, Node as HtmlNode};
@@ -217,17 +216,50 @@ fn apply_common_attrs(mut node: Node, el: &Element) -> Node {
     node
 }
 
+/// A color: a name, `#rrggbb`, or `rgb(r, g, b)`. `None` for any other text.
+///
+/// The one color parser for HTML templates and Lua `cru.oil` nodes.
+pub fn parse_color(s: &str) -> Option<Color> {
+    match s.to_lowercase().as_str() {
+        "black" => Some(Color::Black),
+        "red" => Some(Color::Red),
+        "green" => Some(Color::Green),
+        "yellow" => Some(Color::Yellow),
+        "blue" => Some(Color::Blue),
+        "magenta" => Some(Color::Magenta),
+        "cyan" => Some(Color::Cyan),
+        "white" => Some(Color::White),
+        "gray" | "grey" => Some(Color::Gray),
+        "darkgray" | "darkgrey" | "dark_gray" | "dark_grey" => Some(Color::DarkGray),
+        "reset" => Some(Color::Reset),
+        _ => {
+            if let Some(hex) = s.strip_prefix('#').filter(|h| h.len() == 6) {
+                let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+                return Some(Color::Rgb(channel(0)?, channel(2)?, channel(4)?));
+            }
+            let inner = s.strip_prefix("rgb(")?.strip_suffix(')')?;
+            let mut parts = inner.split(',').map(|p| p.trim().parse::<u8>());
+            let (r, g, b) = (
+                parts.next()?.ok()?,
+                parts.next()?.ok()?,
+                parts.next()?.ok()?,
+            );
+            parts.next().is_none().then_some(Color::Rgb(r, g, b))
+        }
+    }
+}
+
 fn apply_text_style(node: Node, el: &Element) -> Node {
     let mut style = Style::default();
 
     if let Some(Some(color_str)) = el.attributes.get("color") {
-        if let Ok(color) = parse_color(color_str) {
+        if let Some(color) = parse_color(color_str) {
             style = style.fg(color);
         }
     }
 
     if let Some(Some(bg_str)) = el.attributes.get("bg") {
-        if let Ok(color) = parse_color(bg_str) {
+        if let Some(color) = parse_color(bg_str) {
             style = style.bg(color);
         }
     }
@@ -357,5 +389,33 @@ mod tests {
     fn test_badge() {
         let node = html_to_node(r#"<badge>OK</badge>"#).unwrap();
         assert!(matches!(node, Node::Text(_)));
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::*;
+
+    #[test]
+    fn a_color_is_a_name_a_hex_value_or_an_rgb_triple() {
+        assert_eq!(parse_color("Red"), Some(Color::Red));
+        assert_eq!(parse_color("dark_grey"), Some(Color::DarkGray));
+        assert_eq!(parse_color("#ff8000"), Some(Color::Rgb(255, 128, 0)));
+        assert_eq!(parse_color("rgb(1, 2, 3)"), Some(Color::Rgb(1, 2, 3)));
+    }
+
+    #[test]
+    fn any_other_text_is_no_color() {
+        for text in [
+            "",
+            "chartreuse",
+            "#fff",
+            "#gg0000",
+            "rgb(1,2)",
+            "rgb(1,2,3,4)",
+            "rgb(256,0,0)",
+        ] {
+            assert_eq!(parse_color(text), None, "{text}");
+        }
     }
 }

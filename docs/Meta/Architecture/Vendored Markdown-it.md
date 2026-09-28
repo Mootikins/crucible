@@ -466,20 +466,17 @@ this crate, not a change here.
   `vendor/README.md` with the upstream issue number and the
   `crucible-core` regression test name. This matches AGENTS.md's vendor
   rule exactly; no gap found.
-- **Default crate features enable code no Crucible caller uses.** The
-  workspace `Cargo.toml` depends on plain `markdown-it = "0.6"` with no
-  feature selection, so `default = ["linkify", "syntect"]`
-  (`vendor/markdown-it/Cargo.toml`) applies everywhere. No file under
-  `crates/` calls `plugins::extra::linkify::add`, `plugins::extra::
-  syntect::add`, `plugins::extra::smartquotes::add`,
-  `plugins::extra::typographer::add`, `plugins::extra::
-  heading_anchors::add`, `plugins::extra::beautify_links::add`,
-  `plugins::html::add`, `plugins::sourcepos::add`, or the blanket
-  `plugins::extra::add`; every Crucible caller (`crates/crucible-core/src/parser/basic_markdown_it.rs`, `crates/crucible-cli/src/formatting/markdown_renderer.rs`, `crates/crucible-cli/src/tui/oil/markdown/context.rs`) calls only `plugins::cmark::add` plus `plugins::extra::
-  tables::add`. The `linkify` and `syntect` features (and their transitive
-  `syntect`/`linkify` crate dependencies) compile into the binary for every
-  target without being reachable from Crucible code. This is extra build
-  cost and surface area, not a correctness bug.
+- **Crucible builds the crate without its default features.** The
+  workspace `Cargo.toml` depends on `markdown-it` with
+  `default-features = false`, so the `linkify` and `syntect` plugins
+  (`default = ["linkify", "syntect"]` in `vendor/markdown-it/Cargo.toml`)
+  and their crate dependencies stay out of the build. Every Crucible caller
+  (`crates/crucible-core/src/parser/basic_markdown_it.rs`,
+  `crates/crucible-cli/src/formatting/markdown_renderer.rs`,
+  `crates/crucible-cli/src/tui/oil/markdown/context.rs`) calls only
+  `plugins::cmark::add` and `plugins::extra::tables::add`. The crate's own
+  tests still build with its defaults, because the vendored crate is outside
+  the workspace.
 - **The commented-out `no_block_parser` test in `tests/extras.rs`** is
   inert (compiled out) and not evidence of a broken feature, just an
   unresolved upstream experiment.
