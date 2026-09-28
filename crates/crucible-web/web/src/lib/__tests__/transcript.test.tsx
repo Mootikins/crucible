@@ -122,6 +122,16 @@ describe('itemToMessage', () => {
     ).toMatchObject({ role: 'system', content: 'cut off' });
   });
 
+  it('keeps the time of an item and the cached tokens of an answer', () => {
+    const at = '2026-08-11T12:00:01Z';
+    expect(itemToMessage(userTurn('u', 'hi', { timestamp: at }))?.timestamp).toBe(Date.parse(at));
+    expect(itemToMessage(userTurn('u', 'hi'))?.timestamp).toBe(0);
+    const answer = segment('u', 0, 'a', {
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cache_read_tokens: 7 },
+    });
+    expect(itemToMessage(answer)?.usage).toMatchObject({ totalTokens: 15, cacheReadTokens: 7 });
+  });
+
   it('draws no injected context', () => {
     expect(
       itemToMessage({ id: 'x', type: 'injected_context', role: 'user', content: 'ctx' }),

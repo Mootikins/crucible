@@ -29,9 +29,11 @@ export type TurnPartSpec =
   | { kind: 'text'; id: string }
   | { kind: 'tools'; key: string; ids: string[] };
 
-/** Format token usage as a compact string, e.g. "150 tokens" */
+/** Format token usage as a compact string, e.g. "150 tokens (25 cached)" */
 function formatTokenUsage(usage: TokenUsage): string {
-  return `${usage.totalTokens.toLocaleString()} tokens`;
+  const total = `${usage.totalTokens.toLocaleString()} tokens`;
+  // The row names the cache only when the provider read from it.
+  return usage.cacheReadTokens ? `${total} (${usage.cacheReadTokens.toLocaleString()} cached)` : total;
 }
 
 // Also shown by DraftSessionPanel's instant pending-preview — one dots

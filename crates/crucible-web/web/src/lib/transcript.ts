@@ -120,11 +120,11 @@ function delegation(item: ItemOf<'delegation'>): SubagentEvent {
  * The view model of one transcript item, or `null` for an item that the web
  * client does not draw (injected context).
  *
- * A transcript item carries no time, so `timestamp` is 0 and the components
- * draw no time for it.
+ * An item from an older daemon carries no time. Its `timestamp` is 0, and the
+ * components draw no time for it.
  */
 export function itemToMessage(item: TranscriptItem): Message | null {
-  const base = { id: item.id, timestamp: 0 };
+  const base = { id: item.id, timestamp: item.timestamp ? Date.parse(item.timestamp) : 0 };
   switch (item.type) {
     case 'user_turn': {
       const plugin = originName(item.origin, 'plugin');
@@ -171,6 +171,9 @@ export function itemToMessage(item: TranscriptItem): Message | null {
                 promptTokens: item.usage.prompt_tokens ?? 0,
                 completionTokens: item.usage.completion_tokens ?? 0,
                 totalTokens: item.usage.total_tokens,
+                ...(item.usage.cache_read_tokens != null
+                  ? { cacheReadTokens: item.usage.cache_read_tokens }
+                  : {}),
               },
             }
           : {}),

@@ -22,6 +22,8 @@ export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** Tokens read from the provider's cache, when the provider measured them. */
+  cacheReadTokens?: number;
 }
 
 /** One row that the chat transcript draws. */

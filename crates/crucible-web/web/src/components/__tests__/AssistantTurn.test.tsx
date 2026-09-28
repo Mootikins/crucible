@@ -140,6 +140,19 @@ describe('AssistantTurn — one meta row per turn', () => {
     expect(screen.getAllByText(formatAbsoluteTime(ts))).toHaveLength(1);
   });
 
+  it('names the cached tokens when the provider measured them', () => {
+    messagesAccessor = () => [
+      textMsg('a1', 'first', {
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 1234, cacheReadTokens: 25 },
+      }),
+    ];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+
+    expect(
+      screen.getByText(`${(1234).toLocaleString()} tokens (${(25).toLocaleString()} cached)`),
+    ).toBeInTheDocument();
+  });
+
   it('picks up usage from whichever (last) segment carries it', () => {
     messagesAccessor = () => [
       textMsg('a1', 'first', {
