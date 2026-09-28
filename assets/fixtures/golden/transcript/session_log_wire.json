@@ -1,0 +1,72 @@
+{
+  "as_of_seq": 6,
+  "items": [
+    {
+      "id": "m1",
+      "turn_id": "m1",
+      "type": "user_turn",
+      "content": "how do I read a file"
+    },
+    {
+      "id": "m1-seg-0",
+      "turn_id": "m1",
+      "type": "assistant_segment",
+      "index": 0,
+      "text": "",
+      "thinking": "consider std::fs",
+      "streaming": false
+    },
+    {
+      "id": "tool-c1",
+      "turn_id": "m1",
+      "type": "tool_card",
+      "call_id": "c1",
+      "name": "read_file",
+      "args": {
+        "path": "Cargo.toml"
+      },
+      "display": {
+        "kind": "file_read",
+        "tool": "read_file",
+        "paths": [
+          "Cargo.toml"
+        ],
+        "render": {
+          "line": "Cargo.toml",
+          "fields": [
+            {
+              "label": "kind",
+              "value": "file_read"
+            },
+            {
+              "label": "tool",
+              "value": "read_file"
+            },
+            {
+              "label": "rawInput",
+              "value": {
+                "path": "Cargo.toml"
+              }
+            }
+          ]
+        }
+      },
+      "status": "complete",
+      "result": "[package]\nname = \"example\"",
+      "terminate": false
+    },
+    {
+      "id": "m1-seg-1",
+      "turn_id": "m1",
+      "type": "assistant_segment",
+      "index": 1,
+      "text": "Use std::fs::read_to_string.",
+      "streaming": false,
+      "usage": {
+        "prompt_tokens": 25,
+        "completion_tokens": 75,
+        "total_tokens": 100
+      }
+    }
+  ]
+}

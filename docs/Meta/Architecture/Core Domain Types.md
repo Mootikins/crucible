@@ -237,6 +237,8 @@ behavior on top of them.
 
 | Path | Lines | Role |
 |---|---|---|
+| `crates/crucible-core/src/transcript/mod.rs` | 952 | `TranscriptFold`, `Transcript`, `TranscriptItem`, `TranscriptOp`: the one fold from session events to what a client draws (user turns, answer segments, tool cards, delegations, injected context, notices). `TranscriptFold::apply` gives the ops of each event; `Transcript::apply` replays them on a snapshot. |
+| `crates/crucible-core/src/transcript/tests.rs` | 353 | The fold of a live turn and of its stored events give one transcript; the ops rebuild the snapshot; golden files in `assets/fixtures/golden/transcript/` hold the fold of five recordings. |
 | `crates/crucible-core/src/turn/mod.rs` | 719 | `TurnEvent`/`Agent` trait/`StopReason`/`AgentCapabilities`/`TurnContext`/`TurnStatus`/`TurnOrigin` — the unified agent-event protocol; a turn ends before any handler-requested follow-up runs. |
 | `crates/crucible-core/src/turn/tree.rs` | 622 | `ConversationTree`/`TurnNode`/`NodeContent`/`NodeId` — the append-only, branchable conversation store; `NodeContent::Plugin` gives a plugin-requested turn its own node kind. |
 

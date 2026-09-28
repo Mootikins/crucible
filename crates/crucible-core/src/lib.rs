@@ -41,6 +41,7 @@ pub mod storage;
 pub mod test_support;
 pub mod text;
 pub mod traits;
+pub mod transcript;
 pub mod turn;
 pub mod types;
 pub mod utils;

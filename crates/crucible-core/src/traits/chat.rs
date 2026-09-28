@@ -62,7 +62,7 @@ pub enum ChatError {
 
 /// Metadata about a note found during Precognition enrichment.
 /// Carried through RPC so TUI/web can display which notes informed the response.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PrecognitionNoteInfo {
     pub title: String,
     /// Which kiln the note came from, by registry name.

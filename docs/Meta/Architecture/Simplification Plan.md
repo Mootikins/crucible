@@ -36,7 +36,7 @@ at the same time. Each step leaves the tree working.
 | Step | Deletes | Size | Depends on |
 |---|---|---|---|
 | 1. Remove the client-side agent proxy (done) | one client API layer | L | none |
-| 2. One event path to the clients (sub-steps 1 and 2 done) | three event projections, one event type | L | step 1 helps |
+| 2. One event path to the clients (sub-steps 1 and 2 done, sub-step 3 started) | three event projections, one event type | L | step 1 helps |
 | 3. One command registry (done) | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client (done) | a swapped pair of type names | S | none |
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
@@ -136,6 +136,22 @@ session files can hold them; sub-step 2 replaces that type.
 
 Do sub-steps 1 and 2 first. Sub-step 3 is the largest part, and it removes
 the class of bug where the TUI and the web client show one turn differently.
+
+**Sub-step 3, the plan.** The fold lives in core, and the daemon is the only
+process that runs it for a session. The daemon folds each event as it
+broadcasts it, and sends the ops of the fold with the event. The session
+history carries the folded snapshot. A client applies the snapshot, then the
+ops. The commits, in order:
+1. **(done)** `crates/crucible-core/src/transcript/`: the types, the fold and
+   the op replay, with golden files for five recordings.
+2. `session.history` returns the snapshot.
+3. The daemon event bus folds each event and sends its ops.
+4. The web backend forwards the ops.
+5. The web client renders the snapshot and the ops. Its own fold goes.
+6. The TUI renders the snapshot and the ops. Its own fold goes.
+7. `cru acp` replays the snapshot on `session/load`, and maps the ops.
+8. A parity test renders one fixture in all three clients.
+9. The markdown export and the Lua history read the snapshot.
 
 **Proof.** One fixture transcript renders the same turns, segments and tool
 cards in the TUI, the web client and `cru acp`. See [[Data Flows]] and

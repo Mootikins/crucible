@@ -1,0 +1,60 @@
+{
+  "as_of_seq": 9,
+  "items": [
+    {
+      "id": "msg-parity-0001",
+      "turn_id": "msg-parity-0001",
+      "type": "user_turn",
+      "content": "fix the greeting"
+    },
+    {
+      "id": "msg-parity-0001-seg-0",
+      "turn_id": "msg-parity-0001",
+      "type": "assistant_segment",
+      "index": 0,
+      "text": "I'll fix the greeting.",
+      "streaming": false
+    },
+    {
+      "id": "tool-call-edit-1",
+      "turn_id": "msg-parity-0001",
+      "type": "tool_card",
+      "call_id": "call-edit-1",
+      "name": "edit_file",
+      "args": {
+        "path": "greeting.rs",
+        "old_string": "hello",
+        "new_string": "hello, world"
+      },
+      "source": "Core",
+      "display": {
+        "kind": "file_edit",
+        "tool": "edit_file",
+        "paths": [
+          "greeting.rs"
+        ],
+        "diffs": [
+          {
+            "path": "greeting.rs",
+            "old_content": "hello",
+            "new_content": "hello, world"
+          }
+        ],
+        "render": {
+          "line": "greeting.rs"
+        }
+      },
+      "status": "complete",
+      "result": "Replaced 1 occurrence(s)",
+      "terminate": false
+    },
+    {
+      "id": "msg-parity-0001-seg-1",
+      "turn_id": "msg-parity-0001",
+      "type": "assistant_segment",
+      "index": 1,
+      "text": " Done.",
+      "streaming": false
+    }
+  ]
+}
