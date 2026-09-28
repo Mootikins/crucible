@@ -3,7 +3,7 @@
 //! Daemon-only: all storage access goes through the daemon via RPC.
 
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::Result;
 use crucible_core::storage::NoteStore;
 use crucible_daemon::{DaemonNoteStore, DaemonStorageClient};
@@ -103,7 +103,7 @@ impl KilnOpenSummary {
 ///
 /// Connects to the daemon (auto-starting if needed), opens the kiln,
 /// and returns a `CliStorageHandle` for queries.
-pub async fn get_storage(config: &CliConfig) -> Result<CliStorageHandle> {
+pub async fn get_storage(config: &CliAppConfig) -> Result<CliStorageHandle> {
     Ok(get_storage_with_summary(config).await?.0)
 }
 
@@ -113,7 +113,7 @@ pub async fn get_storage(config: &CliConfig) -> Result<CliStorageHandle> {
 /// has never seen is parsed and embedded note by note before this returns. A
 /// caller that makes the user wait for it should be able to say why.
 pub async fn get_storage_with_summary(
-    config: &CliConfig,
+    config: &CliAppConfig,
 ) -> Result<(CliStorageHandle, KilnOpenSummary)> {
     info!("Using daemon storage mode");
     let client = daemon_client().await?;

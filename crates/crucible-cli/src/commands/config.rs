@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::cli::ConfigCommands;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::output;
 
 /// Execute config subcommand
@@ -12,7 +12,7 @@ use crate::output;
 /// resolution in `async_main` is what honours `--config/-C`, the embedding
 /// overrides, and the first-run wizard's rewrite.
 pub async fn execute(
-    config: CliConfig,
+    config: CliAppConfig,
     cmd: ConfigCommands,
     config_path_flag: Option<PathBuf>,
 ) -> Result<()> {
@@ -75,7 +75,7 @@ cru.config.set({
 /// Write a new config file: an example `init.luau`.
 async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
     let config_path = path.unwrap_or_else(|| {
-        let toml_path = CliConfig::default_config_path();
+        let toml_path = CliAppConfig::default_config_path();
         let dir = toml_path.parent().unwrap_or(std::path::Path::new("."));
         // The config that is already THERE, under either name, so an existing
         // `init.luau` is recognised rather than written beside. Creating the
@@ -128,7 +128,7 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
 }
 
 /// Render the effective configuration for `config show`
-fn render(config: &CliConfig, format: &str, sources: bool) -> Result<String> {
+fn render(config: &CliAppConfig, format: &str, sources: bool) -> Result<String> {
     Ok(match (format, sources) {
         ("json", true) => config.display_as_json_with_sources()?,
         ("json", false) => config.display_as_json()?,
@@ -139,7 +139,7 @@ fn render(config: &CliConfig, format: &str, sources: bool) -> Result<String> {
 
 /// Dump default configuration to stdout
 async fn dump(format: String) -> Result<()> {
-    println!("{}", render(&CliConfig::default(), &format, false)?);
+    println!("{}", render(&CliAppConfig::default(), &format, false)?);
     Ok(())
 }
 

@@ -5,7 +5,7 @@
 use anyhow::Result;
 use clap::Subcommand;
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 
 mod add;
 mod check;
@@ -213,7 +213,7 @@ pub struct HealthArgs {
 }
 
 /// Execute plugin subcommand
-pub async fn execute(config: CliConfig, cmd: PluginCommands) -> Result<()> {
+pub async fn execute(config: CliAppConfig, cmd: PluginCommands) -> Result<()> {
     match cmd {
         PluginCommands::Test(args) => test::execute(config, args).await,
         PluginCommands::New(args) => new::execute(config, args).await,

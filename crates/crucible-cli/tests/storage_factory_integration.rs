@@ -6,7 +6,7 @@
 //! These tests modify `XDG_RUNTIME_DIR` and use `#[serial]` to prevent conflicts.
 
 use anyhow::{bail, Result};
-use crucible_cli::config::CliConfig;
+use crucible_cli::config::CliAppConfig;
 use crucible_cli::factories::get_storage;
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
@@ -95,8 +95,8 @@ impl TestServer {
 }
 
 /// Create a test config (daemon mode is always used)
-fn create_daemon_config(kiln_path: PathBuf) -> CliConfig {
-    CliConfig {
+fn create_daemon_config(kiln_path: PathBuf) -> CliAppConfig {
+    CliAppConfig {
         kiln_path,
         ..Default::default()
     }
@@ -178,7 +178,7 @@ async fn test_get_storage_fails_when_no_daemon() {
     );
 
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-    let config = CliConfig {
+    let config = CliAppConfig {
         kiln_path: kiln_dir.path().to_path_buf(),
         ..Default::default()
     };

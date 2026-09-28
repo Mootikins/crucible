@@ -48,7 +48,7 @@ use agent_client_protocol::Stdio;
 use anyhow::{Context, Result};
 use tracing::info;
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::kiln_attach::{AttachedKiln, CliKilnRegistry, KilnTarget};
 use crate::kiln_discover::discover_kiln;
 
@@ -59,7 +59,7 @@ pub use agent::CrucibleAcpAgent;
 /// `kiln_override` comes from `cru acp --kiln <name-or-path>`; otherwise the
 /// kiln is taken from config or discovered by walking up from the current
 /// directory. This is headless: we never prompt (an editor host has no TTY).
-pub async fn execute(mut config: CliConfig, kiln_override: Option<String>) -> Result<()> {
+pub async fn execute(mut config: CliAppConfig, kiln_override: Option<String>) -> Result<()> {
     resolve_kiln(&mut config, kiln_override).await?;
     info!(kiln = %config.kiln_path.display(), "starting ACP agent (cru acp)");
 
@@ -83,7 +83,7 @@ pub async fn execute(mut config: CliConfig, kiln_override: Option<String>) -> Re
 /// through the same registration door: sessions address kilns by name, and a
 /// discovered directory with no `[kilns]` entry would otherwise produce a
 /// session with no kiln at all.
-async fn resolve_kiln(config: &mut CliConfig, kiln_override: Option<String>) -> Result<()> {
+async fn resolve_kiln(config: &mut CliAppConfig, kiln_override: Option<String>) -> Result<()> {
     if let Some(value) = kiln_override {
         let attached = attach_kiln(config, &value).await?;
         attached.apply_to(config);
@@ -113,7 +113,7 @@ async fn resolve_kiln(config: &mut CliConfig, kiln_override: Option<String>) -> 
 /// comes back from the daemon rather than being derived here: it depends on
 /// what is already registered — `notes`, then `notes-2` — so a caller deriving
 /// its own would derive against a different set.
-async fn attach_kiln(config: &CliConfig, value: &str) -> Result<AttachedKiln> {
+async fn attach_kiln(config: &CliAppConfig, value: &str) -> Result<AttachedKiln> {
     let registry = CliKilnRegistry::for_cli(config)?;
     let directory = match registry.resolve(value)? {
         KilnTarget::Registered(attached) => return Ok(attached),
@@ -164,7 +164,7 @@ mod tests {
         let (a_read, a_write) = tokio::io::split(agent_end);
         let (c_read, c_write) = tokio::io::split(client_end);
 
-        let agent = Arc::new(CrucibleAcpAgent::new(CliConfig::default()));
+        let agent = Arc::new(CrucibleAcpAgent::new(CliAppConfig::default()));
         let serving =
             tokio::spawn(agent.serve(ByteStreams::new(a_write.compat_write(), a_read.compat())));
 

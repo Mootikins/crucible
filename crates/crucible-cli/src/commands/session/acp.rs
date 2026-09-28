@@ -1,4 +1,4 @@
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::{anyhow, bail, Result};
 use crucible_core::config::BackendType;
 use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
@@ -184,7 +184,7 @@ pub(super) mod rpc {
 
     pub(crate) async fn list(
         client: &DaemonClient,
-        _config: &CliConfig,
+        _config: &CliAppConfig,
         session_type: Option<&str>,
         state: Option<&str>,
         format: &str,
@@ -255,7 +255,7 @@ pub(super) mod rpc {
 
     pub(crate) async fn create(
         client: &DaemonClient,
-        config: &CliConfig,
+        config: &CliAppConfig,
         params: CreateParams<'_>,
     ) -> Result<()> {
         let recording_mode_parsed = match params.recording_mode {
@@ -544,7 +544,7 @@ pub(super) mod rpc {
     /// here, so the agent must not borrow the config default's endpoint or
     /// key (same rule as `session.create`).
     pub(super) fn configured_agent(
-        config: &CliConfig,
+        config: &CliAppConfig,
         provider: BackendType,
         model: &str,
         endpoint: Option<String>,
@@ -559,7 +559,7 @@ pub(super) mod rpc {
 
     pub(crate) async fn configure(
         client: &DaemonClient,
-        config: &CliConfig,
+        config: &CliAppConfig,
         session_id: &str,
         provider: BackendType,
         model: &str,
@@ -618,7 +618,7 @@ pub(super) mod rpc {
     }
 
     pub(crate) async fn replay(
-        _config: &CliConfig,
+        _config: &CliAppConfig,
         recording_path: &str,
         speed: f64,
         raw: bool,
@@ -701,7 +701,7 @@ pub(super) mod rpc {
 mod tests {
     use super::rpc::configured_agent;
     use super::{agent_type_for, annotate_unknown_agent, raw_event_json, wants_bare_id};
-    use crate::config::CliConfig;
+    use crate::config::CliAppConfig;
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     /// `cru session configure` names a provider, so the agent it sends must
@@ -712,7 +712,7 @@ mod tests {
             .endpoint("http://ollama.test:11434")
             .model("config-model")
             .build();
-        let config = CliConfig {
+        let config = CliAppConfig {
             llm: LlmConfig {
                 default: Some("local".to_string()),
                 providers: [("local".to_string(), local)].into_iter().collect(),

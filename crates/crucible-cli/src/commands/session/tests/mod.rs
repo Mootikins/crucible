@@ -1,4 +1,4 @@
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crucible_daemon::{SessionId, SessionType};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -13,8 +13,8 @@ mod show;
 /// `data_home`, not `kiln_path`: sessions no longer live inside a kiln, so
 /// `io::sessions_dir` reads the data root — and leaving it unset would point
 /// these tests at the developer's real `~/.crucible`.
-pub(super) fn test_config(tmp: &Path) -> CliConfig {
-    CliConfig {
+pub(super) fn test_config(tmp: &Path) -> CliAppConfig {
+    CliAppConfig {
         kiln_path: tmp.to_path_buf(),
         data_home: Some(tmp.to_path_buf()),
         ..Default::default()

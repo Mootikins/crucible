@@ -1,5 +1,5 @@
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::{Context, Result};
 
 /// Search past sessions via the daemon's `session.search` RPC.
@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 /// can't be reached or started, this fails like every other daemon-dependent
 /// command rather than falling back to a divergent client-side scan.
 pub(super) async fn search(
-    config: CliConfig,
+    config: CliAppConfig,
     query: String,
     limit: u32,
     format: String,

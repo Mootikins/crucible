@@ -12,7 +12,7 @@ use colored::Colorize;
 use std::io::IsTerminal;
 use tracing::{info, warn};
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::kiln_discover::{discover_kiln, DiscoverySource};
 use crate::provider_detect::detect_providers;
 
@@ -66,7 +66,7 @@ pub async fn ensure_providers_available(
 /// try auto-discovery (git root ascent). If that fails AND stdin is a TTY,
 /// prompt the user. If stdin is not a TTY, bail with a clear error — we
 /// cannot prompt in a headless context.
-pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
+pub async fn ensure_valid_kiln(config: &mut CliAppConfig) -> Result<()> {
     let config_kiln_valid = config.kiln_path.join(".crucible").is_dir();
     if config_kiln_valid {
         info!("Using kiln from config: {}", config.kiln_path.display());
@@ -210,7 +210,7 @@ async fn registered_default_kiln() -> Option<std::path::PathBuf> {
 /// This mirrors a side-effect that `run_preflight_checks` did before setup
 /// moved daemon-side. Detection is purely local (env + config + credentials),
 /// no HTTP probing.
-pub fn fill_default_model_if_missing(config: &mut CliConfig) {
+pub fn fill_default_model_if_missing(config: &mut CliAppConfig) {
     if config.chat.model.is_some() {
         return;
     }

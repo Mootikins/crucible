@@ -1,12 +1,12 @@
 use super::io::{list_session_dirs, read_session_events, sessions_dir};
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::{anyhow, Result};
 use crucible_core::text::truncate_chars;
 use crucible_daemon::{LogEvent, SessionId, SessionType};
 
 pub(super) async fn list(
-    config: CliConfig,
+    config: CliAppConfig,
     limit: u32,
     session_type: Option<String>,
     format: String,
@@ -37,7 +37,7 @@ pub(super) async fn list(
 }
 
 pub(super) async fn list_persisted(
-    config: CliConfig,
+    config: CliAppConfig,
     limit: u32,
     session_type: Option<String>,
     format: String,

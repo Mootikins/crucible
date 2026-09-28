@@ -11,7 +11,7 @@
 
 use anyhow::{bail, Result};
 use crucible_cli::commands::process;
-use crucible_cli::config::CliConfig;
+use crucible_cli::config::CliAppConfig;
 use crucible_core::config::{AcpConfig, BackendType, LlmConfig, LlmProviderConfig};
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use crucible_core::test_support::EnvVarGuard;
@@ -65,7 +65,7 @@ fn create_test_kiln() -> Result<TempDir> {
 }
 
 /// Helper to create test CLI config
-fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
+fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliAppConfig {
     let mut llm_config = LlmConfig::default();
     llm_config.default = Some("local".to_string());
     llm_config.providers.insert(
@@ -73,7 +73,7 @@ fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfi
         LlmProviderConfig::builder(BackendType::FastEmbed).build(),
     );
 
-    CliConfig {
+    CliAppConfig {
         kiln_path,
         acp: AcpConfig {
             default_agent: Some("test-agent".to_string()),
@@ -506,7 +506,7 @@ async fn test_dry_run_with_verbose() -> Result<()> {
 // JoinHandle, so the "detects file modification" tests wrote a file and checked
 // nothing about whether it was detected. They had also stopped running at all:
 // `process::execute` reaches storage through the daemon, and these built a
-// CliConfig with no daemon behind it.
+// CliAppConfig with no daemon behind it.
 //
 // Watch behaviour is tested where it happens, daemon-side and unignored:
 // tests/watch_indexing.rs, watch_note_parsed_emission_tests.rs,

@@ -19,7 +19,7 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::{OutputFormat, TextFormat};
 
 #[derive(Subcommand)]
@@ -69,7 +69,7 @@ pub enum WorkflowSubcommand {
     },
 }
 
-pub async fn execute(config: CliConfig, command: WorkflowSubcommand) -> Result<()> {
+pub async fn execute(config: CliAppConfig, command: WorkflowSubcommand) -> Result<()> {
     match command {
         WorkflowSubcommand::List { format } => run_list(config, OutputFormat::for_stdout(format)),
         WorkflowSubcommand::Show { target, format } => run_show(config, &target, format),
@@ -97,7 +97,7 @@ struct ListEntry {
     gate_count: usize,
 }
 
-fn run_list(config: CliConfig, format: OutputFormat) -> Result<()> {
+fn run_list(config: CliAppConfig, format: OutputFormat) -> Result<()> {
     let kiln_path = &config.kiln_path;
     if !kiln_path.exists() {
         return Err(anyhow!("Kiln path does not exist: {}", kiln_path.display()));
@@ -189,7 +189,7 @@ fn run_list(config: CliConfig, format: OutputFormat) -> Result<()> {
 
 // ---------- show ----------
 
-fn run_show(config: CliConfig, target: &str, format: TextFormat) -> Result<()> {
+fn run_show(config: CliAppConfig, target: &str, format: TextFormat) -> Result<()> {
     let kiln_path = &config.kiln_path;
     let wf = resolve_workflow(kiln_path, target)?;
 
@@ -378,7 +378,7 @@ where
 
 // ---------- execution commands (Phase 3a) ----------
 
-async fn run_start(config: CliConfig, target: &str, _session: Option<&str>) -> Result<()> {
+async fn run_start(config: CliAppConfig, target: &str, _session: Option<&str>) -> Result<()> {
     // Locate the workflow note and keep the source for RPC transport.
     let (path, source) = load_workflow_source(&config.kiln_path, target)?;
 
@@ -588,8 +588,8 @@ mod tests {
         std::fs::write(path, body).unwrap();
     }
 
-    fn kiln_config(root: &Path) -> CliConfig {
-        CliConfig {
+    fn kiln_config(root: &Path) -> CliAppConfig {
+        CliAppConfig {
             kiln_path: root.to_path_buf(),
             ..Default::default()
         }

@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use tracing::info;
 
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 
 /// MCP server command arguments
 #[derive(Parser, Debug)]
@@ -68,7 +68,7 @@ impl Default for McpArgs {
 ///
 /// - **SSE (default)**: Starts HTTP server on specified port
 /// - **Stdio**: Uses stdin/stdout, logs to file
-pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
+pub async fn execute(config: CliAppConfig, args: McpArgs) -> Result<()> {
     // Determine kiln path (override or config default)
     let kiln_path = args.kiln_path.unwrap_or(config.kiln_path.clone());
     let kiln_path_str = kiln_path.to_string_lossy().to_string();

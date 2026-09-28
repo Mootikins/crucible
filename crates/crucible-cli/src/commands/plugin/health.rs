@@ -3,7 +3,7 @@ use crucible_daemon::{LuaPluginHealthRequest, LuaPluginHealthResponse};
 use serde_json::json;
 
 use super::HealthArgs;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 
 /// The verdict line for a health response.
 ///
@@ -21,7 +21,7 @@ fn verdict(response: &LuaPluginHealthResponse) -> &'static str {
     }
 }
 
-pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
+pub async fn execute(_config: CliAppConfig, args: HealthArgs) -> Result<()> {
     // Validate path exists
     if !args.path.exists() {
         eprintln!("Error: Plugin path does not exist: {}", args.path.display());

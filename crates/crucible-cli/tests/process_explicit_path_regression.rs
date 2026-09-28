@@ -8,7 +8,7 @@
 
 use anyhow::{bail, Result};
 use crucible_cli::commands::process;
-use crucible_cli::config::CliConfig;
+use crucible_cli::config::CliAppConfig;
 use crucible_core::config::{AcpConfig, BackendType, LlmConfig, LlmProviderConfig};
 use crucible_core::storage::Scope;
 use crucible_core::test_support::EnvVarGuard;
@@ -40,7 +40,7 @@ async fn wait_for_daemon_ready(socket_path: &Path) -> Result<()> {
     }
 }
 
-fn config_with_kiln(kiln_path: PathBuf) -> CliConfig {
+fn config_with_kiln(kiln_path: PathBuf) -> CliAppConfig {
     #![allow(clippy::field_reassign_with_default)]
     #[allow(clippy::field_reassign_with_default)]
     let mut llm_config = LlmConfig::default();
@@ -50,7 +50,7 @@ fn config_with_kiln(kiln_path: PathBuf) -> CliConfig {
         LlmProviderConfig::builder(BackendType::FastEmbed).build(),
     );
 
-    CliConfig {
+    CliAppConfig {
         kiln_path,
         acp: AcpConfig {
             default_agent: Some("test-agent".to_string()),

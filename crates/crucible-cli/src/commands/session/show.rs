@@ -1,11 +1,11 @@
 use super::io::{display_events_text, format_events_markdown, read_session_events, sessions_dir};
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::output;
 use anyhow::Result;
 use crucible_daemon::{LogEvent, SessionId};
 
-pub(super) async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
+pub(super) async fn show(config: CliAppConfig, id: String, format: String) -> Result<()> {
     let client = daemon_client().await.ok();
 
     if let Some(client) = &client {

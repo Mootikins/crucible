@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::cli::SkillsCommands;
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::OutputFormat;
 
 #[derive(Debug, Serialize)]
@@ -20,7 +20,7 @@ pub struct SkillOutput {
 }
 
 /// Execute skills subcommand
-pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
+pub async fn execute(config: CliAppConfig, command: SkillsCommands) -> Result<()> {
     match command {
         SkillsCommands::List { scope, format } => {
             list(&config, scope, OutputFormat::for_stdout(format)).await
@@ -32,7 +32,7 @@ pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
 
 /// List discovered skills
 async fn list(
-    config: &CliConfig,
+    config: &CliAppConfig,
     scope_filter: Option<String>,
     format: OutputFormat,
 ) -> Result<()> {
@@ -107,7 +107,7 @@ async fn list(
 }
 
 /// Show skill details
-async fn show(config: &CliConfig, name: String) -> Result<()> {
+async fn show(config: &CliAppConfig, name: String) -> Result<()> {
     let client = daemon_client().await?;
     // A missing skill surfaces as an RPC error from the daemon, so `?` above
     // is the not-found path — no fallback listing here.
@@ -136,7 +136,7 @@ async fn show(config: &CliConfig, name: String) -> Result<()> {
 }
 
 /// Search skills (basic text matching)
-async fn search(config: &CliConfig, query: String, limit: usize) -> Result<()> {
+async fn search(config: &CliAppConfig, query: String, limit: usize) -> Result<()> {
     println!("Searching for: '{}' (limit: {})", query, limit);
 
     let client = daemon_client().await?;

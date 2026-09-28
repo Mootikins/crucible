@@ -150,7 +150,7 @@ async fn test_factory_propagates_errors() {
 //
 // These tests verify the factory pattern structure and behavior.
 // Full integration requires:
-// - Real CliConfig
+// - Real CliAppConfig
 // - Database setup
 // - LLM provider configuration
 // - ACP agent discovery

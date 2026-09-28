@@ -3,7 +3,7 @@ use colored::Colorize;
 use crucible_daemon::{LuaRunPluginTestsRequest, LuaRunPluginTestsResponse};
 
 use super::TestArgs;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 
 /// The process exit code for a finished run.
 ///
@@ -20,7 +20,7 @@ fn exit_code(response: &LuaRunPluginTestsResponse) -> i32 {
     }
 }
 
-pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
+pub async fn execute(_config: CliAppConfig, args: TestArgs) -> Result<()> {
     // Resolved HERE, before it crosses the RPC boundary. The daemon re-checks
     // existence against its OWN working directory, which is wherever it was
     // spawned — `%h` for the systemd unit, the repo root for a shell-started

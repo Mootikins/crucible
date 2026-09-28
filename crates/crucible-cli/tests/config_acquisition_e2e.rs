@@ -93,7 +93,7 @@ fn a_daemon_on_a_different_config_root_is_refused() {
 ///
 /// Two regressions meet here. `--config` once never reached the load at all,
 /// so a named root's port, API key and allow-list were silently the defaults.
-/// Then the load kept calling `CliAppConfig::load`, which reads `config.toml`
+/// Then the load kept calling `CliConfig::load`, which reads `config.toml`
 /// and nothing else — so after the boot stopped reading that file, `cru web`
 /// served the defaults to everyone whose settings live in `init.lua`, and
 /// reported success while doing it.

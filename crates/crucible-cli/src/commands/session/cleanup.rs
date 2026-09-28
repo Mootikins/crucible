@@ -1,6 +1,6 @@
 use super::io::sessions_dir;
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::Result;
 
 /// Delete sessions older than `older_than` days.
@@ -12,7 +12,7 @@ use anyhow::Result;
 /// machine. Both the flag and the daemon's `all_kilns` param exist so no
 /// existing invocation can silently grow a blast radius.
 pub(super) async fn cleanup(
-    config: CliConfig,
+    config: CliAppConfig,
     older_than: u32,
     dry_run: bool,
     all_kilns: bool,

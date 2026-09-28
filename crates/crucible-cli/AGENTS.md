@@ -28,14 +28,18 @@ setting. Use the cross-layer checklist in the root `AGENTS.md`.
 ## Imports from other crates
 
 The CLI imports types and display helpers from `crucible-daemon`,
-`crucible-lua` and `crucible-oil`. It must not run daemon logic in its own
-process.
+`crucible-lua` and `crucible-oil`. It must not hold its own copy of daemon
+logic.
 
-Some commands still do that: `cru plugin add`, `cru plugin check`,
-`cru plugin stubs`, and the config evaluation in `src/config.rs`,
-`src/main.rs`, `src/commands/daemon.rs` and `src/commands/doctor.rs`.
-[Simplification Plan](<../../docs/Meta/Architecture/Simplification Plan.md>)
-step 4 moves them to RPC. Do not add another one.
+A few commands run daemon code in the CLI process, for offline and
+diagnostic use. Each one calls the daemon's own function, not a copy:
+- `cru plugin add` without a reachable daemon (`plugin_ops::install`).
+- `cru plugin stubs --offline` and `cru plugin check` (`DaemonPluginLoader`).
+- `cru doctor` and the bootstrap commands (`evaluate_boot_config`), which
+  must work when the daemon cannot start.
+
+When a daemon runs, a command uses its RPC. Do not add a client-side copy
+of daemon behavior.
 
 ## Where things are
 

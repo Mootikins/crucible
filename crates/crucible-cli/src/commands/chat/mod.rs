@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::commands::chat_preflight::{ensure_valid_kiln, fill_default_model_if_missing};
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::output;
 use crate::status_line::StatusLine;
 use crate::tui::AgentSelection;
@@ -19,7 +19,7 @@ use crucible_core::config::ChatScreen;
 
 /// The flags that every chat run shares, plus the mode that selects the run.
 pub struct ChatParams {
-    pub config: CliConfig,
+    pub config: CliAppConfig,
     pub agent_name: Option<String>,
     pub agent_card: Option<String>,
     /// The user's `--plan` intent, threaded rather than re-derived.
@@ -43,7 +43,7 @@ pub struct ChatParams {
 
 impl ChatParams {
     /// The flags of a plain `cru chat` with no arguments.
-    pub fn new(config: CliConfig) -> Self {
+    pub fn new(config: CliAppConfig) -> Self {
         Self {
             config,
             agent_name: None,
@@ -245,7 +245,7 @@ async fn run_replay(
     path: PathBuf,
     speed: f64,
     auto_exit: Option<u64>,
-    config: &CliConfig,
+    config: &CliAppConfig,
     screen: ChatScreen,
 ) -> Result<()> {
     use crate::tui::oil::OilChatRunner;
@@ -1018,7 +1018,7 @@ fn plugin_command_entries(commands: &[serde_json::Value]) -> Vec<(String, String
 ///
 /// The folder is beside the daemon's session store, never in it. The data
 /// home is the one `sessions_dir` reads, so a relocated root moves both.
-fn shell_output_dir(config: &CliConfig) -> PathBuf {
+fn shell_output_dir(config: &CliAppConfig) -> PathBuf {
     config
         .data_home
         .clone()

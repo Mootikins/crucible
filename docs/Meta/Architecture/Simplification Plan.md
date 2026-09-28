@@ -38,7 +38,7 @@ at the same time. Each step leaves the tree working.
 | 1. Remove the client-side agent proxy (done) | one client API layer | L | none |
 | 2. One event path to the clients (sub-steps 1 and 2 done) | three event projections, one event type | L | step 1 helps |
 | 3. One command registry | two command interpreters, one hand list | M | none |
-| 4. The CLI is an RPC client | an in-process daemon in the CLI | M | none |
+| 4. The CLI is an RPC client (done) | a swapped pair of type names | S | none |
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
 | 6. Wire types live in core | a second home for wire types | M | steps 1 and 4 |
 | 7. One test server | 18 test-server copies, a hand mock | M | step 6 helps |
@@ -162,31 +162,27 @@ The daemon lists plugin commands with `plugin.commands`. The web palette in
 
 ## Step 4. The CLI is an RPC client
 
-**Now.** The CLI runs daemon code in its own process.
-- `cru plugin add` calls `plugin_ops::install` directly in
-  `crates/crucible-cli/src/commands/plugin/add.rs`. The daemon also serves
-  `plugin.install`.
-- `cru plugin check` and `cru plugin stubs` build a `DaemonPluginLoader` in
-  `crates/crucible-cli/src/commands/plugin/`.
-- `crates/crucible-cli/src/config.rs`, `crates/crucible-cli/src/main.rs`,
-  `crates/crucible-cli/src/commands/daemon.rs` and
-  `crates/crucible-cli/src/commands/doctor.rs` call `evaluate_boot_config`.
-- The legacy `CliAppConfig` is still the config type of 11 CLI files.
+**Status: done.** A closer read showed less to change than this step first
+said.
 
-**Change.**
-1. Send plugin install, check and stubs to the daemon as RPC calls.
-2. Read the effective config from the daemon. Keep a local evaluation only
-   where the daemon cannot start, for example in `cru doctor`, and name that
-   reason in the code.
-3. Keep `CliAppConfig` only inside `cru config migrate`.
-4. In `crates/crucible-daemon/src/lib.rs`, make each module private when no
-   other crate uses it any more.
+**What the code does.** `cru plugin add` and `cru plugin remove` go through
+`plugin.install` and `plugin.remove`. Four places run daemon code in the
+CLI process, and each one calls the daemon's own function, not a copy:
+- `cru plugin add` falls back to `plugin_ops::install` only when no daemon
+  can start.
+- `cru plugin stubs --offline` builds the daemon's plugin VM for a CI job
+  that has no daemon.
+- `cru plugin check` checks a plugin against the working tree for its
+  author.
+- `cru doctor` and the bootstrap commands evaluate the config through
+  `evaluate_boot_config`, because they must work when the daemon cannot
+  start.
 
-**Result.** One activation path exists, as the repository agent guide
-requires. The compiler rejects a new in-process copy.
+These are offline and diagnostic uses of one implementation, so they stay.
 
-**Proof.** The plugin install and doctor flows run against a real daemon.
-See [[CLI Commands]] and [[Luau Host]].
+**Change.** The CLI re-exported the two config types under each other's
+names: its `CliConfig` was core's `CliAppConfig`, and the reverse. The CLI
+now uses the core names.
 
 ## Step 5. Shell commands run in the session workspace
 

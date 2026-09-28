@@ -4,7 +4,7 @@ use serde::Serialize;
 use crucible_daemon::tools::surface::BuiltinTool;
 
 use crate::cli::ToolsCommands;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::OutputFormat;
 
 #[derive(Debug, Serialize)]
@@ -12,7 +12,7 @@ pub struct ToolOutput {
     pub name: String,
 }
 
-pub async fn execute(_config: CliConfig, command: ToolsCommands) -> Result<()> {
+pub async fn execute(_config: CliAppConfig, command: ToolsCommands) -> Result<()> {
     match command {
         ToolsCommands::List {
             permissions,
@@ -76,7 +76,7 @@ fn list_permissions() -> Result<()> {
     // the switch to `init.lua` — `cru doctor` reports one as retired. The
     // listing sent users to that dead file, so it names the file that is
     // really loaded, resolved the way `cru doctor` resolves it.
-    let config_path = CliConfig::default_config_path();
+    let config_path = CliAppConfig::default_config_path();
     let config_dir = config_path
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));

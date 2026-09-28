@@ -7,13 +7,13 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::TextFormat;
 use crate::output;
 
 /// Execute status command
 pub async fn execute(
-    config: CliConfig,
+    config: CliAppConfig,
     path: Option<PathBuf>,
     format: TextFormat,
     detailed: bool,
@@ -78,7 +78,7 @@ fn show_path_status(path: &std::path::Path, detailed: bool) -> Result<()> {
 
 /// Show global storage status
 async fn show_global_status(
-    config: &CliConfig,
+    config: &CliAppConfig,
     storage: &crate::factories::CliStorageHandle,
     format: TextFormat,
     detailed: bool,

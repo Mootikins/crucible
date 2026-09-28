@@ -2,7 +2,7 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use crucible_cli::config::CliConfig;
+use crucible_cli::config::CliAppConfig;
 use crucible_core::config::BackendType;
 use crucible_core::test_support::EnvVarGuard;
 use serial_test::serial;
@@ -56,7 +56,7 @@ verbose = false
     )
     .unwrap();
 
-    let config = CliConfig::load(Some(config_path), None, None).unwrap();
+    let config = CliAppConfig::load(Some(config_path), None, None).unwrap();
     assert_eq!(config.kiln_path, kiln_path);
     let provider = config.effective_llm_provider().unwrap();
     assert_eq!(provider.provider_type, BackendType::OpenAI);
@@ -90,7 +90,7 @@ endpoint = "https://file-url.com"
     .unwrap();
 
     // CLI args should override file config
-    let config = CliConfig::load(
+    let config = CliAppConfig::load(
         Some(config_path),
         Some("https://cli-url.com".to_string()),
         Some("cli-model".to_string()),
@@ -114,7 +114,7 @@ fn test_config_with_custom_kiln_path() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let mut config = CliConfig::default();
+    let mut config = CliAppConfig::default();
     config.kiln_path = kiln_path.clone();
 
     assert_eq!(config.kiln_path, kiln_path);
@@ -135,10 +135,10 @@ fn test_database_path_unique_per_process() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let mut config1 = CliConfig::default();
+    let mut config1 = CliAppConfig::default();
     config1.kiln_path = kiln_path.clone();
 
-    let mut config2 = CliConfig::default();
+    let mut config2 = CliAppConfig::default();
     config2.kiln_path = kiln_path.clone();
 
     // Database paths should be the same for the same process
@@ -160,7 +160,7 @@ fn test_database_path_derivation() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let mut config = CliConfig::default();
+    let mut config = CliAppConfig::default();
     config.kiln_path = kiln_path.clone();
 
     // Database path should be derived from kiln path (no test mode = standard name)
@@ -173,7 +173,7 @@ fn test_tools_path_derivation() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let mut config = CliConfig::default();
+    let mut config = CliAppConfig::default();
     config.kiln_path = kiln_path.clone();
 
     let expected = kiln_path.join("tools");
@@ -186,7 +186,7 @@ fn test_tools_path_derivation() {
 
 #[test]
 fn test_display_as_toml() {
-    let mut config = CliConfig::default();
+    let mut config = CliAppConfig::default();
     let kiln_path = test_path("display_test");
     config.kiln_path = kiln_path.clone();
 
@@ -198,7 +198,7 @@ fn test_display_as_toml() {
 
 #[test]
 fn test_display_as_json() {
-    let mut config = CliConfig::default();
+    let mut config = CliAppConfig::default();
     let kiln_path = test_path("display_test");
     config.kiln_path = kiln_path.clone();
 
@@ -237,7 +237,7 @@ endpoint = "https://api.openai.com/v1"
     )
     .unwrap();
 
-    let config = CliConfig::load(Some(config_path), None, None).unwrap();
+    let config = CliAppConfig::load(Some(config_path), None, None).unwrap();
     let provider = config.effective_llm_provider().unwrap();
     assert_eq!(provider.provider_type, BackendType::OpenAI);
     assert_eq!(provider.model, "text-embedding-3-small");
@@ -261,7 +261,7 @@ fn test_create_example_creates_parent_dirs() {
     let temp = TempDir::new().unwrap();
     let nested_path = temp.path().join("a/b/c/config.toml");
 
-    CliConfig::create_example(&nested_path).unwrap();
+    CliAppConfig::create_example(&nested_path).unwrap();
 
     assert!(nested_path.exists());
     assert!(nested_path.parent().unwrap().exists());

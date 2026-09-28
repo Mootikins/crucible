@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::TextFormat;
 use crate::output;
 use crucible_core::config::{BackendType, OllamaTagsResponse};
@@ -49,7 +49,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
     }
 
     let explicit_override = config_path_override.is_some();
-    let config_path = config_path_override.unwrap_or_else(CliConfig::default_config_path);
+    let config_path = config_path_override.unwrap_or_else(CliAppConfig::default_config_path);
     // Whichever of `init.luau` / `init.lua` is really there, so `cru doctor`
     // does not report a missing config beside the file the daemon is loading.
     let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
@@ -57,7 +57,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
         .ok()
         .flatten()
         .unwrap_or_else(|| config_dir.join("init.lua"));
-    let mut loaded_config: Option<CliConfig> = None;
+    let mut loaded_config: Option<CliAppConfig> = None;
 
     // Check 2: Config. The config is `init.lua`, and nothing else — so
     // "missing" means that file is not there. It is judged by the isolated
@@ -156,7 +156,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
     let kiln_path = loaded_config
         .as_ref()
         .map(|cfg| cfg.kiln_path.clone())
-        .unwrap_or_else(|| CliConfig::default().kiln_path);
+        .unwrap_or_else(|| CliAppConfig::default().kiln_path);
 
     if !kiln_path.exists() {
         results.push(DoctorCheckResult {
@@ -455,7 +455,7 @@ async fn evaluate_config_check(
     config_file: Option<PathBuf>,
     daemon_boot_hash: Option<String>,
     plugin_paths: crucible_daemon::daemon_plugins::PluginPathsFn,
-) -> (Vec<DoctorCheckResult>, Option<CliConfig>) {
+) -> (Vec<DoctorCheckResult>, Option<CliAppConfig>) {
     let mut results = Vec::new();
     let boot = match crucible_daemon::daemon_plugins::evaluate_boot_config_with_paths(
         config_file,
@@ -530,7 +530,7 @@ async fn evaluate_config_check(
 /// that does not exist is a normal state — `runtime_roots` names the extracted
 /// tree unconditionally — but a kind with NO candidates at all means the path
 /// itself is empty, which is a real misconfiguration.
-fn runtime_path_checks(config: &Option<CliConfig>) -> Vec<DoctorCheckResult> {
+fn runtime_path_checks(config: &Option<CliAppConfig>) -> Vec<DoctorCheckResult> {
     use crucible_core::runtime_path::{search_paths, RuntimeAsset};
 
     let runtimepath: Vec<PathBuf> = config
@@ -657,7 +657,7 @@ fn source_name_check(
     }
 }
 
-async fn check_providers(config: Option<&CliConfig>) -> Vec<ProviderCheck> {
+async fn check_providers(config: Option<&CliAppConfig>) -> Vec<ProviderCheck> {
     let Some(config) = config else {
         return Vec::new();
     };

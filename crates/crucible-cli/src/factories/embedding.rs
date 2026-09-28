@@ -3,14 +3,14 @@
 //! Provides config-to-provider-config conversion for commands that need
 //! to create embedding providers (MCP server, semantic search).
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crucible_core::config::{BackendType, EmbeddingProviderConfig, OllamaConfig, OpenAIConfig};
 use tracing::warn;
 
 /// Derive embedding provider config from CLI config
 ///
 /// Checks enrichment config first, then falls back to LLM provider config.
-pub fn embedding_provider_config_from_cli(config: &CliConfig) -> EmbeddingProviderConfig {
+pub fn embedding_provider_config_from_cli(config: &CliAppConfig) -> EmbeddingProviderConfig {
     // Check if enrichment provider is explicitly configured — use it directly
     if let Some(enrichment) = &config.enrichment {
         return enrichment.provider.clone();

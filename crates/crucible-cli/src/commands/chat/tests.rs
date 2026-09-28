@@ -275,7 +275,7 @@ fn inline_flag(args: &[&str]) -> bool {
 
 #[test]
 fn a_plain_cru_chat_draws_full_screen() {
-    let config = crate::config::CliConfig::default();
+    let config = crate::config::CliAppConfig::default();
     assert_eq!(
         chat_screen(inline_flag(&["cru", "chat"]), config.cli.screen, true),
         ChatScreen::Fullscreen

@@ -202,7 +202,7 @@ fn seed_logging_level(cli: &Cli, is_server_process: bool) -> Option<String> {
     if !governed {
         return None;
     }
-    config::CliConfig::load(cli.config.clone(), None, None)
+    config::CliAppConfig::load(cli.config.clone(), None, None)
         .ok()
         .and_then(|config| config.logging_level())
 }
@@ -403,7 +403,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             )
             .await?
         }
-        ConfigNeed::None => config::CliConfig::default(),
+        ConfigNeed::None => config::CliAppConfig::default(),
     };
 
     // Log configuration in verbose mode

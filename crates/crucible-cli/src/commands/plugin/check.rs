@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 use crucible_lua::{check_plugin_on, find_checker, CheckerChoice, TypecheckStatus};
 
 use super::CheckArgs;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 
-pub async fn execute(_config: CliConfig, args: CheckArgs) -> Result<()> {
+pub async fn execute(_config: CliAppConfig, args: CheckArgs) -> Result<()> {
     let plugin_dir = args
         .path
         .canonicalize()

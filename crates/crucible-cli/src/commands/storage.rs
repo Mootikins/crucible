@@ -6,12 +6,12 @@ use std::time::Instant;
 
 use crate::cli::StorageCommands;
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::output;
 use crucible_daemon::DaemonClient;
 
 /// Execute storage commands
-pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> {
+pub async fn execute(config: CliAppConfig, command: StorageCommands) -> Result<()> {
     match command {
         StorageCommands::Mode => execute_mode(&config).await,
         StorageCommands::Stats => execute_stats(config).await,
@@ -54,7 +54,7 @@ pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> 
     }
 }
 
-async fn execute_mode(_config: &CliConfig) -> Result<()> {
+async fn execute_mode(_config: &CliAppConfig) -> Result<()> {
     output::header("Storage Mode");
     println!("  Current mode: daemon");
     println!();
@@ -87,7 +87,7 @@ where
 }
 
 /// Execute storage stats command
-async fn execute_stats(config: CliConfig) -> Result<()> {
+async fn execute_stats(config: CliAppConfig) -> Result<()> {
     let start_time = Instant::now();
     output::info("Gathering storage statistics...");
 

@@ -1,13 +1,13 @@
 use super::io::{format_events_markdown, read_session_events, sessions_dir};
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::Result;
 use crucible_daemon::SessionId;
 use std::path::PathBuf;
 use tokio::fs;
 
 pub(super) async fn export(
-    config: CliConfig,
+    config: CliAppConfig,
     id: String,
     output: Option<PathBuf>,
     timestamps: bool,

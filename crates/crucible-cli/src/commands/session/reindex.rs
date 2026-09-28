@@ -1,4 +1,4 @@
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::Result;
 
 /// `cru session reindex` is retired.
@@ -13,7 +13,7 @@ use anyhow::Result;
 /// It exits successfully because the end state it was asked for — sessions not
 /// indexed as kiln notes — already holds. The one leftover it cannot fix is
 /// noted for the user.
-pub(super) async fn reindex(_config: CliConfig, _force: bool) -> Result<()> {
+pub(super) async fn reindex(_config: CliAppConfig, _force: bool) -> Result<()> {
     println!("`cru session reindex` is retired.");
     println!();
     println!(

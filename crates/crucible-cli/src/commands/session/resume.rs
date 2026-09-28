@@ -1,10 +1,10 @@
 use super::io::sessions_dir;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::output;
 use anyhow::Result;
 use crucible_daemon::SessionId;
 
-pub(super) async fn resume(config: CliConfig, id: String) -> Result<()> {
+pub(super) async fn resume(config: CliAppConfig, id: String) -> Result<()> {
     let session_id = SessionId::parse(&id)?;
     let sessions_path = sessions_dir(&config);
     let session_dir = sessions_path.join(session_id.as_str());

@@ -3,14 +3,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::NewArgs;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 
 const TEMPLATE_INIT_LUA: &str = include_str!("templates/init.luau");
 const TEMPLATE_HEALTH_LUA: &str = include_str!("templates/health.luau");
 const TEMPLATE_LUARC_JSON: &str = include_str!("templates/.luarc.json");
 const TEMPLATE_TESTS_INIT: &str = include_str!("templates/tests/init_test.luau");
 
-pub async fn execute(_config: CliConfig, args: NewArgs) -> Result<()> {
+pub async fn execute(_config: CliAppConfig, args: NewArgs) -> Result<()> {
     let output_dir = args
         .output
         .unwrap_or_else(|| std::env::current_dir().unwrap());

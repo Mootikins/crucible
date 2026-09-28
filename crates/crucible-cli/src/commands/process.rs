@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::{factories, output};
 use crucible_core::EXCLUDED_DIRS;
 
@@ -45,7 +45,7 @@ struct ProcessSummary {
 /// * `verbose` - If true, show detailed progress and timing information
 /// * `dry_run` - If true, preview changes without writing to database
 pub async fn execute(
-    config: CliConfig,
+    config: CliAppConfig,
     path: Option<PathBuf>,
     force: bool,
     watch: bool,
@@ -257,7 +257,7 @@ pub async fn execute(
 /// Polls for file changes every 2 seconds and sends changed files to the
 /// daemon for processing. This is a temporary approach until watch mode
 /// is fully moved into the daemon.
-async fn run_watch_mode(config: &CliConfig, target: &std::path::Path) -> Result<()> {
+async fn run_watch_mode(config: &CliAppConfig, target: &std::path::Path) -> Result<()> {
     println!("\nWatching for changes (Press Ctrl+C to stop)...");
     info!("Starting watch mode");
 

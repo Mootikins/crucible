@@ -1,19 +1,12 @@
 //! Configuration management for Crucible CLI
 //!
-//! This module re-exports the canonical configuration types from crucible-config
-//! and provides CLI-specific utilities and backward compatibility.
+//! Re-exports the canonical configuration types from `crucible-core` under
+//! their own names: `CliAppConfig` is the top-level composite config
+//! (kiln path, embedding, ACP, chat, CLI settings), and `CliConfig` is the
+//! small CLI settings section inside it.
 
-// Re-export the canonical configuration types from crucible-config
-// Note: We re-export CliAppConfig as CliConfig for CLI backward compatibility
-// - CliAppConfig is the top-level composite config (kiln_path, embedding, acp, chat, cli, etc.)
-// - crucible_core::config::CliConfig is the small CLI-specific settings (show_progress, verbose, etc.)
 pub use crucible_core::config::{
-    AcpConfig,
-    BackendType,
-    ChatConfig,
-    CliAppConfig as CliConfig, // Top-level config type for CLI
-    CliConfig as CliAppConfig, // Small CLI settings (renamed for clarity)
-    EmbeddingProviderConfig,
+    AcpConfig, BackendType, ChatConfig, CliAppConfig, CliConfig, EmbeddingProviderConfig,
     HighlightingConfig,
 };
 
@@ -33,7 +26,7 @@ pub async fn fetch_effective_config(
     config_file: Option<std::path::PathBuf>,
     embedding_url: Option<String>,
     embedding_model: Option<String>,
-) -> anyhow::Result<CliConfig> {
+) -> anyhow::Result<CliAppConfig> {
     // Only a RUNNING daemon is asked. Acquisition must never be the reason a
     // daemon starts: with no daemon, the local evaluation reads the same
     // files the daemon's boot would, so the values agree by construction,
@@ -56,7 +49,7 @@ pub async fn fetch_effective_from_daemon(
     config_file: Option<std::path::PathBuf>,
     embedding_url: Option<String>,
     embedding_model: Option<String>,
-) -> anyhow::Result<Option<CliConfig>> {
+) -> anyhow::Result<Option<CliAppConfig>> {
     let Some(client) = crate::common::daemon_client_if_running().await else {
         return Ok(None);
     };
@@ -90,13 +83,13 @@ pub async fn fetch_effective_from_daemon(
         }
     }
 
-    let mut config: CliConfig = serde_json::from_value(resp["config"].clone())
+    let mut config: CliAppConfig = serde_json::from_value(resp["config"].clone())
         .map_err(|e| anyhow::anyhow!("the daemon's effective config does not parse: {e}"))?;
     // A DEFAULTED kiln_path is the daemon's own cwd — meaningless here. The
     // default is "the invoking process's directory", so this process
     // computes its own, exactly as a local load would have.
     if resp["kiln_path_is_default"].as_bool() == Some(true) {
-        config.kiln_path = CliConfig::default().kiln_path;
+        config.kiln_path = CliAppConfig::default().kiln_path;
     }
     // The daemon's per-leaf provenance, for `--sources` rendering.
     if let Ok(provenance) =
@@ -142,7 +135,7 @@ pub async fn local_evaluation(
     config_file: Option<std::path::PathBuf>,
     embedding_url: Option<String>,
     embedding_model: Option<String>,
-) -> anyhow::Result<CliConfig> {
+) -> anyhow::Result<CliAppConfig> {
     let boot = crucible_daemon::daemon_plugins::evaluate_boot_config(
         config_file,
         embedding_url,
@@ -152,7 +145,7 @@ pub async fn local_evaluation(
     Ok(boot.config)
 }
 
-/// Builder for programmatically constructing CliConfig (top-level CLI configuration)
+/// Builder for programmatically constructing CliAppConfig (top-level CLI configuration)
 #[cfg(test)]
 pub struct CliConfigBuilder {
     kiln_path: Option<std::path::PathBuf>,
@@ -171,11 +164,11 @@ impl CliConfigBuilder {
         self
     }
 
-    /// Build the CliConfig (returns the top-level CLI configuration)
-    pub fn build(self) -> anyhow::Result<CliConfig> {
+    /// Build the CliAppConfig (returns the top-level CLI configuration)
+    pub fn build(self) -> anyhow::Result<CliAppConfig> {
         // Create default config and override kiln_path if provided
-        // Note: CliConfig here is crucible_core::config::CliAppConfig via the re-export alias
-        let mut config = CliConfig::default();
+        // Note: CliAppConfig here is crucible_core::config::CliAppConfig via the re-export alias
+        let mut config = CliAppConfig::default();
         if let Some(path) = self.kiln_path {
             config.kiln_path = path;
         }
@@ -212,7 +205,7 @@ mod tests {
         // Silently falling back to defaults made a typo'd `-C` indistinguishable
         // from omitting the flag: the user reads defaults believing they are
         // reading their file. Only an absent *default* path falls back.
-        let err = CliConfig::load(Some(nonexistent), None, None)
+        let err = CliAppConfig::load(Some(nonexistent), None, None)
             .expect_err("a named config file that does not exist must not load defaults");
 
         assert!(err.to_string().contains("nonexistent.toml"));
@@ -226,7 +219,7 @@ mod tests {
         // Write invalid TOML
         fs::write(&config_path, "this is not valid toml [[[").unwrap();
 
-        let result = CliConfig::load(Some(config_path), None, None);
+        let result = CliAppConfig::load(Some(config_path), None, None);
         assert!(result.is_err());
     }
 
@@ -268,7 +261,7 @@ verbose = false
         )
         .unwrap();
 
-        let config = CliConfig::load(Some(config_path), None, None).unwrap();
+        let config = CliAppConfig::load(Some(config_path), None, None).unwrap();
         assert_eq!(config.kiln_path, kiln_path);
         let provider = config.effective_llm_provider().unwrap();
         assert_eq!(
@@ -283,7 +276,7 @@ verbose = false
     fn test_database_path_derivation() {
         let temp = TempDir::new().unwrap();
         let _kiln_path = temp.path().join("kiln");
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
         // Note: We can't set kiln_path via builder in this simplified version,
         // so we test the default behavior
         let expected_db_path = config.kiln_path.join(".crucible").join("crucible.db");
@@ -292,14 +285,14 @@ verbose = false
 
     #[test]
     fn test_tools_path_derivation() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
         let expected_tools = config.kiln_path.join("tools");
         assert_eq!(config.tools_path(), expected_tools);
     }
 
     #[test]
     fn test_display_as_toml() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
         let toml_str = config.display_as_toml().unwrap();
         assert!(toml_str.contains("kiln_path"));
         assert!(!toml_str.contains("[embedding]"));
@@ -307,7 +300,7 @@ verbose = false
 
     #[test]
     fn test_display_as_json() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
         let json_str = config.display_as_json().unwrap();
         assert!(json_str.contains("\"kiln_path\""));
         assert!(json_str.contains("\"llm\""));
@@ -315,14 +308,14 @@ verbose = false
 
     #[test]
     fn test_embedding_config_defaults() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
 
         assert!(!config.llm.has_providers());
     }
 
     #[test]
     fn test_default_config_values() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
 
         assert_eq!(config.chat_model(), "llama3.2");
 
@@ -343,7 +336,7 @@ verbose = false
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("example-config.toml");
 
-        CliConfig::create_example(&config_path).unwrap();
+        CliAppConfig::create_example(&config_path).unwrap();
 
         assert!(config_path.exists());
 
@@ -367,7 +360,7 @@ verbose = false
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("example-config.toml");
 
-        CliConfig::create_example(&config_path).unwrap();
+        CliAppConfig::create_example(&config_path).unwrap();
 
         let contents = fs::read_to_string(&config_path).unwrap();
         let parsed: Result<toml::Value, _> = toml::from_str(&contents);
@@ -382,7 +375,7 @@ verbose = false
 
     #[test]
     fn test_config_load_preserves_defaults_when_missing() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
 
         // Verify all important defaults
         assert_eq!(config.chat_model(), "llama3.2");
@@ -409,7 +402,7 @@ type = "openai"
         )
         .unwrap();
 
-        let config = CliConfig::load(Some(config_path), None, None).unwrap();
+        let config = CliAppConfig::load(Some(config_path), None, None).unwrap();
 
         // Specified fields
         assert_eq!(config.kiln_path.to_str().unwrap(), "/partial/kiln");
@@ -429,7 +422,7 @@ type = "openai"
         let empty = temp.path().join("empty.toml");
         fs::write(&empty, "").unwrap();
 
-        let config = CliConfig::load(Some(empty), None, None).unwrap();
+        let config = CliAppConfig::load(Some(empty), None, None).unwrap();
 
         assert_eq!(config.chat_model(), "llama3.2");
         assert!(!config.llm.has_providers());
@@ -441,7 +434,7 @@ type = "openai"
         let config_path = temp.path().join("empty.toml");
         fs::write(&config_path, "").unwrap();
 
-        let result = CliConfig::load(Some(config_path), None, None);
+        let result = CliAppConfig::load(Some(config_path), None, None);
         assert!(result.is_ok());
     }
 
@@ -451,7 +444,7 @@ type = "openai"
         let config_path = temp.path().join("whitespace.toml");
         fs::write(&config_path, "   \n\t\n   ").unwrap();
 
-        let result = CliConfig::load(Some(config_path), None, None);
+        let result = CliAppConfig::load(Some(config_path), None, None);
         assert!(result.is_ok());
     }
 
@@ -461,7 +454,7 @@ type = "openai"
         let config_path = temp.path().join("comments.toml");
         fs::write(&config_path, "# This is a comment\n# Another comment\n").unwrap();
 
-        let result = CliConfig::load(Some(config_path), None, None);
+        let result = CliAppConfig::load(Some(config_path), None, None);
         assert!(result.is_ok());
     }
 
@@ -484,20 +477,20 @@ type = "openai"
 
     #[test]
     fn test_toml_serialization_roundtrip() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
         let toml_str = config.display_as_toml().unwrap();
 
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("roundtrip.toml");
         fs::write(&config_path, &toml_str).unwrap();
 
-        let loaded = CliConfig::load(Some(config_path), None, None).unwrap();
+        let loaded = CliAppConfig::load(Some(config_path), None, None).unwrap();
         assert_eq!(config.chat_model(), loaded.chat_model());
     }
 
     #[test]
     fn test_json_serialization_valid() {
-        let config = CliConfig::default();
+        let config = CliAppConfig::default();
         let json_str = config.display_as_json().unwrap();
 
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -522,7 +515,7 @@ foo = "bar"
         )
         .unwrap();
 
-        let result = CliConfig::load(Some(config_path), None, None);
+        let result = CliAppConfig::load(Some(config_path), None, None);
         assert!(result.is_ok());
     }
 }

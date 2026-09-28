@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 use crucible_daemon::LuaGenerateStubsRequest;
 
 use super::StubsArgs;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 
-pub async fn execute(_config: CliConfig, args: StubsArgs) -> Result<()> {
+pub async fn execute(_config: CliAppConfig, args: StubsArgs) -> Result<()> {
     let output_dir = resolve_output_dir(args.output)?;
     std::fs::create_dir_all(&output_dir).with_context(|| {
         format!(

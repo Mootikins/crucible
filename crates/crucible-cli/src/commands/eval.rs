@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crucible_core::enrichment::eval::{
     hit_rate_at_k, mrr, normalize_stem, rank_of, GoldenQuery, GoldenSet, NamedGoldenSet,
 };
@@ -44,7 +44,7 @@ pub struct QueryResult {
 
 /// Run every golden query against the kiln's semantic search.
 ///
-/// Public for the e2e test; takes the pieces it needs rather than `CliConfig`
+/// Public for the e2e test; takes the pieces it needs rather than `CliAppConfig`
 /// so the test can point it at a hermetic daemon.
 pub async fn run_eval(
     client: &crucible_daemon::DaemonClient,
@@ -247,7 +247,7 @@ fn rank_among_notes(hits: Vec<VectorHit>, expect_note: &str) -> Option<usize> {
 /// The lab plugin selects its strategy by this one key. The eval names it
 /// in the header so a results row says which strategy it measured. `None`
 /// when the section or the key is absent, which is the block-point default.
-fn retrieval_strategy(config: &CliConfig) -> Option<String> {
+fn retrieval_strategy(config: &CliAppConfig) -> Option<String> {
     config
         .plugins
         .get("retrieval-lab")
@@ -493,7 +493,7 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-async fn open_kiln(config: &CliConfig) -> Result<crucible_daemon::DaemonClient> {
+async fn open_kiln(config: &CliAppConfig) -> Result<crucible_daemon::DaemonClient> {
     let kiln_path = config.kiln_path.clone();
     if !kiln_path.join(".crucible").join("kiln.toml").exists() {
         anyhow::bail!("No kiln is open. Run `cru init` to create one.");
@@ -511,7 +511,7 @@ async fn open_kiln(config: &CliConfig) -> Result<crucible_daemon::DaemonClient> 
 /// With `json`, stdout is one [`EvalReport`] object and nothing else, so a
 /// script can collect rows across runs.
 pub async fn execute(
-    config: CliConfig,
+    config: CliAppConfig,
     golden_path: Option<PathBuf>,
     golden_dir: Option<PathBuf>,
     json: bool,
@@ -536,7 +536,7 @@ fn render_strategy_line(strategy: Option<&str>) {
 
 async fn execute_single(
     kiln: crucible_daemon::DaemonClient,
-    config: CliConfig,
+    config: CliAppConfig,
     golden_path: PathBuf,
     json: bool,
 ) -> Result<()> {
@@ -576,7 +576,7 @@ async fn execute_single(
 
 async fn execute_multi(
     kiln: crucible_daemon::DaemonClient,
-    config: CliConfig,
+    config: CliAppConfig,
     dir: PathBuf,
     json: bool,
 ) -> Result<()> {
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn strategy_comes_from_the_retrieval_lab_plugin_section() {
-        let mut config = CliConfig::default();
+        let mut config = CliAppConfig::default();
         assert_eq!(retrieval_strategy(&config), None);
         config.plugins.insert(
             "retrieval-lab".to_string(),

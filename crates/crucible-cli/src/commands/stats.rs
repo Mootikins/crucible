@@ -1,4 +1,4 @@
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::TextFormat;
 use anyhow::{anyhow, Result};
 use crucible_core::EXCLUDED_DIRS;
@@ -110,14 +110,14 @@ impl KilnStatsService for FileSystemKilnStatsService {
     }
 }
 
-pub async fn execute(config: CliConfig, format: TextFormat) -> Result<()> {
+pub async fn execute(config: CliAppConfig, format: TextFormat) -> Result<()> {
     let service: Arc<dyn KilnStatsService> = Arc::new(FileSystemKilnStatsService);
     execute_with_service(service, config, format).await
 }
 
 pub async fn execute_with_service(
     service: Arc<dyn KilnStatsService>,
-    config: CliConfig,
+    config: CliAppConfig,
     format: TextFormat,
 ) -> Result<()> {
     let kiln_path = &config.kiln_path;
@@ -294,7 +294,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_with_mock_service() {
         let temp = TempDir::new().unwrap();
-        let config = CliConfig {
+        let config = CliAppConfig {
             kiln_path: temp.path().to_path_buf(),
             ..Default::default()
         };
@@ -314,7 +314,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_nonexistent_kiln_path() {
-        let config = CliConfig {
+        let config = CliAppConfig {
             kiln_path: PathBuf::from("/nonexistent/kiln/path"),
             ..Default::default()
         };
@@ -330,7 +330,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_with_service_error() {
         let temp = TempDir::new().unwrap();
-        let config = CliConfig {
+        let config = CliAppConfig {
             kiln_path: temp.path().to_path_buf(),
             ..Default::default()
         };

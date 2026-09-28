@@ -8,7 +8,7 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crucible_core::parser::{CheckboxStatus, TaskFile, TaskGraph};
 
 /// Task-related errors
@@ -117,7 +117,7 @@ fn write_task_file(path: &Path, task_file: &TaskFile) -> Result<(), TaskError> {
 }
 
 /// Execute tasks subcommand
-pub async fn execute(_config: CliConfig, file: PathBuf, command: TasksSubcommand) -> Result<()> {
+pub async fn execute(_config: CliAppConfig, file: PathBuf, command: TasksSubcommand) -> Result<()> {
     match command {
         TasksSubcommand::List => {
             let task_file = load_task_file(&file)?;
@@ -220,8 +220,8 @@ mod tests {
     }
 
     // Helper to create a test config
-    fn test_config() -> CliConfig {
-        CliConfig {
+    fn test_config() -> CliAppConfig {
+        CliAppConfig {
             kiln_path: test_path("test-kiln"),
             ..Default::default()
         }

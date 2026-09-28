@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::AgentsCommands;
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::OutputFormat;
 
 /// Width of the DESCRIPTION column in the `cru agents` table.
@@ -20,7 +20,7 @@ const DESCRIPTION_MAX_CHARS: usize = 35;
 
 /// Execute `cru agents`: the list, or the `validate` subcommand.
 pub async fn execute(
-    config: CliConfig,
+    config: CliAppConfig,
     tag: Option<String>,
     format: Option<OutputFormat>,
     command: Option<AgentsCommands>,
@@ -43,7 +43,7 @@ pub async fn execute(
 ///
 /// `list` asks the daemon (`agents.list_cards`); `validate` reads disk,
 /// because it reports per-file errors the daemon does not expose.
-pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<PathBuf> {
+pub fn collect_agent_directories(config: &CliAppConfig, workspace: &Path) -> Vec<PathBuf> {
     let roots = source_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
     card_directories(&roots, workspace, std::slice::from_ref(&config.kiln_path))
 }
@@ -59,7 +59,7 @@ pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<Pa
 /// its own, so it does not see the developer's real
 /// `~/.config/crucible/agents`.
 fn source_roots(
-    config: &CliConfig,
+    config: &CliAppConfig,
     config_home: Option<PathBuf>,
     home: Option<&Path>,
 ) -> SourceRoots {
@@ -120,7 +120,7 @@ async fn acp_profiles(client: &DaemonClient) -> Vec<AcpProfile> {
 /// Crucible runs itself, a profile is an external subprocess — but "what can I
 /// talk to?" is one question, and answering half of it was why `--agent` and
 /// this command disagreed about what an agent is. Two sections, one command.
-async fn list(config: &CliConfig, tag: Option<String>, format: OutputFormat) -> Result<()> {
+async fn list(config: &CliAppConfig, tag: Option<String>, format: OutputFormat) -> Result<()> {
     let client = daemon_client().await?;
     let reply = client
         .agents_list_cards(&current_workspace(), Some(&config.kiln_path))
@@ -269,7 +269,7 @@ struct ValidationResult {
 }
 
 /// Validate all agent cards
-async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
+async fn validate(config: &CliAppConfig, verbose: bool) -> Result<()> {
     let dirs = collect_agent_directories(config, &current_workspace());
     let mut loader = AgentCardLoader::new();
     let mut results: Vec<ValidationResult> = Vec::new();
@@ -396,8 +396,8 @@ mod tests {
         std::env::temp_dir().join(format!("crucible_test_{}", name))
     }
 
-    fn test_config(kiln_path: PathBuf) -> CliConfig {
-        CliConfig {
+    fn test_config(kiln_path: PathBuf) -> CliAppConfig {
+        CliAppConfig {
             kiln_path,
             ..Default::default()
         }
@@ -458,7 +458,7 @@ mod tests {
 
     /// The directories for `config` with a fixed config home and home, so
     /// the test never reads the developer's own.
-    fn hermetic_dirs(config: &CliConfig) -> Vec<PathBuf> {
+    fn hermetic_dirs(config: &CliAppConfig) -> Vec<PathBuf> {
         let roots = source_roots(
             config,
             Some(PathBuf::from("/cfg")),

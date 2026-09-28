@@ -1,4 +1,4 @@
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::{anyhow, Result};
 use crucible_core::text::truncate_chars;
 use crucible_daemon::{FileSessionStorage, LogEvent};
@@ -13,7 +13,7 @@ use tokio::fs;
 /// second time. `data_home` is read off the config first so a relocated daemon
 /// root is honored without an env var; `crucible_home()` is the same default
 /// the daemon resolves when the config says nothing.
-pub(crate) fn sessions_dir(config: &CliConfig) -> PathBuf {
+pub(crate) fn sessions_dir(config: &CliAppConfig) -> PathBuf {
     let data_home = config
         .data_home
         .clone()

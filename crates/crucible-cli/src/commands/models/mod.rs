@@ -1,7 +1,7 @@
 /// The local embedding catalog and the commands that change it.
 pub mod embeddings;
 
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::OutputFormat;
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -15,7 +15,7 @@ pub struct ModelOutput {
     pub parameter_count: Option<u64>,
 }
 
-pub async fn execute(config: CliConfig, format: Option<OutputFormat>) -> Result<()> {
+pub async fn execute(config: CliAppConfig, format: Option<OutputFormat>) -> Result<()> {
     let format = OutputFormat::for_stdout(format);
     eprintln!("Fetching models from daemon...");
 

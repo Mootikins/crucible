@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use crate::formatting::OutputFormat;
 use crate::output;
 use crate::output::SearchResultWithScore;
@@ -40,7 +40,7 @@ impl SearchMode {
 
 /// Execute the `cru search` command.
 pub async fn execute(
-    config: CliConfig,
+    config: CliAppConfig,
     query: &str,
     limit: usize,
     search_type: &str,

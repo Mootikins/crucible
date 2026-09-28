@@ -34,7 +34,7 @@ pub enum EvalCommands {
 }
 
 impl EvalCommands {
-    pub async fn execute(&self, config: crate::config::CliConfig) -> anyhow::Result<()> {
+    pub async fn execute(&self, config: crate::config::CliAppConfig) -> anyhow::Result<()> {
         match self {
             EvalCommands::Precognition {
                 golden,

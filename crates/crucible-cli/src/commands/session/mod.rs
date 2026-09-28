@@ -4,7 +4,7 @@
 
 use crate::cli::SessionCommands;
 use crate::common::daemon_client;
-use crate::config::CliConfig;
+use crate::config::CliAppConfig;
 use anyhow::{anyhow, Result};
 use crucible_core::config::BackendType;
 use std::str::FromStr;
@@ -28,7 +28,7 @@ pub use helpers::resolve_session_id;
 use acp::rpc;
 use helpers::{resolve_permission_mode, resolve_send_inputs, warn_deprecated};
 
-pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
+pub async fn execute(config: CliAppConfig, cmd: SessionCommands) -> Result<()> {
     match cmd {
         SessionCommands::List {
             limit,
