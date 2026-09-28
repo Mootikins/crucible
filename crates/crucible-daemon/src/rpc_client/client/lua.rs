@@ -3,6 +3,7 @@
 //! Methods for managing Lua plugins, hooks, and plugin lifecycle.
 
 use anyhow::Result;
+use crucible_core::protocol::RpcMethod;
 
 use super::DaemonClient;
 
@@ -135,14 +136,14 @@ impl DaemonClient {
         &self,
         params: LuaInitSessionRequest,
     ) -> Result<LuaInitSessionResponse> {
-        self.typed_call("lua.init_session", params).await
+        self.typed_call(RpcMethod::LuaInitSession, params).await
     }
 
     pub async fn lua_shutdown_session(
         &self,
         params: LuaShutdownSessionRequest,
     ) -> Result<LuaShutdownSessionResponse> {
-        self.typed_call("lua.shutdown_session", params).await
+        self.typed_call(RpcMethod::LuaShutdownSession, params).await
     }
 
     // =========================================================================
@@ -154,7 +155,7 @@ impl DaemonClient {
         &self,
         params: LuaDiscoverPluginsRequest,
     ) -> Result<LuaDiscoverPluginsResponse> {
-        self.typed_call("lua.discover_plugins", params).await
+        self.typed_call(RpcMethod::LuaDiscoverPlugins, params).await
     }
 
     /// Run health checks for a plugin.
@@ -162,7 +163,7 @@ impl DaemonClient {
         &self,
         params: LuaPluginHealthRequest,
     ) -> Result<LuaPluginHealthResponse> {
-        self.typed_call("lua.plugin_health", params).await
+        self.typed_call(RpcMethod::LuaPluginHealth, params).await
     }
 
     /// Generate or verify Lua type stubs.
@@ -170,7 +171,7 @@ impl DaemonClient {
         &self,
         params: LuaGenerateStubsRequest,
     ) -> Result<LuaGenerateStubsResponse> {
-        self.typed_call("lua.generate_stubs", params).await
+        self.typed_call(RpcMethod::LuaGenerateStubs, params).await
     }
 
     /// Run plugin test files.
@@ -178,6 +179,6 @@ impl DaemonClient {
         &self,
         params: LuaRunPluginTestsRequest,
     ) -> Result<LuaRunPluginTestsResponse> {
-        self.typed_call("lua.run_plugin_tests", params).await
+        self.typed_call(RpcMethod::LuaRunPluginTests, params).await
     }
 }

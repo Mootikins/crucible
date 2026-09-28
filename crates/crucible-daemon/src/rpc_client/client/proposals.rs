@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use crucible_core::proposal::{Proposal, ProposalFile, ProposalId};
+use crucible_core::protocol::RpcMethod;
 
 use super::DaemonClient;
 
@@ -66,13 +67,13 @@ impl DaemonClient {
     /// `proposal.list`: the proposals in the Inbox, oldest first. With
     /// `all`, every stored proposal.
     pub async fn proposal_list(&self, all: bool) -> Result<Vec<Proposal>> {
-        self.typed_call_with_retry("proposal.list", ProposalListRequest { all })
+        self.typed_call_with_retry(RpcMethod::ProposalList, ProposalListRequest { all })
             .await
     }
 
     /// `proposal.get`: one proposal.
     pub async fn proposal_get(&self, id: &ProposalId) -> Result<Proposal> {
-        self.typed_call_with_retry("proposal.get", ProposalIdRequest { id: *id })
+        self.typed_call_with_retry(RpcMethod::ProposalGet, ProposalIdRequest { id: *id })
             .await
     }
 
@@ -99,7 +100,7 @@ impl DaemonClient {
         files: &[ProposalFile],
     ) -> Result<Proposal> {
         self.typed_call(
-            "proposal.accept",
+            RpcMethod::ProposalAccept,
             ProposalAcceptRequest {
                 id: *id,
                 paths: paths.to_vec(),
@@ -134,7 +135,7 @@ impl DaemonClient {
         reason: Option<&str>,
     ) -> Result<Proposal> {
         self.typed_call(
-            "proposal.reject",
+            RpcMethod::ProposalReject,
             ProposalRejectRequest {
                 id: *id,
                 reason: reason.map(str::to_string),
@@ -148,7 +149,7 @@ impl DaemonClient {
     /// `proposal.dismiss`: take the proposal out of the Inbox with no
     /// decision.
     pub async fn proposal_dismiss(&self, id: &ProposalId) -> Result<Proposal> {
-        self.typed_call("proposal.dismiss", ProposalIdRequest { id: *id })
+        self.typed_call(RpcMethod::ProposalDismiss, ProposalIdRequest { id: *id })
             .await
     }
 
@@ -171,7 +172,7 @@ impl DaemonClient {
         text: &str,
     ) -> Result<Proposal> {
         self.typed_call(
-            "proposal.resolve",
+            RpcMethod::ProposalResolve,
             ProposalResolveRequest {
                 id: *id,
                 path: path.to_string(),

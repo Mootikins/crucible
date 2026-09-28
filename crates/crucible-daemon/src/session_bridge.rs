@@ -6,8 +6,8 @@
 use crate::agent_manager::AgentManager;
 use crate::protocol::{Request, Response};
 use crate::rpc::RpcContext;
-use crate::rpc::RpcMethod;
 use crate::session_manager::SessionManager;
+use crucible_core::protocol::RpcMethod;
 use crucible_core::traits::context_ops::Range;
 use crucible_lua::{DaemonSessionApi, DiffOp, ProposalDecision, ResponsePart};
 use std::future::Future;

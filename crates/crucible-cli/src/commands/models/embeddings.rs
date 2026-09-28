@@ -24,6 +24,7 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::rpc_client::{EmbeddingCatalog, EmbeddingModelRow};
 
 use crate::common::daemon_client;
@@ -117,7 +118,7 @@ pub async fn select(name: &str, format: Option<OutputFormat>) -> Result<()> {
     let stale = stale_provider_keys(&client).await;
     let saved = client
         .call(
-            "config.save",
+            RpcMethod::ConfigSave,
             serde_json::json!({ "values": fastembed_provider_delta(&name) }),
         )
         .await
@@ -226,7 +227,10 @@ fn describe_pin(row: &serde_json::Value) -> String {
 /// courtesy, and failing the selection over it would be worse than omitting
 /// it.
 async fn stale_provider_keys(client: &crucible_daemon::rpc_client::DaemonClient) -> Vec<String> {
-    let Ok(response) = client.call("config.effective", serde_json::json!({})).await else {
+    let Ok(response) = client
+        .call(RpcMethod::ConfigEffective, serde_json::json!({}))
+        .await
+    else {
         return Vec::new();
     };
     let Some(provider) = response.pointer("/config/enrichment/provider") else {

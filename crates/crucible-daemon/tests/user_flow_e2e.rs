@@ -13,6 +13,7 @@ mod common;
 use anyhow::Result;
 use common::{InProcessDaemon, InProcessDaemonBuilder};
 use crucible_core::config::BackendType;
+use crucible_core::protocol::RpcMethod;
 use crucible_core::session::SessionAgent;
 use crucible_daemon::DaemonClient;
 use std::sync::Arc;
@@ -290,7 +291,7 @@ async fn test_complete_user_flow() {
     // ── Step 11: Close kiln ───────────────────────────────────────────────
     let close_result = client
         .call(
-            "kiln.close",
+            RpcMethod::KilnClose,
             serde_json::json!({"path": kiln_dir.to_string_lossy()}),
         )
         .await;

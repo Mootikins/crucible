@@ -6,6 +6,7 @@
 //! `workflow.gate_reached`, etc.
 
 use anyhow::Result;
+use crucible_core::protocol::RpcMethod;
 
 use super::session::SessionIdRequest;
 use super::DaemonClient;
@@ -28,7 +29,7 @@ pub struct WorkflowApproveGateRequest {
 
 impl DaemonClient {
     pub async fn workflow_start(&self, req: WorkflowStartRequest) -> Result<serde_json::Value> {
-        self.call("workflow.start", serde_json::to_value(req)?)
+        self.call(RpcMethod::WorkflowStart, serde_json::to_value(req)?)
             .await
     }
 
@@ -36,13 +37,13 @@ impl DaemonClient {
         &self,
         req: WorkflowApproveGateRequest,
     ) -> Result<serde_json::Value> {
-        self.call("workflow.approve_gate", serde_json::to_value(req)?)
+        self.call(RpcMethod::WorkflowApproveGate, serde_json::to_value(req)?)
             .await
     }
 
     pub async fn workflow_status(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
-            "workflow.status",
+            RpcMethod::WorkflowStatus,
             serde_json::to_value(SessionIdRequest {
                 session_id: session_id.to_string(),
             })?,
@@ -52,7 +53,7 @@ impl DaemonClient {
 
     pub async fn workflow_cancel(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
-            "workflow.cancel",
+            RpcMethod::WorkflowCancel,
             serde_json::to_value(SessionIdRequest {
                 session_id: session_id.to_string(),
             })?,

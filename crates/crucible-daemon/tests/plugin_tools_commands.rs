@@ -260,11 +260,11 @@ async fn plugin_declared_command_is_listed_and_invocable() {
 #[test]
 fn plugin_commands_are_reachable_over_rpc() {
     assert!(
-        crucible_daemon::rpc::METHODS.contains(&"plugin.commands"),
+        crucible_core::protocol::METHODS.contains(&"plugin.commands"),
         "clients (TUI and web) need an RPC to list plugin-declared commands"
     );
     assert!(
-        crucible_daemon::rpc::METHODS.contains(&"plugin.run_command"),
+        crucible_core::protocol::METHODS.contains(&"plugin.run_command"),
         "listing commands is useless without a way to invoke them"
     );
 }

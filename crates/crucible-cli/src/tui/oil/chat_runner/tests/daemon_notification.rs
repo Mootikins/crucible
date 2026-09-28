@@ -1,6 +1,7 @@
 //! A daemon notification crosses the socket into the TUI notification area.
 
 use super::super::*;
+use crucible_core::protocol::RpcMethod;
 use tokio::sync::mpsc;
 
 /// A plugin `cru.log.notify` on a real daemon reaches the TUI as the same
@@ -39,7 +40,7 @@ async fn a_plugin_notification_reaches_the_tui_over_the_socket() {
     // The daemon accepts only after the plugin boot, so the VM has its sink.
     let code = format!("cru.log.notify({message:?}, cru.log.levels.WARN)");
     client
-        .call("lua.eval", serde_json::json!({ "code": code }))
+        .call(RpcMethod::LuaEval, serde_json::json!({ "code": code }))
         .await
         .expect("lua.eval");
 
@@ -83,14 +84,17 @@ async fn an_attaching_tui_reads_the_notifications_of_its_session() {
     let mut ids = Vec::new();
     for message in ["mine", "other"] {
         let created = client
-            .call("session.create", serde_json::json!({ "type": "chat" }))
+            .call(
+                RpcMethod::SessionCreate,
+                serde_json::json!({ "type": "chat" }),
+            )
             .await
             .expect("session.create");
         let id = created["session_id"].as_str().unwrap().to_string();
         let notification = crucible_core::types::Notification::warning(message);
         client
             .call(
-                "session.add_notification",
+                RpcMethod::SessionAddNotification,
                 serde_json::json!({ "session_id": id, "notification": notification }),
             )
             .await
@@ -134,14 +138,17 @@ async fn a_tui_close_hides_a_shared_notice_for_its_session_only() {
     let mut sessions = Vec::new();
     for _ in 0..2 {
         let created = client
-            .call("session.create", serde_json::json!({ "type": "chat" }))
+            .call(
+                RpcMethod::SessionCreate,
+                serde_json::json!({ "type": "chat" }),
+            )
             .await
             .expect("session.create");
         sessions.push(created["session_id"].as_str().unwrap().to_string());
     }
     client
         .call(
-            "lua.eval",
+            RpcMethod::LuaEval,
             serde_json::json!({ "code": "cru.log.notify('shared')" }),
         )
         .await

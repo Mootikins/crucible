@@ -8,6 +8,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::rpc_client::SessionCreateParams;
 use crucible_daemon::{DaemonClient, Server};
 use crucible_web::test_support::{build_mock_state, build_test_app};
@@ -104,7 +105,7 @@ async fn get(app: &Router, uri: &str) -> (StatusCode, Value) {
 async fn daemon_write(daemon: &DaemonClient, path: &Path, content: &str) -> Value {
     daemon
         .call(
-            "fs.write",
+            RpcMethod::FsWrite,
             json!({ "path": path, "operation": "put", "content": content }),
         )
         .await

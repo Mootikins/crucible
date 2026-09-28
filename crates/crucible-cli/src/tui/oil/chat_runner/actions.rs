@@ -3,6 +3,7 @@ use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::commands::DropKind;
 use crate::tui::oil::commands::PLUGIN_APPROVAL;
+use crucible_core::protocol::RpcMethod;
 use std::io;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -26,7 +27,7 @@ async fn write_app_config_key(
 
     let written = client
         .call(
-            "config.set",
+            RpcMethod::ConfigSet,
             serde_json::json!({ "values": { key: value } }),
         )
         .await
@@ -42,7 +43,7 @@ async fn write_app_config_key(
     }
 
     let read_back = client
-        .call("config.get", serde_json::json!({ "key": key }))
+        .call(RpcMethod::ConfigGet, serde_json::json!({ "key": key }))
         .await
         .map_err(|e| e.to_string())?;
     match read_back.get("value") {
@@ -70,7 +71,7 @@ async fn read_app_config_key(
     // Same lookup as the write's read-back, so `:set k=v` and `:set k?`
     // cannot disagree about which key they named.
     let read = client
-        .call("config.get", serde_json::json!({ "key": key }))
+        .call(RpcMethod::ConfigGet, serde_json::json!({ "key": key }))
         .await
         .map_err(|e| e.to_string())?;
     let value = read
@@ -82,7 +83,7 @@ async fn read_app_config_key(
         return Ok((value, None));
     }
     let origin = client
-        .call("config.origin", serde_json::json!({ "key": key }))
+        .call(RpcMethod::ConfigOrigin, serde_json::json!({ "key": key }))
         .await
         .map_err(|e| e.to_string())?;
     Ok((value, Some(origin)))
@@ -835,7 +836,7 @@ impl OilChatRunner {
                         params.background_tasks.push(tokio::spawn(async move {
                             let evaled = match crucible_daemon::DaemonClient::connect().await {
                                 Ok(client) => client
-                                    .call("lua.eval", serde_json::json!({ "code": code }))
+                                    .call(RpcMethod::LuaEval, serde_json::json!({ "code": code }))
                                     .await
                                     .map(|resp| {
                                         resp.get("result")
@@ -1390,7 +1391,7 @@ async fn fetch_resumable_sessions(
             params["workspace"] = workspace.clone();
         }
     }
-    let listed = client.call("session.list", params).await?;
+    let listed = client.call(RpcMethod::SessionList, params).await?;
     Ok(resumable_sessions(
         current.unwrap_or_default(),
         &listed,
@@ -1487,13 +1488,13 @@ async fn fetch_surface(
 ) -> anyhow::Result<Option<ChatAppMsg>> {
     let value = match name {
         Some(name) => client
-            .call("surface.get", serde_json::json!({ "name": name }))
+            .call(RpcMethod::SurfaceGet, serde_json::json!({ "name": name }))
             .await?["surface"]
             .clone(),
         // No name: take the first of the list, so `:surfaces` shows something
         // instead of asking the user to know a name they have not been told.
         None => client
-            .call("surface.list", serde_json::json!({}))
+            .call(RpcMethod::SurfaceList, serde_json::json!({}))
             .await?
             .get("surfaces")
             .and_then(|s| s.as_array())

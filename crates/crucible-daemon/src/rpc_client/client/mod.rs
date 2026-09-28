@@ -4,6 +4,7 @@
 //! Supports both request/response RPC calls and asynchronous event streaming.
 
 use anyhow::{Context, Result};
+use crucible_core::protocol::RpcMethod;
 use std::collections::HashMap;
 use std::os::unix::net::SocketAddr;
 use std::path::Path;
@@ -584,7 +585,7 @@ impl DaemonClient {
     /// RPC-level errors (application errors from the daemon) are NOT retried.
     pub async fn call_with_retry(
         &self,
-        method: &str,
+        method: RpcMethod,
         params: serde_json::Value,
     ) -> Result<serde_json::Value> {
         if !self.timeout_retries {
@@ -635,7 +636,7 @@ impl DaemonClient {
     /// Send a typed JSON-RPC request and deserialize the response.
     ///
     /// Wraps `call()` with automatic serialization/deserialization.
-    pub async fn typed_call<Req, Resp>(&self, method: &str, params: Req) -> Result<Resp>
+    pub async fn typed_call<Req, Resp>(&self, method: RpcMethod, params: Req) -> Result<Resp>
     where
         Req: serde::Serialize,
         Resp: serde::de::DeserializeOwned,
@@ -651,7 +652,7 @@ impl DaemonClient {
     /// times out should surface, not silently restart.
     pub async fn typed_call_with_timeout<Req, Resp>(
         &self,
-        method: &str,
+        method: RpcMethod,
         params: Req,
         timeout: Duration,
     ) -> Result<Resp>
@@ -668,7 +669,11 @@ impl DaemonClient {
     /// Send a typed JSON-RPC request with retry and deserialize the response.
     ///
     /// Wraps `call_with_retry()` with automatic serialization/deserialization.
-    pub async fn typed_call_with_retry<Req, Resp>(&self, method: &str, params: Req) -> Result<Resp>
+    pub async fn typed_call_with_retry<Req, Resp>(
+        &self,
+        method: RpcMethod,
+        params: Req,
+    ) -> Result<Resp>
     where
         Req: serde::Serialize,
         Resp: serde::de::DeserializeOwned,
@@ -683,7 +688,7 @@ impl DaemonClient {
     ///
     /// Wraps `typed_call()` for methods that return unit (Ok(())).
     /// Discards the response value to avoid unused variable warnings.
-    pub(super) async fn typed_unit_call<Req>(&self, method: &str, params: Req) -> Result<()>
+    pub(super) async fn typed_unit_call<Req>(&self, method: RpcMethod, params: Req) -> Result<()>
     where
         Req: serde::Serialize,
     {
@@ -694,7 +699,7 @@ impl DaemonClient {
     /// Shorthand for RPC methods that only take a session_id parameter.
     pub(super) async fn session_id_call(
         &self,
-        method: &str,
+        method: RpcMethod,
         session_id: &str,
     ) -> Result<serde_json::Value> {
         self.typed_call(
@@ -709,7 +714,7 @@ impl DaemonClient {
     /// Fetch a nullable field from a session-scoped RPC method.
     pub(super) async fn get_session_option<T>(
         &self,
-        method: &str,
+        method: RpcMethod,
         session_id: &str,
         field: &str,
         extract: impl FnOnce(&serde_json::Value) -> Option<T>,
@@ -732,7 +737,11 @@ impl DaemonClient {
 
     /// Send a JSON-RPC request and get the response, using the default 30s
     /// per-request timeout in event mode.
-    pub async fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    pub async fn call(
+        &self,
+        method: RpcMethod,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         self.call_with_timeout(method, params, Self::DEFAULT_TIMEOUT)
             .await
     }
@@ -744,7 +753,7 @@ impl DaemonClient {
     /// mode; simple mode blocks on a direct socket read.
     pub async fn call_with_timeout(
         &self,
-        method: &str,
+        method: RpcMethod,
         params: serde_json::Value,
         timeout: Duration,
     ) -> Result<serde_json::Value> {
@@ -753,7 +762,7 @@ impl DaemonClient {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
-            "method": method,
+            "method": method.as_str(),
             "params": params
         });
 
@@ -896,17 +905,18 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn ping(&self) -> Result<String> {
-        let result: serde_json::Value = self.typed_call("ping", EmptyParams {}).await?;
+        let result: serde_json::Value = self.typed_call(RpcMethod::Ping, EmptyParams {}).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        let _: serde_json::Value = self.typed_call("shutdown", EmptyParams {}).await?;
+        let _: serde_json::Value = self.typed_call(RpcMethod::Shutdown, EmptyParams {}).await?;
         Ok(())
     }
 
     pub async fn capabilities(&self) -> Result<DaemonCapabilities> {
-        self.typed_call("daemon.capabilities", EmptyParams {}).await
+        self.typed_call(RpcMethod::DaemonCapabilities, EmptyParams {})
+            .await
     }
 
     pub async fn check_version(&self) -> Result<VersionCheck> {
@@ -930,7 +940,7 @@ impl DaemonClient {
 
     pub async fn plugin_reload(&self, name: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "plugin.reload",
+            RpcMethod::PluginReload,
             NameRequest {
                 name: name.to_string(),
             },
@@ -939,14 +949,18 @@ impl DaemonClient {
     }
 
     pub async fn plugin_list(&self) -> Result<Vec<String>> {
-        let result: serde_json::Value = self.typed_call("plugin.list", EmptyParams {}).await?;
+        let result: serde_json::Value = self
+            .typed_call(RpcMethod::PluginList, EmptyParams {})
+            .await?;
         Ok(extract_string_array(&result, "plugins"))
     }
 
     /// Like [`plugin_list`] but returns the richer `plugin_info` array
     /// (name, version, source, state, dir, capability counts).
     pub async fn plugin_list_info(&self) -> Result<Vec<serde_json::Value>> {
-        let result: serde_json::Value = self.typed_call("plugin.list", EmptyParams {}).await?;
+        let result: serde_json::Value = self
+            .typed_call(RpcMethod::PluginList, EmptyParams {})
+            .await?;
         Ok(result
             .get("plugin_info")
             .and_then(|v| v.as_array().cloned())
@@ -956,7 +970,9 @@ impl DaemonClient {
     /// The merged spec, one row per entry: the `spec` array of `plugin.list`.
     /// An older daemon answers no `spec`, which reads as an empty list.
     pub async fn plugin_list_spec(&self) -> Result<Vec<PluginSpecRow>> {
-        let result: serde_json::Value = self.typed_call("plugin.list", EmptyParams {}).await?;
+        let result: serde_json::Value = self
+            .typed_call(RpcMethod::PluginList, EmptyParams {})
+            .await?;
         match result.get("spec") {
             Some(rows) => Ok(serde_json::from_value(rows.clone())?),
             None => Ok(Vec::new()),
@@ -975,7 +991,7 @@ impl DaemonClient {
     pub async fn plugin_publications(&self, key: Option<&str>) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
             .typed_call(
-                "plugin.publications",
+                RpcMethod::PluginPublications,
                 plugin_requests::PluginPublicationsRequest {
                     key: key.map(str::to_string),
                 },
@@ -994,7 +1010,10 @@ impl DaemonClient {
     /// first. The registry's row cap is what keeps the response bounded.
     pub async fn surface_list(&self) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
-            .typed_call("surface.list", crate::rpc_client::SurfaceRequest::default())
+            .typed_call(
+                RpcMethod::SurfaceList,
+                crate::rpc_client::SurfaceRequest::default(),
+            )
             .await?;
         Ok(result
             .get("surfaces")
@@ -1006,7 +1025,7 @@ impl DaemonClient {
     pub async fn surface_get(&self, name: &str) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
             .typed_call(
-                "surface.get",
+                RpcMethod::SurfaceGet,
                 crate::rpc_client::SurfaceRequest {
                     plugin: None,
                     name: Some(name.to_string()),
@@ -1028,7 +1047,7 @@ impl DaemonClient {
     pub async fn plugin_options(&self, ui: &str) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
             .typed_call(
-                "plugin.options",
+                RpcMethod::PluginOptions,
                 plugin_requests::PluginOptionsRequest {
                     ui: Some(ui.to_string()),
                     plugin: None,
@@ -1050,7 +1069,7 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
             .typed_call(
-                "plugin.option_get",
+                RpcMethod::PluginOptionGet,
                 plugin_requests::PluginOptionCallRequest {
                     plugin: plugin.to_string(),
                     path: path.to_vec(),
@@ -1075,7 +1094,7 @@ impl DaemonClient {
     ) -> Result<()> {
         let _: serde_json::Value = self
             .typed_call(
-                "plugin.option_set",
+                RpcMethod::PluginOptionSet,
                 plugin_requests::PluginOptionCallRequest {
                     plugin: plugin.to_string(),
                     path: path.to_vec(),
@@ -1096,7 +1115,7 @@ impl DaemonClient {
     ) -> Result<()> {
         let _: serde_json::Value = self
             .typed_call(
-                "plugin.option_execute",
+                RpcMethod::PluginOptionExecute,
                 plugin_requests::PluginOptionCallRequest {
                     plugin: plugin.to_string(),
                     path: path.to_vec(),
@@ -1112,7 +1131,9 @@ impl DaemonClient {
     /// `hint`, `parameters`. Served from the daemon so TUI and web show the
     /// same slash-command set.
     pub async fn plugin_commands(&self) -> Result<Vec<serde_json::Value>> {
-        let result: serde_json::Value = self.typed_call("plugin.commands", EmptyParams {}).await?;
+        let result: serde_json::Value = self
+            .typed_call(RpcMethod::PluginCommands, EmptyParams {})
+            .await?;
         Ok(result
             .get("commands")
             .and_then(|v| v.as_array().cloned())
@@ -1138,7 +1159,7 @@ impl DaemonClient {
         session: Option<&str>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "plugin.run_command",
+            RpcMethod::PluginRunCommand,
             plugin_requests::PluginRunCommandRequest {
                 name: name.to_string(),
                 args,
@@ -1157,7 +1178,7 @@ impl DaemonClient {
         pin: Option<&str>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "plugin.install",
+            RpcMethod::PluginInstall,
             plugin_requests::PluginInstallRequest {
                 url: url.to_string(),
                 branch: branch.map(str::to_string),
@@ -1171,7 +1192,7 @@ impl DaemonClient {
     /// cloned plugin directory.
     pub async fn plugin_remove(&self, name: &str, purge: bool) -> Result<serde_json::Value> {
         self.typed_call(
-            "plugin.remove",
+            RpcMethod::PluginRemove,
             plugin_requests::PluginRemoveRequest {
                 name: name.to_string(),
                 purge,

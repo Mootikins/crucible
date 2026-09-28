@@ -6,6 +6,7 @@
 mod common;
 
 use crucible_core::parser::BlockHash;
+use crucible_core::protocol::RpcMethod;
 use crucible_core::storage::NoteRecord;
 use crucible_daemon::storage::sqlite::{create_sqlite_client, SqliteConfig};
 use crucible_daemon::DaemonClient;
@@ -174,7 +175,7 @@ async fn test_kiln_close_removes_from_list() {
     // Close kiln via raw RPC call (no typed method on DaemonClient)
     let result = client
         .call(
-            "kiln.close",
+            RpcMethod::KilnClose,
             serde_json::json!({ "path": kiln_dir.path().to_string_lossy() }),
         )
         .await
@@ -331,7 +332,7 @@ async fn test_kiln_lifecycle_open_query_close() {
     // Close
     let close_result = client
         .call(
-            "kiln.close",
+            RpcMethod::KilnClose,
             serde_json::json!({ "path": kiln_dir.path().to_string_lossy() }),
         )
         .await
@@ -385,7 +386,7 @@ async fn a_registered_name_is_usable_without_restarting_the_daemon() {
     // or the assertion after it proves nothing.
     let before = client
         .call(
-            "session.create",
+            RpcMethod::SessionCreate,
             serde_json::json!({ "type": "chat", "kilns": ["late"] }),
         )
         .await;
@@ -417,7 +418,7 @@ async fn a_registered_name_is_usable_without_restarting_the_daemon() {
     // No restart, no reconnect, no second client: the same connection.
     let after = client
         .call(
-            "session.create",
+            RpcMethod::SessionCreate,
             serde_json::json!({ "type": "chat", "kilns": ["late"] }),
         )
         .await
@@ -481,7 +482,7 @@ async fn a_registered_name_survives_a_daemon_restart() {
             // A fresh process, a fresh registry, no registration call.
             let after = client
                 .call(
-                    "session.create",
+                    RpcMethod::SessionCreate,
                     serde_json::json!({ "type": "chat", "kilns": ["late"] }),
                 )
                 .await

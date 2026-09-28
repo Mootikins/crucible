@@ -5,6 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{DaemonClient, LuaInitSessionRequest, LuaShutdownSessionRequest};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -601,7 +602,7 @@ async fn run_interactive_chat(
                 Some(id) => serde_json::json!({ "session_id": id }),
                 None => serde_json::json!({}),
             };
-            match client.call("ui.config", ui_params).await {
+            match client.call(RpcMethod::UiConfig, ui_params).await {
                 Ok(payload) => {
                     crate::tui::oil::theme::apply_ui_config(&payload);
                 }

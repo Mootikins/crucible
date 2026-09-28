@@ -40,11 +40,12 @@ pub enum DropKind {
 
 impl DropKind {
     /// The RPC verb that performs this drop.
-    pub fn method(self) -> &'static str {
+    pub fn method(self) -> crucible_core::protocol::RpcMethod {
+        use crucible_core::protocol::RpcMethod;
         match self {
-            DropKind::Reset => "config.reset",
-            DropKind::Pop => "config.pop",
-            DropKind::Unset => "config.unset",
+            DropKind::Reset => RpcMethod::ConfigReset,
+            DropKind::Pop => RpcMethod::ConfigPop,
+            DropKind::Unset => RpcMethod::ConfigUnset,
         }
     }
 

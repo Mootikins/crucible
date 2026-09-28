@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use crucible_core::config::KilnName;
+use crucible_core::protocol::RpcMethod;
 use crucible_core::types::SendOutcome;
 use std::path::{Path, PathBuf};
 
@@ -454,7 +455,7 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn session_create(&self, params: SessionCreateParams) -> Result<serde_json::Value> {
-        self.typed_call("session.create", build_create_request(params, None))
+        self.typed_call(RpcMethod::SessionCreate, build_create_request(params, None))
             .await
     }
 
@@ -467,8 +468,11 @@ impl DaemonClient {
         params: SessionCreateParams,
         agent: SessionAgentSpec,
     ) -> Result<serde_json::Value> {
-        self.typed_call("session.create", build_create_request(params, Some(agent)))
-            .await
+        self.typed_call(
+            RpcMethod::SessionCreate,
+            build_create_request(params, Some(agent)),
+        )
+        .await
     }
 
     pub async fn session_list(
@@ -502,7 +506,7 @@ impl DaemonClient {
         include_children: Option<bool>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.list",
+            RpcMethod::SessionList,
             SessionListRequest {
                 session_type: session_type.map(|t| t.to_string()),
                 kiln: kiln.map(KilnName::to_string),
@@ -516,7 +520,8 @@ impl DaemonClient {
     }
 
     pub async fn session_get(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.session_id_call("session.get", session_id).await
+        self.session_id_call(RpcMethod::SessionGet, session_id)
+            .await
     }
 
     /// `session.status` — the status list of a session.
@@ -524,7 +529,8 @@ impl DaemonClient {
     /// Returned as raw JSON (`{"status": [StatusDisplayItem, …]}`) for the
     /// web route, which forwards it verbatim.
     pub async fn session_status(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.session_id_call("session.status", session_id).await
+        self.session_id_call(RpcMethod::SessionStatus, session_id)
+            .await
     }
 
     /// `session.status`, decoded into the items that the TUI draws.
@@ -542,7 +548,7 @@ impl DaemonClient {
         session_id: &str,
     ) -> Result<Vec<crucible_core::types::Notification>> {
         let reply = self
-            .session_id_call("session.list_notifications", session_id)
+            .session_id_call(RpcMethod::SessionListNotifications, session_id)
             .await?;
         Ok(serde_json::from_value(reply["notifications"].clone())?)
     }
@@ -557,7 +563,7 @@ impl DaemonClient {
     ) -> Result<bool> {
         let reply: serde_json::Value = self
             .typed_call(
-                "session.dismiss_notification",
+                RpcMethod::SessionDismissNotification,
                 SessionDismissNotificationRequest {
                     session_id: session_id.to_string(),
                     notification_id: notification_id.to_string(),
@@ -570,20 +576,23 @@ impl DaemonClient {
     }
 
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.session_id_call("session.pause", session_id).await
+        self.session_id_call(RpcMethod::SessionPause, session_id)
+            .await
     }
 
     pub async fn session_resume(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.session_id_call("session.resume", session_id).await
+        self.session_id_call(RpcMethod::SessionResume, session_id)
+            .await
     }
 
     pub async fn session_end(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.session_id_call("session.end", session_id).await
+        self.session_id_call(RpcMethod::SessionEnd, session_id)
+            .await
     }
 
     pub async fn session_delete(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.delete",
+            RpcMethod::SessionDelete,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -593,7 +602,7 @@ impl DaemonClient {
 
     pub async fn session_archive(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.archive",
+            RpcMethod::SessionArchive,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -603,7 +612,7 @@ impl DaemonClient {
 
     pub async fn session_unarchive(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.unarchive",
+            RpcMethod::SessionUnarchive,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -617,7 +626,7 @@ impl DaemonClient {
         speed: f64,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.replay",
+            RpcMethod::SessionReplay,
             SessionReplayRequest {
                 recording_path: recording_path.to_string_lossy().to_string(),
                 speed,
@@ -633,7 +642,7 @@ impl DaemonClient {
         offset: Option<usize>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.resume_from_storage",
+            RpcMethod::SessionResumeFromStorage,
             SessionResumeFromStorageRequest {
                 session_id: session_id.to_string(),
                 limit,
@@ -653,7 +662,7 @@ impl DaemonClient {
         offset: Option<usize>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.history",
+            RpcMethod::SessionHistory,
             SessionHistoryRequest {
                 session_id: session_id.to_string(),
                 limit,
@@ -681,7 +690,7 @@ impl DaemonClient {
         permission_mode: Option<String>,
     ) -> Result<SendOutcome> {
         self.typed_call(
-            "session.send_message",
+            RpcMethod::SessionSendMessage,
             SessionSendMessageRequest {
                 session_id: session_id.to_string(),
                 content: content.to_string(),
@@ -704,7 +713,7 @@ impl DaemonClient {
         is_interactive: bool,
     ) -> Result<SendOutcome> {
         self.typed_call(
-            "session.send_message",
+            RpcMethod::SessionSendMessage,
             SessionSendMessageRequest {
                 session_id: session_id.to_string(),
                 content: content.to_string(),
@@ -719,7 +728,7 @@ impl DaemonClient {
     /// All pending interactions across sessions (`{pending: [{session_id,
     /// request_id, request}]}`) — polled by the web Inbox.
     pub async fn session_pending_interactions(&self) -> Result<serde_json::Value> {
-        self.call("session.pending_interactions", serde_json::json!({}))
+        self.call(RpcMethod::SessionPendingInteractions, serde_json::json!({}))
             .await
     }
 
@@ -730,7 +739,7 @@ impl DaemonClient {
         response: crucible_core::interaction::InteractionResponse,
     ) -> Result<()> {
         self.typed_unit_call(
-            "session.interaction_respond",
+            RpcMethod::SessionInteractionRespond,
             SessionInteractionRespondRequest {
                 session_id: session_id.to_string(),
                 request_id: request_id.to_string(),
@@ -744,7 +753,7 @@ impl DaemonClient {
     /// stays; the daemon sends `context_cleared`.
     pub async fn session_clear(&self, session_id: &str) -> Result<()> {
         self.call(
-            "session.clear",
+            RpcMethod::SessionClear,
             serde_json::json!({ "session_id": session_id }),
         )
         .await
@@ -754,7 +763,7 @@ impl DaemonClient {
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
         let resp: SessionCancelResponse = self
             .typed_call(
-                "session.cancel",
+                RpcMethod::SessionCancel,
                 SessionIdRequest {
                     session_id: session_id.to_string(),
                 },
@@ -766,7 +775,7 @@ impl DaemonClient {
 
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> Result<()> {
         self.typed_unit_call(
-            "session.set_title",
+            RpcMethod::SessionSetTitle,
             SessionSetTitleRequest {
                 session_id: session_id.to_string(),
                 title: title.to_string(),
@@ -779,7 +788,7 @@ impl DaemonClient {
     /// existing title if one is already set).
     pub async fn session_generate_title(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.generate_title",
+            RpcMethod::SessionGenerateTitle,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -797,7 +806,7 @@ impl DaemonClient {
         limit: Option<usize>,
     ) -> Result<crucible_core::session::SessionSearchResponse> {
         self.typed_call(
-            "session.search",
+            RpcMethod::SessionSearch,
             SessionSearchRequest {
                 query: query.to_string(),
                 kilns: kilns.iter().map(KilnName::to_string).collect(),
@@ -814,7 +823,7 @@ impl DaemonClient {
     /// Load events from a persisted session's JSONL log.
     pub async fn session_load_events(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.load_events",
+            RpcMethod::SessionLoadEvents,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -831,7 +840,7 @@ impl DaemonClient {
         after: u64,
     ) -> Result<Vec<crucible_core::protocol::SessionEventMessage>> {
         self.typed_call(
-            "session.events_after",
+            RpcMethod::SessionEventsAfter,
             SessionEventsAfterRequest {
                 session_id: session_id.to_string(),
                 after,
@@ -850,7 +859,7 @@ impl DaemonClient {
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.list_persisted",
+            RpcMethod::SessionListPersisted,
             SessionListPersistedRequest {
                 kilns: kilns.iter().map(KilnName::to_string).collect(),
                 session_type: session_type.map(|t| t.to_string()),
@@ -871,7 +880,7 @@ impl DaemonClient {
     ) -> Result<String> {
         let resp: SessionRenderMarkdownResponse = self
             .typed_call(
-                "session.render_markdown",
+                RpcMethod::SessionRenderMarkdown,
                 SessionRenderMarkdownRequest {
                     session_id: session_id.to_string(),
                     include_timestamps,
@@ -893,7 +902,7 @@ impl DaemonClient {
     ) -> Result<String> {
         let resp: SessionExportToFileResponse = self
             .typed_call(
-                "session.export_to_file",
+                RpcMethod::SessionExportToFile,
                 SessionExportToFileRequest {
                     session_id: session_id.to_string(),
                     output_path: output_path.map(|p| p.to_string_lossy().to_string()),
@@ -918,7 +927,7 @@ impl DaemonClient {
         all_kilns: bool,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.cleanup",
+            RpcMethod::SessionCleanup,
             SessionCleanupRequest {
                 kilns: kilns.iter().map(KilnName::to_string).collect(),
                 older_than_days,

@@ -25,6 +25,7 @@
 //! `diff.comment` stores the comment, `session.send_message` carries the
 //! reference, and the refusals come back as JSON-RPC errors.
 
+use crucible_core::protocol::RpcMethod;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -181,7 +182,7 @@ impl Fixture {
     async fn configure_endpoint(&self, endpoint: &str) {
         self.client
             .call(
-                "config.set",
+                RpcMethod::ConfigSet,
                 serde_json::json!({ "values": { "chat.endpoint": endpoint } }),
             )
             .await

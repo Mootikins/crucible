@@ -1,6 +1,7 @@
 //! `cru lua` CLI command — evaluate Lua code in the daemon's plugin runtime
 
 use anyhow::{anyhow, Context, Result};
+use crucible_core::protocol::RpcMethod;
 use std::io::Read;
 use std::path::PathBuf;
 
@@ -32,7 +33,7 @@ pub async fn execute(code: Option<String>, file: Option<PathBuf>) -> Result<()> 
 
     let client = daemon_client().await?;
     let response = client
-        .call("lua.eval", serde_json::json!({ "code": source }))
+        .call(RpcMethod::LuaEval, serde_json::json!({ "code": source }))
         .await?;
 
     if let Some(result) = response.get("result").and_then(|r| r.as_str()) {

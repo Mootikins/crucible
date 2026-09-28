@@ -2,6 +2,7 @@
 use crate::formatting::OutputFormat;
 use anyhow::Result;
 use clap::{Subcommand, ValueEnum};
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::bases::{
     Column, CreateEntryParams, ListParams, QueryParams, QueryResult, Row, SetPropertyParams,
     Source, ViewSummary, ViewsParams, WriteOutcome,
@@ -89,13 +90,15 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
     let client = crate::common::daemon_client().await?;
     match cmd {
         BaseCommands::List { kiln } => {
-            let files: Vec<String> = client.typed_call("base.list", ListParams { kiln }).await?;
+            let files: Vec<String> = client
+                .typed_call(RpcMethod::BaseList, ListParams { kiln })
+                .await?;
             print_json(&files)
         }
         BaseCommands::Views { file, kiln } => {
             let views: Vec<ViewSummary> = client
                 .typed_call(
-                    "base.views",
+                    RpcMethod::BaseViews,
                     ViewsParams {
                         kiln,
                         source: Source::Path { path: file },
@@ -113,7 +116,7 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
         } => {
             let result: QueryResult = client
                 .typed_call(
-                    "base.query",
+                    RpcMethod::BaseQuery,
                     QueryParams {
                         kiln,
                         source: Source::Path { path: file },
@@ -139,7 +142,7 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
         } => {
             write(
                 &client,
-                "base.create_entry",
+                crucible_core::protocol::RpcMethod::BaseCreateEntry,
                 CreateEntryParams {
                     kiln,
                     source: Source::Path { path: file },
@@ -161,7 +164,7 @@ pub async fn handle(cmd: BaseCommands) -> Result<()> {
         } => {
             write(
                 &client,
-                "base.set_property",
+                crucible_core::protocol::RpcMethod::BaseSetProperty,
                 SetPropertyParams {
                     kiln,
                     path: note,
@@ -183,7 +186,11 @@ fn print_json(value: &impl Serialize) -> Result<()> {
 
 /// Send one Bases write. A stale or refused write prints its outcome to
 /// stderr and fails, so that a script sees that the disk did not change.
-async fn write(client: &DaemonClient, method: &str, params: impl Serialize) -> Result<()> {
+async fn write(
+    client: &DaemonClient,
+    method: crucible_core::protocol::RpcMethod,
+    params: impl Serialize,
+) -> Result<()> {
     let outcome: WriteOutcome = client.typed_call(method, params).await?;
     let text = serde_json::to_string_pretty(&outcome)?;
     match outcome {

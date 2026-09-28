@@ -153,7 +153,8 @@ behavior on top of them.
 |---|---|---|
 | `crates/crucible-core/src/protocol/lifecycle.rs` | 319 | Daemon socket path resolution and creation of the private, per-uid `0700` socket directory. |
 | `crates/crucible-core/src/protocol/mod.rs` | 16 | Re-export aggregator for `lifecycle`, `rpc`, `session_events`. |
-| `crates/crucible-core/src/protocol/rpc/mod.rs` | 583 | `Request`/`Response`/`RpcError`, `SessionEventMessage` and its named constructors (`turn_finished` replaces the deleted `ended`); the `BUSY` error code. |
+| `crates/crucible-core/src/protocol/rpc/method.rs` | 391 | `RpcMethod` and `METHODS` from one `rpc_methods!` table, and `rpc_set_method`, the method that writes each `SessionKnob`. The server dispatches on `RpcMethod`, and each client calls a method through it, so a misspelled method does not compile. |
+| `crates/crucible-core/src/protocol/rpc/mod.rs` | 593 | `Request`/`Response`/`RpcError`, `SessionEventMessage` and its named constructors (`turn_finished` replaces the deleted `ended`); the `BUSY` error code. |
 | `crates/crucible-core/src/protocol/rpc/tests.rs` | 830 | Golden wire-shape regression tests for `SessionEventMessage`, including the migration of old recorded wire forms into their current shape. |
 | `crates/crucible-core/src/protocol/session_events/lifecycle.rs` | 444 | `JobPayload`/`ReviewPayload`/`NotificationPayload`/`WorkflowPayload`/`SystemPayload`, each declared through the `event_payload!` macro. |
 | `crates/crucible-core/src/protocol/session_events/mod.rs` | 461 | `SessionEventPayload`/`Group`/`EventDecodeError` and the `event_payload!` macro — the typed contract layered over the untyped envelope; `migrate`/`migrate_history` keep an old transcript decodable. |

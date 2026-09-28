@@ -1011,7 +1011,8 @@ fn an_empty_assignment_asks_the_daemon_to_unset() {
 #[test]
 fn every_drop_spelling_names_a_distinct_verb() {
     use strum::IntoEnumIterator;
-    let verbs: Vec<&str> = DropKind::iter().map(DropKind::method).collect();
+    let verbs: Vec<crucible_core::protocol::RpcMethod> =
+        DropKind::iter().map(DropKind::method).collect();
     let mut unique = verbs.clone();
     unique.sort_unstable();
     unique.dedup();

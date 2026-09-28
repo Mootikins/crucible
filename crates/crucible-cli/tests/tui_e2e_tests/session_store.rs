@@ -7,6 +7,7 @@
 //! the session listing. Only a spawned binary and a real daemon show that, so
 //! this is a PTY test.
 
+use crucible_core::protocol::RpcMethod;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -68,7 +69,7 @@ fn lua_session_exists(home: &Path, session_id: &str) -> Result<(), String> {
             .map_err(|e| format!("connect: {e}"))?;
         client
             .call(
-                "lua.register_commands",
+                RpcMethod::LuaRegisterCommands,
                 serde_json::json!({ "session_id": session_id, "commands": [] }),
             )
             .await

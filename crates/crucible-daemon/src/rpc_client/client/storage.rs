@@ -3,6 +3,7 @@
 //! Methods for managing kilns, notes, and storage operations.
 
 use anyhow::Result;
+use crucible_core::protocol::RpcMethod;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
@@ -39,7 +40,8 @@ impl DaemonClient {
         &self,
         request: &crucible_core::file_write::FileWriteRequest,
     ) -> Result<serde_json::Value> {
-        self.call("fs.write", serde_json::to_value(request)?).await
+        self.call(RpcMethod::FsWrite, serde_json::to_value(request)?)
+            .await
     }
 
     /// Read one file through the daemon's enclosing-root rule. The answer is
@@ -49,7 +51,8 @@ impl DaemonClient {
         &self,
         request: &crucible_core::file_write::FileReadRequest,
     ) -> Result<serde_json::Value> {
-        self.call("fs.read", serde_json::to_value(request)?).await
+        self.call(RpcMethod::FsRead, serde_json::to_value(request)?)
+            .await
     }
 
     // =========================================================================
@@ -68,7 +71,7 @@ impl DaemonClient {
         force: bool,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "kiln.open",
+            RpcMethod::KilnOpen,
             KilnOpenRequest {
                 path: path.to_string_lossy().to_string(),
                 process,
@@ -118,7 +121,7 @@ impl DaemonClient {
         make_default: bool,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "kiln.register",
+            RpcMethod::KilnRegister,
             KilnRegisterRequest {
                 name: name.map(str::to_string),
                 path: path.to_string_lossy().to_string(),
@@ -141,7 +144,7 @@ impl DaemonClient {
         make_default: bool,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "llm.register_provider",
+            RpcMethod::LlmRegisterProvider,
             LlmRegisterProviderRequest {
                 provider: provider.to_string(),
                 model: model.to_string(),
@@ -156,13 +159,14 @@ impl DaemonClient {
     /// Not [`Self::kiln_list`], which lists the kilns that happen to be OPEN.
     /// This is the registry: what a session may name.
     pub async fn kiln_registry_list(&self) -> Result<serde_json::Value> {
-        self.typed_call("kiln.registry_list", EmptyParams {}).await
+        self.typed_call(RpcMethod::KilnRegistryList, EmptyParams {})
+            .await
     }
 
     /// Remove one registration from the daemon's state store.
     pub async fn kiln_forget(&self, name: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "kiln.forget",
+            RpcMethod::KilnForget,
             NameRequest {
                 name: name.to_string(),
             },
@@ -171,7 +175,8 @@ impl DaemonClient {
     }
 
     pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
-        let result: serde_json::Value = self.typed_call("kiln.list", EmptyParams {}).await?;
+        let result: serde_json::Value =
+            self.typed_call(RpcMethod::KilnList, EmptyParams {}).await?;
         Ok(result.as_array().cloned().unwrap_or_default())
     }
 
@@ -190,7 +195,7 @@ impl DaemonClient {
     pub async fn embed_query(&self, kiln_path: &Path, text: &str) -> Result<Vec<f32>> {
         let result: serde_json::Value = self
             .typed_call(
-                "embed.query",
+                RpcMethod::EmbedQuery,
                 EmbedQueryRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     text: text.to_string(),
@@ -220,7 +225,7 @@ impl DaemonClient {
         limit: usize,
     ) -> Result<Vec<FtsResult>> {
         self.typed_call(
-            "search_text",
+            RpcMethod::SearchText,
             SearchTextRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 query: query.to_string(),
@@ -244,7 +249,7 @@ impl DaemonClient {
         scope: Option<crucible_core::storage::Scope>,
     ) -> Result<Vec<VectorHit>> {
         self.typed_call(
-            "search_vectors",
+            RpcMethod::SearchVectors,
             SearchVectorsRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 vector: vector.to_vec(),
@@ -269,7 +274,7 @@ impl DaemonClient {
         case_insensitive: bool,
     ) -> Result<crate::GrepSearchResponse> {
         self.typed_call(
-            "search_grep",
+            RpcMethod::SearchGrep,
             GrepSearchRequest {
                 root: root.to_string(),
                 query: query.to_string(),
@@ -292,7 +297,7 @@ impl DaemonClient {
     ) -> Result<Vec<NoteListRow>> {
         let result: serde_json::Value = self
             .typed_call(
-                "list_notes",
+                RpcMethod::ListNotes,
                 ListNotesRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     path_filter: path_filter.map(|f| f.to_string()),
@@ -367,7 +372,7 @@ impl DaemonClient {
     ) -> Result<Option<serde_json::Value>> {
         let result: serde_json::Value = self
             .typed_call(
-                "get_note_by_name",
+                RpcMethod::GetNoteByName,
                 GetNoteByNameRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     name: name.to_string(),
@@ -395,7 +400,7 @@ impl DaemonClient {
     ) -> Result<Option<serde_json::Value>> {
         let result: serde_json::Value = self
             .typed_call(
-                "get_backlinks",
+                RpcMethod::GetBacklinks,
                 GetBacklinksRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     name: name.to_string(),
@@ -420,7 +425,7 @@ impl DaemonClient {
         scope: Option<crucible_core::storage::Scope>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "kiln.graph",
+            RpcMethod::KilnGraph,
             KilnGraphRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 scope,
@@ -440,7 +445,7 @@ impl DaemonClient {
     ) -> Result<Vec<serde_json::Value>> {
         let result: serde_json::Value = self
             .typed_call(
-                "suggest_links",
+                RpcMethod::SuggestLinks,
                 SuggestLinksRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     text: text.to_string(),
@@ -467,7 +472,7 @@ impl DaemonClient {
     ) -> Result<()> {
         let _: serde_json::Value = self
             .typed_call(
-                "note.upsert",
+                RpcMethod::NoteUpsert,
                 NoteUpsertRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     note: serde_json::to_value(note)?,
@@ -494,7 +499,7 @@ impl DaemonClient {
     ) -> Result<Option<crucible_core::storage::NoteRecord>> {
         let result: serde_json::Value = self
             .typed_call(
-                "note.get",
+                RpcMethod::NoteGet,
                 NotePathRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     path: path.to_string(),
@@ -514,7 +519,7 @@ impl DaemonClient {
     pub async fn note_delete(&self, kiln_path: &Path, path: &str) -> Result<()> {
         let _: serde_json::Value = self
             .typed_call(
-                "note.delete",
+                RpcMethod::NoteDelete,
                 NotePathRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     path: path.to_string(),
@@ -539,7 +544,7 @@ impl DaemonClient {
         scope: Option<crucible_core::storage::Scope>,
     ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
         self.typed_call(
-            "note.list",
+            RpcMethod::NoteList,
             NoteListRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 scope,
@@ -564,7 +569,7 @@ impl DaemonClient {
 
         let result: serde_json::Value = self
             .typed_call(
-                "process_batch",
+                RpcMethod::ProcessBatch,
                 ProcessBatchRequest {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     paths,
@@ -601,7 +606,7 @@ impl DaemonClient {
 
     pub async fn storage_verify(&self, kiln_path: &Path) -> Result<serde_json::Value> {
         self.typed_call(
-            "storage.verify",
+            RpcMethod::StorageVerify,
             KilnPathRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
             },
@@ -611,7 +616,7 @@ impl DaemonClient {
 
     pub async fn storage_cleanup(&self, kiln_path: &Path) -> Result<serde_json::Value> {
         self.typed_call(
-            "storage.cleanup",
+            RpcMethod::StorageCleanup,
             KilnPathRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
             },
@@ -621,7 +626,7 @@ impl DaemonClient {
 
     pub async fn storage_backup(&self, kiln_path: &Path, dest: &Path) -> Result<serde_json::Value> {
         self.typed_call(
-            "storage.backup",
+            RpcMethod::StorageBackup,
             StorageBackupRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 dest: dest.to_string_lossy().to_string(),
@@ -636,7 +641,7 @@ impl DaemonClient {
         source: &Path,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "storage.restore",
+            RpcMethod::StorageRestore,
             StorageRestoreRequest {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 source: source.to_string_lossy().to_string(),
@@ -662,7 +667,7 @@ impl DaemonClient {
         just_dir: Option<&str>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "mcp.start",
+            RpcMethod::McpStart,
             McpStartRequest {
                 kiln_path: kiln_path.to_string(),
                 no_just,
@@ -676,12 +681,12 @@ impl DaemonClient {
 
     /// Stop the daemon-managed MCP server.
     pub async fn mcp_stop(&self) -> Result<serde_json::Value> {
-        self.typed_call("mcp.stop", EmptyParams {}).await
+        self.typed_call(RpcMethod::McpStop, EmptyParams {}).await
     }
 
     /// Get the status of the daemon-managed MCP server.
     pub async fn mcp_status(&self) -> Result<crate::McpStatus> {
-        self.typed_call("mcp.status", EmptyParams {}).await
+        self.typed_call(RpcMethod::McpStatus, EmptyParams {}).await
     }
 
     /// Turn one verified webhook delivery into a `webhook:received` event.
@@ -695,7 +700,7 @@ impl DaemonClient {
         body: String,
     ) -> Result<crate::WebhookReceiveReply> {
         self.typed_call(
-            "webhook.receive",
+            RpcMethod::WebhookReceive,
             serde_json::json!({ "name": name, "headers": headers, "body": body }),
         )
         .await
@@ -707,7 +712,7 @@ impl DaemonClient {
 
     pub async fn project_register(&self, path: &Path) -> Result<crucible_core::Project> {
         self.typed_call(
-            "project.register",
+            RpcMethod::ProjectRegister,
             PathRequest {
                 path: path.to_string_lossy().to_string(),
             },
@@ -721,7 +726,7 @@ impl DaemonClient {
     /// layer holding both the project registry and the kiln registry.
     pub async fn project_open_kilns(&self, path: &Path) -> Result<serde_json::Value> {
         self.typed_call(
-            "project.open_kilns",
+            RpcMethod::ProjectOpenKilns,
             PathRequest {
                 path: path.to_string_lossy().to_string(),
             },
@@ -732,7 +737,7 @@ impl DaemonClient {
     pub async fn project_unregister(&self, path: &Path) -> Result<()> {
         let _: serde_json::Value = self
             .typed_call(
-                "project.unregister",
+                RpcMethod::ProjectUnregister,
                 PathRequest {
                     path: path.to_string_lossy().to_string(),
                 },
@@ -742,7 +747,7 @@ impl DaemonClient {
     }
 
     pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
-        self.typed_call_with_retry("project.list", EmptyParams {})
+        self.typed_call_with_retry(RpcMethod::ProjectList, EmptyParams {})
             .await
     }
 
@@ -752,7 +757,7 @@ impl DaemonClient {
     /// the two-layer view: `[projects.*]` the user authored beside
     /// `projects.json` the daemon wrote.
     pub async fn project_registry_list(&self) -> Result<serde_json::Value> {
-        self.typed_call("project.registry_list", EmptyParams {})
+        self.typed_call(RpcMethod::ProjectRegistryList, EmptyParams {})
             .await
     }
 
@@ -771,7 +776,7 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         let v: serde_json::Value = self
             .typed_call(
-                "fs.list_dir",
+                RpcMethod::FsListDir,
                 FsListDirRequest {
                     root: root.to_string(),
                     rel_path: rel_path.to_string(),
@@ -791,7 +796,7 @@ impl DaemonClient {
         source: &crucible_core::diff::DiffsetSource,
     ) -> Result<crucible_core::diff::Diffset> {
         self.typed_call_with_retry(
-            "diff.get",
+            RpcMethod::DiffGet,
             DiffGetRequest {
                 source: source.clone(),
             },
@@ -824,14 +829,15 @@ impl DaemonClient {
         &self,
         request: DiffFileRequest,
     ) -> Result<crucible_core::diff::DiffFileText> {
-        self.typed_call_with_retry("diff.file", request).await
+        self.typed_call_with_retry(RpcMethod::DiffFile, request)
+            .await
     }
 
     /// `diff.comment`: anchor a comment to a line range of one file.
     ///
     /// A write, so the client sends it once.
     pub async fn diff_comment(&self, request: DiffCommentRequest) -> Result<DiffCommentReply> {
-        self.typed_call("diff.comment", request).await
+        self.typed_call(RpcMethod::DiffComment, request).await
     }
 
     /// `diff.resolve_comment`: mark one comment of a diffset resolved.
@@ -843,7 +849,7 @@ impl DaemonClient {
         comment_id: &str,
     ) -> Result<DiffResolveCommentReply> {
         self.typed_call(
-            "diff.resolve_comment",
+            RpcMethod::DiffResolveComment,
             DiffResolveCommentRequest {
                 source: source.clone(),
                 comment_id: comment_id.to_string(),
@@ -861,7 +867,7 @@ impl DaemonClient {
         comment_id: &str,
     ) -> Result<DiffDeleteCommentReply> {
         self.typed_call(
-            "diff.delete_comment",
+            RpcMethod::DiffDeleteComment,
             DiffDeleteCommentRequest {
                 source: source.clone(),
                 comment_id: comment_id.to_string(),
@@ -879,7 +885,7 @@ impl DaemonClient {
         source: &crucible_core::diff::DiffsetSource,
     ) -> Result<DiffCommentsReply> {
         self.typed_call_with_retry(
-            "diff.comments",
+            RpcMethod::DiffComments,
             DiffCommentsRequest {
                 source: source.clone(),
             },
@@ -897,7 +903,7 @@ impl DaemonClient {
         to_rel: &str,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "fs.move",
+            RpcMethod::FsMove,
             FsMoveRequest {
                 root: root.to_string(),
                 kind: kind.to_string(),
@@ -913,7 +919,7 @@ impl DaemonClient {
     pub async fn fs_mkdir(&self, root: &str, kind: &str, rel_path: &str) -> Result<()> {
         let _: serde_json::Value = self
             .typed_call(
-                "fs.mkdir",
+                RpcMethod::FsMkdir,
                 FsPathRequest {
                     root: root.to_string(),
                     kind: kind.to_string(),
@@ -933,7 +939,7 @@ impl DaemonClient {
         rel_path: &str,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "fs.trash",
+            RpcMethod::FsTrash,
             FsPathRequest {
                 root: root.to_string(),
                 kind: kind.to_string(),
@@ -956,7 +962,7 @@ impl DaemonClient {
         name: Option<&str>,
     ) -> Result<crate::scm::ScmCloneResponse> {
         self.typed_call_with_timeout(
-            "scm.clone",
+            RpcMethod::ScmClone,
             ScmCloneRequest {
                 url: url.to_string(),
                 dest: dest.map(|p| p.to_string_lossy().to_string()),
@@ -970,7 +976,7 @@ impl DaemonClient {
     pub async fn project_get(&self, path: &Path) -> Result<Option<crucible_core::Project>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "project.get",
+                RpcMethod::ProjectGet,
                 PathRequest {
                     path: path.to_string_lossy().to_string(),
                 },

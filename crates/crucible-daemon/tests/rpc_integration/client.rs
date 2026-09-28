@@ -1,5 +1,6 @@
 //! Client basic tests: ping, shutdown, sequential, concurrent, errors.
 
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::DaemonClient;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -60,7 +61,7 @@ async fn test_interaction_event_flows_to_receiver() {
 
     let interact_result = client
         .call(
-            "session.test_interaction",
+            RpcMethod::SessionTestInteraction,
             serde_json::json!({
                 "session_id": session_id,
                 "type": "ask"
@@ -225,7 +226,9 @@ async fn test_client_handles_rpc_errors() {
         .expect("Failed to connect");
 
     // Make a raw call that will trigger an error (missing required param)
-    let result = client.call("kiln.open", serde_json::json!({})).await;
+    let result = client
+        .call(RpcMethod::KilnOpen, serde_json::json!({}))
+        .await;
 
     assert!(result.is_err(), "Expected error for missing param");
     let err_str = result.unwrap_err().to_string();

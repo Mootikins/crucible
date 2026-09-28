@@ -14,6 +14,7 @@
 
 mod common;
 
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::rpc_client::SessionCreateParams;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use std::time::Duration;
@@ -158,7 +159,7 @@ async fn session_fork_emits_session_created_for_the_fork() {
 
     let forked = client
         .call(
-            "session.fork",
+            RpcMethod::SessionFork,
             serde_json::json!({ "session_id": parent_id }),
         )
         .await

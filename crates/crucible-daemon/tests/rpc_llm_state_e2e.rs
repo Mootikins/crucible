@@ -9,6 +9,7 @@
 mod common;
 
 use common::{InProcessDaemon, InProcessDaemonBuilder};
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::DaemonClient;
 use tempfile::TempDir;
 
@@ -50,7 +51,7 @@ async fn a_recorded_provider_reaches_the_daemons_provider_table() {
 
     let listed = client
         .call(
-            "providers.list",
+            RpcMethod::ProvidersList,
             serde_json::json!({ "include_models": false }),
         )
         .await
@@ -88,7 +89,7 @@ async fn a_daemon_with_no_recorded_selection_starts_normally() {
 
     let listed = client
         .call(
-            "providers.list",
+            RpcMethod::ProvidersList,
             serde_json::json!({ "include_models": false }),
         )
         .await

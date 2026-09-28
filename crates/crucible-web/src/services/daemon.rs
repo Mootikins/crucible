@@ -1,7 +1,7 @@
 use super::forwarding::ReplayPolicy;
 use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
-use crucible_daemon::rpc::RpcMethod;
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
 use futures::future::BoxFuture;
 use std::collections::HashMap;
@@ -92,11 +92,11 @@ impl ReconnectingDaemon {
         }
     }
 
-    forward_rpc! { Safe BaseQuery => base_query(params: crucible_daemon::bases::QueryParams) -> crucible_daemon::bases::QueryResult = typed_call("base.query", params); }
-    forward_rpc! { Safe BaseViews => base_views(params: crucible_daemon::bases::ViewsParams) -> Vec<crucible_daemon::bases::ViewSummary> = typed_call("base.views", params); }
-    forward_rpc! { Once BaseCreateEntry => base_create_entry(params: crucible_daemon::bases::CreateEntryParams) -> crucible_daemon::bases::WriteOutcome = typed_call("base.create_entry", params); }
-    forward_rpc! { Once BaseSetProperty => base_set_property(params: crucible_daemon::bases::SetPropertyParams) -> crucible_daemon::bases::WriteOutcome = typed_call("base.set_property", params); }
-    forward_rpc! { Once BaseReorderGroups => base_reorder_groups(params: crucible_daemon::bases::ReorderGroupsParams) -> crucible_daemon::bases::WriteOutcome = typed_call("base.reorder_groups", params); }
+    forward_rpc! { Safe BaseQuery => base_query(params: crucible_daemon::bases::QueryParams) -> crucible_daemon::bases::QueryResult = typed_call(RpcMethod::BaseQuery, params); }
+    forward_rpc! { Safe BaseViews => base_views(params: crucible_daemon::bases::ViewsParams) -> Vec<crucible_daemon::bases::ViewSummary> = typed_call(RpcMethod::BaseViews, params); }
+    forward_rpc! { Once BaseCreateEntry => base_create_entry(params: crucible_daemon::bases::CreateEntryParams) -> crucible_daemon::bases::WriteOutcome = typed_call(RpcMethod::BaseCreateEntry, params); }
+    forward_rpc! { Once BaseSetProperty => base_set_property(params: crucible_daemon::bases::SetPropertyParams) -> crucible_daemon::bases::WriteOutcome = typed_call(RpcMethod::BaseSetProperty, params); }
+    forward_rpc! { Once BaseReorderGroups => base_reorder_groups(params: crucible_daemon::bases::ReorderGroupsParams) -> crucible_daemon::bases::WriteOutcome = typed_call(RpcMethod::BaseReorderGroups, params); }
 
     /// The daemon's cheapest RPC, for the readiness probe.
     ///

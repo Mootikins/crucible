@@ -1,4 +1,5 @@
 use anyhow::Result;
+use crucible_core::protocol::RpcMethod;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -92,7 +93,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
     if init_lua_path.exists() || explicit_override {
         let daemon_boot_hash = match DaemonClient::connect().await {
             Ok(client) => client
-                .call("config.effective", serde_json::json!({}))
+                .call(RpcMethod::ConfigEffective, serde_json::json!({}))
                 .await
                 .ok()
                 .and_then(|resp| resp["boot_hash"].as_str().map(String::from)),

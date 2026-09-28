@@ -24,6 +24,7 @@ mod common;
 
 use anyhow::Result;
 use common::{InProcessDaemon, InProcessDaemonBuilder};
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::rpc_client::{SessionAgentSpec, SessionCreateParams};
 use crucible_daemon::DaemonClient;
 
@@ -99,7 +100,7 @@ async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
 
     let created = client
         .call(
-            "session.create",
+            RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
                 "kilns": [card_kiln_name()],
@@ -141,7 +142,7 @@ async fn agent_card_resolves_a_card_from_the_second_attached_kiln() {
 
     let created = client
         .call(
-            "session.create",
+            RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
                 "kilns": [card_kiln_name(), "second"],
@@ -166,7 +167,7 @@ async fn agent_name_without_agent_type_still_resolves_a_card() {
 
     let created = client
         .call(
-            "session.create",
+            RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
                 "kilns": [card_kiln_name()],
@@ -194,7 +195,7 @@ async fn agent_card_and_agent_name_together_are_rejected() {
 
     let err = client
         .call(
-            "session.create",
+            RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
                 "kilns": [card_kiln_name()],
@@ -229,7 +230,7 @@ async fn unknown_agent_card_errors_without_creating_a_session() {
 
     let err = client
         .call(
-            "session.create",
+            RpcMethod::SessionCreate,
             serde_json::json!({
                 "type": "chat",
                 "kilns": [card_kiln_name()],
@@ -335,7 +336,7 @@ async fn configure_agent_keeps_an_acp_profile_name() {
     // readable when the struct grows.
     client
         .call(
-            "session.configure_agent",
+            RpcMethod::SessionConfigureAgent,
             serde_json::json!({
                 "session_id": session_id,
                 "agent": {
@@ -556,7 +557,7 @@ async fn configure_agent_refuses_an_internal_endpoint() {
     for endpoint in INTERNAL_ENDPOINTS {
         let err = client
             .call(
-                "session.configure_agent",
+                RpcMethod::SessionConfigureAgent,
                 serde_json::json!({
                     "session_id": session_id,
                     "agent": {

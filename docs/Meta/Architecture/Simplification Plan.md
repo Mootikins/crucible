@@ -40,7 +40,7 @@ at the same time. Each step leaves the tree working.
 | 3. One command registry (done) | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client (done) | a swapped pair of type names | S | none |
 | 5. Shell commands run in the session workspace (done) | one wrong working directory, one dead route | S | none |
-| 6. Wire types live in core | a second home for wire types | M | steps 1 and 4 |
+| 6. Wire types live in core (parts 2 and 3 done) | a second home for wire types | M | steps 1 and 4 |
 | 7. One test server | 18 test-server copies, a hand mock | M | step 6 helps |
 | 8. Local duplicates | about ten small copies | S each | none |
 | 9. Dead code (done) | unused modules and features | S | none |
@@ -224,6 +224,12 @@ does not carry. The TUI modal also stays in the TUI, because it draws in
 the user's terminal.
 
 ## Step 6. Wire types live in core
+
+**Status: parts 2 and 3 done.** `RpcMethod`, `METHODS` and
+`rpc_set_method` live in `crates/crucible-core/src/protocol/rpc/method.rs`.
+Every `DaemonClient` call takes an `RpcMethod`, so a misspelled method does
+not compile. A test that sends a raw request to the dispatcher still names
+the method as a string, because it tests the wire.
 
 **Now.** 95 request types live in `crates/crucible-daemon/src/rpc_client/`,
 not in `crates/crucible-core/src/protocol/`. The server imports them from its

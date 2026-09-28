@@ -54,7 +54,10 @@ pub async fn fetch_effective_from_daemon(
         return Ok(None);
     };
     let resp = client
-        .call("config.effective", serde_json::json!({}))
+        .call(
+            crucible_core::protocol::RpcMethod::ConfigEffective,
+            serde_json::json!({}),
+        )
         .await?;
 
     let my_source =

@@ -46,7 +46,7 @@ Start at the owner. The architecture page lists the rest of the path.
 | To add | Start at | Page |
 |---|---|---|
 | A builtin tool | `crates/crucible-daemon/src/tools/surface.rs`, then its executor | [Tools and Admission](<docs/Meta/Architecture/Tools and Admission.md>) |
-| An RPC method | `RpcMethod` in `crates/crucible-daemon/src/rpc/dispatch.rs` | [Daemon Server](<docs/Meta/Architecture/Daemon Server.md>) |
+| An RPC method | `RpcMethod` in `crates/crucible-core/src/protocol/rpc/method.rs`, then its arm in `crates/crucible-daemon/src/rpc/dispatch.rs` | [Daemon Server](<docs/Meta/Architecture/Daemon Server.md>) |
 | A session event | `SessionEventPayload` in `crates/crucible-core/src/protocol/session_events/` | [Core Domain Types](<docs/Meta/Architecture/Core Domain Types.md>) |
 | A session setting | `SessionKnob` in `crates/crucible-core/src/types/knob.rs`, then the cross-layer checklist below | [Session Services](<docs/Meta/Architecture/Session Services.md>) |
 | A config key | `crates/crucible-core/src/config/components/` | [Core Config](<docs/Meta/Architecture/Core Config.md>) |

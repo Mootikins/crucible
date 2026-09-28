@@ -92,8 +92,7 @@ Directory `crates/crucible-daemon/src/rpc/` (dispatch layer):
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-daemon/src/rpc/context.rs` | 482 | `RpcContext`, `RpcContextParams`, `DeferredShutdown`: the shared state every handler dispatches against; builds `SessionLifecycle`, binds it to delegation, and binds the notification hub to `AgentManager`. |
-| `crates/crucible-daemon/src/rpc/dispatch.rs` | 4317 | `RpcMethod`/`METHODS`/`RpcDispatcher::dispatch`: the closed method table and cross-cutting session/config/plugin logic, including the `diff.*`/`proposal.*`/`base.*`/`fs.read` families (no `review.*` methods remain) and `session.commands`. |
-| `crates/crucible-daemon/src/rpc/knob_method.rs` | 101 | `rpc_set_method`: the total mapping from `SessionKnob` to its writing `RpcMethod`. |
+| `crates/crucible-daemon/src/rpc/dispatch.rs` | 4041 | `RpcDispatcher::dispatch`: the exhaustive match over `RpcMethod` (declared in core), and cross-cutting session/config/plugin logic, including the `diff.*`/`proposal.*`/`base.*`/`fs.read` families (no `review.*` methods remain) and `session.commands`. |
 | `crates/crucible-daemon/src/rpc/missing_session_contract.rs` | 383 | `#[cfg(test)]` pinned table of every session-taking method's answer for a missing session — seven distinct answers now that the review family (an eighth) is gone. |
 | `crates/crucible-daemon/src/rpc/mod.rs` | 19 | Module root; re-exports the RPC public surface. |
 | `crates/crucible-daemon/src/rpc/params.rs` | 65 | `parse_params`: the one typed-params chokepoint. |
@@ -680,13 +679,14 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
 ## Extension seams
 
 - **A new RPC method** is a new `RpcMethod` variant declared through the
-  `rpc_methods!` macro and one arm in `RpcDispatcher::dispatch`
+  `rpc_methods!` macro in `crates/crucible-core/src/protocol/rpc/method.rs`
+  and one arm in `RpcDispatcher::dispatch`
   (`crates/crucible-daemon/src/rpc/dispatch.rs`); `#[deny(clippy::wildcard_enum_match_arm)]`
   and `#[deny(clippy::match_wildcard_for_single_variants)]` fail the build if
   the arm is missing. See [[Consolidation Plan#Extension seams]] for the
   request/response/error/session-lifecycle behavior a new method must prove.
 - **A new session knob** needs an arm in
-  `rpc_set_method` in `crates/crucible-daemon/src/rpc/knob_method.rs`, whose own
+  `rpc_set_method` in `crates/crucible-core/src/protocol/rpc/method.rs`, whose own
   `#[deny]`s make a missing arm a compile error.
 - **A new daemon-internal event that a plugin should see** gets one `EventRow`
   in `ROWS` in `crates/crucible-daemon/src/event_map.rs`; `event_map` is the only

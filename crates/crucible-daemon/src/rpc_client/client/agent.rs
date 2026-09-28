@@ -3,6 +3,7 @@
 //! Methods for managing agents, skills, and models.
 
 use anyhow::Result;
+use crucible_core::protocol::RpcMethod;
 use std::path::Path;
 use std::time::Duration;
 
@@ -201,7 +202,7 @@ impl DaemonClient {
         agent: &crucible_core::session::SessionAgent,
     ) -> Result<()> {
         self.typed_unit_call(
-            "session.configure_agent",
+            RpcMethod::SessionConfigureAgent,
             SessionConfigureAgentRequest {
                 session_id: session_id.to_string(),
                 agent: serde_json::to_value(agent)?,
@@ -212,7 +213,7 @@ impl DaemonClient {
 
     pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
         self.typed_unit_call(
-            "session.switch_model",
+            RpcMethod::SessionSwitchModel,
             SessionSwitchModelRequest {
                 session_id: session_id.to_string(),
                 model_id: model_id.to_string(),
@@ -229,7 +230,7 @@ impl DaemonClient {
         kiln: &crucible_core::config::KilnName,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.connect_kiln",
+            RpcMethod::SessionConnectKiln,
             SessionKilnRequest {
                 session_id: session_id.to_string(),
                 kiln: kiln.clone(),
@@ -246,7 +247,7 @@ impl DaemonClient {
         kiln: &crucible_core::config::KilnName,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.disconnect_kiln",
+            RpcMethod::SessionDisconnectKiln,
             SessionKilnRequest {
                 session_id: session_id.to_string(),
                 kiln: kiln.clone(),
@@ -262,7 +263,7 @@ impl DaemonClient {
         workspace: Option<&Path>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "session.set_workspace",
+            RpcMethod::SessionSetWorkspace,
             SessionSetWorkspaceRequest {
                 session_id: session_id.to_string(),
                 workspace: workspace.map(|p| p.to_string_lossy().to_string()),
@@ -273,7 +274,7 @@ impl DaemonClient {
 
     pub async fn session_set_mode(&self, session_id: &str, mode_id: &str) -> Result<()> {
         self.typed_unit_call(
-            "session.set_mode",
+            RpcMethod::SessionSetMode,
             SessionSetModeRequest {
                 session_id: session_id.to_string(),
                 mode_id: mode_id.to_string(),
@@ -289,7 +290,7 @@ impl DaemonClient {
         approval: crucible_core::session::PluginApproval,
     ) -> Result<()> {
         self.typed_unit_call(
-            "session.set_plugin_approval",
+            RpcMethod::SessionSetPluginApproval,
             SessionPluginApprovalRequest {
                 session_id: session_id.to_owned(),
                 plugin: plugin.to_owned(),
@@ -301,7 +302,7 @@ impl DaemonClient {
 
     pub async fn session_set_plugin_turn_limit(&self, session_id: &str, limit: u32) -> Result<()> {
         self.typed_unit_call(
-            "session.set_plugin_turn_limit",
+            RpcMethod::SessionSetPluginTurnLimit,
             SessionPluginTurnLimitRequest {
                 session_id: session_id.to_owned(),
                 limit,
@@ -313,7 +314,7 @@ impl DaemonClient {
     pub async fn session_get_plugin_turn_limit(&self, session_id: &str) -> Result<u32> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "session.get_plugin_turn_limit",
+                RpcMethod::SessionGetPluginTurnLimit,
                 SessionIdRequest {
                     session_id: session_id.to_string(),
                 },
@@ -333,7 +334,7 @@ impl DaemonClient {
     ) -> Result<crucible_core::session::PluginApproval> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "session.get_plugin_approval",
+                RpcMethod::SessionGetPluginApproval,
                 SessionPluginRequest {
                     session_id: session_id.to_owned(),
                     plugin: plugin.to_owned(),
@@ -349,7 +350,7 @@ impl DaemonClient {
     ) -> Result<std::collections::BTreeMap<String, crucible_core::session::PluginApproval>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "session.list_plugin_approvals",
+                RpcMethod::SessionListPluginApprovals,
                 SessionIdRequest {
                     session_id: session_id.to_owned(),
                 },
@@ -361,7 +362,7 @@ impl DaemonClient {
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "session.list_models",
+                RpcMethod::SessionListModels,
                 SessionIdRequest {
                     session_id: session_id.to_string(),
                 },
@@ -378,7 +379,7 @@ impl DaemonClient {
     /// The settings this session's external agent advertised for itself.
     pub async fn session_list_agent_options(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call_with_retry(
-            "session.list_agent_options",
+            RpcMethod::SessionListAgentOptions,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -401,7 +402,7 @@ impl DaemonClient {
         }
         let _: serde_json::Value = self
             .typed_call(
-                "session.set_agent_option",
+                RpcMethod::SessionSetAgentOption,
                 Params {
                     session_id,
                     option_id,
@@ -418,7 +419,7 @@ impl DaemonClient {
         session_id: &str,
     ) -> Result<crucible_core::types::SessionKnobSupport> {
         self.typed_call_with_retry(
-            "session.list_knobs",
+            RpcMethod::SessionListKnobs,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -437,7 +438,7 @@ impl DaemonClient {
         }
         let reply: Reply = self
             .typed_call_with_retry(
-                "session.commands",
+                RpcMethod::SessionCommands,
                 SessionIdRequest {
                     session_id: session_id.to_string(),
                 },
@@ -451,7 +452,7 @@ impl DaemonClient {
         session_id: &str,
     ) -> Result<crucible_core::types::mode::SessionModes> {
         self.typed_call_with_retry(
-            "session.list_modes",
+            RpcMethod::SessionListModes,
             SessionIdRequest {
                 session_id: session_id.to_string(),
             },
@@ -466,7 +467,7 @@ impl DaemonClient {
     pub async fn list_all_models(&self, kiln_path: Option<&Path>) -> Result<Vec<String>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "models.list",
+                RpcMethod::ModelsList,
                 ListAllModelsRequest {
                     kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
                 },
@@ -494,10 +495,10 @@ impl DaemonClient {
             download,
         };
         if download {
-            self.typed_call_with_timeout("embeddings.models", params, DOWNLOAD_TIMEOUT)
+            self.typed_call_with_timeout(RpcMethod::EmbeddingsModels, params, DOWNLOAD_TIMEOUT)
                 .await
         } else {
-            self.typed_call_with_retry("embeddings.models", params)
+            self.typed_call_with_retry(RpcMethod::EmbeddingsModels, params)
                 .await
         }
     }
@@ -528,7 +529,7 @@ impl DaemonClient {
     ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "providers.list",
+                RpcMethod::ProvidersList,
                 ListProvidersRequest {
                     kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
                     include_models,
@@ -549,7 +550,7 @@ impl DaemonClient {
     /// Set whether Precognition (auto-RAG) is enabled for a session.
     pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
         self.typed_unit_call(
-            "session.set_precognition",
+            RpcMethod::SessionSetPrecognition,
             SessionSetPrecognitionRequest {
                 session_id: session_id.to_string(),
                 precognition_enabled: enabled,
@@ -562,7 +563,7 @@ impl DaemonClient {
     pub async fn session_get_precognition(&self, session_id: &str) -> Result<bool> {
         let result: serde_json::Value = self
             .typed_call_with_retry(
-                "session.get_precognition",
+                RpcMethod::SessionGetPrecognition,
                 SessionIdRequest {
                     session_id: session_id.to_string(),
                 },
@@ -578,7 +579,7 @@ impl DaemonClient {
     }
 
     pub async fn session_get_mode(&self, session_id: &str) -> Result<Option<String>> {
-        self.get_session_option("session.get_mode", session_id, "mode", |v| {
+        self.get_session_option(RpcMethod::SessionGetMode, session_id, "mode", |v| {
             v.as_str().map(|s| s.to_string())
         })
         .await
@@ -590,7 +591,7 @@ impl DaemonClient {
         strategy: &str,
     ) -> Result<()> {
         self.typed_unit_call(
-            "session.set_context_strategy",
+            RpcMethod::SessionSetContextStrategy,
             SessionSetContextStrategyRequest {
                 session_id: session_id.to_string(),
                 context_strategy: strategy.to_string(),
@@ -601,7 +602,7 @@ impl DaemonClient {
 
     pub async fn session_get_context_strategy(&self, session_id: &str) -> Result<Option<String>> {
         self.get_session_option(
-            "session.get_context_strategy",
+            RpcMethod::SessionGetContextStrategy,
             session_id,
             "context_strategy",
             |v| v.as_str().map(String::from),
@@ -617,7 +618,7 @@ impl DaemonClient {
     ) -> Result<Vec<crucible_core::types::UndoSummary>> {
         let resp: serde_json::Value = self
             .typed_call(
-                "session.undo",
+                RpcMethod::SessionUndo,
                 SessionUndoRequest {
                     session_id: session_id.to_string(),
                     count: Some(count),
@@ -645,7 +646,7 @@ impl DaemonClient {
         scope_filter: Option<&str>,
     ) -> Result<crate::SkillsReply> {
         self.typed_call(
-            "skills.list",
+            RpcMethod::SkillsList,
             super::types::SkillsListRequest {
                 kiln_path: kiln_path.to_string_lossy().to_string(),
                 workspace: workspace.map(|p| p.to_string_lossy().to_string()),
@@ -663,7 +664,7 @@ impl DaemonClient {
         workspace: Option<&Path>,
     ) -> Result<crate::SkillDetail> {
         self.typed_call(
-            "skills.get",
+            RpcMethod::SkillsGet,
             super::types::SkillsGetRequest {
                 name: name.to_string(),
                 kiln_path: kiln_path.to_string_lossy().to_string(),
@@ -682,7 +683,7 @@ impl DaemonClient {
         limit: Option<usize>,
     ) -> Result<crate::SkillsReply> {
         self.typed_call(
-            "skills.search",
+            RpcMethod::SkillsSearch,
             super::types::SkillsSearchRequest {
                 query: query.to_string(),
                 kiln_path: kiln_path.to_string_lossy().to_string(),
@@ -695,7 +696,7 @@ impl DaemonClient {
 
     /// List all available agent profiles (builtins + configured).
     pub async fn agents_list_profiles(&self) -> Result<crate::AgentProfilesReply> {
-        self.typed_call("agents.list_profiles", EmptyParams {})
+        self.typed_call(RpcMethod::AgentsListProfiles, EmptyParams {})
             .await
     }
 
@@ -706,7 +707,7 @@ impl DaemonClient {
         kiln_path: Option<&Path>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
-            "agents.list_cards",
+            RpcMethod::AgentsListCards,
             super::types::AgentsListCardsRequest {
                 workspace: workspace.to_string_lossy().to_string(),
                 kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
@@ -718,7 +719,7 @@ impl DaemonClient {
     /// Resolve a named agent profile.
     pub async fn agents_resolve_profile(&self, name: &str) -> Result<serde_json::Value> {
         self.typed_call(
-            "agents.resolve_profile",
+            RpcMethod::AgentsResolveProfile,
             NameRequest {
                 name: name.to_string(),
             },

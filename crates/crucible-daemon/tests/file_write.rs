@@ -3,6 +3,7 @@ use crucible_core::file_write::{
     ExpectedBase, FileChange, FileEncoding, FileReadRequest, FileWriteRequest,
 };
 use crucible_core::note_edit::disk_hash;
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::file_write::{
     read_for_roots, write_for_roots, write_many_for_roots, CheckedPut,
 };
@@ -35,7 +36,10 @@ async fn retrying_an_unacknowledged_write_after_restart_preserves_the_other_writ
         client.kiln_open(&kiln).await.unwrap();
         let request = json!({ "path": path, "operation": "put", "content": ours, "base_hash": disk_hash(base), "base_text": base });
         assert_eq!(
-            client.call("fs.write", request.clone()).await.unwrap()["ok"],
+            client
+                .call(RpcMethod::FsWrite, request.clone())
+                .await
+                .unwrap()["ok"],
             true
         );
         // Treat the acknowledgment as lost: the caller retains the original
@@ -52,7 +56,7 @@ async fn retrying_an_unacknowledged_write_after_restart_preserves_the_other_writ
         let task = tokio::spawn(server.run());
         let client = DaemonClient::connect_to(&socket).await.unwrap();
         client.kiln_open(&kiln).await.unwrap();
-        let result = client.call("fs.write", request).await.unwrap();
+        let result = client.call(RpcMethod::FsWrite, request).await.unwrap();
         if let Some(expected) = expected {
             assert_eq!(result["ok"], true, "{result}");
             assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
@@ -97,8 +101,8 @@ async fn two_clients_merge_writes_through_the_daemon() {
         "base_hash": disk_hash(base), "base_text": base })
     };
     let (left, right) = tokio::join!(
-        a.call("fs.write", request("ONE\ntwo\nthree\n")),
-        b.call("fs.write", request("one\ntwo\nTHREE\n")),
+        a.call(RpcMethod::FsWrite, request("ONE\ntwo\nthree\n")),
+        b.call(RpcMethod::FsWrite, request("one\ntwo\nTHREE\n")),
     );
     assert!(left.unwrap()["ok"].as_bool().unwrap());
     assert!(right.unwrap()["ok"].as_bool().unwrap());
@@ -106,7 +110,7 @@ async fn two_clients_merge_writes_through_the_daemon() {
     let outside = dir.path().join("outside.md");
     let refused = a
         .call(
-            "fs.write",
+            RpcMethod::FsWrite,
             json!({"path": outside, "operation": "put", "content": "no"}),
         )
         .await
@@ -275,7 +279,7 @@ async fn fs_write_fields_map_to_the_same_answers() {
     let write = |body: serde_json::Value| {
         let mut body = body;
         body["path"] = json!(path);
-        client.call("fs.write", body)
+        client.call(RpcMethod::FsWrite, body)
     };
 
     // No base: the write replaces the text with no check.
@@ -329,7 +333,7 @@ async fn fs_write_fields_map_to_the_same_answers() {
     let fresh = kiln.join("fresh.md");
     let answer = client
         .call(
-            "fs.write",
+            RpcMethod::FsWrite,
             json!({"path": fresh, "operation": "put", "content": "new\n", "base_hash": ""}),
         )
         .await

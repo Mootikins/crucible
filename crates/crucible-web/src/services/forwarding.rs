@@ -19,7 +19,7 @@ macro_rules! forward_rpc {
             $(let $arg = forward_rpc!(@own $arg $(, $owned)?);)*
             self.forward_rpc(
                 $crate::services::forwarding::ReplayPolicy::$policy,
-                crucible_daemon::rpc::RpcMethod::$method,
+                crucible_core::protocol::RpcMethod::$method,
                 move |daemon| {
                     $(let $arg = $arg.to_owned();)*
                     Box::pin(async move { daemon.$client_method($($value),*).await })

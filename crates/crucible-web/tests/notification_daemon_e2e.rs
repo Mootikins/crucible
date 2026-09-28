@@ -4,6 +4,7 @@
 //! This test proves that the event reaches the web server's per-session
 //! stream from a real daemon, in the shape the browser reads.
 
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{BindWithPluginConfigParams, DaemonClient, Server};
 use crucible_web::services::daemon::{EventBroker, ReconnectingDaemon};
 use crucible_web::ChatEvent;
@@ -37,7 +38,7 @@ async fn a_plugin_notification_reaches_a_web_session_stream() {
     let caller = DaemonClient::connect_to(&socket).await.expect("connect");
     let code = format!("cru.log.notify({message:?}, cru.log.levels.WARN)");
     caller
-        .call("lua.eval", serde_json::json!({ "code": code }))
+        .call(RpcMethod::LuaEval, serde_json::json!({ "code": code }))
         .await
         .expect("lua.eval");
 
@@ -81,14 +82,17 @@ async fn the_web_route_lists_the_notifications_of_one_session() {
     let mut ids = Vec::new();
     for message in ["mine", "other"] {
         let created = client
-            .call("session.create", serde_json::json!({ "type": "chat" }))
+            .call(
+                RpcMethod::SessionCreate,
+                serde_json::json!({ "type": "chat" }),
+            )
             .await
             .expect("session.create");
         let id = created["session_id"].as_str().unwrap().to_string();
         let notification = crucible_core::types::Notification::warning(message);
         client
             .call(
-                "session.add_notification",
+                RpcMethod::SessionAddNotification,
                 serde_json::json!({ "session_id": id, "notification": notification }),
             )
             .await
@@ -144,14 +148,17 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     let mut sessions = Vec::new();
     for _ in 0..2 {
         let created = client
-            .call("session.create", serde_json::json!({ "type": "chat" }))
+            .call(
+                RpcMethod::SessionCreate,
+                serde_json::json!({ "type": "chat" }),
+            )
             .await
             .expect("session.create");
         sessions.push(created["session_id"].as_str().unwrap().to_string());
     }
     client
         .call(
-            "lua.eval",
+            RpcMethod::LuaEval,
             serde_json::json!({ "code": "cru.log.notify('shared')" }),
         )
         .await
@@ -160,7 +167,10 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     let shared_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let listed = client
-                .call("notification.list", serde_json::json!({ "all": true }))
+                .call(
+                    RpcMethod::NotificationList,
+                    serde_json::json!({ "all": true }),
+                )
                 .await
                 .expect("notification.list");
             if let Some(id) = listed["notifications"][0]["id"].as_str() {

@@ -1,6 +1,7 @@
 use crate::rpc_client::client::session::build_create_request;
 use crate::rpc_client::client::*;
 use crate::Server;
+use crucible_core::protocol::RpcMethod;
 use tempfile::TempDir;
 
 /// Approval criterion 1.3: a cold-start failure must surface in seconds,
@@ -551,7 +552,7 @@ async fn test_call_with_retry_succeeds_on_valid_method() {
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
     let result = client
-        .call_with_retry("ping", serde_json::json!({}))
+        .call_with_retry(RpcMethod::Ping, serde_json::json!({}))
         .await
         .unwrap();
     assert_eq!(result, "pong");
@@ -563,9 +564,12 @@ async fn test_call_with_retry_does_not_retry_rpc_errors() {
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
     let result = client
-        .call_with_retry("nonexistent.method", serde_json::json!({}))
+        .call_with_retry(RpcMethod::SessionGet, serde_json::json!({}))
         .await;
-    assert!(result.is_err(), "Unknown method should fail without retry");
+    assert!(
+        result.is_err(),
+        "a refused request should fail without retry"
+    );
     let err_msg = result.unwrap_err().to_string();
     assert!(
         !err_msg.contains("timeout"),
@@ -696,18 +700,26 @@ mod simple_mode_correlation {
 
         let a = tokio::spawn({
             let client = client.clone();
-            async move { client.call("alpha", serde_json::Value::Null).await }
+            async move { client.call(RpcMethod::Ping, serde_json::Value::Null).await }
         });
         let b = tokio::spawn({
             let client = client.clone();
-            async move { client.call("beta", serde_json::Value::Null).await }
+            async move {
+                client
+                    .call(RpcMethod::KilnList, serde_json::Value::Null)
+                    .await
+            }
         });
 
-        let a = a.await.expect("task a").expect("call alpha");
-        let b = b.await.expect("task b").expect("call beta");
+        let a = a.await.expect("task a").expect("call ping");
+        let b = b.await.expect("task b").expect("call kiln.list");
 
-        assert_eq!(a, serde_json::json!("alpha"), "caller a got b's response");
-        assert_eq!(b, serde_json::json!("beta"), "caller b got a's response");
+        assert_eq!(a, serde_json::json!("ping"), "caller a got b's response");
+        assert_eq!(
+            b,
+            serde_json::json!("kiln.list"),
+            "caller b got a's response"
+        );
 
         // The hazard, asserted present: if the stub had answered in arrival
         // order this test would pass without any correlation at all.
@@ -752,7 +764,7 @@ mod simple_mode_correlation {
 
         let client = DaemonClient::connect_to(&sock).await.expect("connect");
         let result = client
-            .call("ping", serde_json::Value::Null)
+            .call(RpcMethod::Ping, serde_json::Value::Null)
             .await
             .expect("call");
         assert_eq!(result, serde_json::json!("pong"));

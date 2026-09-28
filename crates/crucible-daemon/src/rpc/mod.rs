@@ -5,7 +5,6 @@
 
 mod context;
 mod dispatch;
-mod knob_method;
 #[cfg(test)]
 mod missing_session_contract;
 mod params;
@@ -13,7 +12,4 @@ pub(crate) mod ui;
 pub(crate) mod workflow_handlers;
 
 pub use context::{DeferredShutdown, RpcContext, RpcContextParams};
-pub use dispatch::{
-    ConfigOriginRow, ConfigSaveReply, RpcDispatcher, RpcMethod, WebhookReceiveReply, METHODS,
-};
-pub use knob_method::rpc_set_method;
+pub use dispatch::{ConfigOriginRow, ConfigSaveReply, RpcDispatcher, WebhookReceiveReply};

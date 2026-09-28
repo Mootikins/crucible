@@ -1,4 +1,5 @@
 use super::server::TestServer;
+use crucible_core::protocol::RpcMethod;
 use crucible_daemon::DaemonClient;
 use serde_json::json;
 
@@ -19,22 +20,31 @@ async fn bases_cross_the_socket_and_write_the_same_note() {
         json!({"kiln":"kiln","source":{"path":"Tasks.base"},"view":"Tasks","this":"Host.md"});
     assert_eq!(
         client
-            .call("base.list", json!({"kiln":"kiln"}))
+            .call(RpcMethod::BaseList, json!({"kiln":"kiln"}))
             .await
             .unwrap(),
         json!(["boards/Tasks.base"])
     );
     assert_eq!(
-        client.call("base.views", params.clone()).await.unwrap(),
+        client
+            .call(RpcMethod::BaseViews, params.clone())
+            .await
+            .unwrap(),
         json!([{"name":"Tasks","type":"table"}])
     );
     let mut create = params.clone();
     create["name"] = json!("First");
     assert_eq!(
-        client.call("base.create_entry", create).await.unwrap()["path"],
+        client
+            .call(RpcMethod::BaseCreateEntry, create)
+            .await
+            .unwrap()["path"],
         "First.md"
     );
-    let query = client.call("base.query", params.clone()).await.unwrap();
+    let query = client
+        .call(RpcMethod::BaseQuery, params.clone())
+        .await
+        .unwrap();
     assert_eq!(query["rows"].as_array().unwrap().len(), 1);
     assert_eq!(query["source_path"], "boards/Tasks.base");
     let hash = query["rows"][0]["ancestor_hash"].clone();
@@ -42,22 +52,24 @@ async fn bases_cross_the_socket_and_write_the_same_note() {
         json!({"kiln":"kiln","path":"First.md","key":"status","value":"done","ancestor_hash":hash});
     assert_eq!(
         client
-            .call("base.set_property", edit.clone())
+            .call(RpcMethod::BaseSetProperty, edit.clone())
             .await
             .unwrap()["status"],
         "applied"
     );
     assert_eq!(
-        client.call("base.set_property", edit).await.unwrap()["status"],
+        client.call(RpcMethod::BaseSetProperty, edit).await.unwrap()["status"],
         "stale"
     );
-    assert!(client.call("base.query", params).await.unwrap()["rows"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert!(
+        client.call(RpcMethod::BaseQuery, params).await.unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     assert!(client
         .call(
-            "base.query",
+            RpcMethod::BaseQuery,
             json!({"kiln":"unknown","source":{"path":"Tasks.base"}})
         )
         .await
@@ -66,7 +78,7 @@ async fn bases_cross_the_socket_and_write_the_same_note() {
     let content = tokio::fs::read_to_string(root.join("First.md"))
         .await
         .unwrap();
-    let moved=client.call("base.set_property",json!({"kiln":"kiln","path":"First.md","key":"file.folder","value":"archive","ancestor_hash":crucible_core::note_edit::disk_hash(&content)})).await.unwrap();
+    let moved=client.call(RpcMethod::BaseSetProperty,json!({"kiln":"kiln","path":"First.md","key":"file.folder","value":"archive","ancestor_hash":crucible_core::note_edit::disk_hash(&content)})).await.unwrap();
     assert_eq!(moved["status"], "applied", "{moved}");
     assert!(root.join("archive/First.md").exists());
     assert!(!root.join("First.md").exists());

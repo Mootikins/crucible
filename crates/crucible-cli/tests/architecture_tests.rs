@@ -21,8 +21,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crucible_core::protocol::{rpc_set_method, RpcMethod, METHODS};
 use crucible_core::types::SessionKnob;
-use crucible_daemon::rpc::{rpc_set_method, RpcMethod, METHODS};
 use regex::Regex;
 use walkdir::WalkDir;
 

@@ -27,7 +27,7 @@
 
 use super::{daemon::ReconnectingDaemon, forwarding::ReplayPolicy};
 use crucible_core::config::redact_credentials;
-use crucible_daemon::rpc::RpcMethod;
+use crucible_core::protocol::RpcMethod;
 
 impl ReconnectingDaemon {
     /// The daemon's effective config, plus `config_root`, `boot_hash` and
@@ -35,7 +35,7 @@ impl ReconnectingDaemon {
     pub async fn config_effective(&self) -> anyhow::Result<serde_json::Value> {
         let mut answer = self
             .forward_rpc(ReplayPolicy::Safe, RpcMethod::ConfigEffective, |daemon| {
-                Box::pin(daemon.call(RpcMethod::ConfigEffective.as_str(), serde_json::json!({})))
+                Box::pin(daemon.call(RpcMethod::ConfigEffective, serde_json::json!({})))
             })
             .await?;
         redact_credentials(&mut answer);
@@ -47,7 +47,7 @@ impl ReconnectingDaemon {
     pub async fn config_origins(&self) -> anyhow::Result<serde_json::Value> {
         let mut answer = self
             .forward_rpc(ReplayPolicy::Safe, RpcMethod::ConfigOrigin, |daemon| {
-                Box::pin(daemon.call(RpcMethod::ConfigOrigin.as_str(), serde_json::json!({})))
+                Box::pin(daemon.call(RpcMethod::ConfigOrigin, serde_json::json!({})))
             })
             .await?;
         redact_credentials(&mut answer);
@@ -59,7 +59,7 @@ impl ReconnectingDaemon {
     pub async fn config_controls(&self) -> anyhow::Result<serde_json::Value> {
         let mut answer = self
             .forward_rpc(ReplayPolicy::Safe, RpcMethod::ConfigControls, |daemon| {
-                Box::pin(daemon.call(RpcMethod::ConfigControls.as_str(), serde_json::json!({})))
+                Box::pin(daemon.call(RpcMethod::ConfigControls, serde_json::json!({})))
             })
             .await?;
         redact_credentials(&mut answer);
@@ -79,7 +79,7 @@ impl ReconnectingDaemon {
                 Box::pin(async move {
                     daemon
                         .call(
-                            RpcMethod::ConfigSave.as_str(),
+                            RpcMethod::ConfigSave,
                             serde_json::json!({ "values": values }),
                         )
                         .await
