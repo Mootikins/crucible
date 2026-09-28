@@ -1,19 +1,10 @@
 --!strict
 --- reflection configuration
 ---
---- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention — the daemon seeds setup() with the plugin's config section at
---- load, and a user's later `setup{}` call, e.g. from
---- ~/.config/crucible/init.lua which runs after plugins load, overrides it):
----   1. values passed to `setup({...})` — last call wins per key.
----   2. the `plugins.reflection` config key, read through
----      `cru.plugin.config.get("reflection.<key>")` — covers keys read before
----      any setup() call lands. Note this is NOT `cru.config[...]` —
----      `cru.config` is the *app* config store and holds only `get`/`set`
----      functions; it is not indexable by plugin name.
----   3. the `defaults` table below.
----   4. the caller's `fallback` argument, as a last resort for keys this
----      module does not declare.
+--- `cru.settings.new` gives the order, highest priority first: setup()
+--- values, then the `plugins.reflection` section, then `defaults`, then the
+--- caller's fallback. The daemon calls setup() with the section at load. A
+--- later `setup{}` call from a user lays over it.
 
 local PLUGIN = "reflection"
 
@@ -35,48 +26,10 @@ local defaults = {
     transcript_chars = 60000,
 }
 
--- setup() values. Kept in their own table so the order above stays
--- observable — folding them into `defaults` would make the two layers
--- indistinguishable.
-local configured = {}
+local settings = cru.settings.new(PLUGIN, defaults)
 
---- Merge user-provided config into the setup layer.
---- Called by setup() in init.lua.
-function M.init(cfg)
-    if not cfg then return end
-    for k, v in pairs(cfg) do
-        configured[k] = v
-    end
-end
-
---- Read `[plugins.reflection].<key>`. Returns nil when unset, and also when
---- `cru.plugin.config` is absent — the plugin test runner has no daemon behind
---- it, and the spec-extraction sandbox stubs `crucible` with a metatable
---- (hence rawget, which sees through neither).
-local function from_toml(key)
-    local crucible = rawget(_G, "crucible")
-    if type(crucible) ~= "table" then return nil end
-    local cfg = rawget(crucible, "config")
-    if type(cfg) ~= "table" then return nil end
-    local get = rawget(cfg, "get")
-    if type(get) ~= "function" then return nil end
-    local ok, val = pcall(get, PLUGIN .. "." .. key)
-    if ok then return val end
-    return nil
-end
-
-function M.get(key, fallback)
-    if configured[key] ~= nil then return configured[key] end
-    local val = from_toml(key)
-    if val ~= nil then return val end
-    if defaults[key] ~= nil then return defaults[key] end
-    return fallback
-end
-
---- Clear the setup layer. Tests only: the daemon never unconfigures a
---- plugin, but a suite that cannot clear setup() has order-dependent tests.
-function M.reset()
-    configured = {}
-end
+M.init = settings.init
+M.get = settings.get
+M.reset = settings.reset
 
 return M

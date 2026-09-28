@@ -322,7 +322,7 @@ Each item is small and independent. Merge each one into the owner named here.
 | The selection flow in three TUI modals in `crates/crucible-cli/src/tui/oil/components/interaction_modal/` | one shared helper | [[TUI Components]] |
 | `ToolCall` and `ChatToolCall` in `crates/crucible-core/src/traits/` | one model tool-call record | [[Core Domain Types]] |
 | Two `SessionError` types, and the legacy `CrucibleError` | one error for each domain | [[Session Services]] |
-| `from_toml` copied in four plugins under `runtime/plugins/` | one host-owned helper module in `crates/crucible-lua/src/modules.rs` | [[Luau APIs]] |
+| **Done.** `from_toml` copied in four plugins under `runtime/plugins/`. Each copy read the absent `crucible` global, so the `plugins.<name>` section never answered a key before `setup()`. `cru.service` had a fifth copy | `cru.settings.new` in `crates/crucible-lua/src/prelude/stdlib.rs` | [[Luau APIs]] |
 | Lua twins of core types in `crates/crucible-lua/src/` (`PermissionRequest`, `LuaTool`, `BaseOperation`) | the core type, with a conversion | [[Luau APIs]] |
 | `session_api.rs` next to `sessions/` in `crates/crucible-lua/src/` | `sessions/` | [[Luau APIs]] |
 | `perm.autoconfirm_session`, a session-named flag that one client holds | a session knob, or remove it | [[TUI Components]] |

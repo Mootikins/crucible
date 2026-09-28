@@ -1,7 +1,7 @@
 //! The prelude — Crucible's own pure-Lua additions.
 //!
 //! Not the Lua standard library: this directory holds what Crucible ADDS to
-//! it. Provides `cru.retry`, `cru.emitter`, and `cru.check` as embedded Lua
+//! it. Provides `cru.retry`, `cru.emitter`, `cru.check` and `cru.settings` as embedded Lua
 //! source loaded at executor init time — pure Lua building on the
 //! Rust-backed timer module.
 //!
@@ -147,6 +147,19 @@ fn declare_lua_prelude(lua: &Lua) -> std::result::Result<(), crate::error::LuaEr
     check_ns.declare_only(
         "one_of",
         "(value: any, choices: { any }, name: string, opts: { optional: boolean? }?) -> ()",
+    )?;
+
+    // `cru.settings` (`stdlib.rs`). The answer is a table of three
+    // functions, called with `.`; `get` answers whatever the layers hold.
+    let settings: mlua::Table = cru.get("settings")?;
+    let mut settings_ns = Ns::over(lua, "cru.settings", settings);
+    settings_ns.declare_only(
+        "new",
+        "(plugin: string, defaults: { [string]: any }?, opts: { secrets: { [string]: boolean }? }?) -> { \
+            init: (cfg: { [string]: any }?) -> (), \
+            get: (key: string, fallback: any?) -> any, \
+            reset: () -> () \
+        }",
     )?;
 
     // `cru.emitter` (`stdlib.rs`). Both answer with the same object, and its

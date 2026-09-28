@@ -85,6 +85,8 @@ pub enum CruNamespace {
     Rtp,
     Schedule,
     Service,
+    /// The layered configuration of one plugin: `cru.settings.new`.
+    Settings,
     /// The canonical session module: lifecycle verbs plus `current`.
     Session,
     /// The deprecated plural alias over [`CruNamespace::Session`]; removed
@@ -157,6 +159,7 @@ impl CruNamespace {
             | Self::Rtp
             | Self::Schedule
             | Self::Service
+            | Self::Settings
             | Self::Session
             | Self::Sessions
             | Self::Shell

@@ -229,7 +229,7 @@ count at `582c5e6c1`.
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-lua/src/prelude/mod.rs` | 248 | Orchestrates loading every prelude Lua module and hand-writes the Luau type declarations for the pure-Lua half. |
-| `crates/crucible-lua/src/prelude/stdlib.rs` | 355 | Embeds `cru.retry`, `cru.emitter`, `cru.check`, `cru.service`. |
+| `crates/crucible-lua/src/prelude/stdlib.rs` | 431 | Embeds `cru.retry`, `cru.emitter`, `cru.check`, `cru.settings`, `cru.service`. `cru.service` resolves its config schema through `cru.settings`. |
 | `crates/crucible-lua/src/prelude/qol.rs` | 144 | Embeds `cru.inspect`, `cru.tbl_deep_extend`, `cru.tbl_get`, `cru.on_error`. |
 | `crates/crucible-lua/src/prelude/health.rs` | 105 | Embeds `cru.health`, a `vim.health`-inspired plugin self-diagnostics API. |
 | `crates/crucible-lua/src/prelude/test_runner.rs` | 324 | Embeds a minimal busted-style test runner (`describe`/`it`/`expect`/`run_tests`). |

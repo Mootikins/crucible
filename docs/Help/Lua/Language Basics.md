@@ -175,6 +175,7 @@ notifications; panel visibility is controlled by each client's own UI.
 | `cru.retry(fn, opts)` | Exponential backoff retry (opts: `max_retries`, `base_delay`, `max_delay`, `jitter`, `retryable`) |
 | `cru.emitter.new()` | Event emitter with `:on(event, fn)`, `:once(event, fn)`, `:off(event, id)`, `:emit(event, ...)` |
 | `cru.check` | Argument validation: `.string(val, name)`, `.number(val, name, opts)`, `.boolean(val, name)`, `.table(val, name)`, `.func(val, name)`, `.one_of(val, options, name)` -- all support `{optional=true}` |
+| `cru.settings.new(plugin, defaults, opts)` | The configuration of one plugin, with `.init(cfg)`, `.get(key, fallback)` and `.reset()`. See [[Help/Plugins/Lua Runtime API#Plugin Settings]] |
 | `cru.timer.spawn(fn)` | Spawn an async function as an independent tokio task (daemon context only) |
 | `cru.inspect(value, opts?)` | Pretty-print any value with cycle detection (`<cycle: table>`); opts: `max_depth`, `indent`. Also available as the global `inspect` |
 | `cru.tbl_deep_extend(behavior, ...)` | Deep-merge tables into a new table; `behavior` is `"force"` (last wins) or `"keep"` (first wins) |

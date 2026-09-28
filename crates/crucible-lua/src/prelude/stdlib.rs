@@ -223,6 +223,92 @@ do
 end
 
 -- ============================================================================
+-- cru.settings — the layered configuration of one plugin
+-- ============================================================================
+--
+-- One order for every plugin, highest priority first:
+--   1. the environment, for a key that `opts.secrets` names:
+--      `CRUCIBLE_<PLUGIN>_<KEY>`. Only secrets, because an environment that
+--      redirects a URL is a change that a user cannot read back.
+--   2. values passed to `init(cfg)`: the host calls the plugin's setup()
+--      with its `plugins.<name>` section, and a user's own setup() call
+--      lays over it. The last call wins for each key.
+--   3. the `plugins.<name>` section, through `cru.plugin.config.get`. A key
+--      that a module reads before setup() runs comes from here. A VM with no
+--      daemon (the plugin test runner) has no `cru.plugin`, and the layer
+--      answers nil.
+--   4. `defaults`.
+--   5. the caller's `fallback`.
+
+do
+    local Settings = {}
+
+    local function env_name(plugin, key)
+        local upper = function(s)
+            return (s:upper():gsub("[^A-Z0-9]", "_"))
+        end
+        return "CRUCIBLE_" .. upper(plugin) .. "_" .. upper(key)
+    end
+
+    function Settings.new(plugin, defaults, opts)
+        cru.check.string(plugin, "plugin")
+        cru.check.table(defaults, "defaults", { optional = true })
+        cru.check.table(opts, "opts", { optional = true })
+        defaults = defaults or {}
+        local secrets = (opts and opts.secrets) or {}
+        local configured = {}
+        local settings = {}
+
+        local function from_env(key)
+            if not secrets[key] then return nil end
+            local val = os.getenv(env_name(plugin, key))
+            if val == nil or val == "" then return nil end
+            return val
+        end
+
+        local function from_section(key)
+            local host = rawget(cru, "plugin")
+            local config = type(host) == "table" and rawget(host, "config") or nil
+            local get = type(config) == "table" and rawget(config, "get") or nil
+            if type(get) ~= "function" then return nil end
+            local ok, val = pcall(get, plugin .. "." .. key)
+            if ok then return val end
+            return nil
+        end
+
+        --- Lay `cfg` over the setup layer, key by key.
+        function settings.init(cfg)
+            if not cfg then return end
+            for k, v in pairs(cfg) do
+                configured[k] = v
+            end
+        end
+
+        --- The value of `key`, from the first layer that has one.
+        function settings.get(key, fallback)
+            local env = from_env(key)
+            if env ~= nil then return env end
+            if configured[key] ~= nil then return configured[key] end
+            local val = from_section(key)
+            if val ~= nil then return val end
+            if defaults[key] ~= nil then return defaults[key] end
+            return fallback
+        end
+
+        --- Clear the setup layer. Tests only: the daemon never unconfigures
+        --- a plugin, but a suite that cannot clear setup() has
+        --- order-dependent tests.
+        function settings.reset()
+            configured = {}
+        end
+
+        return settings
+    end
+
+    cru.settings = Settings
+end
+
+-- ============================================================================
 -- cru.service — Supervised service lifecycle
 -- ============================================================================
 
@@ -244,30 +330,20 @@ do
         local base_delay   = restart.base_delay  or 1.0
         local max_delay    = restart.max_delay    or 60.0
 
-        -- Resolve config schema defaults and secrets
+        -- Resolve the config schema through the same layers every plugin
+        -- reads: a secret from the environment, then the plugin's section,
+        -- then the schema default.
         local resolved_config = nil
         if spec.config then
             resolved_config = {}
-            local plugin_upper = name:upper():gsub("[^A-Z0-9]", "_")
+            local defaults, secrets = {}, {}
             for key, schema in pairs(spec.config) do
-                local val = nil
-                -- Secret resolution: env var first
-                if schema.secret then
-                    local env_key = "CRUCIBLE_" .. plugin_upper .. "_" .. key:upper():gsub("[^A-Z0-9]", "_")
-                    val = os.getenv(env_key)
-                end
-                -- Fall back to plugin config
-                if val == nil then
-                    local ok, cfg_val = pcall(function()
-                        return cru.plugin.config.get(name .. "." .. key)
-                    end)
-                    if ok and cfg_val ~= nil then val = cfg_val end
-                end
-                -- Fall back to schema default
-                if val == nil and schema.default ~= nil then
-                    val = schema.default
-                end
-                resolved_config[key] = val
+                defaults[key] = schema.default
+                secrets[key] = schema.secret or nil
+            end
+            local settings = cru.settings.new(name, defaults, { secrets = secrets })
+            for key in pairs(spec.config) do
+                resolved_config[key] = settings.get(key)
             end
         end
 

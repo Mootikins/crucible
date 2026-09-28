@@ -1198,6 +1198,38 @@ services = {
 
 The `gateway.connect` function uses `cru.retry` with reconnection backoff, `cru.ws.connect` for the WebSocket, and `cru.timer` for heartbeat scheduling.
 
+## Plugin Settings
+
+A plugin reads its configuration through one helper, so that every plugin uses the same order.
+
+```lua
+local settings = cru.settings.new("web-search", { timeout = 15 }, {
+    secrets = { exa_api_key = true },
+})
+
+function M.setup(opts) settings.init(opts) end
+
+local timeout = settings.get("timeout")
+```
+
+### cru.settings.new(plugin, defaults?, opts?)
+
+Returns a table with three functions. Call them with `.`, not `:`.
+
+- `init(cfg)` lays `cfg` over the setup layer. The last call wins for each key.
+- `get(key, fallback?)` returns the value from the first layer that has one.
+- `reset()` clears the setup layer. Use it only in a test.
+
+`get` reads the layers in this order, highest priority first:
+
+1. the environment variable `CRUCIBLE_<PLUGIN>_<KEY>`, only for a key that `opts.secrets` names. The name is uppercased, and each other character becomes `_`. An empty value counts as unset.
+2. the values given to `init`. The daemon calls `setup(opts)` with the `plugins.<plugin>` section, and a later `setup{}` call lays over it.
+3. `cru.plugin.config.get("<plugin>.<key>")`. A key that a module reads before `setup()` comes from here. The plugin test runner has no daemon, so this layer is empty there.
+4. `defaults`.
+5. `fallback`.
+
+A secret comes from the environment first. Thus a user can keep a key out of a config file that goes into version control.
+
 ## Supervised Services
 
 `cru.service` is a pure-Lua supervision layer over a service's start function: retry with backoff, a status registry, and config-schema resolution. **It is not the spawn mechanism.** Only the module table's `services` field above gets a function spawned — `cru.service.define` on its own starts nothing, and the daemon never reads `cru.service`'s registry. The two compose: `define` returns a `{ desc, fn }` table shaped exactly like a `services` entry.
@@ -1227,7 +1259,7 @@ If `spec.config` is a schema table, values are resolved **at define time**, per 
 2. `cru.plugin.config.get("<name>.<key>")` — the `plugins.<name>` table of your `init.lua`
 3. the schema's `default`
 
-The resolved table is stored on the internal registry entry only — nothing passes it to `start`, and no accessor exposes it. A start function that needs the values must resolve them itself (the `web-search` plugin's `ws_config.lua` does exactly this, matching the env-var convention).
+`define` resolves the schema through `cru.settings.new(name, defaults, { secrets = ... })`. An empty environment variable counts as unset. The resolved table is stored on the internal registry entry only — nothing passes it to `start`, and no accessor exposes it. A start function that needs the values reads them through `cru.settings` itself.
 
 ### cru.service.status(name) / cru.service.list()
 

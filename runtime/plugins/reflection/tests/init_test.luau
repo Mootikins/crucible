@@ -109,6 +109,40 @@ describe("reflection", function()
     end)
   end)
 
+  describe("config reads the plugins.reflection section", function()
+    -- The daemon answers `cru.plugin.config.get("reflection.<key>")` from
+    -- the plugins.reflection config section. A key that a module reads
+    -- before setup() runs comes from there.
+    local saved_plugin
+    before_each(function()
+      config.reset()
+      saved_plugin = cru.plugin
+      -- The stub holds only `config`, so it is cast to the full host type.
+      cru.plugin = ({
+        config = {
+          get = function(key: string): string?
+            if key == "reflection.model" then return "model-from-config" end
+            return nil
+          end,
+        },
+      } :: any)
+    end)
+
+    after_each(function()
+      cru.plugin = saved_plugin
+      config.reset()
+    end)
+
+    it("answers a key from the section when setup() set none", function()
+      expect.equal("model-from-config", config.get("model"))
+    end)
+
+    it("prefers a setup() value to the section", function()
+      config.init({ model = "model-from-setup" })
+      expect.equal("model-from-setup", config.get("model"))
+    end)
+  end)
+
   describe("build_transcript reads the caps from config", function()
     -- Reset on both sides: a cap an earlier suite set must not reach a
     -- case here, and a cap set here must not leak out.

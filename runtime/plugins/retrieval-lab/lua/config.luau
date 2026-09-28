@@ -1,14 +1,10 @@
 --!strict
 --- retrieval-lab configuration
 ---
---- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention — the daemon seeds setup() with the plugin's config section at
---- load, and a user's later `setup{}` call overrides it):
----   1. values passed to `setup({...})` — last call wins per key.
----   2. the `plugins.retrieval-lab` config key, read through
----      `cru.plugin.config.get("retrieval-lab.<key>")`.
----   3. the `defaults` table below.
----   4. the caller's `fallback` argument.
+--- `cru.settings.new` gives the order, highest priority first: setup()
+--- values, then the `plugins.retrieval-lab` section, then `defaults`, then the
+--- caller's fallback. The daemon calls setup() with the section at load. A
+--- later `setup{}` call from a user lays over it.
 
 local PLUGIN = "retrieval-lab"
 
@@ -39,47 +35,10 @@ local defaults = {
     hop_from = 2,
 }
 
--- setup() values, kept apart from `defaults` so the order above stays
--- observable.
-local configured = {}
+local settings = cru.settings.new(PLUGIN, defaults)
 
---- Merge user-provided config into the setup layer.
-function M.init(cfg)
-    if not cfg then return end
-    for k, v in pairs(cfg) do
-        configured[k] = v
-    end
-end
-
---- Read `[plugins.retrieval-lab].<key>`. Returns nil when unset, and also when
---- `cru.plugin.config` is absent — the plugin test runner has no daemon behind
---- it, and the spec-extraction sandbox stubs `cru` with a metatable (hence
---- rawget, which sees through neither).
-local function from_toml(key)
-    local cru_table = rawget(_G, "cru")
-    if type(cru_table) ~= "table" then return nil end
-    local plugin = rawget(cru_table, "plugin")
-    if type(plugin) ~= "table" then return nil end
-    local cfg = rawget(plugin, "config")
-    if type(cfg) ~= "table" then return nil end
-    local get = rawget(cfg, "get")
-    if type(get) ~= "function" then return nil end
-    local ok, val = pcall(get, PLUGIN .. "." .. key)
-    if ok then return val end
-    return nil
-end
-
-function M.get(key, fallback)
-    if configured[key] ~= nil then return configured[key] end
-    local val = from_toml(key)
-    if val ~= nil then return val end
-    if defaults[key] ~= nil then return defaults[key] end
-    return fallback
-end
-
---- Clear the setup layer. Tests only.
-function M.reset()
-    configured = {}
-end
+M.init = settings.init
+M.get = settings.get
+M.reset = settings.reset
 
 return M

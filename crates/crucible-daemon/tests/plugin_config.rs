@@ -33,8 +33,13 @@ fn shipped_config_module(plugin: &str, toml: serde_json::Value) -> (mlua::Lua, m
     use mlua::LuaSerdeExt;
 
     let lua = mlua::Lua::new();
-    let crucible = lua.create_table().unwrap();
-    let config = lua.create_table().unwrap();
+    // `cru.settings` comes from the prelude, as in the plugin VM. The
+    // prelude's `cru.check` needs only the `cru` table.
+    lua.globals()
+        .set("cru", lua.create_table().unwrap())
+        .unwrap();
+    crucible_lua::register_prelude(&lua).unwrap();
+
     let get = lua
         .create_function(move |lua, key: String| {
             let Some((ns, sub)) = key.split_once('.') else {
@@ -46,16 +51,13 @@ fn shipped_config_module(plugin: &str, toml: serde_json::Value) -> (mlua::Lua, m
             }
         })
         .unwrap();
+    let cru: mlua::Table = lua.globals().get("cru").unwrap();
+    let host = lua.create_table().unwrap();
+    let config = lua.create_table().unwrap();
     config.set("get", get).unwrap();
-    crucible.set("config", config).unwrap();
-    lua.globals().set("crucible", crucible).unwrap();
-
-    // `cru.config` is the *app* config store — a pair of get/set functions,
-    // never a per-plugin table. Present here so a plugin reaching for
-    // `cru.config[<plugin>]` finds the same nil the daemon would hand it.
-    lua.load(r#"cru = { config = { get = function() return nil end, set = function() end } }"#)
-        .exec()
-        .unwrap();
+    host.set("config", config).unwrap();
+    // The daemon's `cru.plugin.config.get("<plugin>.<key>")`.
+    cru.set("plugin", host).unwrap();
 
     // The plugin's own `lua/` directory, exactly as the runtime scopes it:
     // Luau has no `package.path`, and the host resolver is what `require`

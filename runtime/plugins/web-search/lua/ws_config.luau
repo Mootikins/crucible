@@ -1,35 +1,19 @@
 --!strict
 --- web-search configuration.
 ---
---- Resolution order, highest priority first (Lua beats TOML, the Neovim
---- convention the daemon already implements — it seeds setup() with the
---- plugin's config section at load, and a later `require("web-search").setup{}` from the user's
---- init.lua lands afterwards and wins):
+--- The order is the one of `cru.settings.new`, highest priority first:
 ---
 ---   0. `$CRUCIBLE_WEB_SEARCH_<KEY>` — declared secrets only.
 ---   1. values passed to `setup({...})` — last call wins per key.
----   2. the `plugins.web-search` config key, via
----      `cru.plugin.config.get("web-search.<key>")`.
+---   2. the `plugins.web-search` section.
 ---   3. the `defaults` table below.
 ---   4. the caller's `fallback` argument, for keys this module does not declare.
 ---
---- Two things about that order are load-bearing:
----
---- The env step is **implemented here, not inherited**. `schema.secret`
---- resolution lives in `cru.service.define` (lua_stdlib/stdlib.rs:255) and runs
---- only for services; `PluginManifest` has no `config` field at all, so a
---- plugin.yaml `config:` block is documentation that nothing parses. The env
---- var name deliberately matches the service convention so one rule covers
---- both surfaces.
----
---- Secrets are read from the environment **before** setup() and the config,
---- which
---- inverts the order used for everything else. That is the point: it is what
+--- A secret comes from the environment before setup() and the config. That
 --- lets a user keep a key out of a config file that gets committed, and a key
 --- written into the config anyway still works as the lower-priority fallback.
 
 local PLUGIN = "web-search"
-local ENV_PREFIX = "CRUCIBLE_WEB_SEARCH_"
 
 local M = {}
 
@@ -48,61 +32,11 @@ local defaults = {
 -- name so that adding a provider is a deliberate act, not a `_key` suffix.
 local SECRETS = { exa_api_key = true }
 
--- setup() values, kept separate from `defaults` so the two layers stay
--- distinguishable — folding them together would make the order above
--- unobservable.
-local configured = {}
+local settings = cru.settings.new(PLUGIN, defaults, { secrets = SECRETS })
 
---- Merge user config into the setup layer. Called by setup() in init.lua.
-function M.init(cfg: { [string]: any }?): ()
-    if type(cfg) ~= "table" then return end
-    for k, v in pairs(cfg) do
-        configured[k] = v
-    end
-end
-
---- Read `$CRUCIBLE_WEB_SEARCH_<KEY>`, for declared secrets only. Applying it to
---- every key would let the environment silently redirect `searxng_url`, which
---- is a network destination and belongs in config a user can read back.
-local function from_env(key: string): string?
-    if not SECRETS[key] then return nil end
-    local suffix = (key:upper():gsub("[^A-Z0-9]", "_"))
-    local val = os.getenv(ENV_PREFIX .. suffix)
-    if val == nil or val == "" then return nil end
-    return val
-end
-
---- Read `[plugins.web-search].<key>`. Returns nil when unset and also when
---- `cru.plugin.config` is absent — the plugin test runner has no daemon behind
---- it, and the spec-extraction sandbox stubs `crucible` with a metatable
---- (hence rawget, which sees through neither).
-local function from_toml(key: string): any
-    local crucible = rawget(_G, "crucible")
-    if type(crucible) ~= "table" then return nil end
-    local cfg = rawget(crucible, "config")
-    if type(cfg) ~= "table" then return nil end
-    local get = rawget(cfg, "get")
-    if type(get) ~= "function" then return nil end
-    local ok, val = pcall(get, PLUGIN .. "." .. key)
-    if ok then return val end
-    return nil
-end
-
-function M.get(key: string, fallback: any?): any
-    local env = from_env(key)
-    if env ~= nil then return env end
-    if configured[key] ~= nil then return configured[key] end
-    local val = from_toml(key)
-    if val ~= nil then return val end
-    if defaults[key] ~= nil then return defaults[key] end
-    return fallback
-end
-
---- Reset the setup layer. Tests only — the daemon never unconfigures a plugin,
---- but a suite that could not clear setup() would have order-dependent tests.
-function M.reset(): ()
-    configured = {}
-end
+M.init = settings.init
+M.get = settings.get
+M.reset = settings.reset
 
 -- ============================================================================
 -- Typed accessors
