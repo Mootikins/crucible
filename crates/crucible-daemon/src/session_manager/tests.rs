@@ -36,6 +36,40 @@ async fn an_old_transcript_loads_in_its_current_form() {
     assert_eq!(got.trim(), golden.trim(), "the golden file is:\n{got}");
 }
 
+/// The transcript of a stored session is the fold of its whole log: the
+/// same fold that the core golden files hold. An old log folds after its
+/// migration. `CRUCIBLE_WRITE_GOLDEN=1` writes the old log's golden file.
+#[tokio::test]
+async fn a_stored_session_folds_into_its_golden_transcript() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures");
+    let golden = fixtures.join("golden/transcript");
+    let write = std::env::var_os("CRUCIBLE_WRITE_GOLDEN").is_some();
+    for (log, expected) in [
+        ("session_log_wire.jsonl", "session_log_wire.json"),
+        ("old_wire_session.jsonl", "old_wire_session.json"),
+    ] {
+        let manager = temp_session_manager();
+        let session = manager
+            .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+            .await
+            .unwrap();
+        for line in std::fs::read_to_string(fixtures.join(log)).unwrap().lines() {
+            manager.storage.append_event(&session, line).await.unwrap();
+        }
+
+        let transcript = manager.load_transcript(&session.id).await.unwrap();
+        assert!(!transcript.items.is_empty(), "{log}: the fold drew nothing");
+        let got = serde_json::to_string_pretty(&transcript).unwrap();
+        let path = golden.join(expected);
+        if write {
+            std::fs::write(&path, format!("{got}\n")).unwrap();
+            continue;
+        }
+        let want = std::fs::read_to_string(&path).unwrap_or_default();
+        assert_eq!(got.trim(), want.trim(), "{log}: the fold gives:\n{got}");
+    }
+}
+
 #[tokio::test]
 async fn title_sweep_titles_untitled_sessions_with_content() {
     let _tmp = TempDir::new().unwrap();

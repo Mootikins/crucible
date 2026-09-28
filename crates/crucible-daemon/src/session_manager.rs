@@ -685,6 +685,26 @@ impl SessionManager {
         ))
     }
 
+    /// The whole stored log of a session, folded into what a client draws.
+    ///
+    /// The fold reads every event, not one page: a page can start in the
+    /// middle of a turn. A line that is not an event (an old view line the
+    /// migration could not turn into one) is not part of the transcript.
+    pub async fn load_transcript(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<crucible_core::transcript::Transcript, SessionError> {
+        let events: Vec<crucible_core::protocol::SessionEventMessage> = self
+            .load_session_events(session_id, None, None)
+            .await?
+            .into_iter()
+            .filter_map(|line| serde_json::from_value(line).ok())
+            .collect();
+        Ok(crucible_core::transcript::TranscriptFold::of_events(
+            &events,
+        ))
+    }
+
     /// Count total events for a session.
     pub async fn count_session_events(
         &self,

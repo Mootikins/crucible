@@ -230,6 +230,10 @@ struct SessionHistoryResponse {
     history: Vec<SessionHistoryEvent>,
     /// How many events the whole transcript holds, for paging.
     total_events: usize,
+    /// The whole log, folded into what a client draws. The daemon folds it;
+    /// a client renders it and does not fold the events again.
+    #[serde(default)]
+    transcript: crucible_core::transcript::Transcript,
 }
 
 /// What `session.pause`, `session.resume` and `session.end` answer.

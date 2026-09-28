@@ -1,0 +1,108 @@
+{
+  "as_of_seq": 13,
+  "items": [
+    {
+      "id": "m1",
+      "turn_id": "m1",
+      "type": "user_turn",
+      "content": "edit the library"
+    },
+    {
+      "id": "tool-c1",
+      "turn_id": "m1",
+      "type": "tool_card",
+      "call_id": "c1",
+      "name": "edit_file",
+      "args": {
+        "path": "src/lib.rs",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "display": {
+        "kind": "path",
+        "tool": "",
+        "diffs": [
+          {
+            "path": "src/lib.rs",
+            "old_content": "a\n",
+            "new_content": "b\n"
+          }
+        ],
+        "render": {
+          "line": "lib.rs (from Lua)"
+        }
+      },
+      "status": "complete",
+      "result": "ok",
+      "terminate": false
+    },
+    {
+      "id": "m1-seg-0",
+      "turn_id": "m1",
+      "type": "assistant_segment",
+      "index": 0,
+      "text": "Done.",
+      "streaming": false
+    },
+    {
+      "id": "m2",
+      "turn_id": "m2",
+      "type": "user_turn",
+      "content": "fix main"
+    },
+    {
+      "id": "tool-c2",
+      "turn_id": "m2",
+      "type": "tool_card",
+      "call_id": "c2",
+      "name": "Edit",
+      "args": {
+        "file_path": "src/main.rs"
+      },
+      "source": "Acp:claude",
+      "display": {
+        "kind": "other",
+        "tool": "",
+        "diffs": [
+          {
+            "path": "src/main.rs",
+            "old_content": "x\n",
+            "new_content": "y\n"
+          }
+        ],
+        "render": {
+          "line": "src/main.rs"
+        }
+      },
+      "status": "complete",
+      "result": "edited",
+      "terminate": false
+    },
+    {
+      "id": "m2-failed",
+      "turn_id": "m2",
+      "type": "notice",
+      "notice": {
+        "kind": "turn_failed",
+        "status": "failed",
+        "error": "agent turn error: LLM timeout"
+      }
+    },
+    {
+      "id": "m3",
+      "turn_id": "m3",
+      "type": "user_turn",
+      "content": "try again"
+    },
+    {
+      "id": "m3-failed",
+      "turn_id": "m3",
+      "type": "notice",
+      "notice": {
+        "kind": "turn_failed",
+        "status": "failed",
+        "error": "agent turn error: stopped"
+      }
+    }
+  ]
+}

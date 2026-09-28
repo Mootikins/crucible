@@ -949,47 +949,16 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // SessionEventMessage entries, NOT a `messages` array. Session id
         // "empty-session-001" yields an empty history for fallback tests.
         "session.resume_from_storage" | "session.history" => {
-            let session_id = msg
-                .get("params")
-                .and_then(|p| p.get("session_id"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("test-session-001");
-            if session_id == "empty-session-001" {
-                json!({
-                    "session_id": session_id,
-                    "type": "chat",
-                    "state": "active",
-                    "kilns": ["test-kiln"],
-                    "history": [],
-                    "total_events": 0
-                })
-            } else {
-                json!({
-                    "session_id": session_id,
-                    "type": "chat",
-                    "state": "active",
-                    "kilns": ["test-kiln"],
-                    "history": [
-                        {
-                            "type": "event",
-                            "session_id": session_id,
-                            "event": "user_message",
-                            "data": {"message_id": "msg-001", "content": "Explain the merkle tree sync design"},
-                            "timestamp": "2026-01-01T00:00:00Z",
-                            "seq": 1
-                        },
-                        {
-                            "type": "event",
-                            "session_id": session_id,
-                            "event": "agent_message",
-                            "data": {"message_id": "msg-002", "content": "Sure — the merkle tree..."},
-                            "timestamp": "2026-01-01T00:00:01Z",
-                            "seq": 2
-                        }
-                    ],
-                    "total_events": 2
-                })
-            }
+            let mut reply = mock_history_reply(msg);
+            // The daemon folds the stored log; the mock folds its own with
+            // the same core fold.
+            let events: Vec<crucible_core::protocol::SessionEventMessage> =
+                serde_json::from_value(reply["history"].clone()).unwrap_or_default();
+            reply["transcript"] = serde_json::to_value(
+                crucible_core::transcript::TranscriptFold::of_events(&events),
+            )
+            .expect("a transcript serializes");
+            reply
         }
         // The wire envelopes `session.events_after` replays for
         // "test-session-001": a two-turn transcript, seqs 1-4, filtered by the
@@ -1718,6 +1687,52 @@ pub fn survives<T: serde::Serialize + serde::de::DeserializeOwned>(sent: &impl s
         wire,
         "the row changed the object on the way through"
     );
+}
+
+/// The mock answer of `session.history`: an empty session, or two stored
+/// events.
+fn mock_history_reply(msg: &Value) -> Value {
+    let session_id = msg
+        .get("params")
+        .and_then(|p| p.get("session_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("test-session-001");
+    if session_id == "empty-session-001" {
+        json!({
+            "session_id": session_id,
+            "type": "chat",
+            "state": "active",
+            "kilns": ["test-kiln"],
+            "history": [],
+            "total_events": 0
+        })
+    } else {
+        json!({
+            "session_id": session_id,
+            "type": "chat",
+            "state": "active",
+            "kilns": ["test-kiln"],
+            "history": [
+                {
+                    "type": "event",
+                    "session_id": session_id,
+                    "event": "user_message",
+                    "data": {"message_id": "msg-001", "content": "Explain the merkle tree sync design"},
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "seq": 1
+                },
+                {
+                    "type": "event",
+                    "session_id": session_id,
+                    "event": "agent_message",
+                    "data": {"message_id": "msg-002", "content": "Sure — the merkle tree..."},
+                    "timestamp": "2026-01-01T00:00:01Z",
+                    "seq": 2
+                }
+            ],
+            "total_events": 2
+        })
+    }
 }
 
 #[cfg(test)]

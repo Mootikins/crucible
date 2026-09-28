@@ -5,8 +5,10 @@
 //! storage in a layer that must not have any and buried a machine-written
 //! answer inside a hand-written file.
 
+#[cfg(feature = "fastembed")]
+use crucible_core::protocol::requests::EmbeddingModelRow;
 use crucible_core::protocol::requests::{
-    EmbeddingCatalog, EmbeddingModelRow, EmbeddingModelsRequest, LlmRegisterProviderRequest,
+    EmbeddingCatalog, EmbeddingModelsRequest, LlmRegisterProviderRequest,
 };
 use std::sync::Arc;
 

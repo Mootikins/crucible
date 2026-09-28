@@ -6578,6 +6578,14 @@
           }
         }
       },
+      "DelegationStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "complete",
+          "failed"
+        ]
+      },
       "DeleteCommentBody": {
         "type": "object",
         "description": "`POST /api/diff/comment/delete` — remove one comment of a diffset from\nthe store.",
@@ -7840,6 +7848,252 @@
           }
         }
       },
+      "ItemBody": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "What a person, a plugin or a relay asked.",
+            "required": [
+              "content",
+              "type"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "origin": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "precognition": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Precognition",
+                    "description": "The notes that Precognition gave this turn, when it ran."
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "user_turn"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One run of answer text, with the reasoning that came before it. A\ntool call ends a segment; the text after the tool is a new segment.",
+            "required": [
+              "index",
+              "text",
+              "streaming",
+              "type"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string"
+              },
+              "thinking": {
+                "type": "string"
+              },
+              "streaming": {
+                "type": "boolean",
+                "description": "The segment can still grow."
+              },
+              "usage": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TokenUsage",
+                    "description": "The token use of the turn, on its last segment."
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "assistant_segment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "call_id",
+              "name",
+              "args",
+              "status",
+              "type"
+            ],
+            "properties": {
+              "call_id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "args": {
+                "type": "object"
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "auto_approved": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "display": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/ToolStatus"
+              },
+              "result": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The output, as text."
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "terminate": {
+                "type": "boolean",
+                "description": "The tool asked to end the turn."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_card"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "delegation_id",
+              "prompt",
+              "status",
+              "type"
+            ],
+            "properties": {
+              "delegation_id": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "target_agent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/DelegationStatus"
+              },
+              "outcome": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The summary of a finished delegation, or the error of a failed one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "delegation"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Context that the session accepted for a turn. It is not a user turn.",
+            "required": [
+              "role",
+              "content",
+              "type"
+            ],
+            "properties": {
+              "role": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "injected_context"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "notice",
+              "type"
+            ],
+            "properties": {
+              "notice": {
+                "$ref": "#/components/schemas/Notice"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "notice"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "KilnFileResponse": {
         "type": "object",
         "description": "What `GET /api/kiln/file` answers.",
@@ -8375,6 +8629,79 @@
             "description": "When this route wrote it, not when the index noticed."
           }
         }
+      },
+      "Notice": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The model context was cleared here. The transcript keeps what came\nbefore it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "plugin": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "context_cleared"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Why a reply stops early, in the words of [`StopReason::user_notice`].",
+            "required": [
+              "reason",
+              "text",
+              "kind"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "stop_reason"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The turn failed or ran out of time.",
+            "required": [
+              "status",
+              "kind"
+            ],
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "turn_failed"
+                ]
+              }
+            }
+          }
+        ]
       },
       "OkResponse": {
         "type": "object",
@@ -8963,6 +9290,24 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "Precognition": {
+        "type": "object",
+        "required": [
+          "notes_count"
+        ],
+        "properties": {
+          "notes_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
           }
         }
       },
@@ -10285,6 +10630,10 @@
             "type": "integer",
             "description": "How many events the whole transcript holds, for paging.",
             "minimum": 0
+          },
+          "transcript": {
+            "$ref": "#/components/schemas/Transcript",
+            "description": "The whole log, folded into what a client draws. The daemon folds it;\na client renders it and does not fold the events again."
           }
         }
       },
@@ -11190,6 +11539,93 @@
             "type": "string"
           }
         }
+      },
+      "TokenUsage": {
+        "type": "object",
+        "properties": {
+          "prompt_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "completion_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ToolStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "complete",
+          "failed",
+          "incomplete"
+        ]
+      },
+      "Transcript": {
+        "type": "object",
+        "description": "The folded transcript of one session.",
+        "required": [
+          "as_of_seq",
+          "items"
+        ],
+        "properties": {
+          "as_of_seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The `seq` of the last event in the fold. A client drops each later op\nwhose event `seq` is not above it.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TranscriptItem"
+            }
+          }
+        }
+      },
+      "TranscriptItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ItemBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable across the live stream and a fold of the stored log: the turn\nid for a user turn, `{turn}-seg-{n}` for an answer segment,\n`tool-{call_id}` for a tool card."
+              },
+              "turn_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The turn that the item belongs to, when it belongs to one."
+              }
+            }
+          }
+        ],
+        "description": "One thing that a client draws."
       },
       "UnlinkedMentionRow": {
         "type": "object",

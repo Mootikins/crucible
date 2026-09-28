@@ -135,6 +135,7 @@ async fn history_reply(
                     "kilns": session.kilns,
                     "history": [],
                     "total_events": 0,
+                    "transcript": crucible_core::transcript::Transcript::default(),
                 }),
             );
         }
@@ -142,6 +143,15 @@ async fn history_reply(
 
     // Get total event count for pagination
     let total = sm.count_session_events(&session.id).await.unwrap_or(0);
+    // The fold of the whole log. A client draws it; the page of raw events
+    // stays for a client that reads them.
+    let transcript = match sm.load_transcript(&session.id).await {
+        Ok(transcript) => transcript,
+        Err(e) => {
+            warn!("Failed to fold session history: {}", e);
+            crucible_core::transcript::Transcript::default()
+        }
+    };
 
     Response::success(
         req_id,
@@ -152,6 +162,7 @@ async fn history_reply(
             "kilns": session.kilns,
             "history": history,
             "total_events": total,
+            "transcript": transcript,
         }),
     )
 }

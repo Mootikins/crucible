@@ -2868,6 +2868,8 @@ export interface components {
             session_type?: string;
             workspace?: string | null;
         };
+        /** @enum {string} */
+        DelegationStatus: "running" | "complete" | "failed";
         /**
          * @description `POST /api/diff/comment/delete` — remove one comment of a diffset from
          *     the store.
@@ -3410,6 +3412,58 @@ export interface components {
             response: unknown;
             session_id: string;
         };
+        ItemBody: {
+            content: string;
+            origin?: Record<string, never> | null;
+            precognition?: null | components["schemas"]["Precognition"];
+            /** @enum {string} */
+            type: "user_turn";
+        } | {
+            index: number;
+            /** @description The segment can still grow. */
+            streaming: boolean;
+            text: string;
+            thinking?: string;
+            /** @enum {string} */
+            type: "assistant_segment";
+            usage?: null | components["schemas"]["TokenUsage"];
+        } | {
+            args: Record<string, never>;
+            auto_approved?: string | null;
+            call_id: string;
+            display?: Record<string, never> | null;
+            error?: string | null;
+            name: string;
+            /** @description The output, as text. */
+            result?: string | null;
+            source?: string | null;
+            status: components["schemas"]["ToolStatus"];
+            /** @description The tool asked to end the turn. */
+            terminate?: boolean;
+            /** @enum {string} */
+            type: "tool_card";
+        } | {
+            delegation_id: string;
+            /** @description The summary of a finished delegation, or the error of a failed one. */
+            outcome?: string | null;
+            prompt: string;
+            status: components["schemas"]["DelegationStatus"];
+            target_agent?: string | null;
+            /** @enum {string} */
+            type: "delegation";
+        } | {
+            content: string;
+            kind?: string | null;
+            role: string;
+            source?: string | null;
+            tags?: string[];
+            /** @enum {string} */
+            type: "injected_context";
+        } | {
+            notice: components["schemas"]["Notice"];
+            /** @enum {string} */
+            type: "notice";
+        };
         /** @description What `GET /api/kiln/file` answers. */
         KilnFileResponse: {
             content: string;
@@ -3726,6 +3780,21 @@ export interface components {
              * @description When this route wrote it, not when the index noticed.
              */
             updated_at: string;
+        };
+        Notice: {
+            /** @enum {string} */
+            kind: "context_cleared";
+            plugin?: string | null;
+        } | {
+            /** @enum {string} */
+            kind: "stop_reason";
+            reason: string;
+            text: string;
+        } | {
+            error?: string | null;
+            /** @enum {string} */
+            kind: "turn_failed";
+            status: string;
         };
         /** @description Standard acknowledgment response for successful mutations. */
         OkResponse: {
@@ -4058,6 +4127,10 @@ export interface components {
         PluginTurnLimitResponse: {
             /** Format: int32 */
             limit: number;
+        };
+        Precognition: {
+            notes?: Record<string, never>[];
+            notes_count: number;
         };
         PrecognitionNote: {
             name: string;
@@ -4632,6 +4705,11 @@ export interface components {
             state: string;
             /** @description How many events the whole transcript holds, for paging. */
             total_events: number;
+            /**
+             * @description The whole log, folded into what a client draws. The daemon folds it;
+             *     a client renders it and does not fold the events again.
+             */
+            transcript?: components["schemas"]["Transcript"];
             /** @description The session type prefix. */
             type: string;
         };
@@ -5067,6 +5145,37 @@ export interface components {
         TitleResponse: {
             title: string;
         };
+        TokenUsage: {
+            /** Format: int32 */
+            completion_tokens?: number | null;
+            /** Format: int32 */
+            prompt_tokens?: number | null;
+            /** Format: int32 */
+            total_tokens?: number | null;
+        };
+        /** @enum {string} */
+        ToolStatus: "running" | "complete" | "failed" | "incomplete";
+        /** @description The folded transcript of one session. */
+        Transcript: {
+            /**
+             * Format: int64
+             * @description The `seq` of the last event in the fold. A client drops each later op
+             *     whose event `seq` is not above it.
+             */
+            as_of_seq: number;
+            items: components["schemas"]["TranscriptItem"][];
+        };
+        /** @description One thing that a client draws. */
+        TranscriptItem: components["schemas"]["ItemBody"] & {
+            /**
+             * @description Stable across the live stream and a fold of the stored log: the turn
+             *     id for a user turn, `{turn}-seg-{n}` for an answer segment,
+             *     `tool-{call_id}` for a tool card.
+             */
+            id: string;
+            /** @description The turn that the item belongs to, when it belongs to one. */
+            turn_id?: string | null;
+        };
         /**
          * @description A plain-text mention of another note inside the focused note — a candidate
          *     for one-click link insertion, mirroring the daemon's `LinkSuggestion`.
@@ -5249,6 +5358,7 @@ export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateEntryParams = components['schemas']['CreateEntryParams'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
+export type SchemaDelegationStatus = components['schemas']['DelegationStatus'];
 export type SchemaDeleteCommentBody = components['schemas']['DeleteCommentBody'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
 export type SchemaDiffCommentResponse = components['schemas']['DiffCommentResponse'];
@@ -5290,6 +5400,7 @@ export type SchemaIndeterminateProgress = components['schemas']['IndeterminatePr
 export type SchemaInstallRequest = components['schemas']['InstallRequest'];
 export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
 export type SchemaInteractionResponseRequest = components['schemas']['InteractionResponseRequest'];
+export type SchemaItemBody = components['schemas']['ItemBody'];
 export type SchemaKilnFileResponse = components['schemas']['KilnFileResponse'];
 export type SchemaKilnFilesResponse = components['schemas']['KilnFilesResponse'];
 export type SchemaKilnGraphResponse = components['schemas']['KilnGraphResponse'];
@@ -5313,6 +5424,7 @@ export type SchemaNoteListResponse = components['schemas']['NoteListResponse'];
 export type SchemaNoteMetadataRow = components['schemas']['NoteMetadataRow'];
 export type SchemaNoteResponse = components['schemas']['NoteResponse'];
 export type SchemaNoteSavedResponse = components['schemas']['NoteSavedResponse'];
+export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaOkResponse = components['schemas']['OkResponse'];
 export type SchemaOptionRequest = components['schemas']['OptionRequest'];
 export type SchemaPatchFileRequest = components['schemas']['PatchFileRequest'];
@@ -5336,6 +5448,7 @@ export type SchemaPluginRemoveResponse = components['schemas']['PluginRemoveResp
 export type SchemaPluginRow = components['schemas']['PluginRow'];
 export type SchemaPluginRunCommandResponse = components['schemas']['PluginRunCommandResponse'];
 export type SchemaPluginTurnLimitResponse = components['schemas']['PluginTurnLimitResponse'];
+export type SchemaPrecognition = components['schemas']['Precognition'];
 export type SchemaPrecognitionNote = components['schemas']['PrecognitionNote'];
 export type SchemaPrecognitionResponse = components['schemas']['PrecognitionResponse'];
 export type SchemaProject = components['schemas']['Project'];
@@ -5420,6 +5533,10 @@ export type SchemaSurfaceShapeRow = components['schemas']['SurfaceShapeRow'];
 export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
+export type SchemaTokenUsage = components['schemas']['TokenUsage'];
+export type SchemaToolStatus = components['schemas']['ToolStatus'];
+export type SchemaTranscript = components['schemas']['Transcript'];
+export type SchemaTranscriptItem = components['schemas']['TranscriptItem'];
 export type SchemaUnlinkedMentionRow = components['schemas']['UnlinkedMentionRow'];
 export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];

@@ -92,6 +92,12 @@ async fn delete_session_answers_the_declared_shape() {
 async fn get_session_history_answers_the_declared_shape() {
     let history: SessionHistoryResponse = shape("GET", &format!("{SESSION}/history"), None).await;
     assert_eq!(history.history[0].event, "user_message");
+    // The folded transcript crosses with the page of events.
+    assert_eq!(history.transcript.items[0].id, "msg-001");
+    assert!(matches!(
+        history.transcript.items[0].body,
+        crucible_core::transcript::ItemBody::UserTurn { .. }
+    ));
 }
 
 #[tokio::test]
@@ -383,7 +389,8 @@ fn a_restored_payload_does_not_read_as_a_live_one() {
             "timestamp": "2026-01-01T00:00:00Z",
             "seq": 1
         }],
-        "total_events": 1
+        "total_events": 1,
+        "transcript": {"as_of_seq": 1, "items": []}
     });
     let decoded: ResumeSessionResponse =
         serde_json::from_value(restored.clone()).expect("the union reads the stored history");

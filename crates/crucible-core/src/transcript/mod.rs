@@ -34,6 +34,7 @@ mod tests;
 
 /// The folded transcript of one session.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Transcript {
     /// The `seq` of the last event in the fold. A client drops each later op
     /// whose event `seq` is not above it.
@@ -43,6 +44,7 @@ pub struct Transcript {
 
 /// One thing that a client draws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TranscriptItem {
     /// Stable across the live stream and a fold of the stored log: the turn
     /// id for a user turn, `{turn}-seg-{n}` for an answer segment,
@@ -56,12 +58,14 @@ pub struct TranscriptItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ItemBody {
     /// What a person, a plugin or a relay asked.
     UserTurn {
         content: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
         origin: Option<TurnOrigin>,
         /// The notes that Precognition gave this turn, when it ran.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -83,12 +87,14 @@ pub enum ItemBody {
     ToolCard {
         call_id: String,
         name: String,
+        #[cfg_attr(feature = "openapi", schema(value_type = Object))]
         args: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         auto_approved: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
         display: Option<Box<CanonicalToolCall>>,
         status: ToolStatus,
         /// The output, as text.
@@ -127,6 +133,7 @@ pub enum ItemBody {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ToolStatus {
     Running,
@@ -137,6 +144,7 @@ pub enum ToolStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DelegationStatus {
     Running,
@@ -145,7 +153,8 @@ pub enum DelegationStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "notice", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Notice {
     /// The model context was cleared here. The transcript keeps what came
     /// before it.
@@ -154,9 +163,14 @@ pub enum Notice {
         plugin: Option<String>,
     },
     /// Why a reply stops early, in the words of [`StopReason::user_notice`].
-    StopReason { reason: StopReason, text: String },
+    StopReason {
+        #[cfg_attr(feature = "openapi", schema(value_type = String))]
+        reason: StopReason,
+        text: String,
+    },
     /// The turn failed or ran out of time.
     TurnFailed {
+        #[cfg_attr(feature = "openapi", schema(value_type = String))]
         status: TurnStatus,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
@@ -164,13 +178,16 @@ pub enum Notice {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Precognition {
     pub notes_count: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Vec<Object>))]
     pub notes: Vec<PrecognitionNoteInfo>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TokenUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens: Option<u32>,
@@ -182,6 +199,7 @@ pub struct TokenUsage {
 
 /// One change to a transcript.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum TranscriptOp {
     /// Add the item, or replace the item with its id.
@@ -203,6 +221,7 @@ pub enum TranscriptOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TextField {
     Text,

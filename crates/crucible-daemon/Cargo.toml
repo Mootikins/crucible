@@ -89,9 +89,10 @@ default = ["fastembed"]
 
 web = []
 
-# `ToSchema` on the grep request and reply, which `POST /api/search/grep`
-# forwards verbatim. Off by default: only crucible-web builds the OpenAPI
-# document, and nothing else pays for the dependency.
+# `ToSchema` on the daemon replies that crucible-web forwards verbatim (the
+# MCP status, the SCM clone, the note rename and the config replies). Off by
+# default: only crucible-web builds the OpenAPI document, and nothing else
+# pays for the dependency.
 openapi = ["dep:utoipa", "crucible-core/openapi"]
 
 test-utils = ["crucible-core/test-utils"]
