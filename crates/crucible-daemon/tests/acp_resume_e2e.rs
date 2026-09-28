@@ -27,8 +27,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::session::SessionType;
-use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+use crucible_daemon::agent_manager::AgentHandle;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::{AgentManager, SessionManager};
 use tempfile::TempDir;

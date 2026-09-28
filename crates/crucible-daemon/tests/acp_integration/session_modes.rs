@@ -12,8 +12,8 @@
 //! agent declares none does the internal set stand in, which is what
 //! `session/set_mode`-less agents like the mock's default profile need.
 
-use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::AcpAgentHandle;
+use crucible_daemon::agent_manager::AgentHandle;
 use tempfile::TempDir;
 use tokio::time::{timeout, Duration};
 
@@ -137,7 +137,7 @@ async fn an_agent_that_declares_no_modes_falls_back_to_the_internal_set() {
 /// the agent declared at the handshake.
 #[tokio::test]
 async fn a_switch_moves_the_current_mode_in_the_reported_set_too() {
-    use crucible_core::traits::chat::AgentHandle;
+    use crucible_daemon::agent_manager::AgentHandle;
 
     let (mut handle, _workspace) = handle_with_modes(Some("default")).await;
     assert_eq!(

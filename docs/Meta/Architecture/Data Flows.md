@@ -81,9 +81,8 @@ sequenceDiagram
    (about 4.6s across 8 attempts).
 4. The caller subscribes wildcard (`session_subscribe(&["*"])`) *before*
    calling `session.create`/`session.create_with_agent`
-   (`crates/crucible-cli/src/factories/agent.rs`'s
-   `create_daemon_agent_with_events`), to avoid a create-then-subscribe
-   race.
+   (`crates/crucible-cli/src/session.rs`'s `open_session`), to avoid a
+   create-then-subscribe race.
 5. `session.create` reaches `handle_session_create` in
    `crates/crucible-daemon/src/server/session/create.rs`, which calls
    `RpcContext::create_session_resolved` in the same file. That resolves
@@ -147,8 +146,9 @@ sequenceDiagram
    (`crates/crucible-cli/src/tui/oil/chat_app/mod.rs`).
 2. `process_action` in `crates/crucible-cli/src/tui/oil/chat_runner/actions.rs`
    is the sole place a daemon RPC leaves this crate; it calls
-   `send_message_fire_and_forget` on the agent handle, which calls
-   `session_send_message` on the `DaemonClient`.
+   `session_send_message` directly on the `DaemonClient` held by
+   `params.session: Option<&crate::session::LiveSession>` — there is no
+   client-side agent handle in between.
 3. `handle_session_send_message` in `crates/crucible-daemon/src/server/session/messaging.rs`
    calls `AgentManager::send_message` in `crates/crucible-daemon/src/agent_manager/messaging/send.rs`,
    which reaches `send_message_inner` in the same file. It calls
@@ -224,9 +224,12 @@ sequenceDiagram
    ring. Kiln indexing (flow 6) does not read this journal at all: it runs
    off its own `IndexQueue`, fed by the watcher and by every daemon write.
 7. `forward_events` in `crates/crucible-daemon/src/server/core/mod.rs` relays
-   each message to a socket client (TUI or ACP host). The CLI TUI's
-   `session_event_consumer` in `crates/crucible-cli/src/tui/oil/chat_runner/stream.rs`
-   keeps an event whose `session_id` matches this session, or is
+   each message to a socket client (TUI or ACP host). The CLI TUI's live
+   session runs `live_session_event_consumer` in
+   `crates/crucible-cli/src/tui/oil/chat_runner/stream.rs` (a stored-history
+   or replay run uses the plain `session_event_consumer`, which opens no
+   interaction prompt); either way it keeps an event whose `session_id`
+   matches this session, or is
    `crucible_daemon::subscription::WILDCARD_SESSION`, or is
    `crucible_daemon::event_map::SYSTEM_SESSION` — a `proposal_changed` event
    (flow 11) belongs to no session, so without that third case the filter
@@ -272,7 +275,7 @@ sequenceDiagram
 
     Key->>App: Action::Send(UserMessage)
     App->>Runner: process_action
-    Runner->>Handler: session.send_message RPC (via agent handle)
+    Runner->>Handler: session.send_message RPC (direct DaemonClient call)
     Handler->>Send: AgentManager::send_message -> send_message_inner (revives via get_or_revive_session)
     Send->>Stream: spawn execute_agent_stream
     loop TurnEvent stream

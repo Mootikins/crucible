@@ -10,8 +10,8 @@
 use crucible_core::background::JobStatus;
 use crucible_core::config::{BackendType, DelegationConfig};
 use crucible_core::session::{SessionAgent, SessionType};
-use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::agent_manager::AgentFactoryOverride;
+use crucible_daemon::agent_manager::AgentHandle;
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
@@ -774,23 +774,14 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
             Err(crucible_core::turn::NotSupported::new("switch_model"))
         }
     }
-    crucible_core::impl_unsupported_session_knobs!(ToolCallingAgent);
+    crucible_daemon::impl_unsupported_session_knobs!(ToolCallingAgent);
 
     #[async_trait::async_trait]
     impl AgentHandle for ToolCallingAgent {
-        async fn send_message_fire_and_forget(
-            &mut self,
-            _: String,
-        ) -> crucible_core::traits::chat::ChatResult<()> {
-            Ok(())
-        }
         fn get_mode_id(&self) -> &str {
             "normal"
         }
         async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
-            Ok(())
-        }
-        async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
         }
     }
@@ -1005,23 +996,14 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
             Err(crucible_core::turn::NotSupported::new("switch_model"))
         }
     }
-    crucible_core::impl_unsupported_session_knobs!(BashCallingAgent);
+    crucible_daemon::impl_unsupported_session_knobs!(BashCallingAgent);
 
     #[async_trait::async_trait]
     impl AgentHandle for BashCallingAgent {
-        async fn send_message_fire_and_forget(
-            &mut self,
-            _: String,
-        ) -> crucible_core::traits::chat::ChatResult<()> {
-            Ok(())
-        }
         fn get_mode_id(&self) -> &str {
             "normal"
         }
         async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
-            Ok(())
-        }
-        async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
         }
     }

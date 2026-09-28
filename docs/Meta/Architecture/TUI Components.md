@@ -60,23 +60,24 @@ the client.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-cli/src/tui/oil/chat_runner/mod.rs` | 394 | Defines `OilChatRunner`, its builders, the full-screen/inline switch and `ChatExit`; declares the sibling files as submodules. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/runner.rs` | 693 | The `tokio::select!` event loop (`event_loop`) and the top-level `run_with_factory` entry point for live and replay sessions. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/actions.rs` | 1461 | `process_action`: the only place a daemon RPC is issued from this subsystem. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/commands.rs` | 548 | `session_event_to_chat_msgs`: pure translation of a daemon `SessionEvent` into `ChatAppMsg` values; also carries three inline `#[cfg(test)]` cases. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/stream.rs` | 266 | `SessionEventStream`: the stateful wrapper around `commands.rs`'s translator, plus the `session_event_consumer` task. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/mod.rs` | 374 | Defines `OilChatRunner`, its builders, the full-screen/inline switch and `ChatExit`; declares the sibling files as submodules. No longer generic over an agent-handle type parameter. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/runner.rs` | 602 | The `tokio::select!` event loop (`event_loop`) and the top-level `run_with_factory` entry point, taking a factory that returns `crate::session::OpenedSession`; `EventLoopParams`/`ProcessActionParams` carry `session: Option<&LiveSession>`, `None` for a replay. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/actions.rs` | 1526 | `process_action`: the only place a daemon RPC is issued from this subsystem. Each daemon action is a direct `DaemonClient` call on `params.session` (`session_undo`, `session_cancel`, `session_switch_model`, `session_list_modes`, `session_set_context_strategy`, `session_set_precognition`, `session_set_plugin_turn_limit`, `session_set_plugin_approval`, `session_interaction_respond`, `session_set_mode`, `session_send_message`); there is no `ClearHistory` arm. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/commands.rs` | 508 | `session_event_to_chat_msgs`: pure translation of a daemon `SessionEvent` into `ChatAppMsg` values; also carries inline `#[cfg(test)]` cases. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/stream.rs` | 341 | `SessionEventStream`: the stateful wrapper around `commands.rs`'s translator, plus `session_event_consumer` (history/replay, opens no prompt) and the new `live_session_event_consumer` (opens the session's pending prompts first, then each later `interaction_requested` once, deduped by request id). |
 | `crates/crucible-cli/src/tui/oil/chat_runner/render.rs` | 103 | `render_frame`/`render_app_frame`: the inline frame-paint path, plus the full-screen frame path (`render_fullscreen_frame`). |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/mod.rs` | 15 | Declares the sibling test modules. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/mod.rs` | 16 | Declares the sibling test modules, including `interaction_prompts`. |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/builders.rs` | 20 | Proves a runner builder method (`with_show_diffs`) sets its field. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/comment_mention.rs` | 134 | Proves an `@comment:<id>` mention reaches the daemon unaltered, and a refusal reaches the user as an `Error`, not a log line only. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/daemon_notification.rs` | 249 | Integration tests against a real in-process `crucible_daemon::Server`: notification delivery, attach-time read, per-session dismissal and `:messages clear`. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/diff_fetch.rs` | 172 | US-910 regression: a drained `DiffLoaded` follow-up reaches `process_action`, not just the reducer, and starts the per-file diff-text read. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/initial_sets.rs` | 159 | Regression: `cru chat --set` overrides reach the daemon RPC, not just the reducer. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/knob_rpc.rs` | 525 | Per-knob matrix: each `:set` message dispatches to the matching `AgentHandle`/`SessionKnobs` RPC, including `plugin_turn_limit` and `plugin_approval.<plugin>`; also the `:plugin-mode` menu flow. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/comment_mention.rs` | 92 | Proves an `@comment:<id>` mention reaches the daemon unaltered, and a refusal reaches the user as an `Error`, not a log line only; drives a `FakeDaemon` (`crates/crucible-cli/src/test_daemon.rs`). |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/daemon_notification.rs` | 244 | Integration tests against a real in-process `crucible_daemon::Server`: notification delivery, attach-time read, per-session dismissal and `:messages clear`. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/diff_fetch.rs` | 159 | US-910 regression: a drained `DiffLoaded` follow-up reaches `process_action`, not just the reducer, and starts the per-file diff-text read. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/initial_sets.rs` | 53 | Regression: `cru chat --set` overrides reach the daemon RPC, not just the reducer; against a `FakeDaemon`. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/interaction_prompts.rs` | 95 | Proves `live_session_event_consumer` opens a pending prompt plus each later `interaction_requested` of its own session exactly once, and that `session_event_consumer` (stored history) opens none. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/knob_rpc.rs` | 324 | Per-knob matrix: each `:set` message dispatches to the matching daemon RPC (`session.set_plugin_approval`, `session.set_mode`, and so on), including `plugin_turn_limit` and `plugin_approval.<plugin>`; also the `:plugin-mode` menu flow. Drives a `FakeDaemon`. |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/model_prefetch.rs` | 37 | Regression: startup model prefetch needs both a reducer message and a spawned fetch task. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/proposal_fetch.rs` | 64 | Proves a drained `ProposalChanged` event starts a `FetchProposals` read through `process_action`, replay-gated. |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/proposal_fetch.rs` | 55 | Proves a drained `ProposalChanged` event starts a `FetchProposals` read through `process_action`, replay-gated. |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/replay.rs` | 170 | Proves delegation `SessionEvent`s translate correctly and the consumer exits cleanly on `replay_complete`. |
-| `crates/crucible-cli/src/tui/oil/chat_runner/tests/session_resume.rs` | 164 | US-912: proves the `/resume` guards (already-open session, a running turn, replay) short-circuit before any daemon call, and unit-tests the picker's sort/cap/dedup logic (`resumable_sessions`). |
+| `crates/crucible-cli/src/tui/oil/chat_runner/tests/session_resume.rs` | 153 | US-912: proves the `/resume` guards (already-open session, a running turn, replay) short-circuit before any daemon call, and unit-tests the picker's sort/cap/dedup logic (`resumable_sessions`). |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/status_read.rs` | 49 | Proves a failed or partially-undecodable `session.status` read shows a notice rather than silently rendering a shorter list. |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/stream_gap.rs` | 127 | Proves the daemon's broadcast-lag marker survives the per-session filter because it is wildcard-addressed. |
 | `crates/crucible-cli/src/tui/oil/chat_runner/tests/surface_refresh.rs` | 124 | US-908: distinguishes a withdrawn surface (`Ok(None)`) from a failed refetch (`Err`). |
@@ -403,9 +404,12 @@ gates included — so a follow-up `Action::Send` from a drained event (for
 example a `DiffLoaded`/`ProposalChanged` event's follow-up fetch) starts its
 daemon read exactly as a live keystroke's follow-up does. Most
 `process_action` arms fall through to a shared tail that calls
-`app.on_message(msg)` and recurses on the resulting `Action`; `Undo` and
-`ClearHistory` are exceptions that call `on_message` inline or skip it and
-`return` early instead. `render_frame` (inline mode) calls
+`app.on_message(msg)` and recurses on the resulting `Action`; `Undo` is an
+exception that calls `on_message` inline and `return`s early instead. There
+is no `ClearHistory` arm any more — the client-side end-and-recreate-a-new-
+session path it drove was dead in production, since the TUI's `/clear`
+maps to `session.clear` (context reset in place), not a session swap.
+`render_frame` (inline mode) calls
 `app.frame_view(&ctx)`, which reuses the rows of finished messages between
 frames, keyed on the message's revision, the render width, the theme's style
 generation and `show_thinking`/`show_diffs`; a full-screen session
@@ -429,7 +433,14 @@ or mode fetch, plugin reload/run-command, surface fetch, Lua eval, session
 export, undo, clear context, cancel, notification read/close, plugin-turn
 limit/approval, `/resume`'s session list and switch, and `:diff`'s branch
 diff/file fetch) it either spawns a `tokio::task` pushed onto
-`background_tasks` or calls a method on `&mut A: AgentHandle` directly.
+`background_tasks` or calls a `DaemonClient` method directly on
+`params.session: Option<&LiveSession>` (`crates/crucible-cli/src/session.rs`).
+There is no agent-handle abstraction in this path: `session_undo`,
+`session_cancel`, `session_switch_model`, `session_list_modes`,
+`session_set_context_strategy`, `session_set_precognition`,
+`session_set_plugin_turn_limit`, `session_set_plugin_approval`, and
+`session_set_mode` are named RPCs, and a mode-set refusal re-reads the
+current mode via `session_list_modes` rather than trusting a cached mirror.
 Every such arm has a mirrored `if self.is_replay` arm that drops the message
 with `tracing::debug!` instead, so replay never reaches the daemon; the
 `ResumeSession`/`FetchSessions`/`OpenDiff`/`FetchDiffFile`/
@@ -491,17 +502,26 @@ cached transcript row keyed on it (see Key types).
 
 ### Interaction request to daemon response
 
-A daemon `InteractionRequest` arrives as `SessionEvent::InteractionRequested`;
-`OilChatRunner::handle_session_event` (`crates/crucible-cli/src/tui/oil/chat_runner/commands.rs`)
-maps it to `ChatAppMsg::OpenInteraction`, which `chat_app` turns into an
+A daemon `InteractionRequest` arrives as `SessionEvent::InteractionRequested`,
+read by `live_session_event_consumer`
+(`crates/crucible-cli/src/tui/oil/chat_runner/stream.rs`), the consumer a
+live session runs instead of the plain `session_event_consumer` history/replay
+path. It opens the session's pending prompts first (read once at
+`crucible_cli::session::open_session` time, see [[CLI Commands]]), then each
+later `interaction_requested` event, deduped by request id so a prompt
+already delivered as pending is not opened twice; each open is a
+`ChatAppMsg::OpenInteraction`. `chat_app` turns that message into an
 `InteractionModal` (unless `perm_autoconfirm_session` short-circuits a
 `Permission` request straight to `PermResponse::allow()`, outside this page).
-Each keystroke goes through `InteractionModal::update` →
+There is no separate interaction channel: the same `SessionEvent` stream
+that feeds the transcript carries the prompts too. Each keystroke goes
+through `InteractionModal::update` →
 `handle_{ask,ask_batch,edit,panel,perm,popup,show}_key` in the matching
 `crates/crucible-cli/src/tui/oil/components/interaction_modal/` file,
 returning an `InteractionModalOutput`. `chat_app` turns a non-`None` output
 into a `ChatAppMsg::CloseInteraction`/`ToggleDiff`, which reaches
-`process_action` and, for a real response, an `interaction_respond` RPC call.
+`process_action` and, for a real response, a `session_interaction_respond`
+RPC call.
 A prompt that ends without this client's own response — a timeout, another
 client's answer, or a delegated turn finishing — instead arrives as
 `TurnPayload::InteractionCompleted` and reaches this client as
@@ -572,9 +592,11 @@ target text.
 ## State, concurrency and lifecycle
 
 - **Event loop.** `OilChatRunner::run_with_factory` builds one
-  `mpsc::unbounded_channel::<ChatAppMsg>` per run, spawns one
-  `session_event_consumer` task on the live or replay event receiver, queues
-  two unconditional background reads before `apply_initial_sets`
+  `mpsc::unbounded_channel::<ChatAppMsg>` per run, spawns one event-consumer
+  task on the live or replay event receiver — `live_session_event_consumer`
+  for a live session (with its pending prompts), `session_event_consumer`
+  for a replay (which opens no prompt) — queues two unconditional background
+  reads before `apply_initial_sets`
   (`session.status` and the session's notifications) and a third
   (the proposal count) right after — none of which existed before this
   page's current revision — and runs `event_loop` until quit or error. A quit
@@ -594,9 +616,12 @@ target text.
   (`chat_runner/stream.rs`), so a `context_limit_resolved` event patches a
   value that a later `message_complete` event reads back with
   `Ordering::Relaxed`.
-- **Replay mode.** `is_replay` on `OilChatRunner` gates every daemon-bound arm
-  in `actions.rs::process_action`; the replay path uses a `NoopAgentHandle`
-  (outside this page) and never opens an RPC connection.
+- **Replay mode.** `is_replay` on `OilChatRunner` gates most daemon-bound
+  arms in `actions.rs::process_action`; the replay path's factory passes
+  `session: None` through `EventLoopParams`, so an arm that reads
+  `params.session` directly (`Undo`, `StreamCancelled`, `SwitchModel`, and
+  others) finds nothing to call and never opens an RPC connection, with no
+  separate agent-handle stand-in needed to enforce it.
 - **Shell subprocess.** `ShellModal::spawn`
   (`crates/crucible-cli/src/tui/oil/components/shell_modal.rs`) launches a
   child process and a dedicated `std::thread` that itself spawns two more
@@ -654,16 +679,16 @@ target text.
   event handling forwards `ChatAppMsg`s into the same reducer and issues no
   RPC of its own.
 - **Replay never touches the daemon.** For most daemon-bound `ChatAppMsg`
-  variants this is enforced twice in `actions.rs`: once by gating live-only
-  work behind `!self.is_replay`, once by a shared no-op arm covering the same
-  variants under replay — a list that now also includes `ResumeSession`,
-  `FetchSessions`, `OpenDiff`, `FetchDiffFile`, `FetchPluginApprovals`,
-  `FetchProposals`, `ClearContext` and `CloseDaemonNotifications`. A few arms
-  (`Undo`, `ClearHistory`, `StreamCancelled`, `SwitchModel`) carry no
-  `is_replay` gate at all and call `params.agent` unconditionally; for these,
-  replay-safety instead depends on the replay session's agent handle being a
-  `NoopAgentHandle` (outside this page) whose `cancel`/`clear_history`/
-  `switch_model` are true no-ops that never open an RPC connection.
+  variants this is enforced in `actions.rs` by gating live-only work behind
+  `!self.is_replay` — a list that includes `ResumeSession`, `FetchSessions`,
+  `OpenDiff`, `FetchDiffFile`, `FetchPluginApprovals`, `FetchProposals`,
+  `ClearContext` and `CloseDaemonNotifications`. A few arms (`Undo`,
+  `StreamCancelled`, `SwitchModel`) carry no `is_replay` gate at all and
+  instead match on `params.session: Option<&LiveSession>` directly: a replay
+  run's factory returns `None`, so these arms find no session to call and
+  fall through to a "nothing to do"/error branch rather than reaching a
+  daemon. There is no agent-handle stand-in behind this guarantee any more —
+  the `Option` itself is the guard.
 - **`:set` key space is one closed set.** `crates/crucible-cli/src/tui/oil/commands/set.rs`
   denies any wildcard match arm at compile time; its own test
   (`every_declared_set_target_is_classified`) walks `SHORTCUTS` and asserts no
@@ -777,10 +802,17 @@ target text.
   distinction (US-908), comment-mention pass-through and send-failure
   surfacing, daemon-notification read/close, `:diff` branch/file fetch
   (US-910), `/resume` session listing and switching (US-912), and the first
-  `session.status` read. `tests/daemon_notification.rs` is the first file in
-  this list to spin up a real in-process `crucible_daemon::Server` rather
-  than a mock `AgentHandle`, for notification delivery, attach-time read and
-  per-session dismissal.
+  `session.status` read. Most files in this list drive a `FakeDaemon`
+  (`crates/crucible-cli/src/test_daemon.rs`) — a real `DaemonClient`
+  connected to a Unix-socket fake that records each method and params and
+  answers through a closure. `tests/daemon_notification.rs` instead spins up
+  a real in-process
+  `crucible_daemon::Server` for notification delivery, attach-time read and
+  per-session dismissal. `tests/interaction_prompts.rs` proves
+  `live_session_event_consumer` opens a pending prompt and each later
+  `interaction_requested` of its own session exactly once, and that
+  `session_event_consumer` opens none, with no `Server` and no `FakeDaemon`
+  needed — both consumers are plain channel-in, channel-out functions.
 - **`:set` classifier tests** — embedded in `commands/set.rs`, proving every
   shortcut classifies and agrees on `KeyHome` with `classify_set_value`, plus
   an exhaustive spelling matrix for `SetCommand::parse`.

@@ -183,19 +183,10 @@ impl crucible_core::turn::Agent for NoteWritingAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(NoteWritingAgent);
+crate::impl_unsupported_session_knobs!(NoteWritingAgent);
 
 #[async_trait::async_trait]
-impl crucible_core::traits::chat::AgentHandle for NoteWritingAgent {
-    async fn send_message_fire_and_forget(
-        &mut self,
-        _: String,
-    ) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
+impl crate::agent_manager::AgentHandle for NoteWritingAgent {
     async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
         Ok(())
     }
@@ -260,9 +251,7 @@ async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
     am.set_agent_factory_override(Box::new(|_, _| {
         Box::pin(async {
             Ok(Box::new(NoteWritingAgent)
-                as Box<
-                    dyn crucible_core::traits::chat::AgentHandle + Send + Sync,
-                >)
+                as Box<dyn crate::agent_manager::AgentHandle + Send + Sync>)
         })
     }));
 

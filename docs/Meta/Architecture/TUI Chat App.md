@@ -71,8 +71,7 @@ This subsystem must not own:
 | `crates/crucible-cli/src/tui/oil/containers.rs` | 1142 | `ChatNode` and `ContainerList` — the append-only, revision-tracked chat transcript. |
 | `crates/crucible-cli/src/tui/oil/event.rs` | 240 | `Event`, `InputAction`, `InputBuffer` — the raw-input model, including mouse reports for the full-screen view. |
 | `crates/crucible-cli/src/tui/oil/local_replay.rs` | 235 | `read_recording`/`drive_replay` — replays a recorded session with no daemon. |
-| `crates/crucible-cli/src/tui/oil/mod.rs` | 70 | Module root; the curated re-export surface for `tui::oil`, including the `fullscreen` module and `ChatExit`. |
-| `crates/crucible-cli/src/tui/oil/noop_agent.rs` | 140 | `NoopAgentHandle` — an `Agent`/`AgentHandle` that does nothing, for replay. |
+| `crates/crucible-cli/src/tui/oil/mod.rs` | 69 | Module root; the curated re-export surface for `tui::oil`, including the `fullscreen` module and `ChatExit`. Declares no agent-handle stand-in module: the runner is not generic over an agent handle, so replay needs none. |
 | `crates/crucible-cli/src/tui/oil/render_state.rs` | 29 | `RenderState` — a `Copy` projection of `ViewContext` for leaf renderers. |
 | `crates/crucible-cli/src/tui/oil/test_harness.rs` | 220 | `AppHarness` — the app-level test driver. |
 | `crates/crucible-cli/src/tui/oil/transcript_rows.rs` | 312 | `TranscriptRows`/`NodeRows`/`Slot` — the kept-rows cache for finished transcript nodes, shared by the native and full-screen views. |
@@ -218,12 +217,14 @@ This subsystem must not own:
   `autocomplete.rs` mutates `PopupState`, `shell.rs`/`command_handling.rs`
   mutate `PermissionState`, `command_handling.rs` mutates
   `PrecognitionState`.
-- **`NoopAgentHandle`** (`noop_agent.rs`) and **`AgentSelection`**
-  (`agent_selection.rs`). `NoopAgentHandle` implements `Agent`/`AgentHandle`
-  as inert stand-ins so `local_replay.rs`'s replay path can drive
-  `OilChatApp` with no live session; `AgentSelection` is the display choice
-  between an ACP-delegated agent and the built-in one, consumed by
-  `chat_app` configuration code outside this page.
+- **`AgentSelection`** (`agent_selection.rs`). The display choice between an
+  ACP-delegated agent and the built-in one, consumed by `chat_app`
+  configuration code outside this page. There is no agent-handle stand-in
+  type in this page any more: `crate::tui::oil::chat_runner`'s
+  `EventLoopParams` (outside this page, see [[TUI Components]]) carries
+  `session: Option<&LiveSession>`, and `local_replay.rs`'s replay path passes
+  `None`, so a replayed run reaches no daemon by construction rather than by
+  an inert trait impl.
 - **`ComponentHarness`** (`component.rs`) and **`AppHarness`**
   (`test_harness.rs`). Test doubles, both cfg-gated to `test`/`test-utils`.
   `ComponentHarness` renders one `Component` in isolation; `AppHarness` owns
@@ -367,10 +368,11 @@ reply to `command_handling.rs`'s printers.
 vector, paces itself against the recorded timestamps, and sends each event —
 rewritten with a fresh `session_id` — over an
 `mpsc::UnboundedSender<SessionEventMessage>` the caller supplies.
-`chat_runner` (outside this page) is that caller: it constructs a
-`NoopAgentHandle` (`noop_agent.rs`) in place of a live `Agent`, and forwards
-the replayed `SessionEventMessage`s into `OilChatApp::on_message` exactly as
-it would forward a real daemon event.
+`chat_runner` (outside this page) is that caller: its replay entry point
+passes `session: None` through `EventLoopParams` instead of a live
+`LiveSession`, so the replay path forwards the replayed
+`SessionEventMessage`s into `OilChatApp::on_message` exactly as it would
+forward a real daemon event, but can never reach the daemon itself.
 
 ## State, concurrency and lifecycle
 
@@ -405,12 +407,9 @@ it would forward a real daemon event.
   holds no resize-specific reset logic.
 - `local_replay.rs::drive_replay` is an `async fn`; it owns the sending half
   of a caller-supplied `mpsc::UnboundedSender` and stops early if the
-  receiver drops. The other `async fn`s in this page are
-  `noop_agent.rs::NoopAgentHandle`'s `Agent` trait methods (`turn`, `cancel`,
-  `switch_model`, and others), each a one-line no-op required by the trait.
-  `NoopAgentHandle::new` creates an `mpsc::unbounded_channel` and drops its
-  sender immediately, so the receiver it hands out always resolves to
-  `None`.
+  receiver drops. It is the only async entry point this page defines for the
+  replay path — there is no agent-handle stand-in with its own trait methods
+  to run alongside it.
 - There is no explicit shutdown routine in this page: `OilChatApp` and its
   fields are dropped with `chat_runner`'s event loop (outside this page).
 - Test-only state: `ComponentHarness` (`component.rs`) and `AppHarness`
@@ -525,7 +524,7 @@ it would forward a real daemon event.
   `update_tool_by_call_id` reaches a backgrounded call), `autocomplete.rs`
   (21 tests covering every trigger kind, including the new `/resume` and
   `@path:line` cases), `viewport_cache.rs` (4), `test_harness.rs` (5),
-  `component.rs` (4), `local_replay.rs` (4), `noop_agent.rs` (3),
+  `component.rs` (4), `local_replay.rs` (4),
   `repl_command.rs` (4, including the `all_names_every_variant_once`
   completeness check, which now also covers `Diff`/`Proposals`/`Status`/
   `PluginMode`), `input_handling.rs` (3), `message_handlers.rs` (3),

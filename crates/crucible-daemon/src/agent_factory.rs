@@ -5,6 +5,7 @@
 //! `SessionAgent` contains fully-resolved configuration.
 
 use crate::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+use crate::agent_manager::AgentHandle;
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::provider::adapter_mapping::ChatClient;
 use crate::provider::genai_handle::GenaiAgentHandle;
@@ -16,7 +17,6 @@ use crucible_core::config::{BackendType, LlmProviderConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::auth::AuthHeaders;
-use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::mcp::McpToolInfo;
 use crucible_core::traits::KnowledgeRepository;

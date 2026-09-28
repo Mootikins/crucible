@@ -121,10 +121,9 @@ async fn test_tui_daemon_agent_full_flow() {
     let server = TestServer::start().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let client = DaemonClient::connect_to(&server.socket_path)
         .await
-        .expect("Failed to connect with events");
-    let client = std::sync::Arc::new(client);
+        .expect("Failed to connect");
 
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
@@ -173,11 +172,6 @@ async fn test_tui_daemon_agent_full_flow() {
         .session_configure_agent(&session_id, &agent)
         .await
         .expect("configure_agent failed");
-
-    let handle =
-        crucible_daemon::DaemonAgentHandle::new(client.clone(), session_id.clone(), event_rx);
-
-    assert_eq!(handle.session_id(), session_id);
 
     client
         .session_unsubscribe(&[&session_id])

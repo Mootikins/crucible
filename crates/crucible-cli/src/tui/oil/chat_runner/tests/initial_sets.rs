@@ -6,113 +6,13 @@
 //! (and every other daemon-scoped key) was silently inert, and
 //! `--set model=X` updated the status bar without switching the model.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use crucible_core::events::EventRing;
-use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult, SessionKnobs};
 use crucible_oil::terminal::Terminal;
 use tokio::sync::mpsc;
 
-use crate::chat::bridge::AgentEventBridge;
+use crate::test_daemon::FakeDaemon;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::oil::commands::{SetEffect, SetRpcAction};
-
-struct RpcCountingAgent {
-    context_strategy_calls: AtomicUsize,
-    switch_model_calls: AtomicUsize,
-}
-
-impl RpcCountingAgent {
-    fn new() -> Self {
-        Self {
-            context_strategy_calls: AtomicUsize::new(0),
-            switch_model_calls: AtomicUsize::new(0),
-        }
-    }
-}
-
-crucible_core::impl_noop_agent!(RpcCountingAgent);
-
-#[async_trait]
-impl AgentHandle for RpcCountingAgent {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-    fn get_mode_id(&self) -> &str {
-        "ask"
-    }
-    async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-        Ok(())
-    }
-}
-
-/// The two startup knobs count. The rest is the empty answer.
-#[async_trait::async_trait]
-impl SessionKnobs for RpcCountingAgent {
-    async fn set_plugin_approval(
-        &mut self,
-        _plugin: &str,
-        _approval: crucible_core::session::PluginApproval,
-    ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_plugin_approval".into()))
-    }
-    fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
-        crucible_core::session::PluginApproval::Inherit
-    }
-    async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_plugin_turn_limit".into()))
-    }
-    fn get_plugin_turn_limit(&self) -> u32 {
-        25
-    }
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
-        self.switch_model_calls.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn current_model(&self) -> Option<&str> {
-        None
-    }
-
-    async fn fetch_available_models(&mut self) -> Vec<String> {
-        Vec::new()
-    }
-
-    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
-        Vec::new()
-    }
-
-    async fn set_context_strategy(
-        &mut self,
-        _strategy: crucible_core::session::ContextStrategy,
-    ) -> ChatResult<()> {
-        self.context_strategy_calls.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
-        crucible_core::session::ContextStrategy::default()
-    }
-
-    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition".into()))
-    }
-
-    fn get_precognition(&self) -> bool {
-        true
-    }
-}
 
 #[tokio::test]
 async fn startup_set_overrides_reach_the_daemon_rpc() {
@@ -122,17 +22,15 @@ async fn startup_set_overrides_reach_the_daemon_rpc() {
             SetEffect::DaemonRpc(SetRpcAction::SwitchModel("gpt-4o".into())),
         ]);
 
-    let mut agent = RpcCountingAgent::new();
+    let daemon = FakeDaemon::answering_null("chat-1").await;
     let mut app = OilChatApp::default();
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
     let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
 
     runner
         .apply_initial_sets(
             &mut app,
-            &mut agent,
-            &bridge,
+            Some(&daemon.session),
             &msg_tx,
             &mut background_tasks,
         )
@@ -140,14 +38,10 @@ async fn startup_set_overrides_reach_the_daemon_rpc() {
         .expect("apply_initial_sets should not fail");
 
     assert_eq!(
-        agent.context_strategy_calls.load(Ordering::Relaxed),
-        1,
-        "--set context_strategy must invoke the daemon RPC, not just the reducer"
-    );
-    assert_eq!(
-        agent.switch_model_calls.load(Ordering::Relaxed),
-        1,
-        "--set model must actually switch the model, not only update the status bar"
+        daemon.methods(),
+        ["session.set_context_strategy", "session.switch_model"],
+        "--set context_strategy and --set model must each reach the daemon RPC once, \
+         not only the reducer"
     );
     assert_eq!(
         app.current_model(),

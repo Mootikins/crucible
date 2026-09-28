@@ -264,3 +264,78 @@ pub(crate) async fn session_event_consumer(
     )
     .await;
 }
+
+/// The live consumer of one session.
+///
+/// It is [`session_event_consumer`] plus the prompts. The live stream opens
+/// a prompt when `interaction_requested` arrives. Stored history and a replay
+/// do not open prompts, because their questions are answered or gone.
+///
+/// `pending` holds the prompts that waited before this client attached. They
+/// open first. The subscription can also deliver one of them as an event, so
+/// each prompt opens once only.
+pub(crate) async fn live_session_event_consumer(
+    session_id: String,
+    event_rx: tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
+    pending: Vec<crucible_core::interaction::InteractionEvent>,
+    msg_tx: tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
+    context_limit: Arc<AtomicUsize>,
+) {
+    let mut opened = std::collections::HashSet::new();
+    for prompt in pending {
+        opened.insert(prompt.request_id.clone());
+        let msg = ChatAppMsg::OpenInteraction {
+            request_id: prompt.request_id,
+            request: prompt.request,
+        };
+        if msg_tx.send(msg).is_err() {
+            return;
+        }
+    }
+
+    let filter_id = session_id.clone();
+    consume_session_events(
+        event_rx,
+        msg_tx,
+        Some(context_limit),
+        move |event| {
+            event.session_id == filter_id
+                || event.session_id == WILDCARD_SESSION
+                || event.session_id == SYSTEM_SESSION
+        },
+        move |event, tx| {
+            if event.event == "interaction_requested" && event.session_id == session_id {
+                if let Some(msg) = open_prompt(event, &mut opened) {
+                    let _ = tx.send(msg);
+                }
+            }
+            true
+        },
+    )
+    .await;
+}
+
+/// The message that opens the prompt of an `interaction_requested` event, or
+/// `None` when the prompt is already open or the payload does not decode.
+fn open_prompt(
+    event: &crucible_daemon::SessionEvent,
+    opened: &mut std::collections::HashSet<String>,
+) -> Option<ChatAppMsg> {
+    use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+    match event.payload() {
+        Ok(SessionEventPayload::Turn(TurnPayload::InteractionRequested {
+            request_id,
+            request,
+        })) => opened
+            .insert(request_id.clone())
+            .then_some(ChatAppMsg::OpenInteraction {
+                request_id,
+                request,
+            }),
+        Ok(_) => None,
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to decode an interaction request");
+            None
+        }
+    }
+}

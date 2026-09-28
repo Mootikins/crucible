@@ -23,6 +23,7 @@ use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
 use crate::acp::client::CrucibleAcpClient;
 use crate::acp::session::ModelChoice;
+use crate::agent_manager::{AgentHandle, SessionKnobs};
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
 use agent_client_protocol::schema::v1::{SetSessionConfigOptionRequest, SetSessionModeRequest};
@@ -30,7 +31,7 @@ use crucible_core::background::BackgroundSpawner;
 use crucible_core::config::{AcpConfig, DelegationConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
-use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult, SessionKnobs};
+use crucible_core::traits::chat::{ChatError, ChatResult};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
@@ -330,13 +331,6 @@ impl AcpAgentHandle {
 
 #[async_trait]
 impl AgentHandle for AcpAgentHandle {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        // ACP handles are daemon-side — the TUI never calls this directly.
-        Err(ChatError::NotSupported(
-            "AcpAgentHandle::send_message_fire_and_forget — use Agent::turn".to_string(),
-        ))
-    }
-
     fn get_mode_id(&self) -> &str {
         &self.mode_id
     }
@@ -371,18 +365,6 @@ impl AgentHandle for AcpAgentHandle {
         Ok(())
     }
 
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        // ACP agents own their conversation state; clearing requires
-        // terminating and restarting the agent process, which the CLI
-        // path (DaemonAgentHandle::clear_history) refuses for ACP
-        // sessions. Surface the same error here in case this handle is
-        // ever invoked directly.
-        Err(ChatError::NotSupported(
-            "ACP agents manage their own history; clearing would require restarting the agent"
-                .into(),
-        ))
-    }
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         Some(&self.mode_state)
     }
@@ -403,7 +385,7 @@ impl AgentHandle for AcpAgentHandle {
 /// `precognition` belongs to the session's `AgentConfig`: the daemon turn
 /// loop reads it from the config before it calls the handle, and the ACP wire
 /// has no field for it. A value stored here would reach nothing, so the
-/// handle refuses the setter. `DaemonAgentHandle` answers it by RPC.
+/// handle refuses the setter. A client sets it with `session.set_precognition`.
 #[async_trait]
 impl SessionKnobs for AcpAgentHandle {
     /// ACP carries no system prompt; the agent owns its own.

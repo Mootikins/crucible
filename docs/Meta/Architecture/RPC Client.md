@@ -27,10 +27,12 @@ executing the daemon's own handlers directly. It must:
   process if none answers.
 - Frame each call as a JSON-RPC request, correlate it to a reply by id, and
   decode the reply into a typed struct or a raw `serde_json::Value`.
-- Adapt a daemon-managed session to the generic `crucible_core::turn::Agent`
-  and `crucible_core::traits::chat::{AgentHandle, SessionKnobs}` traits, so a
-  front end can drive a daemon session the same way it drives any other
-  agent backend.
+- Send every agent-facing session action (send a message, switch a model,
+  answer a prompt, undo a turn) as one direct `DaemonClient` RPC call. There
+  is no client-side agent adapter in this module: `AgentHandle` and
+  `SessionKnobs` (`crucible_daemon::agent_manager::{AgentHandle,
+  SessionKnobs}`) are daemon-only traits that a running agent implements
+  inside the daemon process; a client never holds one.
 
 It must not:
 
@@ -52,14 +54,10 @@ must not construct a second agent configuration or write pipeline."
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-daemon/src/rpc_client/mod.rs` | 55 | Public façade: declares the `agent`, `client`, `error_ext`, `lifecycle`, `storage` submodules and re-exports the client's whole contract (`DaemonClient`, request/response DTOs, `DaemonAgentHandle`, `ChatResultExt`, `rpc_error_message`, `socket_path`). |
+| `crates/crucible-daemon/src/rpc_client/mod.rs` | 53 | Public façade: declares the `client`, `error_ext`, `lifecycle`, `storage` submodules and re-exports the client's whole contract (`DaemonClient`, request/response DTOs, `ChatResultExt`, `rpc_error_message`, `socket_path`). |
 | `crates/crucible-daemon/src/rpc_client/error_ext.rs` | 59 | `ChatResultExt` trait (one method, `chat_comm`, that folds any displayable error into `ChatError::Communication`) and `rpc_error_message`, a free function that strips the `RPC error: {json}` envelope down to the daemon's own message. |
 | `crates/crucible-daemon/src/rpc_client/lifecycle.rs` | 183 | Synchronous daemon-process utilities: socket path, log path, log rotation on spawn, log tail read, `is_daemon_running`. |
 | `crates/crucible-daemon/src/rpc_client/storage.rs` | 621 | `DaemonStorageClient` (`KnowledgeRepository` impl) and `DaemonNoteStore` (`NoteStore` impl): adapt canonical storage traits onto `DaemonClient` RPC calls. |
-| `crates/crucible-daemon/src/rpc_client/agent/mod.rs` | 353 | Defines `DaemonAgentHandle` and its constructors, pending-interaction replay, cached-value bootstrap, and `Drop` cleanup. |
-| `crates/crucible-daemon/src/rpc_client/agent/agent_handle.rs` | 280 | `impl AgentHandle` and `impl SessionKnobs` for `DaemonAgentHandle`: mode, model, undo, clear-history session-swap, interaction replies, plugin-approval and plugin-turn-limit knobs. |
-| `crates/crucible-daemon/src/rpc_client/agent/native_agent.rs` | 149 | `impl crucible_core::turn::Agent` for `DaemonAgentHandle`: the streaming `turn()` loop that a front end drives directly. |
-| `crates/crucible-daemon/src/rpc_client/agent/convert.rs` | 646 | Converts daemon `SessionEvent`s to `TurnEvent`s; runs the background `event_router` task that replays pending interactions, splits interaction events from turn-content events, and keeps the shared plugin-approval cache live. |
 | `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1185 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/surface/notification-adjacent RPC methods that have no dedicated submodule. |
 | `crates/crucible-daemon/src/rpc_client/client/types.rs` | 134 | Wire types and helpers shared by two or more submodules: `SessionEvent` alias, `DaemonCapabilities`, `VersionCheck`, small param structs, `extract_string_array`. |
 | `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 708 | `DaemonClient` methods and DTOs for `session.*` agent/model/mode RPCs, `models.list`, `providers.list`, `embeddings.models`, `skills.*`, `agents.*`, and the plugin-approval/plugin-turn-limit `session.*` RPCs. |
@@ -85,9 +83,9 @@ must not construct a second agent configuration or write pipeline."
   DaemonClient` block adds methods to this one struct; there is no second
   client type. Created by `DaemonClient::connect`, `connect_or_start`,
   `connect_or_start_with_events`, `connect_to`, or `connect_with_events`.
-  Held as an `Arc<DaemonClient>` by `DaemonAgentHandle`,
-  `DaemonStorageClient`, and `crucible-cli`'s ACP session map
-  (`crates/crucible-cli/src/commands/acp/agent.rs`).
+  Held as an `Arc<DaemonClient>` by `DaemonStorageClient`,
+  `crucible-cli`'s `LiveSession` (`crates/crucible-cli/src/session.rs`), and
+  `crucible-cli`'s ACP session map (`crates/crucible-cli/src/commands/acp/agent.rs`).
   `crucible-web/src/services/daemon.rs`'s `ReconnectingDaemon` holds it as
   `Arc<RwLock<DaemonClient>>` instead, so a reconnect can replace the
   connection in place without handing every caller a new `Arc`.
@@ -95,34 +93,14 @@ must not construct a second agent configuration or write pipeline."
   around a freshly spawned `std::process::Child`. `detach()` releases it on
   success; `Drop` reaps it (SIGTERM, poll, SIGKILL) on failure, so a client
   that gave up connecting never leaves an orphan daemon behind.
-- **`DaemonAgentHandle`** (`crates/crucible-daemon/src/rpc_client/agent/mod.rs`).
-  The struct wiring one daemon session to a front end. Fields include
-  `client: Arc<DaemonClient>`, `session_id: String`, `router_session_id:
-  Arc<watch::Sender<String>>`, `streaming_rx:
-  Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>`, `interaction_rx:
-  Option<mpsc::UnboundedReceiver<InteractionEvent>>`, `raw_event_rx:
-  Option<mpsc::UnboundedReceiver<SessionEvent>>`, cached mirrors
-  (`cached_model`, `cached_context_strategy`, `cached_precognition`,
-  `cached_agent_config`, `cached_plugin_approvals`,
-  `cached_plugin_turn_limit`), `kiln: Option<KilnName>`, `workspace:
-  Option<PathBuf>`, and `event_router_task: Option<JoinHandle<()>>`.
-  Created by `DaemonAgentHandle::new`, `new_and_subscribe`, or
-  `new_and_subscribe_with_raw_forwarding`; held by
-  `crucible-cli/src/factories/agent.rs`, `crucible-daemon/src/acp_handle.rs`,
-  `crucible-daemon/src/agent_manager/models.rs`, and
-  `crucible-daemon/src/provider/genai_handle.rs`, each of which uses it
-  polymorphically through `Agent`/`AgentHandle`.
-- **`PluginApprovals`** (`crates/crucible-daemon/src/rpc_client/agent/convert.rs`,
-  `pub(crate)`). A cloneable newtype around `Arc<Mutex<BTreeMap<String, PluginApproval>>>`,
-  shared between `DaemonAgentHandle`'s `cached_plugin_approvals` field and its
-  `event_router` task. The router applies every `plugin_approval_changed`
-  event to it, so a change made by another client, or by the daemon's own
-  plugin-loop-limit logic, is visible on this handle without a new fetch.
-- **`AgentHandle`, `SessionKnobs`, `Agent`** (`crucible_core::traits::chat`,
-  `crucible_core::turn`). The generic traits `DaemonAgentHandle` implements.
-  It is the daemon-proxy *instance* of these traits; other instances (ACP,
-  a direct provider handle) implement the same traits so a front end never
-  branches on which backend it holds.
+- **`AgentHandle`, `SessionKnobs`** (`crucible_daemon::agent_manager::handle`,
+  re-exported as `crucible_daemon::agent_manager::{AgentHandle,
+  SessionKnobs}`). Daemon-only traits an active agent implements inside the
+  daemon process. This module holds no implementor of either trait and no
+  client-side session cache: `crates/crucible-cli/src/session.rs`'s
+  `LiveSession` drives a session through plain `DaemonClient` calls, and each
+  RPC reads or writes the daemon's own state directly. See [[Agent
+  Manager]] for the traits themselves.
 - **`DaemonStorageClient` / `DaemonNoteStore`** (`crates/crucible-daemon/src/rpc_client/storage.rs`).
   `KnowledgeRepository` and `NoteStore` implementations that hold `Arc<DaemonClient>`
   (and, for `DaemonNoteStore`, an `Arc<DaemonStorageClient>`) and translate
@@ -216,70 +194,36 @@ retries up to twice, only on a fixed set of transient-error substrings
 build on `call`/`call_with_timeout`/`call_with_retry` to deserialize the
 reply into a typed struct.
 
-### Daemon-backed turn
+### A session action as one direct RPC
 
-1. A front end builds a `DaemonAgentHandle` via `new_and_subscribe` or
-   `new_and_subscribe_with_raw_forwarding` (`crates/crucible-daemon/src/rpc_client/agent/mod.rs`),
-   which calls `DaemonClient::session_subscribe`, best-effort fetches any
-   pending interactions via `session_pending_interactions`, spawns the
-   `event_router` task (`crates/crucible-daemon/src/rpc_client/agent/convert.rs`)
-   with that snapshot and a shared `PluginApprovals` map, and best-effort
-   fetches cached model/mode/precognition/plugin-approval/plugin-turn-limit
-   values.
-2. The front end drives the handle as a `crucible_core::turn::Agent`. `turn()`
-   (`crates/crucible-daemon/src/rpc_client/agent/native_agent.rs`) sends the
-   outgoing message via `DaemonClient::session_send_message`, then locks
-   `streaming_rx` and loops `rx.recv()`, converting each `SessionEvent` to
-   zero or more `TurnEvent`s via `session_event_to_turn_events`
-   (`convert.rs`), stopping at the first `Done` or `Error`. Only
-   `turn_finished` (`TurnPayload::TurnFinished`) yields that terminal
-   `Done`/`Error`: `message_complete` emits only `TurnEvent::Usage`, when
-   usage fields are present, and never ends the turn itself.
-3. In parallel, `event_router` (`convert.rs`) reads the same event channel
-   at its source, drops events for a session id that a concurrent
-   `clear_history` has already superseded (via a `watch::Receiver`
-   comparison), replays any pending-interaction snapshot onto `interaction_tx`
-   before the live stream starts (de-duplicated against it by request id, so
-   a prompt open before subscribe is shown once, not twice), applies every
-   `plugin_approval_changed` event to the shared `PluginApprovals` map, and
-   splits `interaction_requested` events onto a separate `interaction_tx`
-   from everything else.
-4. `/clear`-style history reset is `agent_handle.rs`'s `clear_history`: it
-   refuses on an ACP-backed session, unsubscribes, ends the old session,
-   creates a replacement with the same kiln/workspace, best-effort
-   re-applies cached config, resubscribes, then pushes the new session id
-   through `router_session_id` so the already-running `event_router` picks
-   it up without a restart. This is a different operation from
-   `DaemonClient::session_clear` (`session.clear`), which clears the
-   session's model context in place — the transcript stays, the session id
-   does not change, and the daemon reports it with a `context_cleared` event
-   rather than a session swap.
-5. A `turn_finished` event carries a `crucible_core::turn::TurnStatus`
-   (`Completed`, `Cancelled`, `HandlerCancelled`, `TimedOut`, or `Failed`),
-   an optional `stop_reason`, and an optional `error`; `session_event_to_turn_events`
-   (`convert.rs`) maps `Completed`/`Cancelled` to `TurnEvent::Done`,
-   `HandlerCancelled` to `TurnEvent::Done { stop_reason: Refusal }` ("an end,
-   not an error of the connection"), and `Failed`/`TimedOut` to
-   `TurnEvent::Error`. A `TurnEvent::ToolCall` carries `call:
-   Option<Box<CanonicalToolCall>>` (`crucible_core::types::CanonicalToolCall`):
-   `None` when the runtime must classify the call itself from `name` and
-   `args`, `Some` when the agent layer already classified it with its own
-   diff. `TurnEvent::ToolCallUpdate` carries `id: String` and a mandatory
-   `call: Box<CanonicalToolCall>`, replacing the call of that id with a later
-   canonical form.
+There is no client-side agent handle or turn loop in this module. A front
+end that wants to drive a session opens one with
+`crucible_cli::session::open_session` (`crates/crucible-cli/src/session.rs`,
+covered in [[CLI Commands]]), which subscribes and calls `session.create`/
+`session.create_with_agent`, then sends every later action — a message, a
+mode switch, an undo, a prompt answer — as its own `DaemonClient` call:
 
-```mermaid
-flowchart LR
-    FE["Front end (Agent::turn caller)"] -->|session_send_message| DC[DaemonClient]
-    DC -->|RPC| Daemon[daemon session]
-    PI["pending interactions (session_pending_interactions)"] -.replayed first.-> ER
-    Daemon -->|SessionEvent stream| ER[event_router in convert.rs]
-    ER -->|plugin_approval_changed| PA[shared PluginApprovals]
-    ER -->|interaction_requested, deduped| IT[interaction_tx]
-    ER -->|everything else| ST[streaming_tx / raw_event_tx]
-    ST --> NA["native_agent.rs turn() loop"]
-    NA -->|session_event_to_turn_events, terminal on turn_finished| FE
-```
+1. `open_session` subscribes to `"*"` before it creates or resumes the
+   session (`session_subscribe`, then `session_create_with_agent` or
+   `session_resume`), so a setup-task event cannot fire before the
+   subscription exists. It then subscribes to the session's own id and
+   best-effort reads any pending prompts via `session_pending_interactions`.
+2. Each later action is one `DaemonClient` method — `session_send_message`,
+   `session_switch_model`, `session_undo`, `session_cancel`,
+   `session_set_mode`, `session_interaction_respond`, and so on — with no
+   adapter trait and no cached mirror in between. The reply, when the action
+   needs one, comes back on the same RPC; the ongoing turn's content comes
+   back on the subscribed `SessionEvent` stream, read directly by the
+   caller's own event loop (the TUI's `chat_runner`, covered in [[TUI Chat
+   App]]).
+3. `session.clear` (`DaemonClient::session_clear`) clears the session's
+   model context in place: the transcript stays and the session id does not
+   change. The daemon reports it with a `context_cleared` event. There is no
+   client-side session-swap alternative to it in this module.
+4. Ending a session (`LiveSession::end`, `crates/crucible-cli/src/session.rs`)
+   is one `DaemonClient::session_end` call, made when the caller's run loop
+   exits — not a background `Drop` action on a client-held handle, because
+   there is no such handle to drop.
 
 ### Storage-as-RPC
 
@@ -309,43 +253,30 @@ non-idempotent-write reason as `proposal.*` below.
   are `Arc<Mutex<_>>`, cloned implicitly through `Arc<DaemonClient>` so many
   callers can hold the same connection.
 - **Background tasks.** `spawn_reader_task` (event mode, `client/mod.rs`)
-  owns the socket read half for the client's lifetime; `event_router`
-  (`agent/convert.rs`) owns the session's event stream for the handle's
-  lifetime. Both are `tokio::spawn`ed `JoinHandle`s stored on their owning
-  struct and aborted on `Drop`.
+  owns the socket read half for the client's lifetime. This module runs no
+  other background task: the session-event stream `session_subscribe`
+  returns is read directly by the caller's own loop, not by an intermediate
+  router task inside this crate.
 - **Channels.** `mpsc::UnboundedReceiver<SessionEvent>` connects the daemon's
-  event stream to `event_router`; `mpsc::UnboundedReceiver<InteractionEvent>`
-  carries interaction requests to the front end's own loop; a
-  `watch::Sender<String>` (`router_session_id`) lets `clear_history` retarget
-  the running `event_router` to a new session id without restarting the
-  task; `oneshot::Sender<Value>` slots in `pending_requests` carry one RPC
-  reply each. A `Vec<InteractionEvent>` snapshot, fetched via
-  `DaemonClient::session_pending_interactions` before `event_router` starts,
-  is replayed onto `interaction_tx` first and de-duplicated against the live
-  stream by request id, so a prompt open before subscribe is shown once, not
-  twice.
-- **Caches.** `DaemonAgentHandle` mirrors `cached_model`,
-  `cached_context_strategy`, `cached_precognition`, `cached_agent_config`,
-  `cached_plugin_approvals`, `cached_plugin_turn_limit`, and `mode_id`
-  locally so `apply_mode` and similar reads avoid a round trip; every setter
-  that changes daemon state (`set_mode_str`, `switch_model`,
-  `set_plugin_approval`, `set_plugin_turn_limit`) still RPCs first and only
-  updates the mirror after. `cached_plugin_approvals` is a `PluginApprovals`
-  (a cloneable newtype around `Arc<Mutex<BTreeMap<String, PluginApproval>>>`)
-  shared with the `event_router` task, which also updates it in place on every
-  `plugin_approval_changed` event, so a change from another client or the
-  daemon's own plugin-loop-limit logic is visible without a new fetch.
-  `apply_mode`, by contrast, only ever updates the mirror, to avoid
-  re-entering `AgentManager::set_mode` while the caller's mutex is held.
+  event stream to whichever caller subscribed to it; `oneshot::Sender<Value>`
+  slots in `pending_requests` carry one RPC reply each. There is no
+  interaction-only channel and no pending-interaction replay inside this
+  module: a caller that wants a session's pending prompts calls
+  `session_pending_interactions` itself and reads its own reply (see
+  `crucible_cli::session::open_session`, [[CLI Commands]]).
+- **No client-side cache.** This module keeps no mirror of a session's
+  model, mode, context strategy, precognition setting, or plugin approvals.
+  Every read of one of those values is its own RPC; there is nothing here to
+  keep in sync with a change made by another client.
 - **Startup.** `connect_or_start`/`connect_or_start_with_events`
   (`client/mod.rs`) is the sole daemon-discovery path; `lifecycle.rs`'s
   `is_daemon_running` and `daemon_log_stdio` support the spawn path with
   status checks and size-bounded log rotation.
 - **Shutdown/cleanup.** `DaemonClient::drop` aborts its `reader_task`.
-  `DaemonAgentHandle::drop` aborts `event_router_task`, then (if a tokio
-  runtime is still reachable via `Handle::try_current()`) spawns a
-  fire-and-forget `session_end` call. `SpawnedDaemon::drop` reaps an
-  unresponsive spawned daemon with SIGTERM, a grace poll, then SIGKILL.
+  `SpawnedDaemon::drop` reaps an unresponsive spawned daemon with SIGTERM, a
+  grace poll, then SIGKILL. Ending a session is an explicit
+  `DaemonClient::session_end` call made by the caller (`LiveSession::end`,
+  [[CLI Commands]]), not an automatic action on drop of a client-held handle.
 
 ## Boundaries and invariants
 
@@ -367,10 +298,10 @@ non-idempotent-write reason as `proposal.*` below.
   follow the same pattern without stating the rationale inline.
   `proposal_list`/`proposal_get` and `diff_get`/`diff_file`/`diff_comments`
   use `typed_call_with_retry` because they mutate nothing.
-- **Names, not paths.** `SessionKilnRequest.kiln` and
-  `DaemonAgentHandle.kiln` are `KilnName`, never a raw path string, matching
-  AGENTS.md's kiln-registry rule; `AgentsListCardsRequest` is the documented
-  exception (agent cards resolve by directory, not by kiln name).
+- **Names, not paths.** `SessionKilnRequest.kiln` is `KilnName`, never a raw
+  path string, matching AGENTS.md's kiln-registry rule;
+  `AgentsListCardsRequest` is the documented exception (agent cards resolve
+  by directory, not by kiln name).
 - **Card/profile separation.** `session.rs`'s `SessionCreateRequest`
   documents that setting both `agent_name` and `agent_card` is
   `INVALID_PARAMS` daemon-side, matching AGENTS.md's "do not conflate cards
@@ -381,15 +312,6 @@ non-idempotent-write reason as `proposal.*` below.
   `get_note_by_path` because no RPC carries those index rows to a client and
   "the tools that do live in the daemon" — an honest absence rather than a
   faked answer the RPC surface cannot actually provide.
-- **Session-id swap without a task restart.** `router_session_id`
-  (`watch::Sender<String>`) is the one channel `clear_history` uses to
-  retarget a *running* `event_router` task to a freshly created session,
-  instead of tearing the task down and rebuilding it.
-- **Reentrancy guard.** `agent_handle.rs`'s `apply_mode` deliberately skips
-  the daemon RPC that `set_mode_str` would take, because that round trip
-  would re-enter `AgentManager::set_mode` while the caller's own mutex is
-  still held.
-
 ## Extension seams
 
 A new `session.*`/`storage.*`/etc. RPC method's client-side wrapper lands in
@@ -405,11 +327,12 @@ re-export line in `crates/crucible-daemon/src/rpc_client/mod.rs` if a caller
 outside `crucible-daemon` needs it. Per [[Consolidation Plan#Extension seams]],
 the daemon-side half of a new RPC starts at `crates/crucible-daemon/src/rpc/dispatch.rs`
 and its handler — this module is only the matching client half, proven by
-"a real session round-trip," not by this file alone. A new `Agent`/`AgentHandle` backend (an alternative to `DaemonAgentHandle`)
-is the "Client" row of [[Consolidation Plan#Extension seams]]: it must carry
-the same `crucible_core::protocol::SessionEventMessage` events and satisfy
-the `AgentHandle`/`SessionKnobs` contract that `crucible_core::traits::chat`
-defines, not a daemon-specific shortcut.
+"a real session round-trip," not by this file alone. A new agent-facing
+session action needs a `DaemonClient` method here and a caller that sends
+it directly; it does not need a new implementor of `AgentHandle`/
+`SessionKnobs` in this crate, because those traits belong to
+`crucible_daemon::agent_manager` (see [[Agent Manager]]) and this module
+never implements them.
 
 ## Tests
 
@@ -423,19 +346,6 @@ defines, not a daemon-specific shortcut.
   `simple_mode_correlation` submodule proving `read_response_simple`
   answers each caller correctly even when replies arrive out of order, and
   `#[cfg(unix)]` SIGTERM/SIGKILL reaper tests for `SpawnedDaemon`.
-- `crates/crucible-daemon/src/rpc_client/agent/convert.rs` has an inline
-  `#[cfg(test)] mod tests` (about 20 tests) proving each `TurnPayload`
-  variant's mapping to `TurnEvent`s in isolation, with no server or mocks.
-- `crates/crucible-daemon/src/rpc_client/agent/native_agent.rs` has a small
-  inline test module: an object-safety compile check and a capability-flag
-  assertion; no turn-loop behavior test lives here.
-- `crates/crucible-daemon/src/rpc_client/agent/mod.rs` has an inline
-  `#[cfg(test)] mod tests` with
-  `pending_snapshot_reaches_the_tui_interaction_channel_once`, proving a
-  pending interaction for the handle's own session reaches `interaction_rx`
-  exactly once even when the same request id later arrives on the live
-  event stream, and that a pending entry for a different session id is
-  filtered out.
 - `crates/crucible-daemon/src/rpc_client/error_ext.rs` has two inline tests
   proving `rpc_error_message` unwraps a JSON-RPC error envelope to the
   daemon's own message and passes any other error through unchanged.
@@ -451,16 +361,14 @@ defines, not a daemon-specific shortcut.
   with `TempDir`.
 - `crates/crucible-daemon/tests/rpc_integration/`
   and `crates/crucible-daemon/tests/rpc_session_create_agent_e2e.rs` exercise
-  `DaemonClient`/`DaemonAgentHandle` end to end from outside the crate.
+  `DaemonClient` end to end from outside the crate, including daemon-owned
+  agent resolution at `session.create`; this module defines no
+  `DaemonAgentHandle`, so neither suite needs one.
 
-**Gaps.** `agent_handle.rs`'s richer surface (`clear_history`'s session-swap
-path, mode/model/undo RPC wrappers, and the plugin-approval/plugin-turn-limit
-knobs) has no dedicated unit test file of its own; it is covered indirectly
-through the `rpc_integration` end-to-end suites rather than in isolation.
-`workflow.rs`'s four RPC methods have no visible unit test in this module
-(the workflow feature's own tests, if any, live outside this page's file
-set). `proposals.rs`'s methods have no unit test in this module either; they
-are exercised, if at all, outside this page's file set.
+**Gaps.** `workflow.rs`'s four RPC methods have no visible unit test in this
+module (the workflow feature's own tests, if any, live outside this page's
+file set). `proposals.rs`'s methods have no unit test in this module
+either; they are exercised, if at all, outside this page's file set.
 
 ## Findings
 

@@ -9,13 +9,11 @@
 //! - Socket exists but not connectable -> stale socket, safe to replace
 //! - Socket doesn't exist -> daemon not running
 
-mod agent;
 mod client;
 mod error_ext;
 pub mod lifecycle;
 mod storage;
 
-pub use agent::DaemonAgentHandle;
 pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
 pub use client::NoteListRow;
 pub use client::{

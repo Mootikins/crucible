@@ -1,4 +1,4 @@
-use crate::chat::bridge::AgentEventBridge;
+use crate::session::OpenedSession;
 use crate::tui::oil::agent_selection::AgentSelection;
 use crate::tui::oil::app::{Action, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
@@ -7,34 +7,24 @@ use crate::tui::oil::event::Event;
 use crate::tui::oil::theme;
 use anyhow::Result;
 use crossterm::event::{Event as CtEvent, EventStream};
-use crucible_core::events::SessionEvent;
-use crucible_core::traits::chat::AgentHandle;
 use std::io;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::{
-    session_event_consumer, ChatExit, DrainMessagesOutcome, DrainPhaseOutcome, EventLoopParams,
-    EventLoopSelectOutcome, HandleSelectOutcomeParams, HandleSelectedEventParams, OilChatRunner,
-    ProcessActionParams, SessionEventStream,
+    live_session_event_consumer, session_event_consumer, ChatExit, DrainMessagesOutcome,
+    DrainPhaseOutcome, EventLoopParams, EventLoopSelectOutcome, HandleSelectOutcomeParams,
+    HandleSelectedEventParams, OilChatRunner, ProcessActionParams, SessionEventStream,
 };
 
 impl OilChatRunner {
-    pub async fn run_with_factory<F, Fut, A>(
-        &mut self,
-        bridge: &AgentEventBridge,
-        create_agent: F,
-    ) -> Result<ChatExit>
+    /// Run the chat TUI. `open_session` opens the daemon session; a replay
+    /// never calls it.
+    pub async fn run_with_factory<F, Fut>(&mut self, open_session: F) -> Result<ChatExit>
     where
         F: Fn(AgentSelection) -> Fut,
-        Fut: std::future::Future<
-            Output = Result<(
-                A,
-                Option<mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
-            )>,
-        >,
-        A: AgentHandle,
+        Fut: std::future::Future<Output = Result<OpenedSession>>,
     {
         self.terminal.enter()?;
 
@@ -183,19 +173,13 @@ impl OilChatRunner {
                 None,
             )));
 
-            // NoopAgentHandle: pure-display replay. No daemon RPC under any
-            // code path. Drops cleanly (no session.end call).
-            let mut agent = crate::tui::oil::noop_agent::NoopAgentHandle::new(replay_session_id);
-            let interaction_rx = agent.take_interaction_receiver();
-
+            // A replay has no session, so no code path can reach the daemon.
             let event_loop_result = self
                 .event_loop(EventLoopParams {
                     app: &mut app,
-                    agent: &mut agent,
-                    bridge,
+                    session: None,
                     msg_tx,
                     msg_rx,
-                    interaction_rx,
                     background_tasks: &mut background_tasks,
                 })
                 .await;
@@ -208,13 +192,17 @@ impl OilChatRunner {
         }
 
         let selection = self.discover_agent().await;
-        let (mut agent, live_event_rx) = create_agent(selection).await?;
+        let OpenedSession {
+            live: session,
+            events,
+            pending,
+        } = open_session(selection).await?;
         // The model list is session-scoped: `session.list_models` answers an
         // ACP agent's own selector and the provider catalogue (narrowed by
         // the session's classification) for an internal one. The
         // all-providers catalogue would offer an ACP agent models it would
         // reject.
-        let session_models_source = agent.session_id().map(str::to_string);
+        let session_models_source = Some(session.id.clone());
         self.is_replay = false;
         self.replay_remaining_completes = 0;
 
@@ -228,36 +216,24 @@ impl OilChatRunner {
             app.set_status("Loading...");
         }
 
-        // Spawn the live SessionEvent consumer if the factory handed us a
-        // raw event receiver. This is the unified event path: the daemon's
-        // broadcast flows through SessionEventStream → ChatAppMsg, matching
-        // replay and resume.
-        if let Some(event_rx) = live_event_rx {
-            let session_id = agent.session_id().unwrap_or("").to_string();
-            let msg_tx_live = msg_tx.clone();
-            let context_limit = self.context_limit.clone();
-            background_tasks.push(tokio::spawn(session_event_consumer(
-                session_id,
-                event_rx,
-                msg_tx_live,
-                Some(context_limit),
-            )));
-        }
+        // The live consumer: the daemon's broadcast flows through
+        // SessionEventStream → ChatAppMsg, matching replay and resume. It
+        // also opens the prompts, first the ones that waited before this
+        // client attached.
+        background_tasks.push(tokio::spawn(live_session_event_consumer(
+            session.id.clone(),
+            events,
+            pending,
+            msg_tx.clone(),
+            self.context_limit.clone(),
+        )));
 
         // The first status list, read now that the session's events flow:
         // a status that changes after this read arrives as an event.
-        Self::spawn_status_fetch(
-            agent.session_id().map(str::to_string),
-            &msg_tx,
-            &mut background_tasks,
-        );
-        Self::spawn_notification_fetch(
-            agent.session_id().map(str::to_string),
-            &msg_tx,
-            &mut background_tasks,
-        );
+        Self::spawn_status_fetch(Some(session.id.clone()), &msg_tx, &mut background_tasks);
+        Self::spawn_notification_fetch(Some(session.id.clone()), &msg_tx, &mut background_tasks);
 
-        self.apply_initial_sets(&mut app, &mut agent, bridge, &msg_tx, &mut background_tasks)
+        self.apply_initial_sets(&mut app, Some(&session), &msg_tx, &mut background_tasks)
             .await?;
 
         // MCP server status is NOT fetched here. The daemon publishes it on
@@ -275,30 +251,21 @@ impl OilChatRunner {
         // from the first `proposal_changed` event.
         Self::spawn_proposal_fetch(false, &msg_tx, &mut background_tasks);
 
-        let interaction_rx = agent.take_interaction_receiver();
-        tracing::debug!(
-            has_rx = interaction_rx.is_some(),
-            "take_interaction_receiver"
-        );
-
         let event_loop_result = self
             .event_loop(EventLoopParams {
                 app: &mut app,
-                agent: &mut agent,
-                bridge,
+                session: Some(&session),
                 msg_tx,
                 msg_rx,
-                interaction_rx,
                 background_tasks: &mut background_tasks,
             })
             .await;
         Self::abort_background_tasks(&mut background_tasks);
 
-        // Capture session ID before dropping the agent
-        let session_id = agent.session_id().map(|s| s.to_string());
-
         // Always restore terminal before propagating errors
         self.exit_terminal(&mut app);
+        // The session ends when the TUI closes. `--resume` opens it again.
+        session.end().await;
         event_loop_result?;
 
         // `/resume` chose another session: the caller opens it at once, so a
@@ -308,13 +275,11 @@ impl OilChatRunner {
         }
 
         // Print resume hint after terminal is restored to main screen
-        if let Some(id) = session_id {
-            use colored::Colorize;
-            println!(
-                "  Resume with: {}",
-                format!("cru chat --resume {}", id).dimmed()
-            );
-        }
+        use colored::Colorize;
+        println!(
+            "  Resume with: {}",
+            format!("cru chat --resume {}", session.id).dimmed()
+        );
 
         Ok(ChatExit::Quit)
     }
@@ -326,11 +291,10 @@ impl OilChatRunner {
     /// only reaches the reducer, silently dropping the daemon call (the
     /// same seam documented on `queue_model_prefetch`), which left every
     /// `--set <daemon-key>=…` inert and `--set model=…` a display-only lie.
-    pub(super) async fn apply_initial_sets<A: AgentHandle>(
+    pub(super) async fn apply_initial_sets(
         &mut self,
         app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
+        session: Option<&crate::session::LiveSession>,
         msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
         background_tasks: &mut Vec<tokio::task::JoinHandle<()>>,
     ) -> io::Result<()> {
@@ -346,8 +310,7 @@ impl OilChatRunner {
                     self.process_action(ProcessActionParams {
                         action: Action::Send(msg),
                         app,
-                        agent,
-                        bridge,
+                        session,
                         msg_tx,
                         background_tasks,
                     })
@@ -358,10 +321,7 @@ impl OilChatRunner {
         Ok(())
     }
 
-    async fn event_loop<A: AgentHandle>(
-        &mut self,
-        mut params: EventLoopParams<'_, A>,
-    ) -> Result<()> {
+    async fn event_loop(&mut self, mut params: EventLoopParams<'_>) -> Result<()> {
         let mut event_stream = EventStream::new();
         let mut tick_interval = tokio::time::interval(self.tick_rate);
         let mut replay_auto_exit_deadline = if self.is_replay
@@ -397,23 +357,6 @@ impl OilChatRunner {
                     EventLoopSelectOutcome::Event(Some(Event::Tick))
                 }
 
-                Some(interaction_event) = Self::next_interaction_event(&mut params.interaction_rx) => {
-                    let action = Self::handle_interaction_event(params.app, interaction_event);
-                    // Process autoconfirm actions through the async path so
-                    // interaction_respond is called on the agent handle.
-                    if matches!(action, Action::Send(_)) {
-                        let _ = self.process_action(ProcessActionParams {
-                            action,
-                            app: params.app,
-                            agent: params.agent,
-                            bridge: params.bridge,
-                            msg_tx: &params.msg_tx,
-                            background_tasks: params.background_tasks,
-                        }).await;
-                    }
-                    EventLoopSelectOutcome::Continue
-                }
-
                 _ = Self::wait_for_replay_auto_exit(replay_auto_exit_deadline, self.replay_auto_exit),
                     if Self::should_wait_for_replay_auto_exit(
                         self.is_replay,
@@ -442,8 +385,7 @@ impl OilChatRunner {
                 .handle_select_outcome(HandleSelectOutcomeParams {
                     select_outcome,
                     app: params.app,
-                    agent: params.agent,
-                    bridge: params.bridge,
+                    session: params.session,
                     msg_tx: &params.msg_tx,
                     background_tasks: params.background_tasks,
                 })
@@ -456,9 +398,9 @@ impl OilChatRunner {
         Ok(())
     }
 
-    async fn drain_phase_outcome<A: AgentHandle>(
+    async fn drain_phase_outcome(
         &mut self,
-        params: &mut EventLoopParams<'_, A>,
+        params: &mut EventLoopParams<'_>,
         replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
     ) -> Result<DrainPhaseOutcome> {
         let drain_outcome = self
@@ -475,9 +417,9 @@ impl OilChatRunner {
         Ok(DrainPhaseOutcome::Wait)
     }
 
-    async fn handle_selected_event<A: AgentHandle>(
+    async fn handle_selected_event(
         &mut self,
-        params: HandleSelectedEventParams<'_, A>,
+        params: HandleSelectedEventParams<'_>,
     ) -> Result<bool> {
         let Some(ev) = params.event else {
             return Ok(false);
@@ -525,8 +467,7 @@ impl OilChatRunner {
             .process_action(ProcessActionParams {
                 action,
                 app: params.app,
-                agent: params.agent,
-                bridge: params.bridge,
+                session: params.session,
                 msg_tx: params.msg_tx,
                 background_tasks: params.background_tasks,
             })
@@ -539,9 +480,9 @@ impl OilChatRunner {
         Ok(false)
     }
 
-    async fn handle_select_outcome<A: AgentHandle>(
+    async fn handle_select_outcome(
         &mut self,
-        params: HandleSelectOutcomeParams<'_, A>,
+        params: HandleSelectOutcomeParams<'_>,
     ) -> Result<bool> {
         let event = match params.select_outcome {
             EventLoopSelectOutcome::Event(event) => event,
@@ -552,8 +493,7 @@ impl OilChatRunner {
         self.handle_selected_event(HandleSelectedEventParams {
             event,
             app: params.app,
-            agent: params.agent,
-            bridge: params.bridge,
+            session: params.session,
             msg_tx: params.msg_tx,
             background_tasks: params.background_tasks,
         })
@@ -610,37 +550,6 @@ impl OilChatRunner {
         app.add_notification(crucible_core::types::Notification::toast(
             report.summary(text.chars().count()),
         ));
-    }
-
-    fn handle_interaction_event(
-        app: &mut OilChatApp,
-        interaction_event: crucible_core::interaction::InteractionEvent,
-    ) -> Action<ChatAppMsg> {
-        tracing::info!(
-            request_id = %interaction_event.request_id,
-            kind = %interaction_event.request.kind(),
-            "Received interaction event"
-        );
-        let session_event = SessionEvent::InteractionRequested {
-            request_id: interaction_event.request_id,
-            request: interaction_event.request,
-        };
-        if let Some(msg) = Self::handle_session_event(session_event) {
-            app.on_message(msg)
-        } else {
-            Action::Continue
-        }
-    }
-
-    async fn next_interaction_event(
-        interaction_rx: &mut Option<
-            mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>,
-        >,
-    ) -> Option<crucible_core::interaction::InteractionEvent> {
-        match interaction_rx {
-            Some(rx) => rx.recv().await,
-            None => std::future::pending().await,
-        }
     }
 
     fn should_wait_for_replay_auto_exit(

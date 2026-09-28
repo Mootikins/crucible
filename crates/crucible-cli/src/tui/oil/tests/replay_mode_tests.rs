@@ -1,102 +1,15 @@
-//! Tests that `process_message` gates fire-and-forget sends on `is_replay`.
+//! Tests of the replay gates of the chat runner.
 //!
-//! Replay mode delivers user messages as SessionEvent broadcasts from the
-//! daemon's replay session — the TUI must not re-send them via RPC. This
-//! module uses a counting mock agent to assert the gate.
+//! A drained `UserMessage` never sends: `process_message` gets no session,
+//! so the compiler keeps a resume or a replay from sending an old prompt
+//! again. The live send happens in `process_action`, which these tests drive.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use crucible_core::events::EventRing;
-use crucible_core::traits::chat::{AgentHandle, ChatResult};
 use crucible_oil::terminal::Terminal;
 
-use crate::chat::bridge::AgentEventBridge;
+use crate::test_daemon::FakeDaemon;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::Action;
-
-struct CountingAgent {
-    sends: AtomicUsize,
-}
-
-impl CountingAgent {
-    fn new() -> Self {
-        Self {
-            sends: AtomicUsize::new(0),
-        }
-    }
-}
-
-crucible_core::impl_noop_agent!(CountingAgent);
-
-crucible_core::impl_unsupported_session_knobs!(CountingAgent);
-
-#[async_trait]
-impl AgentHandle for CountingAgent {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        self.sends.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-
-    fn get_mode_id(&self) -> &str {
-        "ask"
-    }
-    async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-        Ok(())
-    }
-}
-
-#[tokio::test]
-async fn replay_user_message_does_not_invoke_send() {
-    let mut agent = CountingAgent::new();
-    let mut app = OilChatApp::default();
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-
-    let _ = OilChatRunner::process_message_for_test(
-        &ChatAppMsg::UserMessage("hi".into()),
-        &mut app,
-        &mut agent,
-        &bridge,
-        /* is_replay */ true,
-    )
-    .await;
-
-    assert_eq!(agent.sends.load(Ordering::Relaxed), 0);
-}
-
-/// Regression: a `UserMessage` reaching the drain must NEVER send, even with
-/// `is_replay == false`. Resume hydration pumps stored user turns through this
-/// path with `is_replay == false`; the old code re-sent each one, re-running
-/// the whole conversation on the daemon. Live typed messages send via
-/// `process_action`, not this path.
-#[tokio::test]
-async fn drain_user_message_never_sends_even_when_not_replay() {
-    let mut agent = CountingAgent::new();
-    let mut app = OilChatApp::default();
-    app.set_precognition(false);
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-
-    let _ = OilChatRunner::process_message_for_test(
-        &ChatAppMsg::UserMessage("historical prompt".into()),
-        &mut app,
-        &mut agent,
-        &bridge,
-        /* is_replay */ false,
-    )
-    .await;
-
-    assert_eq!(
-        agent.sends.load(Ordering::Relaxed),
-        0,
-        "resume/drain user messages must not be re-sent to the daemon"
-    );
-}
 
 /// Regression test for the first-message hang fix (5e21776a5).
 ///
@@ -116,28 +29,28 @@ async fn first_message_sends_when_turn_active_already_flipped() {
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
     runner.is_replay = false;
 
-    let mut agent = CountingAgent::new();
+    let daemon = FakeDaemon::start("chat-1", |_, _| {
+        Ok(serde_json::json!({"message_id": "m-1"}))
+    })
+    .await;
     let mut app = OilChatApp::default();
     // Mirror the post-`submit_user_message` state the real keypress flow
     // produces before the action reaches `process_action`.
     app.container_list_mut().mark_turn_active();
     assert!(app.is_streaming(), "precondition: turn must be active");
 
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-
     runner
         .process_action_for_test(
             Action::Send(ChatAppMsg::UserMessage("hello".into())),
             &mut app,
-            &mut agent,
-            &bridge,
+            Some(&daemon.session),
         )
         .await
         .expect("process_action should not fail");
 
     assert_eq!(
-        agent.sends.load(Ordering::Relaxed),
-        1,
+        daemon.methods(),
+        ["session.send_message"],
         "send must fire even when the turn is already active"
     );
 }

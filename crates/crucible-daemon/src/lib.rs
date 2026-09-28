@@ -128,7 +128,6 @@ pub use observe::{
 pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use recording::{RecordedEvent, RecordingFooter, RecordingHeader};
-pub use rpc_client::DaemonAgentHandle;
 pub use rpc_client::{
     first_per_note, DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest,
     LuaDiscoverPluginsResponse, LuaGenerateStubsRequest, LuaGenerateStubsResponse,

@@ -10,24 +10,18 @@
 //! a daemon. The test counts the reads that the runner starts, and then
 //! sends the answer of the daemon itself.
 
-use std::sync::Arc;
-
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crucible_core::diff::{DiffFileEntry, DiffFileText, Diffset, DiffsetSource, FileStatus};
-use crucible_core::events::EventRing;
-use crucible_core::session::PhysicalRoot;
-use crucible_oil::terminal::Terminal;
-use tokio::sync::mpsc;
-
-use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::{
     DrainMessagesOutcome, EventLoopParams, OilChatRunner, ProcessActionParams,
 };
 use crate::tui::oil::event::Event;
-use crate::tui::oil::noop_agent::NoopAgentHandle;
 use crate::tui::oil::tests::vt100_runtime::Vt100TestRuntime;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crucible_core::diff::{DiffFileEntry, DiffFileText, Diffset, DiffsetSource, FileStatus};
+use crucible_core::session::PhysicalRoot;
+use crucible_oil::terminal::Terminal;
+use tokio::sync::mpsc;
 
 fn diffset() -> Diffset {
     let root = PhysicalRoot::from_top_level("/repo");
@@ -59,10 +53,7 @@ fn screen(app: &mut OilChatApp) -> String {
 }
 
 /// Drain the channel once. Answer the count of reads that the drain started.
-async fn drain<A: crucible_core::traits::chat::AgentHandle>(
-    runner: &mut OilChatRunner,
-    params: &mut EventLoopParams<'_, A>,
-) -> usize {
+async fn drain(runner: &mut OilChatRunner, params: &mut EventLoopParams<'_>) -> usize {
     let before = params.background_tasks.len();
     let mut deadline = None;
     let outcome = runner
@@ -79,8 +70,7 @@ async fn open_the_diff(is_replay: bool) -> (usize, String) {
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
     runner.is_replay = is_replay;
     let mut app = OilChatApp::default();
-    let mut agent = NoopAgentHandle::new("chat-1".to_string());
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let daemon = crate::test_daemon::FakeDaemon::answering_null("chat-1").await;
     let (msg_tx, msg_rx) = mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
 
@@ -103,8 +93,7 @@ async fn open_the_diff(is_replay: bool) -> (usize, String) {
         .process_action(ProcessActionParams {
             action,
             app: &mut app,
-            agent: &mut agent,
-            bridge: &bridge,
+            session: Some(&daemon.session),
             msg_tx: &msg_tx,
             background_tasks: &mut background_tasks,
         })
@@ -113,11 +102,9 @@ async fn open_the_diff(is_replay: bool) -> (usize, String) {
 
     let mut params = EventLoopParams {
         app: &mut app,
-        agent: &mut agent,
-        bridge: &bridge,
+        session: Some(&daemon.session),
         msg_tx,
         msg_rx,
-        interaction_rx: None,
         background_tasks: &mut background_tasks,
     };
 

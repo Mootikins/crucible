@@ -1045,8 +1045,8 @@ impl AgentManager {
         // switch snappy:
         //   - Uncontended (no turn, or between turns): apply_mode updates the
         //     mirror in place. apply_mode is the daemon-internal mirror sync
-        //     that skips any RPC round-trip (a DaemonAgentHandle's set_mode_str
-        //     would otherwise re-enter this dispatch path).
+        //     that skips any RPC round-trip (a handle whose set_mode_str calls
+        //     the daemon would otherwise re-enter this dispatch path).
         //   - Contended: defer — store the new mode in the slot's pending_mode
         //     so the
         //     NEXT turn drains it into apply_mode right after acquiring the

@@ -1,50 +1,10 @@
 use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay};
 use crucible_core::error_utils::strip_tool_error_prefix;
-use crucible_core::events::SessionEvent;
-use crucible_core::interaction::InteractionRequest;
 use crucible_core::protocol::session_events::{
     EventDecodeError, JobPayload, NotificationPayload, SessionEventPayload, SettingsPayload,
     SetupPayload, SystemPayload, ToolResultBody, TurnPayload,
 };
 use crucible_core::turn::{TurnOrigin, TurnStatus};
-
-use super::OilChatRunner;
-
-impl OilChatRunner {
-    /// Handle a SessionEvent, dispatching to appropriate ChatAppMsg.
-    ///
-    /// Returns Some(ChatAppMsg) if the event should be forwarded to the app,
-    /// or None if the event was handled internally or should be skipped.
-    pub fn handle_session_event(event: SessionEvent) -> Option<ChatAppMsg> {
-        match event {
-            SessionEvent::InteractionRequested {
-                request_id,
-                request,
-            } => match &request {
-                InteractionRequest::Ask(_) | InteractionRequest::Permission(_) => {
-                    Some(ChatAppMsg::OpenInteraction {
-                        request_id,
-                        request,
-                    })
-                }
-                InteractionRequest::AskBatch(_)
-                | InteractionRequest::Edit(_)
-                | InteractionRequest::Show(_)
-                | InteractionRequest::Popup(_)
-                | InteractionRequest::Panel(_) => Some(ChatAppMsg::OpenInteraction {
-                    request_id,
-                    request,
-                }),
-            },
-            // The three delegation arms that used to live here were dead: this
-            // function's only caller (`runner.rs`) invokes it exclusively with
-            // `SessionEvent::InteractionRequested`, and the live delegation
-            // mapping is the wire one in `session_event_to_chat_msgs`. Two
-            // implementations of the same mapping had already diverged.
-            _ => None,
-        }
-    }
-}
 
 /// Convert a session event into `ChatAppMsg`(s) for the TUI.
 ///

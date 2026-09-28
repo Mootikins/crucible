@@ -16,7 +16,7 @@ pub mod tools;
 
 // Re-export key traits
 
-pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall, SessionKnobs};
+pub use chat::{ChatError, ChatResult, ChatToolCall};
 pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
 pub use knowledge::{KnowledgeRepository, NoteInfo, NoteLinks};
 pub use llm::{

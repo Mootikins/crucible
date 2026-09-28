@@ -22,7 +22,7 @@ use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse};
 use crucible_core::protocol::TurnPayload;
 use crucible_core::session::{ContextStrategy, SessionAgent};
-use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
+use crucible_core::traits::chat::ChatError;
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::types::{AcpKnob, SessionKnob};
 use crucible_lua::{
@@ -1759,6 +1759,7 @@ pub mod cache_stats;
 pub(crate) mod completion;
 pub(crate) mod configured;
 pub mod context_length;
+mod handle;
 mod interaction;
 mod iter;
 pub(crate) mod messaging;
@@ -1779,6 +1780,7 @@ pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
 pub(crate) mod vm_pass;
+pub use handle::{AgentHandle, SessionKnobs};
 pub use messaging::permission::AcpPermissions;
 pub use vm_pass::PluginHandlers;
 

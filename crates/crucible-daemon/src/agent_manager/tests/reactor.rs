@@ -1007,16 +1007,10 @@ mod gate_ordering {
         }
     }
 
-    crucible_core::impl_unsupported_session_knobs!(PlanModeAgent);
+    crate::impl_unsupported_session_knobs!(PlanModeAgent);
 
     #[async_trait::async_trait]
     impl AgentHandle for PlanModeAgent {
-        async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-            Ok(())
-        }
-        async fn clear_history(&mut self) -> ChatResult<()> {
-            Ok(())
-        }
         fn get_mode_id(&self) -> &str {
             "plan"
         }

@@ -26,7 +26,6 @@ mod event;
 pub mod fullscreen;
 pub mod local_replay;
 pub mod markdown;
-pub mod noop_agent;
 mod render_state;
 #[cfg(any(test, feature = "test-utils"))]
 mod test_harness;

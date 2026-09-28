@@ -8,68 +8,13 @@
 //! strip the mention.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crucible_core::events::EventRing;
-use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult};
 use crucible_oil::terminal::Terminal;
-use std::sync::Arc;
 
-use crate::chat::bridge::AgentEventBridge;
+use crate::test_daemon::FakeDaemon;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::oil::event::Event;
-
-/// Records every message that the TUI sends to the daemon.
-#[derive(Default)]
-struct SendRecordingAgent {
-    sent: Vec<String>,
-}
-
-crucible_core::impl_noop_agent!(SendRecordingAgent);
-crucible_core::impl_unsupported_session_knobs!(SendRecordingAgent);
-
-#[async_trait::async_trait]
-impl AgentHandle for SendRecordingAgent {
-    async fn send_message_fire_and_forget(&mut self, message: String) -> ChatResult<()> {
-        self.sent.push(message);
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-    fn get_mode_id(&self) -> &str {
-        "ask"
-    }
-    async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-        Ok(())
-    }
-}
-
-/// Refuses every message, as the daemon does for an unknown comment id.
-struct RefusingAgent;
-
-crucible_core::impl_noop_agent!(RefusingAgent);
-crucible_core::impl_unsupported_session_knobs!(RefusingAgent);
-
-#[async_trait::async_trait]
-impl AgentHandle for RefusingAgent {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        Err(ChatError::InvalidInput(
-            "no stored comment has the id c-1".into(),
-        ))
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-    fn get_mode_id(&self) -> &str {
-        "ask"
-    }
-    async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-        Ok(())
-    }
-}
 
 /// Type a line one key at a time, then press Enter, as a user does.
 fn type_and_submit(app: &mut OilChatApp, line: &str) -> Action<ChatAppMsg> {
@@ -93,15 +38,23 @@ async fn a_comment_mention_reaches_the_daemon_as_typed() {
     let action = type_and_submit(&mut app, LINE);
 
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
-    let mut agent = SendRecordingAgent::default();
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let daemon = FakeDaemon::start("chat-1", |_, _| {
+        Ok(serde_json::json!({"message_id": "m-1"}))
+    })
+    .await;
     runner
-        .process_action_for_test(action, &mut app, &mut agent, &bridge)
+        .process_action_for_test(action, &mut app, Some(&daemon.session))
         .await
         .expect("process_action should not fail");
 
+    let sent: Vec<String> = daemon
+        .calls()
+        .into_iter()
+        .filter(|(method, _)| method == "session.send_message")
+        .map(|(_, params)| params["content"].as_str().unwrap_or_default().to_string())
+        .collect();
     assert_eq!(
-        agent.sent,
+        sent,
         vec![LINE.to_string()],
         "the daemon resolves the mention, so the TUI sends the text as typed"
     );
@@ -113,9 +66,14 @@ async fn a_refused_mention_tells_the_user() {
     let action = type_and_submit(&mut app, "@comment:c-1 why this?");
 
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    // The daemon refuses the message, as it does for an unknown comment id.
+    let daemon = FakeDaemon::start("chat-1", |method, _| match method {
+        "session.send_message" => Err("no stored comment has the id c-1".to_string()),
+        _ => Ok(serde_json::Value::Null),
+    })
+    .await;
     let queued = runner
-        .process_action_collecting_msgs(action, &mut app, &mut RefusingAgent, &bridge)
+        .process_action_collecting_msgs(action, &mut app, Some(&daemon.session))
         .await;
 
     let errors: Vec<String> = queued

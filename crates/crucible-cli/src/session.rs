@@ -1,17 +1,23 @@
-//! Agent factory - creates AgentHandle via daemon
+//! Open a daemon session for `cru chat`.
 //!
-//! All agents route through the daemon (auto-started if needed).
-//! Supports ACP (external) agents and internal (direct LLM) agents.
-//! Selection priority:
-//! 1. Explicit `-a <name>` CLI flag
-//! 2. Config file setting (chat.agent_preference)
-//! 3. Default: Internal (Crucible's built-in Rig-based agents)
+//! The daemon owns the session and its agent. This module asks the daemon to
+//! create or resume a session, and gives the caller the client, the session id
+//! and the event stream. It builds no agent on the client side.
+//!
+//! The agent is selected in this order:
+//! 1. The explicit `-a <name>` flag.
+//! 2. The config setting `chat.agent_preference`.
+//! 3. The internal agent.
+
+use std::sync::Arc;
 
 use anyhow::Result;
 use tracing::info;
 
 use crucible_core::config::CliAppConfig;
-use crucible_core::traits::chat::AgentHandle;
+use crucible_core::interaction::{InteractionEvent, InteractionRequest};
+use crucible_daemon::{DaemonClient, SessionEvent};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 /// Agent type selection
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -146,31 +152,102 @@ impl Default for AgentInitParams {
     }
 }
 
-/// Create an agent via daemon (auto-starts daemon if needed)
-pub async fn create_daemon_agent(
-    config: &CliAppConfig,
-    params: &AgentInitParams,
-) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    let (handle, _session_id, _raw_rx) = create_daemon_agent_inner(config, params, false).await?;
-    Ok(handle)
+/// A daemon session that this client is attached to.
+///
+/// It holds no copy of the session state. Each read and each change goes to
+/// the daemon, which is the only owner of that state.
+#[derive(Clone)]
+pub struct LiveSession {
+    pub client: Arc<DaemonClient>,
+    pub id: String,
 }
 
-/// Like [`create_daemon_agent`], but also returns the raw SessionEvent
-/// receiver for the session. Used by the live TUI, which consumes
-/// SessionEvents directly instead of through `Agent::turn`.
-pub async fn create_daemon_agent_with_events(
+impl LiveSession {
+    /// End the session in the daemon. A later `cru chat --resume` opens it
+    /// again from its stored state.
+    pub async fn end(&self) {
+        match self.client.session_end(&self.id).await {
+            Ok(_) => info!(session_id = %self.id, "Session ended"),
+            Err(e) => tracing::debug!(session_id = %self.id, error = %e, "session.end failed"),
+        }
+    }
+}
+
+/// A session that [`open_session`] opened, with the events of the session and
+/// the prompts that already waited for an answer when the client attached.
+pub struct OpenedSession {
+    pub live: LiveSession,
+    pub events: UnboundedReceiver<SessionEvent>,
+    pub pending: Vec<InteractionEvent>,
+}
+
+/// Create or resume a daemon session, and subscribe to its events.
+///
+/// Starts the daemon when it does not run.
+pub async fn open_session(
     config: &CliAppConfig,
     params: &AgentInitParams,
-) -> Result<(
-    Box<dyn AgentHandle + Send + Sync>,
-    String,
-    tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
-)> {
-    let (handle, session_id, raw_rx) = create_daemon_agent_inner(config, params, true).await?;
-    let raw_rx = raw_rx.ok_or_else(|| {
-        anyhow::anyhow!("Raw event receiver missing from daemon handle (internal error)")
-    })?;
-    Ok((handle, session_id, raw_rx))
+) -> Result<OpenedSession> {
+    info!("Connecting to daemon (auto-start if needed)");
+    let (client, events) = crate::common::daemon_client_with_events()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
+    let client = Arc::new(client);
+
+    // Subscribe to every session BEFORE session.create. The setup task emits
+    // its events as soon as the session exists, and a subscription made after
+    // create returns would miss them. Without them the TUI waits at
+    // "Loading..." for ever, so a failure here stops the command.
+    client
+        .session_subscribe(&["*"])
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to subscribe to session events: {}", e))?;
+
+    let id = resolve_session_id(&client, config, params).await?;
+
+    client
+        .session_subscribe(&[id.as_str()])
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to subscribe to session {id}: {e}"))?;
+    let pending = pending_interactions(&client, &id).await;
+    info!(session_id = %id, "Daemon session ready");
+
+    Ok(OpenedSession {
+        live: LiveSession { client, id },
+        events,
+        pending,
+    })
+}
+
+/// The prompts of `session_id` that wait for an answer.
+///
+/// A prompt asked before this client attached never comes as an event, so the
+/// client reads the list once. A failed read loses only those prompts, and the
+/// daemon still holds them, so it is a warning and not an error.
+async fn pending_interactions(client: &DaemonClient, session_id: &str) -> Vec<InteractionEvent> {
+    match client.session_pending_interactions().await {
+        Ok(response) => pending_from_response(&response, session_id),
+        Err(error) => {
+            tracing::warn!(session_id = %session_id, error = %error, "Could not recover pending interactions");
+            Vec::new()
+        }
+    }
+}
+
+fn pending_from_response(response: &serde_json::Value, session_id: &str) -> Vec<InteractionEvent> {
+    response["pending"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["session_id"].as_str() == Some(session_id))
+        .filter_map(|entry| {
+            Some(InteractionEvent {
+                request_id: entry["request_id"].as_str()?.to_string(),
+                request: serde_json::from_value::<InteractionRequest>(entry["request"].clone())
+                    .ok()?,
+            })
+        })
+        .collect()
 }
 
 /// The single internal-vs-ACP rule, shared by every entry point (interactive
@@ -188,39 +265,11 @@ pub(crate) fn resolve_is_acp(
         || *preference == crucible_core::config::AgentPreference::Acp
 }
 
-async fn create_daemon_agent_inner(
+async fn resolve_session_id(
+    client: &DaemonClient,
     config: &CliAppConfig,
     params: &AgentInitParams,
-    raw_forwarding: bool,
-) -> Result<(
-    Box<dyn AgentHandle + Send + Sync>,
-    String,
-    Option<tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
-)> {
-    use crucible_daemon::DaemonAgentHandle;
-    use std::sync::Arc;
-
-    info!("Connecting to daemon (auto-start if needed)");
-    let (client, event_rx) = crate::common::daemon_client_with_events()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
-
-    let client = Arc::new(client);
-
-    // Subscribe-first: wildcard-subscribe BEFORE session.create so the
-    // setup task's events (emitted the moment the session is registered)
-    // are not missed by the race where the client subscribes after create
-    // returns. The secondary specific-session subscribe later in
-    // `new_and_subscribe` is idempotent.
-    //
-    // If this fails, the TUI would hang on "Loading..." forever waiting on
-    // setup events that never arrive, so propagate the error and let the
-    // CLI exit with a clear message.
-    client
-        .session_subscribe(&["*"])
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to subscribe to session events: {}", e))?;
-
+) -> Result<String> {
     let workspace = params
         .working_dir
         .clone()
@@ -271,40 +320,16 @@ async fn create_daemon_agent_inner(
                 id
             } else {
                 info!("No existing session to resume, creating new one");
-                create_new_daemon_session(&client, config, &workspace, params, create_agent_type)
+                create_new_daemon_session(client, config, &workspace, params, create_agent_type)
                     .await?
             }
         }
         None => {
-            create_new_daemon_session(&client, config, &workspace, params, create_agent_type)
-                .await?
+            create_new_daemon_session(client, config, &workspace, params, create_agent_type).await?
         }
     };
 
-    info!(
-        session_id = %session_id,
-        "Daemon agent handle ready"
-    );
-    let mut handle = if raw_forwarding {
-        DaemonAgentHandle::new_and_subscribe_with_raw_forwarding(
-            client,
-            session_id.clone(),
-            event_rx,
-        )
-        .await?
-    } else {
-        DaemonAgentHandle::new_and_subscribe(client, session_id.clone(), event_rx).await?
-    }
-    .with_kiln(config.session_kiln_name())
-    .with_workspace(workspace.clone());
-
-    let raw_rx = if raw_forwarding {
-        handle.take_raw_event_receiver()
-    } else {
-        None
-    };
-
-    Ok((Box::new(handle), session_id, raw_rx))
+    Ok(session_id)
 }
 
 async fn create_new_daemon_session(
@@ -361,14 +386,6 @@ async fn create_new_daemon_session(
 
     info!("Created new daemon session: {}", session_id);
     Ok(session_id)
-}
-
-/// Create an agent via daemon (auto-starts if needed).
-pub async fn create_agent(
-    config: &CliAppConfig,
-    params: AgentInitParams,
-) -> Result<Box<dyn AgentHandle + Send + Sync>> {
-    create_daemon_agent(config, &params).await
 }
 
 #[cfg(test)]
@@ -462,6 +479,31 @@ mod tests {
         assert!(resolve_is_acp(None, None, &AgentPreference::Acp));
         // Bare `cru chat`: no name, no type, default preference → internal.
         assert!(!resolve_is_acp(None, None, &AgentPreference::Crucible));
+    }
+
+    /// Regression: quitting the TUI must end the session, or the recording
+    /// never gets its footer. The runner calls `end` when it exits.
+    #[tokio::test]
+    async fn ending_a_live_session_sends_session_end() {
+        let daemon = crate::test_daemon::FakeDaemon::answering_null("chat-1").await;
+        daemon.session.end().await;
+        let calls = daemon.calls();
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        assert_eq!(calls[0].0, "session.end");
+        assert_eq!(calls[0].1["session_id"], "chat-1");
+    }
+
+    #[test]
+    fn only_the_pending_prompts_of_this_session_are_recovered() {
+        use crucible_core::interaction::AskRequest;
+        let request = InteractionRequest::Ask(AskRequest::new("Which branch?"));
+        let response = serde_json::json!({"pending": [
+            {"session_id": "other", "request_id": "other-id", "request": request},
+            {"session_id": "wanted", "request_id": "ask-id", "request": request},
+        ]});
+        let pending = pending_from_response(&response, "wanted");
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].request_id, "ask-id");
     }
 
     #[test]

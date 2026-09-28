@@ -199,8 +199,8 @@ async fn resume_falls_back_to_session_new_on_method_not_found() {
 /// and that no `session/new` opened a second session.
 #[tokio::test]
 async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
-    use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+    use crucible_daemon::agent_manager::AgentHandle;
 
     let workspace = tempfile::TempDir::new().expect("temp workspace");
     let agent_path = crate::support::mock_agent_path()
@@ -248,8 +248,8 @@ async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
 /// back to `session/new` and announces the fallback in the event stream.
 #[tokio::test]
 async fn resume_fallback_is_announced_in_the_event_stream() {
-    use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+    use crucible_daemon::agent_manager::AgentHandle;
 
     let workspace = tempfile::TempDir::new().expect("temp workspace");
     let agent_path = crate::support::mock_agent_path()
@@ -298,8 +298,8 @@ async fn resume_fallback_is_announced_in_the_event_stream() {
 /// the agent process. The spawned mock binary logs the closed session id.
 #[tokio::test]
 async fn close_is_sent_on_handle_drop_when_the_agent_advertises_it() {
-    use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::acp_handle::AcpAgentHandle;
+    use crucible_daemon::agent_manager::AgentHandle;
 
     let workspace = tempfile::TempDir::new().expect("temp workspace");
     let log = workspace.path().join("log");

@@ -1,8 +1,7 @@
+use crate::agent_manager::{AgentHandle, SessionKnobs};
 use async_trait::async_trait;
 use crucible_core::session::ContextStrategy;
-use crucible_core::traits::chat::{
-    AgentHandle, ChatError, ChatResult, ChatToolCall, ChatToolResult, SessionKnobs,
-};
+use crucible_core::traits::chat::{ChatError, ChatResult, ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::TokenUsage;
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
@@ -1480,18 +1479,6 @@ impl GenaiAgentHandle {
 
 #[async_trait]
 impl AgentHandle for GenaiAgentHandle {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        // GenaiAgentHandle is daemon-side — the TUI never calls this
-        // directly. Included only to satisfy the AgentHandle trait.
-        Ok(())
-    }
-
-    /// The daemon session owns the transcript (`owns_history: false`),
-    /// so this handle holds nothing to clear. `Ok(())` is the true answer.
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         Some(&self.mode_state)
     }
@@ -1535,8 +1522,8 @@ impl AgentHandle for GenaiAgentHandle {
 /// `precognition` belongs to the session's `AgentConfig`, not to the handle:
 /// the daemon turn loop in `agent_manager/messaging/send.rs` reads it from the
 /// config before it calls the handle. A value stored here would never reach
-/// that loop, so the handle refuses the setter. `DaemonAgentHandle` answers it
-/// by RPC.
+/// that loop, so the handle refuses the setter. A client sets it with
+/// `session.set_precognition`.
 #[async_trait]
 impl SessionKnobs for GenaiAgentHandle {
     fn get_system_prompt(&self) -> Option<String> {

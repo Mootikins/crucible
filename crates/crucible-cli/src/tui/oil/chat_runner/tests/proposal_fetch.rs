@@ -5,17 +5,11 @@
 //! `process_action`, which starts the read. If the follow-up stops there,
 //! the status line count never changes.
 
-use std::sync::Arc;
-
-use crucible_core::events::EventRing;
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
+use crate::tui::oil::chat_runner::{EventLoopParams, OilChatRunner};
 use crucible_core::proposal::ProposalId;
 use crucible_oil::terminal::Terminal;
 use tokio::sync::mpsc;
-
-use crate::chat::bridge::AgentEventBridge;
-use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crate::tui::oil::chat_runner::{EventLoopParams, OilChatRunner};
-use crate::tui::oil::noop_agent::NoopAgentHandle;
 
 /// Drain one `proposal_changed` message. Answer the count of reads that
 /// the drain started.
@@ -23,8 +17,7 @@ async fn reads_after_a_change(is_replay: bool) -> usize {
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
     runner.is_replay = is_replay;
     let mut app = OilChatApp::default();
-    let mut agent = NoopAgentHandle::new("chat-1".to_string());
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let daemon = crate::test_daemon::FakeDaemon::answering_null("chat-1").await;
     let (msg_tx, msg_rx) = mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
     msg_tx
@@ -33,11 +26,9 @@ async fn reads_after_a_change(is_replay: bool) -> usize {
 
     let mut params = EventLoopParams {
         app: &mut app,
-        agent: &mut agent,
-        bridge: &bridge,
+        session: Some(&daemon.session),
         msg_tx,
         msg_rx,
-        interaction_rx: None,
         background_tasks: &mut background_tasks,
     };
     let mut deadline = None;

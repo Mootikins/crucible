@@ -401,19 +401,10 @@ impl crucible_core::turn::Agent for GatedToolAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(GatedToolAgent);
+crate::impl_unsupported_session_knobs!(GatedToolAgent);
 
 #[async_trait::async_trait]
-impl crucible_core::traits::chat::AgentHandle for GatedToolAgent {
-    async fn send_message_fire_and_forget(
-        &mut self,
-        _: String,
-    ) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
+impl crate::agent_manager::AgentHandle for GatedToolAgent {
     fn get_mode_id(&self) -> &str {
         "ask"
     }

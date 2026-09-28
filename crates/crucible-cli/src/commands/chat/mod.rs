@@ -12,7 +12,6 @@ use tracing::{debug, info, warn};
 
 use crate::commands::chat_preflight::{ensure_valid_kiln, fill_default_model_if_missing};
 use crate::config::CliConfig;
-use crate::factories;
 use crate::output;
 use crate::status_line::StatusLine;
 use crate::tui::AgentSelection;
@@ -167,7 +166,7 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
     // stored daemon-side (it may be ACP even without `-a`), so resume
     // relies on the TUI's empty-list warning instead.
     let is_acp = params.agent_card.is_none()
-        && crate::factories::agent::resolve_is_acp(
+        && crate::session::resolve_is_acp(
             None,
             params.agent_name.as_deref(),
             &params.config.chat.agent_preference,
@@ -249,16 +248,10 @@ async fn run_replay(
     config: &CliConfig,
     screen: ChatScreen,
 ) -> Result<()> {
-    use crate::chat::bridge::AgentEventBridge;
     use crate::tui::oil::OilChatRunner;
-    use crucible_core::events::EventRing;
 
     // The replay entry short-circuits inside `run_with_factory` before the
     // factory is invoked, so the supplied closure is a stub that never runs.
-    // The bridge is still required by the entry-point signature; it is
-    // backed by a throwaway ring because nothing consumes it in replay.
-    let ring = Arc::new(EventRing::new(4096));
-    let bridge = AgentEventBridge::new(ring);
 
     let mut runner = OilChatRunner::new()?
         .with_mode(crate::tui::oil::DEFAULT_MODE)
@@ -272,20 +265,13 @@ async fn run_replay(
         .with_screen(screen);
 
     let factory = |_selection: crate::tui::AgentSelection| async move {
-        // Unreachable: replay short-circuits before the factory is called.
-        Err::<
-            (
-                Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
-                Option<tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>>,
-            ),
-            anyhow::Error,
-        >(anyhow::anyhow!(
+        Err::<crate::session::OpenedSession, anyhow::Error>(anyhow::anyhow!(
             "factory called during replay (should be unreachable)"
         ))
     };
 
     // A replay reaches no daemon, so `/resume` cannot end it.
-    runner.run_with_factory(&bridge, factory).await.map(|_| ())
+    runner.run_with_factory(factory).await.map(|_| ())
 }
 
 fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<String, String> {
@@ -474,9 +460,7 @@ async fn run_interactive_chat(
     info!("Initial mode: {}", initial_mode);
     let parsed_env = parse_env_overrides(&env_overrides);
     let working_dir = std::env::current_dir().ok();
-    use crate::chat::bridge::AgentEventBridge;
     use crate::tui::oil::{ChatExit, OilChatRunner};
-    use crucible_core::events::EventRing;
 
     // `--set` plus the `--no-context` / `--context-size` flags. All of these
     // are session state the daemon owns, so they ride the same
@@ -492,9 +476,6 @@ async fn run_interactive_chat(
     };
 
     let default_agent = config.acp.default_agent.clone();
-
-    let ring = std::sync::Arc::new(EventRing::new(4096));
-    let bridge = AgentEventBridge::new(ring);
 
     let mode: std::sync::Arc<str> = initial_mode.into();
     let effective_llm = config.effective_llm_provider().ok();
@@ -672,7 +653,7 @@ async fn run_interactive_chat(
 
             async move {
                 // Build common params once
-                let mut params = factories::AgentInitParams::new()
+                let mut params = crate::session::AgentInitParams::new()
                     .with_agent_card(agent_card)
                     .with_provider_opt(provider_key)
                     .with_env_overrides(parsed_env)
@@ -683,7 +664,7 @@ async fn run_interactive_chat(
                 // Apply ACP-specific fields if needed
                 if let AgentSelection::Acp(agent_name) = &selection {
                     params = params
-                        .with_type(factories::AgentType::Acp)
+                        .with_type(crate::session::AgentType::Acp)
                         .with_agent_name_opt(Some(agent_name.clone()).or(default_agent));
                 }
 
@@ -692,15 +673,14 @@ async fn run_interactive_chat(
                     params = params.with_working_dir(wd);
                 }
 
-                let (handle, session_id, event_rx) =
-                    factories::create_daemon_agent_with_events(&config, &params).await?;
-                if init_lua_session(&session_id, &kiln_root).await {
+                let opened = crate::session::open_session(&config, &params).await?;
+                if init_lua_session(&opened.live.id, &kiln_root).await {
                     lua_sessions
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .push(session_id);
+                        .push(opened.live.id.clone());
                 }
-                Ok((handle, Some(event_rx)))
+                Ok(opened)
             }
         };
 
@@ -708,7 +688,7 @@ async fn run_interactive_chat(
         // setup event (internal-agent sessions only). The runner's
         // SessionEventStream updates its AtomicUsize handle as that event fires.
 
-        let run_result = runner.run_with_factory(&bridge, factory).await;
+        let run_result = runner.run_with_factory(factory).await;
 
         // The session this run showed ends here, so its Lua session does too.
         let opened = std::mem::take(
@@ -788,7 +768,7 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     let mut status = StatusLine::new();
     let default_agent = config.acp.default_agent.clone();
 
-    let mut agent_params = factories::AgentInitParams::new()
+    let mut agent_params = crate::session::AgentInitParams::new()
         .with_agent_card(agent_card)
         .with_agent_name_opt(agent_name.clone().or(default_agent.clone()))
         .with_provider_opt(provider_key)
@@ -810,7 +790,7 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     let (_storage_handle, kiln) = await_with_elapsed(
         &mut status,
         "Opening kiln",
-        factories::get_storage_with_summary(&config),
+        crate::factories::get_storage_with_summary(&config),
     )
     .await?;
     if let Some(line) = kiln.describe() {
@@ -818,59 +798,99 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     }
 
     status.update("Discovering agent...");
-    let mut handle = factories::create_agent(&config, agent_params).await?;
+    let opened = crate::session::open_session(&config, &agent_params).await?;
+    let session = opened.live;
+    let mut events = opened.events;
 
     status.success("Ready");
 
-    let _autoconfirm_session = apply_oneshot_set_overrides(&mut handle, &set_overrides).await;
+    let answer = async {
+        let _autoconfirm_session = apply_oneshot_set_overrides(&session, &set_overrides).await;
 
-    if let Some(mode_id) = oneshot_mode_override(read_only) {
-        handle
-            .set_mode_str(mode_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to apply --plan: {e}"))?;
-    }
-
-    // `--no-context` is session state, not a local transform: the daemon owns
-    // Precognition, and it is already enabled by
-    // `SessionAgent::internal_from_config`. Setting it here is what makes
-    // `cru chat -q` and the TUI ground identically — and why the prompt below
-    // is the user's text verbatim. Enriching it client-side made the daemon's
-    // own search run against the CLI's context block instead of the question.
-    for action in precognition_flag_actions(no_context) {
-        if let Err(e) = apply_rpc_action(&mut handle, action).await {
-            anyhow::bail!("failed to apply knowledge-base context flags: {e}");
+        if let Some(mode_id) = oneshot_mode_override(read_only) {
+            session
+                .client
+                .session_set_mode(&session.id, mode_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to apply --plan: {e}"))?;
         }
-    }
-    let prompt = query_text;
 
-    {
-        use crate::formatting::render_markdown;
-        use crucible_core::turn::{Agent, TurnContext, TurnEvent};
-        use futures::StreamExt;
-
-        let mut response_content = String::new();
-        let mut stream = handle.turn(TurnContext::new(prompt)).await?;
-        while let Some(event) = stream.next().await {
-            match event {
-                TurnEvent::TextDelta(text) => response_content.push_str(&text),
-                TurnEvent::Error(err) => {
-                    eprintln!();
-                    output::error(&format!("{}", err));
-                    return Err(anyhow::anyhow!("{err}"));
-                }
-                _ => {}
+        // `--no-context` is session state, not a local transform: the daemon
+        // owns Precognition, and it is already enabled by
+        // `SessionAgent::internal_from_config`. Setting it here is what makes
+        // `cru chat -q` and the TUI ground identically — and why the prompt
+        // below is the user's text verbatim. Enriching it client-side made
+        // the daemon's own search run against the CLI's context block instead
+        // of the question.
+        for action in precognition_flag_actions(no_context) {
+            if let Err(e) = apply_rpc_action(&session, action).await {
+                anyhow::bail!("failed to apply knowledge-base context flags: {e}");
             }
         }
 
-        println!("{}", render_markdown(&response_content));
+        session
+            .client
+            .session_send_message(&session.id, &query_text, true)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", crucible_daemon::rpc_error_message(&e)))?;
+        collect_turn_text(&session.id, &mut events).await
     }
+    .await;
+    session.end().await;
 
-    Ok(())
+    match answer {
+        Ok(text) => {
+            println!("{}", crate::formatting::render_markdown(&text));
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!();
+            output::error(&format!("{err}"));
+            Err(err)
+        }
+    }
+}
+
+/// Read the events of one turn of `session_id`, and return its text.
+///
+/// Only `turn_finished` ends the turn. A failed or timed-out turn is an
+/// error; every other end returns the text so far.
+async fn collect_turn_text(
+    session_id: &str,
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<crucible_daemon::SessionEvent>,
+) -> Result<String> {
+    use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+    use crucible_core::turn::TurnStatus;
+
+    let mut text = String::new();
+    while let Some(event) = events.recv().await {
+        if event.session_id != session_id {
+            continue;
+        }
+        match event.payload() {
+            Ok(SessionEventPayload::Turn(TurnPayload::TextDelta { content })) => {
+                text.push_str(&content);
+            }
+            Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished { status, error, .. })) => {
+                return match status {
+                    TurnStatus::Failed | TurnStatus::TimedOut => Err(anyhow::anyhow!(
+                        "{}",
+                        error.unwrap_or_else(|| "the turn failed".to_string())
+                    )),
+                    TurnStatus::Completed
+                    | TurnStatus::Cancelled
+                    | TurnStatus::HandlerCancelled => Ok(text),
+                };
+            }
+            Ok(_) => {}
+            Err(e) => tracing::debug!(error = %e, "an event of the turn did not decode"),
+        }
+    }
+    anyhow::bail!("the daemon closed the event stream before the turn ended")
 }
 
 async fn apply_oneshot_set_overrides(
-    handle: &mut Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
+    session: &crate::session::LiveSession,
     set_overrides: &[String],
 ) -> bool {
     use crate::tui::oil::commands::{validate_set_for_cli, CliValue, SetEffect};
@@ -888,7 +908,7 @@ async fn apply_oneshot_set_overrides(
 
         match effect {
             SetEffect::DaemonRpc(action) => {
-                if let Err(e) = apply_rpc_action(handle, action).await {
+                if let Err(e) = apply_rpc_action(session, action).await {
                     output::error(&format!("--set '{}' failed: {}", input, e));
                     std::process::exit(1);
                 }
@@ -921,39 +941,34 @@ async fn apply_oneshot_set_overrides(
 }
 
 async fn apply_rpc_action(
-    handle: &mut Box<dyn crucible_core::traits::chat::AgentHandle + Send + Sync>,
+    session: &crate::session::LiveSession,
     action: crate::tui::oil::commands::SetRpcAction,
 ) -> Result<(), String> {
     use crate::tui::oil::commands::SetRpcAction;
 
-    match action {
-        SetRpcAction::SwitchModel(model) => {
-            crucible_core::traits::chat::SessionKnobs::switch_model(handle, &model)
-                .await
-                .map_err(|e| e.to_string())
-        }
+    let (client, id) = (&session.client, session.id.as_str());
+    let set = match action {
+        SetRpcAction::SwitchModel(model) => client.session_switch_model(id, &model).await,
         SetRpcAction::SetContextStrategy(ref strategy_str) => {
-            match strategy_str.parse::<crucible_core::session::ContextStrategy>() {
-                Ok(strategy) => handle
-                    .set_context_strategy(strategy)
-                    .await
-                    .map_err(|e| e.to_string()),
-                Err(e) => Err(e),
-            }
+            let strategy = strategy_str.parse::<crucible_core::session::ContextStrategy>()?;
+            client
+                .session_set_context_strategy(id, &strategy.to_string())
+                .await
         }
-        SetRpcAction::SetPrecognition(enabled) => handle
-            .set_precognition(enabled)
+        SetRpcAction::SetPrecognition(enabled) => client
+            .session_set_precognition(id, enabled)
             .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetPluginTurnLimit(limit) => handle
-            .set_plugin_turn_limit(limit)
+            .map(|_| ()),
+        SetRpcAction::SetPluginTurnLimit(limit) => client
+            .session_set_plugin_turn_limit(id, limit)
             .await
-            .map_err(|e| e.to_string()),
-        SetRpcAction::SetPluginApproval(plugin, approval) => handle
-            .set_plugin_approval(&plugin, approval)
+            .map(|_| ()),
+        SetRpcAction::SetPluginApproval(plugin, approval) => client
+            .session_set_plugin_approval(id, &plugin, approval)
             .await
-            .map_err(|e| e.to_string()),
-    }
+            .map(|_| ()),
+    };
+    set.map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Open the Lua session of the chat under the daemon's session id.

@@ -4,7 +4,7 @@
 //! `kiln_manager/tests.rs`.
 
 use super::*;
-use crucible_core::traits::chat::SessionKnobs;
+use crate::agent_manager::SessionKnobs;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -295,7 +295,7 @@ fn many_gateway_tools(n: usize) -> Vec<McpToolInfo> {
 /// variant attaches no gateway defs at all.
 #[tokio::test]
 async fn over_budget_agent_attaches_core_plus_bridge_and_plan_excludes_gateway() {
-    use crucible_core::traits::chat::AgentHandle;
+    use crate::agent_manager::AgentHandle;
 
     let gateway_tools = many_gateway_tools(12);
     let gateway = Arc::new(RwLock::new(

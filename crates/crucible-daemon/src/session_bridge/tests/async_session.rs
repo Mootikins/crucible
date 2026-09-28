@@ -65,9 +65,7 @@ fn install_scripted_agents(bridge: &DaemonSessionBridge) -> Arc<std::sync::atomi
             };
             Box::pin(async move {
                 Ok(Box::new(MockSubagentHandle::new(behavior))
-                    as Box<
-                        dyn crucible_core::traits::chat::AgentHandle + Send + Sync,
-                    >)
+                    as Box<dyn crate::agent_manager::AgentHandle + Send + Sync>)
             })
         }));
     observed

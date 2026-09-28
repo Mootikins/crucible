@@ -11,8 +11,8 @@
 use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
 use crucible_core::config::{BackendType, DelegationConfig};
 use crucible_core::session::{SessionAgent, SessionType};
-use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{StopReason, TurnEvent};
+use crucible_daemon::agent_manager::AgentHandle;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::test_support::{
     kiln_name, temp_session_manager, temp_session_manager_with_kilns,
@@ -119,20 +119,10 @@ impl crucible_core::turn::Agent for OneToolAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(OneToolAgent);
+crucible_daemon::impl_unsupported_session_knobs!(OneToolAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for OneToolAgent {
-    async fn send_message_fire_and_forget(
-        &mut self,
-        _: String,
-    ) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
     async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
         Ok(())
     }

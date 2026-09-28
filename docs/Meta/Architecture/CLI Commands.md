@@ -64,8 +64,8 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | `crates/crucible-cli/src/output.rs` | 450 | `format_search_results`, `records_table`, and `info`/`warning`/`error`/`success` print helpers shared across command handlers. |
 | `crates/crucible-cli/src/provider_detect.rs` | 533 | `detect_providers[_probed]` — local, pre-daemon LLM provider detection used by `cru init` and `chat_preflight.rs`; `wizard.rs` uses its own fixed provider list, not this module. |
 | `crates/crucible-cli/src/status_line.rs` | 59 | `StatusLine` — a self-overwriting terminal status indicator for long-running startup steps. |
-| `crates/crucible-cli/src/chat/bridge.rs` | 35 | `AgentEventBridge` — an `Arc<EventRing<SessionEvent>>` holder the TUI's chat runner polls. |
-| `crates/crucible-cli/src/chat/mod.rs` | 6 | Module root re-exporting `bridge`. |
+| `crates/crucible-cli/src/session.rs` | 599 | `AgentType`, `AgentInitParams`, `resolve_is_acp`, `LiveSession`, `OpenedSession`, and `open_session` — opens or resumes a daemon session (subscribe, then create/resume, then a best-effort pending-interaction read) and hands the caller the `DaemonClient`, the session id, and the event receiver. Holds no agent handle: the daemon owns the agent. |
+| `crates/crucible-cli/src/test_daemon.rs` | 117 | `#[cfg(test)]`-only. `FakeDaemon` — a Unix-socket JSON-RPC fake that records each method and params and answers through a closure, so a test drives a real `DaemonClient` against it instead of a mock trait object. |
 
 ### `src/cli/` — clap argument definitions
 
@@ -151,7 +151,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-cli/src/commands/chat/mod.rs` | 1050 | `cru chat` end to end: flag-to-mode resolution, full-screen-by-default TUI launch (looping over `/resume`), oneshot path, replay. |
+| `crates/crucible-cli/src/commands/chat/mod.rs` | 1065 | `cru chat` end to end: flag-to-mode resolution, full-screen-by-default TUI launch (looping over `/resume`), oneshot path (direct RPCs plus `collect_turn_text`), replay. |
 | `crates/crucible-cli/src/commands/chat/tests.rs` | 320 | Unit tests for `chat/mod.rs`'s pure helpers (env parsing, mode selection, piped-query folding, `chat_screen`'s inline/full-screen decision). |
 
 ### `src/commands/config/`
@@ -212,8 +212,7 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 
 | Path | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-cli/src/factories/mod.rs` | 12 | Re-export surface for `agent`, `embedding`, `storage`. |
-| `crates/crucible-cli/src/factories/agent.rs` | 557 | `create_agent`/`create_daemon_agent_with_events` — turns CLI flags into a daemon-backed `AgentHandle` via `session.create`. |
+| `crates/crucible-cli/src/factories/mod.rs` | 10 | Re-export surface for `embedding`, `storage`. Session opening lives in `crates/crucible-cli/src/session.rs`, outside this module. |
 | `crates/crucible-cli/src/factories/embedding.rs` | 51 | `embedding_provider_config_from_cli` — derives an `EmbeddingProviderConfig` from loaded CLI config. |
 | `crates/crucible-cli/src/factories/storage.rs` | 195 | `get_storage[_with_summary]` — daemon-only storage handle factory, `CliStorageHandle`, `KilnOpenSummary`. |
 
@@ -265,13 +264,19 @@ of its own" — registration and the catastrophic-root/forbidden-scope checks
 run inside the daemon-owned registry, not here. `commands/acp/mod.rs`'s
 `attach_kiln` is the confirmed caller.
 
-**`AgentInitParams` / `AgentType`** (`crates/crucible-cli/src/factories/agent.rs`)
-— the builder that every chat/session entry point (interactive, oneshot,
-ACP) fills in before calling `create_daemon_agent[_with_events]`, which
-issues `session.create`/`session.create_with_agent` over RPC. `resolve_is_acp`
-is the single internal-vs-ACP decision function shared by every entry point,
-replacing a prior per-path duplication that let one-shot `chat -a <agent>`
-silently run the internal agent.
+**`AgentInitParams` / `AgentType` / `LiveSession` / `OpenedSession`**
+(`crates/crucible-cli/src/session.rs`) — `AgentInitParams` is the builder
+every chat/session entry point (interactive, oneshot, ACP) fills in before
+calling `open_session`, which subscribes to `"*"`, then issues
+`session.create`/`session.create_with_agent` or `session.resume`, then
+subscribes to the session's own id and best-effort reads its pending
+prompts. `open_session` returns an `OpenedSession { live: LiveSession,
+events, pending }`; `LiveSession` is just `{ client: Arc<DaemonClient>, id }`
+— it holds no agent handle and no cached session state, because the daemon
+is the only owner of both. `resolve_is_acp` is the single internal-vs-ACP
+decision function shared by every entry point, replacing a prior per-path
+duplication that let one-shot `chat -a <agent>` silently run the internal
+agent.
 
 **`CliStorageHandle` / `KilnOpenSummary`** (`crates/crucible-cli/src/factories/storage.rs`)
 — `CliStorageHandle` wraps a `crucible_daemon::DaemonStorageClient` behind
@@ -353,39 +358,41 @@ consumes for `:proposals`.
    or resuming, `chat_preflight::ensure_providers_available`.
 3. `run_interactive_chat` loops: each iteration builds a fresh
    `OilChatRunner` (see [[TUI Chat App]]) with that `screen`, and hands the
-   runner a `factory` closure calling
-   `factories::create_daemon_agent_with_events`
-   (`crates/crucible-cli/src/factories/agent.rs`) and then, once
-   `session.create` has returned the daemon's real session id,
+   runner a `factory` closure calling `crate::session::open_session`
+   (`crates/crucible-cli/src/session.rs`) and then, once that call has
+   returned the daemon's real session id (`opened.live.id`),
    `init_lua_session` — the Lua session opens under that id, not a CLI-made
    one, so a daemon restart never sees an unreadable session folder in its
    store.
-4. `create_daemon_agent_with_events` connects a `DaemonClient`
-   (`common::daemon_client_with_events`), subscribes to all session events
-   (`session_subscribe(&["*"])`) *before* calling `session.create`/
-   `session.create_with_agent`, to avoid a race between setup-task events and
-   subscription.
-5. Daemon `SessionEvent`s flow back through an `Arc<EventRing<SessionEvent>>`
-   into `chat::bridge::AgentEventBridge`
-   (`crates/crucible-cli/src/chat/bridge.rs`), which the TUI's chat runner
-   (`crates/crucible-cli/src/tui/oil/chat_runner/`, outside this page) polls
-   to render messages, tool calls, and thinking.
-6. `run_with_factory` returns a `ChatExit`: `Quit` ends the loop, and
-   `Resume(next_session_id)` (from an in-TUI `/resume` or `:pick sessions`)
-   shuts down that run's Lua session and loops again with `next_session_id`
-   as the id to resume — the same history-fetch/factory path a
-   `cru chat --resume` invocation takes, without the CLI process exiting.
+4. `open_session` connects a `DaemonClient` (`common::daemon_client_with_events`),
+   subscribes to all session events (`session_subscribe(&["*"])`) *before*
+   calling `session.create`/`session.create_with_agent`/`session.resume`, to
+   avoid a race between setup-task events and subscription, then narrows the
+   subscription to the session's own id and best-effort reads its pending
+   prompts.
+5. `run_with_factory` (`crates/crucible-cli/src/tui/oil/chat_runner/runner.rs`)
+   takes the returned `OpenedSession` directly: no bridge, no event ring.
+   The runner reads `opened.events` itself and calls
+   `crate::tui::oil::chat_runner::live_session_event_consumer`
+   (`crates/crucible-cli/src/tui/oil/chat_runner/stream.rs`, see [[TUI Chat
+   App]]) to render messages, tool calls, thinking, and interaction prompts
+   from the daemon `SessionEvent` stream; every user action goes back out as
+   its own `DaemonClient` call on `opened.live`.
+6. `run_with_factory` returns a `ChatExit`: `Quit` calls `LiveSession::end`
+   and ends the loop; `Resume(next_session_id)` shuts down that run's Lua
+   session and loops again with `next_session_id` as the id to resume — the
+   same history-fetch/factory path a `cru chat --resume` invocation takes,
+   without the CLI process exiting.
 
 ```mermaid
 flowchart LR
     main[main.rs async_main] --> chatmod[commands/chat/mod.rs execute]
     chatmod --> preflight[commands/chat_preflight.rs]
-    chatmod --> factory[factories/agent.rs create_daemon_agent_with_events]
-    factory --> common[common/mod.rs daemon_client_with_events]
+    chatmod --> opensess[session.rs open_session]
+    opensess --> common[common/mod.rs daemon_client_with_events]
     common -->|RPC| daemon[crucible-daemon DaemonClient]
-    daemon -->|SessionEvent stream| ring[EventRing]
-    ring --> bridge[chat/bridge.rs AgentEventBridge]
-    bridge --> runner[tui/oil chat_runner]
+    daemon -->|SessionEvent stream| runner[tui/oil chat_runner]
+    runner -->|direct DaemonClient RPCs| daemon
     runner -->|ChatExit::Resume| chatmod
 ```
 
@@ -566,11 +573,13 @@ doc for test-isolation reasons.
 
 ## Boundaries and invariants
 
-- **No second write pipeline.** `factories/agent.rs`'s `legacy_chat_defaults`
-  comment states it directly: "Legacy `[chat]` fallbacks are client config
-  inputs, not a second SessionAgent constructor. Provider and card defaults
-  stay daemon-owned." Every agent construction path funnels through
-  `session.create`/`session.create_with_agent`.
+- **No second write pipeline.** `session.rs`'s `legacy_chat_defaults` comment
+  states it directly: "Legacy `[chat]` fallbacks are client config inputs,
+  not a second SessionAgent constructor. Provider and card defaults stay
+  daemon-owned." Every agent construction path funnels through
+  `session.create`/`session.create_with_agent`, and every later session
+  action is a `DaemonClient` RPC on the `LiveSession` that call returned —
+  there is no client-side agent object to construct a second time.
 - **Registration is daemon state, not a CLI write.** `commands/kiln.rs` and
   `commands/project.rs` perform no local file writes; `kiln_attach.rs`
   resolves a name/directory but explicitly "adds no policy of its own" —

@@ -1,11 +1,11 @@
-//! Integration tests for agent factory
+//! Integration tests for the session parameters
 
 #![allow(clippy::field_reassign_with_default)]
 
 //!
 //! Tests the unified agent initialization for both ACP and internal agents.
 
-use crucible_cli::factories::{AgentInitParams, AgentType};
+use crucible_cli::session::{AgentInitParams, AgentType};
 
 #[test]
 fn test_agent_init_params_builder() {

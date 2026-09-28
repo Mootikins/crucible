@@ -8,9 +8,8 @@ use super::mode::{setup_with_agent, ModeRecordingAgent};
 use std::sync::atomic::AtomicBool;
 
 /// Simulates a handle whose `set_mode_str` RPCs back into the SAME
-/// `AgentManager` that holds this handle's mutex — the shape a
-/// `DaemonAgentHandle` takes when cached inside the daemon's own
-/// `agent_cache` (test setups, possible future in-process callers).
+/// `AgentManager` that holds this handle's mutex, for example a handle that
+/// fronts the daemon itself and sits in the daemon's own `agent_cache`.
 ///
 /// Without `apply_mode`, `AgentManager::set_mode` would call `set_mode_str`
 /// on this handle, which re-issues `set_mode` while the mutex is still held
@@ -39,17 +38,10 @@ impl DaemonLikeRecursingAgent {
 
 crucible_core::impl_noop_agent!(DaemonLikeRecursingAgent);
 
-crucible_core::impl_unsupported_session_knobs!(DaemonLikeRecursingAgent);
+crate::impl_unsupported_session_knobs!(DaemonLikeRecursingAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for DaemonLikeRecursingAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }

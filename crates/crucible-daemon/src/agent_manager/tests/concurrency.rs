@@ -27,17 +27,10 @@ impl crucible_core::turn::Agent for PendingMockAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(PendingMockAgent);
+crate::impl_unsupported_session_knobs!(PendingMockAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for PendingMockAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }

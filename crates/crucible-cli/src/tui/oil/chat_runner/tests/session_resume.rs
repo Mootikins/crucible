@@ -4,27 +4,17 @@
 //! the PTY test `tests/tui_e2e_tests/session_store.rs` proves it. These tests
 //! prove the guards that stop a switch before any daemon call.
 
-use std::sync::Arc;
-
-use crucible_core::events::EventRing;
-use crucible_oil::terminal::Terminal;
-
-use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::actions::resumable_sessions;
 use crate::tui::oil::chat_runner::OilChatRunner;
-use crate::tui::oil::noop_agent::NoopAgentHandle;
-
-fn bridge() -> AgentEventBridge {
-    AgentEventBridge::new(Arc::new(EventRing::new(16)))
-}
+use crucible_oil::terminal::Terminal;
 
 /// Send one message through `process_action`. Answer whether the loop quits.
 async fn process(runner: &mut OilChatRunner, app: &mut OilChatApp, msg: ChatAppMsg) -> bool {
-    let mut agent = NoopAgentHandle::new("chat-open".to_string());
+    let daemon = crate::test_daemon::FakeDaemon::answering_null("chat-open").await;
     runner
-        .process_action_for_test(Action::Send(msg), app, &mut agent, &bridge())
+        .process_action_for_test(Action::Send(msg), app, Some(&daemon.session))
         .await
         .expect("process_action does not fail")
 }
@@ -98,15 +88,14 @@ async fn reads_for_a_fetch(is_replay: bool) -> usize {
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
     runner.is_replay = is_replay;
     let mut app = OilChatApp::default();
-    let mut agent = NoopAgentHandle::new("chat-open".to_string());
+    let daemon = crate::test_daemon::FakeDaemon::answering_null("chat-open").await;
     let (msg_tx, _msg_rx) = tokio::sync::mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
     runner
         .process_action(crate::tui::oil::chat_runner::ProcessActionParams {
             action: Action::Send(ChatAppMsg::FetchSessions),
             app: &mut app,
-            agent: &mut agent,
-            bridge: &bridge(),
+            session: Some(&daemon.session),
             msg_tx: &msg_tx,
             background_tasks: &mut background_tasks,
         })

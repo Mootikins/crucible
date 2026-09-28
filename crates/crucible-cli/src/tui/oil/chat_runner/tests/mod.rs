@@ -3,6 +3,7 @@ mod comment_mention;
 mod daemon_notification;
 mod diff_fetch;
 mod initial_sets;
+mod interaction_prompts;
 mod knob_rpc;
 mod model_prefetch;
 mod proposal_fetch;

@@ -24,14 +24,13 @@ async fn test_client_ping_with_real_daemon() {
 #[tokio::test]
 async fn test_interaction_event_flows_to_receiver() {
     use crucible_core::interaction::InteractionRequest;
-    use crucible_core::traits::chat::AgentHandle;
-    use crucible_daemon::DaemonAgentHandle;
+    use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
     use std::time::Duration;
 
     let server = TestServer::start().await.expect("Failed to start server");
     let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
-    let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
         .await
         .expect("Failed to connect with events");
     let client = std::sync::Arc::new(client);
@@ -54,22 +53,10 @@ async fn test_interaction_event_flows_to_receiver() {
         .expect("session_id should be string")
         .to_string();
 
-    let mut handle =
-        DaemonAgentHandle::new_and_subscribe(client.clone(), session_id.clone(), event_rx)
-            .await
-            .expect("Failed to create agent handle");
-
-    let interaction_rx = handle.take_interaction_receiver();
-    assert!(
-        interaction_rx.is_some(),
-        "DaemonAgentHandle should return Some(interaction_rx)"
-    );
-    let mut interaction_rx = interaction_rx.unwrap();
-
-    assert!(
-        handle.take_interaction_receiver().is_none(),
-        "Second call to take_interaction_receiver should return None"
-    );
+    client
+        .session_subscribe(&[session_id.as_str()])
+        .await
+        .expect("subscribe failed");
 
     let interact_result = client
         .call(
@@ -86,16 +73,30 @@ async fn test_interaction_event_flows_to_receiver() {
         .as_str()
         .expect("request_id should be in response");
 
-    let event = tokio::time::timeout(Duration::from_secs(2), interaction_rx.recv())
-        .await
-        .expect("Timed out waiting for interaction event")
-        .expect("Interaction channel closed unexpectedly");
+    // The prompt reaches a subscribed client as an `interaction_requested`
+    // event of the session.
+    let (event_request_id, request) = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let event = event_rx.recv().await.expect("event channel closed");
+            if event.session_id != session_id {
+                continue;
+            }
+            if let Ok(SessionEventPayload::Turn(TurnPayload::InteractionRequested {
+                request_id,
+                request,
+            })) = event.payload()
+            {
+                return (request_id, request);
+            }
+        }
+    })
+    .await
+    .expect("Timed out waiting for interaction event");
 
-    assert_eq!(event.request_id, request_id, "Request ID should match");
+    assert_eq!(event_request_id, request_id, "Request ID should match");
     assert!(
-        matches!(event.request, InteractionRequest::Ask(_)),
-        "Should be an Ask request, got {:?}",
-        event.request
+        matches!(request, InteractionRequest::Ask(_)),
+        "Should be an Ask request, got {request:?}"
     );
 
     server.shutdown().await;

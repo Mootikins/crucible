@@ -35,7 +35,7 @@ at the same time. Each step leaves the tree working.
 
 | Step | Deletes | Size | Depends on |
 |---|---|---|---|
-| 1. Remove the client-side agent proxy | one client API layer | L | none |
+| 1. Remove the client-side agent proxy (done) | one client API layer | L | none |
 | 2. One event path to the clients | three event projections, one event type | L | step 1 helps |
 | 3. One command registry | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client | an in-process daemon in the CLI | M | none |
@@ -50,28 +50,38 @@ Size: S is days, M is one to two weeks, L is three to six weeks.
 
 ## Step 1. Remove the client-side agent proxy
 
-**Now.** The TUI drives the daemon through an agent-shaped object.
-`DaemonAgentHandle` in `crates/crucible-daemon/src/rpc_client/agent/`
-implements `AgentHandle` and `SessionKnobs` over RPC. `NoopAgentHandle` in
-`crates/crucible-cli/src/tui/oil/noop_agent.rs` is a second implementation.
-The TUI also calls `DaemonClient` directly. So two client APIs exist for one
-RPC surface. A session setting such as `plugin_turn_limit` touches 26 non-test
-files. The hand-forwarded `Box<dyn AgentHandle>` methods in
-`crates/crucible-core/src/traits/chat.rs` drifted at least twice.
+**Status: done.** The TUI and `cru chat` call `DaemonClient` directly.
+
+**Before.** The TUI drove the daemon through an agent-shaped object, a
+`DaemonAgentHandle` in the daemon's `rpc_client`. It implemented
+`AgentHandle` and `SessionKnobs` over RPC, and it kept its own copies of the
+model, the context strategy, precognition and the plugin approvals. A
+`NoopAgentHandle` was a second implementation for replay. The TUI also
+called `DaemonClient` directly, so two client APIs existed for one RPC
+surface. The proxy also had a client-side clear that ended the session and
+configured a new one: a second agent configuration in the client.
 
 **Change.**
-1. Make the TUI call `DaemonClient` for every session action.
-2. Delete `DaemonAgentHandle`, `NoopAgentHandle` and the agent factory in
-   `crates/crucible-cli/src/factories/`.
-3. Delete `AgentEventBridge` in `crates/crucible-cli/src/chat/bridge.rs`.
-4. Make `AgentHandle` and `SessionKnobs` private to the daemon.
+1. `LiveSession` in `crates/crucible-cli/src/session.rs` holds only the
+   client and the session id. `open_session` creates or resumes the
+   session. The TUI runner holds an optional `LiveSession`, and a replay
+   holds none.
+2. Each action in `crates/crucible-cli/src/tui/oil/chat_runner/actions.rs`
+   calls the daemon. A value that the TUI shows after a change comes back
+   from the daemon, not from a client copy.
+3. The live event consumer opens interaction prompts from the session's
+   event stream. The separate interaction channel is gone.
+4. `AgentHandle` and `SessionKnobs` moved to
+   `crates/crucible-daemon/src/agent_manager/handle.rs`. Five trait
+   methods that only the proxy used are gone.
+5. `crates/crucible-cli/src/test_daemon.rs` is a fake daemon on a Unix
+   socket. The runner tests assert on the requests that reach it, in place
+   of fake agent handles.
 
-**Result.** A session setting touches the core knob type, the daemon setter,
-one client method and one renderer for each client. The compiler rejects a
-new client-side agent, because the trait is not public.
-
-**Proof.** The set, get and resume tests for each knob pass through the TUI
-and the web client. See [[Session Services]] and [[RPC Client]].
+**Left for later.** The traits are still `pub` in the daemon crate,
+because integration tests outside the crate implement them. `apply_mode`
+and `set_mode_str` are now near-duplicates; the mode regression tests
+still use the split.
 
 ## Step 2. One event path to the clients
 

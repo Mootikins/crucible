@@ -102,7 +102,7 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-cli/src/tui/oil/tests/region_placement_tests.rs` | 66 | Regression: statusline regions render their authored content, guarding against a hardcoded bar overriding configured layout. |
 | `crates/crucible-cli/src/tui/oil/tests/render_tests.rs` | 627 | Text layout, wrapping, nesting, cursor tracking, gaps, and two-column-layout snapshots. |
 | `crates/crucible-cli/src/tui/oil/tests/rendering_regression_tests.rs` | 469 | Regression tests for visual artifacts, styling consistency and multi-turn flows in the container system. |
-| `crates/crucible-cli/src/tui/oil/tests/replay_mode_tests.rs` | 186 | Tests that `process_message` gates fire-and-forget sends on `is_replay`, so replay never re-sends a user message. |
+| `crates/crucible-cli/src/tui/oil/tests/replay_mode_tests.rs` | 99 | Tests the chat runner's replay gates: a drained `UserMessage` never sends, because `process_message` gets no session (`Option<&LiveSession>` is `None`), so a resume or a replay cannot re-send an old prompt; drives a `FakeDaemon` for the live send `process_action` exercises. |
 | `crates/crucible-cli/src/tui/oil/tests/session_event_stream_tests.rs` | 551 | Tests `SessionEventStream`'s replay-deduplication rule for text and thinking deltas, plus subagent and token-count event mapping. |
 | `crates/crucible-cli/src/tui/oil/tests/spacing_tests.rs` | 488 | Blank-line spacing rules between transcript node types; regression coverage for modal and graduation-boundary spacing bugs. |
 | `crates/crucible-cli/src/tui/oil/tests/transcript_fixtures.rs` | 66 | Shared long-transcript builders (markdown with lists, code, CJK, ZWJ emoji) for `frame_time_bench` and `layout_cache_tests`; needs no daemon. |
@@ -134,7 +134,7 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-cli/src/tui/oil/tests/user_story_tests/surface_tests.rs` | 269 | US-908: a Lua plugin's declared surface panel reaches the frame without stealing focus, and respects withdrawal cleanly (the inline-mode T2 frame; the full-screen-mode equivalent is `fullscreen_tests::a_surface_is_the_whole_full_screen_frame`). |
 | `crates/crucible-cli/src/tui/oil/tests/user_story_tests/tool_render_tests.rs` | 229 | US-306: the tool card and the permission modal draw the daemon-sent `render` (line, fields, result summary) verbatim, never rebuilding from raw arguments; an old (pre-render) transcript still shows its lines/diffs and one error per failed turn after `migrate_history`. |
 | `crates/crucible-cli/src/tui/oil/tests/user_story_tests/turn_end_tests.rs` | 123 | US-207: every `turn_finished` status (including `handler_cancelled`/`timed_out`) ends the console's streaming state and shows its error/reason; a `turn:complete`-handler-started turn renders as its own turn under the first. |
-| `crates/crucible-cli/src/tui/oil/tests/user_story_tests/undo_tests.rs` | 175 | US-902: `/undo`'s render half — the daemon's `UndoComplete` toast and viewport truncation when history clears and re-emits, and the refusal reason shown (never a success toast) when the daemon refuses undo on an ACP-delegated session. |
+| `crates/crucible-cli/src/tui/oil/tests/user_story_tests/undo_tests.rs` | 140 | US-902: `/undo`'s render half — the daemon's `UndoComplete` toast and viewport truncation when history clears and re-emits, and the refusal reason shown (never a success toast) when the daemon refuses undo on an ACP-delegated session, proved against a `FakeDaemon` answering `session.undo` with that refusal. |
 | `crates/crucible-cli/src/tui/oil/tests/user_story_tests/vocab.rs` | 231 | Intent-level verbs (`send_user_message`, `approve_permission`, …) over `StoryRuntime`, so story tests read as user intent, not raw key codes. |
 | `crates/crucible-cli/src/tui/oil/tests/user_story_tests/vocab_tests.rs` | 72 | Exemplar/smoke tests for the vocab layer and `StoryRuntime::settle`/`expect_frame`. |
 
@@ -270,15 +270,15 @@ Roles are condensed from the file's own doc comment or its test names.
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-daemon/tests/rpc_integration/bases.rs` | 74 | Bases RPC (`base.list`/`views`/`create_entry`/`query`/`set_property`) over the socket: query rows carry an `ancestor_hash` for optimistic concurrency, and `set_property` on `file.folder` performs a real folder move. |
-| `crates/crucible-daemon/tests/rpc_integration/client.rs` | 324 | Ping, shutdown, sequential/concurrent calls, kiln operations, RPC error handling. |
+| `crates/crucible-daemon/tests/rpc_integration/client.rs` | 325 | Ping, shutdown, sequential/concurrent calls, kiln operations, RPC error handling. |
 | `crates/crucible-daemon/tests/rpc_integration/event_flow.rs` | 147 | Setup events do not leak into unrelated later RPC calls; concurrent event-mode calls stay isolated. |
-| `crates/crucible-daemon/tests/rpc_integration/models.rs` | 568 | Model and mode switching, and the per-plugin `PluginApproval` (`ask`/`stop`/`inherit`) knob, persist and propagate through `session.get`/`status_items_changed`/`plugin_approval_changed`, decoded the same way the TUI's status line does. |
+| `crates/crucible-daemon/tests/rpc_integration/models.rs` | 351 | Model and mode switching, and the per-plugin `PluginApproval` (`ask`/`stop`/`inherit`) knob, persist and propagate through `session.get`/`status_items_changed`/`plugin_approval_changed`, decoded the same way the TUI's status line does; against a plain `DaemonClient`, with no case for client-side cache/mirror behavior, since there is no client-side handle to test. |
 | `crates/crucible-daemon/tests/rpc_integration/notes.rs` | 524 | `list_notes`, `get_note_by_name`, `search_vectors`, including a seeded SQLite fixture. |
-| `crates/crucible-daemon/tests/rpc_integration/recording.rs` | 177 | Recording modes accepted at `session.create`; `DaemonAgentHandle::drop()` calls `session.end` so the recording footer is written. |
+| `crates/crucible-daemon/tests/rpc_integration/recording.rs` | 101 | Recording modes accepted at `session.create`. The recording-footer path is exercised where it is actually driven, in `crates/crucible-cli/src/session.rs`'s own tests (`ending_a_live_session_sends_session_end`). |
 | `crates/crucible-daemon/tests/rpc_integration/scope.rs` | 114 | Post-C2: a client-supplied `scope` param is accepted for backward compatibility but ignored — the server derives authority from `kiln_path`. |
 | `crates/crucible-daemon/tests/rpc_integration/server.rs` | 71 | Shared `TestServer` fixture — one kiln named `kiln` — for every file in this directory. |
-| `crates/crucible-daemon/tests/rpc_integration/sessions.rs` | 435 | Session CRUD: create, list, subscribe/unsubscribe, configure, send, cancel, clear. |
-| `crates/crucible-daemon/tests/rpc_integration/tui_flow.rs` | 188 | TUI-representative flows: `cru sessions`, `cru resume`, and a full daemon-agent lifecycle. |
+| `crates/crucible-daemon/tests/rpc_integration/sessions.rs` | 396 | Session CRUD: create, list, subscribe/unsubscribe, configure, send, cancel, clear — all against `DaemonClient` directly. |
+| `crates/crucible-daemon/tests/rpc_integration/tui_flow.rs` | 182 | TUI-representative flows: `cru sessions`, `cru resume`, and a full daemon-agent lifecycle, driven by `DaemonClient` calls rather than a client-side agent handle. |
 
 ### `crates/crucible-daemon/tests/` — top level
 
@@ -341,7 +341,7 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-daemon/tests/rpc_kiln_e2e.rs` | 590 | Kiln and note RPC methods over the socket: open/list/close, `list_notes`, `get_note_by_name`. |
 | `crates/crucible-daemon/tests/rpc_llm_state_e2e.rs` | 145 | Recorded provider state in `<data_home>/llm.json` reaches the daemon's provider table and the client. |
 | `crates/crucible-daemon/tests/rpc_platform_e2e.rs` | 428 | Platform RPC methods: `lua.*`, `plugin.*`, `project.*`, `storage.*`, `mcp.*`, `skills.*`, `agents.*`. |
-| `crates/crucible-daemon/tests/rpc_session_create_agent_e2e.rs` | 709 | Daemon-owned agent resolution in `session.create`, now searching every attached kiln (not only the first) for a card; mutual exclusion of `agent_card`/`agent_name`; and the daemon's own SSRF endpoint policy (refusing internal/loopback addresses unless operator-configured) enforced identically for `session.create` and `session.configure_agent`. |
+| `crates/crucible-daemon/tests/rpc_session_create_agent_e2e.rs` | 692 | Daemon-owned agent resolution in `session.create`, searching every attached kiln (not only the first) for a card; mutual exclusion of `agent_card`/`agent_name`; and the daemon's own SSRF endpoint policy (refusing internal/loopback addresses unless operator-configured) enforced identically for `session.create` and `session.configure_agent`. |
 | `crates/crucible-daemon/tests/rpc_session_e2e.rs` | 681 | Session lifecycle RPC: create, list, get, pause, resume, end, delete, archive, unarchive. |
 | `crates/crucible-daemon/tests/rpc_session_kilnless_e2e.rs` | 257 | A kiln-less session (zero kilns) is a legitimate tools-only state, not a fallback to `data_home`. |
 | `crates/crucible-daemon/tests/rpc_session_scope_e2e.rs` | 289 | Mid-session `connect_kiln`/`disconnect_kiln`/`set_workspace`, and trust-based kiln-attach refusal. |
@@ -539,6 +539,16 @@ Roles are condensed from the file's own doc comment or its test names.
   mock Unix-socket JSON-RPC peer every `route_contract_tests/` file uses;
   its own comment records that a hand-maintained duplicate used to live
   beside the tests and drifted, and asks that nothing recreate it.
+- **`FakeDaemon`** (`crates/crucible-cli/src/test_daemon.rs`, `#[cfg(test)]`).
+  `crucible-cli`'s own version of the same pattern: a Unix-socket JSON-RPC
+  fake in a `TempDir` that records each method and params and answers
+  through a caller-supplied closure, giving the test a real `DaemonClient`
+  (via `LiveSession`). The TUI runner's tests
+  (`knob_rpc.rs`, `initial_sets.rs`, `comment_mention.rs`,
+  `session_resume.rs`, `diff_fetch.rs`, `proposal_fetch.rs`,
+  `daemon_notification.rs`, `replay_mode_tests.rs`, `undo_tests.rs`) drive it
+  directly: there is no client-side agent handle for any of them to mock —
+  see [[TUI Components]].
 
 ## Flows
 

@@ -5,9 +5,10 @@
 //! suitable for testing code that depends on these traits without needing a full
 //! implementation.
 
+use crate::agent_manager::AgentHandle;
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::traits::chat::{AgentHandle, ChatResult};
+use crucible_core::traits::chat::ChatResult;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -341,16 +342,10 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(MockSubagentHandle);
+crate::impl_unsupported_session_knobs!(MockSubagentHandle);
 
 #[async_trait]
 impl AgentHandle for MockSubagentHandle {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }

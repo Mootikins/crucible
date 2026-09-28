@@ -100,43 +100,6 @@ fn undo_truncates_viewport_when_daemon_reverts() {
     );
 }
 
-/// A handle whose daemon refuses every undo with the reason it gives for a
-/// session that an external ACP agent runs.
-struct UndoRefusingAgent;
-
-crucible_core::impl_noop_agent!(UndoRefusingAgent);
-crucible_core::impl_unsupported_session_knobs!(UndoRefusingAgent);
-
-#[async_trait::async_trait]
-impl crucible_core::traits::chat::AgentHandle for UndoRefusingAgent {
-    async fn send_message_fire_and_forget(
-        &mut self,
-        _message: String,
-    ) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
-    fn get_mode_id(&self) -> &str {
-        "normal"
-    }
-    async fn set_mode_str(
-        &mut self,
-        _mode_id: &str,
-    ) -> crucible_core::traits::chat::ChatResult<()> {
-        Ok(())
-    }
-    async fn undo(
-        &mut self,
-        _count: usize,
-    ) -> crucible_core::traits::chat::ChatResult<Vec<crucible_core::types::UndoSummary>> {
-        Err(crucible_core::traits::chat::ChatError::Communication(
-            "Failed to undo: this session is delegated to an external ACP agent".into(),
-        ))
-    }
-}
-
 /// The daemon refuses `:undo` on an ACP session. The user must read that
 /// reason on screen, not a success toast and not only a log line.
 #[tokio::test]
@@ -154,11 +117,13 @@ async fn a_refused_undo_shows_the_reason_of_the_daemon() {
     let mut runner = crate::tui::oil::chat_runner::OilChatRunner::with_terminal(
         crucible_oil::terminal::Terminal::with_size(100, 24),
     );
-    let bridge = crate::chat::bridge::AgentEventBridge::new(std::sync::Arc::new(
-        crucible_core::events::EventRing::new(16),
-    ));
+    let daemon = crate::test_daemon::FakeDaemon::start("chat-1", |method, _| match method {
+        "session.undo" => Err("this session is delegated to an external ACP agent".into()),
+        _ => Ok(serde_json::Value::Null),
+    })
+    .await;
     runner
-        .process_action_for_test(action, story.app(), &mut UndoRefusingAgent, &bridge)
+        .process_action_for_test(action, story.app(), Some(&daemon.session))
         .await
         .expect("process_action should not fail");
 

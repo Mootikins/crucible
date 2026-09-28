@@ -3,118 +3,61 @@
 //! The `:set` dispatch matrix (chat_app/command_handling.rs) stops at
 //! `Action::Send(msg)`, and the startup-override regression test
 //! (initial_sets.rs) covers only context_strategy + model. Nothing verified
-//! that each knob message's arm in `process_action` invokes the *matching*
-//! `AgentHandle` RPC — the "budget vs context_budget" miswiring class from
-//! the AGENTS.md cross-layer checklist. This matrix drives every
+//! that each knob message's arm in `process_action` sends the *matching*
+//! daemon RPC — the "budget vs context_budget" miswiring class that the
+//! cross-layer checklist in AGENTS.md guards. This matrix drives every
 //! daemon-scoped knob end-to-end: real keystrokes (`:set …` + Enter) through
 //! `OilChatApp::update`, then the resulting action through the real
-//! `process_action`, asserting exactly the matching RPC fired.
+//! `process_action`, and asserts on the requests that reach a fake daemon.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crucible_core::events::EventRing;
 use crucible_core::session::PluginApproval;
-use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult, SessionKnobs};
 use crucible_oil::terminal::Terminal;
-use std::sync::Arc;
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use test_case::test_case;
 
-use crate::chat::bridge::AgentEventBridge;
+use crate::test_daemon::FakeDaemon;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::oil::event::Event;
 
-/// Records the name of every knob RPC invoked, in call order. Equality
-/// assertions on `calls` catch both a miswired arm (wrong name recorded)
-/// and duplicate dispatch (extra entries).
-#[derive(Default)]
-pub(super) struct KnobRecordingAgent {
-    pub(super) calls: Vec<&'static str>,
-    /// What the daemon holds for each plugin, as a resumed handle reads it.
-    pub(super) approvals: std::collections::BTreeMap<String, PluginApproval>,
+/// A daemon that holds plugin approvals, and answers the mode list with
+/// `modes` and the current mode `ask`. `refuse_modes` makes every
+/// `session.set_mode` fail.
+async fn knob_daemon(
+    approvals: BTreeMap<String, PluginApproval>,
+    modes: &[&str],
+    refuse_modes: bool,
+) -> FakeDaemon {
+    let approvals = Arc::new(Mutex::new(approvals));
+    let modes = serde_json::to_value(crate::tui::oil::chat_app::state::mode_descriptors(modes))
+        .expect("modes serialize");
+    FakeDaemon::start("chat-1", move |method, params| match method {
+        "session.set_plugin_approval" => {
+            let plugin = params["plugin"].as_str().unwrap_or_default().to_string();
+            let approval: PluginApproval =
+                serde_json::from_value(params["approval"].clone()).map_err(|e| e.to_string())?;
+            approvals.lock().unwrap().insert(plugin, approval);
+            Ok(Value::Null)
+        }
+        "session.list_plugin_approvals" => Ok(json!({ "approvals": *approvals.lock().unwrap() })),
+        "session.list_modes" => Ok(json!({ "current_mode_id": "ask", "modes": modes })),
+        "session.set_mode" if refuse_modes => Err(format!("unknown mode '{}'", params["mode_id"])),
+        _ => Ok(Value::Null),
+    })
+    .await
 }
 
-crucible_core::impl_noop_agent!(KnobRecordingAgent);
-
-#[async_trait::async_trait]
-impl AgentHandle for KnobRecordingAgent {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-    fn get_mode_id(&self) -> &str {
-        "ask"
-    }
-    async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
-        self.calls.push("set_mode_str");
-        Ok(())
-    }
-}
-
-/// Every setter the matrix drives records its name. The rest is the empty
-/// answer, written out so the compiler sees the choice.
-#[async_trait::async_trait]
-impl SessionKnobs for KnobRecordingAgent {
-    async fn set_plugin_approval(
-        &mut self,
-        plugin: &str,
-        approval: PluginApproval,
-    ) -> ChatResult<()> {
-        self.calls.push("set_plugin_approval");
-        self.approvals.insert(plugin.into(), approval);
-        Ok(())
-    }
-    fn get_plugin_approval(&self, plugin: &str) -> PluginApproval {
-        self.approvals.get(plugin).copied().unwrap_or_default()
-    }
-    async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
-        self.calls.push("set_plugin_turn_limit");
-        Ok(())
-    }
-    fn get_plugin_turn_limit(&self) -> u32 {
-        25
-    }
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
-        self.calls.push("switch_model");
-        Ok(())
-    }
-    async fn set_context_strategy(
-        &mut self,
-        _strategy: crucible_core::session::ContextStrategy,
-    ) -> ChatResult<()> {
-        self.calls.push("set_context_strategy");
-        Ok(())
-    }
-    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
-        self.calls.push("set_precognition");
-        Ok(())
-    }
-    fn current_model(&self) -> Option<&str> {
-        None
-    }
-
-    async fn fetch_available_models(&mut self) -> Vec<String> {
-        Vec::new()
-    }
-
-    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
-        Vec::new()
-    }
-
-    fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
-        crucible_core::session::ContextStrategy::default()
-    }
-
-    fn get_precognition(&self) -> bool {
-        true
-    }
+/// The requests that change session state, in order. Reads are left out.
+fn setters(daemon: &FakeDaemon) -> Vec<String> {
+    daemon
+        .methods()
+        .into_iter()
+        .filter(|m| !m.starts_with("session.list_"))
+        .collect()
 }
 
 /// Type a line one `Char` at a time (driving the real input/autocomplete
@@ -132,24 +75,20 @@ fn type_and_submit(app: &mut OilChatApp, line: &str) -> Action<ChatAppMsg> {
     )))
 }
 
-/// Run an action through the real `process_action` and return the recorded
-/// RPC call sequence.
-async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> Vec<&'static str> {
+/// Run an action through the real `process_action` against `daemon`.
+async fn run(app: &mut OilChatApp, daemon: &FakeDaemon, action: Action<ChatAppMsg>) {
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
-    let mut agent = KnobRecordingAgent::default();
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
     runner
-        .process_action_for_test(action, app, &mut agent, &bridge)
+        .process_action_for_test(action, app, Some(&daemon.session))
         .await
         .expect("process_action should not fail");
-    agent.calls
 }
 
-#[test_case("model=gpt-4o", "switch_model" ; "model")]
-#[test_case("contextstrategy=summarize", "set_context_strategy" ; "context strategy")]
-#[test_case("precognition=off", "set_precognition" ; "precognition")]
-#[test_case("plugin_turn_limit=7", "set_plugin_turn_limit" ; "plugin turn limit")]
-#[test_case("plugin_approval.goal=ask", "set_plugin_approval" ; "plugin approval")]
+#[test_case("model=gpt-4o", "session.switch_model" ; "model")]
+#[test_case("contextstrategy=summarize", "session.set_context_strategy" ; "context strategy")]
+#[test_case("precognition=off", "session.set_precognition" ; "precognition")]
+#[test_case("plugin_turn_limit=7", "session.set_plugin_turn_limit" ; "plugin turn limit")]
+#[test_case("plugin_approval.goal=ask", "session.set_plugin_approval" ; "plugin approval")]
 #[tokio::test]
 async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {
     let mut app = OilChatApp::default();
@@ -158,37 +97,34 @@ async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &st
         matches!(action, Action::Send(_)),
         ":set {body} typed interactively must submit a daemon-sync action, got Continue/Quit"
     );
-    let calls = record_rpc_calls(&mut app, action).await;
+    let daemon = knob_daemon(BTreeMap::new(), &["ask"], false).await;
+    run(&mut app, &daemon, action).await;
     assert_eq!(
-        calls,
-        vec![expected_rpc],
+        setters(&daemon),
+        vec![expected_rpc.to_string()],
         ":set {body} must invoke exactly the {expected_rpc} RPC once"
     );
 }
 
-/// `:set plugin_approval.<plugin>` writes through the handle and reads the
-/// value back from it, so the answer is what the daemon holds: after a
-/// resume, after a change by another client, and after this set.
+/// `:set plugin_approval.<plugin>` writes to the daemon and reads the value
+/// back from it, so the answer is what the daemon holds: after a resume,
+/// after a change by another client, and after this set.
 #[tokio::test]
-async fn plugin_approval_is_set_and_read_through_the_handle() {
+async fn plugin_approval_is_set_and_read_through_the_daemon() {
     let mut app = OilChatApp::default();
-    let mut agent = KnobRecordingAgent::default();
-    agent.approvals.insert("goal".into(), PluginApproval::Stop);
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+    let daemon = knob_daemon(
+        BTreeMap::from([("goal".to_string(), PluginApproval::Stop)]),
+        &["ask"],
+        false,
+    )
+    .await;
 
     let query = type_and_submit(&mut app, ":set plugin_approval.goal?");
-    runner
-        .process_action_for_test(query, &mut app, &mut agent, &bridge)
-        .await
-        .unwrap();
+    run(&mut app, &daemon, query).await;
     let set = type_and_submit(&mut app, ":set plugin_approval.goal=ask");
-    runner
-        .process_action_for_test(set, &mut app, &mut agent, &bridge)
-        .await
-        .unwrap();
+    run(&mut app, &daemon, set).await;
 
-    assert_eq!(agent.approvals["goal"], PluginApproval::Ask);
+    assert_eq!(setters(&daemon), ["session.set_plugin_approval"]);
     let screen = crate::tui::oil::tests::helpers::vt_render(&mut app);
     assert!(screen.contains("plugin_approval.goal=stop"), "{screen}");
     assert!(screen.contains("plugin_approval.goal=ask"), "{screen}");
@@ -196,9 +132,9 @@ async fn plugin_approval_is_set_and_read_through_the_handle() {
 
 /// `:plugin-mode` is the engine command of decision 10. It asks the runner
 /// for the daemon's list, opens a menu of each plugin with its three
-/// values, and the chosen row sets the knob through the handle.
+/// values, and the chosen row sets the knob in the daemon.
 #[tokio::test]
-async fn the_plugin_menu_sets_the_approval_through_the_handle() {
+async fn the_plugin_menu_sets_the_approval_in_the_daemon() {
     let mut app = OilChatApp::default();
     let fetch = type_and_submit(&mut app, ":plugin-mode");
     assert!(
@@ -233,15 +169,16 @@ async fn the_plugin_menu_sets_the_approval_through_the_handle() {
         KeyCode::Enter,
         KeyModifiers::NONE,
     )));
-    let mut agent = KnobRecordingAgent::default();
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
-    runner
-        .process_action_for_test(choose, &mut app, &mut agent, &bridge)
-        .await
-        .unwrap();
-    assert_eq!(agent.calls, ["set_plugin_approval"]);
-    assert_eq!(agent.approvals["goal"], PluginApproval::Stop);
+    let daemon = knob_daemon(BTreeMap::new(), &["ask"], false).await;
+    run(&mut app, &daemon, choose).await;
+    let calls = daemon.calls();
+    let sets: Vec<_> = calls
+        .iter()
+        .filter(|(m, _)| m == "session.set_plugin_approval")
+        .collect();
+    assert_eq!(sets.len(), 1, "{calls:?}");
+    assert_eq!(sets[0].1["plugin"], "goal");
+    assert_eq!(sets[0].1["approval"], "stop");
     assert!(!app.panel_popup_is_open(), "the menu closes after a choice");
 }
 
@@ -292,32 +229,6 @@ fn an_unknown_plugin_approval_is_refused() {
     assert!(matches!(action, Action::Continue), "{action:?}");
 }
 
-/// A handle that refuses every mode change, reporting the one it is really in.
-struct ModeRejectingAgent;
-
-crucible_core::impl_noop_agent!(ModeRejectingAgent);
-
-crucible_core::impl_unsupported_session_knobs!(ModeRejectingAgent);
-
-#[async_trait::async_trait]
-impl AgentHandle for ModeRejectingAgent {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-    fn get_mode_id(&self) -> &str {
-        "ask"
-    }
-    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
-        Err(crucible_core::traits::chat::ChatError::ModeChange(format!(
-            "unknown mode '{mode_id}'"
-        )))
-    }
-}
-
 /// A mode the daemon refuses must not leave the badge claiming it.
 ///
 /// The badge is set optimistically by `set_mode_with_status` before the RPC is
@@ -328,8 +239,7 @@ impl AgentHandle for ModeRejectingAgent {
 #[tokio::test]
 async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
     let mut app = OilChatApp::default();
-    let mut agent = ModeRejectingAgent;
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let daemon = knob_daemon(BTreeMap::new(), &["ask", "plan"], true).await;
 
     app.on_message(ChatAppMsg::ModeChanged("plan".into()));
     assert_eq!(app.mode(), "plan", "optimistic update happens first");
@@ -339,8 +249,7 @@ async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
         .process_action_collecting_msgs(
             Action::Send(ChatAppMsg::ModeChanged("plan".into())),
             &mut app,
-            &mut agent,
-            &bridge,
+            Some(&daemon.session),
         )
         .await;
     // The event loop drains the queue; do the same so the assertions below
@@ -352,7 +261,7 @@ async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
     assert_eq!(
         app.mode(),
         "ask",
-        "a refused mode must revert to what the handle reports"
+        "a refused mode must revert to what the daemon reports"
     );
     assert!(
         app.has_notifications(),
@@ -360,127 +269,24 @@ async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
     );
 }
 
-/// A handle whose declared mode list can change between fetches.
-struct ModeListingAgent {
-    modes: Vec<String>,
-    fetches: std::sync::Arc<std::sync::Mutex<u32>>,
-    mode: String,
-}
-
-crucible_core::impl_noop_agent!(ModeListingAgent);
-
-#[async_trait::async_trait]
-impl AgentHandle for ModeListingAgent {
-    async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
-    fn get_mode_id(&self) -> &str {
-        &self.mode
-    }
-    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
-        if !self.modes.iter().any(|m| m == mode_id) {
-            return Err(crucible_core::traits::chat::ChatError::ModeChange(format!(
-                "unknown mode '{mode_id}'"
-            )));
-        }
-        self.mode = mode_id.to_string();
-        Ok(())
-    }
-}
-
-/// Only the mode list is live; every knob is the empty answer.
-#[async_trait::async_trait]
-impl SessionKnobs for ModeListingAgent {
-    async fn set_plugin_approval(
-        &mut self,
-        _plugin: &str,
-        _approval: PluginApproval,
-    ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_plugin_approval".into()))
-    }
-    fn get_plugin_approval(&self, _plugin: &str) -> PluginApproval {
-        PluginApproval::Inherit
-    }
-    async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_plugin_turn_limit".into()))
-    }
-    fn get_plugin_turn_limit(&self) -> u32 {
-        25
-    }
-    fn get_system_prompt(&self) -> Option<String> {
-        None
-    }
-
-    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
-        *self.fetches.lock().unwrap() += 1;
-        let ids: Vec<&str> = self.modes.iter().map(String::as_str).collect();
-        crate::tui::oil::chat_app::state::mode_descriptors(&ids)
-    }
-
-    async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported("switch_model".into()))
-    }
-
-    fn current_model(&self) -> Option<&str> {
-        None
-    }
-
-    async fn fetch_available_models(&mut self) -> Vec<String> {
-        Vec::new()
-    }
-
-    async fn set_context_strategy(
-        &mut self,
-        _strategy: crucible_core::session::ContextStrategy,
-    ) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_context_strategy".into()))
-    }
-
-    fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
-        crucible_core::session::ContextStrategy::default()
-    }
-
-    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_precognition".into()))
-    }
-
-    fn get_precognition(&self) -> bool {
-        true
-    }
-}
-
-/// The startup chain, end to end: `FetchModes` → `fetch_available_modes` →
+/// The startup chain, end to end: `FetchModes` → `session.list_modes` →
 /// `ModesLoaded` → the app's list.
 ///
 /// Nothing covered this. Every other mode test hand-feeds `ModesLoaded`, so
 /// deleting the `FetchModes` send or inverting the non-empty guard left the
 /// whole suite green while the TUI silently ran on its built-in fallback.
 #[tokio::test]
-async fn fetch_modes_reaches_the_app_through_the_agent() {
+async fn fetch_modes_reaches_the_app_from_the_daemon() {
     let mut app = OilChatApp::default();
-    let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
-    let mut agent = ModeListingAgent {
-        modes: vec!["ask".to_string(), "review".to_string()],
-        fetches: fetches.clone(),
-        mode: "ask".to_string(),
-    };
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
-    let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
+    let daemon = knob_daemon(BTreeMap::new(), &["ask", "review"], false).await;
 
-    runner
-        .process_action_for_test(
-            Action::Send(ChatAppMsg::FetchModes),
-            &mut app,
-            &mut agent,
-            &bridge,
-        )
-        .await
-        .expect("process_action should not fail");
+    run(&mut app, &daemon, Action::Send(ChatAppMsg::FetchModes)).await;
 
-    assert_eq!(*fetches.lock().unwrap(), 1, "the agent must be asked");
+    assert_eq!(
+        daemon.methods(),
+        ["session.list_modes"],
+        "the daemon must be asked"
+    );
     assert!(
         app.knows_mode("review"),
         "a mode only the daemon knew about must have reached the app's list"
@@ -497,13 +303,7 @@ async fn fetch_modes_reaches_the_app_through_the_agent() {
 #[tokio::test]
 async fn a_mode_declared_after_startup_is_picked_up() {
     let mut app = OilChatApp::default();
-    let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
-    let mut agent = ModeListingAgent {
-        modes: vec!["ask".to_string(), "review".to_string()],
-        fetches: fetches.clone(),
-        mode: "ask".to_string(),
-    };
-    let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
+    let daemon = knob_daemon(BTreeMap::new(), &["ask", "review"], false).await;
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
 
     // The app still has only its built-in fallback list.
@@ -513,8 +313,7 @@ async fn a_mode_declared_after_startup_is_picked_up() {
         .process_action_collecting_msgs(
             Action::Send(ChatAppMsg::ModeSynced("review".into())),
             &mut app,
-            &mut agent,
-            &bridge,
+            Some(&daemon.session),
         )
         .await;
 

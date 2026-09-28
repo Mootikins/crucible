@@ -1,10 +1,11 @@
 use super::*;
+use crate::agent_manager::AgentHandle;
 use crate::test_support::{kiln_name, temp_session_manager, temp_session_manager_with_kilns};
 use async_trait::async_trait;
 use crucible_core::events::SessionEvent;
 use crucible_core::session::SessionType;
 use crucible_core::test_support::EnvVarGuard;
-use crucible_core::traits::chat::{AgentHandle, ChatResult};
+use crucible_core::traits::chat::ChatResult;
 use crucible_core::turn::{StopReason, TurnEvent};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex as StdMutex};
@@ -180,17 +181,10 @@ impl crucible_core::turn::Agent for MultiTurnScriptedAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(MultiTurnScriptedAgent);
+crate::impl_unsupported_session_knobs!(MultiTurnScriptedAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for MultiTurnScriptedAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }
@@ -247,17 +241,10 @@ impl crucible_core::turn::Agent for PromptCapturingAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(PromptCapturingAgent);
+crate::impl_unsupported_session_knobs!(PromptCapturingAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for PromptCapturingAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }
@@ -266,16 +253,10 @@ impl AgentHandle for PromptCapturingAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(MockAgent);
+crate::impl_unsupported_session_knobs!(MockAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for MockAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }
@@ -284,16 +265,10 @@ impl AgentHandle for MockAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(StreamingMockAgent);
+crate::impl_unsupported_session_knobs!(StreamingMockAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for StreamingMockAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }
@@ -343,16 +318,10 @@ impl crucible_core::turn::Agent for OwnsToolsMockAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(OwnsToolsMockAgent);
+crate::impl_unsupported_session_knobs!(OwnsToolsMockAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for OwnsToolsMockAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }
@@ -1082,16 +1051,10 @@ impl crucible_core::turn::Agent for InboundRecordingAgent {
     }
 }
 
-crucible_core::impl_unsupported_session_knobs!(InboundRecordingAgent);
+crate::impl_unsupported_session_knobs!(InboundRecordingAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for InboundRecordingAgent {
-    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
-        Ok(())
-    }
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
     fn get_mode_id(&self) -> &str {
         "ask"
     }

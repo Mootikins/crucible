@@ -528,7 +528,7 @@ pub trait Agent: Send + Sync {
 }
 
 /// Convenience macro for test fixtures that need to satisfy the
-/// [`Agent`] supertrait bound on [`crate::traits::chat::AgentHandle`]
+/// [`Agent`] supertrait bound on the daemon's `AgentHandle`
 /// but never have their `Agent::turn` called in tests. Emits an impl
 /// that returns `Done{Empty}` immediately and `NotSupported` for
 /// `switch_model`.

@@ -189,9 +189,6 @@ async fn a_failed_tui_close_is_a_warning() {
 /// Run `:messages clear` through the real `process_action`. Answer the
 /// count of daemon calls that it started.
 async fn closes_started(is_replay: bool) -> usize {
-    use crate::chat::bridge::AgentEventBridge;
-    use crate::tui::oil::noop_agent::NoopAgentHandle;
-    use crucible_core::events::EventRing;
     use crucible_oil::terminal::Terminal;
 
     let mut runner = OilChatRunner::with_terminal(Terminal::with_size(80, 24));
@@ -215,16 +212,14 @@ async fn closes_started(is_replay: bool) -> usize {
             crossterm::event::KeyModifiers::NONE,
         ),
     ));
-    let mut agent = NoopAgentHandle::new("chat-1".to_string());
-    let bridge = AgentEventBridge::new(std::sync::Arc::new(EventRing::new(16)));
+    let daemon = crate::test_daemon::FakeDaemon::answering_null("chat-1").await;
     let (msg_tx, _msg_rx) = mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
     runner
         .process_action(ProcessActionParams {
             action,
             app: &mut app,
-            agent: &mut agent,
-            bridge: &bridge,
+            session: Some(&daemon.session),
             msg_tx: &msg_tx,
             background_tasks: &mut background_tasks,
         })

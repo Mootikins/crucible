@@ -48,7 +48,7 @@ Start at the owner. The architecture page lists the rest of the path.
 | A builtin tool | `crates/crucible-daemon/src/tools/surface.rs`, then its executor | [Tools and Admission](<docs/Meta/Architecture/Tools and Admission.md>) |
 | An RPC method | `RpcMethod` in `crates/crucible-daemon/src/rpc/dispatch.rs` | [Daemon Server](<docs/Meta/Architecture/Daemon Server.md>) |
 | A session event | `SessionEventPayload` in `crates/crucible-core/src/protocol/session_events/` | [Core Domain Types](<docs/Meta/Architecture/Core Domain Types.md>) |
-| A session setting | `SessionKnobs` in `crates/crucible-core/src/traits/chat.rs`, and `crates/crucible-daemon/src/rpc/knob_method.rs` | [Session Services](<docs/Meta/Architecture/Session Services.md>) |
+| A session setting | `SessionKnob` in `crates/crucible-core/src/types/knob.rs`, then the cross-layer checklist below | [Session Services](<docs/Meta/Architecture/Session Services.md>) |
 | A config key | `crates/crucible-core/src/config/components/` | [Core Config](<docs/Meta/Architecture/Core Config.md>) |
 | A provider | `crates/crucible-core/src/config/components/backend.rs`, then the daemon factory | [Providers and LLM](<docs/Meta/Architecture/Providers and LLM.md>) |
 | A Lua hook | `crates/crucible-lua/src/handlers/hook_name.rs`, then the call site | [Luau Host](<docs/Meta/Architecture/Luau Host.md>) |
@@ -108,11 +108,11 @@ clients on one session must agree, the setting belongs to the session.
 - [ ] Add the variant to `SessionKnob` in `crates/crucible-core/src/types/knob.rs`.
 - [ ] Add the field to the session record in `crates/crucible-core/src/session/types/session.rs`.
 - [ ] Add the field to the settings event in `crates/crucible-core/src/protocol/session_events/settings.rs`.
-- [ ] Add the getter and setter to `SessionKnobs` in `crates/crucible-core/src/traits/chat.rs`.
 
 **Daemon**
-- [ ] Implement the methods in `GenaiAgentHandle`, `AcpAgentHandle` and `DaemonAgentHandle`.
-- [ ] Forward them in the `Box<dyn AgentHandle>` implementation in `crates/crucible-core/src/traits/chat.rs`.
+- [ ] Add the getter and setter to `SessionKnobs` in `crates/crucible-daemon/src/agent_manager/handle.rs`.
+- [ ] Implement them in `GenaiAgentHandle` and `AcpAgentHandle`.
+- [ ] Forward them in the `Box<dyn AgentHandle>` implementation in the same file.
 - [ ] Add the setter to `crates/crucible-daemon/src/agent_manager/models.rs`.
 - [ ] Add the RPC arm to `crates/crucible-daemon/src/rpc/dispatch.rs`.
 - [ ] Add the params to `crates/crucible-daemon/src/server/session/params.rs`.
@@ -121,7 +121,7 @@ clients on one session must agree, the setting belongs to the session.
 **TUI**
 - [ ] Add the `:set` key to `crates/crucible-cli/src/tui/oil/commands/set.rs`.
 - [ ] Handle the message in `crates/crucible-cli/src/tui/oil/chat_app/command_handling.rs`.
-- [ ] Send the RPC in `crates/crucible-cli/src/tui/oil/chat_runner/actions.rs`.
+- [ ] Call the `DaemonClient` method in `crates/crucible-cli/src/tui/oil/chat_runner/actions.rs`.
 
 **Web**
 - [ ] Add the route to `crates/crucible-web/src/routes/session_config/`.
@@ -135,9 +135,8 @@ clients on one session must agree, the setting belongs to the session.
 - [ ] The knob RPC matrix in `crates/crucible-cli/src/tui/oil/chat_runner/tests/knob_rpc.rs` covers the new knob.
 - [ ] The architecture tests in `crates/crucible-cli/tests/architecture_tests.rs` find the knob in the TUI and the web client.
 
-[Simplification Plan](<docs/Meta/Architecture/Simplification Plan.md>)
-step 1 removes the client-side agent handle. That step also shortens this
-list.
+The TUI calls the daemon directly. It holds no agent handle and no copy
+of the session state.
 
 ## Rules that no compiler checks
 

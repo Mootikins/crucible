@@ -1,7 +1,6 @@
 //! Session recording and replay RPC tests.
 
 use crucible_daemon::DaemonClient;
-use std::time::Duration;
 
 use super::server::TestServer;
 
@@ -96,81 +95,6 @@ async fn test_session_replay_rpc_invalid_path() {
     assert!(
         result.is_err(),
         "session_replay with invalid path should return Err, not panic"
-    );
-
-    server.shutdown().await;
-}
-
-/// Regression: DaemonAgentHandle::drop() must call session.end so RecordingWriter writes footer.
-/// Without the Drop impl, `:q` never ended the session and the recording footer was missing.
-#[tokio::test]
-async fn test_recording_footer_regression_drop_ends_session() {
-    use crucible_daemon::DaemonAgentHandle;
-    use std::sync::Arc;
-
-    let server = TestServer::start().await.expect("Failed to start server");
-    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
-        .await
-        .expect("Failed to connect with events");
-    let client = Arc::new(client);
-
-    // Given: an active session with an agent handle
-    let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-            session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
-        })
-        .await
-        .expect("session_create failed");
-
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
-
-    let session_before = client
-        .session_get(&session_id)
-        .await
-        .expect("session_get failed");
-    assert_eq!(
-        session_before["state"], "active",
-        "Session should be active before handle drop"
-    );
-
-    let handle = DaemonAgentHandle::new_and_subscribe(client.clone(), session_id.clone(), event_rx)
-        .await
-        .expect("Failed to create agent handle");
-
-    // When: the handle is dropped (simulates :q in TUI)
-    drop(handle);
-
-    // Drop spawns a fire-and-forget task, so poll for the RPC round-trip to
-    // land rather than guessing how long it takes. A fixed wait passes on an
-    // idle box and fails under load, which is the whole flake pattern.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    let (session_result, session_was_ended) = loop {
-        let result = client.session_get(&session_id).await;
-        let ended = match &result {
-            Err(e) => e.to_string().contains("not found") || e.to_string().contains("Not found"),
-            Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
-        };
-        if ended || tokio::time::Instant::now() >= deadline {
-            break (format!("{result:?}"), ended);
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    };
-    assert!(
-        session_was_ended,
-        "Session should be ended/removed after DaemonAgentHandle drop, got: {:?}. \
-         Recording footer regression — :q must trigger session.end.",
-        session_result,
     );
 
     server.shutdown().await;

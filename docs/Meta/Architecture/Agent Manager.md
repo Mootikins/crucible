@@ -60,7 +60,8 @@ Grouped by directory. Lines are as of `582c5e6c1`.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-daemon/src/agent_manager/mod.rs` | 1793 | Defines `AgentManager`, `AgentError` (now including `SessionRefused`), `TurnStatus`/`TurnOutcome`/`StreamOutcome`, `StreamContext`, `TurnSlotHold`, the `RequestSlotGuard`/`RequestState` mutual exclusion, session-slot access, tool-dispatcher build (`get_or_create_session_dispatcher`), and `cleanup_session`. Declares every submodule below. |
+| `crates/crucible-daemon/src/agent_manager/mod.rs` | 1793 | Defines `AgentManager`, `AgentError` (including `SessionRefused`), `TurnStatus`/`TurnOutcome`/`StreamOutcome`, `StreamContext`, `TurnSlotHold`, the `RequestSlotGuard`/`RequestState` mutual exclusion, session-slot access, tool-dispatcher build (`get_or_create_session_dispatcher`), and `cleanup_session`. Declares every submodule below, including `handle`, and re-exports `AgentHandle`/`SessionKnobs` from it. |
+| `crates/crucible-daemon/src/agent_manager/handle.rs` | 415 | Defines `SessionKnobs` (the session-scoped knobs every agent handle must answer: model, agent-advertised config options, context strategy, precognition, plugin approval, plugin turn limit) and `AgentHandle` (a supertrait of `crucible_core::turn::Agent`, adding mode, undo, an optional ACP session id, and cancel), plus the `impl_unsupported_session_knobs!` macro and the manually-forwarded `Box<dyn AgentHandle + Send + Sync>` impls of both traits. Only the daemon implements either trait — `AcpAgentHandle`, `GenaiAgentHandle`, and the daemon's own cached handle wrapper — since a client drives a session only through `DaemonClient` RPCs. |
 | `crates/crucible-daemon/src/agent_manager/models.rs` | 1097 | Model/provider selection and switching, the one trust gate (`refuse_untrusted`), precognition/context-strategy/plugin-approval/plugin-turn-limit knobs, turn-history undo (refused for an ACP session via `undo_refusal`). |
 | `crates/crucible-daemon/src/agent_manager/scope.rs` | 671 | Mid-session scope mutations (`connect_kiln`/`disconnect_kiln`, both persisting through `SessionManager::modify_session`) and `session_containment`, the allow/deny `RootSet` builder. One of AGENTS.md's four named admission/isolation files. |
 | `crates/crucible-daemon/src/agent_manager/slot.rs` | 639 | Defines `SessionSlot`, the single per-session state holder, and its `TurnGate`/`FollowUpTurn`/`ClearAfterTurn` types. |
@@ -211,6 +212,20 @@ Grouped by directory. Lines are as of `582c5e6c1`.
   field is its own lock so contention on one never blocks a read of another.
   Created lazily by `AgentManager::slot`, held for the duration a turn or
   scope mutation needs it, removed wholesale by `cleanup_session`.
+- **`AgentHandle` / `SessionKnobs` / `BoxedAgentHandle`** (`handle.rs`) — the
+  runtime contract every live agent answers inside the daemon.
+  `SessionKnobs` is the closed set of session-scoped knobs (model, agent
+  config options, context strategy, precognition, plugin approval, plugin
+  turn limit); `AgentHandle` adds mode, undo, an optional ACP session id and
+  cancel on top of `crucible_core::turn::Agent`'s `turn`/`switch_model`.
+  `BoxedAgentHandle` (`mod.rs`) is `Box<dyn AgentHandle + Send + Sync>`, the
+  type `SessionSlot.build`'s `BuildCache` actually stores; `AcpAgentHandle`
+  (`crates/crucible-daemon/src/acp_handle.rs`) and `GenaiAgentHandle`
+  (`crates/crucible-daemon/src/provider/genai_handle.rs`) are its two
+  implementors. Neither trait has a client-side implementor: a client (the
+  CLI's `LiveSession`, the web client) drives a session only through
+  `DaemonClient` RPCs, never through a handle of its own — see [[RPC
+  Client]].
 - **`TurnGate` / `FollowUpTurn` / `ClearAfterTurn`** (`slot.rs`) — `TurnGate`
   is `{ is_interactive, permission_override, origin: TurnOrigin }`, written
   at turn start and read per-call by the ACP permission handler so a later,
@@ -931,6 +946,16 @@ never released mid-turn.
   (outside this page) share a name but answer different questions for
   different callers. Not a duplicate, but a name collision worth knowing
   before grepping for one and finding the other.
+- **`handle.rs`'s boxed-trait-object forwarding is a self-documented
+  manual-maintenance hazard.** Every defaulted `SessionKnobs`/`AgentHandle`
+  method must be re-forwarded by hand in the `Box<dyn AgentHandle + Send +
+  Sync>` impls; the file's own comment says this "has now happened twice"
+  (`get_modes` shipped correct and unreachable, then
+  `agent_config_options`/`set_agent_config_option` did the same), guarded by
+  one integration test
+  (`acp_session_knobs_e2e::the_agents_own_settings_reach_a_client`) rather
+  than a compile-time check. This trait pair moved into this crate from
+  `crucible-core` in this change; the hazard moved with it, unchanged.
 - No conflict was found between this subsystem's code and the AGENTS.md
   ownership or boundary rules it implements; the rules that are most
   explicitly load-bearing (scope/admission, turn lifecycle, one shared

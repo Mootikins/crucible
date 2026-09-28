@@ -338,13 +338,9 @@ async fn unknown_agent_card_errors_without_creating_a_session() {
 /// built-in profile's name must not shadow it — the profile launches.
 #[tokio::test]
 async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
-    use crucible_core::traits::chat::AgentHandle;
     let server = TestServer::start().await.expect("start server");
     write_card(&server.card_kiln(), "claude.md", CLAUDE_CARD);
-    let (client, events) = DaemonClient::connect_to_with_events(&server.socket_path)
-        .await
-        .unwrap();
-    let client = std::sync::Arc::new(client);
+    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
 
     let spec = SessionAgentSpec {
         agent_name: Some("claude".to_string()),
@@ -378,19 +374,6 @@ async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
         "the card's prompt must not leak onto an ACP agent, got: {prompt}"
     );
 
-    let mut handle = crucible_daemon::DaemonAgentHandle::new_and_subscribe(
-        client.clone(),
-        session_id.into(),
-        events,
-    )
-    .await
-    .unwrap();
-    let err = handle.clear_history().await.unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("ACP agents manage their own history"),
-        "{err}"
-    );
     assert_eq!(
         client.session_get(session_id).await.unwrap()["state"],
         "active"

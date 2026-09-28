@@ -29,10 +29,14 @@ connection, a Lua VM, or an HTTP route.
 request, a wire event, and a runtime-path entry ARE. It does not say how the
 daemon stores a session on disk, how it schedules a turn, or how it enforces
 a permission gate — those decisions belong to `crucible-daemon`
-([[Daemon Server]], [[Agent Manager]], [[Session Services]]). A concrete
-`AgentHandle` (`crates/crucible-core/src/traits/chat.rs`) runs in
-`crucible-daemon` or `crucible-cli`; this crate defines only the trait. A
-concrete `KnowledgeRepository` (`crates/crucible-core/src/traits/knowledge.rs`)
+([[Daemon Server]], [[Agent Manager]], [[Session Services]]). `AgentHandle`
+and `SessionKnobs` live in `crucible_daemon::agent_manager::handle` (see
+[[Agent Manager]]), not in this crate, since only the daemon ever implements
+or holds one — a client drives a session through `DaemonClient` RPCs, never
+through a handle. `crucible-core`'s `crates/crucible-core/src/turn/mod.rs`
+defines the lower-level `Agent` trait (`turn`/`switch_model`/`cancel`) that
+`AgentHandle` is a supertrait of.
+A concrete `KnowledgeRepository` (`crates/crucible-core/src/traits/knowledge.rs`)
 runs in the daemon's storage layer; this crate defines only the interface.
 A concrete `ToolExecutor` runs in the daemon or `crucible-lua`; `ToolSurface`
 classification itself is decided by the daemon's
@@ -205,7 +209,7 @@ behavior on top of them.
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-core/src/traits/auth.rs` | 8 | `AuthHeaders` type alias for provider auth-hook responses. |
-| `crates/crucible-core/src/traits/chat.rs` | 643 | `SessionKnobs`/`AgentHandle` traits, `ChatError`, `PrecognitionNoteInfo`, `ChatToolResult`; the per-plugin approval floor and turn-limit knobs. |
+| `crates/crucible-core/src/traits/chat.rs` | 153 | `ChatError`, `PrecognitionNoteInfo`, `ChatToolResult`, `ChatToolCall`. `SessionKnobs`/`AgentHandle` and the per-plugin approval floor and turn-limit knobs live in `crucible_daemon::agent_manager::handle` — see [[Agent Manager]]. |
 | `crates/crucible-core/src/traits/context_ops/context_ops_tests.rs` | 170 | Tests for `ContextMessage` construction, `Range`'s tagged-JSON serde, and the injection envelope's tag-forging resistance. |
 | `crates/crucible-core/src/traits/context_ops/mod.rs` | 257 | `ContextMessage`/`MessageMetadata`, `Position`, `Range` — Lua's context-manipulation primitives; `ContextMessage::injection`/`escape` tag a daemon-injected system message with its `kind`/`source`. |
 | `crates/crucible-core/src/traits/knowledge.rs` | 167 | `KnowledgeRepository` trait, `NoteInfo`/`NoteLinks`. |
@@ -326,33 +330,33 @@ message. `crucible-daemon`'s `AgentManager`/`agent_manager/slot.rs` owns the
 tree per session and drives every concrete `Agent` implementation
 ([[Agent Manager]]).
 
-**The trait layer (dependency inversion).** `SessionKnobs`/`AgentHandle`
-(`traits/chat.rs`) is the interface every runtime agent handle answers —
-model switching, mode, precognition, history, and, as of this change, the
-per-plugin approval floor and the consecutive-plugin-turn limit
-(`set_plugin_approval`/`get_plugin_approval`/`set_plugin_turn_limit`/
-`get_plugin_turn_limit`). `fetch_available_modes` returns
-`Vec<ModeDescriptor>` (each descriptor carries its effective `writes` value),
-not bare mode ids. `KnowledgeRepository` (`traits/knowledge.rs`) decouples
-note retrieval from SQLite storage. `ToolExecutor`/`ToolSurface`
-(`traits/tools.rs`) is the tool-execution and security-classification
-boundary; `ToolSurface` deliberately has no `Default`, so an unclassified
-tool cannot be silently treated as safe. `ContextMessage`/`Range`
-(`traits/context_ops/mod.rs`) is the conversation message type Lua's
-`remove_messages` and the scheduler both use; `ContextMessage::injection`/
-`escape` wrap a daemon-injected system message (Precognition,
-`cru.context.attach`, a plugin turn) with a
+**The trait layer (dependency inversion).** `SessionKnobs`/`AgentHandle` are
+part of `crucible_daemon::agent_manager::handle`'s trait layer (see [[Agent
+Manager]]), not this crate's, since the only implementors
+(`AcpAgentHandle`, `GenaiAgentHandle`) and the only holder (`SessionSlot`'s
+`BuildCache`) are daemon-internal, and no client crate implements or holds
+one. What stays here is `Agent` (`crates/crucible-core/src/turn/mod.rs`):
+`turn`/`switch_model`/`cancel`, the lower-level surface `AgentHandle` is a
+supertrait of.
+`KnowledgeRepository` (`traits/knowledge.rs`) decouples note retrieval from
+SQLite storage. `ToolExecutor`/`ToolSurface` (`traits/tools.rs`) is the
+tool-execution and security-classification boundary; `ToolSurface`
+deliberately has no `Default`, so an unclassified tool cannot be silently
+treated as safe. `ContextMessage`/`Range` (`traits/context_ops/mod.rs`) is
+the conversation message type Lua's `remove_messages` and the scheduler
+both use; `ContextMessage::injection`/`escape` wrap a daemon-injected system
+message (Precognition, `cru.context.attach`, a plugin turn) with a
 `<system-message kind="..." source="...">` envelope and record `kind`/
 `source` in `MessageMetadata`, so a client or a later handler can tell an
 injection from ordinary history and cannot be tricked by injected text that
 contains its own fake envelope. `MessageRole`/`ToolCall`/`TokenUsage`
 (`traits/llm.rs`) and `ContentBlock`/`McpError` (`traits/mcp.rs`) are shared
 LLM/MCP wire-adjacent types. Every trait's real, business-logic
-implementation lives in `crucible-daemon` or `crucible-cli`. `crucible-core`
-itself implements only one forwarding exception: `AgentHandle`/`SessionKnobs`
-for `Box<dyn AgentHandle + Send + Sync>` (`traits/chat.rs`), a mechanical
-passthrough with no logic of its own (see the boxed-forwarding hazard
-below).
+implementation lives in `crucible-daemon` or `crucible-cli`; `crucible-core`
+itself implements no forwarding boxed-trait impl for the chat traits, since
+`AgentHandle`/`SessionKnobs`'s `Box<dyn AgentHandle + Send + Sync>` impls
+live in `handle.rs` with the traits (see [[Agent Manager]] for that
+boxed-forwarding hazard).
 
 **Interaction protocol.** `InteractionRequest`/`InteractionResponse`
 (`interaction/types.rs`) unify `AskRequest`, `AskBatch`, `EditRequest`,
@@ -755,20 +759,22 @@ built from them. The exceptions:
   fixture test in `protocol/session_events/tests.rs`
   (`assets/fixtures/golden/session_event_wire_names.txt`) catches a variant
   whose wire name was renamed or forgotten there.
-- **A new session knob** adds a `SessionKnob` variant, an `on_acp` match
-  arm, and a `SessionKnobs` trait method (`types/knob.rs`, `traits/chat.rs`);
-  the two `#![deny]` lints and the absent `Default` on `AcpKnob` force every
-  answer to be explicit. A new `SessionKnobs` method itself has no default,
-  so the build fails until every implementor answers it: `AcpAgentHandle`
+- **A new session knob** adds a `SessionKnob` variant (`types/knob.rs`, in
+  this crate), an `on_acp` match arm, and a `SessionKnobs` trait method —
+  the trait itself lives in `crucible_daemon::agent_manager::handle`, not in
+  this crate (see [[Agent Manager]]). The two `#![deny]` lints and
+  the absent `Default` on `AcpKnob` force every answer to be explicit. A new
+  `SessionKnobs` method itself has no default, so the build fails until
+  every implementor answers it: `AcpAgentHandle`
   (`crates/crucible-daemon/src/acp_handle.rs`), `GenaiAgentHandle`
-  (`crates/crucible-daemon/src/provider/genai_handle.rs`), `DaemonAgentHandle`
-  (`crates/crucible-daemon/src/rpc_client/agent/agent_handle.rs`), this
-  crate's own `Box<dyn AgentHandle + Send + Sync>` forwarding impl
-  (`traits/chat.rs`), and each test double that implements the trait by
-  hand instead of through `impl_unsupported_session_knobs!`.
-  `crucible-web` names no `SessionKnobs` implementor of its own: its
-  `SessionKnobsResponse` (`crates/crucible-web/src/routes/session/mod.rs`) is
-  an unrelated response DTO for a knobs-support HTTP route, built from
+  (`crates/crucible-daemon/src/provider/genai_handle.rs`), `handle.rs`'s own
+  `Box<dyn AgentHandle + Send + Sync>` forwarding impl, and each test double
+  that implements the trait by hand instead of through
+  `impl_unsupported_session_knobs!`. There is no client-side implementor to
+  update any more: `crucible_daemon::rpc_client` defines no `AgentHandle`
+  of its own. `crucible-web` names no `SessionKnobs` implementor of its own:
+  its `SessionKnobsResponse` (`crates/crucible-web/src/routes/session/mod.rs`)
+  is an unrelated response DTO for a knobs-support HTTP route, built from
   `crucible_core::types::SessionKnobSupport`, not from the trait.
 - **A new `RuntimeAsset` kind** (a sixth thing the runtimepath can hold)
   adds a variant and answers `subdir`/`shape`/`executes`/`reaches` for it —
@@ -837,11 +843,9 @@ Gaps: `recording.rs` has no `#[cfg(test)]` module of its own; its behavior
 is exercised only by the daemon's writer and the CLI's replay driver, both
 out of scope for this page. `paths.rs::env_plugin_paths`'s
 `CRUCIBLE_PLUGIN_PATH` splitting/dedup logic has no direct test in this
-file. `traits/chat.rs`'s manually-forwarded `Box<dyn AgentHandle>` methods
-are covered by exactly one integration test
-(`acp_session_knobs_e2e::the_agents_own_settings_reach_a_client`) rather than
-a compile-time guard, despite the file's own comment flagging this as a
-repeat-prone hazard.
+file. `AgentHandle`/`SessionKnobs`'s manually-forwarded `Box<dyn AgentHandle>`
+methods are part of `crucible_daemon::agent_manager::handle`, not this
+crate — see [[Agent Manager]] for that hazard.
 
 ## Findings
 
@@ -889,15 +893,6 @@ repeat-prone hazard.
   points to an open question in an external plan document rather than a
   closed decision; a resumed transcript still relies on `inject_context`'s
   separate `LogEvent` line to avoid double-persisting the same content.
-- **`traits/chat.rs`'s boxed-trait-object forwarding is a self-documented
-  manual-maintenance hazard.** Every defaulted `SessionKnobs`/`AgentHandle`
-  method must be re-forwarded by hand in the `Box<dyn AgentHandle>` impls;
-  the file's own comment says this "has now happened twice," and this
-  change adds a third occurrence (four more methods —
-  `set_plugin_approval`/`get_plugin_approval`/`set_plugin_turn_limit`/
-  `get_plugin_turn_limit` — added to the manually-forwarded set), still
-  guarded by only one integration test.
-
 None of the above conflicts with `AGENTS.md`'s ownership table: every trait
 in this page is implemented outside `crucible-core`, every closed set with a
 compile-time gate matches the "one exhaustive table" design rule, and the

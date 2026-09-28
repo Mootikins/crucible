@@ -103,45 +103,6 @@ async fn test_session_subscribe_and_unsubscribe() {
 }
 
 #[tokio::test]
-async fn test_daemon_agent_handle_creation() {
-    use crucible_daemon::DaemonAgentHandle;
-
-    let server = TestServer::start().await.expect("Failed to start server");
-    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
-        .await
-        .expect("Failed to connect with events");
-    let client = std::sync::Arc::new(client);
-
-    let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-            session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
-        })
-        .await
-        .expect("session_create failed");
-
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
-
-    let handle = DaemonAgentHandle::new_and_subscribe(client.clone(), session_id.clone(), event_rx)
-        .await
-        .expect("Failed to create agent handle");
-
-    assert_eq!(handle.session_id(), session_id);
-
-    server.shutdown().await;
-}
-
-#[tokio::test]
 async fn test_session_configure_agent() {
     use crucible_core::session::SessionAgent;
 

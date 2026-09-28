@@ -1,10 +1,9 @@
-use crate::chat::bridge::AgentEventBridge;
+use crate::session::LiveSession;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{
     ChatAppMsg, KilnSummary, McpServerDisplay, OilChatApp, PluginStatusEntry,
 };
 use crate::tui::oil::event::Event;
-use crucible_core::traits::chat::AgentHandle;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::terminal::Terminal;
 use std::io;
@@ -28,47 +27,43 @@ mod tests;
 
 pub use commands::session_event_to_chat_msgs;
 pub use render::render_frame;
-pub(crate) use stream::session_event_consumer;
 pub use stream::SessionEventStream;
+pub(crate) use stream::{live_session_event_consumer, session_event_consumer};
 
 /// Parameters for event_loop function.
-pub(super) struct EventLoopParams<'a, A: AgentHandle> {
+///
+/// `session` is `None` in a replay: a replay reaches no daemon.
+pub(super) struct EventLoopParams<'a> {
     pub app: &'a mut OilChatApp,
-    pub agent: &'a mut A,
-    pub bridge: &'a AgentEventBridge,
+    pub session: Option<&'a LiveSession>,
     pub msg_tx: mpsc::UnboundedSender<ChatAppMsg>,
     pub msg_rx: mpsc::UnboundedReceiver<ChatAppMsg>,
-    pub interaction_rx:
-        Option<mpsc::UnboundedReceiver<crucible_core::interaction::InteractionEvent>>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
 
 /// Parameters for handle_selected_event function.
-pub(super) struct HandleSelectedEventParams<'a, A: AgentHandle> {
+pub(super) struct HandleSelectedEventParams<'a> {
     pub event: Option<Event>,
     pub app: &'a mut OilChatApp,
-    pub agent: &'a mut A,
-    pub bridge: &'a AgentEventBridge,
+    pub session: Option<&'a LiveSession>,
     pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
 
 /// Parameters for handle_select_outcome function.
-pub(super) struct HandleSelectOutcomeParams<'a, A: AgentHandle> {
+pub(super) struct HandleSelectOutcomeParams<'a> {
     pub select_outcome: EventLoopSelectOutcome,
     pub app: &'a mut OilChatApp,
-    pub agent: &'a mut A,
-    pub bridge: &'a AgentEventBridge,
+    pub session: Option<&'a LiveSession>,
     pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
 
 /// Parameters for process_action function.
-pub(super) struct ProcessActionParams<'a, A: AgentHandle> {
+pub(super) struct ProcessActionParams<'a> {
     pub action: Action<ChatAppMsg>,
     pub app: &'a mut OilChatApp,
-    pub agent: &'a mut A,
-    pub bridge: &'a AgentEventBridge,
+    pub session: Option<&'a LiveSession>,
     pub msg_tx: &'a mpsc::UnboundedSender<ChatAppMsg>,
     pub background_tasks: &'a mut Vec<JoinHandle<()>>,
 }
@@ -311,9 +306,9 @@ impl OilChatRunner {
             return;
         }
         Self::spawn_model_fetch(msg_tx, background_tasks, session_models_source);
-        // The mode list rides the same prefetch. It is resolved through the
-        // agent handle inside the event loop, so there is nothing to spawn
-        // here — only the message to queue.
+        // The mode list rides the same prefetch. `process_action` reads it
+        // from the session, so there is nothing to spawn here — only the
+        // message to queue.
         if msg_tx.send(ChatAppMsg::FetchModes).is_err() {
             tracing::warn!("UI channel closed, initial FetchModes dropped");
         }
@@ -325,35 +320,22 @@ impl OilChatRunner {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) async fn process_message_for_test<A: AgentHandle>(
-        msg: &ChatAppMsg,
-        app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        is_replay: bool,
-    ) -> Action<ChatAppMsg> {
-        Self::process_message(msg, app, agent, bridge, is_replay).await
-    }
-
     /// Test-only helper: drive `process_action` directly so tests exercise
     /// the real production path rather than a mirrored copy of its body.
     /// Constructs the dependent params (msg_tx, background_tasks) inline.
     #[cfg(test)]
-    pub(crate) async fn process_action_for_test<A: AgentHandle>(
+    pub(crate) async fn process_action_for_test(
         &mut self,
         action: Action<ChatAppMsg>,
         app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
+        session: Option<&LiveSession>,
     ) -> io::Result<bool> {
         let (msg_tx, _msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
         self.process_action(ProcessActionParams {
             action,
             app,
-            agent,
-            bridge,
+            session,
             msg_tx: &msg_tx,
             background_tasks: &mut background_tasks,
         })
@@ -365,20 +347,18 @@ impl OilChatRunner {
     /// trailing `on_message` dispatch go through the channel, so applying them
     /// is the only way a test can observe them.
     #[cfg(test)]
-    pub(crate) async fn process_action_collecting_msgs<A: AgentHandle>(
+    pub(crate) async fn process_action_collecting_msgs(
         &mut self,
         action: Action<ChatAppMsg>,
         app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
+        session: Option<&LiveSession>,
     ) -> Vec<ChatAppMsg> {
         let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
         self.process_action(ProcessActionParams {
             action,
             app,
-            agent,
-            bridge,
+            session,
             msg_tx: &msg_tx,
             background_tasks: &mut background_tasks,
         })
