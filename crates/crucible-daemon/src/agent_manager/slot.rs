@@ -151,13 +151,20 @@ impl SessionInput {
         session: &crucible_core::session::Session,
         message: crate::observe::LogEvent,
     ) -> Result<(), crate::session_manager::SessionError> {
-        let accepted = crate::observe::events::InjectedContext {
-            after_turn: self.after_turn.clone(),
-            message: message.clone(),
+        // Stored now, with the anchor of the turn that already ran: the
+        // broadcast writer could store this after a turn that is in flight.
+        let Some(payload) =
+            crate::observe::events::injection_payload(&message, self.after_turn.clone())
+        else {
+            return Err(crate::session_manager::SessionError::NotContext(format!(
+                "{message:?}"
+            )));
         };
-        storage
-            .append_event(session, &serde_json::to_string(&accepted)?)
-            .await?;
+        let line = crate::observe::events::stored_line(
+            crucible_core::protocol::SessionEventMessage::typed(session.id.to_string(), payload),
+            message.timestamp(),
+        )?;
+        storage.append_event(session, &line).await?;
         self.pending.push(message);
         Ok(())
     }

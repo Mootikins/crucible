@@ -53,15 +53,17 @@ fn to_wire_and_from_wire_round_trip() {
     ));
 }
 
+/// The daemon stores the clear itself, in order, so the broadcast writer
+/// must not store it a second time.
 #[test]
-fn context_clear_is_a_persisted_turn_marker() {
+fn context_clear_is_a_turn_marker_that_the_broadcast_writer_skips() {
     let payload = SessionEventPayload::Turn(TurnPayload::ContextCleared {
         plugin: Some("alpha".into()),
     });
     let (name, data) = payload.to_wire();
     assert_eq!(name, "context_cleared");
     assert_eq!(data, serde_json::json!({"plugin": "alpha"}));
-    assert!(payload.is_persisted());
+    assert!(!payload.is_persisted());
     assert!(matches!(
         SessionEventPayload::from_wire(&name, &data),
         Ok(SessionEventPayload::Turn(
@@ -313,7 +315,14 @@ fn the_persist_set_is_unchanged_from_the_hand_written_name_list() {
         assert!(payload.is_persisted(), "{name} must be persisted");
     }
 
-    for name in ["text_delta", "post_llm_call", "context_injected"] {
+    // `context_cleared` and `context_injected` are stored on the daemon's
+    // own ordered path, not by the broadcast writer.
+    for name in [
+        "text_delta",
+        "post_llm_call",
+        "context_injected",
+        "context_cleared",
+    ] {
         let payload = SessionEventPayload::from_wire(name, &serde_json::json!({})).unwrap();
         assert!(!payload.is_persisted(), "{name} persist decision changed");
     }

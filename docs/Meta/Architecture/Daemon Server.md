@@ -498,8 +498,13 @@ not the live ring, writes the subset `should_persist` admits to
 `session.md`); because the journal drops nothing, a burst that overruns
 `EVENT_CHANNEL_CAPACITY` on the live ring still lands in `session.jsonl`
 whole and in order, and `session.events_after`'s reconnect read is
-journal-backed too. See [[Data Flows]] for the end-to-end wire path across
-frontends.
+journal-backed too. Two turn events do not go through this task: the
+clear (`context_cleared`) and accepted context (`context_injected`, with
+its tags, provenance and the anchor of the turn that already ran). The
+agent manager writes each one directly and in order, in the same wire
+shape, before its in-memory conversation tree changes (`stored_line` and
+`injection_payload` in `crates/crucible-daemon/src/observe/events.rs`).
+See [[Data Flows]] for the end-to-end wire path across frontends.
 
 ## State, concurrency and lifecycle
 

@@ -6,7 +6,7 @@
 //! point of this file:
 //!
 //! - An internal agent gets the block as ACCEPTED CONTEXT. The daemon appends
-//!   a `context_injection` line to `session.jsonl`, so replay, undo and fork
+//!   a `context_injected` event to `session.jsonl`, so replay, undo and fork
 //!   keep the block with its System role.
 //! - An ACP agent owns its history. The daemon must NOT write that line; the
 //!   block rides the one turn through the attachment seam in `send.rs`, and
@@ -240,12 +240,12 @@ impl Fixture {
 
     /// The accepted-context lines of the session log.
     ///
-    /// `SessionInput::accept` writes one `context_injection` line per
+    /// `SessionInput::accept` writes one `context_injected` event per
     /// accepted block. An ACP session must have none.
     fn injections(&self, session: &str) -> Vec<String> {
         self.log(session)
             .lines()
-            .filter(|line| line.contains("\"type\":\"context_injection\""))
+            .filter(|line| line.contains("\"event\":\"context_injected\""))
             .map(str::to_string)
             .collect()
     }
@@ -472,10 +472,10 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
     );
     let line: serde_json::Value = serde_json::from_str(&accepted[0]).expect("the line is JSON");
     assert_eq!(
-        line["message"]["type"], "system",
+        line["data"]["role"], "system",
         "the accepted block keeps its System role: {line}"
     );
-    let stored = line["message"]["content"]
+    let stored = line["data"]["content"]
         .as_str()
         .expect("the stored block is text");
     assert!(
@@ -485,8 +485,11 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
     // The log keeps the kind; the turn adds the one element, live and on
     // replay.
     assert_eq!(
-        line["message"]["injection"],
-        serde_json::json!(["review-comment", "human"]),
+        (&line["data"]["kind"], &line["data"]["source"]),
+        (
+            &serde_json::json!("review-comment"),
+            &serde_json::json!("human")
+        ),
         "{line}"
     );
 

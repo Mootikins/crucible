@@ -193,18 +193,15 @@ pub(crate) async fn inject_context_impl(
     // and then drains the same message from the live queue a second time.
     am.get_or_rebuild_session_tree(session_id, &session.jsonl_path(sm.sessions_root()))
         .await;
+    let announced = crate::observe::events::injection_payload(&log_event, None);
     input
         .accept(sm.storage().as_ref(), &session, log_event)
         .await
         .map_err(|e| e.to_string())?;
     drop(input);
-    let _ = event_tx.emit(SessionEventMessage::typed(
-        session_id,
-        crucible_core::protocol::TurnPayload::ContextInjected {
-            role: role.to_string(),
-            content: content.to_string(),
-        },
-    ));
+    if let Some(payload) = announced {
+        let _ = event_tx.emit(SessionEventMessage::typed(session_id, payload));
+    }
 
     Ok(())
 }

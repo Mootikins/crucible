@@ -37,13 +37,13 @@ pub async fn rebuild_tree_from_jsonl(path: &Path) -> Result<ConversationTree> {
 /// Core rebuilder. Exposed as a pure function for testability.
 pub fn rebuild_tree_from_str(jsonl: &str) -> ConversationTree {
     let mut tree = ConversationTree::new();
-    for (event, injected) in crate::observe::events::replay_session_log(jsonl) {
-        if matches!(event, LogEvent::Clear { .. }) {
+    for row in crate::observe::events::replay_session_log(jsonl) {
+        if matches!(row.event, LogEvent::Clear { .. }) {
             tree = ConversationTree::new();
-        } else if injected {
-            apply_injection_to_tree(&mut tree, &event);
+        } else if row.injected {
+            apply_injection_to_tree(&mut tree, &row.event);
         } else {
-            apply_event_to_tree(&mut tree, &event);
+            apply_event_to_tree(&mut tree, &row.event);
         }
     }
     tree

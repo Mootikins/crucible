@@ -342,3 +342,87 @@ async fn lua_and_rpc_refuse_to_fork_an_acp_session() {
         "a refused fork must not leave a child session behind"
     );
 }
+
+/// A fork writes the child's log in wire shape and keeps what a replay of
+/// the parent reads: each message, its role, whether it is context, and the
+/// model of each answer. An old view line in the parent becomes a wire line
+/// in the child. Only a plain system line from an older daemon, which has no
+/// wire form, stays a view line.
+#[tokio::test]
+async fn a_fork_writes_wire_lines_and_keeps_the_parents_replay() {
+    use crate::observe::events::{replay_session_log, LogEvent};
+    let sm = temp_session_manager();
+    let am = create_test_agent_manager(sm.clone());
+    let parent = sm
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    am.configure_agent(&parent.id, test_agent()).await.unwrap();
+    let wire = |m: SessionEventMessage| serde_json::to_string(&m).unwrap();
+    let lines = [
+        wire(SessionEventMessage::model_switched(
+            &parent.id, "model-a", "p",
+        )),
+        wire(SessionEventMessage::user_message(&parent.id, "t1", "first")),
+        wire(SessionEventMessage::message_complete(
+            &parent.id, "t1", "one", None, None,
+        )),
+        LogEvent::user("old view question").to_jsonl().unwrap(),
+        LogEvent::Assistant {
+            ts: chrono::Utc::now(),
+            content: "old view answer".into(),
+            model: Some("model-b".into()),
+            tokens: None,
+        }
+        .to_jsonl()
+        .unwrap(),
+        serde_json::to_string(&crate::observe::events::InjectedContext {
+            after_turn: None,
+            message: LogEvent::System {
+                ts: chrono::Utc::now(),
+                content: "injected".into(),
+                tags: vec!["review".into()],
+                injection: Some(("review".into(), "rpc".into())),
+            },
+        })
+        .unwrap(),
+        LogEvent::system("legacy plain").to_jsonl().unwrap(),
+    ];
+    for line in &lines {
+        sm.storage().append_event(&parent, line).await.unwrap();
+    }
+
+    let (child, count) = am
+        .fork_session(sm.get_session(&parent.id).unwrap(), None)
+        .await
+        .unwrap();
+    assert_eq!(count, 6);
+
+    let read = |path: std::path::PathBuf| std::fs::read_to_string(path).unwrap();
+    let parent_log = read(parent.jsonl_path(sm.sessions_root()));
+    let child_log = read(child.jsonl_path(sm.sessions_root()));
+    let view_lines: Vec<_> = child_log
+        .lines()
+        .filter(|l| !l.contains("\"type\":\"event\""))
+        .collect();
+    assert_eq!(view_lines.len(), 1, "{view_lines:?}");
+    assert!(view_lines[0].contains("legacy plain"));
+
+    let shape = |log: &str| -> Vec<serde_json::Value> {
+        replay_session_log(log)
+            .into_iter()
+            .filter(|r| {
+                matches!(
+                    r.event,
+                    LogEvent::User { .. } | LogEvent::Assistant { .. } | LogEvent::System { .. }
+                )
+            })
+            .map(|r| {
+                let mut v = serde_json::to_value(&r.event).unwrap();
+                v.as_object_mut().unwrap().remove("ts");
+                serde_json::json!({ "event": v, "injected": r.injected })
+            })
+            .collect()
+    };
+    assert_eq!(shape(&child_log), shape(&parent_log));
+}

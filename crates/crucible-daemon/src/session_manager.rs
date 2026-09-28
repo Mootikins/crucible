@@ -425,41 +425,115 @@ impl SessionManager {
         parent: Session,
         up_to: Option<u64>,
     ) -> Result<(Session, u64), SessionError> {
-        use crate::observe::events::{replay_session_log, InjectedContext, LogEvent};
+        use crate::observe::events::{
+            injection_payload, replay_session_log, stored_line, LogEvent,
+        };
+        use crucible_core::protocol::SessionEventMessage;
 
         let jsonl = match tokio::fs::read_to_string(parent.jsonl_path(self.sessions_root())).await {
             Ok(jsonl) => jsonl,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(error) => return Err(error.into()),
         };
-        // Normalize before copying: parent message-id anchors have no meaning in
-        // the fork's new transcript. Preserve context provenance, not those ids.
-        let mut rows = Vec::new();
-        for (message, injected) in replay_session_log(&jsonl) {
-            if up_to.is_some_and(|limit| rows.len() as u64 >= limit) {
-                break;
-            }
-            if !matches!(
-                message,
-                LogEvent::User { .. } | LogEvent::Assistant { .. } | LogEvent::System { .. }
-            ) {
-                continue;
-            }
-            rows.push(if injected {
-                serde_json::to_string(&InjectedContext {
-                    after_turn: None,
-                    message,
-                })?
-            } else {
-                serde_json::to_string(&message)?
-            });
-        }
         let mut child = Session::new(parent.session_type, parent.kilns)
             .with_workspace(parent.workspace)
             .with_isolation(parent.isolation)
             .with_isolation_record(parent.isolation_record);
         child.agent = parent.agent;
         child.variables = parent.variables;
+        let child_id = child.id.to_string();
+
+        // Copy the conversation in wire shape. A row that came from a wire
+        // line is that line, under the child's id. Accepted context keeps its
+        // role and provenance but not its anchor: the anchor names a parent
+        // turn, and the copy places the context where the parent's replay
+        // read it. A row that an older daemon wrote as a view line is written
+        // again as the wire event with the same meaning.
+        let mut rows = Vec::new();
+        let mut copied = 0u64;
+        let mut model: Option<String> = None;
+        let mut last_turn: Option<String> = None;
+        for row in replay_session_log(&jsonl) {
+            if up_to.is_some_and(|limit| copied >= limit) {
+                break;
+            }
+            if !matches!(
+                row.event,
+                LogEvent::User { .. } | LogEvent::Assistant { .. } | LogEvent::System { .. }
+            ) {
+                continue;
+            }
+            copied += 1;
+            let ts = row.event.timestamp();
+            if row.injected {
+                if let Some(payload) = injection_payload(&row.event, None) {
+                    rows.push(stored_line(
+                        SessionEventMessage::typed(child_id.as_str(), payload),
+                        ts,
+                    )?);
+                }
+                continue;
+            }
+            // The model is announced once and carried forward, so a copied
+            // answer under another model needs its own announcement.
+            if let LogEvent::Assistant { model: Some(m), .. } = &row.event {
+                if model.as_ref() != Some(m) {
+                    model = Some(m.clone());
+                    let switched =
+                        SessionEventMessage::model_switched(child_id.as_str(), m.as_str(), "");
+                    rows.push(stored_line(switched, ts)?);
+                }
+            }
+            if let Some(mut wire) = row.wire {
+                if let LogEvent::User { .. } = row.event {
+                    last_turn = wire
+                        .data
+                        .get("message_id")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                }
+                wire.session_id = child_id.clone();
+                rows.push(serde_json::to_string(&wire)?);
+                continue;
+            }
+            match row.event {
+                LogEvent::User {
+                    content, plugin, ..
+                } => {
+                    let message_id = uuid::Uuid::new_v4().to_string();
+                    last_turn = Some(message_id.clone());
+                    let payload =
+                        crucible_core::protocol::session_events::TurnPayload::UserMessage {
+                            message_id,
+                            content,
+                            origin: plugin.map(crucible_core::turn::TurnOrigin::Plugin),
+                        };
+                    rows.push(stored_line(
+                        SessionEventMessage::typed(child_id.as_str(), payload),
+                        ts,
+                    )?);
+                }
+                LogEvent::Assistant {
+                    content, tokens, ..
+                } => {
+                    let message_id = last_turn
+                        .clone()
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                    let complete = SessionEventMessage::message_complete(
+                        child_id.as_str(),
+                        message_id,
+                        content,
+                        tokens.as_ref(),
+                        None,
+                    );
+                    rows.push(stored_line(complete, ts)?);
+                }
+                // A plain system row from an older daemon has no wire event
+                // with its meaning, so it stays a view line.
+                event @ LogEvent::System { .. } => rows.push(serde_json::to_string(&event)?),
+                _ => {}
+            }
+        }
         // Like delegation, configuration is inherited as a value. No provider
         // connection or lifecycle hook is needed to copy a session.
         let result = async {
@@ -476,7 +550,7 @@ impl SessionManager {
             return Err(error);
         }
         self.sessions.insert(child.id.clone(), child.clone());
-        Ok((child, rows.len() as u64))
+        Ok((child, copied))
     }
 
     /// Create a delegated child session of `parent`.
@@ -1160,6 +1234,11 @@ pub enum SessionError {
 
     #[error("IO error: {0}")]
     IoError(String),
+
+    /// A caller offered a message as context that no turn can read as
+    /// context. Only a system, user or assistant message can be context.
+    #[error("not a context message: {0}")]
+    NotContext(String),
 }
 
 impl From<std::io::Error> for SessionError {

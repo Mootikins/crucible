@@ -487,9 +487,10 @@ async fn clear_with_prompt_starts_a_fresh_turn_in_the_same_session() {
         session.jsonl_path(h.agent_manager.session_manager.sessions_root()),
     )
     .unwrap();
-    assert!(
-        log.contains("\"type\":\"clear\""),
-        "the same session records a clear marker"
+    assert_eq!(
+        log.matches("\"event\":\"context_cleared\"").count(),
+        1,
+        "the same session records one clear marker, in wire shape"
     );
 }
 

@@ -36,7 +36,7 @@ at the same time. Each step leaves the tree working.
 | Step | Deletes | Size | Depends on |
 |---|---|---|---|
 | 1. Remove the client-side agent proxy (done) | one client API layer | L | none |
-| 2. One event path to the clients (sub-step 1 done) | three event projections, one event type | L | step 1 helps |
+| 2. One event path to the clients (sub-steps 1 and 2 done) | three event projections, one event type | L | step 1 helps |
 | 3. One command registry | two command interpreters, one hand list | M | none |
 | 4. The CLI is an RPC client | an in-process daemon in the CLI | M | none |
 | 5. Shell commands run in the daemon | two process spawners | M | none |
@@ -115,7 +115,7 @@ session files can hold them; sub-step 2 replaces that type.
 **Change.**
 1. Make every client decode `SessionEventPayload` only. Delete the string
    matches on event names.
-2. Store only wire-shaped lines. Most of `session.jsonl` is already wire
+2. **(done)** Store only wire-shaped lines. Most of `session.jsonl` is already wire
    events that `persist_event` writes, and `wire_to_log_event` turns them
    into `LogEvent` when a reader loads them. So `LogEvent` is the read
    model, not the stored majority. Two writers still store `LogEvent`
@@ -126,7 +126,10 @@ session files can hold them; sub-step 2 replaces that type.
    carry their data yet: `context_cleared` is not stored, and
    `ContextInjected` has no tags, kind, source or anchor. So this sub-step
    first widens those wire events, then writes them in wire shape on the
-   same direct path, and keeps the `LogEvent` reader for old lines.
+   same direct path, and keeps the `LogEvent` reader for old lines. The
+   fork also writes wire lines: it copies each wire line of the parent, and
+   converts the old view lines. An old plain system line has no wire form,
+   so a fork copies it as it is.
 3. Move the transcript fold into the daemon. Serve the folded transcript
    with the session history. Let the TUI and the web client render it, not
    fold it.

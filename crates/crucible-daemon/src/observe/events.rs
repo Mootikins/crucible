@@ -366,19 +366,20 @@ impl LogEvent {
 /// The log is mixed by construction and always has been. `persist_event`
 /// (`server/core.rs`) appends a serialized [`SessionEventMessage`] —
 /// `{"type":"event","event":"user_message","data":{…}}` — and that is the
-/// overwhelming majority of every real file. Fork handlers and older context
-/// writers append [`LogEvent`] instead — `{"type":"user","ts":…,"content":…}`.
-/// Context acceptance now appends [`InjectedContext`] to preserve turn ordering. Neither
-/// writer knows about the other, so a reader that understands only one
-/// shape silently drops the rest of the file. That was the bug this type
-/// exists to make unrepresentable.
+/// overwhelming majority of every real file. The daemon writes the clear and
+/// the accepted context in the same wire shape, on its own ordered path.
+/// Older daemons wrote [`LogEvent`] lines — `{"type":"user","ts":…,"content":…}`
+/// — and [`InjectedContext`] lines, and a stored session keeps them, so this
+/// type still reads both. A reader that understands only one shape silently
+/// drops the rest of the file. That was the bug this type exists to make
+/// unrepresentable.
 #[derive(Debug, Clone)]
 pub enum SessionLogLine {
     /// The daemon's broadcast event, as persisted.
     Wire(SessionEventMessage),
-    /// The presentation-shaped event written by fork and older context writers.
+    /// The presentation-shaped event that older daemons wrote.
     View(LogEvent),
-    /// Accepted context, anchored after the turn whose input was already assembled.
+    /// Accepted context, as older daemons wrote it.
     Injection(InjectedContext),
 }
 
@@ -459,6 +460,15 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
             ts,
             content: text("content")?,
         }),
+        // The clear marker. A log that an older daemon wrote can hold both a
+        // `clear` view line and this event for one clear. They are adjacent,
+        // and a second clear of an empty context changes nothing.
+        "context_cleared" => match msg.payload() {
+            Ok(SessionEventPayload::Turn(TurnPayload::ContextCleared { plugin })) => {
+                Some(LogEvent::Clear { ts, plugin })
+            }
+            _ => None,
+        },
         "message_complete" => Some(LogEvent::Assistant {
             ts,
             content: text("full_response")?,
@@ -534,6 +544,90 @@ fn wire_token_usage(data: &Value) -> Option<TokenUsage> {
     })
 }
 
+/// The wire payload of an accepted context message, or `None` for an event
+/// that is not a context message.
+///
+/// The one mapping from the read model to the stored event. [`injected_event`]
+/// is its inverse.
+pub(crate) fn injection_payload(
+    message: &LogEvent,
+    after_turn: Option<String>,
+) -> Option<TurnPayload> {
+    let (role, content, tags, kind, source) = match message {
+        LogEvent::System {
+            content,
+            tags,
+            injection,
+            ..
+        } => {
+            let (kind, source) = injection.clone().unzip();
+            ("system", content, tags.clone(), kind, source)
+        }
+        LogEvent::User {
+            content, plugin, ..
+        } => (
+            "user",
+            content,
+            Vec::new(),
+            plugin.as_ref().map(|_| INJECTED_PLUGIN_KIND.to_string()),
+            plugin.clone(),
+        ),
+        LogEvent::Assistant { content, .. } => ("assistant", content, Vec::new(), None, None),
+        _ => return None,
+    };
+    Some(TurnPayload::ContextInjected {
+        role: role.to_string(),
+        content: content.clone(),
+        tags,
+        kind,
+        source,
+        after_turn,
+    })
+}
+
+/// The `kind` of a user message that a plugin injected. Its `source` is the
+/// plugin name.
+const INJECTED_PLUGIN_KIND: &str = "plugin";
+
+/// The context message of a stored `context_injected` event.
+fn injected_event(
+    ts: DateTime<Utc>,
+    role: &str,
+    content: String,
+    tags: Vec<String>,
+    kind: Option<String>,
+    source: Option<String>,
+) -> LogEvent {
+    match role {
+        "user" => LogEvent::User {
+            ts,
+            content,
+            plugin: source.filter(|_| kind.as_deref() == Some(INJECTED_PLUGIN_KIND)),
+        },
+        "assistant" => LogEvent::Assistant {
+            ts,
+            content,
+            model: None,
+            tokens: None,
+        },
+        _ => LogEvent::System {
+            ts,
+            content,
+            tags,
+            injection: kind.zip(source),
+        },
+    }
+}
+
+/// `message` as one `session.jsonl` line, stamped with `ts`.
+pub(crate) fn stored_line(
+    mut message: SessionEventMessage,
+    ts: DateTime<Utc>,
+) -> Result<String, serde_json::Error> {
+    message.timestamp = Some(ts);
+    serde_json::to_string(&message)
+}
+
 /// Parse a whole session log into presentation events.
 ///
 /// Pure `&str -> Vec<LogEvent>` so the async file-backed reader
@@ -550,12 +644,22 @@ fn wire_token_usage(data: &Value) -> Option<TokenUsage> {
 pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
     replay_session_log(jsonl)
         .into_iter()
-        .map(|(event, _)| event)
+        .map(|row| row.event)
         .collect()
 }
 
+/// One replayed message, in the order that a turn reads it.
+pub(crate) struct ReplayRow {
+    pub event: LogEvent,
+    /// Accepted context rather than a turn of the conversation.
+    pub injected: bool,
+    /// The stored wire event that the row came from, when it came from one.
+    /// A fork copies it, so the copy keeps the event's own fields.
+    pub wire: Option<SessionEventMessage>,
+}
+
 /// Replay preserves whether a message is context rather than a user turn.
-pub(crate) fn replay_session_log(jsonl: &str) -> Vec<(LogEvent, bool)> {
+pub(crate) fn replay_session_log(jsonl: &str) -> Vec<ReplayRow> {
     let mut events = Vec::new();
     // The model a turn ran under is announced once, by `model_switched`,
     // and not repeated on each `message_complete`. Carry it forward so
@@ -588,8 +692,35 @@ pub(crate) fn replay_session_log(jsonl: &str) -> Vec<(LogEvent, bool)> {
         .collect();
     let mut injections = std::collections::BTreeMap::<usize, Vec<LogEvent>>::new();
     for (index, line) in lines.iter().enumerate() {
-        if let SessionLogLine::Injection(injection) = line {
-            let anchor = match &injection.after_turn {
+        let accepted = match line {
+            SessionLogLine::Injection(injection) => {
+                Some((injection.after_turn.clone(), injection.message.clone()))
+            }
+            SessionLogLine::Wire(msg) => match msg.payload() {
+                Ok(SessionEventPayload::Turn(TurnPayload::ContextInjected {
+                    role,
+                    content,
+                    tags,
+                    kind,
+                    source,
+                    after_turn,
+                })) => Some((
+                    after_turn,
+                    injected_event(
+                        msg.timestamp.unwrap_or_else(Utc::now),
+                        &role,
+                        content,
+                        tags,
+                        kind,
+                        source,
+                    ),
+                )),
+                _ => None,
+            },
+            SessionLogLine::View(_) => None,
+        };
+        if let Some((after_turn, message)) = accepted {
+            let anchor = match &after_turn {
                 Some(id) => turns
                     .iter()
                     .find(|(_, turn)| *turn == Some(id.as_str()))
@@ -602,10 +733,7 @@ pub(crate) fn replay_session_log(jsonl: &str) -> Vec<(LogEvent, bool)> {
                 .find(|(index, _)| *index > anchor)
                 .map(|(index, _)| *index)
                 .unwrap_or(lines.len());
-            injections
-                .entry(boundary)
-                .or_default()
-                .push(injection.message.clone());
+            injections.entry(boundary).or_default().push(message);
         }
     }
     for (index, line) in lines.into_iter().enumerate() {
@@ -614,7 +742,11 @@ pub(crate) fn replay_session_log(jsonl: &str) -> Vec<(LogEvent, bool)> {
                 .remove(&index)
                 .unwrap_or_default()
                 .into_iter()
-                .map(|event| (event, true)),
+                .map(|event| ReplayRow {
+                    event,
+                    injected: true,
+                    wire: None,
+                }),
         );
         match line {
             SessionLogLine::Wire(msg) => {
@@ -629,20 +761,27 @@ pub(crate) fn replay_session_log(jsonl: &str) -> Vec<(LogEvent, bool)> {
                     if let LogEvent::Assistant { model, .. } = &mut event {
                         *model = current_model.clone();
                     }
-                    events.push((event, false));
+                    events.push(ReplayRow {
+                        event,
+                        injected: false,
+                        wire: Some(msg),
+                    });
                 }
             }
-            SessionLogLine::View(event) => events.push((event, false)),
+            SessionLogLine::View(event) => events.push(ReplayRow {
+                event,
+                injected: false,
+                wire: None,
+            }),
             SessionLogLine::Injection(_) => {}
         }
     }
     // Accepted but not yet consumed: a resumed turn must see these too.
-    events.extend(
-        injections
-            .into_values()
-            .flatten()
-            .map(|event| (event, true)),
-    );
+    events.extend(injections.into_values().flatten().map(|event| ReplayRow {
+        event,
+        injected: true,
+        wire: None,
+    }));
 
     events
 }
@@ -678,6 +817,153 @@ mod tests {
         let pending = parse_session_log(&[first, injection, reply].join("\n"));
         assert!(
             matches!(&pending[..], [LogEvent::User { .. }, LogEvent::Assistant { .. }, LogEvent::System { content, .. }] if content == "remember")
+        );
+    }
+
+    /// The wire `context_injected` line takes the anchor of the old
+    /// `context_injection` line, in every order the two writers can race.
+    #[test]
+    fn a_wire_injection_is_replayed_at_its_turn_boundary_even_when_writers_race() {
+        let first =
+            serde_json::to_string(&SessionEventMessage::user_message("s", "first", "question"))
+                .unwrap();
+        let second = serde_json::to_string(&SessionEventMessage::user_message(
+            "s",
+            "second",
+            "follow-up",
+        ))
+        .unwrap();
+        let injection = stored_line(
+            SessionEventMessage::typed(
+                "s",
+                injection_payload(&LogEvent::system("remember"), Some("first".into())).unwrap(),
+            ),
+            Utc::now(),
+        )
+        .unwrap();
+        let reply = serde_json::to_string(&SessionEventMessage::message_complete(
+            "s", "first", "answer", None, None,
+        ))
+        .unwrap();
+        for lines in [
+            [&injection, &first, &reply, &second],
+            [&first, &injection, &reply, &second],
+            [&first, &reply, &injection, &second],
+        ] {
+            let rows = replay_session_log(&lines.map(String::as_str).join("\n"));
+            let shape: Vec<_> = rows.iter().map(|r| (&r.event, r.injected)).collect();
+            assert!(
+                matches!(&shape[..], [
+                    (LogEvent::User { .. }, false),
+                    (LogEvent::Assistant { .. }, false),
+                    (LogEvent::System { content, .. }, true),
+                    (LogEvent::User { .. }, false),
+                ] if content == "remember"),
+                "{shape:?}"
+            );
+        }
+    }
+
+    /// Each context message survives the trip to the stored event and back,
+    /// with its role, tags and provenance.
+    #[test]
+    fn a_context_message_round_trips_through_the_stored_event() {
+        let ts = Utc::now();
+        let messages = [
+            LogEvent::System {
+                ts,
+                content: "diff".into(),
+                tags: vec!["review".into()],
+                injection: Some(("review".into(), "branch:main".into())),
+            },
+            LogEvent::System {
+                ts,
+                content: "plain".into(),
+                tags: Vec::new(),
+                injection: None,
+            },
+            LogEvent::User {
+                ts,
+                content: "from a plugin".into(),
+                plugin: Some("goal".into()),
+            },
+            LogEvent::User {
+                ts,
+                content: "from a person".into(),
+                plugin: None,
+            },
+            LogEvent::Assistant {
+                ts,
+                content: "said".into(),
+                model: None,
+                tokens: None,
+            },
+        ];
+        for message in messages {
+            let Some(TurnPayload::ContextInjected {
+                role,
+                content,
+                tags,
+                kind,
+                source,
+                after_turn,
+            }) = injection_payload(&message, None)
+            else {
+                panic!("{message:?} is context");
+            };
+            assert_eq!(after_turn, None);
+            let back = injected_event(ts, &role, content, tags, kind, source);
+            assert_eq!(
+                serde_json::to_value(&back).unwrap(),
+                serde_json::to_value(&message).unwrap()
+            );
+        }
+        assert!(injection_payload(&LogEvent::Clear { ts, plugin: None }, None).is_none());
+    }
+
+    /// The stored `context_cleared` is the clear. A log from an older daemon
+    /// holds both a `clear` view line and the broadcast event for one clear;
+    /// the two adjacent clears leave the same empty context.
+    #[test]
+    fn the_stored_clear_marker_is_read_as_a_clear() {
+        let cleared = stored_line(
+            SessionEventMessage::typed("s", TurnPayload::ContextCleared { plugin: None }),
+            Utc::now(),
+        )
+        .unwrap();
+        let old = LogEvent::Clear {
+            ts: Utc::now(),
+            plugin: None,
+        }
+        .to_jsonl()
+        .unwrap();
+        let before =
+            serde_json::to_string(&SessionEventMessage::user_message("s", "a", "before")).unwrap();
+        let after =
+            serde_json::to_string(&SessionEventMessage::user_message("s", "b", "after")).unwrap();
+        let events =
+            parse_session_log(&[before.clone(), cleared.clone(), after.clone()].join("\n"));
+        assert!(matches!(
+            &events[..],
+            [
+                LogEvent::User { .. },
+                LogEvent::Clear { .. },
+                LogEvent::User { .. }
+            ]
+        ));
+        let tree = crate::observe::rebuild::rebuild_tree_from_str(
+            &[before, old, cleared, after].join("\n"),
+        );
+        let path = tree.path_to_here(tree.current());
+        let said = |text: &str| {
+            path.iter().any(|id| {
+                matches!(&tree.get(*id).content,
+                crucible_core::turn::NodeContent::User { text: t } if t == text)
+            })
+        };
+        assert!(
+            !said("before") && said("after"),
+            "only the turn after the clear stays"
         );
     }
 

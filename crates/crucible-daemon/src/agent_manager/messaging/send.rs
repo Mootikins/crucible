@@ -141,18 +141,20 @@ impl AgentManager {
                 &session.jsonl_path(self.session_manager.sessions_root()),
             )
             .await;
-        let marker = crate::observe::LogEvent::Clear {
-            ts: chrono::Utc::now(),
+        // Stored now and in order, before the tree resets: a tree rebuilt
+        // from the file must see the clear where it happened. The broadcast
+        // writer does not store this event.
+        let cleared = crucible_core::protocol::session_events::TurnPayload::ContextCleared {
             plugin: plugin.map(str::to_owned),
         };
+        let marker = crate::observe::events::stored_line(
+            SessionEventMessage::typed(session_id.as_str(), cleared.clone()),
+            chrono::Utc::now(),
+        )
+        .map_err(crate::session_manager::SessionError::from)?;
         self.session_manager
             .storage()
-            .append_event(
-                session,
-                &marker
-                    .to_jsonl()
-                    .map_err(crate::session_manager::SessionError::from)?,
-            )
+            .append_event(session, &marker)
             .await?;
         *tree.lock().await = crucible_core::turn::ConversationTree::new();
         input.pending.clear();
@@ -172,12 +174,7 @@ impl AgentManager {
                 .await?;
             slot.invalidate_agent();
         }
-        event_tx.emit(SessionEventMessage::typed(
-            session_id.as_str(),
-            crucible_core::protocol::session_events::TurnPayload::ContextCleared {
-                plugin: plugin.map(str::to_owned),
-            },
-        ));
+        event_tx.emit(SessionEventMessage::typed(session_id.as_str(), cleared));
         Ok(())
     }
 

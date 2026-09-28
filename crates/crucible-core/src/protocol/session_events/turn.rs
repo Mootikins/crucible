@@ -205,11 +205,33 @@ event_payload! {
             request_id: String,
             response: InteractionResponse,
         },
+        /// Context that the session accepted for its next turn. It is not a
+        /// user turn.
+        ///
+        /// The daemon stores it in `session.jsonl` on its own ordered path, as
+        /// the turn accepts it; the broadcast writer does not store it again.
         "context_injected" => ContextInjected {
+            /// `system`, `user` or `assistant`.
             #[serde(default)]
             role: String,
             #[serde(default)]
             content: String,
+            /// The tags that a `transform_context` handler finds the block by.
+            #[serde(default, skip_serializing_if = "Vec::is_empty")]
+            tags: Vec<String>,
+            /// The kind of the injection, for example `context` or `plugin`.
+            /// Absent for plain context.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            kind: Option<String>,
+            /// Who injected it: a plugin name, `rpc`, or a diffset source.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            source: Option<String>,
+            /// The message id of the turn whose input was already assembled
+            /// when the context arrived. A reader places the context before
+            /// the next turn after it. Absent: before the next turn after the
+            /// line itself.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            after_turn: Option<String>,
         },
         "precognition_complete" => PrecognitionComplete {
             #[serde(default)]
@@ -276,7 +298,6 @@ impl TurnPayload {
     pub fn is_persisted(&self) -> bool {
         match self {
             Self::UserMessage { .. }
-            | Self::ContextCleared { .. }
             | Self::Thinking { .. }
             | Self::SegmentComplete { .. }
             | Self::MessageComplete { .. }
@@ -296,11 +317,14 @@ impl TurnPayload {
             // would report today's search results as though they were the ones
             // actually used.
             | Self::PrecognitionComplete { .. } => true,
-            // `context_injected` sits semantically next to
-            // `precognition_complete` and is NOT persisted here, because
-            // `inject_context` already writes a `LogEvent` line for the same
-            // content and persisting both would duplicate it. Flagged, not
-            // changed: see the plan's open question 4.
+            // `context_cleared` and `context_injected` are stored, but not by
+            // the broadcast writer. The daemon writes each one at once and in
+            // order, before the in-memory tree changes, so a tree that is
+            // rebuilt from the file cannot miss it: the clear where it
+            // happened, and the context with the anchor of the turn that
+            // already ran.
+            Self::ContextCleared { .. }
+            |
             Self::TextDelta { .. }
             | Self::InteractionRequested { .. }
             | Self::InteractionCompleted { .. }
