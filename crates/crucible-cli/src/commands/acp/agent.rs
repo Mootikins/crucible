@@ -35,13 +35,21 @@ use crucible_daemon::{DaemonClient, SessionEvent};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info, warn};
 
+use super::project::HostProjection;
 use super::translate::{
     available_commands, classify_event, interaction_tool_call, opens_turn,
-    outcome_to_interaction_response, permission_options, replay_step, TurnEnd, TurnStep,
+    outcome_to_interaction_response, permission_options, TurnEnd, TurnStep,
 };
 
 /// Shared event stream for one ACP session's daemon connection.
-type EventStream = Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>;
+type EventStream = Arc<Mutex<SessionStream>>;
+
+/// The events of one session and what its host already has of them. One
+/// lock holds both, because a turn reads events and projects their ops.
+struct SessionStream {
+    rx: mpsc::UnboundedReceiver<SessionEvent>,
+    projection: HostProjection,
+}
 
 /// A resolved session: its daemon client, daemon session id, and event stream.
 type SessionRef = (Arc<DaemonClient>, String, EventStream);
@@ -215,6 +223,7 @@ impl CrucibleAcpAgent {
         id: String,
         client: DaemonClient,
         events: mpsc::UnboundedReceiver<SessionEvent>,
+        projection: HostProjection,
     ) {
         self.sessions
             .lock()
@@ -224,7 +233,10 @@ impl CrucibleAcpAgent {
                 SessionEntry {
                     client: Arc::new(client),
                     daemon_session_id: id,
-                    events: Arc::new(Mutex::new(events)),
+                    events: Arc::new(Mutex::new(SessionStream {
+                        rx: events,
+                        projection,
+                    })),
                 },
             );
     }
@@ -258,14 +270,14 @@ impl CrucibleAcpAgent {
         events: &EventStream,
         conn: &HostConnection,
     ) -> AcpResult<StopReason> {
-        let mut rx = events.lock().await;
+        let mut stream = events.lock().await;
         // Nothing before our own turn. A `turn:complete` handler can start a
         // turn after we answered the previous prompt, and its events wait
         // here; without this the next prompt would end on that turn's
         // `turn_finished`.
         let mut ours = false;
         loop {
-            let Some(event) = rx.recv().await else {
+            let Some(event) = stream.rx.recv().await else {
                 // Daemon connection closed mid-turn: report a JSON-RPC error
                 // (more truthful than a clean Cancelled) and drop the session.
                 warn!(session = %daemon_session_id, "daemon event stream closed mid-turn");
@@ -279,14 +291,15 @@ impl CrucibleAcpAgent {
                 ours = opens_turn(&event, message_id);
                 continue;
             }
-            match classify_event(&event) {
-                TurnStep::Update(update) => {
-                    let notif = SessionNotification::new(acp_session_id.clone(), *update);
-                    if let Err(e) = conn.send_notification(notif) {
-                        warn!(error = ?e, "failed to send session/update; ending turn");
-                        return Ok(StopReason::EndTurn);
-                    }
+            // The daemon folded the event; its ops are what the host draws.
+            for update in stream.projection.ops(&event.transcript) {
+                let notif = SessionNotification::new(acp_session_id.clone(), update);
+                if let Err(e) = conn.send_notification(notif) {
+                    warn!(error = ?e, "failed to send session/update; ending turn");
+                    return Ok(StopReason::EndTurn);
                 }
+            }
+            match classify_event(&event) {
                 TurnStep::Interaction {
                     request_id,
                     request,
@@ -468,7 +481,12 @@ impl CrucibleAcpAgent {
             })?;
 
         info!(session = %daemon_session_id, "acp session ready");
-        self.insert_session(daemon_session_id.clone(), client, event_rx);
+        self.insert_session(
+            daemon_session_id.clone(),
+            client,
+            event_rx,
+            HostProjection::default(),
+        );
 
         Ok(NewSessionResponse::new(daemon_session_id))
     }
@@ -571,15 +589,22 @@ impl CrucibleAcpAgent {
         // failure must not orphan the live session, so it degrades to a
         // resumption without history — the same clean-empty contract
         // `session.events_after` answers an unknown id with.
-        match client.session_events_after(&daemon_session_id, 0).await {
-            Ok(envelopes) => {
-                for event in &envelopes {
-                    if let TurnStep::Update(update) = replay_step(event) {
-                        let notif = SessionNotification::new(args.session_id.clone(), *update);
-                        if let Err(e) = conn.send_notification(notif) {
-                            warn!(error = ?e, "failed to send replayed session/update; truncating replay");
-                            break;
-                        }
+        let mut projection = HostProjection::default();
+        match client
+            .session_history(&daemon_session_id, Some(0), None)
+            .await
+        {
+            Ok(reply) => {
+                let transcript: crucible_core::transcript::Transcript = reply
+                    .get("transcript")
+                    .cloned()
+                    .and_then(|t| serde_json::from_value(t).ok())
+                    .unwrap_or_default();
+                for update in projection.snapshot(&transcript) {
+                    let notif = SessionNotification::new(args.session_id.clone(), update);
+                    if let Err(e) = conn.send_notification(notif) {
+                        warn!(error = ?e, "failed to send replayed session/update; truncating replay");
+                        break;
                     }
                 }
             }
@@ -590,7 +615,7 @@ impl CrucibleAcpAgent {
             ),
         }
 
-        self.insert_session(daemon_session_id, client, event_rx);
+        self.insert_session(daemon_session_id, client, event_rx, projection);
         self.advertise_commands(&args.session_id, conn).await;
         Ok(LoadSessionResponse::default())
     }

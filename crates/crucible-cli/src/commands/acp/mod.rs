@@ -39,6 +39,7 @@
 //! then `cru chat -a crucible` drives a full round trip through both roles.
 
 mod agent;
+mod project;
 mod translate;
 
 use std::path::PathBuf;

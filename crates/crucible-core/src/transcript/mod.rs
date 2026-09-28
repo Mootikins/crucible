@@ -931,12 +931,18 @@ fn is_empty_value(value: &Value) -> bool {
     }
 }
 
-/// A tool result as text: a string as it is, other JSON in its compact
-/// form. Text that reads as an error loses the nested `Error: ` prefixes.
+/// A tool result as text: a string as it is; an object with a readable
+/// `output`, `content`, `text` or `message` field, that field; other JSON in
+/// its compact form. Text that reads as an error loses the nested `Error: `
+/// prefixes.
 fn result_text(value: &Value) -> String {
-    let text = match value {
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
+    let readable = ["output", "content", "text", "message"]
+        .iter()
+        .find_map(|key| value.get(key).and_then(Value::as_str));
+    let text = match (value, readable) {
+        (Value::String(text), _) => text.clone(),
+        (_, Some(text)) => text.to_string(),
+        (other, None) => other.to_string(),
     };
     if text.starts_with("Error: ") {
         strip_tool_error_prefix(&text)

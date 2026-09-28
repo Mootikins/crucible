@@ -153,7 +153,7 @@ ops. The commits, in order:
    keeps no turn state. Part b remains: the old stream messages of
    `ChatAppMsg` (`TextDelta`, `ToolCall` and the rest) have no production
    sender, and their tests move to the event path.
-7. `cru acp` replays the snapshot on `session/load`, and maps the ops.
+7. **(done)** `cru acp` replays the snapshot on `session/load`, and maps the ops (`HostProjection` in `crates/crucible-cli/src/commands/acp/project.rs`).
 8. A parity test renders one fixture in all three clients.
 9. The markdown export and the Lua history read the snapshot.
 

@@ -271,23 +271,23 @@ fn session_load_replays_the_recorded_transcript() {
             "user_message_chunk",
             "agent_thought_chunk",
             "agent_message_chunk",
-            "agent_message_chunk",
             "tool_call",
             "tool_call_update",
         ],
         "replayed transcript mismatch: {updates:?}"
     );
+    // The replay draws the daemon's folded transcript: one chunk for each
+    // answer segment, in the place it had before the tool.
     assert_eq!(updates[0]["content"]["text"], "Fix the parser");
     assert_eq!(updates[1]["content"]["text"], "read parser.rs first");
-    assert_eq!(updates[2]["content"]["text"], "I will read ");
-    assert_eq!(updates[3]["content"]["text"], "parser.rs");
+    assert_eq!(updates[2]["content"]["text"], "I will read parser.rs");
+    assert_eq!(updates[3]["toolCallId"], "c1");
+    assert_eq!(updates[3]["title"], "read file");
+    assert_eq!(updates[3]["status"], "in_progress");
+    assert_eq!(updates[3]["rawInput"], json!({"path": "src/parser.rs"}));
     assert_eq!(updates[4]["toolCallId"], "c1");
-    assert_eq!(updates[4]["title"], "read file");
-    assert_eq!(updates[4]["status"], "in_progress");
-    assert_eq!(updates[4]["rawInput"], json!({"path": "src/parser.rs"}));
-    assert_eq!(updates[5]["toolCallId"], "c1");
-    assert_eq!(updates[5]["status"], "completed");
-    assert_eq!(updates[5]["content"][0]["content"]["text"], "fn parse() {}");
+    assert_eq!(updates[4]["status"], "completed");
+    assert_eq!(updates[4]["content"][0]["content"]["text"], "fn parse() {}");
 
     // Closing stdin ends the connection; a replay path that hangs or panics
     // shows up here.

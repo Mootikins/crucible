@@ -145,7 +145,8 @@ point outward to `crucible-core`, `crucible-daemon`, `crucible-lua`,
 | --- | --- | --- |
 | `crates/crucible-cli/src/commands/acp/mod.rs` | 195 | `cru acp` entry point: resolves/attaches the kiln, hands off to `CrucibleAcpAgent::serve`; also covered end to end by `tests/acp_wire_tests.rs`, which drives the real binary against a mock provider. |
 | `crates/crucible-cli/src/commands/acp/agent.rs` | 638 | `CrucibleAcpAgent` — implements the ACP `Agent` role by delegating every operation to the daemon over RPC; `advertise_commands` sends `session.commands` on as `available_commands_update`. |
-| `crates/crucible-cli/src/commands/acp/translate.rs` | 906 | Pure translation layer between daemon `SessionEvent`s and ACP wire types (`SessionUpdate`, `ToolCall`, `PermissionOption`), including the `TurnEnd` mapping, the canonical-tool-call-based title/kind lookup, `TurnStep::CommandsChanged`, and `available_commands`, which projects the session's catalog into `AvailableCommand`s, leaving out the built-in commands. |
+| `crates/crucible-cli/src/commands/acp/project.rs` | 349 | `HostProjection`: the folded transcript as ACP `session/update`s. `ops` maps the ops of a live event (text and thought chunks, tool calls and their updates); `snapshot` replays a whole transcript for `session/load`, with the prompts. It keeps what the host already has, so an item that comes again sends only its new text. |
+| `crates/crucible-cli/src/commands/acp/translate.rs` | 602 | Translation between daemon `SessionEvent`s and the ACP turn: `classify_event` gives the end of a turn, a permission prompt or `TurnStep::CommandsChanged`; transcript events give nothing, because the daemon's ops carry them. It also holds the permission options, the canonical-tool-call-based title/kind lookup, `TurnStep::CommandsChanged`, and `available_commands`, which projects the session's catalog into `AvailableCommand`s, leaving out the built-in commands. |
 
 ### `src/commands/chat/` — `cru chat`
 
@@ -288,8 +289,9 @@ so a slow indexing run doesn't look identical to an instant no-op one.
 holds `sessions: StdMutex<HashMap<String, SessionEntry>>`, one dedicated
 `DaemonClient` per ACP session. Created by `commands/acp/mod.rs::execute`,
 served over `agent_client_protocol::Stdio`; consumes `translate.rs`'s
-`classify_event`/`TurnStep`/`replay_step` to map daemon `SessionEvent`s onto
-ACP `SessionUpdate`s. `pump_turn` skips every event until `opens_turn`
+`classify_event`/`TurnStep` for the turn state, and `project.rs`'s
+`HostProjection` to map the daemon's transcript ops onto ACP
+`SessionUpdate`s. `pump_turn` skips every event until `opens_turn`
 confirms the daemon's `user_message` for its own `message_id`, so a
 `turn:complete` handler's own follow-up turn cannot end the wrong prompt.
 
@@ -445,21 +447,20 @@ client for the duration of the command.
    daemon ran without a turn — sends the result as one message chunk and
    answers `session/prompt` right away. `SendOutcome::Turn { message_id }`
    starts `pump_turn`, which skips every event until `opens_turn` confirms
-   the `user_message` that opens that turn, then loops the rest,
-   mapping each event through `translate.rs::classify_event` into a
-   `TurnStep` — `Update` (forwarded as an ACP `session/update`),
-   `Interaction` (routed through `handle_interaction` to an ACP
+   the `user_message` that opens that turn, then loops the rest. It sends
+   the updates that `HostProjection::ops` makes from the transcript ops of
+   each event, then maps the event through `translate.rs::classify_event`
+   into a `TurnStep` — `Interaction` (routed through `handle_interaction` to an ACP
    `session/request_permission` round trip), or `Finished(TurnEnd)`, where
    `TurnEnd::Stop` answers `session/prompt` with a `StopReason`,
    `TurnEnd::Refused` sends the handler's reason as a message chunk and
    answers `refusal`, and `TurnEnd::Failed` answers with a JSON-RPC error
    rather than a `PromptResponse`.
-4. `load_session` replays history via `session_events_after` before
+4. `load_session` replays the folded transcript of `session.history` before
    returning its response, because "a host keeps no transcript of its own
-   across restarts" — `translate.rs::replay_step` supplies the missing
-   `user_message` side that the live pump never forwards; a plugin-originated
-   turn's replayed text is prefixed `"↻ {plugin}\n"`, since ACP has no
-   separate system-chunk update.
+   across restarts" — `HostProjection::snapshot` also sends the prompts that
+   the live pump never forwards; a plugin-originated turn's replayed text is
+   prefixed `"↻ {plugin}\n"`, since ACP has no separate system-chunk update.
 
 A tool call's ACP title and `ToolKind` come from `translate.rs::describe`,
 which reads the daemon-sent canonical call (`event.data["display"]`, a

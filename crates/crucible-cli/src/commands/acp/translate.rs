@@ -5,17 +5,16 @@
 //! side effects (sending `session/update`, requesting permission).
 
 use agent_client_protocol::schema::v1::{
-    AvailableCommand, AvailableCommandInput, ContentBlock, ContentChunk, PermissionOption,
-    PermissionOptionId, PermissionOptionKind, RequestPermissionOutcome, SessionUpdate, StopReason,
-    TextContent, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
-    ToolKind, UnstructuredCommandInput,
+    AvailableCommand, AvailableCommandInput, PermissionOption, PermissionOptionId,
+    PermissionOptionKind, RequestPermissionOutcome, StopReason, ToolCallUpdate,
+    ToolCallUpdateFields, ToolKind, UnstructuredCommandInput,
 };
 use crucible_core::interaction::{
     InteractionRequest, InteractionResponse, PermResponse, PermissionScope,
 };
 use crucible_core::protocol::session_events::{SessionEventPayload, SettingsPayload, TurnPayload};
 use crucible_core::turn::{StopReason as CoreStopReason, TurnStatus};
-use crucible_core::types::{CanonicalToolCall, CommandKind, SessionCommand, ToolRender};
+use crucible_core::types::{CanonicalToolCall, CommandKind, SessionCommand};
 use crucible_daemon::SessionEvent;
 
 /// Permission option IDs advertised to the host. Matching them back in
@@ -27,8 +26,6 @@ pub const OPT_REJECT_ONCE: &str = "reject_once";
 /// One step of a prompt turn, derived from a single daemon `SessionEvent`.
 #[derive(Debug)]
 pub enum TurnStep {
-    /// Forward this update to the host via `session/update`.
-    Update(Box<SessionUpdate>),
     /// The daemon needs a decision; drive an ACP `session/request_permission`.
     Interaction {
         request_id: String,
@@ -137,26 +134,7 @@ pub fn classify_event(event: &SessionEvent) -> TurnStep {
         Err(_) => return TurnStep::Ignore,
     };
     match turn {
-        TurnPayload::TextDelta { content } if !content.is_empty() => {
-            update(SessionUpdate::AgentMessageChunk(chunk(content)))
-        }
-        TurnPayload::Thinking { content } if !content.is_empty() => {
-            update(SessionUpdate::AgentThoughtChunk(chunk(content)))
-        }
-        TurnPayload::ToolCall {
-            call_id,
-            tool,
-            args,
-            display,
-            ..
-        } if !tool.is_empty() => classify_tool_call(call_id, &tool, args, display.as_deref()),
-        TurnPayload::ToolResult {
-            call_id,
-            tool,
-            result,
-            ..
-        } if !result.is_null() => classify_tool_result(call_id, &tool, result),
-        // `message_complete` seals one reply. `turn_finished` ends the turn.
+        // `turn_finished` ends the turn.
         TurnPayload::TurnFinished {
             status,
             stop_reason,
@@ -169,6 +147,8 @@ pub fn classify_event(event: &SessionEvent) -> TurnStep {
             request_id,
             request: Box::new(request),
         },
+        // Transcript items: the ops of the daemon's fold carry them
+        // (`super::project`).
         TurnPayload::TextDelta { .. }
         | TurnPayload::Thinking { .. }
         | TurnPayload::ToolCall { .. }
@@ -185,111 +165,10 @@ pub fn classify_event(event: &SessionEvent) -> TurnStep {
     }
 }
 
-/// Wrap a session update as a boxed `TurnStep::Update` (the variant is boxed to
-/// keep the enum small; `SessionUpdate` is large).
-fn update(u: SessionUpdate) -> TurnStep {
-    TurnStep::Update(Box::new(u))
-}
-
-/// One step of a `session/load` replay, derived from a recorded daemon event.
-///
-/// Same mapping as [`classify_event`], plus the user's prompt. The live pump
-/// never forwards the prompt — the host renders the text it just sent — but a
-/// host keeps no transcript across restarts, so the recorded `user_message`
-/// frames are the only copy of the user's side of the conversation and replay
-/// forwards them as `UserMessageChunk`. Terminal steps and interactions still
-/// classify as themselves so the replay caller can skip them: a finished turn
-/// answers nothing, and an answered permission request must not be re-asked.
-/// ACP has no system chunk, so a plugin turn carries the TUI's `↻` label.
-pub fn replay_step(event: &SessionEvent) -> TurnStep {
-    match event.payload() {
-        Ok(SessionEventPayload::Turn(TurnPayload::UserMessage {
-            content, origin, ..
-        })) => {
-            if content.is_empty() {
-                return TurnStep::Ignore;
-            }
-            let content = match origin.as_ref().and_then(|o| o.plugin()) {
-                Some(plugin) => format!("↻ {plugin}\n{content}"),
-                None => content,
-            };
-            update(SessionUpdate::UserMessageChunk(chunk(content)))
-        }
-        _ => classify_event(event),
-    }
-}
-
-fn chunk(text: String) -> ContentChunk {
-    ContentChunk::new(ContentBlock::Text(TextContent::new(text)))
-}
-
-fn classify_tool_call(
-    call_id: String,
-    tool: &str,
-    args: serde_json::Value,
-    call: Option<&CanonicalToolCall>,
-) -> TurnStep {
-    // The daemon sends the canonical call with its render. An event with
-    // no call is `Other`: the name alone does not say the kind.
-    let (title, kind) = describe(tool, call);
-    let mut tc = ToolCall::new(call_id, title)
-        .kind(kind)
-        .status(ToolCallStatus::InProgress);
-    if !args.is_null() {
-        tc = tc.raw_input(args);
-    }
-    update(SessionUpdate::ToolCall(tc))
-}
-
-fn classify_tool_result(call_id: String, tool: &str, result: serde_json::Value) -> TurnStep {
-    let error = result.get("error").and_then(|e| e.as_str());
-    let (status, text) = match error {
-        Some(msg) => (ToolCallStatus::Failed, msg.to_string()),
-        None => (ToolCallStatus::Completed, summarize_result(&result)),
-    };
-
-    // The render of the finished call gives the title its summary.
-    let render =
-        (result.get("render")).and_then(|r| serde_json::from_value::<ToolRender>(r.clone()).ok());
-    let mut fields = ToolCallUpdateFields::new()
-        .status(status)
-        .content(vec![ToolCallContent::from(ContentBlock::Text(
-            TextContent::new(text),
-        ))])
-        .raw_output(result);
-    if let Some(render) = render.filter(|r| r.summary.is_some()) {
-        let tool = if tool.is_empty() { "tool" } else { tool };
-        let summary = render.summary.clone().unwrap_or_default();
-        let call = CanonicalToolCall {
-            render: Some(render),
-            ..CanonicalToolCall::crucible_tool(tool, &serde_json::Value::Null)
-        };
-        let (title, _) = describe(tool, Some(&call));
-        fields = fields.title(format!("{title} → {summary}"));
-    }
-    update(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-        call_id, fields,
-    )))
-}
-
-fn summarize_result(result: &serde_json::Value) -> String {
-    // Prefer a human-readable field when the tool provides one; otherwise fall
-    // back to compact JSON so the host still sees something.
-    for key in ["output", "content", "text", "message"] {
-        if let Some(s) = result.get(key).and_then(|v| v.as_str()) {
-            return s.to_string();
-        }
-    }
-    match result {
-        serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
-    }
-}
-
 /// The ACP title and kind of a call: the canonical tool and the render
 /// line, and the ACP kind of the canonical kind. A kind that ACP does not
 /// name, and a call with no canonical form, is `Other`.
-fn describe(name: &str, call: Option<&CanonicalToolCall>) -> (String, ToolKind) {
+pub(super) fn describe(name: &str, call: Option<&CanonicalToolCall>) -> (String, ToolKind) {
     let Some(call) = call else {
         return (humanize_title(name), ToolKind::Other);
     };
@@ -453,115 +332,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn text_delta_becomes_agent_message_chunk() {
-        let step = classify_event(&event("text_delta", json!({"content": "hello"})));
-        match step {
-            TurnStep::Update(u) => match *u {
-                SessionUpdate::AgentMessageChunk(c) => match c.content {
-                    ContentBlock::Text(t) => assert_eq!(t.text, "hello"),
-                    other => panic!("expected text block, got {other:?}"),
-                },
-                other => panic!("expected agent message chunk, got {other:?}"),
-            },
-            other => panic!("expected update, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn thinking_becomes_agent_thought_chunk() {
-        let step = classify_event(&event("thinking", json!({"content": "hmm"})));
-        assert!(matches!(
-            step,
-            TurnStep::Update(u) if matches!(*u, SessionUpdate::AgentThoughtChunk(_))
-        ));
-    }
-
-    #[test]
-    fn tool_call_becomes_in_progress_tool_call() {
-        let step = classify_event(&event(
-            "tool_call",
-            json!({
-                "call_id": "tc1", "tool": "search_notes", "args": {"q": "rust"},
-                "display": {
-                    "kind": "search", "tool": "search_notes", "query": "rust",
-                    "render": { "line": "rust" },
-                },
-            }),
-        ));
-        match step {
-            TurnStep::Update(u) => match *u {
-                SessionUpdate::ToolCall(tc) => {
-                    assert_eq!(tc.tool_call_id.0.as_ref(), "tc1");
-                    assert_eq!(tc.status, ToolCallStatus::InProgress);
-                    assert_eq!(tc.kind, ToolKind::Search, "the canonical kind");
-                    assert_eq!(tc.title, "search notes: rust");
-                    assert_eq!(tc.raw_input, Some(json!({"q": "rust"})));
-                }
-                other => panic!("expected tool call, got {other:?}"),
-            },
-            other => panic!("expected update, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn tool_result_success_completes() {
-        let step = classify_event(&event(
-            "tool_result",
-            json!({"call_id": "tc1", "tool": "search_notes", "result": {"output": "done"}}),
-        ));
-        match step {
-            TurnStep::Update(u) => match *u {
-                SessionUpdate::ToolCallUpdate(tc) => {
-                    assert_eq!(tc.tool_call_id.0.as_ref(), "tc1");
-                    assert_eq!(tc.fields.status, Some(ToolCallStatus::Completed));
-                }
-                other => panic!("expected tool call update, got {other:?}"),
-            },
-            other => panic!("expected update, got {other:?}"),
-        }
-    }
-
-    /// The render of the result gives the title its summary.
-    #[test]
-    fn tool_result_render_titles_the_summary() {
-        let step = classify_event(&event(
-            "tool_result",
-            json!({"call_id": "tc1", "tool": "read_file", "result": {
-                "result": "a", "render": {"line": "a.rs", "summary": "1 lines"},
-            }}),
-        ));
-        match step {
-            TurnStep::Update(u) => match *u {
-                SessionUpdate::ToolCallUpdate(tc) => {
-                    assert_eq!(
-                        tc.fields.title.as_deref(),
-                        Some("read file: a.rs → 1 lines")
-                    );
-                }
-                other => panic!("expected tool call update, got {other:?}"),
-            },
-            other => panic!("expected update, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn tool_result_error_fails() {
-        let step = classify_event(&event(
-            "tool_result",
-            json!({"call_id": "tc1", "tool": "bash", "result": {"error": "boom"}}),
-        ));
-        match step {
-            TurnStep::Update(u) => match *u {
-                SessionUpdate::ToolCallUpdate(tc) => {
-                    assert_eq!(tc.fields.status, Some(ToolCallStatus::Failed));
-                }
-                other => panic!("expected failed tool update, got {other:?}"),
-            },
-            other => panic!("expected update, got {other:?}"),
-        }
-    }
-
     /// `message_complete` seals one reply, so it must not end the prompt
     /// turn: only `turn_finished` does.
     #[test]
@@ -663,64 +433,6 @@ mod tests {
         ));
     }
 
-    /// The text of a replayed `user_message`.
-    fn replayed(data: serde_json::Value) -> String {
-        match replay_step(&event("user_message", data)) {
-            TurnStep::Update(u) => match *u {
-                SessionUpdate::UserMessageChunk(c) => match c.content {
-                    ContentBlock::Text(t) => t.text,
-                    other => panic!("expected text block, got {other:?}"),
-                },
-                other => panic!("expected user message chunk, got {other:?}"),
-            },
-            other => panic!("expected update, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn replay_user_message_becomes_user_chunk() {
-        let data = json!({"message_id": "m1", "content": "Fix the parser"});
-        assert_eq!(replayed(data), "Fix the parser");
-    }
-
-    /// ACP has no system chunk, so the host gets the plugin turn with the
-    /// label that the TUI shows. It must not read as the person's words.
-    #[test]
-    fn replay_labels_a_plugin_turn_with_its_plugin() {
-        let data = json!({"message_id": "m1", "content": "keep going",
-            "origin": {"kind": "plugin", "name": "goal"}});
-        assert_eq!(replayed(data), "↻ goal\nkeep going");
-    }
-
-    #[test]
-    fn replay_user_message_without_text_is_ignored() {
-        assert!(matches!(
-            replay_step(&event("user_message", json!({"message_id": "m1"}))),
-            TurnStep::Ignore
-        ));
-    }
-
-    /// A recorded permission request is history, not a live question: the
-    /// replay caller must see an Interaction (to skip), not an update that
-    /// re-asks the host to approve something already answered.
-    #[test]
-    fn replay_keeps_interactions_classified_so_the_caller_skips_them() {
-        let req = InteractionRequest::Permission(PermRequest::bash(["cargo", "test"]));
-        let step = replay_step(&event(
-            "interaction_requested",
-            json!({"request_id": "r1", "request": serde_json::to_value(&req).unwrap()}),
-        ));
-        assert!(matches!(step, TurnStep::Interaction { .. }));
-    }
-
-    /// Terminal steps classify as themselves: the replay loop skips them
-    /// instead of ending the replay early or answering a prompt nobody sent.
-    #[test]
-    fn replay_maps_turn_finished_to_finished_not_an_update() {
-        let step = replay_step(&event("turn_finished", json!({"status": "completed"})));
-        assert!(matches!(step, TurnStep::Finished(_)), "got {step:?}");
-    }
-
     #[test]
     fn interaction_event_parses_permission_request() {
         let req = InteractionRequest::Permission(PermRequest::bash(["cargo", "test"]));
@@ -796,22 +508,6 @@ mod tests {
         let req = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         let resp = outcome_to_interaction_response(&RequestPermissionOutcome::Cancelled, &req);
         assert!(matches!(resp, InteractionResponse::Cancelled));
-    }
-
-    /// The name alone does not give a kind: `cru acp` guesses nothing.
-    #[test]
-    fn a_tool_call_with_no_canonical_call_is_other() {
-        let step = classify_event(&event(
-            "tool_call",
-            json!({"call_id": "tc1", "tool": "read_file", "args": {}}),
-        ));
-        let TurnStep::Update(u) = step else {
-            panic!("expected update");
-        };
-        let SessionUpdate::ToolCall(tc) = *u else {
-            panic!("expected tool call");
-        };
-        assert_eq!(tc.kind, ToolKind::Other);
     }
 
     #[test]
