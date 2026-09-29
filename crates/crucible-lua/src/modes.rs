@@ -29,40 +29,19 @@
 //! real policy often isn't. Same split as `chat.system_prompt` (a value)
 //! versus `cru.on_session_start` (a decision).
 
+use crucible_core::config::PermissionMode;
 use crucible_core::types::WriteMode;
 use mlua::{Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethods, Value};
 use std::sync::{Arc, RwLock};
 
 /// What a mode does when a tool needs permission.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ModeStance {
-    /// Prompt the user. The interactive default.
-    #[default]
-    Ask,
-    /// Approve without asking.
-    Allow,
-    /// Refuse without asking.
-    Deny,
-}
-
-impl ModeStance {
-    fn parse(s: &str) -> Option<Self> {
-        match s {
-            "ask" => Some(Self::Ask),
-            "allow" => Some(Self::Allow),
-            "deny" => Some(Self::Deny),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Ask => "ask",
-            Self::Allow => "allow",
-            Self::Deny => "deny",
-        }
-    }
-}
+///
+/// Same three variants, same strings and same default as core's
+/// [`PermissionMode`]; a mode's stance used to be a second `ModeStance` enum
+/// here that a daemon-side `match` converted to and from `PermissionMode`
+/// variant by variant. A mode's default stance and the `[permissions]`
+/// config's mode are the same concept, so this is now a direct alias.
+pub type ModeStance = PermissionMode;
 
 /// Which tools a mode exposes.
 ///
@@ -265,7 +244,7 @@ impl ModeRegistry {
 }
 
 fn parse_stance(mode: &str, s: &str) -> LuaResult<ModeStance> {
-    ModeStance::parse(s).ok_or_else(|| {
+    s.parse::<ModeStance>().map_err(|_| {
         mlua::Error::runtime(format!(
             "cru.modes.{mode}.permissions must be \"ask\", \"allow\" or \"deny\", got {s:?}"
         ))
@@ -382,13 +361,13 @@ impl UserData for ModeRegistry {
             }
             if mode.permissions.has_rules() {
                 let p = lua.create_table()?;
-                p.set("default", mode.permissions.default.as_str())?;
+                p.set("default", mode.permissions.default.to_string())?;
                 p.set("allow", lua.create_sequence_from(mode.permissions.allow)?)?;
                 p.set("deny", lua.create_sequence_from(mode.permissions.deny)?)?;
                 p.set("ask", lua.create_sequence_from(mode.permissions.ask)?)?;
                 t.set("permissions", p)?;
             } else {
-                t.set("permissions", mode.permissions.default.as_str())?;
+                t.set("permissions", mode.permissions.default.to_string())?;
             }
             t.set("writes", mode.writes.as_str())?;
             Ok(Value::Table(t))

@@ -157,6 +157,10 @@ is a field of `CliAppConfig`.
 
 **`PermissionConfig`/`PermissionMode`/`PermissionDecision`**
 (`components/permissions/types.rs`) are the permission domain's leaf types.
+`crucible-lua`'s `ModeStance` (`modes.rs`) — what a mode does by default when
+a tool needs permission — is `pub type ModeStance = PermissionMode`: same
+three variants, same wire strings, same default (`Ask`), so a mode's default
+stance and the `[permissions]` config's mode need no conversion between them.
 `CompiledPermissions`/`PermissionMatcher` (`matcher.rs`) compile a
 `PermissionConfig`'s rule strings into `globset` matchers, created by
 `PermissionEngine::new`. `PermissionEngine` (`engine.rs`) holds one

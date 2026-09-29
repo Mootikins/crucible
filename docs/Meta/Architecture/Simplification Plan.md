@@ -741,6 +741,38 @@ with its evidence in the commit that did it:
    only the match arm that handled it, no constructor), so it has no
    `ConfigError` counterpart. `EnrichmentBackendConfig::validate` and the
    daemon's `EmbeddingError` conversion now use `ConfigError` directly.
+7. The 32 named `SessionEventMessage` constructors: skipped this session.
+   `Self::typed(session_id, payload)` already exists
+   (`protocol/rpc/mod.rs`) and the named constructors are thin wrappers
+   over it; deleting them touches roughly 104 call sites across the RPC,
+   agent-manager and daemon-server layers that several other agents
+   (`audit-rpc`, `audit-rpc-agentmgr`, `wire-compat-mapper`) were actively
+   changing at the same time this session ran. Left for a dedicated pass
+   once that work lands.
+11. `ModeStance` (`crucible-lua/src/modes.rs`) into core `PermissionMode`
+    done. Same three variants, same strings (`rg` confirms
+    `crucible_core::config::PermissionMode`'s `FromStr`/`Display` use
+    `"allow"`/`"deny"`/`"ask"`, matching `ModeStance::parse`/`as_str`
+    exactly), same default (`Ask`). `ModeStance` is now
+    `pub type ModeStance = PermissionMode`, so every existing call site in
+    `crucible-lua` and `crucible-daemon/src/agent_manager/messaging/{gate_decision,permission}.rs`
+    still compiles unchanged, and the daemon's variant-by-variant `match`
+    that converted one to the other is gone.
+12. The private `Unprompted` enum (`gate_decision.rs`) into
+    `PermissionDecision`: skipped. `Unprompted::Ask(layer: String)` carries
+    which layer is asking, read as `PermRequest.layer` and shown to the
+    user; `PermissionDecision::Ask { rule_matched: bool }` carries whether
+    an explicit `ask` rule matched, read only inside the permission
+    engine's own read-only auto-approve exemption. Every `Unprompted::Ask`
+    site outside the permission engine (a card `ask`, a plugin `ask`, a
+    mode-stance `ask`) has no rule to have matched, so `rule_matched` would
+    carry a fabricated value there, not a widened optional field. `Allow`
+    and `Deny` fold cleanly (`Deny { reason }` already matches
+    `Unprompted::Deny(String)`; `Allow` would gain one optional
+    `provenance: Option<String>` field), but folding `Ask` too would give
+    two thirds of its call sites a meaningless bit rather than an absent
+    optional value, which is not the same thing the plan's design rules
+    allow.
 
 ## Step 15. Luau types from the schema
 

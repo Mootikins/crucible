@@ -1,7 +1,7 @@
 use super::super::*;
-use crucible_core::config::components::permissions::{
-    PermissionDecision, PermissionEngine, PermissionMode,
-};
+#[cfg(test)]
+use crucible_core::config::components::permissions::PermissionMode;
+use crucible_core::config::components::permissions::{PermissionDecision, PermissionEngine};
 use crucible_core::types::CanonicalToolCall;
 use crucible_lua::StageId;
 use std::ops::ControlFlow;
@@ -677,11 +677,9 @@ impl AgentManager {
     ) -> PermissionDecision {
         use crucible_core::config::components::permissions::PermissionConfig;
         let config = PermissionConfig {
-            default: match permissions.default {
-                crucible_lua::ModeStance::Allow => PermissionMode::Allow,
-                crucible_lua::ModeStance::Deny => PermissionMode::Deny,
-                crucible_lua::ModeStance::Ask => PermissionMode::Ask,
-            },
+            // `ModeStance` is `PermissionMode` (`crucible-lua/src/modes.rs`),
+            // so a mode's default stance needs no per-variant conversion.
+            default: permissions.default,
             allow: permissions.allow.clone(),
             deny: permissions.deny.clone(),
             ask: permissions.ask.clone(),
