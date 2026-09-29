@@ -67,9 +67,11 @@ fn claim_every_backend() -> std::collections::BTreeMap<String, LlmProviderConfig
         .map(|b| {
             (
                 format!("declared-{}", b.as_str()),
-                LlmProviderConfig::builder(b)
-                    .available_models(vec!["pinned".to_string()])
-                    .build(),
+                LlmProviderConfig {
+                    provider_type: b,
+                    available_models: Some(vec!["pinned".to_string()]),
+                    ..Default::default()
+                },
             )
         })
         .collect()
@@ -109,9 +111,11 @@ async fn unresponsive_providers_are_probed_concurrently() {
         // which is exactly the path this test must not take.
         providers.insert(
             format!("stalled{i}"),
-            LlmProviderConfig::builder(BackendType::OpenAI)
-                .endpoint(stalling_endpoint(delay).await)
-                .build(),
+            LlmProviderConfig {
+                provider_type: BackendType::OpenAI,
+                endpoint: Some((stalling_endpoint(delay).await).into()),
+                ..Default::default()
+            },
         );
     }
     let declared = providers.len();

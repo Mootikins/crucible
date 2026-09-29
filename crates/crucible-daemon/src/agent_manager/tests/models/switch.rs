@@ -9,10 +9,12 @@ async fn test_switch_model_zai_llm_config() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint("https://api.z.ai/api/coding/paas/v4")
-            .available_models(vec!["GLM-4.7".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some(("https://api.z.ai/api/coding/paas/v4").into()),
+            available_models: Some(vec!["GLM-4.7".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -65,15 +67,19 @@ async fn test_switch_model_legacy_still_works() {
     let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "local".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://localhost:11434")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://localhost:11434").into()),
+            ..Default::default()
+        },
     );
     llm_providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint("https://api.z.ai/api/coding/paas/v4")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some(("https://api.z.ai/api/coding/paas/v4").into()),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: None,
@@ -125,9 +131,11 @@ async fn test_switch_model_llm_config_invalidates_cache() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint("https://api.z.ai/api/coding/paas/v4")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some(("https://api.z.ai/api/coding/paas/v4").into()),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -229,20 +237,24 @@ async fn test_switch_model_to_zai_provider() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("gpt-4")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            default_model: Some(("gpt-4").into()),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint("https://api.z.ai/api/coding/paas/v4")
-            .available_models(vec![
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some(("https://api.z.ai/api/coding/paas/v4").into()),
+            available_models: Some(vec![
                 "GLM-5".to_string(),
                 "GLM-4.7".to_string(),
                 "GLM-4.5-Air".to_string(),
-            ])
-            .build(),
+            ]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {

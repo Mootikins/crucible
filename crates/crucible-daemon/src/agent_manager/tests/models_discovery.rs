@@ -43,12 +43,16 @@ async fn list_models_dynamic_discovery_succeeds(
 
     let (endpoint, server) = start_mock_openai_models_server(200, response, api_key).await;
 
-    let mut builder = LlmProviderConfig::builder(backend).endpoint(&endpoint);
+    let mut builder = LlmProviderConfig {
+        provider_type: backend,
+        endpoint: Some((&endpoint).into()),
+        ..Default::default()
+    };
     if let Some(key) = api_key {
-        builder = builder.api_key(key);
+        builder.api_key = Some(key.to_string());
     }
     let mut providers = std::collections::BTreeMap::new();
-    providers.insert(provider_name.to_string(), builder.build());
+    providers.insert(provider_name.to_string(), builder);
 
     let llm_config = LlmConfig {
         default: Some(provider_name.to_string()),
@@ -107,16 +111,20 @@ async fn a_failed_dynamic_discovery_offers_the_configured_model() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-fail".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint(&openai_endpoint)
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some((&openai_endpoint).into()),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-fail".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint(&zai_endpoint)
-            .model("GLM-4.7")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some((&zai_endpoint).into()),
+            default_model: Some(("GLM-4.7").into()),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -159,21 +167,27 @@ async fn test_list_models_explicit_config_skips_dynamic_discovery() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-explicit".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["my-custom-model".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["my-custom-model".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-explicit".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(vec!["custom-glm".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(vec!["custom-glm".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openrouter-explicit".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenRouter)
-            .available_models(vec!["custom-or-model".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenRouter,
+            available_models: Some(vec!["custom-or-model".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -228,21 +242,27 @@ async fn test_list_models_integration_multi_provider() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-int".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint(ollama_endpoint)
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some((ollama_endpoint).into()),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openai-int".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-4o".to_string(), "o3-mini".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-4o".to_string(), "o3-mini".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-int".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(vec!["GLM-5".to_string(), "GLM-4.7".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(vec!["GLM-5".to_string(), "GLM-4.7".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -311,10 +331,12 @@ async fn test_list_models_integration_dynamic_discovery() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-discovery-int".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint(&endpoint)
-            .api_key("integration-openai-key")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some((&endpoint).into()),
+            api_key: Some(("integration-openai-key").into()),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -383,16 +405,20 @@ async fn test_list_models_integration_override_precedence() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-override-int".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint(&dead_endpoint)
-            .available_models(vec!["gpt-custom-override".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some((&dead_endpoint).into()),
+            available_models: Some(vec!["gpt-custom-override".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-dynamic-int".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint(&zai_endpoint)
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some((&zai_endpoint).into()),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -449,21 +475,27 @@ async fn test_list_models_integration_partial_failure() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-bad-int".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint(&ollama_dead_endpoint)
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some((&ollama_dead_endpoint).into()),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openai-ok-int".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-4o".to_string(), "o3-mini".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-4o".to_string(), "o3-mini".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-ok-int".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(vec!["GLM-5".to_string(), "GLM-4.7".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(vec!["GLM-5".to_string(), "GLM-4.7".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -561,10 +593,12 @@ async fn test_openai_model_discovery_returns_all_models() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-test".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint(&endpoint)
-            .api_key("test-openai-key")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some((&endpoint).into()),
+            api_key: Some(("test-openai-key").into()),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -640,15 +674,19 @@ async fn test_list_models_ollama_failure() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-dead".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint(&ollama_endpoint)
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some((&ollama_endpoint).into()),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openai-ok".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -711,9 +749,11 @@ async fn test_model_cache_hit() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "test".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["model1".to_string(), "model2".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["model1".to_string(), "model2".to_string()]),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("test".to_string()),
@@ -753,9 +793,11 @@ async fn test_model_cache_invalidation() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "test".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["model1".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["model1".to_string()]),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("test".to_string()),
@@ -804,9 +846,11 @@ async fn test_model_cache_does_not_cache_errors() {
     // Configure provider with models
     providers.insert(
         "test".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["model1".to_string(), "model2".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["model1".to_string(), "model2".to_string()]),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("test".to_string()),
@@ -865,9 +909,11 @@ async fn discovery_sends_the_key_stored_under_the_provider_key() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint(&endpoint)
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some((&endpoint).into()),
+            ..Default::default()
+        },
     );
     let agent_manager = create_test_agent_manager_with_llm_config(
         session_manager.clone(),

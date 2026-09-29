@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Named LLM provider instance configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LlmProviderConfig {
     /// Provider type
     #[serde(rename = "type")]
@@ -72,106 +72,6 @@ impl LlmProviderConfig {
     pub fn effective_models(&self) -> Vec<String> {
         self.available_models.clone().unwrap_or_default()
     }
-
-    /// Create a new builder for this config type
-    pub fn builder(provider_type: BackendType) -> LlmProviderConfigBuilder {
-        LlmProviderConfigBuilder::new(provider_type)
-    }
-}
-
-/// Builder for LlmProviderConfig
-#[derive(Debug, Clone)]
-pub struct LlmProviderConfigBuilder {
-    provider_type: BackendType,
-    endpoint: Option<String>,
-    default_model: Option<String>,
-    api_key: Option<String>,
-    available_models: Option<Vec<String>>,
-    trust_level: Option<super::trust::TrustLevel>,
-    name: Option<String>,
-}
-
-impl LlmProviderConfigBuilder {
-    /// Create a new builder with the specified provider type
-    pub fn new(provider_type: BackendType) -> Self {
-        Self {
-            provider_type,
-            endpoint: None,
-            default_model: None,
-            api_key: None,
-            available_models: None,
-            trust_level: None,
-            name: None,
-        }
-    }
-
-    /// Set the API endpoint
-    pub fn endpoint(mut self, endpoint: impl Into<String>) -> Self {
-        self.endpoint = Some(endpoint.into());
-        self
-    }
-
-    /// Set the default model
-    pub fn model(mut self, model: impl Into<String>) -> Self {
-        self.default_model = Some(model.into());
-        self
-    }
-
-    /// Set API key
-    pub fn api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(key.into());
-        self
-    }
-
-    /// Set API key to the provider's default environment variable name.
-    ///
-    /// This method stores the **environment variable name** (e.g., `"OPENAI_API_KEY"`),
-    /// not the actual value from the environment. The actual value is resolved later
-    /// when the configuration is used, allowing for dynamic environment variable lookup.
-    ///
-    /// # Behavior
-    ///
-    /// - For providers with a standard env var (OpenAI, Anthropic, OpenRouter, ZAI),
-    ///   this sets `api_key` to that variable name.
-    /// - For providers without a standard env var (Ollama, GitHub Copilot),
-    ///   this has no effect (api_key remains `None`).
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let config = LlmProviderConfig::builder(BackendType::OpenAI)
-    ///     .with_api_key_env_var_name()  // Sets api_key to "OPENAI_API_KEY"
-    ///     .build();
-    /// ```
-    pub fn with_api_key_env_var_name(mut self) -> Self {
-        self.api_key = self.provider_type.api_key_env_var().map(String::from);
-        self
-    }
-
-    /// Set available models
-    pub fn available_models(mut self, models: Vec<String>) -> Self {
-        self.available_models = Some(models);
-        self
-    }
-
-    /// Set custom display name for this provider
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into());
-        self
-    }
-
-    /// Build the config
-    pub fn build(self) -> LlmProviderConfig {
-        LlmProviderConfig {
-            provider_type: self.provider_type,
-            endpoint: self.endpoint,
-            default_model: self.default_model,
-            api_key: self.api_key,
-            available_models: self.available_models,
-            trust_level: self.trust_level,
-            name: self.name,
-        }
-    }
 }
 
 /// Main LLM configuration with named provider instances
@@ -237,33 +137,47 @@ mod tests {
     use super::*;
     use std::str::FromStr;
 
-    /// Fully-defaulted config for a given provider type, for tests that need to
-    /// override a field the builder has no setter for (e.g. `trust_level`) via
-    /// struct-update syntax. For everything else prefer `LlmProviderConfig::builder(..).build()`.
+    /// Fully-defaulted config for a given provider type, for a test that sets
+    /// only `provider_type` and lets struct-update syntax fill the rest.
     impl LlmProviderConfig {
         fn test_default(provider_type: BackendType) -> Self {
-            LlmProviderConfig::builder(provider_type).build()
+            LlmProviderConfig {
+                provider_type,
+                ..Default::default()
+            }
         }
     }
 
     #[test]
     fn test_provider_defaults() {
-        let ollama = LlmProviderConfig::builder(BackendType::Ollama).build();
+        let ollama = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            ..Default::default()
+        };
 
         assert_eq!(ollama.endpoint(), "http://localhost:11434");
         assert_eq!(ollama.model(), "llama3.2");
 
-        let openai = LlmProviderConfig::builder(BackendType::OpenAI).build();
+        let openai = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            ..Default::default()
+        };
 
         assert_eq!(openai.endpoint(), "https://api.openai.com/v1");
         assert_eq!(openai.model(), "gpt-4o");
 
-        let anthropic = LlmProviderConfig::builder(BackendType::Anthropic).build();
+        let anthropic = LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            ..Default::default()
+        };
 
         assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
         assert_eq!(anthropic.model(), "claude-sonnet-5");
 
-        let copilot = LlmProviderConfig::builder(BackendType::GitHubCopilot).build();
+        let copilot = LlmProviderConfig {
+            provider_type: BackendType::GitHubCopilot,
+            ..Default::default()
+        };
 
         assert_eq!(copilot.endpoint(), "https://api.githubcopilot.com");
         assert_eq!(copilot.model(), "gpt-4o");
@@ -294,10 +208,12 @@ mod tests {
 
     #[test]
     fn test_provider_custom_values() {
-        let config = LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://192.168.1.100:11434")
-            .model("llama3.1:70b")
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://192.168.1.100:11434").into()),
+            default_model: Some(("llama3.1:70b").into()),
+            ..Default::default()
+        };
 
         assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
         assert_eq!(config.model(), "llama3.1:70b");
@@ -305,9 +221,11 @@ mod tests {
 
     #[test]
     fn test_api_key_direct_value() {
-        let config = LlmProviderConfig::builder(BackendType::OpenAI)
-            .api_key("sk-test-key-123")
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            api_key: Some(("sk-test-key-123").into()),
+            ..Default::default()
+        };
 
         assert_eq!(config.api_key(), Some("sk-test-key-123".to_string()));
     }
@@ -317,17 +235,21 @@ mod tests {
         let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig::builder(BackendType::Ollama)
-                .endpoint("http://localhost:11434")
-                .model("llama3.2")
-                .build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: Some(("http://localhost:11434").into()),
+                default_model: Some(("llama3.2").into()),
+                ..Default::default()
+            },
         );
         providers.insert(
             "cloud".to_string(),
-            LlmProviderConfig::builder(BackendType::OpenAI)
-                .model("gpt-4o")
-                .api_key("OPENAI_API_KEY")
-                .build(),
+            LlmProviderConfig {
+                provider_type: BackendType::OpenAI,
+                default_model: Some(("gpt-4o").into()),
+                api_key: Some(("OPENAI_API_KEY").into()),
+                ..Default::default()
+            },
         );
 
         let config = LlmConfig {
@@ -347,10 +269,12 @@ mod tests {
         let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig::builder(BackendType::Ollama)
-                .endpoint("http://localhost:11434")
-                .model("llama3.2")
-                .build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: Some(("http://localhost:11434").into()),
+                default_model: Some(("llama3.2").into()),
+                ..Default::default()
+            },
         );
 
         let config = LlmConfig {
@@ -370,11 +294,17 @@ mod tests {
         let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig::builder(BackendType::Ollama).build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                ..Default::default()
+            },
         );
         providers.insert(
             "cloud".to_string(),
-            LlmProviderConfig::builder(BackendType::OpenAI).build(),
+            LlmProviderConfig {
+                provider_type: BackendType::OpenAI,
+                ..Default::default()
+            },
         );
 
         let config = LlmConfig {
@@ -401,7 +331,10 @@ mod tests {
         let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig::builder(BackendType::Ollama).build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                ..Default::default()
+            },
         );
 
         let config = LlmConfig {
@@ -428,7 +361,10 @@ mod tests {
         let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig::builder(BackendType::Ollama).build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                ..Default::default()
+            },
         );
 
         let config = LlmConfig {
@@ -442,9 +378,11 @@ mod tests {
 
     #[test]
     fn test_available_models_deserialization() {
-        let config = LlmProviderConfig::builder(BackendType::Ollama)
-            .available_models(vec!["model-a".to_string(), "model-b".to_string()])
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            available_models: Some(vec!["model-a".to_string(), "model-b".to_string()]),
+            ..Default::default()
+        };
 
         assert_eq!(
             config.available_models,
@@ -454,7 +392,10 @@ mod tests {
 
     #[test]
     fn test_available_models_none_by_default() {
-        let config = LlmProviderConfig::builder(BackendType::Ollama).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            ..Default::default()
+        };
 
         assert_eq!(config.available_models, None);
     }
@@ -464,15 +405,19 @@ mod tests {
         let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
-            LlmProviderConfig::builder(BackendType::Ollama)
-                .available_models(vec!["llama3.2".to_string()])
-                .build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                available_models: Some(vec!["llama3.2".to_string()]),
+                ..Default::default()
+            },
         );
         providers.insert(
             "cloud".to_string(),
-            LlmProviderConfig::builder(BackendType::OpenAI)
-                .available_models(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()])
-                .build(),
+            LlmProviderConfig {
+                provider_type: BackendType::OpenAI,
+                available_models: Some(vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]),
+                ..Default::default()
+            },
         );
 
         let config = LlmConfig {
@@ -507,11 +452,17 @@ mod tests {
         // Without available_models, effective_models returns empty (dynamic discovery at daemon layer)
         providers.insert(
             "anthropic".to_string(),
-            LlmProviderConfig::builder(BackendType::Anthropic).build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Anthropic,
+                ..Default::default()
+            },
         );
         providers.insert(
             "openai".to_string(),
-            LlmProviderConfig::builder(BackendType::OpenAI).build(),
+            LlmProviderConfig {
+                provider_type: BackendType::OpenAI,
+                ..Default::default()
+            },
         );
 
         let config = LlmConfig {
@@ -565,21 +516,30 @@ mod tests {
 
     #[test]
     fn test_zai_endpoint_default() {
-        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            ..Default::default()
+        };
 
         assert_eq!(config.endpoint(), "https://api.z.ai/api/coding/paas/v4");
     }
 
     #[test]
     fn test_zai_model_default() {
-        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            ..Default::default()
+        };
 
         assert_eq!(config.model(), "GLM-4.7");
     }
 
     #[test]
     fn test_zai_effective_models_empty_without_config() {
-        let config = LlmProviderConfig::builder(BackendType::ZAI).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            ..Default::default()
+        };
 
         let models = config.effective_models();
         assert!(
@@ -591,9 +551,11 @@ mod tests {
     #[test]
     fn test_zai_effective_models_custom() {
         let custom_models = vec!["custom-model".to_string()];
-        let config = LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(custom_models.clone())
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(custom_models.clone()),
+            ..Default::default()
+        };
 
         assert_eq!(config.effective_models(), custom_models);
     }
@@ -611,13 +573,19 @@ mod tests {
     #[test]
     fn test_effective_trust_level_uses_backend_default() {
         // When trust_level is None, should use backend's default
-        let config = LlmProviderConfig::builder(BackendType::FastEmbed).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::FastEmbed,
+            ..Default::default()
+        };
         assert_eq!(
             config.effective_trust_level(),
             super::super::trust::TrustLevel::Local
         );
 
-        let config = LlmProviderConfig::builder(BackendType::OpenAI).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            ..Default::default()
+        };
         assert_eq!(
             config.effective_trust_level(),
             super::super::trust::TrustLevel::Cloud
@@ -640,7 +608,10 @@ mod tests {
     #[test]
     fn test_trust_level_serde_skip_none() {
         // When trust_level is None, it should not be serialized
-        let config = LlmProviderConfig::builder(BackendType::OpenAI).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            ..Default::default()
+        };
         let json = serde_json::to_string(&config).expect("Failed to serialize");
         assert!(!json.contains("trust_level"));
     }
@@ -683,7 +654,10 @@ default_model = "gpt-4"
             BackendType::ZAI,
             BackendType::Ollama,
         ] {
-            let config = LlmProviderConfig::builder(backend).build();
+            let config = LlmProviderConfig {
+                provider_type: backend,
+                ..Default::default()
+            };
             assert!(
                 config.effective_models().is_empty(),
                 "{:?} should return empty without available_models",
@@ -694,7 +668,10 @@ default_model = "gpt-4"
 
     #[test]
     fn effective_models_ollama_returns_empty() {
-        let config = LlmProviderConfig::builder(BackendType::Ollama).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            ..Default::default()
+        };
         let models = config.effective_models();
         assert_eq!(
             models,
@@ -705,7 +682,10 @@ default_model = "gpt-4"
 
     #[test]
     fn effective_models_custom_returns_empty() {
-        let config = LlmProviderConfig::builder(BackendType::Custom).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::Custom,
+            ..Default::default()
+        };
         let models = config.effective_models();
         assert_eq!(
             models,
@@ -716,7 +696,10 @@ default_model = "gpt-4"
 
     #[test]
     fn effective_models_openrouter_returns_empty() {
-        let config = LlmProviderConfig::builder(BackendType::OpenRouter).build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenRouter,
+            ..Default::default()
+        };
         let models = config.effective_models();
         assert_eq!(
             models,
@@ -729,9 +712,11 @@ default_model = "gpt-4"
     fn effective_models_explicit_override_wins() {
         // Test with Anthropic (has hardcoded fallback)
         let custom_models = vec!["my-custom-model".to_string()];
-        let config = LlmProviderConfig::builder(BackendType::Anthropic)
-            .available_models(custom_models.clone())
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            available_models: Some(custom_models.clone()),
+            ..Default::default()
+        };
         assert_eq!(
             config.effective_models(),
             custom_models,
@@ -740,9 +725,11 @@ default_model = "gpt-4"
 
         // Test with OpenAI
         let custom_models = vec!["gpt-5-turbo".to_string()];
-        let config = LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(custom_models.clone())
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(custom_models.clone()),
+            ..Default::default()
+        };
         assert_eq!(
             config.effective_models(),
             custom_models,
@@ -751,9 +738,11 @@ default_model = "gpt-4"
 
         // Test with ZAI
         let custom_models = vec!["GLM-6".to_string()];
-        let config = LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(custom_models.clone())
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(custom_models.clone()),
+            ..Default::default()
+        };
         assert_eq!(
             config.effective_models(),
             custom_models,
@@ -762,9 +751,11 @@ default_model = "gpt-4"
 
         // Test with Ollama
         let custom_models = vec!["llama3.1:70b".to_string()];
-        let config = LlmProviderConfig::builder(BackendType::Ollama)
-            .available_models(custom_models.clone())
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            available_models: Some(custom_models.clone()),
+            ..Default::default()
+        };
         assert_eq!(
             config.effective_models(),
             custom_models,

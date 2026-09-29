@@ -567,11 +567,14 @@ pub(crate) fn build_chat_client_for_agent(
 ) -> Result<(genai::Client, genai::ModelIden), AgentFactoryError> {
     let provider_type = agent_config.provider;
 
-    let mut llm_config = LlmProviderConfig::builder(provider_type);
+    let mut llm_config = LlmProviderConfig {
+        provider_type,
+        default_model: Some(agent_config.model.clone()),
+        ..Default::default()
+    };
     if let Some(endpoint) = agent_config.endpoint.clone() {
-        llm_config = llm_config.endpoint(endpoint);
+        llm_config.endpoint = Some(endpoint);
     }
-    let mut llm_config = llm_config.model(agent_config.model.clone()).build();
 
     // The name the provider has in the config (`zai-coding`), which is where
     // `cru auth login --provider zai-coding` stores its key. The backend name

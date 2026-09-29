@@ -2317,9 +2317,11 @@ mod tests {
     // ─── Progressive tool disclosure: visible_tools() deferral ──────────
 
     fn test_handle_with_tools(tools: Vec<LlmToolDefinition>) -> GenaiAgentHandle {
-        let config = LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("gpt-4o-mini")
-            .build();
+        let config = LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            default_model: Some(("gpt-4o-mini").into()),
+            ..Default::default()
+        };
         let chat_client = ChatClient::new(&config);
         let client = chat_client.inner().clone();
         let model = chat_client

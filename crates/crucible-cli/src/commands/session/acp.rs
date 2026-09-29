@@ -701,10 +701,12 @@ mod tests {
     /// not borrow the config default provider's endpoint or key.
     #[test]
     fn configure_drops_the_config_default_endpoint_and_key() {
-        let local = LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://ollama.test:11434")
-            .model("config-model")
-            .build();
+        let local = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://ollama.test:11434").into()),
+            default_model: Some(("config-model").into()),
+            ..Default::default()
+        };
         let config = CliAppConfig {
             llm: LlmConfig {
                 default: Some("local".to_string()),

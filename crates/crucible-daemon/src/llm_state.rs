@@ -177,10 +177,14 @@ impl LlmStateStore {
             let claims_default = make_default || default_was_unset;
             let moves_default = claims_default && state.default.as_deref() != Some(name);
 
-            let entry = state
-                .providers
-                .entry(name.to_string())
-                .or_insert_with(|| LlmProviderConfig::builder(provider_type).build());
+            let entry =
+                state
+                    .providers
+                    .entry(name.to_string())
+                    .or_insert_with(|| LlmProviderConfig {
+                        provider_type: provider_type,
+                        ..Default::default()
+                    });
             entry.provider_type = provider_type;
             entry.default_model = Some(model.to_string());
             if claims_default {
@@ -336,7 +340,10 @@ mod tests {
     use tempfile::TempDir;
 
     fn provider(kind: BackendType, model: &str) -> LlmProviderConfig {
-        let mut entry = LlmProviderConfig::builder(kind).build();
+        let mut entry = LlmProviderConfig {
+            provider_type: kind,
+            ..Default::default()
+        };
         entry.default_model = Some(model.to_string());
         entry
     }

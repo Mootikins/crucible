@@ -922,18 +922,22 @@ mod permission_channel_tests {
         let mut providers = std::collections::BTreeMap::new();
         providers.insert(
             "ollama".to_string(),
-            LlmProviderConfig::builder(BackendType::Ollama)
-                .endpoint("http://localhost:11434")
-                .build(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: Some(("http://localhost:11434").into()),
+                ..Default::default()
+            },
         );
 
         let switch_input = match scenario {
             SwitchScenario::CrossProvider | SwitchScenario::CrossProviderInvalidatesCache => {
                 providers.insert(
                     "zai".to_string(),
-                    LlmProviderConfig::builder(BackendType::Anthropic)
-                        .endpoint("https://api.zaiforge.com/v1")
-                        .build(),
+                    LlmProviderConfig {
+                        provider_type: BackendType::Anthropic,
+                        endpoint: Some(("https://api.zaiforge.com/v1").into()),
+                        ..Default::default()
+                    },
                 );
                 "zai/claude-sonnet-4"
             }

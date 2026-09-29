@@ -24,7 +24,10 @@ fn test_cache_key_generation_default() {
     set_default_provider(
         &mut config,
         "local",
-        LlmProviderConfig::builder(BackendType::FastEmbed).build(),
+        LlmProviderConfig {
+            provider_type: BackendType::FastEmbed,
+            ..Default::default()
+        },
     );
 
     let key = cache_key_from_llm(&config);
@@ -40,16 +43,20 @@ fn test_cache_key_uniqueness() {
     set_default_provider(
         &mut config1,
         "local",
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("text-embedding-3-small")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            default_model: Some(("text-embedding-3-small").into()),
+            ..Default::default()
+        },
     );
     set_default_provider(
         &mut config2,
         "local",
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("text-embedding-3-large")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            default_model: Some(("text-embedding-3-large").into()),
+            ..Default::default()
+        },
     );
 
     let key1 = cache_key_from_llm(&config1);
@@ -64,10 +71,12 @@ fn test_cache_key_consistency() {
     set_default_provider(
         &mut config,
         "local",
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("text-embedding-3-small")
-            .endpoint("https://api.openai.com/v1")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            default_model: Some(("text-embedding-3-small").into()),
+            endpoint: Some(("https://api.openai.com/v1").into()),
+            ..Default::default()
+        },
     );
 
     let key1 = cache_key_from_llm(&config);
@@ -82,10 +91,12 @@ fn test_cache_key_ollama_provider() {
     set_default_provider(
         &mut config,
         "ollama",
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .model("nomic-embed-text")
-            .endpoint("http://localhost:11434")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            default_model: Some(("nomic-embed-text").into()),
+            endpoint: Some(("http://localhost:11434").into()),
+            ..Default::default()
+        },
     );
 
     let key = cache_key_from_llm(&config);
@@ -101,10 +112,12 @@ fn test_cache_key_openai_provider() {
     set_default_provider(
         &mut config,
         "openai",
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("text-embedding-3-small")
-            .endpoint("https://api.openai.com/v1")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            default_model: Some(("text-embedding-3-small").into()),
+            endpoint: Some(("https://api.openai.com/v1").into()),
+            ..Default::default()
+        },
     );
 
     let key = cache_key_from_llm(&config);
@@ -130,7 +143,10 @@ fn test_default_provider_is_local() {
     set_default_provider(
         &mut config,
         "local",
-        LlmProviderConfig::builder(BackendType::FastEmbed).build(),
+        LlmProviderConfig {
+            provider_type: BackendType::FastEmbed,
+            ..Default::default()
+        },
     );
 
     let provider = config.effective_llm_provider().unwrap();
@@ -143,9 +159,11 @@ fn test_model_configuration() {
     set_default_provider(
         &mut config,
         "local",
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .model("custom-model")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            default_model: Some(("custom-model").into()),
+            ..Default::default()
+        },
     );
 
     let provider = config.effective_llm_provider().unwrap();
@@ -158,9 +176,11 @@ fn test_api_url_configuration() {
     set_default_provider(
         &mut config,
         "local",
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint("http://custom-endpoint:8080")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some(("http://custom-endpoint:8080").into()),
+            ..Default::default()
+        },
     );
 
     let provider = config.effective_llm_provider().unwrap();
@@ -173,10 +193,12 @@ fn test_cache_key_format() {
     set_default_provider(
         &mut config,
         "provider",
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .model("model")
-            .endpoint("http://url")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            default_model: Some(("model").into()),
+            endpoint: Some(("http://url").into()),
+            ..Default::default()
+        },
     );
 
     let key = cache_key_from_llm(&config);
@@ -190,10 +212,12 @@ fn test_cache_key_format() {
 
 #[test]
 fn test_llm_provider_config_clone() {
-    let original = LlmProviderConfig::builder(BackendType::Ollama)
-        .model("test-model")
-        .endpoint("http://test:8080")
-        .build();
+    let original = LlmProviderConfig {
+        provider_type: BackendType::Ollama,
+        default_model: Some(("test-model").into()),
+        endpoint: Some(("http://test:8080").into()),
+        ..Default::default()
+    };
 
     let cloned = original.clone();
 

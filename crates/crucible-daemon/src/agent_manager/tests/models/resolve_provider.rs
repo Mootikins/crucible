@@ -10,10 +10,12 @@ async fn test_resolve_provider_config_from_llm_config() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint("https://api.z.ai/api/coding/paas/v4")
-            .api_key("test-key-123")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some(("https://api.z.ai/api/coding/paas/v4").into()),
+            api_key: Some(("test-key-123").into()),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -45,10 +47,12 @@ async fn test_resolve_provider_config_from_providers_config() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "local".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://localhost:11434")
-            .api_key("ollama-key")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://localhost:11434").into()),
+            api_key: Some(("ollama-key").into()),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("local".to_string()),
@@ -104,10 +108,12 @@ async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
     let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "shared".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint("https://api.openai.com/v1")
-            .api_key("openai-key")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            endpoint: Some(("https://api.openai.com/v1").into()),
+            api_key: Some(("openai-key").into()),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: None,

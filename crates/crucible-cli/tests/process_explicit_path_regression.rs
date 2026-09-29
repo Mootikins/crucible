@@ -47,7 +47,10 @@ fn config_with_kiln(kiln_path: PathBuf) -> CliAppConfig {
     llm_config.default = Some("local".to_string());
     llm_config.providers.insert(
         "local".to_string(),
-        LlmProviderConfig::builder(BackendType::FastEmbed).build(),
+        LlmProviderConfig {
+            provider_type: BackendType::FastEmbed,
+            ..Default::default()
+        },
     );
 
     CliAppConfig {

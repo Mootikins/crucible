@@ -46,7 +46,10 @@ fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliAppCo
     llm_config.default = Some("local".to_string());
     llm_config.providers.insert(
         "local".to_string(),
-        LlmProviderConfig::builder(BackendType::FastEmbed).build(),
+        LlmProviderConfig {
+            provider_type: BackendType::FastEmbed,
+            ..Default::default()
+        },
     );
 
     CliAppConfig {

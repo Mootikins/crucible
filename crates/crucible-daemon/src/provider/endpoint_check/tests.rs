@@ -115,9 +115,11 @@ fn a_configured_endpoint_on_a_private_network_is_accepted() {
     let llm = LlmConfig {
         providers: [(
             "lan".to_string(),
-            crucible_core::config::LlmProviderConfig::builder(BackendType::Ollama)
-                .endpoint("http://192.168.1.100:11434")
-                .build(),
+            crucible_core::config::LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: Some(("http://192.168.1.100:11434").into()),
+                ..Default::default()
+            },
         )]
         .into_iter()
         .collect(),

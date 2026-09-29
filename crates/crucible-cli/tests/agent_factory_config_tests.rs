@@ -25,7 +25,10 @@ fn create_config_with_provider(provider: BackendType, model: Option<String>) -> 
     config.llm.default = Some("default".to_string());
     config.llm.providers.insert(
         "default".to_string(),
-        LlmProviderConfig::builder(provider).build(),
+        LlmProviderConfig {
+            provider_type: provider,
+            ..Default::default()
+        },
     );
     config
 }

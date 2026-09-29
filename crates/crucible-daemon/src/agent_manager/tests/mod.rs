@@ -765,11 +765,11 @@ pub(crate) fn handler_vm() -> HandlerVm {
 /// loopback unless the operator configured it. A user takes the same step for
 /// a local model server.
 pub(super) fn configure_provider_endpoint(am: &AgentManager, endpoint: &str) {
-    let entry = crucible_core::config::LlmProviderConfig::builder(
-        crucible_core::config::BackendType::Ollama,
-    )
-    .endpoint(endpoint)
-    .build();
+    let entry = LlmProviderConfig {
+        provider_type: crucible_core::config::BackendType::Ollama,
+        endpoint: Some((endpoint).into()),
+        ..Default::default()
+    };
     am.llm_handle()
         .add_provider(&format!("mock-{endpoint}"), entry, false);
 }

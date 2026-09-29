@@ -682,6 +682,14 @@ with its evidence in the commit that did it:
 5. `DocumentId` done: replaced with `String` in
    `crates/crucible-core/src/types/database.rs`. `rg -n "DocumentId" -t rust`
    found 9 files; all call sites now use the inner `String` directly.
+6. `LlmProviderConfigBuilder` done: deleted from
+   `crates/crucible-core/src/config/components/llm.rs`.
+   `LlmProviderConfig` now derives `Default`, and every one of the roughly
+   100 call sites (`rg -n "LlmProviderConfig::builder" -t rust` found 23
+   files) builds the struct directly with `..Default::default()`.
+   `with_api_key_env_var_name` had no caller outside its own doc example, so
+   its replacement (`default_api_key_env_var`) went too once confirmed
+   unread.
 
 ## Step 15. Luau types from the schema
 

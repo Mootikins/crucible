@@ -641,9 +641,11 @@ mod internal_defaults_tests {
             default: Some("anthropic".to_string()),
             providers: std::collections::BTreeMap::from([(
                 "anthropic".to_string(),
-                LlmProviderConfig::builder(BackendType::Anthropic)
-                    .model("claude-x")
-                    .build(),
+                LlmProviderConfig {
+                    provider_type: BackendType::Anthropic,
+                    default_model: Some(("claude-x").into()),
+                    ..Default::default()
+                },
             )]),
             ..LlmConfig::default()
         };

@@ -10,10 +10,12 @@ async fn test_parse_provider_model_llm_config_found() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint("https://api.z.ai/api/coding/paas/v4")
-            .available_models(vec!["GLM-4.7".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some(("https://api.z.ai/api/coding/paas/v4").into()),
+            available_models: Some(vec!["GLM-4.7".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -43,7 +45,10 @@ async fn test_parse_provider_model_llm_config_not_found() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI).build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -75,9 +80,11 @@ async fn test_parse_provider_model_legacy_takes_precedence() {
     let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "local".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://different:11434")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://different:11434").into()),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: None,
@@ -122,9 +129,11 @@ async fn test_parse_provider_model_trailing_slash() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "provider".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://localhost:11434")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://localhost:11434").into()),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("provider".to_string()),
@@ -156,9 +165,11 @@ async fn test_parse_provider_model_whitespace() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "provider".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://localhost:11434")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://localhost:11434").into()),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("provider".to_string()),
@@ -189,9 +200,11 @@ async fn test_parse_provider_model_case_sensitivity() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://localhost:11434")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://localhost:11434").into()),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("ollama".to_string()),

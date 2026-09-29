@@ -26,7 +26,7 @@ pub use defaults::{
     DEFAULT_ZAI_ENDPOINT, DEFAULT_ZAI_MODEL, OPENAI_HARDCODED_MODELS, OPENAI_MODEL_PREFIXES,
     ZAI_MODELS,
 };
-pub use llm::{LlmConfig, LlmProviderConfig, LlmProviderConfigBuilder};
+pub use llm::{LlmConfig, LlmProviderConfig};
 pub use mcp::{McpConfig, TransportType, UpstreamServerConfig};
 pub use permissions::{
     parse_rule, CompiledPermissions, ParsedRule, PermissionConfig, PermissionDecision,

@@ -320,9 +320,11 @@ async fn over_budget_agent_attaches_core_plus_bridge_and_plan_excludes_gateway()
         .await;
     assert_eq!(deferrable.len(), 12, "all gateway tools are deferrable");
 
-    let config = LlmProviderConfig::builder(BackendType::OpenAI)
-        .model("gpt-4o-mini")
-        .build();
+    let config = LlmProviderConfig {
+        provider_type: BackendType::OpenAI,
+        default_model: Some(("gpt-4o-mini").into()),
+        ..Default::default()
+    };
     let chat_client = ChatClient::new(&config);
     let client = chat_client.inner().clone();
     let model = chat_client

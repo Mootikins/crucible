@@ -534,20 +534,24 @@ mod tests {
     /// A config whose default provider is `local`, an Ollama at a custom
     /// endpoint with its own model.
     fn llm_with_default() -> Option<LlmConfig> {
-        let provider = LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://ollama.test:11434")
-            .model("config-model")
-            .build();
+        let provider = LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://ollama.test:11434").into()),
+            default_model: Some(("config-model").into()),
+            ..Default::default()
+        };
         Some(LlmConfig {
             default: Some("local".to_string()),
             providers: [
                 ("local".to_string(), provider),
                 (
                     "named".to_string(),
-                    LlmProviderConfig::builder(BackendType::OpenAI)
-                        .endpoint("http://named.test")
-                        .model("named-model")
-                        .build(),
+                    LlmProviderConfig {
+                        provider_type: BackendType::OpenAI,
+                        endpoint: Some(("http://named.test").into()),
+                        default_model: Some(("named-model").into()),
+                        ..Default::default()
+                    },
                 ),
             ]
             .into_iter()

@@ -82,7 +82,10 @@ pub(crate) async fn handle_llm_register_provider(
     // said Additive would mean the two had drifted — asserted rather than
     // papered over, because a silent disagreement here is a lie in the reply.
     let applied = if outcome == SelectionOutcome::Additive {
-        let mut entry = LlmProviderConfig::builder(provider_type).build();
+        let mut entry = LlmProviderConfig {
+            provider_type: provider_type,
+            ..Default::default()
+        };
         entry.default_model = Some(params.model.clone());
         live.add_provider(&params.provider, entry, params.make_default)
     } else {
@@ -334,7 +337,10 @@ mod tests {
         let mut bound = LlmConfig::default();
         bound.providers.insert(
             "ollama".to_string(),
-            LlmProviderConfig::builder(crucible_core::config::BackendType::Ollama).build(),
+            LlmProviderConfig {
+                provider_type: crucible_core::config::BackendType::Ollama,
+                ..Default::default()
+            },
         );
         bound.default = Some("ollama".to_string());
         let live = crate::llm_state::LiveLlmConfig::new(Some(bound));
@@ -382,7 +388,10 @@ mod tests {
         let mut bound = LlmConfig::default();
         bound.providers.insert(
             "ollama".to_string(),
-            LlmProviderConfig::builder(crucible_core::config::BackendType::Ollama).build(),
+            LlmProviderConfig {
+                provider_type: crucible_core::config::BackendType::Ollama,
+                ..Default::default()
+            },
         );
         bound.default = Some("ollama".to_string());
         let live = crate::llm_state::LiveLlmConfig::new(Some(bound));

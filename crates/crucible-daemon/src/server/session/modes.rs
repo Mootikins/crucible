@@ -297,9 +297,11 @@ mod stored_session_tests {
             default: Some("ollama".to_string()),
             providers: std::collections::BTreeMap::from([(
                 "ollama".to_string(),
-                LlmProviderConfig::builder(BackendType::Ollama)
-                    .available_models(vec!["llama3.2".to_string()])
-                    .build(),
+                LlmProviderConfig {
+                    provider_type: BackendType::Ollama,
+                    available_models: Some(vec!["llama3.2".to_string()]),
+                    ..Default::default()
+                },
             )]),
             models: Default::default(),
         };

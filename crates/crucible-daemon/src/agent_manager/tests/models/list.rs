@@ -10,16 +10,20 @@ async fn test_list_models_returns_all_providers() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint("http://localhost:11434")
-            .available_models(vec!["llama3.2".to_string(), "qwen2.5".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some(("http://localhost:11434").into()),
+            available_models: Some(vec!["llama3.2".to_string(), "qwen2.5".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openai".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -98,14 +102,18 @@ async fn list_models_trust_classification(
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut local = LlmProviderConfig::builder(BackendType::Custom)
-        .available_models(vec!["local-model".to_string()])
-        .build();
+    let mut local = LlmProviderConfig {
+        provider_type: BackendType::Custom,
+        available_models: Some(vec!["local-model".to_string()]),
+        ..Default::default()
+    };
     local.trust_level = Some(TrustLevel::Local);
 
-    let mut cloud = LlmProviderConfig::builder(BackendType::OpenAI)
-        .available_models(vec!["gpt-4o".to_string()])
-        .build();
+    let mut cloud = LlmProviderConfig {
+        provider_type: BackendType::OpenAI,
+        available_models: Some(vec!["gpt-4o".to_string()]),
+        ..Default::default()
+    };
     cloud.trust_level = Some(TrustLevel::Cloud);
 
     let mut providers = std::collections::BTreeMap::new();
@@ -113,9 +121,11 @@ async fn list_models_trust_classification(
     providers.insert("cloud-openai".to_string(), cloud);
 
     if include_untrusted {
-        let mut untrusted = LlmProviderConfig::builder(BackendType::Custom)
-            .available_models(vec!["unsafe-model".to_string()])
-            .build();
+        let mut untrusted = LlmProviderConfig {
+            provider_type: BackendType::Custom,
+            available_models: Some(vec!["unsafe-model".to_string()]),
+            ..Default::default()
+        };
         untrusted.trust_level = Some(TrustLevel::Untrusted);
         providers.insert("untrusted-custom".to_string(), untrusted);
     }
@@ -173,58 +183,76 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-local".to_string(),
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .endpoint(ollama_endpoint)
-            .available_models(vec!["llama3.2".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Ollama,
+            endpoint: Some((ollama_endpoint).into()),
+            available_models: Some(vec!["llama3.2".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openai-main".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-4o".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-4o".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "anthropic-main".to_string(),
-        LlmProviderConfig::builder(BackendType::Anthropic)
-            .available_models(vec!["claude-sonnet-4-20250514".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            available_models: Some(vec!["claude-sonnet-4-20250514".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "cohere-main".to_string(),
-        LlmProviderConfig::builder(BackendType::Cohere)
-            .available_models(vec!["command-r-plus".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Cohere,
+            available_models: Some(vec!["command-r-plus".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "vertex-main".to_string(),
-        LlmProviderConfig::builder(BackendType::VertexAI)
-            .available_models(vec!["gemini-1.5-pro".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::VertexAI,
+            available_models: Some(vec!["gemini-1.5-pro".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "copilot-main".to_string(),
-        LlmProviderConfig::builder(BackendType::GitHubCopilot)
-            .available_models(vec!["gpt-4o".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::GitHubCopilot,
+            available_models: Some(vec!["gpt-4o".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openrouter-main".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenRouter)
-            .available_models(vec!["openai/gpt-4o".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenRouter,
+            available_models: Some(vec!["openai/gpt-4o".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-main".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(vec!["GLM-4.7".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(vec!["GLM-4.7".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "custom-main".to_string(),
-        LlmProviderConfig::builder(BackendType::Custom)
-            .available_models(vec!["my-custom-model".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Custom,
+            available_models: Some(vec!["my-custom-model".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -294,16 +322,20 @@ async fn discovery_failure_still_offers_the_model_each_provider_runs() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "anthropic-dead".to_string(),
-        LlmProviderConfig::builder(BackendType::Anthropic)
-            .endpoint(&dead_endpoint)
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            endpoint: Some((&dead_endpoint).into()),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-dead".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint(&dead_endpoint)
-            .model("GLM-4.7")
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some((&dead_endpoint).into()),
+            default_model: Some(("GLM-4.7").into()),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -344,21 +376,27 @@ async fn test_list_models_count_matches_sum() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-count".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-4o".to_string(), "o3-mini".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-4o".to_string(), "o3-mini".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "anthropic-count".to_string(),
-        LlmProviderConfig::builder(BackendType::Anthropic)
-            .available_models(vec!["claude-3-7-sonnet-20250219".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            available_models: Some(vec!["claude-3-7-sonnet-20250219".to_string()]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "zai-count".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(vec!["GLM-5".to_string(), "GLM-4.7".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(vec!["GLM-5".to_string(), "GLM-4.7".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -442,9 +480,11 @@ async fn test_list_models_includes_env_discovered_providers() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .available_models(vec!["glm-4".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            available_models: Some(vec!["glm-4".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -483,9 +523,11 @@ async fn test_list_models_classification_filters_env_providers() {
 
     // Configure ZAI provider with Cloud trust level (simulates env-discovered provider)
     let mut providers = std::collections::BTreeMap::new();
-    let mut zai_config = LlmProviderConfig::builder(BackendType::ZAI)
-        .available_models(vec!["glm-4".to_string()])
-        .build();
+    let mut zai_config = LlmProviderConfig {
+        provider_type: BackendType::ZAI,
+        available_models: Some(vec!["glm-4".to_string()]),
+        ..Default::default()
+    };
     zai_config.trust_level = Some(TrustLevel::Cloud);
     providers.insert("zai".to_string(), zai_config);
 
@@ -522,9 +564,11 @@ async fn test_list_models_prefixes_with_provider_key() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "anthropic".to_string(),
-        LlmProviderConfig::builder(BackendType::Anthropic)
-            .available_models(vec!["claude-3-opus".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            available_models: Some(vec!["claude-3-opus".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -572,20 +616,24 @@ async fn test_list_models_multi_provider_with_zai() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
-        LlmProviderConfig::builder(BackendType::ZAI)
-            .endpoint("https://api.z.ai/api/coding/paas/v4")
-            .available_models(vec![
+        LlmProviderConfig {
+            provider_type: BackendType::ZAI,
+            endpoint: Some(("https://api.z.ai/api/coding/paas/v4").into()),
+            available_models: Some(vec![
                 "GLM-5".to_string(),
                 "GLM-4.7".to_string(),
                 "GLM-4.5-Air".to_string(),
-            ])
-            .build(),
+            ]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "openai".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-4".to_string(), "gpt-3.5-turbo".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {
@@ -643,18 +691,22 @@ async fn test_list_models_legacy_providers_config() {
     let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec![
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec![
                 "gpt-4".to_string(),
                 "text-embedding-3-small".to_string(),
-            ])
-            .build(),
+            ]),
+            ..Default::default()
+        },
     );
     providers.insert(
         "anthropic".to_string(),
-        LlmProviderConfig::builder(BackendType::Anthropic)
-            .available_models(vec!["claude-3-opus".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            available_models: Some(vec!["claude-3-opus".to_string()]),
+            ..Default::default()
+        },
     );
     let llm_config = LlmConfig {
         default: Some("openai".to_string()),
@@ -697,15 +749,19 @@ async fn test_list_models_both_configs() {
     let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "legacy-openai".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .available_models(vec!["gpt-3.5-turbo".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::OpenAI,
+            available_models: Some(vec!["gpt-3.5-turbo".to_string()]),
+            ..Default::default()
+        },
     );
     llm_providers.insert(
         "new-anthropic".to_string(),
-        LlmProviderConfig::builder(BackendType::Anthropic)
-            .available_models(vec!["claude-sonnet-4".to_string()])
-            .build(),
+        LlmProviderConfig {
+            provider_type: BackendType::Anthropic,
+            available_models: Some(vec!["claude-sonnet-4".to_string()]),
+            ..Default::default()
+        },
     );
 
     let llm_config = LlmConfig {

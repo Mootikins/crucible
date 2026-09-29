@@ -149,10 +149,11 @@ Mock). A private per-variant metadata table backs
 `supports_chat`/`supports_embeddings`/`default_endpoint`/`api_key_env_var`;
 `BackendType::all()` is the one iteration order every provider-listing caller
 uses. `LlmProviderConfig` (`components/llm.rs`) holds one named provider
-instance and is created from TOML/JSON deserialization or
-`LlmProviderConfigBuilder`; `LlmConfig` (same file) holds the `default`
-pointer, the `providers` map, and the specialty-to-model table, and is a
-field of `CliAppConfig`.
+instance and derives `Default`, so a caller that needs only some fields set
+builds it as `LlmProviderConfig { provider_type, ..Default::default() }`
+rather than through a builder type. `LlmConfig` (same file) holds the
+`default` pointer, the `providers` map, and the specialty-to-model table, and
+is a field of `CliAppConfig`.
 
 **`PermissionConfig`/`PermissionMode`/`PermissionDecision`**
 (`components/permissions/types.rs`) are the permission domain's leaf types.
