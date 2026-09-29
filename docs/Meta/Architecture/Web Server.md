@@ -97,10 +97,8 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
 | `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with strict containment and reference redaction, within the root the daemon's `fs.read` names. |
 | `crates/crucible-web/src/routes/chat.rs` | 542 | Chat turn intake (with attached diff comments), the session SSE event stream, and pending-interaction routes. |
-| `crates/crucible-web/src/routes/comment_rows.rs` | 107 | Named, OpenAPI-visible wire rows (`LineRangeRow`, `CommentAuthorRow`, `CommentAnchorRow`, `CommentSideRow`, `ReviewCommentRow`) for the `/api/diff/comment*` routes. |
-| `crates/crucible-web/src/routes/comment_rows_tests.rs` | 84 | Round-trip tests proving each comment row reads every shape the daemon's `Comment` type can serialize. |
 | `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. |
-| `crates/crucible-web/src/routes/diff.rs` | 661 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
+| `crates/crucible-web/src/routes/diff.rs` | 609 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
 | `crates/crucible-web/src/routes/events.rs` | 180 | `GET /api/events/system` — `publication_changed` and `proposal_changed` pushed on the daemon's system session; also the shared `system_stream` helper `fs.rs` and `surface.rs` reuse. |
 | `crates/crucible-web/src/routes/fs.rs` | 487 | File-tree explorer routes: list, move, mkdir, trash, and a live SSE stream built on the shared `system_stream` helper. |
 | `crates/crucible-web/src/routes/health.rs` | 49 | `/health` liveness and `/ready` readiness probes. |
@@ -117,7 +115,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
 | `crates/crucible-web/src/routes/skills.rs` | 171 | `/api/skills*` — proxies to daemon skill discovery. |
-| `crates/crucible-web/src/routes/surface.rs` | 402 | `GET /api/surfaces` and its SSE change stream, built on the shared `system_stream` helper. |
+| `crates/crucible-web/src/routes/surface.rs` | 206 | `GET /api/surfaces` and its SSE change stream, built on the shared `system_stream` helper. |
 | `crates/crucible-web/src/routes/terminal.rs` | 504 | `GET /api/terminal/ws` — WebSocket-to-PTY bridge. |
 | `crates/crucible-web/src/routes/webhook.rs` | 465 | `POST /api/webhook/{name}` — signed webhook ingress. |
 
@@ -249,9 +247,11 @@ Paths are relative to the repository root. Line counts are as recorded at
   full-record fields. Every route returns the core type unchanged rather
   than decoding into a web-local row. `ResumeSessionResponse` is a
   `#[serde(untagged)]` enum whose variant order is load-bearing (`Restored`
-  must precede `Live`, tested by `shape_tests.rs`). `daemon_shape` is still
-  the decoder `crates/crucible-web/src/routes/diff.rs`'s `reply_row` calls
-  for every diffset/comment reply. `ModeRow.writes: WriteModeRow`
+  must precede `Live`, tested by `shape_tests.rs`). `crates/crucible-web/src/routes/diff.rs`
+  no longer calls `daemon_shape` for a diffset/comment reply: the daemon's
+  `diff.*` RPCs answer `crucible_core::protocol::requests::{DiffCommentReply,
+  DiffCommentsReply, DiffResolveCommentReply, DiffDeleteCommentReply}`
+  directly, and the route returns each one unchanged. `ModeRow.writes: WriteModeRow`
   (`Apply`/`Propose`, mirroring `crucible_core::types::WriteMode` in
   `crates/crucible-core/src/types/mode.rs`) replaced `ModeRow.review_policy:
   ReviewPolicyRow`, since a mode now declares what a write *does*
@@ -264,13 +264,11 @@ Paths are relative to the repository root. Line counts are as recorded at
   turns a caller's query or body into, and the key
   `crates/crucible-web/src/services/daemon.rs`'s `Diff*` forwarders send to
   the daemon.
-- **`ReviewCommentRow`**/`CommentAnchorRow`/`CommentSideRow`/`CommentAuthorRow`
-  (`crates/crucible-web/src/routes/comment_rows.rs`) — the named,
-  OpenAPI-visible wire rows for `/api/diff/comment*`, mirroring
-  `crucible_core::session::Comment`/`CommentAnchor`/`CommentSide`/`CommentAuthor`;
-  `comment_rows_tests.rs` round-trips each row against the daemon's real
-  type so a field `crucible-core` adds cannot silently drop before it
-  reaches the browser.
+- **`Comment`**/`CommentAnchor`/`CommentSide`/`CommentAuthor`
+  (`crucible_core::session`, in `crates/crucible-core/src/session/types/review.rs`)
+  — the one wire shape of a review comment, with `ToSchema` behind the
+  `openapi` feature. `/api/diff/comment*` (`crates/crucible-web/src/routes/diff.rs`)
+  names these types directly; no web-local row mirrors them.
 - **`Proposal`**/`ProposalId` (`crucible_core::proposal`, in
   `crates/crucible-core/src/proposal.rs`) — forwarded verbatim by
   `crates/crucible-web/src/routes/proposals.rs` and
@@ -555,11 +553,13 @@ a session record's base text against the current files on disk (`session`),
 or a proposal's base-of-each-write against its new text (`proposal`); a
 session-record or proposal source takes no `base`/`head`, and additionally
 accepts an explicit `root` (either can span more than one root, unlike a
-branch source, which names its own). Comment rows
-(`crates/crucible-web/src/routes/comment_rows.rs`) mirror
-`crucible_core::session::Comment`/`CommentAuthor`/`CommentAnchor`/
-`CommentSide`, and `comment_rows_tests.rs` round-trips each row against the
-daemon's real type. `crates/crucible-web/src/routes/proposals.rs` serves
+branch source, which names its own). Each comment reply
+(`DiffCommentReply`/`DiffCommentsReply`/`DiffResolveCommentReply`/
+`DiffDeleteCommentReply`, in
+`crates/crucible-core/src/protocol/requests/storage.rs`) carries the core
+`crucible_core::session::Comment` type directly; the route returns each
+reply unchanged, with no web-local row to drop a field the daemon adds.
+`crates/crucible-web/src/routes/proposals.rs` serves
 `/api/proposals*` — a proposal belongs to no session, so its routes are not
 nested under `/api/session/{id}`. `accept_proposal`/`reject_proposal` take
 optional `paths`/root-qualified `files` so a caller can decide only some
@@ -709,9 +709,9 @@ losing or duplicating the decision.
   production file) cover per-file behavior: asset serving
   (`assets.rs`), error mapping including the new `BUSY`-to-`Conflict`
   classification (`error.rs`), event projection and a cross-language drift
-  guard against the frontend source (`events.rs`), diffset/comment-row
-  round-tripping against the daemon's real `Comment` type
-  (`comment_rows_tests.rs`), CORS/CSP/Host-header layering (`server.rs`),
+  guard against the frontend source (`events.rs`), diffset/comment routes
+  against the daemon's real `Comment` type (`diff.rs`),
+  CORS/CSP/Host-header layering (`server.rs`),
   auth/session/host/shell logic (all of `middleware/auth/`), and per-route
   shape and validation behavior across `routes/*.rs`.
 - **`crates/crucible-web/src/test_support.rs`** holds the two test daemons

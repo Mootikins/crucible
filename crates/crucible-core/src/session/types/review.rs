@@ -78,6 +78,24 @@ impl SnapshotId {
     }
 }
 
+/// A snapshot id's schema is the schema of its wire spelling: a plain
+/// string. [`Display`](std::fmt::Display) and [`Self::parse`] are the
+/// wire contract, and a derived schema would publish the two-arm enum
+/// instead of the one string a client actually reads.
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for SnapshotId {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        <String as utoipa::PartialSchema>::schema()
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for SnapshotId {
+    fn name() -> std::borrow::Cow<'static, str> {
+        <String as utoipa::ToSchema>::name()
+    }
+}
+
 impl std::fmt::Display for SnapshotId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -105,6 +123,7 @@ impl<'de> Deserialize<'de> for SnapshotId {
 /// `start == end` is a valid empty range and is how a pure insertion is
 /// expressed on the *before* side (and a pure deletion on the *after* side).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LineRange {
     /// First line, 1-based, inclusive.
     pub start: u32,
@@ -233,6 +252,8 @@ impl From<String> for HunkId {
 /// `root.join(path)` and friends are unaffected.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(value_type = String))]
 pub struct PhysicalRoot(PathBuf);
 
 impl PhysicalRoot {
@@ -605,6 +626,7 @@ impl ComposedHunk {
 
 /// Who wrote a review comment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CommentAuthor {
     Human,
@@ -617,6 +639,7 @@ pub enum CommentAuthor {
 /// A [`SnapshotId`] cannot hold a merge-base commit or a proposal, so each
 /// source of a diffset has its own arm.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum CommentAnchor {
     /// The session base snapshot of a session record.
@@ -631,6 +654,7 @@ pub enum CommentAnchor {
 ///
 /// This is not the canvas `Side`, which names the edges of a canvas node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CommentSide {
     /// The old text: the snapshot, the merge base or the expected base.
@@ -649,6 +673,7 @@ pub enum CommentSide {
 /// range, so that a later listing can find the range again after the text
 /// moves.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Comment {
     pub id: String,
     /// The diffset that owns the comment.

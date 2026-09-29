@@ -8,19 +8,20 @@
 //! proposal source with `proposal`. A comment write carries the
 //! `DiffsetSource` in its JSON body.
 
-use crate::routes::comment_rows::{CommentAuthorRow, CommentSideRow, ReviewCommentRow};
-use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Query, State},
     Json,
 };
-use crucible_core::diff::{DiffFileText, Diffset, DiffsetId, DiffsetSource};
+use crucible_core::diff::{DiffFileText, Diffset, DiffsetSource};
 use crucible_core::proposal::ProposalId;
-use crucible_core::protocol::requests::{DiffCommentRequest, DiffFileRequest};
-use crucible_core::session::{PhysicalRoot, SessionId};
-use serde::{Deserialize, Serialize};
+use crucible_core::protocol::requests::{
+    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffDeleteCommentReply,
+    DiffFileRequest, DiffResolveCommentReply,
+};
+use crucible_core::session::{CommentAuthor, CommentSide, PhysicalRoot, SessionId};
+use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -235,7 +236,7 @@ struct CommentBody {
     #[serde(default)]
     from: Option<String>,
     /// The side that the line numbers count on.
-    side: CommentSideRow,
+    side: CommentSide,
     /// The first line, 1-based.
     line_start: u32,
     /// One past the last line. Absent means one line.
@@ -244,7 +245,7 @@ struct CommentBody {
     body: String,
     /// Absent means a human.
     #[serde(default)]
-    author: Option<CommentAuthorRow>,
+    author: Option<CommentAuthor>,
 }
 
 impl From<CommentBody> for DiffCommentRequest {
@@ -254,22 +255,13 @@ impl From<CommentBody> for DiffCommentRequest {
             root: body.root.map(PhysicalRoot::from_top_level),
             path: body.path,
             from: body.from,
-            side: body.side.into(),
+            side: body.side,
             line_start: body.line_start,
             line_end: body.line_end,
             body: body.body,
-            author: body.author.map(Into::into),
+            author: body.author,
         }
     }
-}
-
-/// What `POST /api/diff/comment` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct DiffCommentResponse {
-    /// The diffset that owns the comment.
-    diffset: DiffsetId,
-    /// The comment as the daemon stored it, with its id and its quote.
-    comment: ReviewCommentRow,
 }
 
 /// `POST /api/diff/comment/resolve` — mark one comment of a diffset
@@ -282,14 +274,6 @@ struct ResolveCommentBody {
     comment_id: String,
 }
 
-/// What `POST /api/diff/comment/resolve` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct DiffResolveCommentResponse {
-    diffset: DiffsetId,
-    comment_id: String,
-    resolved: bool,
-}
-
 /// `POST /api/diff/comment/delete` — remove one comment of a diffset from
 /// the store.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -298,42 +282,6 @@ struct DeleteCommentBody {
     /// The diffset of the comment.
     source: DiffsetSource,
     comment_id: String,
-}
-
-/// What `POST /api/diff/comment/delete` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct DiffDeleteCommentResponse {
-    diffset: DiffsetId,
-    comment_id: String,
-    deleted: bool,
-}
-
-/// One comment as `GET /api/diff/comments` lists it.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct ListedCommentRow {
-    /// The comment. When its quoted text moved, `line_range` is the new
-    /// range.
-    comment: ReviewCommentRow,
-    /// The current text of the side does not contain the quoted text. The
-    /// pane shows an outdated comment at the end of its file.
-    outdated: bool,
-}
-
-/// What `GET /api/diff/comments` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct DiffCommentsResponse {
-    diffset: DiffsetId,
-    /// The comments, oldest first.
-    comments: Vec<ListedCommentRow>,
-}
-
-/// Read a typed daemon reply into the row that this route declares.
-fn reply_row<T: serde::de::DeserializeOwned>(
-    reply: impl Serialize,
-    method: &str,
-) -> Result<T, WebError> {
-    let value = serde_json::to_value(reply).map_err(|e| WebError::Daemon(e.to_string()))?;
-    daemon_shape(value, method)
 }
 
 /// `POST /api/diff/comment` — anchor a comment to a line range of one file of
@@ -347,7 +295,7 @@ fn reply_row<T: serde::de::DeserializeOwned>(
     path = "/api/diff/comment",
     request_body = CommentBody,
     responses(
-        (status = 200, body = DiffCommentResponse),
+        (status = 200, body = DiffCommentReply),
         (status = 422, description = "The daemon refuses the source, the root, the path or the range, and says why"),
         (status = 502, description = "The daemon could not store the comment, or could not be reached"),
     )
@@ -355,9 +303,9 @@ fn reply_row<T: serde::de::DeserializeOwned>(
 async fn post_diff_comment(
     State(state): State<AppState>,
     Json(body): Json<CommentBody>,
-) -> Result<Json<DiffCommentResponse>, WebError> {
+) -> Result<Json<DiffCommentReply>, WebError> {
     let reply = state.daemon.diff_comment(&body.into()).await.daemon_err()?;
-    Ok(Json(reply_row(reply, "diff.comment")?))
+    Ok(Json(reply))
 }
 
 /// `POST /api/diff/comment/resolve` — mark one comment of a diffset resolved.
@@ -366,7 +314,7 @@ async fn post_diff_comment(
     path = "/api/diff/comment/resolve",
     request_body = ResolveCommentBody,
     responses(
-        (status = 200, body = DiffResolveCommentResponse),
+        (status = 200, body = DiffResolveCommentReply),
         (status = 422, description = "The diffset has no such comment, or the daemon refuses the source"),
         (status = 502, description = "The daemon could not resolve the comment, or could not be reached"),
     )
@@ -374,13 +322,13 @@ async fn post_diff_comment(
 async fn post_diff_resolve_comment(
     State(state): State<AppState>,
     Json(body): Json<ResolveCommentBody>,
-) -> Result<Json<DiffResolveCommentResponse>, WebError> {
+) -> Result<Json<DiffResolveCommentReply>, WebError> {
     let reply = state
         .daemon
         .diff_resolve_comment(&body.source, &body.comment_id)
         .await
         .daemon_err()?;
-    Ok(Json(reply_row(reply, "diff.resolve_comment")?))
+    Ok(Json(reply))
 }
 
 /// `POST /api/diff/comment/delete` — remove one comment of a diffset.
@@ -393,7 +341,7 @@ async fn post_diff_resolve_comment(
     path = "/api/diff/comment/delete",
     request_body = DeleteCommentBody,
     responses(
-        (status = 200, body = DiffDeleteCommentResponse),
+        (status = 200, body = DiffDeleteCommentReply),
         (status = 422, description = "The diffset has no such comment, or the daemon refuses the source"),
         (status = 502, description = "The daemon could not delete the comment, or could not be reached"),
     )
@@ -401,13 +349,13 @@ async fn post_diff_resolve_comment(
 async fn post_diff_delete_comment(
     State(state): State<AppState>,
     Json(body): Json<DeleteCommentBody>,
-) -> Result<Json<DiffDeleteCommentResponse>, WebError> {
+) -> Result<Json<DiffDeleteCommentReply>, WebError> {
     let reply = state
         .daemon
         .diff_delete_comment(&body.source, &body.comment_id)
         .await
         .daemon_err()?;
-    Ok(Json(reply_row(reply, "diff.delete_comment")?))
+    Ok(Json(reply))
 }
 
 /// `GET /api/diff/comments` — the comments of the branch diff of one root, of
@@ -421,7 +369,7 @@ async fn post_diff_delete_comment(
     path = "/api/diff/comments",
     params(DiffQuery),
     responses(
-        (status = 200, body = DiffCommentsResponse),
+        (status = 200, body = DiffCommentsReply),
         (status = 422, description = "The query or the daemon refuses the source, and says why"),
         (status = 502, description = "git failed, or the daemon could not be reached"),
     )
@@ -429,13 +377,13 @@ async fn post_diff_delete_comment(
 async fn get_diff_comments(
     State(state): State<AppState>,
     Query(query): Query<DiffQuery>,
-) -> Result<Json<DiffCommentsResponse>, WebError> {
+) -> Result<Json<DiffCommentsReply>, WebError> {
     let reply = state
         .daemon
         .diff_comments(&query.source()?)
         .await
         .daemon_err()?;
-    Ok(Json(reply_row(reply, "diff.comments")?))
+    Ok(Json(reply))
 }
 
 #[cfg(test)]
@@ -520,7 +468,7 @@ mod tests {
             "body": "why?",
             "author": "agent",
         });
-        let answered: DiffCommentResponse = shape("POST", "/api/diff/comment", Some(body)).await;
+        let answered: DiffCommentReply = shape("POST", "/api/diff/comment", Some(body)).await;
         let request = DiffCommentRequest {
             source: source.clone(),
             root: Some(PhysicalRoot::from_top_level("/tmp/test-project")),
@@ -565,7 +513,7 @@ mod tests {
             base: "main".into(),
             head: None,
         };
-        let answered: DiffResolveCommentResponse = shape(
+        let answered: DiffResolveCommentReply = shape(
             "POST",
             "/api/diff/comment/resolve",
             Some(serde_json::json!({ "source": source, "comment_id": "comment-1" })),
@@ -583,7 +531,7 @@ mod tests {
             base: "main".into(),
             head: None,
         };
-        let answered: DiffDeleteCommentResponse = shape(
+        let answered: DiffDeleteCommentReply = shape(
             "POST",
             "/api/diff/comment/delete",
             Some(serde_json::json!({ "source": source, "comment_id": "comment-1" })),
@@ -598,7 +546,7 @@ mod tests {
     /// `outdated` flag of each comment reaches the browser.
     #[tokio::test]
     async fn get_diff_comments_answers_the_declared_shape() {
-        let answered: DiffCommentsResponse =
+        let answered: DiffCommentsReply =
             shape("GET", "/api/diff/comments?session=chat-1", None).await;
         let source = DiffsetSource::SessionRecord {
             session: SessionId::parse("chat-1").unwrap(),
@@ -634,7 +582,7 @@ mod tests {
         };
         assert_eq!(text, mock_diff_file_text_for(&request));
 
-        let answered: DiffCommentsResponse =
+        let answered: DiffCommentsReply =
             shape("GET", &format!("/api/diff/comments?proposal={id}"), None).await;
         assert_eq!(answered.diffset, source.id());
     }

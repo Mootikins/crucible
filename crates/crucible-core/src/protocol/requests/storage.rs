@@ -360,6 +360,7 @@ pub struct DiffCommentRequest {
 
 /// What `diff.comment` answers: the stored comment and its diffset.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffCommentReply {
     pub diffset: crate::diff::DiffsetId,
     pub comment: crate::session::Comment,
@@ -375,6 +376,7 @@ pub struct DiffResolveCommentRequest {
 
 /// What `diff.resolve_comment` answers.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffResolveCommentReply {
     pub diffset: crate::diff::DiffsetId,
     pub comment_id: String,
@@ -391,6 +393,7 @@ pub struct DiffDeleteCommentRequest {
 
 /// What `diff.delete_comment` answers.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffDeleteCommentReply {
     pub diffset: crate::diff::DiffsetId,
     pub comment_id: String,
@@ -486,6 +489,7 @@ impl NoteListRow {
 /// What `diff.comments` answers: each comment, oldest first, with its range
 /// projected onto the current text of its side.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffCommentsReply {
     pub diffset: crate::diff::DiffsetId,
     pub comments: Vec<ListedComment>,
@@ -493,6 +497,7 @@ pub struct DiffCommentsReply {
 
 /// A comment as the daemon lists it: its range follows its text.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ListedComment {
     /// The stored comment. When its text moved, `line_range` is the new range.
     pub comment: crate::session::Comment,

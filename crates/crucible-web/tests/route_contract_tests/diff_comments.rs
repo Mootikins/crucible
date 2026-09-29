@@ -1,8 +1,9 @@
 //! Diff comment route contract tests: what a daemon refusal becomes.
 //!
-//! The shape of each reply is pinned in `src/routes/diff.rs` and in
-//! `src/routes/comment_rows_tests.rs`. These tests pin the status that a
-//! daemon error gives, because a client acts on the status.
+//! The shape of each reply is pinned in `src/routes/diff.rs`, which returns
+//! the core `crucible_core::protocol::requests::DiffCommentReply` and its
+//! siblings unchanged. These tests pin the status that a daemon error
+//! gives, because a client acts on the status.
 
 use crucible_core::protocol::rpc::RpcMethod;
 

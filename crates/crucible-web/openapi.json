@@ -658,7 +658,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DiffCommentResponse"
+                  "$ref": "#/components/schemas/DiffCommentReply"
                 }
               }
             }
@@ -693,7 +693,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DiffDeleteCommentResponse"
+                  "$ref": "#/components/schemas/DiffDeleteCommentReply"
                 }
               }
             }
@@ -727,7 +727,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DiffResolveCommentResponse"
+                  "$ref": "#/components/schemas/DiffResolveCommentReply"
                 }
               }
             }
@@ -799,7 +799,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DiffCommentsResponse"
+                  "$ref": "#/components/schemas/DiffCommentsReply"
                 }
               }
             }
@@ -4372,7 +4372,7 @@
     "/api/surfaces": {
       "get": {
         "summary": "`GET /api/surfaces` — every declared surface, rows included.",
-        "description": "Rows come with the list because a surface is a panel, not a feed: fetching\neach one separately would draw an empty sidebar first. The registry's row cap\nkeeps the response bounded.",
+        "description": "Rows come with the list because a surface is a panel, not a feed: fetching\neach one separately would draw an empty sidebar first. The registry's row cap\nkeeps the response bounded. `Surface`, `Shape`, `Mark` and `SurfaceRow` are\n`crucible_core::types` types: the daemon answers them directly, and this\nroute forwards them unchanged, so no row here can drop a field the daemon\nadded.",
         "operationId": "list_surfaces",
         "responses": {
           "200": {
@@ -4380,13 +4380,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SurfaceListResponse"
+                  "$ref": "#/components/schemas/SurfaceListReply"
                 }
               }
             }
           },
           "502": {
-            "description": "The daemon could not list the surfaces, or answered a shape this route cannot read"
+            "description": "The daemon could not list the surfaces"
           }
         }
       }
@@ -6240,7 +6240,70 @@
           }
         }
       },
-      "CommentAnchorRow": {
+      "Comment": {
+        "type": "object",
+        "description": "A review comment anchored to a line range.\n\nRanges rather than hunks: a hunk comment is just a comment whose range\nequals a hunk, and ranges additionally allow commenting on unchanged code\nand on spans crossing several hunks.\n\nA diffset owns the comment, not a session. `quoted` keeps the text of the\nrange, so that a later listing can find the range again after the text\nmoves.",
+        "required": [
+          "id",
+          "diffset",
+          "root",
+          "path",
+          "anchor",
+          "side",
+          "line_range",
+          "quoted",
+          "body",
+          "author",
+          "resolved",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "diffset": {
+            "$ref": "#/components/schemas/DiffsetId",
+            "description": "The diffset that owns the comment."
+          },
+          "root": {
+            "$ref": "#/components/schemas/PhysicalRoot",
+            "description": "Repository top level. See [`RootInterval::root`]."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path relative to [`Self::root`]."
+          },
+          "anchor": {
+            "$ref": "#/components/schemas/CommentAnchor",
+            "description": "What the diffset compares with when the comment was made."
+          },
+          "side": {
+            "$ref": "#/components/schemas/CommentSide",
+            "description": "The side that [`Self::line_range`] counts its lines on."
+          },
+          "line_range": {
+            "$ref": "#/components/schemas/LineRange"
+          },
+          "quoted": {
+            "type": "string",
+            "description": "The text of the range on [`Self::side`] when the comment was made."
+          },
+          "body": {
+            "type": "string"
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommentAuthor"
+          },
+          "resolved": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CommentAnchor": {
         "oneOf": [
           {
             "type": "object",
@@ -6251,7 +6314,7 @@
             ],
             "properties": {
               "id": {
-                "type": "string",
+                "$ref": "#/components/schemas/String",
                 "description": "The session base snapshot of a session record."
               },
               "kind": {
@@ -6284,15 +6347,15 @@
           },
           {
             "type": "object",
-            "description": "One proposal id.",
+            "description": "One proposal.",
             "required": [
               "id",
               "kind"
             ],
             "properties": {
               "id": {
-                "type": "string",
-                "description": "One proposal id."
+                "$ref": "#/components/schemas/ProposalId",
+                "description": "One proposal."
               },
               "kind": {
                 "type": "string",
@@ -6303,11 +6366,11 @@
             }
           }
         ],
-        "description": "What a comment is anchored in. The web mirror of\n`crucible_core::session::CommentAnchor`."
+        "description": "What a comment is anchored in: the snapshot, commit or proposal that its\ndiffset compares with.\n\nA [`SnapshotId`] cannot hold a merge-base commit or a proposal, so each\nsource of a diffset has its own arm."
       },
-      "CommentAuthorRow": {
+      "CommentAuthor": {
         "type": "string",
-        "description": "Who wrote a comment.",
+        "description": "Who wrote a review comment.",
         "enum": [
           "human",
           "agent"
@@ -6347,7 +6410,7 @@
             "description": "The old path of a renamed file. A base-side comment quotes this path."
           },
           "side": {
-            "$ref": "#/components/schemas/CommentSideRow",
+            "$ref": "#/components/schemas/CommentSide",
             "description": "The side that the line numbers count on."
           },
           "line_start": {
@@ -6374,7 +6437,7 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/CommentAuthorRow",
+                "$ref": "#/components/schemas/CommentAuthor",
                 "description": "Absent means a human."
               }
             ]
@@ -6400,9 +6463,9 @@
           }
         }
       },
-      "CommentSideRow": {
+      "CommentSide": {
         "type": "string",
-        "description": "The side of a diff that a comment range counts its lines on.",
+        "description": "The side of a diff that a comment range counts its lines on.\n\nThis is not the canvas `Side`, which names the edges of a canvas node.",
         "enum": [
           "base",
           "current"
@@ -6715,27 +6778,25 @@
           }
         }
       },
-      "DiffCommentResponse": {
+      "DiffCommentReply": {
         "type": "object",
-        "description": "What `POST /api/diff/comment` answers.",
+        "description": "What `diff.comment` answers: the stored comment and its diffset.",
         "required": [
           "diffset",
           "comment"
         ],
         "properties": {
           "diffset": {
-            "$ref": "#/components/schemas/DiffsetId",
-            "description": "The diffset that owns the comment."
+            "$ref": "#/components/schemas/DiffsetId"
           },
           "comment": {
-            "$ref": "#/components/schemas/ReviewCommentRow",
-            "description": "The comment as the daemon stored it, with its id and its quote."
+            "$ref": "#/components/schemas/Comment"
           }
         }
       },
-      "DiffCommentsResponse": {
+      "DiffCommentsReply": {
         "type": "object",
-        "description": "What `GET /api/diff/comments` answers.",
+        "description": "What `diff.comments` answers: each comment, oldest first, with its range\nprojected onto the current text of its side.",
         "required": [
           "diffset",
           "comments"
@@ -6747,15 +6808,14 @@
           "comments": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ListedCommentRow"
-            },
-            "description": "The comments, oldest first."
+              "$ref": "#/components/schemas/ListedComment"
+            }
           }
         }
       },
-      "DiffDeleteCommentResponse": {
+      "DiffDeleteCommentReply": {
         "type": "object",
-        "description": "What `POST /api/diff/comment/delete` answers.",
+        "description": "What `diff.delete_comment` answers.",
         "required": [
           "diffset",
           "comment_id",
@@ -6836,9 +6896,9 @@
           }
         }
       },
-      "DiffResolveCommentResponse": {
+      "DiffResolveCommentReply": {
         "type": "object",
-        "description": "What `POST /api/diff/comment/resolve` answers.",
+        "description": "What `diff.resolve_comment` answers.",
         "required": [
           "diffset",
           "comment_id",
@@ -8392,9 +8452,9 @@
         ],
         "description": "Where one leaf came from, and whether `config.save` would refuse it.\n\nThe row `config.origin` answers with. `pinned` is the refusal rule itself,\nreported per leaf, and the [`SourceOrigin`] beside it is the pin that\nrefuses — the same one the refusal carries. See [`crate::config::ConfigStore::origin`]\nfor why the pin, and not the last writer, names the file here."
       },
-      "LineRangeRow": {
+      "LineRange": {
         "type": "object",
-        "description": "A half-open range of 1-based line numbers: `end` is one past the last line.",
+        "description": "A half-open range of 1-based line numbers.\n\n`start == end` is a valid empty range and is how a pure insertion is\nexpressed on the *before* side (and a pure deletion on the *after* side).",
         "required": [
           "start",
           "end"
@@ -8414,23 +8474,33 @@
           }
         }
       },
-      "ListedCommentRow": {
+      "ListedComment": {
         "type": "object",
-        "description": "One comment as `GET /api/diff/comments` lists it.",
+        "description": "A comment as the daemon lists it: its range follows its text.",
         "required": [
           "comment",
           "outdated"
         ],
         "properties": {
           "comment": {
-            "$ref": "#/components/schemas/ReviewCommentRow",
-            "description": "The comment. When its quoted text moved, `line_range` is the new\nrange."
+            "$ref": "#/components/schemas/Comment",
+            "description": "The stored comment. When its text moved, `line_range` is the new range."
           },
           "outdated": {
             "type": "boolean",
-            "description": "The current text of the side does not contain the quoted text. The\npane shows an outdated comment at the end of its file."
+            "description": "The current text of the side does not contain the quoted text.\nThe pane shows an outdated comment at the end of its file."
           }
         }
+      },
+      "Mark": {
+        "type": "string",
+        "description": "A row's status, stated as a fact rather than as a glyph.\n\nThe plugin says what is true. The TUI may draw `●` and the web a coloured\ndot; each client picks its own mark. A plugin that shipped its own glyph\nwould bind one client's medium into a contract both must honour, which is\nthe mistake this enum exists to prevent.",
+        "enum": [
+          "busy",
+          "blocked",
+          "ok",
+          "failed"
+        ]
       },
       "Markers": {
         "type": "string",
@@ -8931,6 +9001,10 @@
             }
           }
         }
+      },
+      "PhysicalRoot": {
+        "type": "string",
+        "description": "A repository top level, as `git rev-parse --show-toplevel` printed it.\n\nDistinct from a plain `PathBuf` because the difference is invisible and\nload-bearing: this spelling is physical (symlinks resolved) and is the\nfirst field hashed into a [`HunkId`], whereas the paths a caller supplies\n— `session.workspace`, a tool's target, an RPC argument — are whatever\nspelling that caller happened to use. Mixing the two gives one change two\nidentities, or a query that silently matches nothing.\n\nOnly [`Self::from_top_level`] mints one, so the compiler asks where a root\ncame from at every construction site. Reads go through `Deref`, so\n`root.join(path)` and friends are unaffected."
       },
       "PinnedLeaf": {
         "allOf": [
@@ -10339,70 +10413,6 @@
         ],
         "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session.\n\nThe warm path answers the state change. The cold path reloads the session\nfrom the store and answers its history, because that call is also what\n`GET /api/session/{id}/history` serves.\n\n**`Restored` must stay first.** The daemon sends no tag, so the variants\nare told apart by their fields, and `Live`'s required fields\n(`session_id`, `state`) are a subset of `Restored`'s. An untagged enum\ntakes the first variant that fits, so with the order reversed every\nrestored history would read back as a bare state change and every event\nwould be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`\nholds the order.\n\n`deny_unknown_fields` would be the other way to separate them, and it is\nnot used here: these are daemon replies, and refusing a field a newer\ndaemon added would turn an extension into a 502 on three healthy routes."
       },
-      "ReviewCommentRow": {
-        "type": "object",
-        "description": "One review comment, anchored to a line range rather than to a hunk.",
-        "required": [
-          "id",
-          "diffset",
-          "root",
-          "path",
-          "anchor",
-          "side",
-          "line_range",
-          "quoted",
-          "body",
-          "author",
-          "resolved",
-          "created_at"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "diffset": {
-            "type": "string",
-            "description": "The diffset that owns the comment."
-          },
-          "root": {
-            "type": "string",
-            "description": "The repository top level."
-          },
-          "path": {
-            "type": "string",
-            "description": "The path, relative to `root`."
-          },
-          "anchor": {
-            "$ref": "#/components/schemas/CommentAnchorRow",
-            "description": "What the diffset compares with when the comment was made."
-          },
-          "side": {
-            "$ref": "#/components/schemas/CommentSideRow",
-            "description": "The side that `line_range` counts its lines on."
-          },
-          "line_range": {
-            "$ref": "#/components/schemas/LineRangeRow"
-          },
-          "quoted": {
-            "type": "string",
-            "description": "The text of the range on `side` when the comment was made."
-          },
-          "body": {
-            "type": "string"
-          },
-          "author": {
-            "$ref": "#/components/schemas/CommentAuthorRow"
-          },
-          "resolved": {
-            "type": "boolean"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the comment was written, RFC 3339.\n\nA string rather than a date type: the daemon's spelling reaches the\nbrowser unchanged, and a parse and a reformat here could only lose\nprecision the daemon sent."
-          }
-        }
-      },
       "Row": {
         "type": "object",
         "required": [
@@ -11376,6 +11386,13 @@
           }
         }
       },
+      "Shape": {
+        "type": "string",
+        "description": "What a client draws.\n\nOne variant, because one renderer exists. `Tree`, `Table` and `KeyValue`\narrive **with** their renderers, not ahead of them: the exhaustive match\non this enum is what forces that.",
+        "enum": [
+          "list"
+        ]
+      },
       "SkillDetail": {
         "type": "object",
         "description": "What `skills.get` answers: one skill, with the body a summary omits.",
@@ -11653,6 +11670,57 @@
         ],
         "description": "How far along a status item's work is, when it is work rather than a\nstate.\n\nModelled on LSP `$/progress`: the producer reports and the client decides\nhow to draw it. An image pull knows its fraction; an image build does\nnot, and a fake fraction for the second is worse than saying so. On the\nwire it is a number or the string `\"indeterminate\"`."
       },
+      "String": {
+        "type": "string"
+      },
+      "Surface": {
+        "type": "object",
+        "description": "One declared surface, as `surface.list` and `surface.get` report it.\n\nRows travel with the surface. A surface is a panel a person reads, not a\nfeed a client polls piece by piece.",
+        "required": [
+          "plugin",
+          "name",
+          "title",
+          "shape",
+          "session",
+          "rows",
+          "version"
+        ],
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "description": "The plugin that declared it, so a stale surface can be attributed."
+          },
+          "name": {
+            "type": "string",
+            "description": "The plugin's own name for it. Stable across a reload."
+          },
+          "title": {
+            "type": "string"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/Shape"
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session this surface is about, or `null` when it is about the\nplugin. Always written, so `null` means \"about the plugin\", never\n\"unknown\"."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SurfaceRow"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bumped on every row change, so a client redraws on a change it sees\nrather than on a timer.",
+            "minimum": 0
+          }
+        }
+      },
       "SurfaceChangedEvent": {
         "type": "object",
         "description": "A surface changed, delivered to the browser.\n\nCarries the identity and the new version, never the rows — the same contract\nthe daemon event has, and for the same reason: a surface is unbounded where an\nevent is not, and two clients want it at different moments. The browser\nrefetches through `GET /api/surfaces`.",
@@ -11685,9 +11753,24 @@
           }
         }
       },
-      "SurfaceLineRow": {
+      "SurfaceListReply": {
         "type": "object",
-        "description": "One line of a surface.\n\nNamed for a line rather than for a row, because the daemon calls both the\npanel and its entries a row and this file needs to name them apart. The\nwire key stays `rows`.",
+        "description": "What `surface.list` answers: every declared surface, rows included.",
+        "required": [
+          "surfaces"
+        ],
+        "properties": {
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Surface"
+            }
+          }
+        }
+      },
+      "SurfaceRow": {
+        "type": "object",
+        "description": "One row of a surface.",
         "required": [
           "id",
           "text",
@@ -11701,14 +11784,14 @@
           },
           "text": {
             "type": "string",
-            "description": "The line's own text."
+            "description": "The row's own text."
           },
           "detail": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Secondary text, or `null`. The daemon always writes the key, so\n`required` rather than optional."
+            "description": "Secondary text, or `null` when the row has none. Always written, so\n`null` means \"no detail\", never \"unknown\"."
           },
           "mark": {
             "oneOf": [
@@ -11716,92 +11799,12 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/SurfaceMarkRow",
-                "description": "Status, or `null` for a line that has none. `null` is \"no status\",\nnever \"unknown\". Always written, so `required`."
+                "$ref": "#/components/schemas/Mark",
+                "description": "Status, or `null` when the row has none. Always written, so `null`\nmeans \"no status\", never \"unknown\"."
               }
             ]
           }
         }
-      },
-      "SurfaceListResponse": {
-        "type": "object",
-        "description": "What `GET /api/surfaces` answers.",
-        "required": [
-          "surfaces"
-        ],
-        "properties": {
-          "surfaces": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SurfaceRow"
-            }
-          }
-        }
-      },
-      "SurfaceMarkRow": {
-        "type": "string",
-        "description": "A row's status, mirroring [`crucible_lua::Mark`].\n\nStated semantically, so each client picks its own glyph. Closed for the same\nreason [`SurfaceShapeRow`] is closed.",
-        "enum": [
-          "busy",
-          "blocked",
-          "ok",
-          "failed"
-        ]
-      },
-      "SurfaceRow": {
-        "type": "object",
-        "description": "One declared surface, as `surface.list` reports it.",
-        "required": [
-          "plugin",
-          "name",
-          "title",
-          "shape",
-          "session",
-          "version",
-          "rows"
-        ],
-        "properties": {
-          "plugin": {
-            "type": "string",
-            "description": "The plugin that declared it, so a stale surface can be attributed."
-          },
-          "name": {
-            "type": "string",
-            "description": "The plugin's own name for it. Stable across a reload."
-          },
-          "title": {
-            "type": "string"
-          },
-          "shape": {
-            "$ref": "#/components/schemas/SurfaceShapeRow"
-          },
-          "session": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The session this surface is about, or `null` when it is about the\nplugin. Always written, so `required`."
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Bumped on every row change, so a client redraws on a change it sees\nrather than on a timer.",
-            "minimum": 0
-          },
-          "rows": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SurfaceLineRow"
-            }
-          }
-        }
-      },
-      "SurfaceShapeRow": {
-        "type": "string",
-        "description": "What a client draws, mirroring [`crucible_lua::Shape`].\n\nA closed set here, and not the open string the browser's hand-written type\ndeclares, because the daemon cannot send anything else: `Shape::parse`\nrefuses an unknown name when the plugin declares the surface, so a spelling\noutside this list never reaches a reply. `the_mirrored_vocabularies_stay_closed`\nholds the two lists together — a variant added in `crucible-lua` fails that\ntest rather than reaching the browser as a shape no renderer knows.",
-        "enum": [
-          "list"
-        ]
       },
       "SwitchModelRequest": {
         "type": "object",

@@ -1996,7 +1996,10 @@ export interface paths {
          * `GET /api/surfaces` — every declared surface, rows included.
          * @description Rows come with the list because a surface is a panel, not a feed: fetching
          *     each one separately would draw an empty sidebar first. The registry's row cap
-         *     keeps the response bounded.
+         *     keeps the response bounded. `Surface`, `Shape`, `Mark` and `SurfaceRow` are
+         *     `crucible_core::types` types: the daemon answers them directly, and this
+         *     route forwards them unchanged, so no row here can drop a field the daemon
+         *     added.
          */
         get: operations["list_surfaces"];
         put?: never;
@@ -2668,12 +2671,47 @@ export interface components {
             commands: components["schemas"]["SessionCommand"][];
         };
         /**
-         * @description What a comment is anchored in. The web mirror of
-         *     `crucible_core::session::CommentAnchor`.
+         * @description A review comment anchored to a line range.
+         *
+         *     Ranges rather than hunks: a hunk comment is just a comment whose range
+         *     equals a hunk, and ranges additionally allow commenting on unchanged code
+         *     and on spans crossing several hunks.
+         *
+         *     A diffset owns the comment, not a session. `quoted` keeps the text of the
+         *     range, so that a later listing can find the range again after the text
+         *     moves.
          */
-        CommentAnchorRow: {
-            /** @description The session base snapshot of a session record. */
+        Comment: {
+            /** @description What the diffset compares with when the comment was made. */
+            anchor: components["schemas"]["CommentAnchor"];
+            author: components["schemas"]["CommentAuthor"];
+            body: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description The diffset that owns the comment. */
+            diffset: components["schemas"]["DiffsetId"];
             id: string;
+            line_range: components["schemas"]["LineRange"];
+            /** @description Path relative to [`Self::root`]. */
+            path: string;
+            /** @description The text of the range on [`Self::side`] when the comment was made. */
+            quoted: string;
+            resolved: boolean;
+            /** @description Repository top level. See [`RootInterval::root`]. */
+            root: components["schemas"]["PhysicalRoot"];
+            /** @description The side that [`Self::line_range`] counts its lines on. */
+            side: components["schemas"]["CommentSide"];
+        };
+        /**
+         * @description What a comment is anchored in: the snapshot, commit or proposal that its
+         *     diffset compares with.
+         *
+         *     A [`SnapshotId`] cannot hold a merge-base commit or a proposal, so each
+         *     source of a diffset has its own arm.
+         */
+        CommentAnchor: {
+            /** @description The session base snapshot of a session record. */
+            id: components["schemas"]["String"];
             /** @enum {string} */
             kind: "snapshot";
         } | {
@@ -2682,22 +2720,22 @@ export interface components {
             /** @enum {string} */
             kind: "commit";
         } | {
-            /** @description One proposal id. */
-            id: string;
+            /** @description One proposal. */
+            id: components["schemas"]["ProposalId"];
             /** @enum {string} */
             kind: "proposal";
         };
         /**
-         * @description Who wrote a comment.
+         * @description Who wrote a review comment.
          * @enum {string}
          */
-        CommentAuthorRow: "human" | "agent";
+        CommentAuthor: "human" | "agent";
         /**
          * @description `POST /api/diff/comment` — anchor a comment to a line range of one file
          *     of a diffset.
          */
         CommentBody: {
-            author?: null | components["schemas"]["CommentAuthorRow"];
+            author?: null | components["schemas"]["CommentAuthor"];
             body: string;
             /** @description The old path of a renamed file. A base-side comment quotes this path. */
             from?: string | null;
@@ -2720,7 +2758,7 @@ export interface components {
              */
             root?: string | null;
             /** @description The side that the line numbers count on. */
-            side: components["schemas"]["CommentSideRow"];
+            side: components["schemas"]["CommentSide"];
             /** @description The diffset of the file. */
             source: components["schemas"]["DiffsetSource"];
         };
@@ -2739,9 +2777,11 @@ export interface components {
         };
         /**
          * @description The side of a diff that a comment range counts its lines on.
+         *
+         *     This is not the canvas `Side`, which names the edges of a canvas node.
          * @enum {string}
          */
-        CommentSideRow: "base" | "current";
+        CommentSide: "base" | "current";
         /**
          * @description One row of `config.origin`: a leaf, the value the store holds for it, and
          *     where that value came from.
@@ -2931,21 +2971,21 @@ export interface components {
         DeleteResponse: {
             deleted: boolean;
         };
-        /** @description What `POST /api/diff/comment` answers. */
-        DiffCommentResponse: {
-            /** @description The comment as the daemon stored it, with its id and its quote. */
-            comment: components["schemas"]["ReviewCommentRow"];
-            /** @description The diffset that owns the comment. */
+        /** @description What `diff.comment` answers: the stored comment and its diffset. */
+        DiffCommentReply: {
+            comment: components["schemas"]["Comment"];
             diffset: components["schemas"]["DiffsetId"];
         };
-        /** @description What `GET /api/diff/comments` answers. */
-        DiffCommentsResponse: {
-            /** @description The comments, oldest first. */
-            comments: components["schemas"]["ListedCommentRow"][];
+        /**
+         * @description What `diff.comments` answers: each comment, oldest first, with its range
+         *     projected onto the current text of its side.
+         */
+        DiffCommentsReply: {
+            comments: components["schemas"]["ListedComment"][];
             diffset: components["schemas"]["DiffsetId"];
         };
-        /** @description What `POST /api/diff/comment/delete` answers. */
-        DiffDeleteCommentResponse: {
+        /** @description What `diff.delete_comment` answers. */
+        DiffDeleteCommentReply: {
             comment_id: string;
             deleted: boolean;
             diffset: components["schemas"]["DiffsetId"];
@@ -2975,8 +3015,8 @@ export interface components {
             /** @description `None` when the file is deleted. */
             current_text?: string | null;
         };
-        /** @description What `POST /api/diff/comment/resolve` answers. */
-        DiffResolveCommentResponse: {
+        /** @description What `diff.resolve_comment` answers. */
+        DiffResolveCommentReply: {
             comment_id: string;
             diffset: components["schemas"]["DiffsetId"];
             resolved: boolean;
@@ -3641,8 +3681,13 @@ export interface components {
              */
             pinned: boolean;
         };
-        /** @description A half-open range of 1-based line numbers: `end` is one past the last line. */
-        LineRangeRow: {
+        /**
+         * @description A half-open range of 1-based line numbers.
+         *
+         *     `start == end` is a valid empty range and is how a pure insertion is
+         *     expressed on the *before* side (and a pure deletion on the *after* side).
+         */
+        LineRange: {
             /**
              * Format: int32
              * @description One past the last line, 1-based, exclusive.
@@ -3654,19 +3699,26 @@ export interface components {
              */
             start: number;
         };
-        /** @description One comment as `GET /api/diff/comments` lists it. */
-        ListedCommentRow: {
+        /** @description A comment as the daemon lists it: its range follows its text. */
+        ListedComment: {
+            /** @description The stored comment. When its text moved, `line_range` is the new range. */
+            comment: components["schemas"]["Comment"];
             /**
-             * @description The comment. When its quoted text moved, `line_range` is the new
-             *     range.
-             */
-            comment: components["schemas"]["ReviewCommentRow"];
-            /**
-             * @description The current text of the side does not contain the quoted text. The
-             *     pane shows an outdated comment at the end of its file.
+             * @description The current text of the side does not contain the quoted text.
+             *     The pane shows an outdated comment at the end of its file.
              */
             outdated: boolean;
         };
+        /**
+         * @description A row's status, stated as a fact rather than as a glyph.
+         *
+         *     The plugin says what is true. The TUI may draw `●` and the web a coloured
+         *     dot; each client picks its own mark. A plugin that shipped its own glyph
+         *     would bind one client's medium into a contract both must honour, which is
+         *     the mistake this enum exists to prevent.
+         * @enum {string}
+         */
+        Mark: "busy" | "blocked" | "ok" | "failed";
         /**
          * @description List view item markers.
          * @enum {string}
@@ -3905,6 +3957,21 @@ export interface components {
         PendingInteractionsResponse: {
             pending: components["schemas"]["PendingInteraction"][];
         };
+        /**
+         * @description A repository top level, as `git rev-parse --show-toplevel` printed it.
+         *
+         *     Distinct from a plain `PathBuf` because the difference is invisible and
+         *     load-bearing: this spelling is physical (symlinks resolved) and is the
+         *     first field hashed into a [`HunkId`], whereas the paths a caller supplies
+         *     — `session.workspace`, a tool's target, an RPC argument — are whatever
+         *     spelling that caller happened to use. Mixing the two gives one change two
+         *     identities, or a query that silently matches nothing.
+         *
+         *     Only [`Self::from_top_level`] mints one, so the compiler asks where a root
+         *     came from at every construction site. Reads go through `Deref`, so
+         *     `root.join(path)` and friends are unaffected.
+         */
+        PhysicalRoot: string;
         /** @description One leaf `config.save` refuses, and what pins it. */
         PinnedLeaf: components["schemas"]["SourceOrigin"] & {
             /** @description The dot-joined leaf path the caller asked to save. */
@@ -4592,35 +4659,6 @@ export interface components {
          *     daemon added would turn an extension into a 502 on three healthy routes.
          */
         ResumeSessionResponse: components["schemas"]["SessionHistoryResponse"] | components["schemas"]["SessionLifecycleResponse"];
-        /** @description One review comment, anchored to a line range rather than to a hunk. */
-        ReviewCommentRow: {
-            /** @description What the diffset compares with when the comment was made. */
-            anchor: components["schemas"]["CommentAnchorRow"];
-            author: components["schemas"]["CommentAuthorRow"];
-            body: string;
-            /**
-             * Format: date-time
-             * @description When the comment was written, RFC 3339.
-             *
-             *     A string rather than a date type: the daemon's spelling reaches the
-             *     browser unchanged, and a parse and a reformat here could only lose
-             *     precision the daemon sent.
-             */
-            created_at: string;
-            /** @description The diffset that owns the comment. */
-            diffset: string;
-            id: string;
-            line_range: components["schemas"]["LineRangeRow"];
-            /** @description The path, relative to `root`. */
-            path: string;
-            /** @description The text of the range on `side` when the comment was made. */
-            quoted: string;
-            resolved: boolean;
-            /** @description The repository top level. */
-            root: string;
-            /** @description The side that `line_range` counts its lines on. */
-            side: components["schemas"]["CommentSideRow"];
-        };
         Row: {
             ancestor_hash: string;
             /** @description Whether this row can move between the groups of this view. */
@@ -5037,6 +5075,15 @@ export interface components {
             /** @description Omitted/null → detach: the session is then left with no workspace. */
             workspace?: string | null;
         };
+        /**
+         * @description What a client draws.
+         *
+         *     One variant, because one renderer exists. `Tree`, `Table` and `KeyValue`
+         *     arrive **with** their renderers, not ahead of them: the exhaustive match
+         *     on this enum is what forces that.
+         * @enum {string}
+         */
+        Shape: "list";
         /** @description What `skills.get` answers: one skill, with the body a summary omits. */
         SkillDetail: {
             /** @description The agent the skill declares, when it declares one. Always written. */
@@ -5172,6 +5219,34 @@ export interface components {
          *     wire it is a number or the string `"indeterminate"`.
          */
         StatusProgress: number | components["schemas"]["IndeterminateProgress"];
+        String: string;
+        /**
+         * @description One declared surface, as `surface.list` and `surface.get` report it.
+         *
+         *     Rows travel with the surface. A surface is a panel a person reads, not a
+         *     feed a client polls piece by piece.
+         */
+        Surface: {
+            /** @description The plugin's own name for it. Stable across a reload. */
+            name: string;
+            /** @description The plugin that declared it, so a stale surface can be attributed. */
+            plugin: string;
+            rows: components["schemas"]["SurfaceRow"][];
+            /**
+             * @description The session this surface is about, or `null` when it is about the
+             *     plugin. Always written, so `null` means "about the plugin", never
+             *     "unknown".
+             */
+            session: string | null;
+            shape: components["schemas"]["Shape"];
+            title: string;
+            /**
+             * Format: int64
+             * @description Bumped on every row change, so a client redraws on a change it sees
+             *     rather than on a timer.
+             */
+            version: number;
+        };
         /**
          * @description A surface changed, delivered to the browser.
          *
@@ -5195,17 +5270,15 @@ export interface components {
              */
             withdrawn?: boolean;
         };
-        /**
-         * @description One line of a surface.
-         *
-         *     Named for a line rather than for a row, because the daemon calls both the
-         *     panel and its entries a row and this file needs to name them apart. The
-         *     wire key stays `rows`.
-         */
-        SurfaceLineRow: {
+        /** @description What `surface.list` answers: every declared surface, rows included. */
+        SurfaceListReply: {
+            surfaces: components["schemas"]["Surface"][];
+        };
+        /** @description One row of a surface. */
+        SurfaceRow: {
             /**
-             * @description Secondary text, or `null`. The daemon always writes the key, so
-             *     `required` rather than optional.
+             * @description Secondary text, or `null` when the row has none. Always written, so
+             *     `null` means "no detail", never "unknown".
              */
             detail: string | null;
             /**
@@ -5213,55 +5286,10 @@ export interface components {
              *     what a client keys a selection on across a re-push.
              */
             id: string;
-            mark: null | components["schemas"]["SurfaceMarkRow"];
-            /** @description The line's own text. */
+            mark: null | components["schemas"]["Mark"];
+            /** @description The row's own text. */
             text: string;
         };
-        /** @description What `GET /api/surfaces` answers. */
-        SurfaceListResponse: {
-            surfaces: components["schemas"]["SurfaceRow"][];
-        };
-        /**
-         * @description A row's status, mirroring [`crucible_lua::Mark`].
-         *
-         *     Stated semantically, so each client picks its own glyph. Closed for the same
-         *     reason [`SurfaceShapeRow`] is closed.
-         * @enum {string}
-         */
-        SurfaceMarkRow: "busy" | "blocked" | "ok" | "failed";
-        /** @description One declared surface, as `surface.list` reports it. */
-        SurfaceRow: {
-            /** @description The plugin's own name for it. Stable across a reload. */
-            name: string;
-            /** @description The plugin that declared it, so a stale surface can be attributed. */
-            plugin: string;
-            rows: components["schemas"]["SurfaceLineRow"][];
-            /**
-             * @description The session this surface is about, or `null` when it is about the
-             *     plugin. Always written, so `required`.
-             */
-            session: string | null;
-            shape: components["schemas"]["SurfaceShapeRow"];
-            title: string;
-            /**
-             * Format: int64
-             * @description Bumped on every row change, so a client redraws on a change it sees
-             *     rather than on a timer.
-             */
-            version: number;
-        };
-        /**
-         * @description What a client draws, mirroring [`crucible_lua::Shape`].
-         *
-         *     A closed set here, and not the open string the browser's hand-written type
-         *     declares, because the daemon cannot send anything else: `Shape::parse`
-         *     refuses an unknown name when the plugin declares the surface, so a spelling
-         *     outside this list never reaches a reply. `the_mirrored_vocabularies_stay_closed`
-         *     holds the two lists together — a variant added in `crucible-lua` fails that
-         *     test rather than reaching the browser as a shape no renderer knows.
-         * @enum {string}
-         */
-        SurfaceShapeRow: "list";
         SwitchModelRequest: {
             model_id: string;
         };
@@ -5509,11 +5537,12 @@ export type SchemaCommandKind = components['schemas']['CommandKind'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
 export type SchemaCommandResponse = components['schemas']['CommandResponse'];
 export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
-export type SchemaCommentAnchorRow = components['schemas']['CommentAnchorRow'];
-export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
+export type SchemaComment = components['schemas']['Comment'];
+export type SchemaCommentAnchor = components['schemas']['CommentAnchor'];
+export type SchemaCommentAuthor = components['schemas']['CommentAuthor'];
 export type SchemaCommentBody = components['schemas']['CommentBody'];
 export type SchemaCommentRef = components['schemas']['CommentRef'];
-export type SchemaCommentSideRow = components['schemas']['CommentSideRow'];
+export type SchemaCommentSide = components['schemas']['CommentSide'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
@@ -5525,12 +5554,12 @@ export type SchemaDelegationConfig = components['schemas']['DelegationConfig'];
 export type SchemaDelegationStatus = components['schemas']['DelegationStatus'];
 export type SchemaDeleteCommentBody = components['schemas']['DeleteCommentBody'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
-export type SchemaDiffCommentResponse = components['schemas']['DiffCommentResponse'];
-export type SchemaDiffCommentsResponse = components['schemas']['DiffCommentsResponse'];
-export type SchemaDiffDeleteCommentResponse = components['schemas']['DiffDeleteCommentResponse'];
+export type SchemaDiffCommentReply = components['schemas']['DiffCommentReply'];
+export type SchemaDiffCommentsReply = components['schemas']['DiffCommentsReply'];
+export type SchemaDiffDeleteCommentReply = components['schemas']['DiffDeleteCommentReply'];
 export type SchemaDiffFileEntry = components['schemas']['DiffFileEntry'];
 export type SchemaDiffFileText = components['schemas']['DiffFileText'];
-export type SchemaDiffResolveCommentResponse = components['schemas']['DiffResolveCommentResponse'];
+export type SchemaDiffResolveCommentReply = components['schemas']['DiffResolveCommentReply'];
 export type SchemaDiffset = components['schemas']['Diffset'];
 export type SchemaDiffsetId = components['schemas']['DiffsetId'];
 export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
@@ -5575,8 +5604,9 @@ export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
-export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
-export type SchemaListedCommentRow = components['schemas']['ListedCommentRow'];
+export type SchemaLineRange = components['schemas']['LineRange'];
+export type SchemaListedComment = components['schemas']['ListedComment'];
+export type SchemaMark = components['schemas']['Mark'];
 export type SchemaMarkers = components['schemas']['Markers'];
 export type SchemaMcpRunning = components['schemas']['McpRunning'];
 export type SchemaMcpStatus = components['schemas']['McpStatus'];
@@ -5595,6 +5625,7 @@ export type SchemaOptionRequest = components['schemas']['OptionRequest'];
 export type SchemaPatchFileRequest = components['schemas']['PatchFileRequest'];
 export type SchemaPendingInteraction = components['schemas']['PendingInteraction'];
 export type SchemaPendingInteractionsResponse = components['schemas']['PendingInteractionsResponse'];
+export type SchemaPhysicalRoot = components['schemas']['PhysicalRoot'];
 export type SchemaPinnedLeaf = components['schemas']['PinnedLeaf'];
 export type SchemaPluginApproval = components['schemas']['PluginApproval'];
 export type SchemaPluginApprovalResponse = components['schemas']['PluginApprovalResponse'];
@@ -5646,7 +5677,6 @@ export type SchemaResolveCommentBody = components['schemas']['ResolveCommentBody
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
-export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
 export type SchemaRow = components['schemas']['Row'];
 export type SchemaRowHeight = components['schemas']['RowHeight'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
@@ -5683,6 +5713,7 @@ export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitio
 export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
 export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
+export type SchemaShape = components['schemas']['Shape'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillsReply = components['schemas']['SkillsReply'];
 export type SchemaSkillSummary = components['schemas']['SkillSummary'];
@@ -5694,12 +5725,11 @@ export type SchemaStatusColorGroup = components['schemas']['StatusColorGroup'];
 export type SchemaStatusDisplayItem = components['schemas']['StatusDisplayItem'];
 export type SchemaStatusItemKind = components['schemas']['StatusItemKind'];
 export type SchemaStatusProgress = components['schemas']['StatusProgress'];
+export type SchemaString = components['schemas']['String'];
+export type SchemaSurface = components['schemas']['Surface'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
-export type SchemaSurfaceLineRow = components['schemas']['SurfaceLineRow'];
-export type SchemaSurfaceListResponse = components['schemas']['SurfaceListResponse'];
-export type SchemaSurfaceMarkRow = components['schemas']['SurfaceMarkRow'];
+export type SchemaSurfaceListReply = components['schemas']['SurfaceListReply'];
 export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
-export type SchemaSurfaceShapeRow = components['schemas']['SurfaceShapeRow'];
 export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
 export type SchemaTextField = components['schemas']['TextField'];
@@ -6369,7 +6399,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DiffCommentResponse"];
+                    "application/json": components["schemas"]["DiffCommentReply"];
                 };
             };
             /** @description The daemon refuses the source, the root, the path or the range, and says why */
@@ -6406,7 +6436,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DiffDeleteCommentResponse"];
+                    "application/json": components["schemas"]["DiffDeleteCommentReply"];
                 };
             };
             /** @description The diffset has no such comment, or the daemon refuses the source */
@@ -6443,7 +6473,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DiffResolveCommentResponse"];
+                    "application/json": components["schemas"]["DiffResolveCommentReply"];
                 };
             };
             /** @description The diffset has no such comment, or the daemon refuses the source */
@@ -6496,7 +6526,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DiffCommentsResponse"];
+                    "application/json": components["schemas"]["DiffCommentsReply"];
                 };
             };
             /** @description The query or the daemon refuses the source, and says why */
@@ -9884,10 +9914,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SurfaceListResponse"];
+                    "application/json": components["schemas"]["SurfaceListReply"];
                 };
             };
-            /** @description The daemon could not list the surfaces, or answered a shape this route cannot read */
+            /** @description The daemon could not list the surfaces */
             502: {
                 headers: {
                     [name: string]: unknown;

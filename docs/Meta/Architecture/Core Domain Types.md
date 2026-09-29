@@ -161,10 +161,10 @@ behavior on top of them.
 | `crates/crucible-core/src/protocol/requests/common.rs` | 117 | `DaemonCapabilities`/`CapabilityFlags`/`VersionCheck` and the small shared request shapes (`EmptyParams`, `PathRequest`, `NameRequest`, `SkillsListRequest`, `AgentsListCardsRequest`) more than one submodule needs. |
 | `crates/crucible-core/src/protocol/requests/lua.rs` | 126 | Request and reply types for `lua.*` plugin-lifecycle RPCs: init/shutdown session, discover, health check, generate stubs, run plugin tests. |
 | `crates/crucible-core/src/protocol/requests/notifications.rs` | 33 | Request and reply types for `notification.list`/`notification.dismiss`. |
-| `crates/crucible-core/src/protocol/requests/plugin.rs` | 99 | Request types for `plugin.*`/`project.*`/`surface.*` RPCs. |
+| `crates/crucible-core/src/protocol/requests/plugin.rs` | 114 | Request and reply types for `plugin.*`/`project.*`/`surface.*` RPCs, including `SurfaceListReply` and `SurfaceGetReply`. |
 | `crates/crucible-core/src/protocol/requests/proposals.rs` | 58 | Request types for `proposal.*` RPCs: list, get, accept, reject, resolve. |
 | `crates/crucible-core/src/protocol/requests/session.rs` | 396 | Request and reply types for the bulk of `session.*` RPCs: create, list, get/status, history, pause/resume/end/delete/archive/clear, replay, send-message, interaction-respond, search, export. |
-| `crates/crucible-core/src/protocol/requests/storage.rs` | 510 | Request and reply types for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, `diff.*`, and `fs.*` RPCs; also `first_per_note`, `ListedComment`, and `GREP_DEFAULT_LIMIT`. |
+| `crates/crucible-core/src/protocol/requests/storage.rs` | 515 | Request and reply types for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, `diff.*`, and `fs.*` RPCs; also `first_per_note`, `ListedComment`, and `GREP_DEFAULT_LIMIT`. All `diff.comment*` replies have `ToSchema` behind the `openapi` feature, so `crucible-web` names them directly. |
 | `crates/crucible-core/src/protocol/requests/subscription.rs` | 8 | The `session.subscribe`/`session.unsubscribe` request type. |
 | `crates/crucible-core/src/protocol/requests/workflow.rs` | 18 | Request types for `workflow.start`/`approve_gate`. |
 | `crates/crucible-core/src/protocol/session_events/lifecycle.rs` | 444 | `JobPayload`/`ReviewPayload`/`NotificationPayload`/`WorkflowPayload`/`SystemPayload`, each declared through the `event_payload!` macro. |
@@ -195,7 +195,7 @@ behavior on top of them.
 | `crates/crucible-core/src/session/types/enums.rs` | 128 | `RecordingMode`/`SessionType`/`SessionState`. |
 | `crates/crucible-core/src/session/types/id.rs` | 343 | `SessionId` — the validated, path-traversal-safe session identifier. |
 | `crates/crucible-core/src/session/types/mod.rs` | 24 | Re-export aggregator for `session/types/*`. |
-| `crates/crucible-core/src/session/types/review.rs` | 703 | `Ledger`/`ComposedHunk`/`Integrity`/`HunkId`/`SnapshotId`/`Comment`/`CommentAnchor`/`CommentSide` — the attribution and comment model (no `ReviewState`/`Verdict`/`GateBlock`; a comment owns a diffset). |
+| `crates/crucible-core/src/session/types/review.rs` | 728 | `Ledger`/`ComposedHunk`/`Integrity`/`HunkId`/`SnapshotId`/`Comment`/`CommentAnchor`/`CommentSide` — the attribution and comment model (no `ReviewState`/`Verdict`/`GateBlock`; a comment owns a diffset). `Comment` and its anchor types have `ToSchema` behind the `openapi` feature; `SnapshotId` implements the trait by hand, so its schema is the plain string of its wire spelling, not its two-arm enum. |
 | `crates/crucible-core/src/session/types/session.rs` | 569 | `Session` — the persisted unit of agent interaction, its legacy kiln-path merge logic, and its plugin isolation/approval/turn-limit bookkeeping. |
 | `crates/crucible-core/src/session/types/summary.rs` | 69 | `SessionSummary` — a lightweight session-listing projection. |
 | `crates/crucible-core/src/session/types/tests/agent.rs` | 401 | `SessionAgent` serialization and `from_profile` tests. |
@@ -252,12 +252,14 @@ behavior on top of them.
 | `crates/crucible-core/src/types/knob.rs` | 346 | `SessionKnob`/`AcpKnob`/`AgentConfigOption` — which per-session settings exist and how ACP handles them; `SessionKnob::PluginTurnLimit` is a daemon-only knob. |
 | `crates/crucible-core/src/types/mcp_status.rs` | 20 | `McpServerInfo` (display-only) for the `mcp_servers_ready` setup event. |
 | `crates/crucible-core/src/types/mode.rs` | 447 | `WriteMode`/`BuiltinMode`/`ModeDescriptor`/`SessionModes` — mode presentation and whether a mode's note writes apply to disk or are recorded as proposals. `SessionModes::next_mode`/the free function `next_mode` give the mode after the current one, wrapping, for `/mode` and its `Shift+Tab` equivalent. |
-| `crates/crucible-core/src/types/mod.rs` | 82 | Re-export root for `types/*`; documents where each canonical type actually lives. |
+| `crates/crucible-core/src/types/mod.rs` | 95 | Re-export root for `types/*`; documents where each canonical type actually lives. |
 | `crates/crucible-core/src/types/notification.rs` | 309 | `Notification`/`NotificationScope`/`NotificationKind`; a session scope wins over workspace/kiln scoping. |
 | `crates/crucible-core/src/types/plugin_status.rs` | 24 | `PluginStatusEntry` for the `plugins_discovered` setup event. |
 | `crates/crucible-core/src/types/popup.rs` | 92 | `PopupEntry` — the cross-platform simple popup-list-item type. |
 | `crates/crucible-core/src/types/provider_info.rs` | 20 | `ProviderInfo` for the `providers_listed` setup event and `list_providers` RPC. |
+| `crates/crucible-core/src/types/skill.rs` | 48 | `SkillSummary`/`SkillDetail`/`SkillsReply` — the `skills.list`/`skills.search`/`skills.get` replies, moved from `crucible-daemon` so the daemon client and the web route name the same type. |
 | `crates/crucible-core/src/types/status_item.rs` | 108 | `StatusDisplayItem`/`StatusItemKind`/`StatusProgress` — the `session.status` reply and `status_items_changed` event payload. |
+| `crates/crucible-core/src/types/surface.rs` | 135 | `Surface`/`Shape`/`Mark`/`SurfaceRow` — the plugin-surface wire types a `cru.surface.declare`d panel serializes as, moved from `crucible-lua` so the daemon, the web route and `crucible-lua` name the same type. |
 | `crates/crucible-core/src/types/tool_call.rs` | 612 | `BuiltinKind`/`CanonicalToolCall`/`ToolRender`/`RenderField` — the canonical, cross-crate tool-call classification and display projection. |
 | `crates/crucible-core/src/types/tool_match.rs` | 813 | `classify_acp`/`AgentKeys`/`KeyPattern`/`RawToolCall` — the default matcher that turns an ACP tool call into a `CanonicalToolCall`. |
 | `crates/crucible-core/src/types/tool_ref.rs` | 181 | `ToolRef`/`ToolSource` — a unified tool reference spanning core, native, MCP, plugin and ACP sources. |
