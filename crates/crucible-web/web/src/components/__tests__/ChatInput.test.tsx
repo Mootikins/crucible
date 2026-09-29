@@ -408,8 +408,7 @@ describe('ChatInput — a pending request docks on the prompt', () => {
   const permission = (): InteractionRequest => ({
     kind: 'permission',
     id: 'perm-1',
-    action_type: 'bash',
-    tokens: ['rm', '-rf', 'build'],
+    action: { type: 'bash', tokens: ['rm', '-rf', 'build'] },
   });
 
   it('draws no card while nothing is pending', () => {

@@ -19,9 +19,7 @@ let pending: PendingInteractionEntry[] = [];
 const perm: InteractionOf<'permission'> = {
   kind: 'permission',
   id: 'req-1',
-  action_type: 'bash',
-  tokens: ['cargo', 'test'],
-  tool_name: 'Bash',
+  action: { type: 'bash', tokens: ['cargo', 'test'] },
 };
 
 beforeEach(async () => {

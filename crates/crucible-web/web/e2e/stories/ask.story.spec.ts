@@ -23,7 +23,10 @@ function askFrame(
 ) {
   return {
     type: 'interaction_requested',
-    data: { type: 'interaction_requested', kind: 'ask', id, ...fields },
+    data: {
+      event: 'interaction_requested',
+      data: { request_id: id, request: { kind: 'ask', ...fields } },
+    },
   };
 }
 

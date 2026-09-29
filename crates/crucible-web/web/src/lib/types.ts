@@ -243,56 +243,11 @@ export interface ToolCallDisplay {
   autoApproved?: string;
 }
 
-/** One proposed file edit. Mirrors `crucible_core::types::acp::FileDiff`. */
-export interface FileDiffWire {
-  path: string;
-  old_content: string | null;
-  new_content: string;
-}
+/** One proposed file edit. */
+export type FileDiffWire = Schemas['FileDiff'];
 
-/** The canonical tool call. Mirrors `crucible_core::types::CanonicalToolCall`. */
-interface CanonicalToolCall {
-  /** An open kind name: `command`, `file_edit`, `file_read`, `mcp_tool`,
-   * `fetch`, `search`, the fallback `tool`, or a name that a plugin adds. */
-  kind: string;
-  tool: string;
-  command?: string;
-  paths?: string[];
-  url?: string;
-  query?: string;
-  /** The call's proposed file edits (`old_content: null` = whole-file
-   * write). */
-  diffs?: FileDiffWire[];
-  agent?: string;
-  /** The fields of an ACP call, for display and debugging only. */
-  raw?: RawToolCall;
-  /** What the render function of the kind says. Mirrors
-   * `crucible_core::types::ToolRender`. Absent in a recording from before it. */
-  render?: ToolRender;
-}
-
-/** Display data for one tool call: meaning, not markup. Each client draws it. */
-interface ToolRender {
-  /** The one line that says what the call does. */
-  line?: string;
-  /** The other facts of the call, in order. */
-  fields?: Array<{ label: string; value: unknown }>;
-  /** The one line that says what the result is. Only the render of a
-   * finished call has it. */
-  summary?: string;
-}
-
-/** The fields of an ACP tool call. Mirrors `crucible_core::types::RawToolCall`. */
-interface RawToolCall {
-  title?: string;
-  name?: string;
-  kind?: string;
-  rawInput?: unknown;
-  locations?: Array<{ path: string; line?: number }>;
-  content?: unknown[];
-  /** The ACP `_meta` object, as opaque JSON. */
-  _meta?: unknown;
-}
+/** The canonical tool call. */
+type CanonicalToolCall = Schemas['CanonicalToolCall'];
 
 /** A delegated task. Client-local: `itemToMessage` maps a transcript
  * delegation item into it. */
@@ -374,7 +329,8 @@ export interface NotificationOrigin {
 }
 
 // =============================================================================
-// SSE Event Types (generated from the Rust `ChatEvent` in events.rs)
+// SSE Event Types (generated from the Rust `SessionEventPayload` and
+// `TranscriptFrame` — see `crates/crucible-web/src/routes/chat.rs::to_sse`)
 // =============================================================================
 
 /**
@@ -400,13 +356,30 @@ interface ConnectionEvent {
 }
 
 /**
+ * One daemon session event, in the same `{event, data}` shape the RPC socket
+ * and `session.jsonl` carry — one event vocabulary, not a second one
+ * re-encoded for the browser. `event.event` is the SSE `event:` name.
+ */
+type SessionEvent = Schemas['SessionEventPayload'];
+
+/** Every wire name a `SessionEvent` may carry. */
+export type SessionEventName = SessionEvent['event'];
+
+/**
+ * The second SSE frame a live event sends when it changed the transcript,
+ * with the same `id:` as the event's own frame.
+ */
+type TranscriptFrame = Schemas['TranscriptFrame'];
+
+/**
  * Everything a chat stream handler receives.
  *
- * The daemon's half comes from the contract, so a variant added in Rust
- * reaches the reducer's exhaustiveness check without anyone editing a list
- * here. `ConnectionEvent` is the client's own half — see above.
+ * The daemon's half (`SessionEvent | TranscriptFrame`) comes from the
+ * contract, so a variant added in Rust reaches this union — and the
+ * reducer's exhaustiveness check — with no hand edit here.
+ * `ConnectionEvent` is the client's own half — see above.
  */
-export type ChatEvent = Schemas['ChatEvent'] | ConnectionEvent;
+export type ChatEvent = SessionEvent | TranscriptFrame | ConnectionEvent;
 
 /**
  * A chat event carrying the `seq` the stream stamped on its frame, when it
@@ -422,141 +395,28 @@ export type ChatEvent = Schemas['ChatEvent'] | ConnectionEvent;
 export type SequencedChatEvent = ChatEvent & { seq?: number | null };
 
 // =============================================================================
-// Interaction Request/Response Types (from Rust core interaction.rs)
+// Interaction Request/Response Types
 // =============================================================================
-
-// The seven variants of Rust's `InteractionRequest`, which is internally
-// tagged on `kind` (crucible-core/src/interaction/types.rs). The list is kept
-// complete by `InteractionRequest::KINDS` on the Rust side and by
-// `interaction-coverage.test.ts` here, which fails when a kind has no renderer
-// — three of seven rendered in the browser is the state those guards exist to
-// stop recurring.
 //
-// They stay hand-written because the contract cannot carry them: the web route
-// forwards the body as an opaque object (`PendingInteraction.request` is
-// `serde_json::Value`), so the document describes it as an open object and
-// knows none of these fields. The owner is `crucible-core`, not `crucible-web`.
+// Aliases into the generated contract: `crucible-core/src/interaction/`
+// now carries `ToSchema`, so the seven `InteractionRequest` variants and
+// their responses are no longer copied here by hand.
 
-/** Format hint carried by `edit` and `show`. */
-type ArtifactFormat = 'markdown' | 'code' | 'json' | 'plain';
-
-interface AskRequest {
-  kind: 'ask';
-  question: string;
-  choices?: string[];
-  multi_select?: boolean;
-  allow_other?: boolean;
-}
-
-interface AskQuestion {
-  header: string;
-  question: string;
-  choices: string[];
-  multi_select?: boolean;
-  allow_other?: boolean;
-}
-
-interface AskBatchRequest {
-  kind: 'ask_batch';
-  id: string;
-  questions: AskQuestion[];
-}
-
-interface EditRequest {
-  kind: 'edit';
-  content: string;
-  format?: ArtifactFormat;
-  hint?: string;
-}
-
-interface ShowRequest {
-  kind: 'show';
-  content: string;
-  format?: ArtifactFormat;
-  title?: string;
-}
-
-interface PopupEntry {
-  label: string;
-  description?: string;
-  data?: unknown;
-}
-
-interface PopupRequest {
-  kind: 'popup';
-  title: string;
-  entries: PopupEntry[];
-  allow_other?: boolean;
-}
-
-export interface PanelItem {
-  label: string;
-  description?: string;
-  data?: unknown;
-}
-
-interface PanelHints {
-  filterable?: boolean;
-  multi_select?: boolean;
-  allow_other?: boolean;
-  initial_selection?: number[];
-  initial_filter?: string;
-}
-
-interface PanelRequest {
-  kind: 'panel';
-  header: string;
-  items: PanelItem[];
-  hints?: PanelHints;
-}
-
-type PermActionType = 'bash' | 'read' | 'write' | 'tool';
-
-interface PermRequest {
-  kind: 'permission';
-  /** The origin of the turn that asks: `{ kind: 'plugin', name }` for a plugin turn. */
-  origin?: { kind: string; name?: string };
-  action_type: PermActionType;
-  tokens: string[];
-  tool_name?: string;
-  tool_args?: unknown;
-  /**
-   * The proposed file edits the permission gate attached (daemon `FileDiff`s;
-   * `old_content: null` = whole-file write). Forwarded whole by the web
-   * server's interaction normalization; absent on requests that propose no
-   * edit. This is the change's authoritative form — the page does not
-   * re-derive a diff from `tool_args` field names.
-   */
-  diffs?: Array<{ path: string; old_content: string | null; new_content: string }>;
-  /** The canonical call, with its render, its agent and its raw tool name. */
-  call?: CanonicalToolCall;
-  /** The permission layer that asked, for example `ask mode`. */
-  layer?: string;
-  /**
-   * The grant that "always allow" saves, which the daemon made from the call.
-   * Absent when no grant can name the call.
-   */
-  pattern?: string;
-}
+export type PanelItem = Schemas['PopupEntry'];
+export type PermissionScope = Schemas['PermissionScope'];
 
 /** The seven request bodies, exactly as the Rust enum serializes them. */
-export type InteractionBody =
-  | AskRequest
-  | AskBatchRequest
-  | EditRequest
-  | ShowRequest
-  | PermRequest
-  | PopupRequest
-  | PanelRequest;
+export type InteractionBody = Schemas['InteractionRequest'];
 
 /**
  * A request as a client receives it: the body plus the correlation `id`.
  *
- * `id` is NOT a field on any of the Rust structs — it is `request_id` from the
- * `interaction_requested` envelope, which the SSE reducer flattens onto the
- * body. Declaring it per-variant (as three of them used to) made it look like
- * part of the payload and left the four other kinds unable to be answered at
- * all, since responding needs exactly this value.
+ * `id` is NOT a field on any of the Rust structs — it is `request_id` from
+ * the `interaction_requested` envelope (or from the pending-interactions
+ * list), which `chatEventReducer` and `listPendingInteractions` attach onto
+ * the body. Declaring it per-variant made it look like part of the payload
+ * and left kinds with no natural id field unable to be answered at all,
+ * since responding needs exactly this value.
  */
 export type InteractionRequest = InteractionBody & { id: string };
 
@@ -582,64 +442,16 @@ export const INTERACTION_KINDS = [
 // routes/chat.rs), but inference cannot separate a panel result from an ask
 // response — both carry `selected` — so new kinds must say what they are.
 
-export interface AskResponse {
-  kind: 'ask';
-  selected: number[];
-  other?: string;
-}
-
-export interface QuestionAnswer {
-  selected: number[];
-  other?: string;
-}
-
-export interface AskBatchResponse {
-  kind: 'ask_batch';
-  id: string;
-  answers: QuestionAnswer[];
-  cancelled?: boolean;
-}
-
-export interface EditResponse {
-  kind: 'edit';
-  modified: string;
-}
-
-export interface PopupResponse {
-  kind: 'popup';
-  selected_index?: number;
-  other?: string;
-}
-
-export interface PanelResponse {
-  kind: 'panel';
-  cancelled?: boolean;
-  selected: number[];
-  other?: string;
-}
-
+export type InteractionResponse = Schemas['InteractionResponse'];
+export type AskResponse = Extract<InteractionResponse, { kind: 'ask' }>;
+export type QuestionAnswer = Schemas['QuestionAnswer'];
+export type AskBatchResponse = Extract<InteractionResponse, { kind: 'ask_batch' }>;
+export type EditResponse = Extract<InteractionResponse, { kind: 'edit' }>;
+export type PopupResponse = Extract<InteractionResponse, { kind: 'popup' }>;
+export type PanelResponse = Extract<InteractionResponse, { kind: 'panel' }>;
+export type PermResponse = Extract<InteractionResponse, { kind: 'permission' }>;
 /** `show` expects no answer; dismissing it reports cancellation. */
-export interface CancelledResponse {
-  kind: 'cancelled';
-}
-
-export type PermissionScope = 'once' | 'session' | 'project' | 'user';
-
-export interface PermResponse {
-  kind: 'permission';
-  allowed: boolean;
-  pattern?: string;
-  scope: PermissionScope;
-}
-
-export type InteractionResponse =
-  | AskResponse
-  | AskBatchResponse
-  | EditResponse
-  | PopupResponse
-  | PanelResponse
-  | PermResponse
-  | CancelledResponse;
+export type CancelledResponse = Extract<InteractionResponse, { kind: 'cancelled' }>;
 
 // =============================================================================
 // Wire Rows Read Without a Request

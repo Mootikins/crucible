@@ -376,7 +376,7 @@ function ensureStream(sessionId: string): void {
         sync.firstLiveSeq = event.seq;
         checkLiveGap(sessionId);
       }
-      if (event.type === 'transcript') {
+      if ('type' in event && event.type === 'transcript') {
         receiveFrame(sessionId, { seq: event.seq ?? null, ops: event.ops });
         return;
       }
@@ -384,9 +384,11 @@ function ensureStream(sessionId: string): void {
       // some. Either way the store reads the snapshot again. A turn that
       // ended while an op did not fit is in the stored log now.
       if (
-        (event.type === 'connection' && event.status === 'connected' && needsSnapshotOnOpen(sessionId)) ||
-        (event.type === 'session_event' && event.event === 'stream_gap') ||
-        (event.type === 'turn_finished' && syncOf(sessionId).stale)
+        (('type' in event && event.type === 'connection') &&
+          event.status === 'connected' &&
+          needsSnapshotOnOpen(sessionId)) ||
+        (!('type' in event) && event.event === 'stream_gap') ||
+        (!('type' in event) && event.event === 'turn_finished' && syncOf(sessionId).stale)
       ) {
         resyncTranscript(sessionId);
       }

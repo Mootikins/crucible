@@ -24,16 +24,18 @@ function permFrame(id: string, newContent: string, oldContent = '# Draft\n\nold 
   return {
     type: 'interaction_requested',
     data: {
-      type: 'interaction_requested',
-      kind: 'permission',
-      id,
-      action_type: 'write',
-      tokens: [FILE],
-      tool_args: { content: newContent },
-      diffs: [{ path: FILE, old_content: oldContent, new_content: newContent }],
-      // The grant that the daemon suggests for a write of one path. Without
-      // it the card offers no wider scope.
-      pattern: FILE,
+      event: 'interaction_requested',
+      data: {
+        request_id: id,
+        request: {
+          kind: 'permission',
+          action: { type: 'write', segments: [FILE] },
+          diffs: [{ path: FILE, old_content: oldContent, new_content: newContent }],
+          // The grant that the daemon suggests for a write of one path.
+          // Without it the card offers no wider scope.
+          pattern: FILE,
+        },
+      },
     },
   };
 }

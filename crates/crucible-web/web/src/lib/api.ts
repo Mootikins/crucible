@@ -25,6 +25,7 @@ import type {
   SemanticHit,
   Session,
   SessionDetail,
+  SessionEventName,
   SessionHistoryResponse,
   SessionScope,
   SessionSearchResponse,
@@ -206,41 +207,98 @@ export async function sendChatMessage(
 /**
  * The SSE `event:` names `subscribeToEvents` installs a listener for.
  *
- * `satisfies` binds the tuple to the generated `ChatEvent` union, so a name
- * that is not a variant fails to compile. `MissingSseEventType` below closes
- * the other direction: a variant added in Rust and not listed here makes
- * `_SSE_EVENT_TYPES_ARE_COMPLETE` unassignable, which is the check the old
- * "append it here" comment asked a human to perform.
+ * `satisfies` binds the tuple to `SessionEventName` — the generated union of
+ * every wire name `SessionEventPayload` declares — so a name that is not a
+ * variant fails to compile. `MissingSseEventType` below closes the other
+ * direction: a variant added in Rust (in any of the eight payload groups)
+ * and not listed here makes `_SSE_EVENT_TYPES_ARE_COMPLETE` unassignable.
+ * There is no curated subset any more, and no `default:` anywhere that could
+ * swallow a name silently — every wire name the daemon can send is either
+ * handled here and in `chatEventReducer`, or named as deliberately unhandled.
  *
  * `connection` is absent on purpose: the client mints it, the daemon never
- * sends it, so there is no server event to listen for.
+ * sends it, so there is no server event to listen for. `transcript` is
+ * added by hand: it is `TranscriptFrame`'s own frame name, not one of
+ * `SessionEventPayload`'s.
  */
 export const SSE_EVENT_TYPES = [
-  'token',
-  'tool_call',
-  'tool_result',
-  'tool_result_delta',
-  'tool_result_complete',
-  'tool_result_error',
-  'thinking',
-  'segment_complete',
-  'message_complete',
-  'turn_finished',
-  'error',
-  'interaction_requested',
-  'session_event',
-  'delegation_spawned',
+  'acp_resume_fallback',
+  'background_job_completed',
+  'base:changed',
+  'bash_job_completed',
+  'bash_job_failed',
+  'bash_job_spawned',
+  'classification_required',
+  'commands_changed',
+  'context_cleared',
+  'context_injected',
+  'context_limit_resolved',
+  'context_strategy_changed',
   'delegation_completed',
   'delegation_failed',
-  'precognition_result',
+  'delegation_spawned',
+  'file_changed',
+  'file_deleted',
+  'file_moved',
+  'interaction_completed',
+  'interaction_requested',
+  'kiln_notes_indexed',
+  'mcp_servers_ready',
+  'message_complete',
   'mode_changed',
+  'model_switched',
+  'note:created',
+  'note:deleted',
+  'note:modified',
+  'note:renamed',
+  'notification_added',
+  'notification_dismissed',
+  'plugin_approval_changed',
+  'plugin_turn_limit_changed',
+  'plugins_discovered',
+  'post_llm_call',
+  'precognition_complete',
+  'precognition_toggled',
+  'process_complete',
+  'proposal_changed',
+  'providers_listed',
+  'publication_changed',
+  'replay_complete',
+  'review_changed',
+  'scope_changed',
+  'segment_complete',
+  'session:created',
+  'session:ended',
+  'session_initialized',
+  'session_undo',
+  'status_items_changed',
+  'stream_gap',
+  'surface_changed',
+  'system_prompt_changed',
+  'text_delta',
+  'thinking',
   'title_changed',
-  'commands_changed',
+  'tool_call',
+  'tool_call_update',
+  'tool_result',
+  'turn_finished',
+  'ui_style_changed',
+  'user_message',
+  'webhook:received',
+  'workflow.assessed',
+  'workflow.cancelled',
+  'workflow.completed',
+  'workflow.failed',
+  'workflow.gate_approved',
+  'workflow.gate_reached',
+  'workflow.step_completed',
+  'workflow.step_started',
+  'workspace_indexed',
   'transcript',
-] as const satisfies readonly Schemas['ChatEvent']['type'][];
+] as const satisfies readonly (SessionEventName | 'transcript')[];
 
 /** Every daemon event name the tuple above forgot. Empty, or the build stops. */
-type MissingSseEventType = Exclude<Schemas['ChatEvent']['type'], (typeof SSE_EVENT_TYPES)[number]>;
+type MissingSseEventType = Exclude<SessionEventName, (typeof SSE_EVENT_TYPES)[number]>;
 const _SSE_EVENT_TYPES_ARE_COMPLETE: [MissingSseEventType] extends [never] ? true : never = true;
 void _SSE_EVENT_TYPES_ARE_COMPLETE;
 
@@ -316,9 +374,22 @@ function guardStreamVersion(stream: string, source: EventSource, shutDown: () =>
 /** Every `type` a chat event may carry, as a set the decode can ask. */
 const CHAT_EVENT_TAGS = new Set<string>(SSE_EVENT_TYPES);
 
-/** A chat payload tagged with a variant the document declares. */
+/**
+ * A chat payload tagged with a name the document declares.
+ *
+ * A `SessionEventPayload` frame carries its tag under `event` (adjacent
+ * tagging: `{event, data}`); the `transcript` frame carries `type` instead,
+ * because it is not one of `SessionEventPayload`'s own variants. Both tags
+ * share one name set, since `SSE_EVENT_TYPES` includes `transcript` by hand.
+ */
 function isChatEvent(payload: object): boolean {
-  return 'type' in payload && typeof payload.type === 'string' && CHAT_EVENT_TAGS.has(payload.type);
+  const tag =
+    'event' in payload && typeof payload.event === 'string'
+      ? payload.event
+      : 'type' in payload && typeof payload.type === 'string'
+        ? payload.type
+        : undefined;
+  return tag !== undefined && CHAT_EVENT_TAGS.has(tag);
 }
 
 /**

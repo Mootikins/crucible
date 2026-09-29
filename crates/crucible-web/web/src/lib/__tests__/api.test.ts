@@ -1440,8 +1440,8 @@ describe('subscribeToEvents', () => {
     const source = MockEventSource.instances[0];
     expect(source.url).toBe('/api/chat/events/ses-1');
 
-    source.dispatch('token', { type: 'token', content: 'hi' });
-    expect(events).toEqual([{ type: 'token', content: 'hi' }]);
+    source.dispatch('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    expect(events).toEqual([{ event: 'text_delta', data: { content: 'hi' } }]);
 
     cleanup();
     expect(source.closed).toBe(true);
@@ -1450,7 +1450,7 @@ describe('subscribeToEvents', () => {
   it('warns on unparseable event data', () => {
     subscribeToEvents('ses-1', () => {});
     const source = MockEventSource.instances[0];
-    source.dispatchRaw('token', 'not json {{{');
+    source.dispatchRaw('text_delta', 'not json {{{');
     expect(warnSpy).toHaveBeenCalled();
     expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse SSE event');
   });
@@ -1604,7 +1604,7 @@ describe('subscribeToEvents', () => {
 
       // Valid JSON, tagged like nothing the document declares: decodeEvent
       // refuses it and the stream lives on.
-      MockEventSource.instances[0].dispatch('token', { hello: 1 });
+      MockEventSource.instances[0].dispatch('text_delta', { hello: 1 });
 
       expect(events).toEqual([]);
       expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse SSE event');

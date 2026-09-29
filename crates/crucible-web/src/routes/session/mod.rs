@@ -78,28 +78,13 @@ struct TitleResponse {
 // — to read all three. There is one shape now, so this route returns it
 // unchanged: no row, no `Option<Option<T>>` present-or-null trick.
 
-/// One persisted session event, as `session.resume_from_storage` replays it.
-///
-/// The same envelope the SSE stream carries, but this route replays whatever
-/// the transcript holds — including an event name a newer daemon minted — so
-/// `data` stays untyped here rather than narrowing to [`crate::events::ChatEvent`].
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SessionHistoryEvent {
-    /// The envelope kind. Always `event`.
-    #[serde(rename = "type")]
-    message_type: String,
-    session_id: String,
-    /// The event name, such as `user_message` or `text_delta`.
-    event: String,
-    /// The event payload. Its shape follows `event`.
-    data: serde_json::Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    timestamp: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    seq: Option<u64>,
-}
-
 /// What `GET /api/session/{id}/history` answers.
+///
+/// `history` is the core [`crucible_core::protocol::SessionEventMessage`] —
+/// the same envelope the SSE stream carries — replayed whatever the
+/// transcript holds, including an event name a newer daemon minted. Its
+/// `data` stays untyped for exactly that reason: this build cannot type an
+/// event it does not know.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct SessionHistoryResponse {
     session_id: String,
@@ -109,7 +94,7 @@ struct SessionHistoryResponse {
     state: String,
     kilns: Vec<String>,
     /// The page of events the query asked for.
-    history: Vec<SessionHistoryEvent>,
+    history: Vec<crucible_core::protocol::SessionEventMessage>,
     /// How many events the whole transcript holds, for paging.
     total_events: usize,
     /// The whole log, folded into what a client draws. The daemon folds it;

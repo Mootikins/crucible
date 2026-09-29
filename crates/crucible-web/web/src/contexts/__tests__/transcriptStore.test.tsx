@@ -132,7 +132,7 @@ describe('the transcript store reads a new snapshot', () => {
     start();
     snapshot = historyOf(ID, [userTurn('t1', 'lost in the gap')], 3).transcript;
 
-    stream().emit('session_event', { type: 'session_event', event: 'stream_gap', data: { dropped: 2 } });
+    stream().emit('stream_gap', { event: 'stream_gap', data: { dropped: 2 } });
 
     await waitFor(() => expect(rows()).toEqual(['user:lost in the gap']));
   });

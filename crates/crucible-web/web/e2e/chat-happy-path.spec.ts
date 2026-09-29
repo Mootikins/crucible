@@ -10,15 +10,16 @@ import { openSessionsList } from './helpers/nav';
  *
  * Core send → stream → complete flow and cancel-during-stream.
  *
- * The real Axum backend serializes ChatEvent with `#[serde(tag = "type")]`,
- * so SSE data payloads include the `type` discriminator. We build events
+ * The real Axum backend forwards the daemon's own `{event, data}` pair for
+ * every session event (`to_sse` in `crates/crucible-web/src/routes/chat.rs`)
+ * — one event vocabulary, not a `ChatEvent` re-encoding. We build events
  * matching that wire format here.
  */
 
 /**
- * Build SSE events matching the real backend format (type in data payload):
- * the events of one turn, and the transcript frames the daemon sends with
- * them.
+ * Build SSE events matching the real backend format (`{event, data}` in the
+ * data payload): the events of one turn, and the transcript frames the
+ * daemon sends with them.
  */
 function buildChatEvents(
   prompt: string,
@@ -35,20 +36,21 @@ function buildChatEvents(
     transcript.ops([upsert(userTurn(messageId, prompt))]),
     transcript.upsert(open),
     ...chunks.map((chunk) => ({
-      type: 'token',
-      data: { type: 'token', content: chunk },
+      type: 'text_delta',
+      data: { event: 'text_delta', data: { content: chunk } },
     })),
     ...transcript.appends(open.id, content, 10),
     transcript.upsert(segment(messageId, 0, content)),
     {
       type: 'message_complete',
-      data: { type: 'message_complete', id: messageId, content, tool_calls: [] },
+      data: { event: 'message_complete', data: { message_id: messageId, full_response: content } },
     },
   ];
 }
 
 test.describe('Chat happy path', () => {
   test('sends a message and displays streamed response', async ({ page }) => {
+
     const responseText = 'Hello! How can I help you today?';
     const sseBody = createSSEStream(buildChatEvents('Hello there', responseText));
 

@@ -11,10 +11,12 @@ export const PopupInteraction: Component<Props> = (props) => {
   const [filter, setFilter] = createSignal('');
   const [otherText, setOtherText] = createSignal('');
 
+  const entries = () => props.request.entries ?? [];
+
   const filteredEntries = createMemo(() => {
     const query = filter().toLowerCase();
-    if (!query) return props.request.entries;
-    return props.request.entries.filter(
+    if (!query) return entries();
+    return entries().filter(
       (entry) =>
         entry.label.toLowerCase().includes(query) ||
         entry.description?.toLowerCase().includes(query)
@@ -22,7 +24,7 @@ export const PopupInteraction: Component<Props> = (props) => {
   });
 
   const handleSelect = (index: number) => {
-    const originalIndex = props.request.entries.findIndex(
+    const originalIndex = entries().findIndex(
       (e) => e === filteredEntries()[index]
     );
     props.onRespond({ kind: 'popup', selected_index: originalIndex });

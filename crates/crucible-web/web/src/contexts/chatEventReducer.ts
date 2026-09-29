@@ -44,14 +44,27 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
   };
 
   return (event: ChatEvent) => {
-    switch (event.type) {
-      case 'token':
+    // `ChatEvent` mixes two tags: `type` (the client's own `connection`
+    // frame, and `TranscriptFrame`) and `event` (every `SessionEventPayload`
+    // variant — see `lib/types.ts`). `'type' in event` is false for every
+    // `SessionEventPayload` member, so it narrows the union correctly.
+    if ('type' in event) {
+      if (event.type === 'connection') {
+        // Transport reconnect — a transient banner ONLY.
+        deps.setConnectionStatus(event.status === 'connected' ? 'connected' : 'reconnecting');
+        deps.setError(event.status === 'connected' ? null : (event.message ?? 'Reconnecting…'));
+        return;
+      }
+      // event.type === 'transcript': transcriptStore applies the ops
+      // before the reducer runs.
+      return;
+    }
+
+    switch (event.event) {
+      case 'text_delta':
       case 'thinking':
       case 'tool_call':
       case 'tool_result':
-      case 'tool_result_delta':
-      case 'tool_result_complete':
-      case 'tool_result_error':
       case 'segment_complete':
         markStreaming();
         break;
@@ -64,51 +77,50 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // A failed turn and a turn that a handler cancelled (for example the
         // loop guard) carry the reason in `error`. The transcript shows the
         // notice of a failed turn; the error line says it too.
-        if ((event.status === 'failed' || event.status === 'handler_cancelled') && event.error) {
-          deps.setError(`${event.error} (turn_${event.status})`);
+        const { status, error } = event.data;
+        if ((status === 'failed' || status === 'handler_cancelled') && error) {
+          deps.setError(`${error} (turn_${status})`);
         }
         closeTurn();
         break;
       }
 
-      case 'error':
-        deps.setError(`${event.message} (${event.code})`);
-        deps.addErrorNotice(`Error: ${event.message}`);
-        closeTurn();
-        break;
-
-      case 'connection': {
-        // Transport reconnect — a transient banner ONLY.
-        deps.setConnectionStatus(event.status === 'connected' ? 'connected' : 'reconnecting');
-        deps.setError(event.status === 'connected' ? null : (event.message ?? 'Reconnecting…'));
-        break;
-      }
-
       case 'interaction_requested': {
-        const { type: _eventType, ...requestData } = event;
-        deps.setPendingInteraction(requestData as unknown as InteractionRequest);
+        const { request_id, request } = event.data;
+        deps.setPendingInteraction({ ...request, id: request_id } as InteractionRequest);
         break;
       }
 
-      case 'mode_changed':
-        deps.setChatMode(event.mode);
-        statusBarActions.setChatMode(event.mode);
-        deps.onUnknownMode?.(event.mode);
+      case 'mode_changed': {
+        // `#[serde(default)]` on the Rust field makes the schema mark it
+        // optional for a READER — an old recording could omit it — though
+        // every live event carries it. The empty-string fallback matches
+        // that Rust default.
+        const mode = event.data.mode ?? '';
+        deps.setChatMode(mode);
+        statusBarActions.setChatMode(mode);
+        deps.onUnknownMode?.(mode);
         break;
+      }
 
       case 'title_changed':
-        deps.onTitleChanged(event.title);
+        deps.onTitleChanged(event.data.title ?? '');
         break;
 
-      // The transcript items carry these: the delegation rows, the notes of
-      // Precognition, and every `session_event` that changes the transcript
-      // (`user_message`, `tool_call_update`, `context_cleared`). The store
-      // refetches the snapshot on a `stream_gap`.
+      // The transcript items carry these: user turns, tool-call updates,
+      // context markers, delegation rows and the notes of Precognition —
+      // `transcriptStore` applies them from the co-emitted `transcript`
+      // frame, so this reducer does nothing with the named event itself.
+      case 'user_message':
+      case 'context_cleared':
+      case 'context_injected':
+      case 'tool_call_update':
       case 'delegation_spawned':
       case 'delegation_completed':
       case 'delegation_failed':
-      case 'precognition_result':
-      case 'session_event':
+      case 'precognition_complete':
+      case 'interaction_completed':
+      case 'post_llm_call':
         break;
 
       // The catalog is a query of its own; `lib/query/routes/session.ts`
@@ -116,9 +128,96 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
       case 'commands_changed':
         break;
 
-      // `transcriptStore` applies the ops before the reducer runs.
-      case 'transcript':
+      // Session-settings acknowledgements other than mode/title: each has
+      // its own reader (the session config panels, the status bar), not
+      // this reducer.
+      case 'model_switched':
+      case 'scope_changed':
+      case 'system_prompt_changed':
+      case 'precognition_toggled':
+      case 'context_strategy_changed':
+      case 'plugin_approval_changed':
+      case 'plugin_turn_limit_changed':
         break;
+
+      // Setup-phase notices: `lib/query/routes/session.ts` and the status
+      // panels read these directly off the stream; the chat pane does not.
+      case 'session_initialized':
+      case 'providers_listed':
+      case 'context_limit_resolved':
+      case 'workspace_indexed':
+      case 'kiln_notes_indexed':
+      case 'plugins_discovered':
+      case 'mcp_servers_ready':
+      case 'acp_resume_fallback':
+        break;
+
+      // Delegated job lifecycle beyond the three delegation_* events above:
+      // no per-session chat rendering.
+      case 'bash_job_spawned':
+      case 'bash_job_completed':
+      case 'bash_job_failed':
+      case 'background_job_completed':
+        break;
+
+      // Review/undo: the diff panel's own store reads these.
+      case 'review_changed':
+      case 'session_undo':
+        break;
+
+      // Session-wide notifications: the toast store reads these.
+      case 'notification_added':
+      case 'notification_dismissed':
+        break;
+
+      // Workflow-engine progress: the workflow panel's own store.
+      case 'workflow.step_started':
+      case 'workflow.step_completed':
+      case 'workflow.gate_reached':
+      case 'workflow.gate_approved':
+      case 'workflow.completed':
+      case 'workflow.assessed':
+      case 'workflow.failed':
+      case 'workflow.cancelled':
+        break;
+
+      // Daemon-wide system events: none are addressed to one session's chat
+      // pane. File watch, kiln indexing, UI config, webhooks, replay,
+      // plugin surfaces/publications, proposals, session lifecycle and the
+      // transport's own gap marker each have their own reader elsewhere
+      // (the fs store, the surfaces store, the proposals store, the session
+      // list, `EventSource`'s dedicated `stream_gap` listener).
+      case 'file_changed':
+      case 'file_deleted':
+      case 'file_moved':
+      case 'classification_required':
+      case 'process_complete':
+      case 'ui_style_changed':
+      case 'status_items_changed':
+      case 'stream_gap':
+      case 'note:created':
+      case 'note:modified':
+      case 'note:deleted':
+      case 'note:renamed':
+      case 'base:changed':
+      case 'webhook:received':
+      case 'replay_complete':
+      case 'session:created':
+      case 'session:ended':
+      case 'surface_changed':
+      case 'publication_changed':
+      case 'proposal_changed':
+        break;
+
+      /* v8 ignore next 6 -- unreachable by construction: every real
+       * `SessionEventPayload` variant has a case above, and a new one fails
+       * `bun run typecheck` here at compile time (see the type budget note
+       * in `lib/types.ts`) before it could ever reach this branch at run
+       * time. */
+      default: {
+        const unhandled: never = event;
+        void unhandled;
+      }
     }
   };
 }

@@ -115,10 +115,10 @@ describe('sessionEvents', () => {
     sessionEvents('s1').subscribe(first);
     sessionEvents('s1').subscribe(second);
 
-    onlySource().emit('token', { type: 'token', content: 'hi' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
-    expect(first).toHaveBeenCalledWith({ type: 'token', content: 'hi' });
-    expect(second).toHaveBeenCalledWith({ type: 'token', content: 'hi' });
+    expect(first).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'hi' } });
+    expect(second).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'hi' } });
   });
 
   it('holds the stream open until the last subscriber leaves', async () => {
@@ -167,7 +167,7 @@ describe('sessionEvents', () => {
     sessionEvents('s1').subscribe(first);
     sessionEvents('s2').subscribe(second);
 
-    FakeEventSource.instances[0]!.emit('token', { type: 'token', content: 'one' });
+    FakeEventSource.instances[0]!.emit('text_delta', { event: 'text_delta', data: { content: 'one' } });
 
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).not.toHaveBeenCalled();
@@ -192,7 +192,7 @@ describe('sessionEvents', () => {
     sessionEvents('s1').subscribe(second);
 
     stopFirst();
-    onlySource().emit('token', { type: 'token', content: 'hi' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
@@ -203,9 +203,9 @@ describe('sessionEvents', () => {
     stream.subscribe(vi.fn());
 
     expect(stream.latest()).toBeUndefined();
-    onlySource().emit('token', { type: 'token', content: 'hi' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
-    expect(stream.latest()).toEqual({ type: 'token', content: 'hi' });
+    expect(stream.latest()).toEqual({ event: 'text_delta', data: { content: 'hi' } });
   });
 
   it('tells the first subscriber and a later one that the stream is open', () => {
@@ -226,10 +226,10 @@ describe('sessionEvents', () => {
     setEventRoute('session', route);
     sessionEvents('s1').subscribe(vi.fn());
 
-    onlySource().emit('token', { type: 'token', content: 'hi' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
     expect(route).toHaveBeenCalledWith(
-      { type: 'token', content: 'hi' },
+      { event: 'text_delta', data: { content: 'hi' } },
       { client: getQueryClient(), bus: getBus(), sessionId: 's1' },
     );
   });
@@ -241,7 +241,7 @@ describe('sessionEvents', () => {
     const handler = vi.fn();
     sessionEvents('s1').subscribe(handler);
 
-    onlySource().emit('token', { type: 'token', content: 'hi' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -252,7 +252,7 @@ describe('sessionEvents', () => {
     resetSseForTests();
 
     sessionEvents('s1').subscribe(vi.fn());
-    onlySource().emit('token', { type: 'token', content: 'hi' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
     expect(route).not.toHaveBeenCalled();
   });
@@ -288,24 +288,23 @@ describe('the session resume cursor', () => {
   });
 
   it('carries the seq a frame stamped, and nothing when it did not', () => {
-    const seen: Array<{ seq?: number | null; type: string }> = [];
+    const seen: Array<{ seq?: number | null; event?: string; type?: string }> = [];
     sessionEvents('s1').subscribe((event) => seen.push(event));
 
-    onlySource().emit('token', { type: 'token', content: 'a' }, { lastEventId: '12' });
-    onlySource().emit('token', { type: 'token', content: 'b' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'a' } }, { lastEventId: '12' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'b' } });
     onlySource().emit(
       'message_complete',
       {
-        type: 'message_complete',
-        id: 'm1',
-        content: 'c',
+        event: 'message_complete',
+        data: { message_id: 'm1', full_response: 'c' },
       },
       { lastEventId: '13' },
     );
 
-    expect(seen.map((event) => [event.type, event.seq])).toEqual([
-      ['token', 12],
-      ['token', undefined],
+    expect(seen.map((event) => ['event' in event ? event.event : event.type, event.seq])).toEqual([
+      ['text_delta', 12],
+      ['text_delta', undefined],
       ['message_complete', 13],
     ]);
   });
@@ -526,9 +525,9 @@ describe('reconnect', () => {
     expect(replacement.url).toBe('/api/chat/events/s1');
     expect(replacement.closed).toBe(false);
 
-    replacement.emit('token', { type: 'token', content: 'after' });
-    expect(first).toHaveBeenCalledWith({ type: 'token', content: 'after' });
-    expect(second).toHaveBeenCalledWith({ type: 'token', content: 'after' });
+    replacement.emit('text_delta', { event: 'text_delta', data: { content: 'after' } });
+    expect(first).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'after' } });
+    expect(second).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'after' } });
   });
 
   it('keeps the route on the new source', () => {
@@ -538,7 +537,7 @@ describe('reconnect', () => {
     stream.subscribe(vi.fn());
 
     stream.reconnect();
-    FakeEventSource.instances[1]!.emit('token', { type: 'token', content: 'after' });
+    FakeEventSource.instances[1]!.emit('text_delta', { event: 'text_delta', data: { content: 'after' } });
 
     expect(route).toHaveBeenCalledTimes(1);
   });
@@ -627,7 +626,7 @@ describe('a handler that throws', () => {
     sessionEvents('s1').subscribe(broken);
     sessionEvents('s1').subscribe(good);
 
-    onlySource().emit('token', { type: 'token', content: 'hi' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
     expect(broken).toHaveBeenCalledTimes(1);
     expect(good).toHaveBeenCalledTimes(1);
@@ -642,8 +641,8 @@ describe('a handler that throws', () => {
     });
     sessionEvents('s1').subscribe(broken);
 
-    onlySource().emit('token', { type: 'token', content: 'one' });
-    onlySource().emit('token', { type: 'token', content: 'two' });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'one' } });
+    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'two' } });
 
     expect(broken).toHaveBeenCalledTimes(2);
     expect(onlySource().closed).toBe(false);

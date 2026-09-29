@@ -59,8 +59,7 @@ const activeSession = (): Session => ({
 const permission = (): InteractionRequest => ({
   kind: 'permission',
   id: 'perm-1',
-  action_type: 'bash',
-  tokens: ['rm', '-rf', 'build'],
+  action: { type: 'bash', tokens: ['rm', '-rf', 'build'] },
 });
 
 afterEach(() => {
@@ -127,8 +126,7 @@ describe('MessageList interaction record', () => {
     setPending({
       kind: 'permission',
       id: 'perm-2',
-      action_type: 'write',
-      tokens: ['docs/Meta/Product.md'],
+      action: { type: 'write', segments: ['docs/Meta/Product.md'] },
     });
     render(() => <MessageList />);
 

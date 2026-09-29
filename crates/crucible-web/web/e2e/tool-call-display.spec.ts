@@ -14,9 +14,9 @@ import { openSessionsList } from './helpers/nav';
  *   1. Send message → POST completes
  *   2. Release SSE events → tool card appears, assistant message streams
  *
- * NOTE: SSE event data must include `type` field to match the real Axum backend's
- * `#[serde(tag = "type")]` serialization, which the frontend's handleEvent switch
- * requires for dispatching.
+ * NOTE: SSE event data must be `{event, data}` — the daemon's own pair, which
+ * `to_sse` (`crates/crucible-web/src/routes/chat.rs`) forwards unchanged — for
+ * the frontend's `chatEventReducer` switch to dispatch on it.
  */
 
 test.describe('Tool call display', () => {
@@ -34,18 +34,28 @@ test.describe('Tool call display', () => {
       transcript.ops([upsert(call)]),
       transcript.ops([upsert({ ...call, status: 'complete', result: 'File contents here' } as typeof call)]),
       transcript.upsert(segment('msg-001', 0, 'I read the file for you.')),
-      // Real backend shape: event `tool_call` with `title` (src/web/events.rs)
-      { type: 'tool_call', data: { type: 'tool_call', id: 'tool-001', title: 'read_file', arguments: { path: '/test.txt' } } },
-      { type: 'tool_result_delta', data: { type: 'tool_result_delta', id: 'tool-001', delta: 'File contents here' } },
-      { type: 'tool_result_complete', data: { type: 'tool_result_complete', id: 'tool-001' } },
-      { type: 'token', data: { type: 'token', content: 'I read the file for you.' } },
+      // Real backend shape: `TurnPayload::ToolCall` carries `call_id`/`tool`/
+      // `args`, and one `tool_result` event carries the whole output.
+      {
+        type: 'tool_call',
+        data: {
+          event: 'tool_call',
+          data: { call_id: 'tool-001', tool: 'read_file', args: { path: '/test.txt' } },
+        },
+      },
+      {
+        type: 'tool_result',
+        data: {
+          event: 'tool_result',
+          data: { call_id: 'tool-001', tool: 'read_file', result: 'File contents here', terminate: false },
+        },
+      },
+      { type: 'text_delta', data: { event: 'text_delta', data: { content: 'I read the file for you.' } } },
       {
         type: 'message_complete',
         data: {
-          type: 'message_complete',
-          id: 'msg-002',
-          content: 'I read the file for you.',
-          tool_calls: [{ id: 'tool-001', title: 'read_file' }],
+          event: 'message_complete',
+          data: { message_id: 'msg-002', full_response: 'I read the file for you.' },
         },
       },
     ]);

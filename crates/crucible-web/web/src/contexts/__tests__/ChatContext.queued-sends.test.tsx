@@ -85,12 +85,12 @@ let seq = 0;
 function daemonTurn(id: string, prompt: string, text: string): void {
   emitOps(stream(), ++seq, [upsert(userTurn(id, prompt))]);
   emitOps(stream(), ++seq, [upsert(segment(id, 0, text, { streaming: true }))]);
-  stream().emit('token', { type: 'token', content: text });
+  stream().emit('text_delta', { event: 'text_delta', data: { content: text } });
 }
 /** The daemon ends the turn `id`. */
 function daemonTurnEnds(id: string, text: string): void {
   emitOps(stream(), ++seq, [upsert(segment(id, 0, text))]);
-  stream().emit('message_complete', { type: 'message_complete', id, content: text });
+  stream().emit('message_complete', { event: 'message_complete', data: { message_id: id, full_response: text } });
 }
 
 describe('ChatContext queues mid-turn sends', () => {
@@ -188,7 +188,7 @@ describe('ChatContext queues mid-turn sends', () => {
     });
 
     void ctx.sendMessage('raced');
-    stream().emit('thinking', { type: 'thinking', content: 'foreign turn working ' });
+    stream().emit('thinking', { event: 'thinking', data: { content: 'foreign turn working ' } });
     await gated;
     await waitFor(() => expect(ctx.isStreaming()).toBe(true));
 
@@ -206,7 +206,7 @@ describe('ChatContext queues mid-turn sends', () => {
     );
 
     // ...and once the foreign turn ends, the flush dispatches it.
-    stream().emit('turn_finished', { type: 'turn_finished', status: 'completed' });
+    stream().emit('turn_finished', { event: 'turn_finished', data: { status: 'completed' } });
     await waitFor(() => expect(sentTurns.some((t) => t.content === 'raced')).toBe(true));
   });
 });
@@ -228,7 +228,7 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
     await ctx.cancelStream();
     // The daemon records `turn_finished` BEFORE the cancel call resolves,
     // and every subscriber receives it, with the ops that close the turn.
-    stream().emit('turn_finished', { type: 'turn_finished', status: 'cancelled' });
+    stream().emit('turn_finished', { event: 'turn_finished', data: { status: 'cancelled' } });
     emitOps(stream(), 2, [upsert(segment('turn-1', 0, '', { thinking: 'deep in thought' }))]);
 
     // The daemon closed the segment, so the thinking block is not left
@@ -250,8 +250,8 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
 
     void ctx.sendMessage('foreign');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['foreign']));
-    stream().emit('token', { type: 'token', content: 'partial' });
-    stream().emit('turn_finished', { type: 'turn_finished', status: 'cancelled' });
+    stream().emit('text_delta', { event: 'text_delta', data: { content: 'partial' } });
+    stream().emit('turn_finished', { event: 'turn_finished', data: { status: 'cancelled' } });
 
     await waitFor(() => expect(ctx.isStreaming()).toBe(false));
     await waitFor(() => expect(ctx.isLoading()).toBe(false));

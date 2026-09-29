@@ -96,7 +96,7 @@ describe('useSessionModes', () => {
     await vi.waitFor(() => expect(query.data).toBeDefined());
 
     const stop = sessionEvents('s-1').subscribe(() => {});
-    onlyEventSource().emit('mode_changed', { type: 'mode_changed', mode: 'plan' });
+    onlyEventSource().emit('mode_changed', { event: 'mode_changed', data: { mode: 'plan' } });
 
     await vi.waitFor(() => expect(env.fetch.calls(LIST)).toBe(2));
     stop();

@@ -184,8 +184,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-1',
-      action_type: 'bash',
-      tokens: ['ls', '-la'],
+      action: { type: 'bash', tokens: ['ls', '-la'] },
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -201,8 +200,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-weight',
-      action_type: 'bash',
-      tokens: ['rm', '-rf', 'build'],
+      action: { type: 'bash', tokens: ['rm', '-rf', 'build'] },
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -229,10 +227,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-tool-dup',
-      action_type: 'tool',
-      tokens: [],
-      tool_name: 'write_file',
-      tool_args: { path: 'notes/a.md' },
+      action: { type: 'tool', name: 'write_file', args: { path: 'notes/a.md' } },
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -247,8 +242,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-about',
-      action_type: 'bash',
-      tokens: ['cargo test'],
+      action: { type: 'bash', tokens: ['cargo test'] },
       call: {
         kind: 'command',
         tool: 'command',
@@ -273,10 +267,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-render',
-      action_type: 'tool',
-      tokens: [],
-      tool_name: 'spawn',
-      tool_args: { prompt: 'from the arguments' },
+      action: { type: 'tool', name: 'spawn', args: { prompt: 'from the arguments' } },
       call: {
         kind: 'delegate',
         tool: 'spawn',
@@ -294,7 +285,7 @@ describe('PermissionInteraction', () => {
   // Decision 6: a prompt in a plugin turn names the plugin whose turn asks.
   it('names the plugin whose turn asks', () => {
     const request: InteractionOf<'permission'> = {
-      kind: 'permission', id: 'perm-plugin', action_type: 'bash', tokens: ['ls'],
+      kind: 'permission', id: 'perm-plugin', action: { type: 'bash', tokens: ['ls'] },
       origin: { kind: 'plugin', name: 'goal' },
     };
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -305,8 +296,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-bash-chip',
-      action_type: 'bash',
-      tokens: ['rm', '-rf', 'build'],
+      action: { type: 'bash', tokens: ['rm', '-rf', 'build'] },
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -320,13 +310,14 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-tool-1',
-      action_type: 'tool',
-      tokens: [],
-      tool_name: 'search_vectors',
-      tool_args: {
-        query: longQuery,
-        limit: 20,
-        filters: { kiln: 'docs', tags: ['api'] },
+      action: {
+        type: 'tool',
+        name: 'search_vectors',
+        args: {
+          query: longQuery,
+          limit: 20,
+          filters: { kiln: 'docs', tags: ['api'] },
+        },
       },
     };
 
@@ -355,8 +346,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-write-1',
-      action_type: 'write',
-      tokens: ['/kiln/notes/a.md'],
+      action: { type: 'write', segments: ['/kiln/notes/a.md'] },
       diffs: [{ path: '/kiln/notes/a.md', old_content: 'on disk\n', new_content: 'typed\n' }],
     };
 
@@ -370,9 +360,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-tool-2',
-      action_type: 'tool',
-      tokens: [],
-      tool_name: 'list_notes',
+      action: { type: 'tool', name: 'list_notes', args: {} },
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -383,8 +371,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-2',
-      action_type: 'bash',
-      tokens: ['echo', 'hello'],
+      action: { type: 'bash', tokens: ['echo', 'hello'] },
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -397,8 +384,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-3',
-      action_type: 'bash',
-      tokens: ['rm', '-rf', '/tmp/test'],
+      action: { type: 'bash', tokens: ['rm', '-rf', '/tmp/test'] },
       pattern: 'rm -rf /tmp/test',
     };
 
@@ -420,9 +406,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-5',
-      action_type: 'tool',
-      tokens: ['Edit'],
-      tool_name: 'Edit',
+      action: { type: 'tool', name: 'Edit', args: {} },
       pattern: '/w/a.rs',
     };
 
@@ -445,9 +429,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-6',
-      action_type: 'tool',
-      tokens: ['tool'],
-      tool_name: 'tool',
+      action: { type: 'tool', name: 'tool', args: {} },
     };
     const { unmount } = render(() => (
       <PermissionInteraction request={request} onRespond={mockOnRespond} />
@@ -465,9 +447,7 @@ describe('PermissionInteraction', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-4',
-      action_type: 'tool',
-      tokens: ['dangerous_tool'],
-      tool_name: 'exec_sql',
+      action: { type: 'tool', name: 'exec_sql', args: {} },
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
@@ -512,8 +492,7 @@ describe('InteractionHandler', () => {
     const request: InteractionRequest = {
       kind: 'permission',
       id: 'perm-dispatch',
-      action_type: 'read',
-      tokens: ['/etc/passwd'],
+      action: { type: 'read', segments: ['/etc/passwd'] },
     };
 
     render(() => <InteractionHandler request={request} onRespond={mockOnRespond} />);

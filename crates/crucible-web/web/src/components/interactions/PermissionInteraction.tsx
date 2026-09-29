@@ -3,6 +3,7 @@ import type { InteractionOf, PermResponse, PermissionScope } from '@/lib/types';
 import { DiffViewer } from '@/components/DiffViewer';
 import { btnConsent, btnNeutral } from '@/lib/button-style';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
+import { permActionType, permToolArgs, permToolName, permTokens } from '@/lib/permission';
 import { originName } from '@/lib/turn';
 
 interface Props {
@@ -33,9 +34,10 @@ const ACTION_LABELS: Record<string, { label: string; chip: string }> = {
 function detailPairs(request: InteractionOf<'permission'>): [string, string][] {
   const fields = request.call?.render?.fields ?? [];
   if (fields.length > 0) return fields.map((f) => [f.label, prettyPrintMaybeJson(f.value)]);
-  if (request.action_type !== 'tool' || request.call?.kind === 'command') return [];
-  if (!request.tool_args || typeof request.tool_args !== 'object') return [];
-  return Object.entries(request.tool_args as Record<string, unknown>).map(([k, v]) => [
+  if (permActionType(request) !== 'tool' || request.call?.kind === 'command') return [];
+  const toolArgs = permToolArgs(request);
+  if (!toolArgs || typeof toolArgs !== 'object') return [];
+  return Object.entries(toolArgs as Record<string, unknown>).map(([k, v]) => [
     k,
     prettyPrintMaybeJson(v),
   ]);
@@ -59,7 +61,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const [showDiff, setShowDiff] = createSignal(true);
 
   const plugin = () => originName(props.request.origin, 'plugin');
-  const actionInfo = () => ACTION_LABELS[props.request.action_type] || ACTION_LABELS.tool;
+  const actionInfo = () => ACTION_LABELS[permActionType(props.request)] || ACTION_LABELS.tool;
 
   // A tool request used to render a generic "Tool" chip AND a "Tool: <name>"
   // line beneath it — the word twice, the name once, and two lines spent on
@@ -67,16 +69,16 @@ export const PermissionInteraction: Component<Props> = (props) => {
   // that identifies the request, and "Permission Required" beside it already
   // says what kind of card this is. Non-tool actions keep their verb chip
   // ("Execute", "Read", "Write"), which is their identifying label.
-  const isNamedTool = () =>
-    props.request.action_type === 'tool' && !!props.request.tool_name;
-  const chipLabel = () => (isNamedTool() ? props.request.tool_name! : actionInfo().label);
+  const toolName = () => permToolName(props.request);
+  const isNamedTool = () => permActionType(props.request) === 'tool' && !!toolName();
+  const chipLabel = () => (isNamedTool() ? toolName()! : actionInfo().label);
   // The line of the render that the daemon made, or the tokens of a request
   // with no call, for the display only. The grant that "always allow" saves
   // is `request.pattern`, which the daemon made from the canonical call: the
   // daemon checks the grant against that call, so a grant that the browser
   // made could never match it.
   const commandDisplay = () =>
-    prettyPrintMaybeJson(props.request.call?.render?.line ?? props.request.tokens.join(' '));
+    prettyPrintMaybeJson(props.request.call?.render?.line ?? permTokens(props.request).join(' '));
 
   // The proposed edits as the daemon attached them to the request — the
   // authoritative change, with its true baseline. This page used to guess a

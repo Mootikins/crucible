@@ -23,9 +23,7 @@ const RESPOND = 'POST /api/interaction/respond';
 const perm: InteractionOf<'permission'> = {
   kind: 'permission',
   id: 'r-1',
-  action_type: 'bash',
-  tokens: ['cargo', 'test'],
-  tool_name: 'Bash',
+  action: { type: 'bash', tokens: ['cargo', 'test'] },
 };
 
 /** One entry of the daemon's aggregate. */
@@ -98,8 +96,8 @@ describe('usePendingInteractions', () => {
 
     const stop = sessionEvents('s-1').subscribe(() => {});
     onlyEventSource().emit('interaction_requested', {
-      type: 'interaction_requested',
-      request: { ...perm, id: 'r-2' },
+      event: 'interaction_requested',
+      data: { request_id: 'r-2', request: perm },
     });
 
     await vi.waitFor(() => expect(env.fetch.calls(PENDING)).toBe(2));
@@ -230,8 +228,8 @@ describe('the requests this client already answered', () => {
     // A second session raises a request, which invalidates this key.
     const stop = sessionEvents('s-2').subscribe(() => {});
     onlyEventSource().emit('interaction_requested', {
-      type: 'interaction_requested',
-      request: { ...perm, id: 'r-9' },
+      event: 'interaction_requested',
+      data: { request_id: 'r-9', request: perm },
     });
 
     // Waiting on the CACHE and not on the request count: the count rises when

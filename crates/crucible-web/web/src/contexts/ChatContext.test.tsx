@@ -296,7 +296,7 @@ describe('ChatContext', () => {
       expect(screen.getByTestId('loading').textContent).toBe('loading');
     });
 
-    FakeEventSource.instances[0]!.emit('turn_finished', { type: 'turn_finished', status: 'completed' });
+    FakeEventSource.instances[0]!.emit('turn_finished', { event: 'turn_finished', data: { status: 'completed' } });
 
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('idle');

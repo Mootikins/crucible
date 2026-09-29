@@ -25,7 +25,7 @@ import { openSessionsList } from '../helpers/nav';
 /** The one frame that ends the turn, whatever stopped it. */
 const TURN_FINISHED_FRAME = {
   type: 'turn_finished',
-  data: { type: 'turn_finished', status: 'cancelled' },
+  data: { event: 'turn_finished', data: { status: 'cancelled' } },
 };
 
 test.describe('WS-108 cancel a turn', () => {

@@ -27,7 +27,7 @@ export const PanelInteraction: Component<Props> = (props) => {
 
   /** `[originalIndex, item]` pairs surviving the filter. */
   const visible = createMemo<[number, PanelItem][]>(() => {
-    const pairs = props.request.items.map((item, i) => [i, item] as [number, PanelItem]);
+    const pairs = (props.request.items ?? []).map((item, i) => [i, item] as [number, PanelItem]);
     const query = filter().trim().toLowerCase();
     if (!query || !hints().filterable) return pairs;
     return pairs.filter(

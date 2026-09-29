@@ -47,12 +47,12 @@ it('a delayed attach snapshot cannot resurrect a notice dismissed on the stream'
   );
 
   // Exercise the real ChatProvider/reducer, not a test-owned SSE callback.
-  source.emit('session_event', {
-    type: 'session_event', event: 'notification_added', data: { notification: notice },
+  source.emit('notification_added', {
+    event: 'notification_added', data: { notification: notice },
   });
   await waitFor(() => expect(visible(notice.id)).toHaveLength(1));
-  source.emit('session_event', {
-    type: 'session_event', event: 'notification_dismissed', data: { notification_id: notice.id },
+  source.emit('notification_dismissed', {
+    event: 'notification_dismissed', data: { notification_id: notice.id },
   });
   await waitFor(() => expect(visible(notice.id)).toHaveLength(0));
 

@@ -68,8 +68,8 @@ async function mockListRenamedAfterTheStreamOpens(
         Connection: 'keep-alive',
       },
       body: `event: title_changed\ndata: ${JSON.stringify({
-        type: 'title_changed',
-        title,
+        event: 'title_changed',
+        data: { title },
       })}\n\n`,
     });
   });

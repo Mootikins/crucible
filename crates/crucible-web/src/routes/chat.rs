@@ -1,4 +1,3 @@
-use crate::events::ChatEvent;
 use crate::routes::helpers::{stream_version_frame, versioned};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -8,6 +7,7 @@ use axum::{
     response::sse::{Event, Sse},
     Json,
 };
+use crucible_core::protocol::session_events::SessionEventPayload;
 use crucible_core::protocol::SystemPayload;
 use futures::stream::{iter, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -78,6 +78,40 @@ struct EventStreamQuery {
     after: Option<u64>,
 }
 
+/// One SSE `data:` payload of `GET /api/chat/events/{session_id}`.
+///
+/// Documentation only — `to_sse` builds each frame from its own producer and
+/// never constructs this enum. It exists so `openapi.json` can name one
+/// schema for the route: either a typed session event, in the same
+/// `{event, data}` shape [`SessionEventPayload`] itself serializes to, or a
+/// [`TranscriptFrame`], the second frame a live event sends when it changed
+/// the transcript.
+#[derive(Debug, ToSchema)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum ChatSseFrame {
+    Event(SessionEventPayload),
+    Transcript(TranscriptFrame),
+}
+
+/// The second SSE frame for a live event that changed the transcript, with
+/// the same `id:` as the event's own frame. The browser applies `ops` to the
+/// snapshot the history route gave, and drops an op when `seq` is not above
+/// the `as_of_seq` of that snapshot.
+///
+/// One variant, internally tagged on `type`, rather than a plain struct with
+/// a hand-set `&'static str` field: a bare `&str` gives the schema `type:
+/// string`, not the literal `"transcript"` a browser needs to discriminate
+/// on. The tag is the whole reason for the enum.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum TranscriptFrame {
+    Transcript {
+        seq: Option<u64>,
+        ops: Vec<crucible_core::transcript::TranscriptOp>,
+    },
+}
+
 /// The session's live event stream, resuming from a seq cursor.
 ///
 /// The body schema describes one SSE `data:` payload, not the whole stream:
@@ -96,7 +130,7 @@ struct EventStreamQuery {
     responses((
         status = 200,
         content_type = "text/event-stream",
-        body = ChatEvent,
+        body = ChatSseFrame,
         headers((
             "X-Crucible-Stream-Version" = u64,
             description = "The stream protocol this build speaks (also the first \
@@ -195,6 +229,12 @@ async fn event_stream(
 
 /// One daemon event as SSE frames, its seq (when stamped) as the `id:`.
 ///
+/// The `data:` payload is the daemon's own `{event, data}` pair, byte-
+/// identical to what the RPC socket and `session.jsonl` carry — one event
+/// vocabulary, not a second one re-encoded for the browser. The SSE
+/// `event:` name is `event.event`, so a listener needs no `type` field
+/// inside the JSON to dispatch on.
+///
 /// The seq is the cursor's vocabulary: the client reads it back off
 /// `MessageEvent.lastEventId` and states it on reconnect, and nothing else on
 /// the frame needs it.
@@ -203,34 +243,49 @@ async fn event_stream(
 /// `transcript`, with the same `id:`. The first frame stays until the client
 /// stops reading it.
 fn to_sse(event: &crucible_daemon::SessionEvent) -> Vec<Result<Event, Infallible>> {
-    std::iter::once(ChatEvent::from_daemon_event(event))
-        .chain(ChatEvent::transcript_of(event))
-        .map(|chat_event| {
-            let data = serde_json::to_string(&chat_event).unwrap_or_default();
-            let frame = Event::default().event(chat_event.event_name()).data(data);
-            Ok(match event.seq {
-                Some(seq) => frame.id(seq.to_string()),
-                None => frame,
-            })
-        })
+    let with_id = |frame: Event| match event.seq {
+        Some(seq) => frame.id(seq.to_string()),
+        None => frame,
+    };
+
+    let body = serde_json::json!({ "event": event.event, "data": event.data });
+    let main = with_id(
+        Event::default()
+            .event(event.event.clone())
+            .data(serde_json::to_string(&body).unwrap_or_default()),
+    );
+
+    let transcript = (!event.transcript.is_empty()).then(|| {
+        let frame = TranscriptFrame::Transcript {
+            seq: event.seq,
+            ops: event.transcript.clone(),
+        };
+        with_id(
+            Event::default()
+                .event("transcript")
+                .data(serde_json::to_string(&frame).unwrap_or_default()),
+        )
+    });
+
+    std::iter::once(Ok(main))
+        .chain(transcript.map(Ok))
         .collect()
 }
 
 /// One interaction a session is waiting on an answer to.
+///
+/// `request` is the same typed, kind-tagged shape the SSE
+/// `interaction_requested` frame carries — see
+/// [`crucible_core::interaction::InteractionRequest`]. A permission
+/// request's `pattern` is filled in here too, the one place this route
+/// decides it, so the browser never re-derives it.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct PendingInteraction {
     /// The session that asked.
     session_id: String,
     /// The identifier an answer must carry back.
     request_id: String,
-    /// The request, in the flat shape the SSE path delivers.
-    ///
-    /// Deliberately open: `normalize_interaction` writes one object per
-    /// interaction kind — a permission request carries `tokens` and maybe
-    /// `diffs`, an ask carries the question's own fields — and the kinds are
-    /// the daemon's to add to. `kind` tells the browser which one it has.
-    #[schema(value_type = HashMap<String, serde_json::Value>)]
-    request: serde_json::Value,
+    request: crucible_core::interaction::InteractionRequest,
 }
 
 /// The interactions every session is waiting on, in one list.
@@ -239,9 +294,8 @@ struct PendingInteractionsResponse {
     pending: Vec<PendingInteraction>,
 }
 
-/// Aggregate pending interactions across all sessions, with each request
-/// normalized to the same flat shape the SSE path delivers — the Inbox
-/// renders both sources through one component.
+/// Aggregate pending interactions across all sessions — the Inbox renders
+/// both sources through one component.
 #[utoipa::path(
     get,
     path = "/api/interactions/pending",
@@ -264,18 +318,22 @@ async fn pending_interactions(
         .map(|items| {
             items
                 .iter()
-                .map(|item| {
-                    // Wrap into the SSE payload shape so normalize_interaction
-                    // applies the identical mapping.
-                    let wire = serde_json::json!({
-                        "request_id": item["request_id"],
-                        "request": item["request"],
-                    });
-                    PendingInteraction {
+                .filter_map(|item| {
+                    let request: crucible_core::interaction::InteractionRequest =
+                        serde_json::from_value(item["request"].clone()).ok()?;
+                    let request = match request {
+                        crucible_core::interaction::InteractionRequest::Permission(perm) => {
+                            crucible_core::interaction::InteractionRequest::Permission(
+                                perm.with_suggested_pattern(),
+                            )
+                        }
+                        other => other,
+                    };
+                    Some(PendingInteraction {
                         session_id: item["session_id"].as_str().unwrap_or_default().to_string(),
                         request_id: item["request_id"].as_str().unwrap_or_default().to_string(),
-                        request: crate::events::normalize_interaction(&wire),
-                    }
+                        request,
+                    })
                 })
                 .collect()
         })
@@ -402,7 +460,18 @@ mod tests {
         let text = sse_text(vec![live, stored]).await;
         let frames: Vec<&str> = text.split("\n\n").filter(|f| !f.is_empty()).collect();
         assert_eq!(frames.len(), 3, "{text}");
-        assert!(frames[0].contains("event: token") && frames[0].contains("id: 7"));
+        // The SSE `event:` name is the daemon's own event name — `text_delta`,
+        // not a re-tagged `token` — and the `data:` payload is the
+        // `{event, data}` pair, not a re-encoded `ChatEvent`.
+        assert!(frames[0].contains("event: text_delta") && frames[0].contains("id: 7"));
+        let frame0_data = frames[0]
+            .lines()
+            .find_map(|l| l.strip_prefix("data: "))
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(frame0_data).unwrap(),
+            serde_json::json!({"event": "text_delta", "data": {"content": "hi"}})
+        );
         assert!(frames[1].contains("event: transcript"), "{text}");
         assert!(frames[1].contains("id: 7"), "{text}");
         let data = frames[1]
@@ -416,7 +485,7 @@ mod tests {
                 {"op": "append", "id": "t1-seg-0", "field": "text", "at": 0, "text": "hi"}
             ]})
         );
-        assert!(frames[2].contains("event: token") && frames[2].contains("id: 8"));
+        assert!(frames[2].contains("event: text_delta") && frames[2].contains("id: 8"));
     }
 
     #[tokio::test]
@@ -506,11 +575,13 @@ mod tests {
         assert!(parsed.ok);
     }
 
-    /// The daemon names the session and the request; this route replaces the
-    /// request body with the flat shape the Inbox renders, and keeps the two
-    /// identifiers beside it.
+    /// The daemon names the session and the request; this route decodes the
+    /// request into the typed, kind-tagged `InteractionRequest` and fills in
+    /// the permission's suggested `pattern`.
     #[tokio::test]
     async fn pending_interactions_answers_the_declared_shape() {
+        use crucible_core::interaction::{InteractionRequest, PermAction};
+
         let (status, json) = request_json("GET", "/api/interactions/pending", None).await;
         assert_eq!(status, axum::http::StatusCode::OK);
 
@@ -520,17 +591,22 @@ mod tests {
         let entry = &parsed.pending[0];
         assert_eq!(entry.session_id, "session-001");
         assert_eq!(entry.request_id, "req-001");
-        assert_eq!(
-            entry.request["kind"],
-            serde_json::json!("permission"),
-            "the request arrives normalised: {json}"
-        );
-        assert_eq!(
-            entry.request["id"],
-            serde_json::json!("req-001"),
-            "the normalised request carries the id an answer quotes: {json}"
-        );
-        assert_eq!(entry.request["tokens"], serde_json::json!(["ls"]), "{json}");
+        match &entry.request {
+            InteractionRequest::Permission(perm) => {
+                assert_eq!(
+                    perm.action,
+                    PermAction::Bash {
+                        tokens: vec!["ls".into()]
+                    }
+                );
+                assert_eq!(
+                    perm.pattern.as_deref(),
+                    Some("ls"),
+                    "the route fills the suggested pattern: {json}"
+                );
+            }
+            other => panic!("expected a permission request, got {other:?}: {json}"),
+        }
     }
 
     /// The exact objects the frontend POSTs (PermResponse/AskResponse/
@@ -598,5 +674,133 @@ mod tests {
         let tagged = serde_json::json!({ "kind": "permission", "allowed": false, "scope": "once" });
         let out = tag_interaction_response(tagged.clone());
         assert_eq!(out, tagged);
+    }
+
+    // ── Cross-language drift guards ───────────────────────────────────
+    //
+    // These two moved here from the deleted `crucible-web/src/events.rs`
+    // when `ChatEvent` was deleted (see step 11 of the Simplification
+    // Plan). Neither depends on `ChatEvent`: one guards the stop-reason
+    // wording, the other the side-channel SSE names, and both still hold
+    // under the SSE route sending the daemon's own `{event, data}` pair.
+
+    /// Every `.ts` and `.tsx` file the frontend ships.
+    ///
+    /// A walk rather than `include_str!`, because the gate below must refuse a
+    /// wording wherever a future edit puts it, not only in the one file that
+    /// held the old copy.
+    fn frontend_sources() -> Vec<(String, String)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/src");
+        walkdir::WalkDir::new(&root)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| {
+                matches!(
+                    e.path().extension().and_then(|x| x.to_str()),
+                    Some("ts" | "tsx")
+                )
+            })
+            .filter_map(|e| {
+                let name = e.path().strip_prefix(&root).ok()?.display().to_string();
+                Some((name, std::fs::read_to_string(e.path()).ok()?))
+            })
+            .collect()
+    }
+
+    /// **The H3 gate.** `StopReason::user_notice` is the only wording. The page
+    /// held a second one (`stopReasonNotice` in `lib/stop-reason.ts`) and the
+    /// two had already drifted — a capital letter and a trailing full stop — so
+    /// the comparison ignores case and a trailing stop. Any frontend file that
+    /// spells a notice again fails here.
+    ///
+    /// The notices come from the running enum through [`StopReason::ALL`], not
+    /// from a list in this file, and the walk must find sources: an empty parse
+    /// is a gate that passes because it looked at nothing.
+    #[test]
+    fn the_frontend_words_no_stop_reason_notice() {
+        use crucible_core::turn::StopReason;
+
+        let sources = frontend_sources();
+        assert!(
+            !sources.is_empty(),
+            "walked no frontend sources — the path moved, fix this test"
+        );
+
+        let notices: Vec<&str> = StopReason::ALL
+            .iter()
+            .filter_map(StopReason::user_notice)
+            .collect();
+        assert!(
+            !notices.is_empty(),
+            "no reason words a notice — `user_notice` changed, fix this test"
+        );
+
+        let normalize = |s: &str| s.to_lowercase().replace('.', "");
+        let mut offenders = Vec::new();
+        for (name, body) in &sources {
+            let flat = normalize(body);
+            for notice in &notices {
+                if flat.contains(&normalize(notice)) {
+                    offenders.push(format!("web/src/{name}: {notice:?}"));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "the daemon words the stop-reason note; the page must draw \
+             `stop_notice` instead of spelling it again:\n  {}",
+            offenders.join("\n  ")
+        );
+    }
+
+    // ── The side-channel SSE names ───────────────────────────────────
+
+    /// The publication and surface streams do not travel the chat channel, so
+    /// a gate that compares the chat vocabulary alone cannot see them. That is
+    /// why a fresh literal for one of these two names passed review before
+    /// this test existed.
+    ///
+    /// Each name comes from the compiled const, which `event_payload!`
+    /// expands from the same literal as the daemon's serde rename. So the
+    /// chain is: rename and core const → route const → browser listener.
+    #[test]
+    fn every_side_channel_event_name_has_a_frontend_listener() {
+        let sources = frontend_sources();
+        assert!(
+            !sources.is_empty(),
+            "walked no frontend sources — the path moved, fix this test"
+        );
+
+        let declared = [
+            crate::routes::PublicationChangedEvent::EVENT_NAME,
+            crate::routes::SurfaceChangedEvent::EVENT_NAME,
+            crate::routes::ProposalChangedEvent::EVENT_NAME,
+        ];
+
+        // `SIDE_CHANNEL_EVENTS` in `lib/api.ts` types each listener table as
+        // `Record<name, listener>`, so tsc proves a listener for each name in
+        // the table. This test proves the table holds exactly the names the
+        // routes send.
+        let api = sources
+            .iter()
+            .find(|(name, _)| name == "lib/api.ts")
+            .map(|(_, body)| body.as_str())
+            .expect("web/src/lib/api.ts is missing — the path moved, fix this test");
+        let start = api
+            .find("const SIDE_CHANNEL_EVENTS = {")
+            .expect("lib/api.ts declares no SIDE_CHANNEL_EVENTS table");
+        let table = &api[start..];
+        let table = &table[..table
+            .find("} as const;")
+            .expect("SIDE_CHANNEL_EVENTS does not end with `} as const;`")];
+        let listed: std::collections::BTreeSet<&str> =
+            table.split('\'').skip(1).step_by(2).collect();
+        let declared: std::collections::BTreeSet<&str> = declared.into_iter().collect();
+        assert_eq!(
+            listed, declared,
+            "SIDE_CHANNEL_EVENTS in web/src/lib/api.ts must name exactly the \
+             side-channel events that the daemon sends"
+        );
     }
 }

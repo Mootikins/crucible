@@ -29,9 +29,7 @@ const LIST = 'GET /api/session/list';
 const perm: InteractionOf<'permission'> = {
   kind: 'permission',
   id: 'req-42',
-  action_type: 'bash',
-  tokens: ['cargo', 'test', '--package', 'helios-core'],
-  tool_name: 'Bash',
+  action: { type: 'bash', tokens: ['cargo', 'test', '--package', 'helios-core'] },
 };
 
 /** One session as the daemon sends it. */

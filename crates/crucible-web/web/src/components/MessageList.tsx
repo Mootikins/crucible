@@ -4,6 +4,7 @@ import { AssistantTurn, type TurnPartSpec } from './AssistantTurn';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { InteractionRequest } from '@/lib/types';
+import { permActionType, permToolName, permTokens } from '@/lib/permission';
 
 /**
  * Transcript row. A TURN groups everything the agent did for one prompt —
@@ -47,8 +48,9 @@ const ChatBubbleMark: Component<{ ring: string; glyph: string }> = (props) => (
 function interactionRecord(request: InteractionRequest): string {
   switch (request.kind) {
     case 'permission': {
-      const subject = request.tokens.join(' ') || request.tool_name || 'a tool';
-      switch (request.action_type) {
+      const toolName = permToolName(request);
+      const subject = permTokens(request).join(' ') || toolName || 'a tool';
+      switch (permActionType(request)) {
         case 'write':
           return `Asked to write ${subject}`;
         case 'read':
@@ -56,7 +58,7 @@ function interactionRecord(request: InteractionRequest): string {
         case 'bash':
           return `Asked to run ${subject}`;
         case 'tool':
-          return `Asked to use ${request.tool_name || subject}`;
+          return `Asked to use ${toolName || subject}`;
       }
       break;
     }

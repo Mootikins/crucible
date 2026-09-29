@@ -29,10 +29,10 @@ function attach(session = 's1') {
   return { stream, source, unsubscribe };
 }
 function added(source: FakeEventSource, id: string, message = id) {
-  source.emit('session_event', { type: 'session_event', event: 'notification_added', data: { notification: notice(id, message) } });
+  source.emit('notification_added', { event: 'notification_added', data: { notification: notice(id, message) } });
 }
 function dismissed(source: FakeEventSource, id: string) {
-  source.emit('session_event', { type: 'session_event', event: 'notification_dismissed', data: { notification_id: id } });
+  source.emit('notification_dismissed', { event: 'notification_dismissed', data: { notification_id: id } });
 }
 
 it('two panes share one snapshot and newer additions override its old text', async () => {
@@ -78,7 +78,7 @@ it('detach invalidates a pending snapshot, and a gap starts a fresh one', async 
   env = createTestQueryEnv({ 'GET /api/session/s1/notifications': () => read.promise });
   const { source, unsubscribe } = attach();
   await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(1));
-  source.emit('session_event', { type: 'session_event', event: 'stream_gap', data: { dropped: 1 } });
+  source.emit('stream_gap', { event: 'stream_gap', data: { dropped: 1 } });
   await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(2));
   unsubscribe();
   await vi.waitFor(() => expect(source.closed).toBe(true));
@@ -111,7 +111,7 @@ it('a failed snapshot reports the error and live warning/toast events still work
   const { source } = attach();
   await vi.waitFor(() => expect(visible().some((s) => s.includes('not available'))).toBe(true));
   added(source, 'warning');
-  source.emit('session_event', { type: 'session_event', event: 'notification_added', data: { notification: { id: 'info', kind: 'toast', message: 'saved' } } });
+  source.emit('notification_added', { event: 'notification_added', data: { notification: { id: 'info', kind: 'toast', message: 'saved' } } });
   expect(notificationStore.notifications.find((n) => n.message === 'warning')?.type).toBe('warning');
   expect(notificationStore.notifications.find((n) => n.message === 'saved')?.type).toBe('info');
   dismissed(source, 'warning');
@@ -131,7 +131,7 @@ it('a notification that its timer hid does not show again on a reconnect or a ga
 
     source.open();
     await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(2));
-    source.emit('session_event', { type: 'session_event', event: 'stream_gap', data: { dropped: 1 } });
+    source.emit('stream_gap', { event: 'stream_gap', data: { dropped: 1 } });
     source.open();
     await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(4));
     vi.useRealTimers();

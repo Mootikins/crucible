@@ -29,7 +29,10 @@ type Frame = { type: string; data: object };
 function tokenFrames(text: string): Frame[] {
   const chunks: string[] = [];
   for (let i = 0; i < text.length; i += 8) chunks.push(text.slice(i, i + 8));
-  return chunks.map((content) => ({ type: 'token', data: { type: 'token', content } }));
+  return chunks.map((content) => ({
+    type: 'text_delta',
+    data: { event: 'text_delta', data: { content } },
+  }));
 }
 
 const PROMPT = 'What is the answer?';
@@ -62,25 +65,36 @@ function completeTranscript(): Frame[] {
 const COMPLETE_STREAM: Frame[] = [
   ...completeTranscript(),
   ...tokenFrames('Here is the answer.'),
-  { type: 'thinking', data: { type: 'thinking', content: 'Considering the options carefully.' } },
-  // Real backend shape: ChatEvent::ToolCall serializes as event `tool_call`
-  // with a `title` field (src/web/events.rs) — not tool_call_start/name.
+  {
+    type: 'thinking',
+    data: { event: 'thinking', data: { content: 'Considering the options carefully.' } },
+  },
+  // Real backend shape: `TurnPayload::ToolCall` carries `call_id`/`tool`/`args`
+  // (`crates/crucible-core/src/protocol/session_events/turn.rs`) — not
+  // `id`/`title`/`arguments`, and the wire has no delta/complete pair for a
+  // tool result: one `tool_result` event carries the whole output.
   {
     type: 'tool_call',
-    data: { type: 'tool_call', id: 't1', title: 'read_file', arguments: { path: 'notes/x.md' } },
+    data: { event: 'tool_call', data: { call_id: 't1', tool: 'read_file', args: { path: 'notes/x.md' } } },
   },
-  { type: 'tool_result_delta', data: { type: 'tool_result_delta', id: 't1', delta: 'file contents' } },
-  { type: 'tool_result_complete', data: { type: 'tool_result_complete', id: 't1' } },
+  {
+    type: 'tool_result',
+    data: {
+      event: 'tool_result',
+      data: { call_id: 't1', tool: 'read_file', result: 'file contents', terminate: false },
+    },
+  },
   {
     type: 'message_complete',
     data: {
-      type: 'message_complete',
-      id: 'msg-1',
-      content: 'Here is the answer.',
-      tool_calls: [{ id: 't1', title: 'read_file' }],
-      prompt_tokens: 900,
-      completion_tokens: 334,
-      total_tokens: 1234,
+      event: 'message_complete',
+      data: {
+        message_id: 'msg-1',
+        full_response: 'Here is the answer.',
+        prompt_tokens: 900,
+        completion_tokens: 334,
+        total_tokens: 1234,
+      },
     },
   },
 ];
@@ -226,7 +240,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
       t.ops([upsert(userTurn('msg-1', PROMPT))]),
       t.upsert(open),
       t.ops([{ op: 'append', id: open.id, field: 'thinking', at: 0, text: REASONING }]),
-      { type: 'thinking', data: { type: 'thinking', content: REASONING } },
+      { type: 'thinking', data: { event: 'thinking', data: { content: REASONING } } },
     ];
     const REST: Frame[] = [
       ...t.appends(open.id, ANSWER, 8),
@@ -235,12 +249,14 @@ test.describe('WS-101/102/103 streaming chat', () => {
       {
         type: 'message_complete',
         data: {
-          type: 'message_complete',
-          id: 'msg-1',
-          content: 'Here is the answer.',
-          prompt_tokens: 900,
-          completion_tokens: 334,
-          total_tokens: 1234,
+          event: 'message_complete',
+          data: {
+            message_id: 'msg-1',
+            full_response: 'Here is the answer.',
+            prompt_tokens: 900,
+            completion_tokens: 334,
+            total_tokens: 1234,
+          },
         },
       },
     ];

@@ -39,16 +39,21 @@ const STREAM: Frame[] = [
       }),
     ),
   ]),
-  { type: 'token', data: { type: 'token', content: 'See [[Kiln Note]] for the details.' } },
+  {
+    type: 'text_delta',
+    data: { event: 'text_delta', data: { content: 'See [[Kiln Note]] for the details.' } },
+  },
   {
     type: 'message_complete',
     data: {
-      type: 'message_complete',
-      id: 'msg-1',
-      content: 'See [[Kiln Note]] for the details.',
-      prompt_tokens: 10,
-      completion_tokens: 10,
-      total_tokens: 20,
+      event: 'message_complete',
+      data: {
+        message_id: 'msg-1',
+        full_response: 'See [[Kiln Note]] for the details.',
+        prompt_tokens: 10,
+        completion_tokens: 10,
+        total_tokens: 20,
+      },
     },
   },
 ];

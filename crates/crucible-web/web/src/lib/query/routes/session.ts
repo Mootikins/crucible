@@ -53,20 +53,65 @@ export function resetReviewInvalidationForTests(): void {
   reviewTimers.clear();
 }
 
-/** Routes the events the daemon forwards under one `session_event` type. */
-function routeSessionSubEvent(
-  event: Extract<ChatEvent, { type: 'session_event' }>,
-  { client, bus, sessionId }: SessionRouteContext,
-): void {
+/** Turns one chat event into the cache writes it owes every pane. */
+function routeSessionEvent(event: ChatEvent, { client, bus, sessionId }: SessionRouteContext): void {
+  if ('type' in event) {
+    // `event.type === 'connection'`; `'transcript'` writes no cache key —
+    // `contexts/transcriptStore.ts` applies its ops.
+    if (event.type === 'connection' && event.status === 'connected') {
+      scheduleReviewInvalidation(client, sessionId);
+    }
+    return;
+  }
+
   switch (event.event) {
+    // A turn ended. Its edits can move the session record.
+    case 'message_complete':
+      scheduleReviewInvalidation(client, sessionId);
+      break;
+
+    // No event says "the agent changed a file": `review_changed` fires for
+    // review actions only. A tool result can move the session record, and a
+    // reconnect can hide the events that did.
+    case 'tool_result':
+      scheduleReviewInvalidation(client, sessionId);
+      break;
+
+    case 'interaction_requested':
+      void client.invalidateQueries({ queryKey: keys.pendingInteractions() });
+      break;
+
     // A prompt ended: a client answered it, or it ended with no answer (a
     // cancelled turn). The pane drops its card, and the Inbox refetches.
     case 'interaction_completed': {
-      const requestId = (event.data as { request_id?: unknown } | null)?.request_id;
-      if (typeof requestId === 'string') bus.emit('interactionResolved', { sessionId, requestId });
+      const { request_id: requestId } = event.data;
+      if (requestId) bus.emit('interactionResolved', { sessionId, requestId });
       void client.invalidateQueries({ queryKey: keys.pendingInteractions() });
       break;
     }
+
+    // The table qualifies this row with "on unknown mode", which is a question
+    // about one pane's list, not about the cache. The refetch also carries
+    // `current_mode_id`, which the event just moved, so an unconditional
+    // invalidation keeps a cached list right in both ways a mode change can
+    // make it wrong.
+    case 'mode_changed':
+      void client.invalidateQueries({ queryKey: keys.sessionModes(sessionId) });
+      break;
+
+    // Both lists, because the archived flag is part of the key and a rename
+    // reaches the row under either flag.
+    case 'title_changed':
+      // Named one at a time: the flag sits in an OBJECT inside the key, so a
+      // prefix match on `['sessions']` would not reach either variant.
+      void client.invalidateQueries({ queryKey: keys.sessions(false) });
+      void client.invalidateQueries({ queryKey: keys.sessions(true) });
+      bus.emit('sessionTitleChanged', { sessionId, title: event.data.title ?? '' });
+      break;
+
+    case 'commands_changed':
+      void client.invalidateQueries({ queryKey: keys.slashCommands(sessionId) });
+      break;
 
     case 'plugin_turn_limit_changed':
       void client.invalidateQueries({ queryKey: keys.sessionPluginTurnLimit(sessionId) });
@@ -88,67 +133,10 @@ function routeSessionSubEvent(
       void client.invalidateQueries({ queryKey: keys.sessionStatus(sessionId) });
       break;
 
+    // The rest are the transcript (the events the `transcript` frame's ops
+    // carry) or the session state that `contexts/chatEventReducer.ts` keeps.
     // `stream_gap` makes the transcript store read the snapshot again. No
-    // cached key is wrong because of it.
-    default:
-      break;
-  }
-}
-
-/** Turns one chat event into the cache writes it owes every pane. */
-function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void {
-  const { client, bus, sessionId } = context;
-
-  switch (event.type) {
-    // A turn ended. Its edits can move the session record.
-    case 'message_complete':
-      scheduleReviewInvalidation(client, sessionId);
-      break;
-
-    // No event says "the agent changed a file": `review_changed` fires for
-    // review actions only. A tool result can move the session record, and a
-    // reconnect can hide the events that did.
-    case 'tool_result':
-      scheduleReviewInvalidation(client, sessionId);
-      break;
-    case 'connection':
-      if (event.status === 'connected') scheduleReviewInvalidation(client, sessionId);
-      break;
-
-    case 'interaction_requested':
-      void client.invalidateQueries({ queryKey: keys.pendingInteractions() });
-      break;
-
-    // The table qualifies this row with "on unknown mode", which is a question
-    // about one pane's list, not about the cache. The refetch also carries
-    // `current_mode_id`, which the event just moved, so an unconditional
-    // invalidation keeps a cached list right in both ways a mode change can
-    // make it wrong.
-    case 'mode_changed':
-      void client.invalidateQueries({ queryKey: keys.sessionModes(sessionId) });
-      break;
-
-    // Both lists, because the archived flag is part of the key and a rename
-    // reaches the row under either flag.
-    case 'title_changed':
-      // Named one at a time: the flag sits in an OBJECT inside the key, so a
-      // prefix match on `['sessions']` would not reach either variant.
-      void client.invalidateQueries({ queryKey: keys.sessions(false) });
-      void client.invalidateQueries({ queryKey: keys.sessions(true) });
-      bus.emit('sessionTitleChanged', { sessionId, title: event.title });
-      break;
-
-    case 'commands_changed':
-      void client.invalidateQueries({ queryKey: keys.slashCommands(sessionId) });
-      break;
-
-    case 'session_event':
-      routeSessionSubEvent(event, context);
-      break;
-
-    // The rest are the transcript (the `transcript` frame, and the events
-    // whose ops it carries) or the session state that
-    // `contexts/chatEventReducer.ts` keeps.
+    // cached key here is wrong because of it.
     default:
       break;
   }

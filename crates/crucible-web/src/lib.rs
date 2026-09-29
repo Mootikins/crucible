@@ -6,11 +6,9 @@ pub mod test_support;
 
 mod assets;
 mod error;
-mod events;
 pub mod fs_events;
 pub mod middleware;
 
 pub use crucible_core::config::WebConfig;
 pub use error::{Result, WebError};
-pub use events::ChatEvent;
 pub use server::start_server;

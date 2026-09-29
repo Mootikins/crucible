@@ -37,45 +37,11 @@ test.describe('Error handling', () => {
     await expect(page.getByText(/Failed to send/).first()).toBeVisible({ timeout: 5000 });
   });
 
-  test('shows error when SSE stream contains error event', async ({ page }) => {
-    // SSE error events — include `type` in data so handleEvent's switch matches
-    const errorEvents = [
-      {
-        type: 'error',
-        data: {
-          type: 'error',
-          code: 'agent_error',
-          message: 'Agent failed to process request',
-        },
-      },
-    ];
-
-    await setupBasicMocks(page, { sseEvents: errorEvents });
-
-    await page.goto('/');
-    await openSessionsList(page);
-
-    // Click the session in the sidebar to open it in the chat tab
-    const sessionItem = page.getByTestId('session-item-test-session-001');
-    await expect(sessionItem).toBeVisible({ timeout: 5000 });
-    await sessionItem.click();
-
-    // Wait for chat input to be ready
-    const chatInput = page.getByTestId('chat-input');
-    await expect(chatInput).toBeVisible({ timeout: 5000 });
-    await expect(chatInput).not.toBeDisabled({ timeout: 5000 });
-
-    // Send a message — SSE error event fires on EventSource connection/reconnection
-    await chatInput.fill('Hello');
-    await page.getByTestId('send-button').click();
-
-    // Assert: error from SSE error event surfaces in the UI. The reducer sets
-    // the error line AND adds an "Error: <message>" notice to the transcript.
-    // The error line may be overwritten by "Reconnecting..." from EventSource
-    // onerror, but the notice persists as the reliable indicator.
-    const notice = page.getByTestId('message-system');
-    await expect(notice.first()).toContainText('Agent failed to process request', {
-      timeout: 10000,
-    });
-  });
+  // The SSE stream carries no `error` event: the daemon never sends one, and
+  // `ChatEvent::Error` (deleted in step 11 of the Simplification Plan) was
+  // declared but never constructed by `from_daemon_event` either — this
+  // test exercised a payload nothing on the real wire ever sends. A daemon
+  // failure mid-turn reaches the transcript through `turn_finished` with
+  // `status: "failed"` instead; see `chatEventReducer.test.ts`'s
+  // `turn_finished: a failed turn shows its error` case.
 });

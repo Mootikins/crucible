@@ -35,8 +35,11 @@ describe('the stream version gate in subscribeToEvents', () => {
     source.emit('stream_version', { version: 2 });
     // Payload frames after the refusal must not reach the handler — a
     // half-read transcript looks like the truth, which is worse than none.
-    source.emit('token', { type: 'token', content: 'should not render' });
-    source.emit('message_complete', { type: 'message_complete', id: 'm1', content: 'nor this' });
+    source.emit('text_delta', { event: 'text_delta', data: { content: 'should not render' } });
+    source.emit('message_complete', {
+      event: 'message_complete',
+      data: { message_id: 'm1', full_response: 'nor this' },
+    });
 
     expect(seen).toEqual([]);
     expect(source.closed).toBe(true);
@@ -48,9 +51,9 @@ describe('the stream version gate in subscribeToEvents', () => {
 
     const source = FakeEventSource.instances[0]!;
     source.emit('stream_version', { version: STREAM_VERSION });
-    source.emit('token', { type: 'token', content: 'renders' });
+    source.emit('text_delta', { event: 'text_delta', data: { content: 'renders' } });
 
-    expect(seen).toEqual([{ type: 'token', content: 'renders' }]);
+    expect(seen).toEqual([{ event: 'text_delta', data: { content: 'renders' } }]);
     expect(source.closed).toBe(false);
   });
 
@@ -59,9 +62,9 @@ describe('the stream version gate in subscribeToEvents', () => {
     subscribeToEvents('s1', (event) => seen.push(event));
 
     const source = FakeEventSource.instances[0]!;
-    source.emit('token', { type: 'token', content: 'legacy' });
+    source.emit('text_delta', { event: 'text_delta', data: { content: 'legacy' } });
 
-    expect(seen).toEqual([{ type: 'token', content: 'legacy' }]);
+    expect(seen).toEqual([{ event: 'text_delta', data: { content: 'legacy' } }]);
     expect(source.closed).toBe(false);
   });
 });

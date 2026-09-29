@@ -50,14 +50,22 @@ const ANSWER = [
 function tokenFrames(text: string): Frame[] {
   const chunks: string[] = [];
   for (let i = 0; i < text.length; i += 12) chunks.push(text.slice(i, i + 12));
-  return chunks.map((content) => ({ type: 'token', data: { type: 'token', content } }));
+  return chunks.map((content) => ({
+    type: 'text_delta',
+    data: { event: 'text_delta', data: { content } },
+  }));
 }
 
-function toolFrames(id: string, title: string, args: object, result: string): Frame[] {
+// Real backend shape: `TurnPayload::ToolCall` carries `call_id`/`tool`/`args`,
+// and one `tool_result` event carries the whole output — there is no
+// delta/complete pair on the wire.
+function toolFrames(id: string, tool: string, args: object, result: string): Frame[] {
   return [
-    { type: 'tool_call', data: { type: 'tool_call', id, title, arguments: args } },
-    { type: 'tool_result_delta', data: { type: 'tool_result_delta', id, delta: result } },
-    { type: 'tool_result_complete', data: { type: 'tool_result_complete', id } },
+    { type: 'tool_call', data: { event: 'tool_call', data: { call_id: id, tool, args } } },
+    {
+      type: 'tool_result',
+      data: { event: 'tool_result', data: { call_id: id, tool, result, terminate: false } },
+    },
   ];
 }
 
@@ -107,7 +115,10 @@ function richTranscript(): Frame[] {
 const RICH_STREAM: Frame[] = [
   ...richTranscript(),
   ...tokenFrames(ANSWER),
-  { type: 'thinking', data: { type: 'thinking', content: 'Mapping the deploy steps to daemon internals.' } },
+  {
+    type: 'thinking',
+    data: { event: 'thinking', data: { content: 'Mapping the deploy steps to daemon internals.' } },
+  },
   ...toolFrames('t1', 'read_file', { path: 'crates/crucible-daemon/src/server/core.rs' }, 'ok'),
   // MCP envelope result whose text payload is itself JSON — the card must
   // unwrap and pretty-print the payload, not the wrapper.
@@ -126,18 +137,14 @@ const RICH_STREAM: Frame[] = [
   {
     type: 'message_complete',
     data: {
-      type: 'message_complete',
-      id: 'msg-1',
-      content: ANSWER,
-      tool_calls: [
-        { id: 't1', title: 'read_file' },
-        { id: 't2', title: 'search_codebase' },
-        { id: 't3', title: 'bash_exec' },
-        { id: 't4', title: 'write_note' },
-      ],
-      prompt_tokens: 1800,
-      completion_tokens: 420,
-      total_tokens: 2220,
+      event: 'message_complete',
+      data: {
+        message_id: 'msg-1',
+        full_response: ANSWER,
+        prompt_tokens: 1800,
+        completion_tokens: 420,
+        total_tokens: 2220,
+      },
     },
   },
 ];

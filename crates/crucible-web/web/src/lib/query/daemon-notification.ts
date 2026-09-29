@@ -114,19 +114,18 @@ export function sessionNotifications(sessionId: string) {
      * read the snapshot again, because either one can hide a change.
      */
     event(event: ChatEvent): void {
-      if (event.type === 'connection') {
-        if (event.status === 'connected') refresh();
+      if ('type' in event) {
+        if (event.type === 'connection' && event.status === 'connected') refresh();
         return;
       }
-      if (event.type !== 'session_event') return;
       if (event.event === 'stream_gap') {
         refresh();
       } else if (event.event === 'notification_added') {
-        const n = (event.data as { notification?: DaemonNotification } | null)?.notification;
+        const n = event.data.notification;
         if (n?.id) pending?.set(n.id, n);
         showDaemonNotification(n, sessionId);
       } else if (event.event === 'notification_dismissed') {
-        const id = (event.data as { notification_id?: unknown } | null)?.notification_id;
+        const id = event.data.notification_id;
         if (typeof id === 'string') pending?.set(id, null);
         dropDaemonNotification(id, sessionId);
       }

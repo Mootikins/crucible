@@ -24,7 +24,6 @@ use std::path::{Path, PathBuf};
 
 use crucible_web::fs_events::FsEvent;
 use crucible_web::server::api_spec;
-use crucible_web::ChatEvent;
 
 /// The document is JSON, so the test reads it as JSON.
 fn spec_json() -> serde_json::Value {
@@ -191,106 +190,6 @@ fn discriminator_values(schema: &serde_json::Value) -> Vec<String> {
     found
 }
 
-/// One value of every `ChatEvent` variant.
-///
-/// The list is held complete by the document: the assertions below compare it
-/// to the union `utoipa` derives from the enum, so a variant added in Rust and
-/// not added here fails as a name the document has and this list does not.
-fn one_chat_event_per_variant() -> Vec<ChatEvent> {
-    vec![
-        ChatEvent::Token {
-            content: String::new(),
-        },
-        ChatEvent::ToolCall {
-            id: String::new(),
-            title: String::new(),
-            arguments: None,
-            display: None,
-            auto_approved: None,
-        },
-        ChatEvent::ToolResult {
-            id: String::new(),
-            result: None,
-            terminate: false,
-            render: None,
-        },
-        ChatEvent::ToolResultDelta {
-            id: String::new(),
-            delta: String::new(),
-        },
-        ChatEvent::ToolResultComplete { id: String::new() },
-        ChatEvent::ToolResultError {
-            id: String::new(),
-            error: String::new(),
-            render: None,
-        },
-        ChatEvent::Thinking {
-            content: String::new(),
-        },
-        ChatEvent::SegmentComplete {
-            message_id: String::new(),
-            index: 0,
-            content: String::new(),
-        },
-        ChatEvent::MessageComplete {
-            id: String::new(),
-            content: String::new(),
-            prompt_tokens: None,
-            completion_tokens: None,
-            total_tokens: None,
-            cache_read_tokens: None,
-            cache_creation_tokens: None,
-            stop_reason: None,
-            stop_notice: None,
-        },
-        ChatEvent::TurnFinished {
-            status: crucible_core::turn::TurnStatus::Completed,
-            stop_reason: None,
-            error: None,
-        },
-        ChatEvent::Error {
-            code: String::new(),
-            message: String::new(),
-        },
-        ChatEvent::InteractionRequested {
-            id: String::new(),
-            request: serde_json::json!({}),
-        },
-        ChatEvent::DelegationSpawned {
-            id: String::new(),
-            prompt: String::new(),
-            target_agent: None,
-        },
-        ChatEvent::DelegationCompleted {
-            id: String::new(),
-            summary: String::new(),
-        },
-        ChatEvent::DelegationFailed {
-            id: String::new(),
-            error: String::new(),
-        },
-        ChatEvent::PrecognitionResult {
-            notes_count: 0,
-            notes: Vec::new(),
-        },
-        ChatEvent::ModeChanged {
-            mode: String::new(),
-        },
-        ChatEvent::TitleChanged {
-            title: String::new(),
-        },
-        ChatEvent::CommandsChanged {},
-        ChatEvent::SessionEvent {
-            event: String::new(),
-            data: serde_json::Value::Null,
-        },
-        ChatEvent::Transcript {
-            seq: None,
-            ops: Vec::new(),
-        },
-    ]
-}
-
 /// The serde tag one event serialises under.
 fn serde_tag(event: &impl serde::Serialize) -> String {
     serde_json::to_value(event).expect("the event serialises")["type"]
@@ -299,38 +198,94 @@ fn serde_tag(event: &impl serde::Serialize) -> String {
         .to_string()
 }
 
-/// The SSE `event:` name and the payload's `type` tag name the same event.
+/// Every wire name `SessionEventPayload` declares, across its eight groups.
 ///
-/// The browser installs a listener per `event_name()` and then switches on the
-/// payload's `type`, so the two have to agree or a listener fires for a shape
-/// its handler cannot read. The document stands in for the tag, because
-/// `utoipa` derives it from the same enum the serde tag comes from.
-///
-/// The browser's own side of this contract is no longer read here.
-/// `SSE_EVENT_TYPES` in `web/src/lib/api.ts` is now bound to the generated
-/// `ChatEvent` union by a `satisfies` clause and an `Exclude` check, so
-/// `bun run typecheck` fails in both directions and this test does not have to
-/// parse TypeScript to say the same thing.
-#[test]
-fn every_sse_event_name_is_in_the_document() {
-    let spec = spec_json();
+/// One flat list rather than one value per variant: the chat SSE stream no
+/// longer re-encodes each event into a `ChatEvent` of its own, so there is no
+/// second, hand-picked variant list to hold complete against the document —
+/// `TurnPayload::WIRE_NAMES` and its seven siblings already are that list.
+fn session_event_wire_names() -> Vec<&'static str> {
+    use crucible_core::protocol::session_events::{
+        JobPayload, NotificationPayload, ReviewPayload, SettingsPayload, SetupPayload,
+        SystemPayload, TurnPayload, WorkflowPayload,
+    };
+    [
+        TurnPayload::WIRE_NAMES,
+        SetupPayload::WIRE_NAMES,
+        SettingsPayload::WIRE_NAMES,
+        JobPayload::WIRE_NAMES,
+        ReviewPayload::WIRE_NAMES,
+        NotificationPayload::WIRE_NAMES,
+        WorkflowPayload::WIRE_NAMES,
+        SystemPayload::WIRE_NAMES,
+    ]
+    .concat()
+}
 
-    let chat = one_chat_event_per_variant();
-    for event in &chat {
-        assert_eq!(
-            event.event_name(),
-            serde_tag(event),
-            "`ChatEvent::event_name` and the serde tag disagree"
-        );
-    }
-    let mut chat_names: Vec<String> = chat.iter().map(serde_tag).collect();
-    chat_names.sort();
-    chat_names.dedup();
+/// Every `event` tag value an adjacently-tagged `SessionEventPayload` group
+/// schema can take.
+///
+/// utoipa renders `#[serde(tag = "event", content = "data")]` as a `oneOf` of
+/// objects, one per variant, each naming its tag as a single-value `event`
+/// property — the same shape [`discriminator_values`] reads for an internally
+/// tagged enum, but keyed on `event` rather than `type`.
+fn adjacent_discriminator_values(schema: &serde_json::Value) -> Vec<String> {
+    let variants = schema["oneOf"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the schema is not a `oneOf` union: {schema:#}"));
+    let mut found: Vec<String> = variants
+        .iter()
+        .filter_map(|variant| variant["properties"]["event"]["enum"][0].as_str())
+        .map(str::to_string)
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// The SSE `event:` name of every session event the daemon can send is a
+/// name `SessionEventPayload` declares, and each of the eight groups is
+/// findable in the document under its own schema name.
+///
+/// The browser's own side of this contract is enforced by the generated
+/// TypeScript types alone: `lib/types.ts` aliases the generated
+/// `SessionEventPayload` union, so a variant this build adds reaches
+/// `bun run typecheck` with no second list here to keep in step.
+#[test]
+fn every_session_event_wire_name_is_in_the_document() {
+    let spec = spec_json();
+    let schemas = &spec["components"]["schemas"];
+
+    let mut names = session_event_wire_names();
+    names.sort_unstable();
+    names.dedup();
+
+    let mut from_document: Vec<String> = [
+        "TurnPayload",
+        "SetupPayload",
+        "SettingsPayload",
+        "JobPayload",
+        "ReviewPayload",
+        "NotificationPayload",
+        "WorkflowPayload",
+        "SystemPayload",
+    ]
+    .into_iter()
+    .flat_map(|group| adjacent_discriminator_values(&schemas[group]))
+    .collect();
+    from_document.sort();
+    from_document.dedup();
+
     assert_eq!(
-        discriminator_values(&spec["components"]["schemas"]["ChatEvent"]),
-        chat_names,
-        "`ChatEvent` and the document name different events"
+        names, from_document,
+        "`SessionEventPayload`'s eight groups and the document name different events"
     );
+}
+
+/// The filesystem stream's own SSE event names against its document schema.
+#[test]
+fn every_fs_sse_event_name_is_in_the_document() {
+    let spec = spec_json();
 
     // The filesystem stream's SSE `event:` names carry an `fs_` prefix that the
     // serde tag does not: `fs_changed` on the wire envelope, `changed` in the
@@ -371,7 +326,7 @@ fn every_stream_route_answers_with_an_event_stream() {
     let spec = spec_json();
 
     for (method, path, schema) in [
-        ("get", "/api/chat/events/{session_id}", "ChatEvent"),
+        ("get", "/api/chat/events/{session_id}", "ChatSseFrame"),
         ("get", "/api/fs/events", "FsEvent"),
         ("get", "/api/events/system", "SystemEvent"),
         ("get", "/api/surfaces/events", "SurfaceChangedEvent"),

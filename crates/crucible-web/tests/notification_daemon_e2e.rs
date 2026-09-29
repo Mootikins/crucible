@@ -7,7 +7,6 @@
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{BindWithPluginConfigParams, DaemonClient, Server};
 use crucible_web::services::daemon::{EventBroker, ReconnectingDaemon};
-use crucible_web::ChatEvent;
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,10 +44,10 @@ async fn a_plugin_notification_reaches_a_web_session_stream() {
     let data = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let event = stream.recv().await.expect("the stream ended");
-            if let ChatEvent::SessionEvent { event, data } = ChatEvent::from_daemon_event(&event) {
-                if event == "notification_added" && data["notification"]["message"] == message {
-                    return data;
-                }
+            if event.event == "notification_added"
+                && event.data["notification"]["message"] == message
+            {
+                return event.data;
             }
         }
     })
@@ -244,12 +243,8 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
         let dismissed = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 let event = stream.next().await.expect("the stream stays open");
-                if let ChatEvent::SessionEvent { event, data } =
-                    ChatEvent::from_daemon_event(&event)
-                {
-                    if event == "notification_dismissed" {
-                        break data["notification_id"].as_str().unwrap().to_string();
-                    }
+                if event.event == "notification_dismissed" {
+                    break event.data["notification_id"].as_str().unwrap().to_string();
                 }
             }
         })

@@ -408,7 +408,8 @@ export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> 
     // `subscribeToEvents` reports the transport through this event: it sends
     // `reconnecting` from its error handler and `connected` from its open
     // handler. Without reading it the stream would look open through a drop.
-    openState: (event) => (event.type === 'connection' ? event.status === 'connected' : undefined),
+    openState: (event) =>
+      'type' in event && event.type === 'connection' ? event.status === 'connected' : undefined,
   });
 }
 

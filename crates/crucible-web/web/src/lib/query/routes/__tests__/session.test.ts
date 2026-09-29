@@ -22,7 +22,8 @@ let stop: (() => void) | null = null;
  * Opens the session stream and answers the source the route reads.
  *
  * The route runs inside the stream, not beside it, so every case drives it the
- * way the daemon does: one frame on the wire.
+ * way the daemon does: one frame on the wire, `{event, data}` — the SSE
+ * `event:` name and the payload's own tag are always the same string.
  */
 function openStream() {
   stop = sessionEvents(SESSION).subscribe(() => {});
@@ -63,15 +64,13 @@ function history(events: SessionHistoryResponse['history']): SessionHistoryRespo
 describe('the session event route', () => {
   it('refreshes the status list when Lua publishes a replacement', () => {
     const source = openStream();
-    source.emit('session_event', {
-      type: 'session_event', event: 'status_items_changed', data: { status: [] },
-    });
+    source.emit('status_items_changed', { event: 'status_items_changed', data: { status: [] } });
     expect(invalidated).toEqual([keys.sessionStatus(SESSION)]);
   });
   it('leaves the cache alone for a token', () => {
     const source = openStream();
 
-    source.emit('token', { type: 'token', content: 'hi' });
+    source.emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
 
     expect(invalidated).toEqual([]);
   });
@@ -81,8 +80,10 @@ describe('the session event route', () => {
   it('reads the review again when a turn completes, and leaves the history alone', async () => {
     const source = openStream();
 
-    source.emit('message_complete', { type: 'message_complete', id: 'msg-1', content: 'done' });
-    source.emit('error', { type: 'error', code: 'provider', message: 'no' });
+    source.emit('message_complete', {
+      event: 'message_complete',
+      data: { message_id: 'msg-1', full_response: 'done' },
+    });
     await new Promise((resolve) => setTimeout(resolve, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
 
     expect(invalidated).toEqual([keys.diffset(`session-${SESSION}`)]);
@@ -103,7 +104,7 @@ describe('the session event route', () => {
     getBus().on('sessionTitleChanged', (payload) => titles.push(payload));
     const source = openStream();
 
-    source.emit('title_changed', { type: 'title_changed', title: 'Renamed' });
+    source.emit('title_changed', { event: 'title_changed', data: { title: 'Renamed' } });
 
     expect(invalidated).toEqual([keys.sessions(false), keys.sessions(true)]);
     expect(titles).toEqual([{ sessionId: SESSION, title: 'Renamed' }]);
@@ -112,7 +113,7 @@ describe('the session event route', () => {
   it('invalidates the mode list when the daemon changes mode', () => {
     const source = openStream();
 
-    source.emit('mode_changed', { type: 'mode_changed', mode: 'review' });
+    source.emit('mode_changed', { event: 'mode_changed', data: { mode: 'review' } });
 
     expect(invalidated).toEqual([keys.sessionModes(SESSION)]);
   });
@@ -121,10 +122,8 @@ describe('the session event route', () => {
     const source = openStream();
 
     source.emit('interaction_requested', {
-      type: 'interaction_requested',
-      id: 'req-1',
-      kind: 'ask',
-      question: 'which?',
+      event: 'interaction_requested',
+      data: { request_id: 'req-1', request: { kind: 'ask', question: 'which?' } },
     });
 
     expect(invalidated).toEqual([keys.pendingInteractions()]);
@@ -135,8 +134,7 @@ describe('the session event route', () => {
     getBus().on('interactionResolved', (payload) => resolved.push(payload));
     const source = openStream();
 
-    source.emit('session_event', {
-      type: 'session_event',
+    source.emit('interaction_completed', {
       event: 'interaction_completed',
       data: { request_id: 'perm-1', response: { kind: 'cancelled' } },
     });
@@ -148,16 +146,16 @@ describe('the session event route', () => {
   // The loop limit and the TUI change the approval too, so the web
   // control reads it again.
   it('invalidates the plugin approvals when the daemon changes one', () => {
-    openStream().emit('session_event', {
-      type: 'session_event', event: 'plugin_approval_changed', data: { plugin: 'goal', approval: 'ask' },
+    openStream().emit('plugin_approval_changed', {
+      event: 'plugin_approval_changed',
+      data: { plugin: 'goal', approval: 'ask' },
     });
     expect(invalidated).toEqual([keys.sessionPluginApprovals(SESSION)]);
   });
 
   it('writes no echoed user message into the history', () => {
     env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
-    openStream().emit('session_event', {
-      type: 'session_event',
+    openStream().emit('user_message', {
       event: 'user_message',
       data: { message_id: 'msg-1', content: 'hello' },
     });
@@ -178,8 +176,8 @@ describe('the session event route', () => {
   it('coalesces a burst of change events into one review listing', async () => {
     const source = openStream();
 
-    source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
-    source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
+    source.emit('review_changed', { event: 'review_changed', data: {} });
+    source.emit('review_changed', { event: 'review_changed', data: {} });
 
     expect(invalidated).toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
@@ -192,7 +190,7 @@ describe('the session event route', () => {
   it('leaves the review of a session that said nothing alone', async () => {
     const source = openStream();
 
-    source.emit('token', { type: 'token', content: 'x' });
+    source.emit('text_delta', { event: 'text_delta', data: { content: 'x' } });
     await new Promise((resolve) => setTimeout(resolve, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
 
     expect(invalidated).toEqual([]);
@@ -201,8 +199,7 @@ describe('the session event route', () => {
   it('writes nothing for a dropped-event warning, which the transcript store answers', () => {
     const source = openStream();
 
-    source.emit('session_event', {
-      type: 'session_event',
+    source.emit('stream_gap', {
       event: 'stream_gap',
       data: { dropped: 3 },
     });
@@ -218,8 +215,8 @@ describe('the session event route', () => {
     const [first, second] = FakeEventSource.instances;
 
     expect(second!.url).toBe('/api/chat/events/s1');
-    second!.emit('title_changed', { type: 'title_changed', title: 'One' });
-    first!.emit('title_changed', { type: 'title_changed', title: 'Two' });
+    second!.emit('title_changed', { event: 'title_changed', data: { title: 'One' } });
+    first!.emit('title_changed', { event: 'title_changed', data: { title: 'Two' } });
 
     expect(titles).toEqual([
       { sessionId: 's1', title: 'One' },

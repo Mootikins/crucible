@@ -1,200 +1,18 @@
-//! ChatEvent Contract Tests and Chat Route Contract Tests
+//! Chat Route Contract Tests
+//!
+//! The SSE stream carries the daemon's own `{event, data}` pair — one event
+//! vocabulary, not a second one re-encoded for the browser (see
+//! `crates/crucible-web/src/routes/chat.rs::to_sse`). There is no `ChatEvent`
+//! type left to test here: the wire tests below exercise the stream itself.
 
 use crucible_core::protocol::rpc::RpcMethod;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use crucible_web::ChatEvent;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use super::shared::{build_state, build_test_app, start_mock_daemon};
-
-// =========================================================================
-// ChatEvent Contract Tests
-// =========================================================================
-
-#[test]
-fn chat_event_token_event_name() {
-    let event = ChatEvent::Token {
-        content: "hello".to_string(),
-    };
-    assert_eq!(event.event_name(), "token");
-}
-
-#[test]
-fn chat_event_tool_call_event_name() {
-    let event = ChatEvent::ToolCall {
-        id: "1".to_string(),
-        title: "search".to_string(),
-        arguments: None,
-        display: None,
-        auto_approved: None,
-    };
-    assert_eq!(event.event_name(), "tool_call");
-}
-
-#[test]
-fn chat_event_tool_result_event_name() {
-    let event = ChatEvent::ToolResult {
-        id: "1".to_string(),
-        result: Some("found it".to_string()),
-        terminate: false,
-        render: None,
-    };
-    assert_eq!(event.event_name(), "tool_result");
-}
-
-#[test]
-fn chat_event_thinking_event_name() {
-    let event = ChatEvent::Thinking {
-        content: "hmm".to_string(),
-    };
-    assert_eq!(event.event_name(), "thinking");
-}
-
-#[test]
-fn chat_event_message_complete_event_name() {
-    let event = ChatEvent::MessageComplete {
-        id: "1".to_string(),
-        content: "done".to_string(),
-        prompt_tokens: None,
-        completion_tokens: None,
-        total_tokens: None,
-        cache_read_tokens: None,
-        cache_creation_tokens: None,
-        stop_reason: None,
-        stop_notice: None,
-    };
-    assert_eq!(event.event_name(), "message_complete");
-}
-
-#[test]
-fn chat_event_error_event_name() {
-    let event = ChatEvent::Error {
-        code: "500".to_string(),
-        message: "oops".to_string(),
-    };
-    assert_eq!(event.event_name(), "error");
-}
-
-#[test]
-fn chat_event_token_serializes_with_type_tag() {
-    let event = ChatEvent::Token {
-        content: "hello world".to_string(),
-    };
-    let json: Value = serde_json::to_value(&event).unwrap();
-
-    // Contract: ChatEvent uses { "type": "token", ... } tagged format
-    assert_eq!(json["type"], "token");
-    assert_eq!(json["content"], "hello world");
-}
-
-#[test]
-fn chat_event_error_serializes_with_type_tag() {
-    let event = ChatEvent::Error {
-        code: "rate_limit".to_string(),
-        message: "Too many requests".to_string(),
-    };
-    let json: Value = serde_json::to_value(&event).unwrap();
-
-    assert_eq!(json["type"], "error");
-    assert_eq!(json["code"], "rate_limit");
-    assert_eq!(json["message"], "Too many requests");
-}
-
-#[test]
-fn chat_event_message_complete_has_no_tool_calls_field() {
-    // tool_calls was removed from the wire entirely — tools are first-class
-    // transcript events (tool_call/tool_result), never a completion payload.
-    let event = ChatEvent::MessageComplete {
-        id: "msg-1".to_string(),
-        content: "response text".to_string(),
-        prompt_tokens: None,
-        completion_tokens: None,
-        total_tokens: None,
-        cache_read_tokens: None,
-        cache_creation_tokens: None,
-        stop_reason: None,
-        stop_notice: None,
-    };
-    let json: Value = serde_json::to_value(&event).unwrap();
-    assert!(json.get("tool_calls").is_none());
-}
-
-#[test]
-fn chat_event_from_daemon_text_delta() {
-    let daemon_event = crucible_daemon::SessionEvent::new(
-        "s1".to_string(),
-        "text_delta".to_string(),
-        json!({"content": "chunk"}),
-    );
-    let event = ChatEvent::from_daemon_event(&daemon_event);
-    assert_eq!(event.event_name(), "token");
-
-    let json: Value = serde_json::to_value(&event).unwrap();
-    assert_eq!(json["content"], "chunk");
-}
-
-/// The daemon's name is `thinking`; `thinking_delta` was an input arm nothing
-/// ever emitted and is gone.
-#[test]
-fn chat_event_from_daemon_thinking() {
-    let daemon_event = crucible_daemon::SessionEvent::new(
-        "s1".to_string(),
-        "thinking".to_string(),
-        json!({"content": "reasoning..."}),
-    );
-    let event = ChatEvent::from_daemon_event(&daemon_event);
-    assert_eq!(event.event_name(), "thinking");
-}
-
-/// The daemon's only tool-call name is `tool_call`, with `{call_id, tool, args}`.
-/// This test used to feed `tool_call_start` and the legacy `id`/`name` keys — an
-/// input name nothing has ever emitted, which is why `api.ts` grew a listener for
-/// an SSE name the server could not send.
-#[test]
-fn chat_event_from_daemon_tool_call() {
-    let daemon_event = crucible_daemon::SessionEvent::new(
-        "s1".to_string(),
-        "tool_call".to_string(),
-        json!({"call_id": "tc-1", "tool": "search", "args": {"query": "test"}}),
-    );
-    let event = ChatEvent::from_daemon_event(&daemon_event);
-    assert_eq!(event.event_name(), "tool_call");
-
-    let json: Value = serde_json::to_value(&event).unwrap();
-    assert_eq!(json["id"], "tc-1");
-    assert_eq!(json["title"], "search");
-}
-
-/// The daemon's name is `message_complete`; `turn_complete` was an input arm
-/// nothing ever emitted and is gone.
-#[test]
-fn chat_event_from_daemon_message_complete() {
-    let daemon_event = crucible_daemon::SessionEvent::new(
-        "s1".to_string(),
-        "message_complete".to_string(),
-        json!({"message_id": "msg-99", "full_response": "Final answer"}),
-    );
-    let event = ChatEvent::from_daemon_event(&daemon_event);
-    assert_eq!(event.event_name(), "message_complete");
-
-    let json: Value = serde_json::to_value(&event).unwrap();
-    assert_eq!(json["id"], "msg-99");
-    assert_eq!(json["content"], "Final answer");
-}
-
-#[test]
-fn chat_event_from_daemon_unknown_maps_to_session_event() {
-    let daemon_event = crucible_daemon::SessionEvent::new(
-        "s1".to_string(),
-        "custom_plugin_event".to_string(),
-        json!({"key": "value"}),
-    );
-    let event = ChatEvent::from_daemon_event(&daemon_event);
-    assert_eq!(event.event_name(), "session_event");
-}
 
 // =========================================================================
 // Chat Route Contract Tests (with mock daemon)
@@ -512,5 +330,41 @@ async fn chat_events_without_a_cursor_replays_nothing() {
         mock.received_params(RpcMethod::SessionEventsAfter)
             .is_none(),
         "a cursor-less request must not replay"
+    );
+}
+
+/// The `data:` payload of a live event is the daemon's own `{event, data}`
+/// pair, not a re-tagged `{"type": ...}` object — `ChatEvent` is gone, and
+/// the SSE `event:` field carries the name instead of a JSON tag.
+#[tokio::test]
+async fn chat_events_data_payload_is_the_daemon_event_data_pair() {
+    let (_mock, client) = start_mock_daemon().await;
+    let (state, _replayed, body) = read_stream(
+        client,
+        "/api/chat/events/test-session-001?after=4",
+        &[],
+        |_| true,
+    )
+    .await;
+
+    state
+        .events
+        .publish_for_tests(stamped(5, "text_delta", json!({ "content": "hi" })))
+        .await;
+
+    let (live, _body) = drain(body, &|text: &str| text.contains("event: text_delta")).await;
+    let frame = live
+        .split("\n\n")
+        .find(|frame| frame.contains("event: text_delta"))
+        .expect("a text_delta frame");
+    let data = frame
+        .lines()
+        .find_map(|l| l.strip_prefix("data: "))
+        .expect("a data: line");
+    let parsed: Value = serde_json::from_str(data).unwrap();
+    assert_eq!(
+        parsed,
+        json!({ "event": "text_delta", "data": { "content": "hi" } }),
+        "the data: payload is {{event, data}}, not a {{type, ...}} tag: {live}"
     );
 }
