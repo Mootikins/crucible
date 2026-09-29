@@ -11,6 +11,7 @@
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@/index.css';
+import '@/windowing/theme.css';
 import './mockup.css';
 import { createEffect } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -18,7 +19,8 @@ import { configureWindowing, windowActions, windowStore } from '@/windowing/stor
 import { WindowManager } from '@/windowing/components/WindowManager';
 import type { Tab } from '@/windowing/model/types';
 import { mockPolicy, type MockType } from './policy';
-import { applyMaterial, mockSlots } from './chrome';
+import { mockSlots } from './chrome';
+import { applyTweaks } from './toolbox';
 import { ChangesView, FilesPanel, NoteView, SessionView, SessionsPanel, TerminalView } from './panels';
 import { setFocusedNote } from './state';
 import { openNote } from './actions';
@@ -33,7 +35,7 @@ configureWindowing(
   }),
 );
 Object.assign(window, { __windowStore: windowStore, __windowActions: windowActions });
-applyMaterial();
+applyTweaks();
 
 /** The composer's context chip follows the note that has focus in the centre. */
 function FocusedNoteTracker() {
@@ -54,11 +56,12 @@ const renderContent = (tab: () => Tab) => {
     case 'files':
       return <FilesPanel />;
     case 'note':
-      return <NoteView path={t.metadata?.path as string} />;
+      // Read through `tab()`: a navigation replaces the path in place.
+      return <NoteView tabId={t.id} path={tab().metadata?.path as string} />;
     case 'changes':
       return <ChangesView sid={t.metadata?.sid as string} />;
     case 'session':
-      return <SessionView />;
+      return <SessionView sid={t.metadata?.sid as string | undefined} />;
     case 'terminal':
       return <TerminalView />;
   }

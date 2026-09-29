@@ -25,6 +25,7 @@ import {
   Search,
   Sparkles,
   X,
+  ChevronLeft,
 } from 'lucide-solid';
 import { renderMarkdown } from '@/lib/markdown';
 import { windowActions, windowStore } from '@/windowing/store';
@@ -42,7 +43,7 @@ import {
   state,
   type Item,
 } from './state';
-import { hoverEnd, hoverStart, openChanges, openNote } from './actions';
+import { canGoBack, canGoForward, goHistory, hoverEnd, hoverStart, openChanges, openNote, openSession, whereFor } from './actions';
 
 const basename = (p: string) => p.split('/').pop() ?? p;
 
@@ -70,7 +71,7 @@ function linkHandlers(fromSession: boolean): { onClick: (e: MouseEvent) => void;
       if (!a) return;
       e.preventDefault();
       const path = resolve(a.dataset.note ?? '');
-      if (path) openNote(path, { fromSession });
+      if (path) openNote(path, { fromSession, where: whereFor(e) });
     },
     onMouseOver: (e) => {
       const a = link(e);
@@ -123,7 +124,7 @@ export const SessionsPanel: Component = () => {
                   class="mk-srow"
                   aria-current={state.active === sid}
                   title={state.sessions[sid]!.title}
-                  onClick={() => setState('active', sid)}
+                  onClick={() => openSession(sid)}
                 >
                   <Mark sid={sid} />
                   <span class="mk-t">{state.sessions[sid]!.title}</span>
@@ -191,7 +192,7 @@ export const FilesPanel: Component = () => {
       <For each={[...p.node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name))}>
         {(d) => (
           <>
-            <button type="button" class="mk-trow mk-dir" style={{ 'padding-left': `${10 + p.depth * 14}px` }} onClick={() => toggle(`docs:${d.path}`)}>
+            <button type="button" class="mk-trow mk-dir" style={{ 'padding-left': `${4 + p.depth * 14}px` }} onClick={() => toggle(`docs:${d.path}`)}>
               <Show when={open().has(`docs:${d.path}`)} fallback={<ChevronRight class="mk-i" />}>
                 <ChevronDown class="mk-i" />
               </Show>
@@ -211,9 +212,9 @@ export const FilesPanel: Component = () => {
             <button
               type="button"
               class="mk-trow"
-              style={{ 'padding-left': `${24 + p.depth * 14}px` }}
+              style={{ 'padding-left': `${18 + p.depth * 14}px` }}
               aria-current={activePath() === f ? 'page' : undefined}
-              onClick={() => openNote(f)}
+              onClick={(e) => openNote(f, { where: whereFor(e) })}
             >
               <span class="mk-t">{basename(f)}</span>
               <Show when={owe()} fallback={<Show when={touched()}><span class="mk-touch" style={{ background: session().color }} title="Used by this session" /></Show>}>
@@ -254,7 +255,7 @@ export const FilesPanel: Component = () => {
       <Root key="crucible" label="crucible" kind="project">
         <For each={PROJECT_PATHS}>
           {(p) => (
-            <div class="mk-trow" classList={{ 'mk-dir': p.endsWith('/') }} style={{ 'padding-left': p.endsWith('/') ? '10px' : '24px' }}>
+            <div class="mk-trow" classList={{ 'mk-dir': p.endsWith('/') }} style={{ 'padding-left': p.endsWith('/') ? '4px' : '18px' }}>
               <Show when={p.endsWith('/')}>
                 <ChevronRight class="mk-i" />
               </Show>
@@ -265,7 +266,7 @@ export const FilesPanel: Component = () => {
       </Root>
       <Show when={session().roots.includes('folder')}>
         <Root key="folder" label="Session folder" kind="workspace">
-          <div class="mk-trow mk-quiet" style={{ 'padding-left': '24px' }}>
+          <div class="mk-trow mk-quiet" style={{ 'padding-left': '18px' }}>
             <span class="mk-t">No files yet</span>
           </div>
         </Root>
@@ -346,21 +347,46 @@ const HunkBlock: Component<{ id: string }> = (props) => {
   );
 };
 
-export const NoteView: Component<{ path: string }> = (props) => {
+export const NoteView: Component<{ tabId?: string; path: string }> = (props) => {
   const [mode, setMode] = createSignal<'live' | 'source' | 'read'>('live');
   const src = () => state.notes[props.path];
   const parsed = createMemo(() => (src() ? parseFront(src()!) : null));
-  const parts = props.path.split('/');
+  const parts = () => props.path.split('/');
+  const go = (step: -1 | 1) => props.tabId && goHistory(props.tabId, step);
   return (
-    <div class="mk-body">
+    <div
+      class="mk-body"
+      // Alt+Left/Right and the mouse's back/forward buttons, as in a browser.
+      onKeyDown={(e) => {
+        if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          go(e.key === 'ArrowLeft' ? -1 : 1);
+        }
+      }}
+      onMouseUp={(e) => {
+        if (e.button === 3 || e.button === 4) go(e.button === 3 ? -1 : 1);
+      }}
+    >
       <div class="mk-crumbbar">
+        <Show when={props.tabId}>
+          {(id) => (
+            <div class="mk-nav">
+              <button type="button" class="mk-iconbtn" title="Back (Alt+Left)" disabled={!canGoBack(id())} onClick={() => go(-1)}>
+                <ChevronLeft class="mk-i" />
+              </button>
+              <button type="button" class="mk-iconbtn" title="Forward (Alt+Right)" disabled={!canGoForward(id())} onClick={() => go(1)}>
+                <ChevronRight class="mk-i" />
+              </button>
+            </div>
+          )}
+        </Show>
         <span class="mk-path">
           docs
-          <For each={parts}>
+          <For each={parts()}>
             {(p, i) => (
               <>
                 <span class="mk-sep">/</span>
-                {i() === parts.length - 1 ? <b>{p}</b> : p}
+                {i() === parts().length - 1 ? <b>{p}</b> : p}
               </>
             )}
           </For>
@@ -641,12 +667,14 @@ const ItemView: Component<{ it: Item; last: boolean }> = (props) => {
   );
 };
 
-export const SessionView: Component = () => {
-  const sid = () => state.active;
+/** One session. In the right rail it shows the active session; as a centre tab it shows its own. */
+export const SessionView: Component<{ sid?: string }> = (props) => {
+  const sid = () => props.sid ?? state.active;
   const s = () => state.sessions[sid()]!;
   const perm = () => state.perms[sid()];
   const owed = () => pendingHunks(sid()).length;
   const expanded = () => windowStore.expandedEdge === 'right';
+  let root: HTMLDivElement | undefined;
   // While the session covers the centre, a peek floats at the right edge.
   // The transcript makes room for it instead of running under it.
   const peekRoom = () => {
@@ -657,14 +685,17 @@ export const SessionView: Component = () => {
     // Room only where the transcript keeps a readable column (about 34rem)
     // beside the peek; a narrower window lets the peek float over it.
     if (!peekWin || window.innerWidth - peekWin.width < 900) return 0;
-    return peekWin.width + 24;
+    // Measured from this view's own right edge: the shell's gaps and the
+    // peek's inset both sit between that edge and the window edge.
+    const right = root?.getBoundingClientRect().right ?? window.innerWidth;
+    return Math.max(0, right - peekWin.x) + 24;
   };
   const ctx = () => {
     const n = focusedNote();
     return n && !state.ctxOff[n] ? n : null;
   };
   return (
-    <div class="mk-session">
+    <div class="mk-session" ref={root}>
       <div class="mk-shead">
         <span class="mk-ident" style={{ background: s().color }} />
         <span class="mk-stitle">{s().title}</span>

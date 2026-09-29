@@ -14,7 +14,7 @@ import { LAYOUT_SHORTCUTS } from '@/windowing/shortcuts';
 
 export type MockType = 'sessions' | 'files' | 'note' | 'changes' | 'session' | 'terminal';
 
-const ICONS: Record<MockType, Component<{ class?: string }>> = {
+export const ICONS: Record<MockType, Component<{ class?: string }>> = {
   sessions: ClipboardList,
   files: FolderTree,
   note: FileText,

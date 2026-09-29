@@ -9,19 +9,40 @@
 
 /* ---------------------------------------------------------------- 1. theme */
 :root {
-  --cru-color-shell-bg: #151619;
-  --cru-color-shell-panel: #1b1c20;
-  --cru-color-surface-base: #1b1c20;
-  --cru-color-surface-elevated: #222328;
-  --cru-color-surface-overlay: #26272d;
-  --cru-color-control: #2c2d34;
+  /* Two tones, as in GitLab and Obsidian. MAIN is the high-contrast tone:
+     the documents, the session and every popout. NAV is the low-contrast
+     tone: the ground, the left rail and the ribbons. NAV is MAIN moved
+     toward `--mk-contrast-to` by `--mk-contrast` steps, then tinted toward
+     the accent by `--mk-nav-tint` percent. The toolbox sets both. The focus
+     cards are MAIN: the darker tone in dark, the lighter tone in light. */
+  --mk-main-base: #141517;
+  --mk-main-solid: var(--mk-main-base);
+  --mk-contrast-to: #ffffff;
+  --mk-contrast-step: 1.6%;
+  --mk-contrast: 8;
+  --mk-nav-tint: 0;
+  --mk-nav-solid: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--mk-main-base), var(--mk-contrast-to) calc(var(--mk-contrast) * var(--mk-contrast-step))),
+    var(--cru-color-primary) calc(var(--mk-nav-tint) * 1%)
+  );
+  --mk-main: var(--mk-main-solid);
+  --mk-nav: var(--mk-nav-solid);
+  --cru-color-shell-bg: var(--mk-nav);
+  --cru-color-shell-panel: var(--mk-main);
+  --cru-color-surface-base: var(--mk-main);
+  /* One raised step inside MAIN (bubbles, properties, code). */
+  --cru-color-surface-elevated: var(--mk-nav-solid);
+  --cru-color-surface-overlay: var(--mk-main);
+  --cru-color-control: var(--mk-nav-solid);
   --cru-color-hover-wash: rgba(255, 255, 255, 0.045);
   --cru-color-ink: #e8e8ec;
   --cru-color-body: #c5c6cc;
   --cru-color-muted: #9c9da6;
   --cru-color-muted-dark: #8a8b94;
-  --cru-color-hairline: #26272c;
-  --cru-color-hairline-strong: #35363d;
+  /* Lines and controls take NAV too: two shades in all. */
+  --cru-color-hairline: var(--mk-nav-solid);
+  --cru-color-hairline-strong: var(--mk-nav-solid);
   --cru-color-primary: #6e9ef0;
   --cru-color-primary-hover: #8cb3f5;
   --cru-color-primary-active: #5687dd;
@@ -33,25 +54,31 @@
   --cru-radius-card: 8px;
   --cru-radius-composer: 14px;
   /* PROPOSED (not in the 0.31 contract). */
+  --mk-nav-ink: #e4e5e9;
+  --mk-nav-body: #c3c5cc;
   --mk-diff-add: rgba(124, 198, 138, 0.13);
   --mk-diff-del: rgba(239, 111, 108, 0.12);
   --mk-font-note: 0.9375rem;
   --mk-measure-note: 40rem;
+  /* The shell layout: the toolbox sets these. */
+  --mk-gap: 8px;
+  --mk-radius: 12px;
+  --mk-edge: transparent;
+  --mk-shadow: none;
 }
 :root[data-theme='light'] {
-  --cru-color-shell-bg: #eef0f3;
-  --cru-color-shell-panel: #fafafb;
-  --cru-color-surface-base: #fafafb;
-  --cru-color-surface-elevated: #ffffff;
-  --cru-color-surface-overlay: #ffffff;
-  --cru-color-control: #e7e8ec;
+  --mk-main-base: #ffffff;
+  --mk-main-solid: var(--mk-main-base);
+  --mk-contrast-to: #2a2d36;
+  --mk-contrast-step: 1.1%;
+  --cru-color-control: var(--mk-nav-solid);
   --cru-color-hover-wash: rgba(20, 22, 28, 0.05);
   --cru-color-ink: #17181c;
   --cru-color-body: #34363d;
   --cru-color-muted: #5b5d66;
   --cru-color-muted-dark: #686a73;
-  --cru-color-hairline: #e4e6ea;
-  --cru-color-hairline-strong: #cfd2d8;
+  --cru-color-hairline: var(--mk-nav-solid);
+  --cru-color-hairline-strong: var(--mk-nav-solid);
   --cru-color-primary: #2e62c8;
   --cru-color-primary-hover: #2452ab;
   --cru-color-primary-active: #1c438d;
@@ -60,9 +87,17 @@
   --cru-color-attention: #8a6200;
   --cru-color-ok: #2f7a3f;
   --cru-color-precog: #6a4fb0;
+  --mk-nav-ink: #17181c;
+  --mk-nav-body: #34363d;
   --mk-diff-add: rgba(47, 122, 63, 0.11);
   --mk-diff-del: rgba(196, 43, 43, 0.09);
+  --mk-shadow: none;
 }
+
+/* True black (dark theme only): MAIN, the documents and the sessions,
+   becomes #000 for OLED. NAV derives from the base tone, so the rails, the
+   strips and the inactive tabs keep their usual lower contrast. */
+:root[data-mk-black]:not([data-theme='light']) { --mk-main-solid: #000000; }
 
 /* ---------------------------------------------------------------- 2. bodies */
 .mk-i { width: 14px; height: 14px; flex: none; }
@@ -121,13 +156,14 @@
 
 /* Note */
 .mk-body { display: grid; grid-template-rows: 30px minmax(0, 1fr); height: 100%; min-height: 0; background: var(--cru-color-shell-panel); }
-.mk-crumbbar { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 14px; font-size: 12px; color: var(--cru-color-muted); border-bottom: 1px solid var(--cru-color-hairline); min-width: 0; }
+.mk-crumbbar { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 8px; font-size: 12px; color: var(--cru-color-muted); border-bottom: 1px solid var(--cru-color-hairline); min-width: 0; }
 .mk-path { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mk-path b { color: var(--cru-color-body); font-weight: 500; }
 .mk-sep { opacity: 0.5; margin: 0 4px; }
-.mk-seg { display: inline-flex; background: var(--cru-color-control); border-radius: var(--cru-radius-control); padding: 2px; gap: 2px; }
-.mk-seg button { height: 20px; padding: 0 6px; border-radius: 4px; color: var(--cru-color-muted); display: inline-flex; align-items: center; cursor: pointer; }
-.mk-seg button[aria-pressed='true'] { background: var(--cru-color-surface-elevated); color: var(--cru-color-ink); }
+.mk-seg { display: inline-flex; background: var(--mk-btn); border-radius: 8px; padding: 2px; gap: 2px; }
+.mk-seg button { height: 22px; padding: 0 6px; border-radius: 6px; color: var(--cru-color-muted); display: inline-flex; align-items: center; cursor: pointer; }
+.mk-seg button:hover { color: var(--cru-color-ink); background: var(--mk-btn); }
+.mk-seg button[aria-pressed='true'] { background: var(--mk-btn-hover); color: var(--cru-color-ink); }
 .mk-note { max-width: var(--mk-measure-note); margin: 0 auto; padding: 28px 40px 80px; font-size: var(--mk-font-note); line-height: 1.7; color: var(--cru-color-body); user-select: text; }
 .mk-note h1 { font-size: 1.85em; line-height: 1.2; color: var(--cru-color-ink); margin: 0.2em 0 0.5em; font-weight: 700; letter-spacing: -0.015em; }
 .mk-note h2 { font-size: 1.3em; color: var(--cru-color-ink); margin: 1.8em 0 0.5em; font-weight: 650; }
@@ -234,7 +270,7 @@
 .mk-composerwrap { padding: 8px 12px 12px; }
 [data-edge-expanded] .mk-composerwrap { padding: 8px 28px 20px; }
 .mk-cinner { max-width: 48rem; margin: 0 auto; display: grid; gap: 8px; }
-.mk-perm { border: 1px solid color-mix(in srgb, var(--cru-color-attention) 50%, transparent); background: var(--cru-color-surface-elevated); border-radius: var(--cru-radius-card); box-shadow: var(--cru-shadow-md); overflow: hidden; }
+.mk-perm { border: 1px solid color-mix(in srgb, var(--cru-color-attention) 50%, transparent); background: transparent; border-radius: var(--cru-radius-card); box-shadow: var(--cru-shadow-md); overflow: hidden; }
 .mk-ph { padding: 9px 12px 6px; font-size: 12.5px; color: var(--cru-color-ink); font-weight: 500; }
 .mk-perm pre { margin: 0 12px 8px; font-family: var(--cru-font-mono); font-size: 11px; line-height: 1.55; border-radius: 6px; border: 1px solid var(--cru-color-hairline); white-space: pre-wrap; overflow: hidden; }
 .mk-perm pre .a { display: block; background: var(--mk-diff-add); padding: 0 8px; min-height: 1.55em; }
@@ -277,50 +313,402 @@
 .mk-check input { margin-top: 3px; accent-color: var(--cru-color-primary); }
 .mk-check small { display: block; color: var(--cru-color-muted-dark); font-size: 11.5px; }
 
-/* ------------------------------------------------------ 3. glass material
+/* The look toolbox */
+.mk-toolbox { position: fixed; right: 16px; bottom: 16px; z-index: 90; width: 300px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: var(--mk-main); outline: 1px solid var(--cru-color-hairline-strong); outline-offset: -1px; border-radius: var(--mk-radius); box-shadow: var(--cru-shadow-xl); font-size: 12.5px; color: var(--cru-color-body); overflow: hidden; }
+.mk-tb-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 14px; font-weight: 600; color: var(--cru-color-ink); }
+.mk-tb-body { overflow: auto; padding: 2px 14px 8px; display: grid; gap: 10px; }
+.mk-tb-row { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; }
+.mk-tb-label { color: var(--cru-color-muted); line-height: 1.25; }
+.mk-tb-label small { display: block; color: var(--cru-color-muted-dark); font-size: 10.5px; }
+.mk-tb-foot { display: flex; justify-content: space-between; padding: 8px 14px 12px; }
+.mk-tb-seg { display: flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--cru-color-surface-elevated); }
+.mk-tb-seg button { flex: 1; padding: 3px 6px; border-radius: 5px; color: var(--cru-color-muted); cursor: pointer; white-space: nowrap; }
+.mk-tb-seg button:hover { color: var(--cru-color-ink); }
+.mk-tb-seg button.on { background: var(--mk-main-solid); color: var(--cru-color-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+.mk-slider { display: flex; align-items: center; gap: 8px; }
+.mk-slider input { flex: 1; accent-color: var(--cru-color-primary); }
+.mk-slider span { width: 34px; text-align: right; color: var(--cru-color-muted-dark); font-variant-numeric: tabular-nums; }
+.mk-swatches { display: flex; gap: 6px; }
+.mk-swatch { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35); }
+.mk-swatch.auto { background: conic-gradient(var(--cru-color-primary) 0 50%, var(--mk-nav-solid) 0 100%) !important; }
+.mk-swatch.on { box-shadow: 0 0 0 2px var(--mk-main-solid), 0 0 0 3.5px var(--cru-color-ink); }
+
+/* ------------------------------------------------------- 3. shell layout
+ * Both surfaces. Every working surface is a card: the same radius, and an
+ * even gap of ground around it. A rail's card slides whole: its body, and its
+ * ribbon on the inside edge when the ribbon rides in the rail. A sliding card
+ * takes only vertical margins, since the slide measures widths; the host pads
+ * the window edge, and the centre card holds the gaps beside it. The card
+ * edge is an inset outline for the same reason: a border adds width.
+ * PROPOSED tokens, which the contract lacks: gap, radius, edge, shadow.
+ */
+body { background: var(--mk-nav); }
+/* The window manager's root paints the shell tone; the body paints it here
+   instead, so a glass ground shows through one layer only. */
+.wm-root,
+[data-testid^='edge-host-'],
+[data-testid='centre-column'] { background: transparent; }
+.wm-ribbon,
+.wm-ribbon-toggle { --color-shell-bg: transparent; background: transparent; }
+/* Only the documents and the session pane are cards. The left rail and every
+   ribbon sit on the ground the cards lie on, as in GitLab. The session card
+   is the rail body's content, so its gaps are inside the piece that slides:
+   a closing rail only moves, and a closed rail leaves its ribbon on the
+   ground, flush with the window edge. */
+[data-testid='centre-column'] > div,
+:root[data-mk-darkpanes] [data-testid='edge-host-right'][data-ribbon-placement='edge'] [data-edge-panel-body] > div {
+  --color-shell-bg: transparent;
+  margin-block: var(--mk-gap);
+  border-radius: var(--mk-radius);
+  overflow: hidden;
+  outline: 1px solid var(--mk-edge);
+  outline-offset: -1px;
+  /* No tone here: the pane content paints MAIN, so the strip above it stays
+     NAV up to the rounded corner, with no MAIN edge showing at the curve. */
+  background: transparent;
+  box-shadow: var(--mk-shadow);
+}
+[data-testid='centre-column'] > div { margin-inline: var(--mk-gap); }
+:root[data-mk-darkpanes] [data-testid='edge-host-right'][data-ribbon-placement='edge'] [data-edge-panel-body] > div { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+/* With the ribbon at the edge, the card meets the ribbon with no gap, so the
+   open tab's cutout joins the pane there too. */
+
+/* Dark panes (toolbox, off by default). A rail pane then takes the MAIN
+   tone of the focus cards and is padded as a card. Its vertical tabs (the
+   ribbon) sit in the same card, on the same tone, with no line between them
+   and the content. The card is a pseudo-element that starts after the
+   window-edge gap, so the gap slides with the rail, and a closed rail keeps
+   its ribbon, on the card tone, flush with the window edge. */
+:root[data-mk-darkpanes] [data-testid='edge-host-right'][data-ribbon-placement='panel'] [data-edge-card] {
+  --color-shell-bg: transparent;
+  position: relative;
+  isolation: isolate;
+  margin-block: var(--mk-gap);
+}
+:root[data-mk-darkpanes] [data-testid='edge-host-right'][data-ribbon-placement='panel'] [data-edge-card]::before {
+  content: '';
+  position: absolute;
+  inset: 0 var(--mk-gap) 0 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: var(--mk-radius);
+  outline: 1px solid var(--mk-edge);
+  outline-offset: -1px;
+  background: transparent;
+  box-shadow: var(--mk-shadow);
+}
+:root[data-mk-darkpanes] [data-testid='edge-host-right'][data-ribbon-placement='panel'] [data-edge-panel-body] { box-sizing: border-box; padding-right: var(--mk-gap); }
+:root[data-mk-darkpanes] [data-testid='edge-host-right'][data-ribbon-placement='panel'] [data-edge-panel-body] > div { overflow: hidden; border-radius: var(--mk-radius); }
+
+/* The left rail: NAV text, quieter than MAIN. Its selection takes the accent.
+   Scoped values set both the `--cru-*` names (the mockup bodies read them
+   where they are used) and the Tailwind `--color-*` names (resolved once at
+   :root otherwise). */
+[data-testid='edge-host-left'],
+.wm-ribbon {
+  --cru-color-ink: var(--mk-nav-ink);
+  --cru-color-body: var(--mk-nav-body);
+  --color-shell-ink: var(--mk-nav-ink);
+  --color-shell-body: var(--mk-nav-body);
+}
+
+/* A rail that covers the centre keeps the gap on its centre side too. The
+   slider pads it: the card fills the slider, so a card margin would overflow. */
+[data-edge-expanded] > div:not([data-testid]) > div { box-sizing: border-box; }
+[data-testid='edge-host-right'][data-edge-expanded] > div:not([data-testid]) > div { padding-left: var(--mk-gap); }
+[data-testid='edge-host-left'][data-edge-expanded] > div:not([data-testid]) > div { padding-right: var(--mk-gap); }
+/* The core's swap button swaps the rails; the mockup's own button swaps
+   what opens in the centre instead (chrome.tsx). */
+[data-testid='ribbon-cmd-swap-sides'] { display: none; }
+
+/* Vertical tabs in the rails (toolbox, on by default). A rail pane shows no
+   tab bar: the ribbon's icons are its tabs, on the same tone as the content,
+   with no line between them. A folded pane takes no room at all, in the rail
+   and when the rail covers the centre: its ribbon icon is the only thing
+   that opens it. Only the centre shows horizontal tabs. */
+:root:not([data-mk-railtabs='horizontal']) [data-edge-panel-body] .wm-tabbar { display: none; }
+/* The ribbon's tab icons are the vertical tabs. The pane markers repeat
+   those icons at each pane's top edge, so they go; the line between the
+   panes stays. */
+:root:not([data-mk-railtabs='horizontal']) .wm-pane-marker { display: none; }
+/* Without a tab bar, a left-rail pane's content starts one gap down, level
+   with the top of the cards beside it. The right rail's content is in a
+   card already. */
+:root:not([data-mk-railtabs='horizontal']) [data-testid='edge-host-left'] [data-edge-panel-body] .wm-pane { padding-top: var(--mk-gap); }
+:root:not([data-mk-railtabs='horizontal']) [data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]),
+:root:not([data-mk-railtabs='horizontal']) [data-edge-panel-body] .wm-splitter:has(+ div > .wm-pane[data-pane-collapsed]),
+:root:not([data-mk-railtabs='horizontal']) [data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]) + .wm-splitter { display: none; }
+
+/* Buttons are the icon only: no fill and no corner. The pointer and the
+   pressed state change the icon colour. */
+.wm-ribbon-btn,
+.wm-ribbon-tab,
+.mk-railbtn,
+.wm-tabbar-btn,
+.mk-iconbtn { position: relative; isolation: isolate; background: transparent !important; border-radius: 0; color: var(--cru-color-muted-dark); }
+:is(.wm-ribbon-btn, .mk-railbtn, .wm-tabbar-btn, .mk-iconbtn):hover { color: var(--cru-color-ink); }
+.mk-railbtn[aria-pressed='true'],
+.mk-iconbtn[aria-pressed='true'] { color: var(--cru-color-primary); }
+.mk-seg { background: transparent; padding: 0; gap: 0; }
+.mk-seg button { background: transparent !important; border-radius: 0; color: var(--cru-color-muted-dark); }
+.mk-seg button:hover { color: var(--cru-color-ink); }
+.mk-seg button[aria-pressed='true'] { color: var(--cru-color-ink); }
+
+/* ONE tab system, for the vertical tabs (the rail ribbons) and the
+   horizontal tabs (the centre tab bar). Every pane owns one opaque tone,
+   `--mk-pane-bg`. Its tab strip is `--mk-strip`, one step off that tone.
+   An inactive tab has no fill: it is the strip, and only its icon or label
+   shows. The open tab is a cutout of EXACTLY the pane tone, joined to the
+   pane with no gap and no line, with an inverted curve at each foot. The
+   cutout is the only difference between the two orientations.
+
+   Opaque, because a translucent tone over two different layers (the strip
+   under the cutout, the card under the pane) gives two colours. The rail
+   pane views paint no tone of their own. The ribbon's 1px border and the
+   rail's resize handle sit between the tab and the pane, so both take the
+   pane tone. `data-highlighted` / `data-active` are the core's states. */
+[data-testid='edge-host-left'] { --mk-pane-bg: var(--mk-nav-solid); }
+[data-testid='edge-host-right'] { --mk-pane-bg: var(--mk-nav-solid); }
+:root[data-mk-darkpanes] [data-testid='edge-host-right'] { --mk-pane-bg: var(--mk-main-solid); }
+[data-testid='centre-column'] { --mk-pane-bg: var(--mk-main-solid); }
+:is([data-testid^='edge-host-'], [data-testid='centre-column']) {
+  --mk-strip: var(--mk-nav-solid);
+  --mk-foot: 8px;
+}
+[data-edge-panel-body] .wm-pane { background: var(--mk-pane-bg); }
+/* Every MAIN region rounds its own corners where it meets NAV. A rail pane
+   in the card is one region; in the centre, the region is the content under
+   the tab strip (the strip itself is NAV). */
+:root[data-mk-darkpanes] [data-testid='edge-host-right'] [data-edge-panel-body] .wm-pane { border-radius: var(--mk-radius); }
+[data-testid='centre-column'] .wm-pane { background: transparent; }
+[data-testid='centre-column'] .wm-pane > .wm-tabbar + * {
+  background: var(--mk-pane-bg);
+  border-radius: var(--mk-radius) var(--mk-radius) 0 0;
+}
+/* Side by side, only the outer corners round: the corners that meet the
+   line between the two panes stay square, as in the left rail's split. */
+[data-testid='centre-column'] div:has(+ .wm-splitter.w-px) > .wm-pane > .wm-tabbar + * { border-top-right-radius: 0; }
+[data-testid='centre-column'] .wm-splitter.w-px + div > .wm-pane > .wm-tabbar + * { border-top-left-radius: 0; }
+/* The rail handle is NAV in the card, so the pane corner beside it shows. */
+:root:root[data-mk-darkpanes] [data-testid='edge-host-right'][data-ribbon-placement='panel'] .wm-edge-handle:not(:hover):not([data-dragging]) { background: transparent; }
+.wm-pane :is(.mk-session, .mk-body, .mk-term) { background: transparent; }
+.wm-ribbon { background: var(--mk-strip); border-color: transparent !important; }
+:root:root [data-ribbon-placement='panel'] .wm-edge-handle:not(:hover):not([data-dragging]) { /* Beats the line rules below. */ background: var(--mk-pane-bg); }
+
+/* Vertical tabs. */
+.wm-ribbon-tab { color: var(--cru-color-muted-dark); }
+.wm-ribbon-tab:hover { color: var(--cru-color-ink); }
+.wm-ribbon-tab[data-highlighted] { color: var(--cru-color-ink); }
+.wm-ribbon-tab[data-highlighted]::before,
+.wm-ribbon-tab[data-highlighted]::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+.wm-ribbon-tab[data-highlighted]::before { background: var(--mk-pane-bg); top: 3px; bottom: 3px; }
+.wm-ribbon-tab[data-highlighted]::after { width: var(--mk-foot); top: calc(3px - var(--mk-foot)); bottom: calc(3px - var(--mk-foot)); }
+/* The pane on the left of the ribbon (left rail inside, right rail at edge).
+   The cutout runs over the ribbon's 1px border and the 1px handle to the pane. */
+:is([data-testid='edge-host-left'][data-ribbon-placement='panel'], [data-testid='edge-host-right'][data-ribbon-placement='edge']) .wm-ribbon-tab[data-highlighted]::before {
+  left: -2px; right: 5px; border-radius: 0 8px 8px 0;
+}
+:is([data-testid='edge-host-left'][data-ribbon-placement='panel'], [data-testid='edge-host-right'][data-ribbon-placement='edge']) .wm-ribbon-tab[data-highlighted]::after {
+  left: -2px;
+  background:
+    radial-gradient(circle at 100% 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) top / var(--mk-foot) var(--mk-foot) no-repeat,
+    radial-gradient(circle at 100% 100%, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) bottom / var(--mk-foot) var(--mk-foot) no-repeat;
+}
+/* The pane on the right of the ribbon (right rail inside, left rail at edge). */
+:is([data-testid='edge-host-right'][data-ribbon-placement='panel'], [data-testid='edge-host-left'][data-ribbon-placement='edge']) .wm-ribbon-tab[data-highlighted]::before {
+  right: -2px; left: 5px; border-radius: 8px 0 0 8px;
+}
+:is([data-testid='edge-host-right'][data-ribbon-placement='panel'], [data-testid='edge-host-left'][data-ribbon-placement='edge']) .wm-ribbon-tab[data-highlighted]::after {
+  right: -2px;
+  background:
+    radial-gradient(circle at 0 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) top / var(--mk-foot) var(--mk-foot) no-repeat,
+    radial-gradient(circle at 0 100%, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) bottom / var(--mk-foot) var(--mk-foot) no-repeat;
+}
+
+/* The left rail. Its icon strip takes a third shade, half-way between NAV
+   and MAIN, so the icons read apart from the list beside them; the open
+   tab's cutout is still exactly the pane tone. The split between the top
+   and bottom pane is a MAIN line with room on both sides, and it runs on
+   across the icon strip. */
+[data-testid='edge-host-left'] { --mk-strip: color-mix(in oklab, var(--mk-nav-solid), var(--mk-main-base) 45%); }
+/* The split is a gap in the strip colour, not a line: the icon strip runs on
+   into it across the pane. The panes round only their corners on the strip
+   side, so the gap flows out of the strip; on the document side the gap
+   ends in a round cap at the pane's right edge. */
+/* The strip colour sits behind the panes only in the corner zone on the strip
+   side, so the rounded pane corners there show it. The gap itself is the
+   splitter, in the strip colour, with a round cap on the document side. */
+[data-testid='edge-host-left'] [data-edge-panel-body] > div {
+  background: linear-gradient(to right, var(--mk-strip) var(--mk-radius), transparent var(--mk-radius));
+}
+[data-testid='edge-host-left'] [data-edge-panel-body] .wm-splitter { height: 6px; border-radius: 0 3px 3px 0; }
+[data-testid='edge-host-left'] [data-edge-panel-body] .wm-splitter:not([data-dragging]) { background: var(--mk-strip); }
+[data-testid='edge-host-left'] [data-edge-panel-body] div:has(+ .wm-splitter) .wm-pane { border-radius: 0 0 0 var(--mk-radius); }
+/* The lower pane's tab joins it at its top-left corner, so that corner is
+   square, and the cutout starts flush with the pane's top edge, under the
+   gap, with no top foot. The gap then runs straight across the strip, the
+   tab and the pane. */
+[data-testid='edge-host-left'] [data-edge-panel-body] .wm-splitter + div .wm-pane { border-radius: 0; }
+[data-testid='edge-host-left'] .wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::before { top: 0; border-top-right-radius: 0; }
+[data-testid='edge-host-left'] .wm-ribbon-trailing .wm-ribbon-tab[data-highlighted]::after {
+  background: radial-gradient(circle at 0 100%, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)) bottom / var(--mk-foot) var(--mk-foot) no-repeat;
+}
+[data-testid='edge-host-left'] .wm-pane-boundary:not(:hover):not([data-dragging]) { background: transparent; }
+
+/* The left rail's lower pane shows its icons at its own top edge, just under
+   the split, from the geometry the ribbon publishes. The clamp keeps them
+   clear of the upper icons and of the pinned tail. */
+[data-testid='edge-host-left'] .wm-ribbon-trailing {
+  position: absolute;
+  inset-inline: 0;
+  top: clamp(var(--wm-ribbon-ceiling), var(--wm-trailing-pane-top), calc(var(--wm-ribbon-floor) - var(--wm-ribbon-trailing-height)));
+}
+[data-testid='edge-host-left'] .wm-ribbon-tail { margin-top: auto; }
+
+/* Left list rows: a little in from both pane edges, rounded, with less
+   padding inside. A selected row then never touches the edge where the open
+   tab joins the pane. */
+[data-testid='edge-host-left'] :is(.mk-srow, .mk-trow, .mk-rootrow) {
+  width: calc(100% - 12px);
+  margin-inline: 6px;
+  border-radius: 6px;
+}
+[data-testid='edge-host-left'] .mk-srow { padding: 0 6px; }
+[data-testid='edge-host-left'] .mk-trow { padding-right: 6px; }
+[data-testid='edge-host-left'] .mk-rootrow { padding: 0 4px; }
+[data-testid='edge-host-left'] .mk-grouplabel { padding-inline: 12px; }
+
+/* The right pane starts level with the top of the document tabs, which sit
+   6px down in their strip. */
+:root:root:root [data-testid='edge-host-right'] [data-edge-panel-body] > div { margin-top: calc(var(--mk-gap) + 6px); }
+
+/* Popouts take the main tone. */
+.wm-floating { --color-shell-bg: transparent; background: var(--mk-main); }
+.mk-pop { background: var(--mk-main); }
+
+/* Back and forward, before the path. A button that cannot act fades. */
+.mk-nav { display: flex; }
+.mk-iconbtn:disabled { opacity: 0.35; cursor: default; }
+
+/* Lines: one width (1px) and one colour (`--mk-line`). A split always shows
+   its line, because each side of it has its own tabs. The toolbox's inner
+   lines add the tab bars, the headers and the rail edges. The edge between a
+   rail's tabs (the ribbon) and its content never draws a line. A line always
+   shows under the pointer and while it drags. */
+:root { --mk-line: var(--mk-nav-solid); }
+[data-testid='edge-host-left'] { --mk-line: var(--mk-main-solid); }
+.wm-pane-boundary { height: 1px; top: 0; }
+.wm-splitter:not(:hover):not([data-dragging]) { background: var(--mk-line); }
+/* The ribbon is one strip: the split line of its panes stops at the pane
+   edge, so it does not break across the handle into the ribbon. It still
+   shows under the pointer and while it drags. */
+.wm-pane-boundary:not(:hover):not([data-dragging]) { background: transparent; }
+:root:not([data-mk-lines]) :is(.wm-ribbon, .wm-ribbon-toggle, .wm-pane-marker, .wm-tabbar, .mk-crumbbar, .mk-shead) { border-color: transparent; }
+:root:not([data-mk-lines]) .wm-edge-handle:not(:hover):not([data-dragging]) { background: transparent; }
+:root[data-mk-lines] :is(.wm-ribbon-toggle, .wm-pane-marker, .wm-tabbar, .mk-crumbbar, .mk-shead) { border-color: var(--mk-line); }
+:root[data-mk-lines] [data-ribbon-placement='edge'] .wm-ribbon { border-color: var(--mk-line); }
+:root[data-mk-lines] [data-ribbon-placement='edge'] .wm-edge-handle:not(:hover):not([data-dragging]) { background: var(--mk-line); }
+[data-ribbon-placement='panel'] .wm-ribbon { border-color: transparent; }
+
+/* Flat tabs (the default): the tab bar shares the content's tone, with no
+   line under it. The open tab is a rounded fill, in the same button language
+   as the ribbon; the others are plain labels. */
+:root[data-mk-tabs='flat'] .wm-tabbar { background: transparent; border-bottom-color: transparent; }
+:root[data-mk-tabs='flat'] .wm-tabstrip { gap: 2px; padding-inline: 8px; }
+:root[data-mk-tabs='flat'] .wm-tab {
+  margin: 0;
+  height: 28px;
+  border-radius: 8px;
+  outline: none;
+  background: transparent;
+  color: var(--cru-color-muted);
+}
+:root[data-mk-tabs='flat'] .wm-tab:not([data-active]):hover { background: var(--mk-btn); color: var(--cru-color-ink); }
+:root[data-mk-tabs='flat'] .wm-tab[data-active] { background: var(--mk-btn-hover); color: var(--cru-color-ink); }
+:root[data-mk-tabs='flat'] .wm-tab[data-active]:not([data-focused]) { background: var(--mk-btn); color: var(--cru-color-body); }
+
+/* Leaf tabs, as in Obsidian: the horizontal form of the one tab system
+   above. The tab bar is the strip; an inactive tab is only its label; the
+   open tab is the pane-tone cutout, joined to the pane, with a foot on each
+   side. The left rail, in the horizontal rail-tab option, keeps quiet labels. */
+:root[data-mk-tabs='leaf'] .wm-tabbar { background: var(--mk-strip); border-bottom-width: 0; }
+/* No bottom border: a transparent border still shows the strip, as a 1px
+   row between the cutout and the pane. The bar keeps its 36px height. */
+:root[data-mk-tabs='leaf'] .wm-tabstrip { gap: 0; padding-inline: calc(var(--mk-radius) + var(--mk-foot)); align-self: stretch; }
+:root[data-mk-tabs='leaf'] .wm-tab {
+  isolation: isolate;
+  margin: 6px 0 0;
+  padding-block: 0;
+  height: 30px;
+  align-self: flex-end;
+  border-radius: 8px 8px 0 0;
+  outline: none;
+  background: transparent;
+  color: var(--cru-color-muted);
+}
+:root[data-mk-tabs='leaf'] .wm-tab:not([data-active]):hover { background: transparent; color: var(--cru-color-ink); }
+:root[data-mk-tabs='leaf'] .wm-tab[data-active] { background: var(--mk-pane-bg); color: var(--cru-color-ink); }
+:root[data-mk-tabs='leaf'] .wm-tab[data-active]:not([data-focused]) { color: var(--cru-color-body); }
+:root[data-mk-tabs='leaf'] .wm-tab[data-active]::before,
+:root[data-mk-tabs='leaf'] .wm-tab[data-active]::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: var(--mk-foot);
+  height: var(--mk-foot);
+  pointer-events: none;
+}
+:root[data-mk-tabs='leaf'] .wm-tab[data-active]::before {
+  left: calc(-1 * var(--mk-foot));
+  background: radial-gradient(circle at 0 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot));
+}
+:root[data-mk-tabs='leaf'] .wm-tab[data-active]::after {
+  right: calc(-1 * var(--mk-foot));
+  background: radial-gradient(circle at 100% 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot));
+}
+:root[data-mk-tabs='leaf'] [data-testid='edge-host-left'] .wm-tab { height: 26px; margin: 5px 2px; align-self: center; border-radius: 6px; }
+:root[data-mk-tabs='leaf'] [data-testid='edge-host-left'] .wm-tab::before,
+:root[data-mk-tabs='leaf'] [data-testid='edge-host-left'] .wm-tab::after { display: none; }
+
+/* ------------------------------------------------------ 4. glass material
  * `:root[data-material='glass']`. Every rule here is either a `--cru-*`
  * value (translucent surfaces over a gradient ground) or a mockup-body rule.
- * The few core selectors (`[data-window-id]`) mark what a real material
+ * The few core selectors (`.wm-floating`) mark what a real material
  * would need as TOKENS: a blur, an edge highlight and a grain opacity.
  */
 :root[data-material='glass'] {
-  /* Chrome (root, rails, ribbons, tab bars) stacks this value 2-3 times,
-     so it stays thin: the ground shows through the chrome. Reading surfaces
-     use shell-panel, which stays near-opaque for contrast. */
-  --cru-color-shell-bg: rgba(18, 19, 23, 0.32);
-  --cru-color-shell-panel: rgba(24, 25, 30, 0.86);
-  --cru-color-surface-base: rgba(25, 26, 31, 0.7);
-  --cru-color-surface-elevated: rgba(44, 45, 53, 0.66);
-  --cru-color-surface-overlay: rgba(32, 33, 40, 0.68);
+  /* Only the ribbons and the cards paint a tone; the shell behind them is
+     clear, so the ground shows through once, not through stacked layers. */
+  --mk-main: color-mix(in oklab, var(--mk-main-solid) 86%, transparent);
+  --mk-nav: color-mix(in oklab, var(--mk-nav-solid) 55%, transparent);
   --cru-color-control: rgba(255, 255, 255, 0.07);
   --cru-color-hairline: rgba(255, 255, 255, 0.055);
   --cru-color-hairline-strong: rgba(255, 255, 255, 0.1);
   --mk-glass-blur: blur(22px) saturate(1.6);
   --mk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
-  --mk-grain-opacity: 0.07;
+  --mk-grain-opacity: 0.045;
   --mk-grain-blend: overlay;
   --mk-ground:
-    radial-gradient(900px 620px at 8% 0%, rgba(110, 158, 240, 0.42), transparent 64%),
-    radial-gradient(860px 600px at 96% 100%, rgba(177, 148, 236, 0.36), transparent 64%),
-    radial-gradient(640px 440px at 55% 60%, rgba(107, 191, 187, 0.10), transparent 70%),
-    #0a0b0e;
+    radial-gradient(1000px 700px at 6% 0%, rgba(120, 150, 210, 0.12), transparent 70%),
+    radial-gradient(900px 640px at 98% 100%, rgba(160, 140, 210, 0.09), transparent 70%),
+    #0c0d10;
 }
 :root[data-material='glass'][data-theme='light'] {
-  --cru-color-shell-bg: rgba(238, 240, 244, 0.34);
-  --cru-color-shell-panel: rgba(252, 252, 253, 0.88);
-  --cru-color-surface-base: rgba(252, 252, 253, 0.72);
-  --cru-color-surface-elevated: rgba(255, 255, 255, 0.74);
-  --cru-color-surface-overlay: rgba(255, 255, 255, 0.72);
   --cru-color-control: rgba(20, 22, 28, 0.06);
   --cru-color-hairline: rgba(20, 22, 28, 0.07);
   --cru-color-hairline-strong: rgba(20, 22, 28, 0.13);
   --mk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(20, 22, 28, 0.04);
-  --mk-grain-opacity: 0.05;
+  --mk-grain-opacity: 0.035;
   --mk-grain-blend: soft-light;
   --mk-ground:
-    radial-gradient(900px 620px at 8% 0%, rgba(46, 98, 200, 0.26), transparent 64%),
-    radial-gradient(860px 600px at 96% 100%, rgba(106, 79, 176, 0.22), transparent 64%),
-    #e4e7ee;
+    radial-gradient(1000px 700px at 6% 0%, rgba(60, 100, 180, 0.08), transparent 70%),
+    radial-gradient(900px 640px at 98% 100%, rgba(110, 90, 170, 0.06), transparent 70%),
+    #e7e8ec;
 }
 
 /* The ground the translucent shell shows through. */
@@ -338,79 +726,37 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Rail bodies catch a faint sheen from the top edge. */
-:root[data-material='glass'] [data-edge-panel-body] {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 42%);
-}
-:root[data-material='glass'][data-theme='light'] [data-edge-panel-body] {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 42%);
-}
-
-/* The working surfaces float as cards over the ground: the centre, and the
-   session rail. The gaps between them show the ground. A real version needs
-   two tokens the contract lacks: a shell gap and a shell radius. */
-:root[data-material='glass'] [data-testid='centre-column'] > div,
-:root[data-material='glass'] [data-testid='edge-host-right'] [data-edge-panel-body] {
-  margin: 6px 6px 6px 0;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--cru-color-hairline-strong);
-  background: var(--cru-color-shell-panel);
-  box-shadow: var(--mk-glass-edge), 0 18px 48px -20px rgba(0, 0, 0, 0.7);
-}
-:root[data-material='glass'][data-theme='light'] [data-testid='centre-column'] > div,
-:root[data-material='glass'][data-theme='light'] [data-testid='edge-host-right'] [data-edge-panel-body] {
-  box-shadow: var(--mk-glass-edge), 0 18px 48px -24px rgba(20, 22, 28, 0.28);
-}
-:root[data-material='glass'] [data-testid='edge-host-right'] [data-edge-panel-body] { margin-left: 0; }
-/* Inside a card, the tab bars take the card's own ground. */
-:root[data-material='glass'] [data-testid='centre-column'] > div,
-:root[data-material='glass'] [data-testid='edge-host-right'] [data-edge-panel-body] { --cru-color-shell-bg: transparent; }
-
 /* Floating layers are frosted: windows (peek, hover editor), popovers, the permission card. */
-:root[data-material='glass'] [data-window-id],
+:root[data-material='glass'] .wm-floating,
 :root[data-material='glass'] .mk-pop,
+:root[data-material='glass'] .mk-toolbox,
 :root[data-material='glass'] .mk-perm {
   backdrop-filter: var(--mk-glass-blur);
   -webkit-backdrop-filter: var(--mk-glass-blur);
   box-shadow: var(--mk-glass-edge), 0 24px 60px -18px rgba(0, 0, 0, 0.6);
 }
-:root[data-material='glass'][data-theme='light'] [data-window-id],
+:root[data-material='glass'][data-theme='light'] .wm-floating,
 :root[data-material='glass'][data-theme='light'] .mk-pop,
 :root[data-material='glass'][data-theme='light'] .mk-perm { box-shadow: var(--mk-glass-edge), 0 24px 60px -20px rgba(20, 22, 28, 0.25); }
 
-/* The composer is a frosted capsule; focus draws a gradient ring. */
+/* The composer is a frosted capsule; focus draws a quiet ring. */
 :root[data-material='glass'] .mk-composer {
   backdrop-filter: var(--mk-glass-blur);
   -webkit-backdrop-filter: var(--mk-glass-blur);
   box-shadow: var(--mk-glass-edge);
 }
 :root[data-material='glass'] .mk-composer:focus-within {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--cru-color-shell-panel), var(--cru-color-shell-panel)) padding-box,
-    linear-gradient(120deg, var(--cru-color-primary), var(--cru-color-precog) 55%, var(--cru-color-canvas-cyan)) border-box;
-  box-shadow: var(--mk-glass-edge), 0 0 0 4px color-mix(in srgb, var(--cru-color-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--cru-color-primary) 45%, transparent);
+  box-shadow: var(--mk-glass-edge), 0 0 0 3px color-mix(in srgb, var(--cru-color-primary) 10%, transparent);
 }
 
-/* Actions: a lit top edge and a short vertical gradient. */
+/* Actions: a lit top edge on a flat fill. */
 :root[data-material='glass'] .mk-btn.primary,
 :root[data-material='glass'] .mk-send:not(:disabled):not(.queue) {
-  background: linear-gradient(180deg, var(--cru-color-primary-hover), var(--cru-color-primary) 70%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px -6px color-mix(in srgb, var(--cru-color-primary) 70%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 :root[data-material='glass'] .mk-btn:not(.primary):not(.ghost) { box-shadow: var(--mk-glass-edge); }
 
-/* Selection and attention read as light falling from the left. */
-:root[data-material='glass'] .mk-srow[aria-current='true'] {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--cru-color-primary) 24%, transparent), color-mix(in srgb, var(--cru-color-primary) 6%, transparent) 85%);
-}
-:root[data-material='glass'] .mk-hhead {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--cru-color-attention) 16%, transparent), color-mix(in srgb, var(--cru-color-attention) 4%, transparent));
-}
-:root[data-material='glass'] .mk-queued {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--cru-color-primary) 12%, transparent), color-mix(in srgb, var(--cru-color-primary) 3%, transparent));
-}
 :root[data-material='glass'] .mk-bubble { box-shadow: var(--mk-glass-edge); }
 :root[data-material='glass'] .mk-props,
 :root[data-material='glass'] .mk-chunk { box-shadow: var(--mk-glass-edge); }
@@ -418,3 +764,6 @@
 /* The expand morph: one short cross-fade of the whole row. */
 ::view-transition-old(root),
 ::view-transition-new(root) { animation-duration: 220ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* The tab menu takes focus when it opens; the menu itself shows no ring. */
+[data-scope='menu'][data-part='content'] { outline: none; }

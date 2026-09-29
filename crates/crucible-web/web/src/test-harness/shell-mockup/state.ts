@@ -120,6 +120,12 @@ const [state, setState] = createStore({
   /** The note a composer carries as context, unless the user removed it. */
   ctxOff: {} as Record<string, boolean>,
   theme: 'dark' as 'dark' | 'light',
+  /** Which kind opens in the centre. The ribbon's swap button sets it; it
+      moves nothing that is already open. */
+  spawn: 'docs' as 'docs' | 'sessions',
+  /** Each document tab's history, as in a web browser: the paths it showed,
+      and the one it shows now. A tab without an entry has not moved yet. */
+  history: {} as Record<string, { stack: string[]; at: number }>,
 });
 
 export { state, setState };

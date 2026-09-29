@@ -4,12 +4,13 @@
  */
 import { For, Show, createSignal, type Component, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { Bell, Contrast, Plus, Search, Settings } from 'lucide-solid';
+import { ArrowLeftRight, Bell, Contrast, Plus, Search, Settings, SlidersHorizontal } from 'lucide-solid';
 import { RibbonCommand } from '@/windowing/components/RibbonButton';
 import type { WindowingSlots } from '@/windowing/components/context';
 import type { EdgePanelPosition } from '@/windowing/model/types';
 import { windowActions, windowStore } from '@/windowing/store';
 import { answerPermission, pendingHunks, setState, state } from './state';
+import { Toolbox, setTweak, toggleToolbox, tweaks } from './toolbox';
 import { openChanges } from './actions';
 
 type Pop = 'inbox' | 'settings' | null;
@@ -47,42 +48,6 @@ const Popover: Component<{ kind: Exclude<Pop, null>; children: JSX.Element }> = 
 const waiting = () =>
   Object.keys(state.perms).length +
   Object.keys(state.sessions).filter((sid) => !state.perms[sid] && pendingHunks(sid).length).length;
-
-const PLUGIN_CSS: Record<string, string> = {
-  none: '',
-  docs: `:root { --cru-color-primary:#3a7fe0; --cru-color-primary-hover:#5e9bf0; --cru-color-primary-active:#2e63b4; --cru-color-on-primary:#0b0f17; --cru-radius-control:0px; --cru-radius-card:2px; --cru-radius-composer:4px; }
-:root[data-theme='light'] { --cru-color-primary:#1f4a91; --cru-color-primary-hover:#17376d; --cru-color-primary-active:#102850; --cru-color-on-primary:#ffffff; }`,
-};
-const [plugin, setPlugin] = createSignal('none');
-
-/**
- * Glass or flat. Glass is the default, except where the OS asks for less
- * transparency: then the flat surfaces stay.
- */
-const [material, setMaterialSignal] = createSignal<'glass' | 'flat'>(
-  matchMedia('(prefers-reduced-transparency: reduce)').matches ? 'flat' : 'glass',
-);
-export function applyMaterial(m: 'glass' | 'flat' = material()) {
-  setMaterialSignal(m);
-  document.documentElement.dataset.material = m;
-}
-function applyPlugin(id: string) {
-  setPlugin(id);
-  let el = document.getElementById('mk-plugin-theme');
-  if (!el) {
-    el = document.createElement('style');
-    el.id = 'mk-plugin-theme';
-    document.head.append(el);
-  }
-  el.textContent = PLUGIN_CSS[id] ?? '';
-}
-
-function setTheme(theme: 'dark' | 'light') {
-  setState('theme', theme);
-  // The app's rule: dark writes no attribute.
-  if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
-  else document.documentElement.removeAttribute('data-theme');
-}
 
 const InboxBody: Component = () => (
   <div class="mk-inbox">
@@ -129,24 +94,6 @@ const SettingsBody: Component = () => (
         <small>Off: only its toggle ends it (Shift+Esc).</small>
       </span>
     </label>
-    <div class="mk-ph">Surface</div>
-    <For each={[['glass', 'Glass: gradient, blur and grain'], ['flat', 'Flat']] as const}>
-      {([id, label]) => (
-        <label class="mk-check">
-          <input type="radio" name="mk-material" checked={material() === id} onChange={() => applyMaterial(id)} />
-          <span>{label}</span>
-        </label>
-      )}
-    </For>
-    <div class="mk-ph">Plugin stylesheet</div>
-    <For each={[['none', 'None'], ['docs', 'Docs example: blue, square']] as const}>
-      {([id, label]) => (
-        <label class="mk-check">
-          <input type="radio" name="mk-plugin" checked={plugin() === id} onChange={() => applyPlugin(id)} />
-          <span>{label}</span>
-        </label>
-      )}
-    </For>
   </div>
 );
 
@@ -166,10 +113,25 @@ export function mockSlots(onNewSession: () => void, onSearch: () => void): Windo
             <Bell class="w-4 h-4" />
             <Show when={waiting()}><span class="mk-badge">{waiting()}</span></Show>
           </button>
-          <RibbonCommand title="Switch theme" testId="mk-theme" onClick={() => setTheme(state.theme === 'dark' ? 'light' : 'dark')}><Contrast class="w-4 h-4" /></RibbonCommand>
+          <RibbonCommand title="Switch theme" testId="mk-theme" onClick={() => setTweak('theme', tweaks.theme === 'dark' ? 'light' : 'dark')}><Contrast class="w-4 h-4" /></RibbonCommand>
+          <RibbonCommand title="Look" testId="mk-look" onClick={toggleToolbox}><SlidersHorizontal class="w-4 h-4" /></RibbonCommand>
+          {/* The swap button: it swaps what opens in the centre, and moves
+              nothing. The core's own swap button (it swaps the rails) is
+              hidden by the mockup stylesheet. */}
+          <button
+            type="button"
+            class="mk-railbtn"
+            data-testid="mk-spawn"
+            aria-pressed={state.spawn === 'sessions'}
+            title={state.spawn === 'docs' ? 'Documents open in the centre. Switch: sessions open there' : 'Sessions open in the centre. Switch: documents open there'}
+            onClick={() => setState('spawn', state.spawn === 'docs' ? 'sessions' : 'docs')}
+          >
+            <ArrowLeftRight class="w-4 h-4" />
+          </button>
           <button type="button" class="mk-railbtn" title="Settings" onClick={(e) => openPop('settings', e)}><Settings class="w-4 h-4" /></button>
           <Popover kind="inbox"><InboxBody /></Popover>
           <Popover kind="settings"><SettingsBody /></Popover>
+          <Toolbox />
         </>
       ) : undefined,
   };
