@@ -109,7 +109,7 @@ pub mod workspace_targets;
 pub use acp_handle::{AcpAgentHandle, AcpHandleError};
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
 pub use agent_manager::{AgentError, AgentManager, AgentManagerParams};
-pub use background_manager::{BackgroundError, BackgroundJobManager};
+pub use background_manager::BackgroundJobManager;
 pub use daemon_plugins::{
     bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
     BootstrapOutcome, DaemonPluginLoader,
@@ -125,7 +125,7 @@ pub use observe::{
     load_transcript, render_to_markdown, transcript_of_log, transcript_summary, LogEvent,
     RenderOptions, SessionId, SessionIdError, SessionLogLine, SessionType, TokenUsage,
 };
-pub use project_manager::{ProjectError, ProjectManager};
+pub use project_manager::ProjectManager;
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use recording::{RecordedEvent, RecordingFooter, RecordingHeader};
 pub use rpc_client::{rpc_error_message, ChatResultExt, DaemonNoteStore, DaemonStorageClient};
@@ -148,8 +148,8 @@ pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
 pub use skills::{
-    format_skills_for_context, FolderDiscovery, ResolvedSkill, SearchPath, Skill, SkillError,
-    SkillParser, SkillResult, SkillScope, SkillSource,
+    format_skills_for_context, FolderDiscovery, ResolvedSkill, SearchPath, Skill, SkillParser,
+    SkillScope, SkillSource,
 };
 pub use subscription::{ClientId, SubscriptionManager};
 pub use tools::grep_engine::{GrepHit, GrepSearchResponse};

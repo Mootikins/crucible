@@ -57,7 +57,6 @@
 //!
 //! Non-`.toml` files and hidden files (starting with `.`) are ignored.
 //!
-mod error;
 mod merge;
 mod path;
 mod process;
@@ -66,6 +65,5 @@ mod reference;
 #[cfg(all(test, feature = "toml"))]
 mod tests;
 
-pub use error::IncludeError;
 #[cfg(feature = "toml")]
 pub use process::process_file_references;

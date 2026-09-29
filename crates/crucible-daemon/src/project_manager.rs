@@ -6,6 +6,7 @@
 
 use crate::kiln_registry::KilnRegistry;
 use crate::registry_store::RegistryStore;
+use anyhow::{anyhow, bail, Result};
 use crucible_core::config::{read_kiln_config, read_project_config};
 use crucible_core::{Project, ProjectKiln, RepositoryInfo};
 use dashmap::DashMap;
@@ -209,13 +210,13 @@ impl ProjectManager {
     ///
     /// `path` is compared through the registry's own reverse index, so both
     /// spellings of a directory (configured and symlink-resolved) match.
-    fn kiln_root_refusal(&self, path: &Path) -> Option<ProjectError> {
+    fn kiln_root_refusal(&self, path: &Path) -> Option<anyhow::Error> {
         let name = self.kiln_registry.as_ref()?.name_for(path)?;
-        Some(ProjectError::InvalidPath(format!(
-            "{} is the root of the kiln '{name}', not a project: a kiln is where \
+        Some(anyhow!(
+            "Invalid path: {} is the root of the kiln '{name}', not a project: a kiln is where \
              knowledge goes, a project is where work goes",
             path.display()
-        )))
+        ))
     }
 
     /// Where the registry lives. Named in diagnostics.
@@ -228,29 +229,23 @@ impl ProjectManager {
     /// Every writer goes through here, so the version gate cannot be skipped
     /// by a new call site, and no mutation can read the file, decide, and then
     /// write with another writer in between.
-    fn update_file<R>(
-        &self,
-        mutate: impl FnOnce(&mut ProjectStateFile) -> R,
-    ) -> Result<R, ProjectError> {
+    fn update_file<R>(&self, mutate: impl FnOnce(&mut ProjectStateFile) -> R) -> Result<R> {
         let file = self.store.path().to_path_buf();
         self.store
             .update(|state| {
                 *state = gate_version(std::mem::take(state), &file)?;
                 Ok(mutate(state))
             })
-            .map_err(|e| ProjectError::Storage(e.to_string()))
+            .map_err(|e| anyhow!("{e}"))
     }
 
-    pub fn register(&self, path: &Path) -> Result<Project, ProjectError> {
+    pub fn register(&self, path: &Path) -> Result<Project> {
         let canonical = path
             .canonicalize()
-            .map_err(|_| ProjectError::InvalidPath(path.display().to_string()))?;
+            .map_err(|_| anyhow!("Invalid path: {}", path.display()))?;
 
         if !canonical.is_dir() {
-            return Err(ProjectError::InvalidPath(format!(
-                "Not a directory: {}",
-                canonical.display()
-            )));
+            bail!("Invalid path: Not a directory: {}", canonical.display());
         }
 
         // `.crucible` directories are Crucible data/config dirs (kiln or
@@ -258,10 +253,10 @@ impl ProjectManager {
         // produces nonsense like a project named ".crucible" with a nested
         // ".crucible/.crucible" kiln.
         if canonical.file_name().is_some_and(|n| n == ".crucible") {
-            return Err(ProjectError::InvalidPath(format!(
-                "{} is a Crucible data directory, not a project",
+            bail!(
+                "Invalid path: {} is a Crucible data directory, not a project",
                 canonical.display()
-            )));
+            );
         }
 
         let repository = self.detect_repository(&canonical);
@@ -288,10 +283,10 @@ impl ProjectManager {
                     "Resolving project registration to repository root"
                 );
                 repo.root.canonicalize().map_err(|_| {
-                    ProjectError::InvalidPath(format!(
-                        "Repository root does not resolve: {}",
+                    anyhow!(
+                        "Invalid path: Repository root does not resolve: {}",
                         repo.root.display()
-                    ))
+                    )
                 })?
             }
             _ => canonical,
@@ -303,10 +298,7 @@ impl ProjectManager {
         // actually ended up. `canonical` is a canonicalized path, so a symlink
         // cannot present an innocent name for a forbidden target.
         if let Some(why) = forbidden_root_reason(&canonical, dirs::home_dir().as_deref()) {
-            return Err(ProjectError::ForbiddenRoot(format!(
-                "{} is not a valid project root: {why}",
-                canonical.display()
-            )));
+            bail!("{} is not a valid project root: {why}", canonical.display());
         }
         // Also on the FINAL path, and for the same reason: a kiln inside a
         // repository resolves to the repository, which is a project.
@@ -340,7 +332,7 @@ impl ProjectManager {
         Ok(project)
     }
 
-    pub fn register_if_missing(&self, path: &Path) -> Result<Project, ProjectError> {
+    pub fn register_if_missing(&self, path: &Path) -> Result<Project> {
         if let Some(existing) = self.get(path) {
             self.touch(path);
             return Ok(existing);
@@ -390,10 +382,10 @@ impl ProjectManager {
         added
     }
 
-    pub fn unregister(&self, path: &Path) -> Result<(), ProjectError> {
+    pub fn unregister(&self, path: &Path) -> Result<()> {
         let canonical = path
             .canonicalize()
-            .map_err(|_| ProjectError::NotFound(path.to_path_buf()))?;
+            .map_err(|_| anyhow!("Project not found: {}", path.display()))?;
 
         // The FILE decides whether there was anything to remove, and it
         // decides under the lock. The in-memory map can be missing an entry a
@@ -407,7 +399,7 @@ impl ProjectManager {
 
         self.projects.remove(&canonical);
         if !removed {
-            return Err(ProjectError::NotFound(canonical));
+            bail!("Project not found: {}", canonical.display());
         }
 
         info!(path = %canonical.display(), "Project unregistered");
@@ -606,13 +598,13 @@ impl ProjectManager {
         (name, kilns)
     }
 
-    fn load(&self) -> Result<(), ProjectError> {
+    fn load(&self) -> Result<()> {
         let file = self.store.path().to_path_buf();
         let state = self
             .store
             .read()
             .and_then(|state| gate_version(state, &file))
-            .map_err(|e| ProjectError::Storage(e.to_string()))?;
+            .map_err(|e| anyhow!("{e}"))?;
         let projects = state.projects;
         let home = dirs::home_dir();
 
@@ -663,30 +655,6 @@ impl ProjectManager {
         );
         Ok(())
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ProjectError {
-    #[error("Project not found: {0}")]
-    NotFound(PathBuf),
-
-    #[error("Invalid path: {0}")]
-    InvalidPath(String),
-
-    #[error("{0}")]
-    ForbiddenRoot(String),
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-
-    /// The registry file could not be read or written. Distinct from `Io`
-    /// because the message already names the file and says what to do about
-    /// it — a version gate's refusal is not an errno.
-    #[error("{0}")]
-    Storage(String),
 }
 
 /// Whether `path` is the top level of a git working tree.
@@ -783,7 +751,7 @@ path = "./notes"
             .with_kiln_registry(registry_naming(&tmp, &notes));
 
         let err = manager.register(&notes).unwrap_err();
-        assert!(matches!(err, ProjectError::InvalidPath(_)), "{err:?}");
+        assert!(err.to_string().starts_with("Invalid path"), "{err}");
         assert!(err.to_string().contains("kiln"), "{err}");
         // The auto-registration door a session opens.
         assert!(manager.register_if_missing(&notes).is_err());
@@ -868,7 +836,7 @@ path = "./notes"
         fs::create_dir(&data_dir).unwrap();
 
         let err = manager.register(&data_dir).unwrap_err();
-        assert!(matches!(err, ProjectError::InvalidPath(_)));
+        assert!(err.to_string().starts_with("Invalid path"), "{err}");
         assert!(manager.list().is_empty());
     }
 
@@ -885,7 +853,10 @@ path = "./notes"
         let (_tmp, manager) = test_manager();
 
         let err = manager.register(Path::new("/")).unwrap_err();
-        assert!(matches!(err, ProjectError::ForbiddenRoot(_)), "{err:?}");
+        assert!(
+            err.to_string().contains("is not a valid project root"),
+            "{err}"
+        );
         assert!(manager.list().is_empty());
     }
 
@@ -978,7 +949,10 @@ path = "./notes"
         std::os::unix::fs::symlink("/", &link).unwrap();
 
         let err = manager.register(&link).unwrap_err();
-        assert!(matches!(err, ProjectError::ForbiddenRoot(_)), "{err:?}");
+        assert!(
+            err.to_string().contains("is not a valid project root"),
+            "{err}"
+        );
         assert!(manager.list().is_empty());
     }
 
@@ -1260,7 +1234,7 @@ path = "./notes"
         // Registering the `.crucible` data dir is rejected outright, so the
         // list never grows a bogus ".crucible" project.
         let err = manager.register(&crucible_dir).unwrap_err();
-        assert!(matches!(err, ProjectError::InvalidPath(_)));
+        assert!(err.to_string().starts_with("Invalid path"), "{err}");
         let list = manager.list();
         assert_eq!(list.len(), 1);
         assert!(!list[0].path.ends_with(".crucible"));

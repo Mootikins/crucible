@@ -43,15 +43,18 @@ fn body_only_signature_covers_the_raw_body_alone() {
 fn correctly_signed_delivery_is_accepted() {
     let body = br#"{"event":"push"}"#;
     let header = sign(SECRET, NOW, body);
-    assert_eq!(store().verify_at("ci", stamped(&header), body, NOW), Ok(()));
+    assert_eq!(
+        refusal(store().verify_at("ci", stamped(&header), body, NOW)),
+        None
+    );
 }
 
 #[test]
 fn unsigned_delivery_is_refused() {
     let body = br#"{"event":"push"}"#;
     assert_eq!(
-        store().verify_at("ci", None, body, NOW),
-        Err(WebhookAuthError::MissingSignature)
+        refusal(store().verify_at("ci", None, body, NOW)),
+        Some("missing signature header".into())
     );
 }
 
@@ -60,8 +63,8 @@ fn wrong_signature_is_refused() {
     let body = br#"{"event":"push"}"#;
     let header = sign("not-the-configured-secret", NOW, body);
     assert_eq!(
-        store().verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::BadSignature)
+        refusal(store().verify_at("ci", stamped(&header), body, NOW)),
+        Some("signature does not match".into())
     );
 }
 
@@ -71,8 +74,8 @@ fn signature_from_another_body_is_refused() {
     // different payload.
     let header = sign(SECRET, NOW, br#"{"event":"push"}"#);
     assert_eq!(
-        store().verify_at("ci", stamped(&header), br#"{"event":"rm -rf"}"#, NOW),
-        Err(WebhookAuthError::BadSignature)
+        refusal(store().verify_at("ci", stamped(&header), br#"{"event":"rm -rf"}"#, NOW)),
+        Some("signature does not match".into())
     );
 }
 
@@ -88,8 +91,8 @@ fn signature_for_another_webhook_name_is_refused() {
     let body = br#"{"event":"push"}"#;
     let header = sign(SECRET, NOW, body);
     assert_eq!(
-        store.verify_at("deploy", stamped(&header), body, NOW),
-        Err(WebhookAuthError::BadSignature)
+        refusal(store.verify_at("deploy", stamped(&header), body, NOW)),
+        Some("signature does not match".into())
     );
 }
 
@@ -98,8 +101,8 @@ fn replayed_old_timestamp_is_refused() {
     let body = br#"{"event":"push"}"#;
     let header = sign(SECRET, NOW - TOLERANCE_SECS - 1, body);
     assert_eq!(
-        store().verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::StaleTimestamp)
+        refusal(store().verify_at("ci", stamped(&header), body, NOW)),
+        Some("signature timestamp is outside the accepted window".into())
     );
 }
 
@@ -108,8 +111,8 @@ fn far_future_timestamp_is_refused() {
     let body = br#"{"event":"push"}"#;
     let header = sign(SECRET, NOW + TOLERANCE_SECS + 1, body);
     assert_eq!(
-        store().verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::StaleTimestamp)
+        refusal(store().verify_at("ci", stamped(&header), body, NOW)),
+        Some("signature timestamp is outside the accepted window".into())
     );
 }
 
@@ -120,10 +123,13 @@ fn replayed_delivery_inside_the_window_is_refused() {
     let store = store();
     let body = br#"{"event":"push"}"#;
     let header = sign(SECRET, NOW, body);
-    assert_eq!(store.verify_at("ci", stamped(&header), body, NOW), Ok(()));
     assert_eq!(
-        store.verify_at("ci", stamped(&header), body, NOW + 5),
-        Err(WebhookAuthError::Replayed)
+        refusal(store.verify_at("ci", stamped(&header), body, NOW)),
+        None
+    );
+    assert_eq!(
+        refusal(store.verify_at("ci", stamped(&header), body, NOW + 5)),
+        Some("signature has already been used".into())
     );
 }
 
@@ -136,8 +142,8 @@ fn github_signed_delivery_is_accepted() {
     let body = br#"{"zen":"Non-blocking is better than blocking."}"#;
     let header = sign_body_only(SECRET, body);
     assert_eq!(
-        store().verify_at("ci", Some(Signature::BodyOnly(&header)), body, NOW),
-        Ok(())
+        refusal(store().verify_at("ci", Some(Signature::BodyOnly(&header)), body, NOW)),
+        None
     );
 }
 
@@ -146,8 +152,8 @@ fn github_signed_delivery_with_the_wrong_secret_is_refused() {
     let body = br#"{"zen":"Speak like a human."}"#;
     let header = sign_body_only("not-the-configured-secret", body);
     assert_eq!(
-        store().verify_at("ci", Some(Signature::BodyOnly(&header)), body, NOW),
-        Err(WebhookAuthError::BadSignature)
+        refusal(store().verify_at("ci", Some(Signature::BodyOnly(&header)), body, NOW)),
+        Some("signature does not match".into())
     );
 }
 
@@ -155,13 +161,13 @@ fn github_signed_delivery_with_the_wrong_secret_is_refused() {
 fn github_signed_delivery_from_another_body_is_refused() {
     let header = sign_body_only(SECRET, br#"{"action":"opened"}"#);
     assert_eq!(
-        store().verify_at(
+        refusal(store().verify_at(
             "ci",
             Some(Signature::BodyOnly(&header)),
             br#"{"action":"deleted"}"#,
             NOW
-        ),
-        Err(WebhookAuthError::BadSignature)
+        )),
+        Some("signature does not match".into())
     );
 }
 
@@ -173,10 +179,10 @@ fn replayed_github_delivery_inside_the_window_is_refused() {
     let body = br#"{"action":"opened"}"#;
     let header = sign_body_only(SECRET, body);
     let signature = Some(Signature::BodyOnly(&header));
-    assert_eq!(store.verify_at("ci", signature, body, NOW), Ok(()));
+    assert_eq!(refusal(store.verify_at("ci", signature, body, NOW)), None);
     assert_eq!(
-        store.verify_at("ci", signature, body, NOW + TOLERANCE_SECS - 1),
-        Err(WebhookAuthError::Replayed)
+        refusal(store.verify_at("ci", signature, body, NOW + TOLERANCE_SECS - 1)),
+        Some("signature has already been used".into())
     );
 }
 
@@ -193,8 +199,8 @@ fn malformed_github_signatures_are_refused() {
         format!("sha256={}", &tag[..62]), // short tag
     ] {
         assert_eq!(
-            store().verify_at("ci", Some(Signature::BodyOnly(&header)), body, NOW),
-            Err(WebhookAuthError::MalformedSignature),
+            refusal(store().verify_at("ci", Some(Signature::BodyOnly(&header)), body, NOW)),
+            Some("malformed signature header".into()),
             "header {header:?} must be refused as malformed"
         );
     }
@@ -212,7 +218,7 @@ fn stripe_signature_header_carries_the_timestamped_scheme() {
         (name == STRIPE_SIGNATURE_HEADER).then_some(header.as_str())
     });
     assert_eq!(signature, Some(Signature::Timestamped(&header)));
-    assert_eq!(store().verify_at("ci", signature, body, NOW), Ok(()));
+    assert_eq!(refusal(store().verify_at("ci", signature, body, NOW)), None);
 }
 
 #[test]
@@ -242,14 +248,14 @@ fn webhook_without_a_configured_secret_is_refused() {
     let body = br#"{"event":"push"}"#;
     let header = sign(SECRET, NOW, body);
     assert_eq!(
-        store().verify_at("unknown", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(store().verify_at("unknown", stamped(&header), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
     // ...including when nothing at all is configured, which is the
     // out-of-the-box state.
     assert_eq!(
-        WebhookSecrets::default().verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(WebhookSecrets::default().verify_at("ci", stamped(&header), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
 }
 
@@ -267,18 +273,18 @@ fn webhooks_sharing_a_secret_are_all_refused() {
     let header = sign(SECRET, NOW, body);
 
     assert_eq!(
-        store.verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(store.verify_at("ci", stamped(&header), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
     assert_eq!(
-        store.verify_at("deploy", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(store.verify_at("deploy", stamped(&header), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
     // The webhook with its own secret is unaffected.
     let release = sign("a-distinct-long-secret", NOW, body);
     assert_eq!(
-        store.verify_at("release", stamped(&release), body, NOW),
-        Ok(())
+        refusal(store.verify_at("release", stamped(&release), body, NOW)),
+        None
     );
 }
 
@@ -288,8 +294,8 @@ fn short_secret_is_dropped_rather_than_accepted() {
     let body = br#"{"event":"push"}"#;
     let header = sign("hunter2", NOW, body);
     assert_eq!(
-        store.verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(store.verify_at("ci", stamped(&header), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
 }
 
@@ -318,8 +324,8 @@ fn malformed_signature_headers_are_refused() {
         format!("sha256={tag}"),
     ] {
         assert_eq!(
-            store().verify_at("ci", stamped(&header), body, NOW),
-            Err(WebhookAuthError::MalformedSignature),
+            refusal(store().verify_at("ci", stamped(&header), body, NOW)),
+            Some("malformed signature header".into()),
             "header {header:?} must be refused as malformed"
         );
     }
@@ -339,8 +345,8 @@ fn unknown_signature_fields_are_ignored() {
         format!("{timestamp},v1={tag},scheme=whatever"),
     ] {
         assert_eq!(
-            store().verify_at("ci", stamped(&header), body, NOW),
-            Ok(()),
+            refusal(store().verify_at("ci", stamped(&header), body, NOW)),
+            None,
             "header {header:?} must be accepted"
         );
     }
@@ -352,7 +358,10 @@ fn uppercase_hex_signature_is_accepted() {
     let valid = sign(SECRET, NOW, body);
     let (timestamp, tag) = valid.split_once(",v1=").unwrap();
     let header = format!("{timestamp},v1={}", tag.to_uppercase());
-    assert_eq!(store().verify_at("ci", stamped(&header), body, NOW), Ok(()));
+    assert_eq!(
+        refusal(store().verify_at("ci", stamped(&header), body, NOW)),
+        None
+    );
 }
 
 #[test]
@@ -361,7 +370,10 @@ fn non_utf8_body_bytes_are_signed_verbatim() {
     let store = store();
     let body = [0xffu8, 0xfe, 0x00, 0x41];
     let header = sign(SECRET, NOW, &body);
-    assert_eq!(store.verify_at("ci", stamped(&header), &body, NOW), Ok(()));
+    assert_eq!(
+        refusal(store.verify_at("ci", stamped(&header), &body, NOW)),
+        None
+    );
 }
 
 // --- Loading ---
@@ -380,10 +392,13 @@ fn secrets_load_from_toml() {
     let body = br#"{"event":"push"}"#;
     let ci = sign(SECRET, NOW, body);
     let short = sign("tiny", NOW, body);
-    assert_eq!(store.verify_at("ci", stamped(&ci), body, NOW), Ok(()));
     assert_eq!(
-        store.verify_at("short", stamped(&short), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(store.verify_at("ci", stamped(&ci), body, NOW)),
+        None
+    );
+    assert_eq!(
+        refusal(store.verify_at("short", stamped(&short), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
 }
 
@@ -395,20 +410,25 @@ fn unreadable_or_malformed_secrets_file_closes_the_ingress() {
 
     let missing = dir.path().join("absent.toml");
     assert_eq!(
-        WebhookSecrets::load(Some(&missing)).verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(WebhookSecrets::load(Some(&missing)).verify_at("ci", stamped(&header), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
 
     let malformed = dir.path().join("bad.toml");
     std::fs::write(&malformed, "this is not toml [[[").unwrap();
     assert_eq!(
-        WebhookSecrets::load(Some(&malformed)).verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(WebhookSecrets::load(Some(&malformed)).verify_at(
+            "ci",
+            stamped(&header),
+            body,
+            NOW
+        )),
+        Some("no secret is configured for this webhook".into())
     );
 
     assert_eq!(
-        WebhookSecrets::load(None).verify_at("ci", stamped(&header), body, NOW),
-        Err(WebhookAuthError::NoSecret)
+        refusal(WebhookSecrets::load(None).verify_at("ci", stamped(&header), body, NOW)),
+        Some("no secret is configured for this webhook".into())
     );
 }
 
@@ -427,7 +447,10 @@ fn minted_secret_is_usable_immediately() {
     let store = WebhookSecrets::load(Some(&path));
     let body = br#"{"event":"push"}"#;
     let header = sign(&secret, NOW, body);
-    assert_eq!(store.verify_at("ci", stamped(&header), body, NOW), Ok(()));
+    assert_eq!(
+        refusal(store.verify_at("ci", stamped(&header), body, NOW)),
+        None
+    );
 }
 
 #[cfg(unix)]
@@ -455,25 +478,25 @@ fn minting_twice_needs_rotate_and_retires_the_old_secret() {
     // Without `--rotate` an existing secret is never silently replaced.
     assert!(mint_secret(&path, "ci", false).is_err());
     assert_eq!(
-        WebhookSecrets::load(Some(&path)).verify_at(
+        refusal(WebhookSecrets::load(Some(&path)).verify_at(
             "ci",
             stamped(&sign(&first, NOW, body)),
             body,
             NOW
-        ),
-        Ok(())
+        )),
+        None
     );
 
     let second = mint_secret(&path, "ci", true).unwrap();
     assert_ne!(first, second);
     let store = WebhookSecrets::load(Some(&path));
     assert_eq!(
-        store.verify_at("ci", stamped(&sign(&first, NOW, body)), body, NOW),
-        Err(WebhookAuthError::BadSignature)
+        refusal(store.verify_at("ci", stamped(&sign(&first, NOW, body)), body, NOW)),
+        Some("signature does not match".into())
     );
     assert_eq!(
-        store.verify_at("ci", stamped(&sign(&second, NOW, body)), body, NOW),
-        Ok(())
+        refusal(store.verify_at("ci", stamped(&sign(&second, NOW, body)), body, NOW)),
+        None
     );
 }
 
@@ -488,8 +511,8 @@ fn minting_keeps_the_other_webhooks_in_the_file() {
     let store = WebhookSecrets::load(Some(&path));
     let body = br#"{"event":"push"}"#;
     assert_eq!(
-        store.verify_at("ci", stamped(&sign(SECRET, NOW, body)), body, NOW),
-        Ok(())
+        refusal(store.verify_at("ci", stamped(&sign(SECRET, NOW, body)), body, NOW)),
+        None
     );
 }
 
@@ -517,4 +540,9 @@ fn minting_never_overwrites_a_file_it_cannot_parse() {
         std::fs::read_to_string(&path).unwrap(),
         "this is not toml [[["
     );
+}
+
+/// The refusal text of one delivery, or `None` when the delivery verifies.
+fn refusal(outcome: anyhow::Result<()>) -> Option<String> {
+    outcome.err().map(|e| e.to_string())
 }

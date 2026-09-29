@@ -9,9 +9,7 @@ impl BackgroundSpawner for BackgroundJobManager {
         workdir: Option<PathBuf>,
         timeout: Option<Duration>,
     ) -> Result<JobId, JobError> {
-        self.spawn_bash(session_id, command, workdir, timeout)
-            .await
-            .map_err(|e| JobError::SpawnFailed(e.to_string()))
+        self.spawn_bash(session_id, command, workdir, timeout).await
     }
 
     fn list_jobs(&self, session_id: &str) -> Vec<JobInfo> {

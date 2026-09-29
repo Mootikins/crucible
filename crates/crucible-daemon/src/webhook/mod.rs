@@ -103,25 +103,13 @@ pub const MIN_SECRET_LEN: usize = 16;
 /// keeps a chatty legitimate sender from growing the set without bound.
 const MAX_REMEMBERED: usize = 4096;
 
-/// Why a webhook delivery was refused.
+/// Why a webhook delivery was refused, for the server log.
 ///
-/// Deliberately *not* surfaced to the caller verbatim — the HTTP edge collapses
-/// every variant into one 401 so the endpoint is not an oracle for which
-/// webhook names exist. It is carried separately for the server log.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum WebhookAuthError {
-    #[error("no secret is configured for this webhook")]
-    NoSecret,
-    #[error("missing signature header")]
-    MissingSignature,
-    #[error("malformed signature header")]
-    MalformedSignature,
-    #[error("signature timestamp is outside the accepted window")]
-    StaleTimestamp,
-    #[error("signature does not match")]
-    BadSignature,
-    #[error("signature has already been used")]
-    Replayed,
+/// The HTTP edge does not show it to the caller: it collapses every refusal
+/// into one 401, so the endpoint does not tell which webhook names exist.
+/// Nothing branches on the reason, so the reason is text.
+fn refused(reason: &str) -> anyhow::Error {
+    anyhow::anyhow!("{reason}")
 }
 
 /// The signature a delivery presented, and therefore which scheme verifies it.
@@ -258,7 +246,7 @@ impl WebhookSecrets {
         name: &str,
         signature: Option<Signature<'_>>,
         raw_body: &[u8],
-    ) -> Result<(), WebhookAuthError> {
+    ) -> anyhow::Result<()> {
         self.verify_at(name, signature, raw_body, unix_now())
     }
 
@@ -273,35 +261,41 @@ impl WebhookSecrets {
         signature: Option<Signature<'_>>,
         raw_body: &[u8],
         now_unix: i64,
-    ) -> Result<(), WebhookAuthError> {
-        let secret = self.secrets.get(name).ok_or(WebhookAuthError::NoSecret)?;
+    ) -> anyhow::Result<()> {
+        let secret = self
+            .secrets
+            .get(name)
+            .ok_or_else(|| refused("no secret is configured for this webhook"))?;
 
-        let (sent_at, provided) = match signature.ok_or(WebhookAuthError::MissingSignature)? {
-            Signature::Timestamped(header) => {
-                let (timestamp, provided) = parse_timestamped(header)?;
+        let (sent_at, provided) =
+            match signature.ok_or_else(|| refused("missing signature header"))? {
+                Signature::Timestamped(header) => {
+                    let (timestamp, provided) = parse_timestamped(header)?;
 
-                // Parsed for the window check, but the *literal* text is what
-                // gets signed — re-formatting `t` (`007` -> `7`) would hash
-                // different bytes than the sender hashed.
-                let sent_at: i64 = timestamp
-                    .parse()
-                    .map_err(|_| WebhookAuthError::MalformedSignature)?;
-                if now_unix.saturating_sub(sent_at).saturating_abs() > TOLERANCE_SECS {
-                    return Err(WebhookAuthError::StaleTimestamp);
+                    // Parsed for the window check, but the *literal* text is what
+                    // gets signed — re-formatting `t` (`007` -> `7`) would hash
+                    // different bytes than the sender hashed.
+                    let sent_at: i64 = timestamp
+                        .parse()
+                        .map_err(|_| refused("malformed signature header"))?;
+                    if now_unix.saturating_sub(sent_at).saturating_abs() > TOLERANCE_SECS {
+                        return Err(refused(
+                            "signature timestamp is outside the accepted window",
+                        ));
+                    }
+
+                    verify_tag(secret, &signed_material(timestamp, raw_body), &provided)?;
+                    (sent_at, provided)
                 }
-
-                verify_tag(secret, &signed_material(timestamp, raw_body), &provided)?;
-                (sent_at, provided)
-            }
-            Signature::BodyOnly(header) => {
-                let provided = parse_body_only(header)?;
-                verify_tag(secret, raw_body, &provided)?;
-                // The signature carries no timestamp, so the delivery is only
-                // as fresh as the moment it arrived: remember it from now, and
-                // it stays un-replayable exactly as long as we remember it.
-                (now_unix, provided)
-            }
-        };
+                Signature::BodyOnly(header) => {
+                    let provided = parse_body_only(header)?;
+                    verify_tag(secret, raw_body, &provided)?;
+                    // The signature carries no timestamp, so the delivery is only
+                    // as fresh as the moment it arrived: remember it from now, and
+                    // it stays un-replayable exactly as long as we remember it.
+                    (now_unix, provided)
+                }
+            };
 
         self.claim(sent_at, provided, now_unix)
     }
@@ -309,17 +303,12 @@ impl WebhookSecrets {
     /// Remember a verified signature so the same delivery cannot be replayed
     /// inside the tolerance window (the window alone only bounds replay, it
     /// does not prevent it).
-    fn claim(
-        &self,
-        sent_at: i64,
-        signature: [u8; 32],
-        now_unix: i64,
-    ) -> Result<(), WebhookAuthError> {
+    fn claim(&self, sent_at: i64, signature: [u8; 32], now_unix: i64) -> anyhow::Result<()> {
         let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
         // Anything outside the window is already refused by the clock check.
         seen.retain(|(ts, _)| now_unix.saturating_sub(*ts).saturating_abs() <= TOLERANCE_SECS);
         if seen.iter().any(|(_, sig)| *sig == signature) {
-            return Err(WebhookAuthError::Replayed);
+            return Err(refused("signature has already been used"));
         }
         if seen.len() >= MAX_REMEMBERED {
             seen.remove(0);
@@ -439,10 +428,10 @@ fn tag(secret: &str, message: &[u8]) -> [u8; 32] {
 
 /// `verify_slice` is the `hmac` crate's own constant-time comparison, so there
 /// is no hand-written tag compare here to get wrong.
-fn verify_tag(secret: &str, message: &[u8], provided: &[u8; 32]) -> Result<(), WebhookAuthError> {
+fn verify_tag(secret: &str, message: &[u8], provided: &[u8; 32]) -> anyhow::Result<()> {
     keyed_mac(secret, message)
         .verify_slice(provided)
-        .map_err(|_| WebhookAuthError::BadSignature)
+        .map_err(|_| refused("signature does not match"))
 }
 
 /// Parse `t=<digits>,v1=<64 hex>` into the literal timestamp text and the
@@ -453,7 +442,7 @@ fn verify_tag(secret: &str, message: &[u8], provided: &[u8; 32]) -> Result<(), W
 /// deliver. Duplicate `t`/`v1` keys are still refused rather than resolved — a
 /// verifier that picks one of two candidate signatures is a verifier an
 /// attacker gets to aim.
-fn parse_timestamped(header: &str) -> Result<(&str, [u8; 32]), WebhookAuthError> {
+fn parse_timestamped(header: &str) -> anyhow::Result<(&str, [u8; 32])> {
     let mut timestamp: Option<&str> = None;
     let mut tag: Option<&str> = None;
 
@@ -467,17 +456,17 @@ fn parse_timestamped(header: &str) -> Result<(&str, [u8; 32]), WebhookAuthError>
             _ => continue,
         };
         if slot.is_some() {
-            return Err(WebhookAuthError::MalformedSignature);
+            return Err(refused("malformed signature header"));
         }
         *slot = Some(value);
     }
 
     let (timestamp, tag) = (
-        timestamp.ok_or(WebhookAuthError::MalformedSignature)?,
-        tag.ok_or(WebhookAuthError::MalformedSignature)?,
+        timestamp.ok_or_else(|| refused("malformed signature header"))?,
+        tag.ok_or_else(|| refused("malformed signature header"))?,
     );
     if timestamp.is_empty() {
-        return Err(WebhookAuthError::MalformedSignature);
+        return Err(refused("malformed signature header"));
     }
     Ok((timestamp, decode_tag(tag)?))
 }
@@ -485,18 +474,18 @@ fn parse_timestamped(header: &str) -> Result<(&str, [u8; 32]), WebhookAuthError>
 /// Parse GitHub's `sha256=<64 hex>`. The algorithm prefix is required: an
 /// unprefixed or `sha1=` value is a different (or unknown) scheme, not this
 /// one.
-fn parse_body_only(header: &str) -> Result<[u8; 32], WebhookAuthError> {
+fn parse_body_only(header: &str) -> anyhow::Result<[u8; 32]> {
     let tag = header
         .trim()
         .strip_prefix("sha256=")
-        .ok_or(WebhookAuthError::MalformedSignature)?;
+        .ok_or_else(|| refused("malformed signature header"))?;
     decode_tag(tag)
 }
 
-fn decode_tag(hex_tag: &str) -> Result<[u8; 32], WebhookAuthError> {
+fn decode_tag(hex_tag: &str) -> anyhow::Result<[u8; 32]> {
     let mut decoded = [0u8; 32];
     hex::decode_to_slice(hex_tag, &mut decoded)
-        .map_err(|_| WebhookAuthError::MalformedSignature)?;
+        .map_err(|_| refused("malformed signature header"))?;
     Ok(decoded)
 }
 

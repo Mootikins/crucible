@@ -1,7 +1,7 @@
 //! SKILL.md parser following agentskills.io specification
 
-use crate::skills::error::{SkillError, SkillResult};
 use crate::skills::types::{Skill, SkillFrontmatter, SkillSource};
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 
 /// Parser for SKILL.md files
@@ -13,19 +13,18 @@ impl SkillParser {
     }
 
     /// Parse SKILL.md content into a Skill
-    pub fn parse(&self, content: &str, source: SkillSource) -> SkillResult<Skill> {
+    pub fn parse(&self, content: &str, source: SkillSource) -> Result<Skill> {
         let (frontmatter, body) = self.split_frontmatter(content)?;
-        let fm: SkillFrontmatter =
-            serde_yaml::from_str(&frontmatter).map_err(|e| SkillError::ParseError {
-                path: source.path.clone(),
-                source: e,
-            })?;
+        let fm: SkillFrontmatter = serde_yaml::from_str(&frontmatter).with_context(|| {
+            format!(
+                "Failed to parse SKILL.md frontmatter: {}",
+                source.path.display()
+            )
+        })?;
 
         // Validate required fields
         if fm.description.is_empty() {
-            return Err(SkillError::ValidationError {
-                reason: "description is required".to_string(),
-            });
+            bail!("Invalid skill: description is required");
         }
 
         // Parse allowed-tools from space-delimited string
@@ -47,22 +46,18 @@ impl SkillParser {
     }
 
     /// Split content into frontmatter and body
-    fn split_frontmatter(&self, content: &str) -> SkillResult<(String, String)> {
+    fn split_frontmatter(&self, content: &str) -> Result<(String, String)> {
         let content = content.trim();
 
         if !content.starts_with("---") {
-            return Err(SkillError::ValidationError {
-                reason: "SKILL.md must start with YAML frontmatter (---)".to_string(),
-            });
+            bail!("Invalid skill: SKILL.md must start with YAML frontmatter (---)");
         }
 
         // Find closing ---
         let rest = &content[3..];
         let end_idx = rest
             .find("\n---")
-            .ok_or_else(|| SkillError::ValidationError {
-                reason: "Missing closing --- for frontmatter".to_string(),
-            })?;
+            .ok_or_else(|| anyhow!("Invalid skill: Missing closing --- for frontmatter"))?;
 
         let frontmatter = rest[..end_idx].trim().to_string();
         let body = rest[end_idx + 4..].to_string();
@@ -172,12 +167,7 @@ Body text.
         let parser = SkillParser::new();
         let err = parser.parse(content, test_source()).unwrap_err();
 
-        match err {
-            SkillError::ValidationError { reason } => {
-                assert!(reason.contains("frontmatter"));
-            }
-            other => panic!("Expected ValidationError, got: {other}"),
-        }
+        assert!(err.to_string().contains("frontmatter"), "{err}");
     }
 
     #[test]
@@ -186,12 +176,7 @@ Body text.
         let parser = SkillParser::new();
         let err = parser.parse(content, test_source()).unwrap_err();
 
-        match err {
-            SkillError::ValidationError { reason } => {
-                assert!(reason.contains("closing ---"));
-            }
-            other => panic!("Expected ValidationError, got: {other}"),
-        }
+        assert!(err.to_string().contains("closing ---"), "{err}");
     }
 
     #[test]
@@ -200,12 +185,7 @@ Body text.
         let parser = SkillParser::new();
         let err = parser.parse(content, test_source()).unwrap_err();
 
-        match err {
-            SkillError::ValidationError { reason } => {
-                assert!(reason.contains("description"));
-            }
-            other => panic!("Expected ValidationError, got: {other}"),
-        }
+        assert!(err.to_string().contains("description"), "{err}");
     }
 
     #[test]
@@ -214,7 +194,9 @@ Body text.
         let parser = SkillParser::new();
         let err = parser.parse(content, test_source()).unwrap_err();
 
-        assert!(matches!(err, SkillError::ParseError { .. }));
+        assert!(err
+            .to_string()
+            .contains("Failed to parse SKILL.md frontmatter"));
     }
 
     #[test]

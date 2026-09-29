@@ -6,7 +6,8 @@ mod indexing;
 pub use external_change::ExternalChangeHandler;
 pub use indexing::{IndexingHandler, WATCH_RESCAN_EVENT};
 
-use crate::watch::{error::Result, events::FileEvent, traits::EventHandler};
+use crate::watch::{events::FileEvent, traits::EventHandler};
+use anyhow::Result;
 use crucible_core::events::{EventEmitter, SessionEvent};
 use std::sync::Arc;
 

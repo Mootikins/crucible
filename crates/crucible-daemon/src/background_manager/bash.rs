@@ -7,7 +7,7 @@ impl BackgroundJobManager {
         command: String,
         workdir: Option<PathBuf>,
         timeout: Option<Duration>,
-    ) -> Result<JobId, BackgroundError> {
+    ) -> Result<JobId, JobError> {
         let kind = JobKind::Bash {
             command: command.clone(),
             workdir: workdir.clone(),

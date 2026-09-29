@@ -347,7 +347,7 @@ impl WorkflowExecution {
     /// Approve the currently-pending gate by id. Advances past the slot
     /// that blocked. Returns `Err` if no gate is pending or the id
     /// doesn't match.
-    pub fn approve_gate(&mut self, gate_id: &str) -> Result<&WorkflowStatus, GateError> {
+    pub fn approve_gate(&mut self, gate_id: &str) -> anyhow::Result<&WorkflowStatus> {
         match &self.status {
             WorkflowStatus::AwaitingApproval { gate } if gate.id == gate_id => {
                 self.pending_events.push(WorkflowEvent::GateApproved {
@@ -357,11 +357,11 @@ impl WorkflowExecution {
                 self.status = WorkflowStatus::Running;
                 Ok(&self.status)
             }
-            WorkflowStatus::AwaitingApproval { gate } => Err(GateError::Mismatch {
-                expected: gate.id.clone(),
-                got: gate_id.to_string(),
-            }),
-            _ => Err(GateError::NoGatePending),
+            WorkflowStatus::AwaitingApproval { gate } => Err(anyhow::anyhow!(
+                "gate mismatch: expected '{}', got '{gate_id}'",
+                gate.id
+            )),
+            _ => Err(anyhow::anyhow!("no gate currently pending")),
         }
     }
 
@@ -373,14 +373,6 @@ impl WorkflowExecution {
         self.status = WorkflowStatus::Cancelled;
         self.pending_events.push(WorkflowEvent::WorkflowCancelled);
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum GateError {
-    #[error("no gate currently pending")]
-    NoGatePending,
-    #[error("gate mismatch: expected '{expected}', got '{got}'")]
-    Mismatch { expected: String, got: String },
 }
 
 // ---------- slot construction ----------
@@ -730,7 +722,7 @@ type: workflow
         let mut exec = exec_from(source);
         run_until_gate_or_done(&mut exec).await;
         let err = exec.approve_gate("wrong").unwrap_err();
-        assert!(matches!(err, GateError::Mismatch { .. }));
+        assert!(err.to_string().starts_with("gate mismatch"), "{err}");
     }
 
     #[test]
@@ -738,7 +730,7 @@ type: workflow
         let source = "---\ntype: workflow\n---\n## X\n";
         let mut exec = exec_from(source);
         let err = exec.approve_gate("any").unwrap_err();
-        assert!(matches!(err, GateError::NoGatePending));
+        assert_eq!(err.to_string(), "no gate currently pending");
     }
 
     #[tokio::test]

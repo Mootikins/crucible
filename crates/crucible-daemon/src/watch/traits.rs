@@ -1,7 +1,8 @@
 //! Shared types of the file watching system: handles and configs
 //! and the `EventHandler` trait.
 
-use crate::watch::{error::Result, events::FileEvent};
+use crate::watch::events::FileEvent;
+use anyhow::Result;
 use async_trait::async_trait;
 use std::path::PathBuf;
 

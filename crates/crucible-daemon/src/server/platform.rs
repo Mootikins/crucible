@@ -118,7 +118,7 @@ async fn discover_skills(
     kiln_path: String,
     workspace: Option<String>,
 ) -> Result<
-    crate::skills::SkillResult<std::collections::HashMap<String, crate::skills::ResolvedSkill>>,
+    anyhow::Result<std::collections::HashMap<String, crate::skills::ResolvedSkill>>,
     tokio::task::JoinError,
 > {
     tokio::task::spawn_blocking(move || {

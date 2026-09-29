@@ -12,10 +12,10 @@
 //! gone, because the name promised work that another owner does.
 
 use crate::watch::{
-    error::Result,
     events::{FileEvent, FileEventKind},
     traits::EventHandler,
 };
+use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::events::{EventEmitter, FileChangeKind, InternalSessionEvent, SessionEvent};
 use std::sync::Arc;

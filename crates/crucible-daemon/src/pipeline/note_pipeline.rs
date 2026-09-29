@@ -774,7 +774,7 @@ pub(super) fn stamp_scope_on_properties(
     use crucible_core::storage::Scope;
 
     // Pre-prune `from_property_value` returned `Option<Scope>`. It now
-    // returns `Option<Result<Scope, ScopeError>>` because legacy `global`
+    // returns `Option<Result<Scope>>` because legacy `global`
     // and `user:*` kinds are refused. Treat any error as "missing" so a
     // stale frontmatter `scope: global` flips back to the kiln workspace.
     let existing = properties

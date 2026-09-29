@@ -22,9 +22,10 @@ const LIST_MODELS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 
 pub mod anthropic {
     use super::openai_compat::parse_models_response;
-    use super::{http_client, ModelListingError, ModelListingResult, LIST_MODELS_TIMEOUT};
+    use super::{http_client, LIST_MODELS_TIMEOUT};
+    use anyhow::{bail, Result};
 
-    pub async fn list_models(endpoint: &str, api_key: &str) -> ModelListingResult<Vec<String>> {
+    pub async fn list_models(endpoint: &str, api_key: &str) -> Result<Vec<String>> {
         let endpoint = endpoint.trim_end_matches('/');
         let url = format!("{}/v1/models", endpoint);
 
@@ -43,10 +44,7 @@ pub mod anthropic {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let text = response.text().await.unwrap_or_default();
-            return Err(ModelListingError::Api(format!(
-                "Anthropic API error {}: {}",
-                status, text
-            )));
+            bail!("Anthropic API error {}: {}", status, text);
         }
 
         let body = response.text().await?;
@@ -55,10 +53,11 @@ pub mod anthropic {
 }
 
 pub mod ollama {
-    use super::{http_client, ModelListingError, ModelListingResult, LIST_MODELS_TIMEOUT};
+    use super::{http_client, LIST_MODELS_TIMEOUT};
+    use anyhow::{bail, Result};
     use crucible_core::config::OllamaTagsResponse;
 
-    pub async fn list_models(endpoint: &str) -> ModelListingResult<Vec<String>> {
+    pub async fn list_models(endpoint: &str) -> Result<Vec<String>> {
         let endpoint = endpoint.trim_end_matches('/');
         let url = format!("{}/api/tags", endpoint);
 
@@ -69,27 +68,25 @@ pub mod ollama {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let text = response.text().await.unwrap_or_default();
-            return Err(ModelListingError::Api(format!(
-                "Ollama API error {}: {}",
-                status, text
-            )));
+            bail!("Ollama API error {}: {}", status, text);
         }
 
         let body = response.text().await?;
         parse_tags_response(&body)
     }
 
-    pub fn parse_tags_response(body: &str) -> ModelListingResult<Vec<String>> {
+    pub fn parse_tags_response(body: &str) -> Result<Vec<String>> {
         let response: OllamaTagsResponse = serde_json::from_str(body)?;
         Ok(response.model_names())
     }
 }
 
 pub mod openai_compat {
-    use super::{http_client, ModelListingError, ModelListingResult, LIST_MODELS_TIMEOUT};
+    use super::{http_client, LIST_MODELS_TIMEOUT};
+    use anyhow::{bail, Result};
     use serde_json::Value;
 
-    pub async fn list_models(endpoint: &str, api_key: &str) -> ModelListingResult<Vec<String>> {
+    pub async fn list_models(endpoint: &str, api_key: &str) -> Result<Vec<String>> {
         let endpoint = endpoint.trim_end_matches('/');
         let url = format!("{}/models", endpoint);
 
@@ -105,14 +102,14 @@ pub mod openai_compat {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let text = response.text().await.unwrap_or_default();
-            return Err(ModelListingError::Api(format!("HTTP {}: {}", status, text)));
+            bail!("HTTP {}: {}", status, text);
         }
 
         let body = response.text().await?;
         parse_models_response(&body)
     }
 
-    pub fn parse_models_response(body: &str) -> ModelListingResult<Vec<String>> {
+    pub fn parse_models_response(body: &str) -> Result<Vec<String>> {
         let payload: Value = serde_json::from_str(body)?;
 
         fn model_names_from_array(models: &[Value]) -> Vec<String> {
@@ -140,33 +137,18 @@ pub mod openai_compat {
             }
         }
 
-        Err(ModelListingError::Api(
-            "expected 'data' or 'models' key in response".into(),
-        ))
+        bail!("expected 'data' or 'models' key in response")
     }
 }
 
 use crate::provider::copilot::CopilotClient;
 use crucible_core::config::BackendType;
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum ModelListingError {
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-    #[error("JSON parse error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("API error: {0}")]
-    Api(String),
-}
-
-pub type ModelListingResult<T> = Result<T, ModelListingError>;
 
 pub async fn list_models(
     backend_type: BackendType,
     endpoint: &str,
     api_key: Option<&str>,
-) -> ModelListingResult<Vec<String>> {
+) -> anyhow::Result<Vec<String>> {
     match backend_type {
         BackendType::Ollama => ollama::list_models(endpoint).await,
         BackendType::OpenAI | BackendType::ZAI | BackendType::OpenRouter => {

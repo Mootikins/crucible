@@ -2,7 +2,7 @@
 
 use super::asset::RuntimeAsset;
 use super::entry::{EntryKind, RuntimeEntry, SearchPath};
-use crate::sources::{sources_new, Source, Sources, SourcesError};
+use crate::sources::{sources_new, Source, Sources};
 
 /// Every candidate directory for `asset`, in path order. The order is not
 /// precedence: [`search_sources`] sorts by priority.
@@ -45,7 +45,7 @@ pub fn search_paths(asset: RuntimeAsset, path: &[RuntimeEntry]) -> Vec<SearchPat
 pub fn search_sources(
     asset: RuntimeAsset,
     path: &[RuntimeEntry],
-) -> Result<Sources<SearchPath>, SourcesError> {
+) -> anyhow::Result<Sources<SearchPath>> {
     let (kept, clashes) = drop_repeated_sources(candidates(asset, path));
     for clash in &clashes {
         tracing::warn!(

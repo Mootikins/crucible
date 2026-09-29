@@ -32,5 +32,5 @@ pub use note_store::{
     Filter, GraphLink, InboundLink, LinkOccurrence, NoteRecord, NoteStore, Op, SearchResult,
 };
 pub use property_store::PropertyStore;
-pub use scope::{Scope, ScopeError};
+pub use scope::Scope;
 pub use scoped_links::{scoped_backlinks, scoped_outlinks, sorted_unique, visible_paths};

@@ -54,14 +54,6 @@ impl<T> Sources<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SourcesError {
-    #[error("two sources are named '{0}'")]
-    DuplicateSource(String),
-    #[error("'{0}' is not a source name: a name is not empty and holds no ':'")]
-    BadSourceName(String),
-}
-
 /// One named thing that a source supplies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry<V> {
@@ -84,13 +76,16 @@ pub enum Lookup<V> {
 ///
 /// A second source with a name that is already in the list is an error. The
 /// caller decides which source to drop before this call.
-pub fn sources_new<T>(mut list: Vec<Source<T>>) -> Result<Sources<T>, SourcesError> {
+pub fn sources_new<T>(mut list: Vec<Source<T>>) -> anyhow::Result<Sources<T>> {
     for (i, source) in list.iter().enumerate() {
         if source.name.is_empty() || source.name.contains(':') {
-            return Err(SourcesError::BadSourceName(source.name.clone()));
+            anyhow::bail!(
+                "'{}' is not a source name: a name is not empty and holds no ':'",
+                source.name
+            );
         }
         if list[..i].iter().any(|s| s.name == source.name) {
-            return Err(SourcesError::DuplicateSource(source.name.clone()));
+            anyhow::bail!("two sources are named '{}'", source.name);
         }
     }
     // A stable sort keeps the caller's order inside one key.
@@ -245,8 +240,10 @@ mod tests {
     #[test]
     fn two_sources_of_one_name_are_an_error() {
         assert_eq!(
-            sources_new(vec![source("x", 1), source("x", 2)]),
-            Err(SourcesError::DuplicateSource("x".into()))
+            sources_new(vec![source("x", 1), source("x", 2)])
+                .unwrap_err()
+                .to_string(),
+            "two sources are named 'x'"
         );
     }
 
@@ -254,8 +251,8 @@ mod tests {
     fn a_source_name_is_not_empty_and_holds_no_colon() {
         for bad in ["", "a:b"] {
             assert_eq!(
-                sources_new(vec![source(bad, 1)]),
-                Err(SourcesError::BadSourceName(bad.into()))
+                sources_new(vec![source(bad, 1)]).unwrap_err().to_string(),
+                format!("'{bad}' is not a source name: a name is not empty and holds no ':'")
             );
         }
     }

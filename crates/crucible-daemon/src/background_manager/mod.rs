@@ -49,7 +49,6 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use types::BackgroundError;
 use types::{BashError, RunningJob};
 
 pub struct BackgroundJobManager {

@@ -270,20 +270,6 @@ pub struct TaskGraph {
     dependents: HashMap<String, Vec<String>>,
 }
 
-/// Error building task graph
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum GraphError {
-    /// Task depends on a non-existent task ID
-    #[error("Task '{task_id}' depends on non-existent task '{missing_dep}'")]
-    MissingDependency {
-        task_id: String,
-        missing_dep: String,
-    },
-    /// Dependency graph contains a cycle
-    #[error("Dependency cycle detected: {}", cycle.join(" -> "))]
-    CycleDetected { cycle: Vec<String> },
-}
-
 impl TaskGraph {
     /// Build a task graph from a list of tasks
     ///
@@ -294,8 +280,8 @@ impl TaskGraph {
     /// TaskGraph with dependency edges, or error if dependencies are invalid
     ///
     /// # Errors
-    /// Returns `GraphError::MissingDependency` if a task depends on a non-existent task ID
-    pub fn from_tasks(tasks: &[TaskItem]) -> Result<Self, GraphError> {
+    /// Returns an error if a task depends on a non-existent task ID
+    pub fn from_tasks(tasks: &[TaskItem]) -> anyhow::Result<Self> {
         let mut dependencies = HashMap::new();
         let mut dependents = HashMap::new();
 
@@ -307,10 +293,7 @@ impl TaskGraph {
             // Verify all dependencies exist
             for dep in &task.deps {
                 if !task_ids.contains(dep.as_str()) {
-                    return Err(GraphError::MissingDependency {
-                        task_id: task.id.clone(),
-                        missing_dep: dep.clone(),
-                    });
+                    anyhow::bail!("Task '{}' depends on non-existent task '{}'", task.id, dep);
                 }
             }
 
@@ -360,8 +343,8 @@ impl TaskGraph {
     /// Vector of task IDs in execution order
     ///
     /// # Errors
-    /// Returns `GraphError::CycleDetected` if graph contains a cycle
-    pub fn topo_sort(&self) -> Result<Vec<String>, GraphError> {
+    /// Returns an error if the graph contains a cycle
+    pub fn topo_sort(&self) -> anyhow::Result<Vec<String>> {
         // Build in-degree map (count of dependencies for each task)
         let mut in_degree: HashMap<String, usize> = HashMap::new();
 
@@ -415,7 +398,7 @@ impl TaskGraph {
             // Return the cycle nodes (sorted for deterministic error messages)
             let mut cycle = unprocessed;
             cycle.sort();
-            return Err(GraphError::CycleDetected { cycle });
+            anyhow::bail!("Dependency cycle detected: {}", cycle.join(" -> "));
         }
 
         Ok(result)
@@ -790,16 +773,10 @@ title: Minimal Task File
         let result = TaskGraph::from_tasks(&tasks);
         assert!(result.is_err());
 
-        if let Err(GraphError::MissingDependency {
-            task_id,
-            missing_dep,
-        }) = result
-        {
-            assert_eq!(task_id, "task-2");
-            assert_eq!(missing_dep, "task-nonexistent");
-        } else {
-            panic!("Expected MissingDependency error");
-        }
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Task 'task-2' depends on non-existent task 'task-nonexistent'"
+        );
     }
 
     // Topological sort tests
@@ -942,12 +919,13 @@ title: Minimal Task File
         let result = graph.topo_sort();
 
         assert!(result.is_err());
-        if let Err(GraphError::CycleDetected { cycle }) = result {
-            assert!(!cycle.is_empty());
-            assert!(cycle.contains(&"A".to_string()));
-        } else {
-            panic!("Expected CycleDetected error");
-        }
+        let message = result.unwrap_err().to_string();
+        let cycle: Vec<&str> = message
+            .strip_prefix("Dependency cycle detected: ")
+            .expect("a cycle error")
+            .split(" -> ")
+            .collect();
+        assert!(cycle.contains(&"A"));
     }
 
     #[test]
@@ -974,14 +952,15 @@ title: Minimal Task File
         let result = graph.topo_sort();
 
         assert!(result.is_err());
-        if let Err(GraphError::CycleDetected { cycle }) = result {
-            assert!(!cycle.is_empty());
-            // Both nodes should be in the cycle
-            assert!(cycle.contains(&"A".to_string()));
-            assert!(cycle.contains(&"B".to_string()));
-        } else {
-            panic!("Expected CycleDetected error");
-        }
+        let message = result.unwrap_err().to_string();
+        let cycle: Vec<&str> = message
+            .strip_prefix("Dependency cycle detected: ")
+            .expect("a cycle error")
+            .split(" -> ")
+            .collect();
+        // Both nodes should be in the cycle
+        assert!(cycle.contains(&"A"));
+        assert!(cycle.contains(&"B"));
     }
 
     #[test]
@@ -1015,15 +994,16 @@ title: Minimal Task File
         let result = graph.topo_sort();
 
         assert!(result.is_err());
-        if let Err(GraphError::CycleDetected { cycle }) = result {
-            assert!(!cycle.is_empty());
-            // All three nodes should be in the cycle
-            assert!(cycle.contains(&"A".to_string()));
-            assert!(cycle.contains(&"B".to_string()));
-            assert!(cycle.contains(&"C".to_string()));
-        } else {
-            panic!("Expected CycleDetected error");
-        }
+        let message = result.unwrap_err().to_string();
+        let cycle: Vec<&str> = message
+            .strip_prefix("Dependency cycle detected: ")
+            .expect("a cycle error")
+            .split(" -> ")
+            .collect();
+        // All three nodes should be in the cycle
+        assert!(cycle.contains(&"A"));
+        assert!(cycle.contains(&"B"));
+        assert!(cycle.contains(&"C"));
     }
 
     #[test]

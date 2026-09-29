@@ -148,23 +148,6 @@ impl HttpResponse {
     }
 }
 
-/// HTTP error types.
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum HttpError {
-    /// Request failed to send
-    #[error("HTTP request failed: {0}")]
-    Request(String),
-    /// Failed to read response body
-    #[error("Failed to read body: {0}")]
-    Body(String),
-    /// Request timed out
-    #[error("Request timed out")]
-    Timeout,
-    /// Invalid URL
-    #[error("Invalid URL: {0}")]
-    InvalidUrl(String),
-}
-
 /// HTTP executor using reqwest.
 #[derive(Clone)]
 pub struct HttpExecutor {
@@ -186,7 +169,7 @@ impl HttpExecutor {
     }
 
     /// Execute an HTTP request.
-    pub async fn execute(&self, req: HttpRequest) -> Result<HttpResponse, HttpError> {
+    pub async fn execute(&self, req: HttpRequest) -> anyhow::Result<HttpResponse> {
         let method = match req.method {
             HttpMethod::Get => reqwest::Method::GET,
             HttpMethod::Post => reqwest::Method::POST,
@@ -209,9 +192,9 @@ impl HttpExecutor {
 
         let response = builder.send().await.map_err(|e| {
             if e.is_timeout() {
-                HttpError::Timeout
+                anyhow::anyhow!("Request timed out")
             } else {
-                HttpError::Request(e.to_string())
+                anyhow::anyhow!("HTTP request failed: {e}")
             }
         })?;
 
@@ -225,7 +208,7 @@ impl HttpExecutor {
         let body = response
             .text()
             .await
-            .map_err(|e| HttpError::Body(e.to_string()))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read body: {e}"))?;
 
         Ok(HttpResponse {
             status,
@@ -313,14 +296,5 @@ mod tests {
         assert_eq!(HttpMethod::Post.as_str(), "POST");
         assert_eq!(HttpMethod::Put.as_str(), "PUT");
         assert_eq!(HttpMethod::Delete.as_str(), "DELETE");
-    }
-
-    #[test]
-    fn test_http_error_display() {
-        let req_err = HttpError::Request("connection refused".to_string());
-        assert!(req_err.to_string().contains("connection refused"));
-
-        let timeout_err = HttpError::Timeout;
-        assert!(timeout_err.to_string().contains("timed out"));
     }
 }

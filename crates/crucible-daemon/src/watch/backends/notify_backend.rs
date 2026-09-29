@@ -1,11 +1,11 @@
 //! Notify-based file watching backend.
 
 use crate::watch::{
-    error::{Error, Result},
     events::{EventFilter, EventMetadata, FileEvent, FileEventKind},
     traits::{WatchConfig, WatchHandle},
 };
 
+use anyhow::{anyhow, Result};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{
@@ -95,7 +95,7 @@ impl NotifyWatcher {
                 }
             },
         )
-        .map_err(|e| Error::Watch(format!("Failed to create notify watcher: {}", e)))?;
+        .map_err(|e| anyhow!("Failed to create notify watcher: {}", e))?;
 
         self.debouncer = Some(debouncer);
         self.event_sender = Some(event_sender);
@@ -178,7 +178,7 @@ impl NotifyWatcher {
             .paths
             .into_iter()
             .next()
-            .ok_or_else(|| Error::Watch("Event has no path".to_string()))?;
+            .ok_or_else(|| anyhow!("Event has no path"))?;
 
         let metadata = EventMetadata::new("notify".to_string(), "default".to_string());
 
@@ -198,9 +198,10 @@ impl NotifyWatcher {
 
         // Store filter from config (if provided and not already set)
         if let Some(filter) = config.filter.clone() {
-            let mut filter_guard = self.filter.write().map_err(|e| {
-                Error::Internal(format!("Failed to acquire filter write lock: {}", e))
-            })?;
+            let mut filter_guard = self
+                .filter
+                .write()
+                .map_err(|e| anyhow!("Failed to acquire filter write lock: {}", e))?;
             if filter_guard.is_none() {
                 debug!("Setting event filter for notify watcher");
                 *filter_guard = Some(filter);
@@ -211,9 +212,10 @@ impl NotifyWatcher {
 
         // Initialize if not already done
         if self.debouncer.is_none() {
-            let sender = self.event_sender.clone().ok_or_else(|| {
-                Error::Internal("Event sender not set before calling watch".to_string())
-            })?;
+            let sender = self
+                .event_sender
+                .clone()
+                .ok_or_else(|| anyhow!("Event sender not set before calling watch"))?;
             let delay = Duration::from_millis(config.debounce.delay_ms);
             self.initialize(sender, delay).await?;
         }
@@ -234,7 +236,7 @@ impl NotifyWatcher {
 
             debouncer
                 .watch(&path, mode)
-                .map_err(|e| Error::Watch(format!("Failed to watch path: {}", e)))?;
+                .map_err(|e| anyhow!("Failed to watch path: {}", e))?;
         }
 
         self.watches.insert(watch_id.clone(), path.clone());
@@ -250,7 +252,7 @@ impl NotifyWatcher {
             if let Some(ref mut debouncer) = self.debouncer {
                 debouncer
                     .unwatch(&handle.path)
-                    .map_err(|e| Error::Watch(format!("Failed to unwatch path: {}", e)))?;
+                    .map_err(|e| anyhow!("Failed to unwatch path: {}", e))?;
             }
         }
         self.watches.remove(&handle.id);

@@ -2,18 +2,8 @@ use crate::node::*;
 use crate::style::*;
 use html_parser::{Dom, Element, Node as HtmlNode};
 
-#[derive(Debug, thiserror::Error)]
-pub enum HtmlError {
-    #[error("HTML parse error: {0}")]
-    ParseError(String),
-    #[error("unsupported element: {0}")]
-    UnsupportedElement(String),
-}
-
-pub type HtmlResult<T> = Result<T, HtmlError>;
-
-pub fn html_to_node(html: &str) -> HtmlResult<Node> {
-    let dom = Dom::parse(html).map_err(|e| HtmlError::ParseError(e.to_string()))?;
+pub fn html_to_node(html: &str) -> html_parser::Result<Node> {
+    let dom = Dom::parse(html)?;
 
     if dom.children.is_empty() {
         return Ok(Node::Empty);
@@ -33,7 +23,7 @@ pub fn html_to_node(html: &str) -> HtmlResult<Node> {
     }
 }
 
-fn html_node_to_ink(node: &HtmlNode) -> HtmlResult<Node> {
+fn html_node_to_ink(node: &HtmlNode) -> html_parser::Result<Node> {
     match node {
         HtmlNode::Text(content) => {
             let trimmed = content.trim();
@@ -48,7 +38,7 @@ fn html_node_to_ink(node: &HtmlNode) -> HtmlResult<Node> {
     }
 }
 
-fn element_to_node(el: &Element) -> HtmlResult<Node> {
+fn element_to_node(el: &Element) -> html_parser::Result<Node> {
     let tag = el.name.to_lowercase();
     let children: Vec<Node> = el
         .children

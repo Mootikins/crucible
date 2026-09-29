@@ -1,4 +1,4 @@
-use super::super::{process_file_references, IncludeError};
+use super::super::process_file_references;
 use crate::test_support::EnvVarGuard;
 use std::fs;
 use tempfile::TempDir;
@@ -138,7 +138,7 @@ api_key = "{file:nonexistent.key}"
 
     let errors = result.unwrap_err();
     assert_eq!(errors.len(), 1);
-    assert!(matches!(errors[0], IncludeError::FileNotFound(_)));
+    assert!(errors[0].to_string().starts_with("Include file not found:"));
 }
 
 #[test]
@@ -161,11 +161,11 @@ api_key = "{file:~/.secrets/test.key}"
     assert!(result.is_err());
 
     let errors = result.unwrap_err();
-    assert!(matches!(errors[0], IncludeError::FileNotFound(_)));
-
     // Verify the path was resolved to home directory
-    if let IncludeError::FileNotFound(path) = &errors[0] {
-        let home = dirs::home_dir().expect("HOME is pinned to the TempDir");
-        assert!(path.starts_with(home));
-    }
+    let home = dirs::home_dir().expect("HOME is pinned to the TempDir");
+    let message = errors[0].to_string();
+    assert!(
+        message.starts_with(&format!("Include file not found: {}", home.display())),
+        "{message}"
+    );
 }

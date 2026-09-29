@@ -27,7 +27,7 @@ use crate::error::LuaError;
 use crate::theme::ThemeConfig;
 use crucible_core::config::{ConfigSource, ConfigStore, LocationPolicy};
 use crucible_core::runtime_path::SearchPath;
-use crucible_core::sources::{Entry, Lookup, Sources, SourcesError};
+use crucible_core::sources::{Entry, Lookup, Sources};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
@@ -753,7 +753,7 @@ pub fn theme_roots(
     runtimepath: &[PathBuf],
     plugin_dirs: &[PathBuf],
     levels: &crucible_core::runtime_path::LevelPriorities,
-) -> Result<Sources<SearchPath>, SourcesError> {
+) -> anyhow::Result<Sources<SearchPath>> {
     use crucible_core::runtime_path::{build_path, search_sources, PathInputs, RuntimeAsset};
 
     let shipped = crucible_core::runtime_roots::shipped();

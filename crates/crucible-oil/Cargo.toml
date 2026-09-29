@@ -22,7 +22,6 @@ taffy = "0.12"
 textwrap = "0.16.2"
 html_parser = "0.7"
 proptest = { version = "1.11", optional = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

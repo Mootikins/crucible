@@ -1,9 +1,7 @@
 //! Event queue for managing file events with backpressure handling.
 
-use crate::watch::{
-    error::Result,
-    events::{FileEvent, FileEventKind},
-};
+use crate::watch::events::{FileEvent, FileEventKind};
+use anyhow::{bail, Result};
 use std::collections::VecDeque;
 use tracing::debug;
 
@@ -55,7 +53,7 @@ impl EventQueue {
             Ok(())
         } else {
             // Queue is empty but capacity is 0, drop new event
-            Err(crate::watch::error::Error::QueueFull(self.capacity))
+            bail!("event queue is full (capacity: {})", self.capacity)
         }
     }
 
@@ -80,7 +78,7 @@ impl EventQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::watch::{Error, FileEventKind};
+    use crate::watch::FileEventKind;
 
     #[tokio::test]
     async fn overflow_keeps_the_newest_events_in_order_and_drain_resets_length() {
@@ -114,7 +112,10 @@ mod tests {
         let result = queue
             .push(FileEvent::new(FileEventKind::Created, "note.md".into()))
             .await;
-        assert!(matches!(result, Err(Error::QueueFull(0))));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("event queue is full"));
         assert_eq!(queue.len(), 0);
         assert!(queue.drain_all().is_empty());
     }

@@ -6,12 +6,10 @@
 
 pub mod context;
 pub mod discovery;
-mod error;
 pub mod parser;
 pub mod types;
 
 pub use context::{format_skills_for_context, skill_instructions};
 pub use discovery::{FolderDiscovery, SearchPath};
-pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
 pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};

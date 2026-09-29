@@ -2,12 +2,12 @@
 
 use crate::watch::{
     backends::NotifyWatcher,
-    error::{Error, Result},
     events::FileEvent,
     handlers::{create_default_handlers, HandlerRegistry},
     traits::{DebounceConfig, EventHandler, WatchConfig, WatchHandle},
     utils::{Debouncer, EventQueue},
 };
+use anyhow::{anyhow, bail, Result};
 use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -117,7 +117,7 @@ impl WatchManager {
         {
             let is_running = self.is_running.read().await;
             if *is_running {
-                return Err(Error::AlreadyRunning);
+                bail!("watch manager is already running");
             }
         }
 
@@ -178,21 +178,19 @@ impl WatchManager {
         debug!("Adding watch for: {}", path.display());
 
         if !*self.is_running.read().await {
-            return Err(Error::NotRunning);
+            bail!("watch manager is not running");
         }
 
         // Get the event sender to pass to the watcher
         let event_sender = self
             .event_sender
             .as_ref()
-            .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
+            .ok_or_else(|| anyhow!("event sender not available"))?
             .clone();
 
         // Preserve the manager's supported platforms; there is no polling fallback.
         if !matches!(std::env::consts::OS, "linux" | "macos" | "windows") {
-            return Err(Error::BackendUnavailable(
-                "Native watching is unsupported on this platform".into(),
-            ));
+            bail!("native watching is unsupported on this platform");
         }
         let mut watcher = NotifyWatcher::new();
         watcher.set_event_sender(event_sender);
@@ -223,7 +221,7 @@ impl WatchManager {
         template: &WatchConfig,
     ) -> Result<usize> {
         if !*self.is_running.read().await {
-            return Err(Error::NotRunning);
+            bail!("watch manager is not running");
         }
         if paths.is_empty() {
             return Ok(0);
@@ -232,14 +230,12 @@ impl WatchManager {
         let event_sender = self
             .event_sender
             .as_ref()
-            .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
+            .ok_or_else(|| anyhow!("event sender not available"))?
             .clone();
 
         // Preserve the manager's supported platforms; there is no polling fallback.
         if !matches!(std::env::consts::OS, "linux" | "macos" | "windows") {
-            return Err(Error::BackendUnavailable(
-                "Native watching is unsupported on this platform".into(),
-            ));
+            bail!("native watching is unsupported on this platform");
         }
         let mut watcher = NotifyWatcher::new();
         watcher.set_event_sender(event_sender);
@@ -262,10 +258,7 @@ impl WatchManager {
         }
 
         if added == 0 {
-            return Err(Error::Watch(format!(
-                "no path of {} could be watched",
-                paths.len()
-            )));
+            bail!("no path of {} could be watched", paths.len());
         }
 
         self.watchers
@@ -306,7 +299,7 @@ impl WatchManager {
         let event_receiver = self
             .event_receiver
             .take()
-            .ok_or_else(|| Error::Internal("Event receiver not available".to_string()))?;
+            .ok_or_else(|| anyhow!("event receiver not available"))?;
 
         let handlers = Arc::clone(&self.handlers);
         let event_queue = Arc::clone(&self.event_queue);

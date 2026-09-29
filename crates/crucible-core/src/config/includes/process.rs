@@ -3,7 +3,6 @@ use std::path::Path;
 #[cfg(feature = "toml")]
 use tracing::{debug, warn};
 
-use super::error::IncludeError;
 #[cfg(feature = "toml")]
 use super::path::resolve_include_path;
 #[cfg(feature = "toml")]
@@ -19,7 +18,7 @@ use super::reference::{parse_ref_kind, read_dir_as_value, read_file_as_value, Re
 pub fn process_file_references(
     value: &mut toml::Value,
     base_dir: &Path,
-) -> Result<(), Vec<IncludeError>> {
+) -> Result<(), Vec<anyhow::Error>> {
     let mut errors = Vec::new();
     process_refs_recursive(value, base_dir, &mut errors);
 
@@ -34,7 +33,7 @@ pub fn process_file_references(
 pub(super) fn process_refs_recursive(
     value: &mut toml::Value,
     base_dir: &Path,
-    errors: &mut Vec<IncludeError>,
+    errors: &mut Vec<anyhow::Error>,
 ) {
     match value {
         toml::Value::String(s) => {
@@ -72,9 +71,10 @@ pub(super) fn process_refs_recursive(
                             }
                             Err(_) => {
                                 warn!("Environment variable not found: {}", var_name);
-                                errors.push(IncludeError::EnvVarNotFound {
-                                    var_name: var_name.clone(),
-                                });
+                                errors.push(anyhow::anyhow!(
+                                    "Environment variable not found: {var_name} \
+                                     (referenced as {{env:{var_name}}})"
+                                ));
                             }
                         }
                     }

@@ -1,4 +1,4 @@
-use super::super::{process_file_references, IncludeError};
+use super::super::process_file_references;
 use crate::test_support::EnvVarGuard;
 use std::fs;
 use tempfile::TempDir;
@@ -159,7 +159,9 @@ settings = "{dir:nonexistent.d}"
     assert!(result.is_err());
 
     let errors = result.unwrap_err();
-    assert!(matches!(errors[0], IncludeError::DirNotFound(_)));
+    assert!(errors[0]
+        .to_string()
+        .starts_with("Include directory not found:"));
 }
 
 #[test]
@@ -214,13 +216,13 @@ settings = "{dir:~/.config/crucible/nonexistent.d/}"
     assert!(result.is_err());
 
     let errors = result.unwrap_err();
-    assert!(matches!(errors[0], IncludeError::DirNotFound(_)));
-
     // Verify path was resolved to home directory
-    if let IncludeError::DirNotFound(path) = &errors[0] {
-        let home = dirs::home_dir().expect("HOME is pinned to the TempDir");
-        assert!(path.starts_with(home), "Path should start with home dir");
-    }
+    let home = dirs::home_dir().expect("HOME is pinned to the TempDir");
+    let message = errors[0].to_string();
+    assert!(
+        message.starts_with(&format!("Include directory not found: {}", home.display())),
+        "Path should start with home dir: {message}"
+    );
 }
 
 #[test]
@@ -306,7 +308,7 @@ settings = "{dir:conf.d}"
 
     let errors = result.unwrap_err();
     assert_eq!(errors.len(), 1);
-    assert!(matches!(errors[0], IncludeError::Parse { .. }));
+    assert!(errors[0].to_string().starts_with("Parse error in"));
 }
 
 #[test]

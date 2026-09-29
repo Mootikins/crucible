@@ -34,11 +34,11 @@ use tracing::{debug, info, warn};
 
 use crate::review::backend::RootBackend;
 use crate::watch::{
-    error::Result,
     handlers::ExternalChangeHandler,
     traits::{DebounceConfig, WatchConfig},
     WatchManager, WatchManagerConfig,
 };
+use anyhow::Result;
 
 /// Directories never handed to the watch backend, whatever git says.
 ///

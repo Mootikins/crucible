@@ -20,27 +20,10 @@
 //! }
 //! ```
 
+use anyhow::{anyhow, bail, Result};
 use crucible_core::config::{is_valid_plugin_name, PLUGIN_NAME_RULE};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum ManifestError {
-    #[error("Failed to read manifest: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Validation failed: {0}")]
-    Validation(String),
-
-    #[error("Missing required field: {0}")]
-    MissingField(String),
-
-    #[error("Invalid version format: {0}")]
-    InvalidVersion(String),
-}
-
-pub type ManifestResult<T> = Result<T, ManifestError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginManifest {
@@ -110,17 +93,18 @@ impl PluginManifest {
     /// Uses the directory stem as the plugin name, and NO version: the
     /// version is the plugin's own claim, and discovery fills it in from the
     /// fragment when there is one.
-    pub fn from_directory_defaults(dir: &Path) -> ManifestResult<Self> {
+    pub fn from_directory_defaults(dir: &Path) -> Result<Self> {
         let name = dir
             .file_stem()
             .and_then(|s| s.to_str())
-            .ok_or_else(|| ManifestError::Validation("Cannot derive name from directory".into()))?
+            .ok_or_else(|| anyhow!("Validation failed: Cannot derive name from directory"))?
             .to_string();
 
         if !is_valid_plugin_name(&name) {
-            return Err(ManifestError::Validation(format!(
-                "Directory name '{name}' is not a valid plugin name: {PLUGIN_NAME_RULE}"
-            )));
+            bail!(
+                "Validation failed: Directory name '{name}' is not a valid plugin name: \
+                 {PLUGIN_NAME_RULE}"
+            );
         }
 
         Ok(Self {
@@ -135,16 +119,16 @@ impl PluginManifest {
         })
     }
 
-    pub fn validate(&self) -> ManifestResult<()> {
+    pub fn validate(&self) -> Result<()> {
         if self.name.is_empty() {
-            return Err(ManifestError::MissingField("name".to_string()));
+            bail!("Missing required field: name");
         }
 
         if !is_valid_plugin_name(&self.name) {
-            return Err(ManifestError::Validation(format!(
-                "Invalid plugin name '{}': {PLUGIN_NAME_RULE}",
+            bail!(
+                "Validation failed: Invalid plugin name '{}': {PLUGIN_NAME_RULE}",
                 self.name
-            )));
+            );
         }
 
         // A version is optional — an unloaded plugin has none — but a
@@ -152,10 +136,10 @@ impl PluginManifest {
         // something no reader can compare.
         if let Some(version) = &self.version {
             if version.is_empty() {
-                return Err(ManifestError::MissingField("version".to_string()));
+                bail!("Missing required field: version");
             }
             if !is_valid_version(version) {
-                return Err(ManifestError::InvalidVersion(version.clone()));
+                bail!("Invalid version format: {version}");
             }
         }
 

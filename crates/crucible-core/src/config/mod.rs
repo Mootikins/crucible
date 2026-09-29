@@ -84,14 +84,14 @@ pub use config::{
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use credentials::{
-    discover_credentials, resolve_api_key, CredentialError, CredentialResult, CredentialSource,
-    DiscoveredCredential, ProviderSecrets, SecretsFile, SecretsFileContent,
+    discover_credentials, resolve_api_key, CredentialSource, DiscoveredCredential, ProviderSecrets,
+    SecretsFile, SecretsFileContent,
 };
 pub use enrichment::{
     default_max_precognition_chars, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
     MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
 };
-pub use includes::{process_file_references, IncludeError};
+pub use includes::process_file_references;
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
 pub use lua_emit::emit_lua_config;
 pub use merge::{deep_merge, flatten_leaves, leaf_at, nest_leaves, set_leaf};

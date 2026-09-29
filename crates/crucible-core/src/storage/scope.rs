@@ -29,26 +29,8 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
-/// Errors that can occur constructing a [`Scope`].
-#[derive(Debug, Error)]
-pub enum ScopeError {
-    /// The supplied path could not be canonicalized (typically: it doesn't
-    /// exist, or a symlink along the path is broken). We refuse silent
-    /// fallback to the unresolved path — see [`Scope::workspace`] for why.
-    #[error("scope path cannot be canonicalized: {path}: {source}")]
-    Canonicalize {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    /// A frontmatter `scope:` string used a kind that's no longer supported
-    /// (e.g. `global`, `user:alice`). The Wave 2 prune dropped both.
-    #[error("unsupported scope: {0}")]
-    Unsupported(String),
-}
 
 /// Memory scope for a note or a request authority.
 ///
@@ -84,19 +66,19 @@ pub enum Scope {
 impl Scope {
     /// Construct a workspace scope, canonicalizing the path.
     ///
-    /// Returns `Err(ScopeError::Canonicalize)` if the path cannot be
+    /// Returns an error if the path cannot be
     /// canonicalized — typically because it doesn't exist. Failing loudly
     /// here avoids the asymmetric-path adversarial case where two scopes
     /// pointing at the same workspace via different unresolved spellings
     /// compare unequal.
-    pub fn workspace(path: impl AsRef<Path>) -> Result<Self, ScopeError> {
+    pub fn workspace(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
-        let canon = p
-            .canonicalize()
-            .map_err(|source| ScopeError::Canonicalize {
-                path: p.to_path_buf(),
-                source,
-            })?;
+        let canon = p.canonicalize().map_err(|source| {
+            anyhow!(
+                "scope path cannot be canonicalized: {}: {source}",
+                p.display()
+            )
+        })?;
         Ok(Scope::Workspace { path: canon })
     }
 
@@ -145,7 +127,7 @@ impl Scope {
     /// **Strict refusal**: the Wave 2 prune removed `Global` and `User`
     /// variants; frontmatter using those kinds is now an error rather than
     /// being silently coerced.
-    pub fn from_property_value(value: &serde_json::Value) -> Option<Result<Scope, ScopeError>> {
+    pub fn from_property_value(value: &serde_json::Value) -> Option<Result<Scope>> {
         // Structured form.
         if value.is_object() {
             // Accept current (workspace-only) shape.
@@ -155,7 +137,7 @@ impl Scope {
             // Detect removed kinds and refuse explicitly.
             if let Some(kind) = value.get("kind").and_then(|k| k.as_str()) {
                 if matches!(kind, "global" | "user") {
-                    return Some(Err(ScopeError::Unsupported(kind.to_string())));
+                    return Some(Err(anyhow!("unsupported scope: {kind}")));
                 }
             }
         }
@@ -173,10 +155,10 @@ impl Scope {
     ///   the pipeline from the kiln binding at upsert time)
     /// - `"workspace:/abs/path"` → `Scope::Workspace { path: "/abs/path" }`
     ///
-    /// Returns `Err(ScopeError::Unsupported)` for the legacy `global` and
+    /// Returns an error for the legacy `global` and
     /// `user:*` kinds — the Wave 2 prune dropped them and we refuse silent
     /// coercion.
-    pub fn from_frontmatter_str(s: &str) -> Result<Scope, ScopeError> {
+    pub fn from_frontmatter_str(s: &str) -> Result<Scope> {
         let trimmed = s.trim();
         let lower = trimmed.to_ascii_lowercase();
         if lower == "workspace" {
@@ -193,9 +175,9 @@ impl Scope {
         // Reject the removed kinds explicitly so a stale note doesn't
         // silently parse with the wrong semantics.
         if lower == "global" || lower.starts_with("user:") {
-            return Err(ScopeError::Unsupported(trimmed.to_string()));
+            bail!("unsupported scope: {trimmed}");
         }
-        Err(ScopeError::Unsupported(trimmed.to_string()))
+        bail!("unsupported scope: {trimmed}")
     }
 
     /// Returns true if this is a `Workspace` scope with an empty path —
@@ -248,7 +230,10 @@ mod tests {
     #[test]
     fn workspace_canonicalize_fails_on_missing_path() {
         let result = Scope::workspace("/definitely/does/not/exist/xyz");
-        assert!(matches!(result, Err(ScopeError::Canonicalize { .. })));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .starts_with("scope path cannot be canonicalized"));
     }
 
     #[test]
@@ -279,31 +264,31 @@ mod tests {
     #[test]
     fn frontmatter_parse_global_refused() {
         // The Wave 2 prune dropped `global`. Refuse loudly rather than
-        // silently coercing — see ScopeError::Unsupported.
-        assert!(matches!(
-            Scope::from_frontmatter_str("global"),
-            Err(ScopeError::Unsupported(_))
-        ));
+        // silently coercing.
+        assert!(Scope::from_frontmatter_str("global")
+            .unwrap_err()
+            .to_string()
+            .starts_with("unsupported scope"));
     }
 
     #[test]
     fn frontmatter_parse_user_refused() {
-        assert!(matches!(
-            Scope::from_frontmatter_str("user:alice"),
-            Err(ScopeError::Unsupported(_))
-        ));
+        assert!(Scope::from_frontmatter_str("user:alice")
+            .unwrap_err()
+            .to_string()
+            .starts_with("unsupported scope"));
     }
 
     #[test]
     fn frontmatter_parse_unknown_refused() {
-        assert!(matches!(
-            Scope::from_frontmatter_str("admin"),
-            Err(ScopeError::Unsupported(_))
-        ));
-        assert!(matches!(
-            Scope::from_frontmatter_str(""),
-            Err(ScopeError::Unsupported(_))
-        ));
+        assert!(Scope::from_frontmatter_str("admin")
+            .unwrap_err()
+            .to_string()
+            .starts_with("unsupported scope"));
+        assert!(Scope::from_frontmatter_str("")
+            .unwrap_err()
+            .to_string()
+            .starts_with("unsupported scope"));
     }
 
     #[test]
@@ -341,14 +326,22 @@ mod tests {
     fn property_value_legacy_global_refused() {
         let v = serde_json::json!({ "kind": "global" });
         let decoded = Scope::from_property_value(&v);
-        assert!(matches!(decoded, Some(Err(ScopeError::Unsupported(_)))));
+        assert!(decoded
+            .expect("a refusal")
+            .unwrap_err()
+            .to_string()
+            .starts_with("unsupported scope"));
     }
 
     #[test]
     fn property_value_legacy_user_refused() {
         let v = serde_json::json!({ "kind": "user", "id": "alice" });
         let decoded = Scope::from_property_value(&v);
-        assert!(matches!(decoded, Some(Err(ScopeError::Unsupported(_)))));
+        assert!(decoded
+            .expect("a refusal")
+            .unwrap_err()
+            .to_string()
+            .starts_with("unsupported scope"));
     }
 
     #[test]

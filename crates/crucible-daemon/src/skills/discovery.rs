@@ -1,9 +1,9 @@
 //! Folder-based skill discovery with source-qualified collisions.
 
 use crate::runtime_path::{MachineRuntime, SourceRoots};
-use crate::skills::error::{SkillError, SkillResult};
 use crate::skills::parser::SkillParser;
 use crate::skills::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
+use anyhow::{bail, Context, Result};
 use crucible_core::runtime_path::{
     build_path, search_sources, Origin, PathInputs, PriorityLevel, RuntimeAsset, RuntimeEntry,
 };
@@ -109,7 +109,7 @@ impl FolderDiscovery {
     /// `shadowed` names the other skills of that name. Every other skill
     /// takes its full name `source:name`. Two skills of one name at one
     /// priority both take full names, so the bare name is ambiguous.
-    pub fn discover(&self) -> SkillResult<HashMap<String, ResolvedSkill>> {
+    pub fn discover(&self) -> Result<HashMap<String, ResolvedSkill>> {
         let sources = sources_new(
             self.search_paths
                 .iter()
@@ -121,7 +121,7 @@ impl FolderDiscovery {
                 })
                 .collect(),
         )
-        .map_err(|e| SkillError::DiscoveryError(e.to_string()))?;
+        .context("Discovery error")?;
 
         let mut entries: Vec<Entry<Skill>> = Vec::new();
         for (index, source) in sources.list().iter().enumerate() {
@@ -170,16 +170,13 @@ impl FolderDiscovery {
         Ok(resolved)
     }
 
-    fn discover_in_path(&self, search_path: &SearchPath) -> SkillResult<Vec<Skill>> {
+    fn discover_in_path(&self, search_path: &SearchPath) -> Result<Vec<Skill>> {
         let mut skills = Vec::new();
         let pattern = search_path.path.join("*/SKILL.md");
         let pattern_str = pattern.to_string_lossy();
 
-        for entry in glob::glob(&pattern_str)
-            .map_err(|e| SkillError::DiscoveryError(format!("Invalid glob pattern: {}", e)))?
-        {
-            let skill_md_path =
-                entry.map_err(|e| SkillError::DiscoveryError(format!("Glob error: {}", e)))?;
+        for entry in glob::glob(&pattern_str).context("Invalid glob pattern")? {
+            let skill_md_path = entry.context("Glob error")?;
 
             match self.parse_skill_file(&skill_md_path, search_path) {
                 Ok(skill) => skills.push(skill),
@@ -189,26 +186,21 @@ impl FolderDiscovery {
         Ok(skills)
     }
 
-    fn parse_skill_file(&self, path: &Path, search_path: &SearchPath) -> SkillResult<Skill> {
+    fn parse_skill_file(&self, path: &Path, search_path: &SearchPath) -> Result<Skill> {
         // Reject symlinks. A SKILL.md (or its parent directory) symlinked
         // to anything sensitive — `~/.ssh/id_rsa`, another user's home,
         // arbitrary system files — would otherwise be read into LLM context
         // as instructions. Cross-harness discovery makes this realistic:
         // any unrelated tool that writes to `~/.claude/skills/...` becomes
         // a vector.
-        let file_meta = std::fs::symlink_metadata(path).map_err(|e| SkillError::ReadError {
-            path: path.to_path_buf(),
-            source: e,
-        })?;
+        let file_meta = std::fs::symlink_metadata(path)
+            .with_context(|| format!("Failed to read skill file: {}", path.display()))?;
         if file_meta.file_type().is_symlink() {
             warn!(
                 path = %path.display(),
                 "Skipping symlinked SKILL.md (security policy)"
             );
-            return Err(SkillError::DiscoveryError(format!(
-                "skipped symlinked SKILL.md: {}",
-                path.display()
-            )));
+            bail!("skipped symlinked SKILL.md: {}", path.display());
         }
         if let Some(parent) = path.parent() {
             if let Ok(parent_meta) = std::fs::symlink_metadata(parent) {
@@ -217,10 +209,7 @@ impl FolderDiscovery {
                         path = %parent.display(),
                         "Skipping skill in symlinked directory (security policy)"
                     );
-                    return Err(SkillError::DiscoveryError(format!(
-                        "skipped skill in symlinked directory: {}",
-                        parent.display()
-                    )));
+                    bail!("skipped skill in symlinked directory: {}", parent.display());
                 }
             }
         }
@@ -234,17 +223,15 @@ impl FolderDiscovery {
                 limit = SKILL_MAX_BYTES,
                 "Skipping oversized SKILL.md"
             );
-            return Err(SkillError::DiscoveryError(format!(
+            bail!(
                 "SKILL.md exceeds {} bytes: {}",
                 SKILL_MAX_BYTES,
                 path.display()
-            )));
+            );
         }
 
-        let content = std::fs::read_to_string(path).map_err(|e| SkillError::ReadError {
-            path: path.to_path_buf(),
-            source: e,
-        })?;
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read skill file: {}", path.display()))?;
 
         let content_hash = hex::encode(Sha256::digest(content.as_bytes()));
 

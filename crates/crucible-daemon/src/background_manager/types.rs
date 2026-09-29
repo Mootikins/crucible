@@ -1,14 +1,4 @@
 use super::*;
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum BackgroundError {
-    #[error("Job error: {0}")]
-    Job(#[from] JobError),
-
-    #[error("Failed to spawn job: {0}")]
-    SpawnFailed(String),
-}
 
 pub(super) struct RunningJob {
     pub(crate) info: JobInfo,

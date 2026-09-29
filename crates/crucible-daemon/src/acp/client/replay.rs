@@ -99,20 +99,21 @@ impl ReplayFixture {
 
     /// Parse fixture body from text. Public for tests that build fixtures
     /// inline.
-    pub fn parse(text: &str) -> Result<Self, ReplayError> {
+    pub fn parse(text: &str) -> anyhow::Result<Self> {
         let mut lines = text.lines();
         let header_line = lines
             .next()
-            .ok_or_else(|| ReplayError::Format("empty fixture".into()))?;
+            .ok_or_else(|| anyhow::anyhow!("fixture format error: empty fixture"))?;
         let header: FixtureHeader = serde_json::from_str(header_line)
-            .map_err(|e| ReplayError::Format(format!("bad header: {e}")))?;
+            .map_err(|e| anyhow::anyhow!("fixture format error: bad header: {e}"))?;
         let mut records = Vec::new();
         for (i, line) in lines.enumerate() {
             if line.trim().is_empty() {
                 continue;
             }
-            let record: FrameRecord = serde_json::from_str(line)
-                .map_err(|e| ReplayError::Format(format!("bad frame at line {}: {e}", i + 2)))?;
+            let record: FrameRecord = serde_json::from_str(line).map_err(|e| {
+                anyhow::anyhow!("fixture format error: bad frame at line {}: {e}", i + 2)
+            })?;
             records.push(record);
         }
         Ok(Self { header, records })
@@ -148,21 +149,6 @@ impl ReplayFixture {
         (writer, reader, Box::pin(driver))
     }
 }
-
-#[derive(Debug)]
-pub enum ReplayError {
-    Format(String),
-}
-
-impl std::fmt::Display for ReplayError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Format(s) => write!(f, "fixture format error: {s}"),
-        }
-    }
-}
-
-impl std::error::Error for ReplayError {}
 
 /// Result of running the driver to completion (or hitting an error).
 #[derive(Debug, Default)]

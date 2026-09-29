@@ -246,9 +246,7 @@ pub use lifecycle::{
     PluginSpec, FRAGMENT_FILE,
 };
 pub use luau_compat::register_stdlib_compat;
-pub use manifest::{
-    LoadedPlugin, ManifestError, ManifestResult, PluginManifest, PluginSource, PluginState,
-};
+pub use manifest::{LoadedPlugin, PluginManifest, PluginSource, PluginState};
 pub use mcp::register_mcp_module_stub;
 pub use modes::{
     humanize_mode_id, register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance,

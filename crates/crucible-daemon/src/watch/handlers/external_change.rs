@@ -11,11 +11,11 @@ use async_trait::async_trait;
 use tracing::trace;
 
 use crate::watch::{
-    error::Result,
     events::{FileEvent, FileEventKind},
     external_changes::{ExternalChangeTracker, Ownership},
     traits::EventHandler,
 };
+use anyhow::Result;
 
 /// Records worktree writes that no capture bracket owns.
 pub struct ExternalChangeHandler {

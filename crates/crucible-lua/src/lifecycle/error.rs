@@ -1,11 +1,7 @@
-use crate::manifest::ManifestError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum LifecycleError {
-    #[error("Manifest error: {0}")]
-    Manifest(#[from] ManifestError),
-
     #[error("Plugin not found: {0}")]
     NotFound(String),
 

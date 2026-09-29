@@ -16,7 +16,6 @@
 )]
 
 pub mod backends;
-pub mod error;
 mod events;
 pub mod external_changes;
 pub mod handlers;
@@ -26,7 +25,6 @@ pub mod traits;
 mod utils;
 
 pub use backends::NotifyWatcher;
-pub use error::{Error, Result};
 pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
 pub use external_changes::{
     CaptureWindow, ExternalChange, ExternalChangeTracker, ExternalChangeWatch, Ownership,

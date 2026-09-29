@@ -2,34 +2,13 @@
 //!
 //! Provides CLI commands for managing tasks defined in TaskFile frontmatter.
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Subcommand;
 use regex::Regex;
 use std::path::{Path, PathBuf};
-use thiserror::Error;
 
 use crate::config::CliAppConfig;
 use crucible_core::parser::{CheckboxStatus, TaskFile, TaskGraph};
-
-/// Task-related errors
-#[derive(Debug, Error)]
-pub enum TaskError {
-    /// File I/O error
-    #[error("Failed to read task file: {0}")]
-    IoError(#[from] std::io::Error),
-
-    /// Task file parsing error
-    #[error("Failed to parse task file: {0}")]
-    ParseError(String),
-
-    /// Task not found
-    #[error("Task not found: {0}")]
-    NotFound(String),
-
-    /// Task already done
-    #[error("Task {0} is already done")]
-    AlreadyDone(String),
-}
 
 #[derive(Subcommand)]
 pub enum TasksSubcommand {
@@ -52,9 +31,11 @@ pub enum TasksSubcommand {
 ///
 /// # Returns
 /// The parsed TaskFile or an error if loading/parsing fails
-fn load_task_file(path: &Path) -> Result<TaskFile, TaskError> {
-    let content = std::fs::read_to_string(path)?;
-    TaskFile::from_markdown(path.to_path_buf(), &content).map_err(TaskError::ParseError)
+fn load_task_file(path: &Path) -> Result<TaskFile> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read task file: {}", path.display()))?;
+    TaskFile::from_markdown(path.to_path_buf(), &content)
+        .map_err(|e| anyhow!("Failed to parse task file: {e}"))
 }
 
 /// Write task status changes back to the file
@@ -65,8 +46,9 @@ fn load_task_file(path: &Path) -> Result<TaskFile, TaskError> {
 /// # Arguments
 /// * `path` - Path to the task file
 /// * `task_file` - The modified TaskFile with updated statuses
-fn write_task_file(path: &Path, task_file: &TaskFile) -> Result<(), TaskError> {
-    let content = std::fs::read_to_string(path)?;
+fn write_task_file(path: &Path, task_file: &TaskFile) -> Result<()> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read task file: {}", path.display()))?;
     let lines: Vec<&str> = content.lines().collect();
 
     // Build a map of task id -> new status
@@ -134,8 +116,7 @@ pub async fn execute(_config: CliAppConfig, file: PathBuf, command: TasksSubcomm
         }
         TasksSubcommand::Next => {
             let task_file = load_task_file(&file)?;
-            let graph = TaskGraph::from_tasks(&task_file.tasks)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let graph = TaskGraph::from_tasks(&task_file.tasks)?;
             let ready = graph.ready_tasks(&task_file.tasks);
 
             if ready.is_empty() {
@@ -158,10 +139,10 @@ pub async fn execute(_config: CliAppConfig, file: PathBuf, command: TasksSubcomm
                 .tasks
                 .iter_mut()
                 .find(|t| t.id == id)
-                .ok_or_else(|| TaskError::NotFound(id.clone()))?;
+                .ok_or_else(|| anyhow!("Task not found: {id}"))?;
 
             if task.status == CheckboxStatus::Done {
-                return Err(TaskError::AlreadyDone(id).into());
+                bail!("Task {id} is already done");
             }
 
             task.status = CheckboxStatus::InProgress;
@@ -177,7 +158,7 @@ pub async fn execute(_config: CliAppConfig, file: PathBuf, command: TasksSubcomm
                 .tasks
                 .iter_mut()
                 .find(|t| t.id == id)
-                .ok_or_else(|| TaskError::NotFound(id.clone()))?;
+                .ok_or_else(|| anyhow!("Task not found: {id}"))?;
 
             task.status = CheckboxStatus::Done;
 
@@ -192,7 +173,7 @@ pub async fn execute(_config: CliAppConfig, file: PathBuf, command: TasksSubcomm
                 .tasks
                 .iter_mut()
                 .find(|t| t.id == id)
-                .ok_or_else(|| TaskError::NotFound(id.clone()))?;
+                .ok_or_else(|| anyhow!("Task not found: {id}"))?;
 
             task.status = CheckboxStatus::Blocked;
 
@@ -401,7 +382,6 @@ description: Tasks loaded from explicit path
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        // Should be a TaskError with appropriate message
         let err_str = err.to_string();
         assert!(
             err_str.contains("TASKS.md")

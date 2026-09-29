@@ -183,9 +183,13 @@ fn a_folded_name_claimed_by_two_directories_aborts_the_build() {
     )
     .expect_err("a name claimed by two directories must not build");
 
-    let RegistryError::Collision { name: n, .. } = &err;
-    assert_eq!(n, &name("My Vault"));
     let message = err.to_string();
+    assert!(
+        // The two keys fold to one name, so either spelling may be the one
+        // that the message names.
+        message.to_lowercase().contains("kiln name 'my vault'"),
+        "the abort must name the contested kiln: {message}"
+    );
     assert!(
         message.contains("alpha") && message.contains("bravo"),
         "the abort must name both paths so the user can fix it: {message}"

@@ -280,23 +280,6 @@ impl KilnResolution {
 #[error("{0}")]
 pub struct RegistrationRefused(String);
 
-/// A registry that cannot be built, because acting on it would need Crucible to
-/// guess which of two corpora the user meant.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum RegistryError {
-    // Names both paths and the fix. A collision the user cannot locate is a
-    // daemon that will not start for reasons they cannot act on.
-    #[error(
-        "kiln name '{name}' is claimed by two different directories — '{first}' and '{second}'. \
-         Rename one of the `[kilns]` entries in your config and start the daemon again."
-    )]
-    Collision {
-        name: KilnName,
-        first: String,
-        second: String,
-    },
-}
-
 /// Name → kiln, and the floor every path crosses to get in here.
 #[derive(Debug)]
 pub struct KilnRegistry {
@@ -371,7 +354,7 @@ impl KilnRegistry {
     pub fn from_app_config(
         ctx: KilnRegistryContext,
         app_config: Option<&serde_json::Value>,
-    ) -> Result<Self, RegistryError> {
+    ) -> anyhow::Result<Self> {
         let registry = Self::empty(ctx);
         let Some(app_config) = app_config else {
             debug!("No app config: the kiln registry is empty and every name unresolvable");
@@ -701,7 +684,7 @@ impl KilnRegistry {
     /// keys folding onto one name is a config the user must resolve, and
     /// picking a winner silently re-points already-persisted sessions at a
     /// different corpus.
-    fn insert_configured(&self, key: &str, raw: &Path, lazy: bool) -> Result<(), RegistryError> {
+    fn insert_configured(&self, key: &str, raw: &Path, lazy: bool) -> anyhow::Result<()> {
         let Some(name) = KilnName::normalize(key) else {
             warn!(
                 kiln = key,
@@ -738,11 +721,16 @@ impl KilnRegistry {
             // the user wrote down. See `register_named`.
             Some(existing) if existing.origin == RegistrationOrigin::Discovered => {}
             Some(existing) => {
-                return Err(RegistryError::Collision {
-                    name,
-                    first: existing.path.display().to_string(),
-                    second: resolved.lexical().display().to_string(),
-                })
+                // Names both paths and the fix. A collision the user cannot
+                // locate is a daemon that will not start for reasons they
+                // cannot act on. Nothing asks which refusal this was, so the
+                // message is the whole contract.
+                anyhow::bail!(
+                    "kiln name '{name}' is claimed by two different directories — '{}' and '{}'. \
+                     Rename one of the `[kilns]` entries in your config and start the daemon again.",
+                    existing.path.display(),
+                    resolved.lexical().display()
+                )
             }
             None => {}
         }

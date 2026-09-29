@@ -1,6 +1,7 @@
 //! MCP Gateway Manager - aggregates upstream MCP servers
 
 use super::mcp_client::{create_stdio_executor_with_env, RmcpExecutor};
+use anyhow::{anyhow, bail, Result};
 use crucible_core::config::mcp::{McpConfig, TransportType, UpstreamServerConfig};
 use crucible_core::traits::mcp::{McpError, McpToolInfo, ToolCallResult};
 use crucible_core::utils::glob_match;
@@ -13,43 +14,13 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-/// Error type for gateway operations.
-#[derive(Debug, thiserror::Error)]
-pub enum GatewayError {
-    /// Upstream server not found by name.
-    #[error("Upstream '{0}' not found")]
-    UpstreamNotFound(String),
-    /// Tool not found by prefixed name.
-    #[error("Tool '{0}' not found")]
-    ToolNotFound(String),
-    /// Failed to establish connection to upstream.
-    #[error("Connection failed: {0}")]
-    ConnectionFailed(String),
-    /// Tool execution failed on upstream.
-    #[error("Tool call failed: {0}")]
-    ToolCallFailed(String),
-    /// Upstream with this name already registered.
-    #[error("Upstream '{0}' already exists")]
-    DuplicateUpstream(String),
-    /// Prefix already in use by another upstream.
-    #[error("Prefix '{0}' already in use by upstream '{1}'")]
-    DuplicatePrefix(String, String),
-    /// Tool call timed out.
-    #[error("Tool '{0}' timed out after {1}s")]
-    Timeout(String, u64),
-    /// Invalid prefix format.
-    #[error("Invalid prefix '{0}': {1}")]
-    InvalidPrefix(String, String),
-    /// An upstream tool's prefixed name is a Crucible built-in.
-    #[error(
-        "Upstream '{0}' would expose '{1}', which is a Crucible built-in tool name; \
+/// The refusal of an upstream whose prefixed tool name is a Crucible built-in.
+fn shadows_builtin(upstream: &str, tool: &str) -> anyhow::Error {
+    anyhow!(
+        "Upstream '{upstream}' would expose '{tool}', which is a Crucible built-in tool name; \
          change the server's prefix"
-    )]
-    ShadowsBuiltin(String, String),
+    )
 }
-
-/// Result type for gateway operations.
-pub type GatewayResult<T> = Result<T, GatewayError>;
 
 /// State of an upstream connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,8 +82,8 @@ impl UpstreamClient {
     /// Connect to the upstream server and discover available tools.
     ///
     /// # Errors
-    /// Returns `GatewayError::ConnectionFailed` if connection fails.
-    pub async fn connect(&mut self) -> GatewayResult<()> {
+    /// Returns an error if the connection fails.
+    pub async fn connect(&mut self) -> Result<()> {
         match &self.config.transport {
             TransportType::Stdio { command, args, env } => {
                 let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -144,19 +115,17 @@ impl UpstreamClient {
                     }
                     Err(e) => {
                         self.set_state(ConnectionState::Error);
-                        Err(GatewayError::ConnectionFailed(format!(
-                            "{}: {}",
-                            self.name, e
-                        )))
+                        Err(anyhow!("Connection failed: {}: {}", self.name, e))
                     }
                 }
             }
             TransportType::Sse { url, .. } => {
                 self.set_state(ConnectionState::Error);
-                Err(GatewayError::ConnectionFailed(format!(
-                    "{}: SSE transport not yet implemented (url: {})",
-                    self.name, url
-                )))
+                Err(anyhow!(
+                    "Connection failed: {}: SSE transport not yet implemented (url: {})",
+                    self.name,
+                    url
+                ))
             }
         }
     }
@@ -201,27 +170,23 @@ impl UpstreamClient {
     ///
     /// # Errors
     /// Returns error if not connected, tool call fails, or times out.
-    pub async fn call_tool(
-        &self,
-        tool_name: &str,
-        args: JsonValue,
-    ) -> GatewayResult<ToolCallResult> {
-        let executor = self.executor.as_ref().ok_or_else(|| {
-            GatewayError::ConnectionFailed(format!("{}: not connected", self.name))
-        })?;
+    pub async fn call_tool(&self, tool_name: &str, args: JsonValue) -> Result<ToolCallResult> {
+        let executor = self
+            .executor
+            .as_ref()
+            .ok_or_else(|| anyhow!("Connection failed: {}: not connected", self.name))?;
 
         let timeout_duration = Duration::from_secs(self.config.timeout_secs);
 
-        let outcome = tokio::time::timeout(timeout_duration, executor.call_tool(tool_name, args))
-            .await
-            .map_err(|_| GatewayError::Timeout(tool_name.to_string(), self.config.timeout_secs));
+        let outcome =
+            tokio::time::timeout(timeout_duration, executor.call_tool(tool_name, args)).await;
 
         // A server that answers with an error is still connected. One that
         // does not answer, or whose pipe is gone, is not: mark it so the
         // reconnect loop restarts it.
         let lost = matches!(
             &outcome,
-            Err(GatewayError::Timeout(..))
+            Err(_)
                 | Ok(Err(McpError::Transport(_)
                     | McpError::Connection(_)
                     | McpError::NotConnected))
@@ -234,7 +199,14 @@ impl UpstreamClient {
             self.set_state(ConnectionState::Disconnected);
         }
 
-        outcome?.map_err(|e| GatewayError::ToolCallFailed(e.to_string()))
+        match outcome {
+            Err(_) => bail!(
+                "Tool '{}' timed out after {}s",
+                tool_name,
+                self.config.timeout_secs
+            ),
+            Ok(reply) => reply.map_err(|e| anyhow!("Tool call failed: {e}")),
+        }
     }
 
     /// Disconnect from the upstream server.
@@ -265,7 +237,7 @@ impl McpGatewayManager {
     ///
     /// # Errors
     /// Returns error if any upstream fails to connect (logged but continues).
-    pub async fn from_config(config: &McpConfig) -> GatewayResult<Self> {
+    pub async fn from_config(config: &McpConfig) -> Result<Self> {
         let mut manager = Self::new();
 
         for server_config in &config.servers {
@@ -281,19 +253,19 @@ impl McpGatewayManager {
     ///
     /// # Errors
     /// Returns error if upstream name/prefix is duplicate or connection fails.
-    pub async fn add_upstream(&mut self, config: UpstreamServerConfig) -> GatewayResult<()> {
+    pub async fn add_upstream(&mut self, config: UpstreamServerConfig) -> Result<()> {
         let name = config.name.clone();
         let prefix = config.prefix.clone();
 
         Self::validate_prefix(&prefix)?;
 
         if self.upstreams.contains_key(&name) {
-            return Err(GatewayError::DuplicateUpstream(name));
+            bail!("Upstream '{name}' already exists");
         }
 
         for (existing_name, existing_client) in &self.upstreams {
             if existing_client.prefix == prefix {
-                return Err(GatewayError::DuplicatePrefix(prefix, existing_name.clone()));
+                bail!("Prefix '{prefix}' already in use by upstream '{existing_name}'");
             }
         }
 
@@ -309,12 +281,12 @@ impl McpGatewayManager {
     /// the operator chose the prefix, the fix is to change it, and silently
     /// serving a server minus one tool is how a shadowing attempt becomes
     /// invisible.
-    fn index_upstream(&mut self, mut client: UpstreamClient) -> GatewayResult<()> {
+    fn index_upstream(&mut self, mut client: UpstreamClient) -> Result<()> {
         let name = client.name.clone();
 
         if let Some(shadowed) = Self::shadowed_builtin(client.tools()) {
             client.disconnect();
-            return Err(GatewayError::ShadowsBuiltin(name, shadowed));
+            return Err(shadows_builtin(&name, &shadowed));
         }
 
         for tool in client.tools() {
@@ -347,27 +319,24 @@ impl McpGatewayManager {
             .map(|t| t.prefixed_name.clone())
     }
 
-    fn validate_prefix(prefix: &str) -> GatewayResult<()> {
+    fn validate_prefix(prefix: &str) -> Result<()> {
         if prefix.is_empty() {
-            return Err(GatewayError::InvalidPrefix(
-                prefix.to_string(),
-                "prefix cannot be empty".to_string(),
-            ));
+            bail!("Invalid prefix '{prefix}': {}", "prefix cannot be empty");
         }
         if !prefix
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_')
         {
-            return Err(GatewayError::InvalidPrefix(
-                prefix.to_string(),
-                "prefix must contain only alphanumeric characters and underscores".to_string(),
-            ));
+            bail!(
+                "Invalid prefix '{prefix}': {}",
+                "prefix must contain only alphanumeric characters and underscores"
+            );
         }
         if !prefix.ends_with('_') {
-            return Err(GatewayError::InvalidPrefix(
-                prefix.to_string(),
-                "prefix should end with underscore for clarity".to_string(),
-            ));
+            bail!(
+                "Invalid prefix '{prefix}': {}",
+                "prefix should end with underscore for clarity"
+            );
         }
         Ok(())
     }
@@ -406,20 +375,16 @@ impl McpGatewayManager {
     ///
     /// # Errors
     /// Returns error if tool or upstream not found, or call fails.
-    pub async fn call_tool(
-        &self,
-        prefixed_name: &str,
-        args: JsonValue,
-    ) -> GatewayResult<ToolCallResult> {
+    pub async fn call_tool(&self, prefixed_name: &str, args: JsonValue) -> Result<ToolCallResult> {
         let upstream_name = self
             .tool_index
             .get(prefixed_name)
-            .ok_or_else(|| GatewayError::ToolNotFound(prefixed_name.to_string()))?;
+            .ok_or_else(|| anyhow!("Tool '{prefixed_name}' not found"))?;
 
         let client = self
             .upstreams
             .get(upstream_name)
-            .ok_or_else(|| GatewayError::UpstreamNotFound(upstream_name.clone()))?;
+            .ok_or_else(|| anyhow!("Upstream '{upstream_name}' not found"))?;
 
         let original_name = prefixed_name
             .strip_prefix(&client.prefix)
@@ -489,11 +454,11 @@ impl McpGatewayManager {
     ///
     /// # Errors
     /// Returns error if upstream not found or reconnection fails.
-    pub async fn reconnect(&mut self, name: &str) -> GatewayResult<()> {
+    pub async fn reconnect(&mut self, name: &str) -> Result<()> {
         let client = self
             .upstreams
             .get_mut(name)
-            .ok_or_else(|| GatewayError::UpstreamNotFound(name.to_string()))?;
+            .ok_or_else(|| anyhow!("Upstream '{name}' not found"))?;
 
         for tool in client.tools() {
             self.tool_index.remove(&tool.prefixed_name);
@@ -506,7 +471,7 @@ impl McpGatewayManager {
         // before.
         if let Some(shadowed) = Self::shadowed_builtin(client.tools()) {
             client.disconnect();
-            return Err(GatewayError::ShadowsBuiltin(name.to_string(), shadowed));
+            return Err(shadows_builtin(name, &shadowed));
         }
 
         for tool in client.tools() {
@@ -750,7 +715,7 @@ mod call_failure_tests {
             .call_tool("ping", serde_json::json!({}))
             .await
             .expect_err("the server is gone");
-        assert!(matches!(err, GatewayError::ToolCallFailed(_)), "{err}");
+        assert!(err.to_string().starts_with("Tool call failed"), "{err}");
 
         assert_eq!(
             manager.upstreams["up"].state(),
@@ -771,7 +736,7 @@ mod call_failure_tests {
             .call_tool("ping", serde_json::json!({}))
             .await
             .expect_err("the server never answers");
-        assert!(matches!(err, GatewayError::Timeout(_, 1)), "{err}");
+        assert!(err.to_string().contains("timed out after 1s"), "{err}");
 
         assert_eq!(
             manager.upstreams_needing_reconnect(),
@@ -788,7 +753,7 @@ mod call_failure_tests {
             .call_tool("ping", serde_json::json!({}))
             .await
             .expect_err("the server refuses the call");
-        assert!(matches!(err, GatewayError::ToolCallFailed(_)), "{err}");
+        assert!(err.to_string().starts_with("Tool call failed"), "{err}");
 
         assert_eq!(manager.upstreams["up"].state(), ConnectionState::Connected);
         assert!(manager.upstreams_needing_reconnect().is_empty());
@@ -868,30 +833,30 @@ mod tests {
     fn test_prefix_validation_empty() {
         let result = McpGatewayManager::validate_prefix("");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            GatewayError::InvalidPrefix(_, _)
-        ));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .starts_with("Invalid prefix"));
     }
 
     #[test]
     fn test_prefix_validation_no_trailing_underscore() {
         let result = McpGatewayManager::validate_prefix("gh");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            GatewayError::InvalidPrefix(_, _)
-        ));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .starts_with("Invalid prefix"));
     }
 
     #[test]
     fn test_prefix_validation_special_chars() {
         let result = McpGatewayManager::validate_prefix("gh-mcp_");
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            GatewayError::InvalidPrefix(_, _)
-        ));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .starts_with("Invalid prefix"));
     }
 
     #[test]
@@ -976,8 +941,8 @@ mod tests {
             .expect_err("an upstream shadowing a built-in must not be registered");
 
         assert!(
-            matches!(err, GatewayError::ShadowsBuiltin(ref up, ref tool)
-                if up == "docs" && tool == "read_note"),
+            err.to_string()
+                .contains("Upstream 'docs' would expose 'read_note'"),
             "{err}"
         );
         assert!(!manager.has_tool("read_note"));

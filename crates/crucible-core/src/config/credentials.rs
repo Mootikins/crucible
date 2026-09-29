@@ -30,6 +30,7 @@
 //! 3. Config file value (already resolved from `{env:VAR}` / `{file:path}`)
 
 use crate::config::components::backend::{ollama_endpoint_from_env, BackendType};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -56,25 +57,6 @@ pub struct SecretsFileContent {
     #[serde(default)]
     pub providers: HashMap<String, ProviderSecrets>,
 }
-
-/// Errors from credential store operations
-#[derive(Debug, thiserror::Error)]
-pub enum CredentialError {
-    /// IO error reading/writing credential store
-    #[error("credential store IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    /// TOML serialization error
-    #[error("credential store serialization error: {0}")]
-    Serialize(#[from] toml::ser::Error),
-
-    /// TOML parse error
-    #[error("credential store parse error: {0}")]
-    Parse(#[from] toml::de::Error),
-}
-
-/// Result type for credential operations
-pub type CredentialResult<T> = Result<T, CredentialError>;
 
 /// TOML-based credential store
 ///
@@ -120,12 +102,13 @@ impl SecretsFile {
     }
 
     /// Read the secrets file from disk
-    fn read(&self) -> CredentialResult<SecretsFileContent> {
+    fn read(&self) -> anyhow::Result<SecretsFileContent> {
         if !self.path.exists() {
             return Ok(SecretsFileContent::default());
         }
 
-        let content = std::fs::read_to_string(&self.path)?;
+        let content = std::fs::read_to_string(&self.path)
+            .with_context(|| format!("credential store IO error: {}", self.path.display()))?;
         if content.trim().is_empty() {
             return Ok(SecretsFileContent::default());
         }
@@ -148,14 +131,16 @@ impl SecretsFile {
     }
 
     /// Write the secrets file to disk with restricted permissions
-    fn write(&self, content: &SecretsFileContent) -> CredentialResult<()> {
-        let toml_str = toml::to_string_pretty(content)?;
-        crate::fs::write_private(&self.path, toml_str.as_bytes())?;
+    fn write(&self, content: &SecretsFileContent) -> anyhow::Result<()> {
+        let toml_str =
+            toml::to_string_pretty(content).context("credential store serialization error")?;
+        crate::fs::write_private(&self.path, toml_str.as_bytes())
+            .with_context(|| format!("credential store IO error: {}", self.path.display()))?;
         Ok(())
     }
 
     /// Get the OAuth token for a provider
-    pub fn get_oauth_token(&self, provider: &str) -> CredentialResult<Option<String>> {
+    pub fn get_oauth_token(&self, provider: &str) -> anyhow::Result<Option<String>> {
         let content = self.read()?;
         Ok(content
             .providers
@@ -164,7 +149,7 @@ impl SecretsFile {
     }
 
     /// Store an OAuth token for a provider
-    pub fn set_oauth_token(&mut self, provider: &str, oauth_token: &str) -> CredentialResult<()> {
+    pub fn set_oauth_token(&mut self, provider: &str, oauth_token: &str) -> anyhow::Result<()> {
         let mut content = self.read()?;
         let mut secrets = content
             .providers
@@ -187,7 +172,7 @@ impl Default for SecretsFile {
 
 impl SecretsFile {
     /// Get the API key for a provider
-    pub fn get(&self, provider: &str) -> CredentialResult<Option<String>> {
+    pub fn get(&self, provider: &str) -> anyhow::Result<Option<String>> {
         let content = self.read()?;
         Ok(content
             .providers
@@ -196,7 +181,7 @@ impl SecretsFile {
     }
 
     /// Store an API key for a provider
-    pub fn set(&mut self, provider: &str, api_key: &str) -> CredentialResult<()> {
+    pub fn set(&mut self, provider: &str, api_key: &str) -> anyhow::Result<()> {
         let mut content = self.read()?;
         content.providers.insert(
             provider.to_string(),
@@ -209,7 +194,7 @@ impl SecretsFile {
     }
 
     /// Remove credentials for a provider. Returns true if the provider existed.
-    pub fn remove(&mut self, provider: &str) -> CredentialResult<bool> {
+    pub fn remove(&mut self, provider: &str) -> anyhow::Result<bool> {
         let mut content = self.read()?;
         let existed = content.providers.remove(provider).is_some();
         if existed {
@@ -219,7 +204,7 @@ impl SecretsFile {
     }
 
     /// List all stored provider -> API key pairs
-    pub fn list(&self) -> CredentialResult<HashMap<String, String>> {
+    pub fn list(&self) -> anyhow::Result<HashMap<String, String>> {
         let content = self.read()?;
         Ok(content
             .providers

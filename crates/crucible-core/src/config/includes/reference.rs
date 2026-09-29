@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "toml")]
 use tracing::{debug, warn};
 
-use super::error::IncludeError;
 #[cfg(feature = "toml")]
 use super::merge::merge_toml_values;
 #[cfg(feature = "toml")]
@@ -53,22 +52,18 @@ pub(super) fn parse_ref_kind(s: &str) -> Option<RefKind> {
 /// - If the file has a `.toml` extension, parse it as TOML
 /// - Otherwise, return the content as a trimmed string
 #[cfg(feature = "toml")]
-pub(super) fn read_file_as_value(path: &Path) -> Result<toml::Value, IncludeError> {
+pub(super) fn read_file_as_value(path: &Path) -> anyhow::Result<toml::Value> {
     if !path.exists() {
-        return Err(IncludeError::FileNotFound(path.to_path_buf()));
+        anyhow::bail!("Include file not found: {}", path.display());
     }
 
-    let content = std::fs::read_to_string(path).map_err(|e| IncludeError::Io {
-        path: path.to_path_buf(),
-        error: e.to_string(),
-    })?;
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("IO error reading {}: {e}", path.display()))?;
 
     // If it's a TOML file, parse it as structured data
     if path.extension().is_some_and(|ext| ext == "toml") {
-        let value: toml::Value = toml::from_str(&content).map_err(|e| IncludeError::Parse {
-            path: path.to_path_buf(),
-            error: e.to_string(),
-        })?;
+        let value: toml::Value = toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Parse error in {}: {e}", path.display()))?;
         Ok(value)
     } else {
         // Otherwise, return as a trimmed string (useful for secrets)
@@ -88,22 +83,19 @@ pub(super) fn read_file_as_value(path: &Path) -> Result<toml::Value, IncludeErro
 pub(super) fn read_dir_as_value(
     dir_path: &Path,
     base_dir: &Path,
-    errors: &mut Vec<IncludeError>,
-) -> Result<toml::Value, IncludeError> {
+    errors: &mut Vec<anyhow::Error>,
+) -> anyhow::Result<toml::Value> {
     if !dir_path.exists() {
-        return Err(IncludeError::DirNotFound(dir_path.to_path_buf()));
+        anyhow::bail!("Include directory not found: {}", dir_path.display());
     }
 
     if !dir_path.is_dir() {
-        return Err(IncludeError::NotADirectory(dir_path.to_path_buf()));
+        anyhow::bail!("Path is not a directory: {}", dir_path.display());
     }
 
     // Collect and sort .toml files
     let mut toml_files: Vec<PathBuf> = std::fs::read_dir(dir_path)
-        .map_err(|e| IncludeError::Io {
-            path: dir_path.to_path_buf(),
-            error: e.to_string(),
-        })?
+        .map_err(|e| anyhow::anyhow!("IO error reading {}: {e}", dir_path.display()))?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|path| {
