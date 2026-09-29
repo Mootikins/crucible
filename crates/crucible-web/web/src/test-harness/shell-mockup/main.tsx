@@ -18,7 +18,7 @@ import { configureWindowing, windowActions, windowStore } from '@/windowing/stor
 import { WindowManager } from '@/windowing/components/WindowManager';
 import type { Tab } from '@/windowing/model/types';
 import { mockPolicy, type MockType } from './policy';
-import { mockSlots } from './chrome';
+import { applyMaterial, mockSlots } from './chrome';
 import { ChangesView, FilesPanel, NoteView, SessionView, SessionsPanel, TerminalView } from './panels';
 import { setFocusedNote } from './state';
 import { openNote } from './actions';
@@ -33,6 +33,7 @@ configureWindowing(
   }),
 );
 Object.assign(window, { __windowStore: windowStore, __windowActions: windowActions });
+applyMaterial();
 
 /** The composer's context chip follows the note that has focus in the centre. */
 function FocusedNoteTracker() {

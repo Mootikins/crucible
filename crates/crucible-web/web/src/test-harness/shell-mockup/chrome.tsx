@@ -54,6 +54,18 @@ const PLUGIN_CSS: Record<string, string> = {
 :root[data-theme='light'] { --cru-color-primary:#1f4a91; --cru-color-primary-hover:#17376d; --cru-color-primary-active:#102850; --cru-color-on-primary:#ffffff; }`,
 };
 const [plugin, setPlugin] = createSignal('none');
+
+/**
+ * Glass or flat. Glass is the default, except where the OS asks for less
+ * transparency: then the flat surfaces stay.
+ */
+const [material, setMaterialSignal] = createSignal<'glass' | 'flat'>(
+  matchMedia('(prefers-reduced-transparency: reduce)').matches ? 'flat' : 'glass',
+);
+export function applyMaterial(m: 'glass' | 'flat' = material()) {
+  setMaterialSignal(m);
+  document.documentElement.dataset.material = m;
+}
 function applyPlugin(id: string) {
   setPlugin(id);
   let el = document.getElementById('mk-plugin-theme');
@@ -117,6 +129,15 @@ const SettingsBody: Component = () => (
         <small>Off: only its toggle ends it (Shift+Esc).</small>
       </span>
     </label>
+    <div class="mk-ph">Surface</div>
+    <For each={[['glass', 'Glass: gradient, blur and grain'], ['flat', 'Flat']] as const}>
+      {([id, label]) => (
+        <label class="mk-check">
+          <input type="radio" name="mk-material" checked={material() === id} onChange={() => applyMaterial(id)} />
+          <span>{label}</span>
+        </label>
+      )}
+    </For>
     <div class="mk-ph">Plugin stylesheet</div>
     <For each={[['none', 'None'], ['docs', 'Docs example: blue, square']] as const}>
       {([id, label]) => (

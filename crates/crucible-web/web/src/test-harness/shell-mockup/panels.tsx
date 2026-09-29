@@ -45,6 +45,13 @@ import {
 import { hoverEnd, hoverStart, openChanges, openNote } from './actions';
 
 const basename = (p: string) => p.split('/').pop() ?? p;
+
+/** Run a layout change as a view transition, so an expand morphs instead of jumping. */
+export function withTransition(change: () => void) {
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (doc.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) doc.startViewTransition(change);
+  else change();
+}
 const resolve = (target: string): string | null => {
   const t = target.split('#')[0]!.trim().replace(/\.md$/, '');
   if (KILN_PATHS.includes(t)) return t;
@@ -640,6 +647,18 @@ export const SessionView: Component = () => {
   const perm = () => state.perms[sid()];
   const owed = () => pendingHunks(sid()).length;
   const expanded = () => windowStore.expandedEdge === 'right';
+  // While the session covers the centre, a peek floats at the right edge.
+  // The transcript makes room for it instead of running under it.
+  const peekRoom = () => {
+    if (!expanded()) return 0;
+    const peekWin = windowStore.floatingWindows.find(
+      (w) => !w.isMinimized && windowStore.tabGroups[w.tabGroupId]?.tabs.some((t) => t.id.startsWith('peek:')),
+    );
+    // Room only where the transcript keeps a readable column (about 34rem)
+    // beside the peek; a narrower window lets the peek float over it.
+    if (!peekWin || window.innerWidth - peekWin.width < 900) return 0;
+    return peekWin.width + 24;
+  };
   const ctx = () => {
     const n = focusedNote();
     return n && !state.ctxOff[n] ? n : null;
@@ -660,20 +679,20 @@ export const SessionView: Component = () => {
           class="mk-iconbtn"
           title={`${expanded() ? 'Back to the documents' : 'Cover the centre'} (Shift+Esc)`}
           aria-pressed={expanded()}
-          onClick={() => windowActions.toggleEdgeExpanded('right')}
+          onClick={() => withTransition(() => windowActions.toggleEdgeExpanded('right'))}
         >
           <Show when={expanded()} fallback={<Maximize2 class="mk-i" />}><Minimize2 class="mk-i" /></Show>
         </button>
         <button type="button" class="mk-iconbtn" title="More"><MoreHorizontal class="mk-i" /></button>
       </div>
-      <div class="mk-scroll mk-transcript">
+      <div class="mk-scroll mk-transcript" style={{ 'padding-right': peekRoom() ? `${peekRoom()}px` : undefined }}>
         <div class="mk-tinner">
           <For each={blocks(state.transcripts[sid()] ?? [])}>
             {(b) => (b.kind === 'group' ? <ToolGroup items={b.items} /> : <ItemView it={b.it} last={b.last} />)}
           </For>
         </div>
       </div>
-      <div class="mk-composerwrap">
+      <div class="mk-composerwrap" style={{ 'padding-right': peekRoom() ? `${peekRoom()}px` : undefined }}>
         <div class="mk-cinner">
           <Show when={perm()}>
             {(p) => (

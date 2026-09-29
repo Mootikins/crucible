@@ -276,3 +276,145 @@
 .mk-check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 12px; color: var(--cru-color-body); cursor: pointer; }
 .mk-check input { margin-top: 3px; accent-color: var(--cru-color-primary); }
 .mk-check small { display: block; color: var(--cru-color-muted-dark); font-size: 11.5px; }
+
+/* ------------------------------------------------------ 3. glass material
+ * `:root[data-material='glass']`. Every rule here is either a `--cru-*`
+ * value (translucent surfaces over a gradient ground) or a mockup-body rule.
+ * The few core selectors (`[data-window-id]`) mark what a real material
+ * would need as TOKENS: a blur, an edge highlight and a grain opacity.
+ */
+:root[data-material='glass'] {
+  /* Chrome (root, rails, ribbons, tab bars) stacks this value 2-3 times,
+     so it stays thin: the ground shows through the chrome. Reading surfaces
+     use shell-panel, which stays near-opaque for contrast. */
+  --cru-color-shell-bg: rgba(18, 19, 23, 0.32);
+  --cru-color-shell-panel: rgba(24, 25, 30, 0.86);
+  --cru-color-surface-base: rgba(25, 26, 31, 0.7);
+  --cru-color-surface-elevated: rgba(44, 45, 53, 0.66);
+  --cru-color-surface-overlay: rgba(32, 33, 40, 0.68);
+  --cru-color-control: rgba(255, 255, 255, 0.07);
+  --cru-color-hairline: rgba(255, 255, 255, 0.055);
+  --cru-color-hairline-strong: rgba(255, 255, 255, 0.1);
+  --mk-glass-blur: blur(22px) saturate(1.6);
+  --mk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  --mk-grain-opacity: 0.07;
+  --mk-grain-blend: overlay;
+  --mk-ground:
+    radial-gradient(900px 620px at 8% 0%, rgba(110, 158, 240, 0.42), transparent 64%),
+    radial-gradient(860px 600px at 96% 100%, rgba(177, 148, 236, 0.36), transparent 64%),
+    radial-gradient(640px 440px at 55% 60%, rgba(107, 191, 187, 0.10), transparent 70%),
+    #0a0b0e;
+}
+:root[data-material='glass'][data-theme='light'] {
+  --cru-color-shell-bg: rgba(238, 240, 244, 0.34);
+  --cru-color-shell-panel: rgba(252, 252, 253, 0.88);
+  --cru-color-surface-base: rgba(252, 252, 253, 0.72);
+  --cru-color-surface-elevated: rgba(255, 255, 255, 0.74);
+  --cru-color-surface-overlay: rgba(255, 255, 255, 0.72);
+  --cru-color-control: rgba(20, 22, 28, 0.06);
+  --cru-color-hairline: rgba(20, 22, 28, 0.07);
+  --cru-color-hairline-strong: rgba(20, 22, 28, 0.13);
+  --mk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(20, 22, 28, 0.04);
+  --mk-grain-opacity: 0.05;
+  --mk-grain-blend: soft-light;
+  --mk-ground:
+    radial-gradient(900px 620px at 8% 0%, rgba(46, 98, 200, 0.26), transparent 64%),
+    radial-gradient(860px 600px at 96% 100%, rgba(106, 79, 176, 0.22), transparent 64%),
+    #e4e7ee;
+}
+
+/* The ground the translucent shell shows through. */
+:root[data-material='glass'] body { background: var(--mk-ground); background-attachment: fixed; }
+
+/* Grain: a fine noise over everything, which also breaks gradient banding. */
+:root[data-material='glass'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  opacity: var(--mk-grain-opacity);
+  mix-blend-mode: var(--mk-grain-blend);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Rail bodies catch a faint sheen from the top edge. */
+:root[data-material='glass'] [data-edge-panel-body] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 42%);
+}
+:root[data-material='glass'][data-theme='light'] [data-edge-panel-body] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 42%);
+}
+
+/* The working surfaces float as cards over the ground: the centre, and the
+   session rail. The gaps between them show the ground. A real version needs
+   two tokens the contract lacks: a shell gap and a shell radius. */
+:root[data-material='glass'] [data-testid='centre-column'] > div,
+:root[data-material='glass'] [data-testid='edge-host-right'] [data-edge-panel-body] {
+  margin: 6px 6px 6px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--cru-color-hairline-strong);
+  background: var(--cru-color-shell-panel);
+  box-shadow: var(--mk-glass-edge), 0 18px 48px -20px rgba(0, 0, 0, 0.7);
+}
+:root[data-material='glass'][data-theme='light'] [data-testid='centre-column'] > div,
+:root[data-material='glass'][data-theme='light'] [data-testid='edge-host-right'] [data-edge-panel-body] {
+  box-shadow: var(--mk-glass-edge), 0 18px 48px -24px rgba(20, 22, 28, 0.28);
+}
+:root[data-material='glass'] [data-testid='edge-host-right'] [data-edge-panel-body] { margin-left: 0; }
+/* Inside a card, the tab bars take the card's own ground. */
+:root[data-material='glass'] [data-testid='centre-column'] > div,
+:root[data-material='glass'] [data-testid='edge-host-right'] [data-edge-panel-body] { --cru-color-shell-bg: transparent; }
+
+/* Floating layers are frosted: windows (peek, hover editor), popovers, the permission card. */
+:root[data-material='glass'] [data-window-id],
+:root[data-material='glass'] .mk-pop,
+:root[data-material='glass'] .mk-perm {
+  backdrop-filter: var(--mk-glass-blur);
+  -webkit-backdrop-filter: var(--mk-glass-blur);
+  box-shadow: var(--mk-glass-edge), 0 24px 60px -18px rgba(0, 0, 0, 0.6);
+}
+:root[data-material='glass'][data-theme='light'] [data-window-id],
+:root[data-material='glass'][data-theme='light'] .mk-pop,
+:root[data-material='glass'][data-theme='light'] .mk-perm { box-shadow: var(--mk-glass-edge), 0 24px 60px -20px rgba(20, 22, 28, 0.25); }
+
+/* The composer is a frosted capsule; focus draws a gradient ring. */
+:root[data-material='glass'] .mk-composer {
+  backdrop-filter: var(--mk-glass-blur);
+  -webkit-backdrop-filter: var(--mk-glass-blur);
+  box-shadow: var(--mk-glass-edge);
+}
+:root[data-material='glass'] .mk-composer:focus-within {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--cru-color-shell-panel), var(--cru-color-shell-panel)) padding-box,
+    linear-gradient(120deg, var(--cru-color-primary), var(--cru-color-precog) 55%, var(--cru-color-canvas-cyan)) border-box;
+  box-shadow: var(--mk-glass-edge), 0 0 0 4px color-mix(in srgb, var(--cru-color-primary) 12%, transparent);
+}
+
+/* Actions: a lit top edge and a short vertical gradient. */
+:root[data-material='glass'] .mk-btn.primary,
+:root[data-material='glass'] .mk-send:not(:disabled):not(.queue) {
+  background: linear-gradient(180deg, var(--cru-color-primary-hover), var(--cru-color-primary) 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px -6px color-mix(in srgb, var(--cru-color-primary) 70%, transparent);
+}
+:root[data-material='glass'] .mk-btn:not(.primary):not(.ghost) { box-shadow: var(--mk-glass-edge); }
+
+/* Selection and attention read as light falling from the left. */
+:root[data-material='glass'] .mk-srow[aria-current='true'] {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--cru-color-primary) 24%, transparent), color-mix(in srgb, var(--cru-color-primary) 6%, transparent) 85%);
+}
+:root[data-material='glass'] .mk-hhead {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--cru-color-attention) 16%, transparent), color-mix(in srgb, var(--cru-color-attention) 4%, transparent));
+}
+:root[data-material='glass'] .mk-queued {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--cru-color-primary) 12%, transparent), color-mix(in srgb, var(--cru-color-primary) 3%, transparent));
+}
+:root[data-material='glass'] .mk-bubble { box-shadow: var(--mk-glass-edge); }
+:root[data-material='glass'] .mk-props,
+:root[data-material='glass'] .mk-chunk { box-shadow: var(--mk-glass-edge); }
+
+/* The expand morph: one short cross-fade of the whole row. */
+::view-transition-old(root),
+::view-transition-new(root) { animation-duration: 220ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
