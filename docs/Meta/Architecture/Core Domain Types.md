@@ -923,10 +923,9 @@ crate — see [[Agent Manager]] for that hazard.
   storage` is set unconditionally; the conversion does not compute a real
   count, so a caller that trusts `SessionSummary::from(&session).event_count`
   without separately populating it reads a permanent zero.
-- **`http.rs`'s `HttpError::InvalidUrl` is unreachable from `execute`.** The
-  variant exists but `execute`'s error mapping only produces `Timeout` or a
-  generic `Request` error; a URL-parse failure surfaces as the latter, not
-  as `InvalidUrl`. `HttpMethod::Patch`/`Head`/`Options` also have no
+- **`http.rs`'s `execute` returns `anyhow::Result`.** It reports a timeout,
+  a failed request and an unreadable body as text. No caller matches a
+  kind of error. `HttpMethod::Patch`/`Head`/`Options` also have no
   matching `HttpRequest` builder constructor, unlike `Get`/`Post`/`Put`/`Delete`.
 - **One record's claim that `JobKind::Subagent` is dead code does not hold
   up.** It is still constructed live by

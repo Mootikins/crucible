@@ -117,7 +117,6 @@ defines the `Spec`/`SpecEntry` data shape and the rank-merge algebra, but
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-core/src/config/includes/error.rs` | 42 | `IncludeError` — the error type for `{file:}`/`{dir:}`/`{env:}` references. |
 | `crates/crucible-core/src/config/includes/merge.rs` | 27 | `merge_toml_values` — deep merge of two TOML trees for `{dir:}` fragments. |
 | `crates/crucible-core/src/config/includes/mod.rs` | 71 | Module root and documentation for the include mechanism. |
 | `crates/crucible-core/src/config/includes/path.rs` | 29 | `resolve_include_path` — resolves a reference path against a base directory. |
@@ -585,7 +584,7 @@ pop cannot strip provenance from a boot-time location key.
 - `config/includes/mod.rs`'s module doc describes a `BestEffort` mode (missing
   env vars warn and continue) versus a `Strict` mode (hard error); `process.rs`'s
   actual `RefKind::Env` handling always both warns and pushes an
-  `IncludeError::EnvVarNotFound`, with no `BestEffort`/`Strict` enum or field
+  "Environment variable not found" error, with no `BestEffort`/`Strict` enum or field
   anywhere in `includes/`. The doc describes a mode that is not implemented.
 - `config/components/trust.rs`'s `TrustLevel` derives `Ord` from declaration
   order (`Untrusted < Cloud < Local`) with no test that pins the order itself

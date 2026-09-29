@@ -595,11 +595,21 @@ audit record:
   (daemon) into `PermissionDecision`; the TS `PermissionScope`.
 - error enums whose variants no caller matches become `anyhow`:
   `watch::Error`, `SkillError`, `BackgroundError`, `ModelListingError`,
-  `ReplayError`, and the others that a sweep finds.
+  `ReplayError`, and the others that a sweep finds. **(Done.** The sweep
+  also removed `GatewayError`, `HtmlError`, `GateError`, `GraphError`,
+  `TaskError`, `RegistryError`, `WebhookAuthError`, `ProjectError`,
+  `CredentialError`, `ManifestError`, `ScopeError`, `SourcesError`,
+  `HttpError` and `IncludeError`. `LuaError`, `StorageError`, core
+  `turn::AgentError`, `PatternError` and `ParserError` stay for now: each
+  change touches a trait contract or an area that another change owns.**)**
 - small copies: `RenderedOverlay` (oil), the identical one-field tool
   parameter structs, `ModelInfoBuilder`, `ExecuteMultiKilnSearchParams`,
   the duplicate test `Daemon` in `server/diff.rs`, the web path and kiln
-  query copies, the TS `PaneDropPosition` and `Rect` copies.
+  query copies, the TS `PaneDropPosition` and `Rect` copies. **(Done,**
+  also `EventUtils`, the TS `FileBodyProps` and the Lua notify test
+  doubles. `GetJobResultParams` and `CancelJobParams` stay: their field
+  descriptions differ, and each description is the text of a tool
+  schema.**)**
 
 **Done when.**
 - Each listed item is gone, or the step records why it stays, with the code

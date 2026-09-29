@@ -161,7 +161,6 @@ This page's subsystem:
 | --- | --- | --- |
 | `crates/crucible-daemon/src/watch/backends/mod.rs` | 4 | Module gate re-exporting `NotifyWatcher`. |
 | `crates/crucible-daemon/src/watch/backends/notify_backend.rs` | 375 | `NotifyWatcher` — wraps the `notify`/`notify-debouncer-full` crates into Crucible's `WatchHandle`/`FileEvent` model; decodes a kernel rename as one `Moved` event (not two `Modified`s) and a lost-events overflow as a `Rescan`. |
-| `crates/crucible-daemon/src/watch/error.rs` | 125 | The watch subsystem's independent `Error`/`Result` type. |
 | `crates/crucible-daemon/src/watch/events.rs` | 374 | `FileEvent`, `FileEventKind` (now including `Rescan`), `EventMetadata`, `EventFilter` — the shared file-event data model; `EventFilter::matches` always passes a `Rescan` and skips the extension filter for a folder-shaped `Moved`. |
 | `crates/crucible-daemon/src/watch/external_changes.rs` | 1286 | `ExternalChangeTracker`/`ExternalChangeWatch` — classifies every worktree write as bracketed, external or untracked, for the review ledger. |
 | `crates/crucible-daemon/src/watch/manager.rs` | 464 | `WatchManager` — the generic watch coordinator: backend instances, event queue, debouncer, handler registry, event-processing task. |
@@ -181,7 +180,7 @@ This page's subsystem:
 | Path | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-daemon/src/watch/utils/debouncer.rs` | 266 | `Debouncer` — in-process event debouncer grouping/deduplicating rapid successive events per path. |
-| `crates/crucible-daemon/src/watch/utils/mod.rs` | 39 | Utils module wiring plus `EventUtils::deduplication_key`, whose exhaustive `FileEventKind` match now also covers `Rescan`. |
+| `crates/crucible-daemon/src/watch/utils/mod.rs` | 39 | Utils module wiring plus the free function `deduplication_key`, whose exhaustive `FileEventKind` match also covers `Rescan`. The watch subsystem returns `anyhow::Result`. |
 | `crates/crucible-daemon/src/watch/utils/queue.rs` | 121 | `EventQueue` — bounded FIFO with drop-oldest backpressure feeding handler dispatch; a drain after any drop appends a synthetic `FileEventKind::Rescan` so a consumer that mirrors the tree knows to re-read it. |
 
 ### `crates/crucible-daemon/src/workspace`

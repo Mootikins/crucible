@@ -114,7 +114,7 @@ The root `AGENTS.md` ownership table names `crucible-oil` as the owner of
   created fresh per render call inside `layout/tree_render.rs`; nothing
   holds one across frames except `Terminal<W>`'s `ScreenDiff`, which keeps
   the previous frame's rendered rows, not a `CellGrid`.
-- **`FramePlanner`/`FrameSnapshot`/`FramePlan`/`Graduation`/`RenderedOverlay`**
+- **`FramePlanner`/`FrameSnapshot`/`FramePlan`/`Graduation`**
   (`crates/crucible-oil/src/planning.rs`) are the per-frame orchestration
   types. `FramePlanner` is created once by `Terminal<W>` and called once per
   frame (`plan_frame`); `FrameSnapshot` is the immutable output a `Terminal`
@@ -505,9 +505,8 @@ next frame's row diff rewrites every row at the new width.
   `render_box_content` code fills the background for a borderless box
   whenever `style.bg.is_some()`, so the comment describes a bug the code has
   already fixed; it is a stale description, not a live defect.
-- `HtmlError::UnsupportedElement` in `crates/crucible-oil/src/template/html.rs`
-  is declared but no code path in the file constructs it — dead until a
-  strict-mode validation path is added. Child-node parse errors inside
+- `html_to_node` in `crates/crucible-oil/src/template/html.rs` returns the
+  `html_parser` error directly. It has no error type of its own. Child-node parse errors inside
   `html_to_node` are silently dropped (`.filter_map(|c| ... .ok())`) rather
   than aggregated, which can hide malformed plugin markup rather than surface
   it, in tension with `AGENTS.md`'s "every error variant a distinct handler."

@@ -113,7 +113,7 @@ Grouped by directory. Lines are as of `582c5e6c1`.
 |---|---|---|
 | `crates/crucible-daemon/src/background_manager/bash.rs` | 346 | `BackgroundJobManager::spawn_bash` — spawns and supervises a detached bash job with concurrent stdout/stderr/wait to avoid a pipe deadlock, emitting typed `JobPayload` events through `EventBus`. |
 | `crates/crucible-daemon/src/background_manager/mod.rs` | 194 | `BackgroundJobManager` itself: state, list/get/cancel/cleanup, bounded per-session history. |
-| `crates/crucible-daemon/src/background_manager/types.rs` | 31 | `BackgroundError`, `RunningJob`, `BashError` (the job event-name constant table was removed; events are typed `JobPayload` variants now). |
+| `crates/crucible-daemon/src/background_manager/types.rs` | 31 | `RunningJob`, `BashError` (the job event-name constant table was removed; events are typed `JobPayload` variants now). `spawn_bash` returns the core `JobError`. |
 | `crates/crucible-daemon/src/background_manager/spawner.rs` | 28 | `impl BackgroundSpawner for BackgroundJobManager` — the seam generic tool code uses to spawn/inspect/cancel jobs. |
 | `crates/crucible-daemon/src/background_manager/tests/bash.rs` | 385 | Integration tests: spawn, list, cancel, timeout, history eviction, events (asserted as typed `JobPayload` variants), cleanup, the `BackgroundSpawner` trait object. |
 | `crates/crucible-daemon/src/background_manager/tests/mod.rs` | 8 | Shared `create_manager()` fixture. |
@@ -149,7 +149,6 @@ Grouped by directory. Lines are as of `582c5e6c1`.
 | `crates/crucible-daemon/src/skills/parser.rs` | 255 | `SkillParser` — YAML frontmatter plus Markdown body into a `Skill`. |
 | `crates/crucible-daemon/src/skills/types.rs` | 104 | `SkillScope`, `SkillSource` (now carrying `namespace`), `Skill`, `ResolvedSkill`, `SkillFrontmatter`. |
 | `crates/crucible-daemon/src/skills/context.rs` | 119 | `format_skills_for_context` — the compact, cache-stable tier-1 catalog for the system prompt. |
-| `crates/crucible-daemon/src/skills/error.rs` | 29 | `SkillError`/`SkillResult`. |
 | `crates/crucible-daemon/src/skills/mod.rs` | 17 | Module wiring and public re-exports. |
 
 ### `crates/crucible-daemon/src/workflow_handlers/`

@@ -73,7 +73,7 @@ performs that conversion.
 | `crates/crucible-core/src/parser/types/frontmatter.rs` | 75 | `Frontmatter`, `FrontmatterFormat` |
 | `crates/crucible-core/src/parser/types/inline_metadata.rs` | 225 | `InlineMetadata`, `extract_inline_metadata`; Dataview-style `[key:: value]` |
 | `crates/crucible-core/src/parser/types/lists.rs` | 110 | `CheckboxStatus` |
-| `crates/crucible-core/src/parser/types/task.rs` | 1180 | `TaskItem`, `TaskFile`, `TaskGraph`, `GraphError`: `TASKS.md`-format parsing and dependency graph |
+| `crates/crucible-core/src/parser/types/task.rs` | 1180 | `TaskItem`, `TaskFile`, `TaskGraph`: `TASKS.md`-format parsing and dependency graph. A missing dependency or a cycle is an `anyhow` error. |
 | `crates/crucible-core/src/parser/types/workflow.rs` | 790 | `WorkflowDoc`, `WorkflowStep`, `Gate`, `ValidationEntry`, `WorkflowParseWarning`: `type: workflow` note parsing, parse-only |
 | `crates/crucible-core/src/parser/types/workflow/tests.rs` | 904 | Unit test suite for `workflow.rs`, loaded via `#[cfg(test)] mod tests;` |
 | `crates/crucible-core/src/note_edit.rs` | 243 | `AnchoredEdit`, `EditRefusal`, `EditOutcome`, `apply_anchored_edits`, `disk_hash`: anchored line edits |

@@ -113,7 +113,8 @@ Directory `crates/crucible-daemon/src/server/` (connection lifecycle and top-lev
 | `crates/crucible-daemon/src/server/bind.rs` | 324 | `BindWithPluginConfigParams`: the one parameter struct `Server::bind_with_plugin_config` consumes. |
 | `crates/crucible-daemon/src/server/diff.rs` | 946 | `diff.get`/`diff.file`: `Admission`, branch/session-record/proposal diffset resolution, and file-text serving. |
 | `crates/crucible-daemon/src/server/diff_comments.rs` | 585 | `diff.comment`/`diff.resolve_comment`/`diff.delete_comment`/`diff.comments`: comment anchoring, outdatedness projection, and the source the Lua bridge shares with these handlers. |
-| `crates/crucible-daemon/src/server/diff_comments_tests.rs` | 563 | `#[cfg(test)]`, `#[path]`-included from `diff_comments.rs`: anchoring, refusal, and outdatedness-projection tests. |
+| `crates/crucible-daemon/src/server/diff_comments_tests.rs` | 470 | `#[cfg(test)]`, `#[path]`-included from `diff_comments.rs`: anchoring, refusal, and outdatedness-projection tests. |
+| `crates/crucible-daemon/src/server/diff_test_daemon.rs` | 120 | `#[cfg(test)]`: the one test `Daemon` that the `diff.rs` tests and the `diff_comments` tests share, with its `repo` and `working_tree` helpers. |
 | `crates/crucible-daemon/src/server/diff_context.rs` | 204 | Resolves `@comment:<id>` mentions and composer `CommentRef`s into `<context kind="review-comment">` blocks for `session.send_message`. |
 | `crates/crucible-daemon/src/server/external_announce.rs` | 69 | Coalesces external file-change events into one `review_changed` event per session. |
 | `crates/crucible-daemon/src/server/file_event_hooks.rs` | 444 | Dispatches broadcast events into Lua `cru.on(...)` handlers; `run_handlers` is shared with `SessionLifecycle::stop`'s scoped end-observer pass. |

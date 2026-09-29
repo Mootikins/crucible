@@ -61,7 +61,7 @@ and handle.
 | `crates/crucible-daemon/src/llm/embeddings/mod.rs` | 102 | Embeddings module root; `create_provider`, the one factory entry point |
 | `crates/crucible-daemon/src/llm/embeddings/config.rs` | 112 | Re-exports `crucible_core::config::EmbeddingProviderConfig` as `EmbeddingConfig`; expected-dimensions lookup |
 | `crates/crucible-daemon/src/llm/embeddings/error.rs` | 154 | `EmbeddingError`/`EmbeddingResult`, shared by every provider; retry classification |
-| `crates/crucible-daemon/src/llm/embeddings/provider.rs` | 524 | Shared value types: `ModelFamily`, `ParameterSize`, `ModelInfo`/`ModelInfoBuilder`, `EmbeddingResponse` |
+| `crates/crucible-daemon/src/llm/embeddings/provider.rs` | 524 | Shared value types: `ModelFamily`, `ParameterSize`, `ModelInfo`, `EmbeddingResponse` |
 | `crates/crucible-daemon/src/llm/embeddings/fastembed.rs` | 498 | Local ONNX/CPU provider, feature-gated behind `fastembed` |
 | `crates/crucible-daemon/src/llm/embeddings/ollama.rs` | 665 | Ollama HTTP provider with retry/backoff and native batch requests |
 | `crates/crucible-daemon/src/llm/embeddings/openai.rs` | 407 | OpenAI HTTP embedding provider |
@@ -102,7 +102,7 @@ and handle.
   `is_retryable`/`retry_delay_secs` methods drive `ollama.rs`'s
   `embed_with_retry` backoff loop.
 - `crates/crucible-daemon/src/llm/embeddings/provider.rs`'s `ModelInfo` (built
-  via `ModelInfoBuilder`) and `EmbeddingResponse` are the shared value types
+  with struct update syntax on `ModelInfo::new`) and `EmbeddingResponse` are the shared value types
   every provider's `list_models`/`embed` return; `catalog.rs` builds
   `ModelInfo` values from its curated table.
 - `crates/crucible-daemon/src/provider/adapter_mapping.rs`'s `ChatClient
