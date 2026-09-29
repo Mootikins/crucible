@@ -54,6 +54,7 @@ const defaults = (): Tweaks => ({
   accent: 'theme',
   reading: 15,
   plugin: 'none',
+  changesControls: 'ab',
 });
 
 // v2: the defaults changed, so the settings saved under v1 no longer apply.

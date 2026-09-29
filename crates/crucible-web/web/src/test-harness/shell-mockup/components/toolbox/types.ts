@@ -26,6 +26,8 @@ export interface Tweaks {
   accent: AccentId;
   reading: number;
   plugin: PluginCssId;
+  /** A/B variant: the changes view as B, or B with A's controls. */
+  changesControls: 'b' | 'ab';
 }
 
 export type SetTweak = <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void;

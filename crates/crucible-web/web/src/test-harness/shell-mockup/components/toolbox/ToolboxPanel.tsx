@@ -11,6 +11,7 @@ import { IconButton } from '../primitives/IconButton';
 import { CardRows } from './CardRows';
 import { SurfaceRows } from './SurfaceRows';
 import { TextRows } from './TextRows';
+import { VariantRows } from './VariantRows';
 import { ToneRows } from './ToneRows';
 import type { AccentOption, SetTweak, Tweaks } from './types';
 
@@ -38,6 +39,7 @@ export const ToolboxPanel: Component<ToolboxPanelProps> = (props) => (
         <ToneRows tweaks={props.tweaks} onSet={props.onSet} accents={props.accents} />
         <CardRows tweaks={props.tweaks} onSet={props.onSet} />
         <TextRows tweaks={props.tweaks} onSet={props.onSet} />
+        <VariantRows tweaks={props.tweaks} onSet={props.onSet} />
       </div>
       <div class="mk-tb-foot">
         <Button variant="ghost" onClick={() => props.onReset()}>

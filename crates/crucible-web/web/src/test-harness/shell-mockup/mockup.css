@@ -783,3 +783,8 @@ body { background: var(--mk-nav); }
 
 /* The tab menu takes focus when it opens; the menu itself shows no ring. */
 [data-scope='menu'][data-part='content'] { outline: none; }
+
+/* The review controls row of the variant "B with A's controls". */
+.mk-review-controls { display: flex; align-items: center; gap: 16px; margin: -4px 0 14px; }
+.mk-review-controls .mk-tb-seg { width: auto; }
+.mk-review-controls .mk-check { padding: 0; }
