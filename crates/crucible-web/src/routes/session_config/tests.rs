@@ -65,26 +65,23 @@ fn shaped<T: serde::de::DeserializeOwned>(uri: &str, body: &Value) -> T {
         .unwrap_or_else(|e| panic!("{uri} answered a body the struct cannot read: {e}\n{body}"))
 }
 
-/// PUT the knob and assert the value reached the daemon under `wire_field`.
-async fn assert_put_reaches_daemon(
-    tail: &str,
-    rpc_method: RpcMethod,
-    wire_field: &str,
-    value: Value,
-) {
-    let uri = format!("/api/session/s1/config/{tail}");
-    let body = json!({ wire_field: value.clone() });
-    let (status, _, mock) = call("PUT", &uri, Some(body)).await;
-
-    assert_eq!(status, StatusCode::OK, "PUT {uri} should succeed");
+/// PUT `/api/session/{id}/knob` with a [`crucible_core::types::KnobValue`]
+/// body and assert it reached `session.knob.set` unchanged.
+async fn assert_knob_put_reaches_daemon(value: Value) {
+    let (status, _, mock) = call("PUT", "/api/session/s1/knob", Some(value.clone())).await;
+    assert_eq!(status, StatusCode::OK, "PUT /knob {value} should succeed");
     let params = mock
-        .received_params(rpc_method)
-        .unwrap_or_else(|| panic!("PUT {uri} did not call {rpc_method}"));
+        .received_params(RpcMethod::SessionKnobSet)
+        .unwrap_or_else(|| panic!("PUT /knob {value} did not call session.knob.set"));
     assert_eq!(
-        params.get(wire_field),
-        Some(&value),
-        "PUT {uri} must forward {wire_field} to {rpc_method} unchanged; \
-         params were {params}"
+        params.get("knob"),
+        value.get("knob"),
+        "PUT /knob must forward the knob tag unchanged; params were {params}"
+    );
+    assert_eq!(
+        params.get("value"),
+        value.get("value"),
+        "PUT /knob must forward the value unchanged; params were {params}"
     );
     assert_eq!(
         params.get("session_id").and_then(Value::as_str),
@@ -93,35 +90,25 @@ async fn assert_put_reaches_daemon(
     );
 }
 
-/// GET the knob and assert the daemon's answer surfaced under `web_key`.
-async fn assert_get_returns(tail: &str, web_key: &str, expected: Value) {
-    let uri = format!("/api/session/s1/config/{tail}");
+/// GET `/api/session/{id}/knob/{knob}` and assert the reply is the whole
+/// [`crucible_core::types::KnobValue`] the mock daemon answered.
+async fn assert_knob_get_returns(knob: &str, expected: Value) {
+    let uri = format!("/api/session/s1/knob/{knob}");
     let (status, body, _) = call("GET", &uri, None).await;
-
     assert_eq!(status, StatusCode::OK, "GET {uri} should succeed");
-    assert_eq!(
-        body.get(web_key),
-        Some(&expected),
-        "GET {uri} must answer {web_key} = {expected}; body was {body}"
-    );
+    assert_eq!(body, expected, "GET {uri} answered {body}");
 }
 
-// ── Context ───────────────────────────────────────────────────────────────
-
-// ── Execution ─────────────────────────────────────────────────────────────
-
-// ── Prompt and enum-valued knobs ──────────────────────────────────────────
+// ── Enum-valued knob ──────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn context_strategy_round_trips_its_string_spelling() {
-    assert_put_reaches_daemon(
-        "context-strategy",
-        RpcMethod::SessionSetContextStrategy,
+    assert_knob_put_reaches_daemon(json!({"knob": "context_strategy", "value": "truncate"})).await;
+    assert_knob_get_returns(
         "context_strategy",
-        json!("truncate"),
+        json!({"knob": "context_strategy", "value": "recent"}),
     )
     .await;
-    assert_get_returns("context-strategy", "context_strategy", json!("recent")).await;
 }
 
 #[tokio::test]
@@ -152,35 +139,22 @@ async fn plugin_approval_routes_forward_plugin_and_value() {
 
 #[tokio::test]
 async fn plugin_turn_limit_routes_forward_and_read_session_value() {
-    let uri = "/api/session/s1/config/plugin-turn-limit";
-    let (status, _, mock) = call("PUT", uri, Some(json!({"limit": 7}))).await;
-    assert_eq!(status, StatusCode::OK);
-    let params = mock
-        .received_params(RpcMethod::SessionSetPluginTurnLimit)
-        .unwrap();
-    assert_eq!(params["session_id"], "s1");
-    assert_eq!(params["limit"], 7);
-    let (status, body, _) = call("GET", uri, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["limit"], 5);
+    assert_knob_put_reaches_daemon(json!({"knob": "plugin_turn_limit", "value": 7})).await;
+    assert_knob_get_returns(
+        "plugin_turn_limit",
+        json!({"knob": "plugin_turn_limit", "value": 25}),
+    )
+    .await;
 }
 
-// ── Nullable knobs ────────────────────────────────────────────────────────
+// ── mode, a knob like the rest ────────────────────────────────────────────
 
-// ── mode, which is not a config/ knob ─────────────────────────────────────
-
-/// `GET /api/session/{id}/mode`. Exempt from gate A2e by design — `mode` has its
-/// own route pair because switching it changes tool policy rather than a scalar
-/// — so nothing failed while the web could set a mode it could not read.
+/// `GET /api/session/{id}/knob/mode`. Mode used to have its own route pair,
+/// exempt from gate A2e by design; it is `set_knob`/`get_knob` now, like
+/// every other knob.
 #[tokio::test]
 async fn mode_can_be_read_back_not_only_set() {
-    let (status, body, _) = call("GET", "/api/session/s1/mode", None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body.get("mode"),
-        Some(&json!("plan")),
-        "GET mode must answer the daemon's stored mode; body was {body}"
-    );
+    assert_knob_get_returns("mode", json!({"knob": "mode", "value": "plan"})).await;
 }
 
 // ── The agent's own settings, which are not Crucible knobs ────────────────

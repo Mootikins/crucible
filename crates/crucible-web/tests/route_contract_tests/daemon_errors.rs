@@ -82,16 +82,16 @@ async fn chat_send_daemon_error_maps_to_502() {
 #[tokio::test]
 async fn set_mode_daemon_error_maps_to_502() {
     let (_mock, client) =
-        start_mock_daemon_with_errors(errors_for(&[RpcMethod::SessionSetMode])).await;
+        start_mock_daemon_with_errors(errors_for(&[RpcMethod::SessionKnobSet])).await;
     let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
             Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/mode")
+                .method("PUT")
+                .uri("/api/session/test-session-001/knob")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"mode":"yolo"}"#))
+                .body(Body::from(r#"{"knob":"mode","value":"yolo"}"#))
                 .unwrap(),
         )
         .await

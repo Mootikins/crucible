@@ -153,10 +153,12 @@ async fn switch_model_returns_200() {
     let response = app
         .oneshot(
             Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/model")
+                .method("PUT")
+                .uri("/api/session/test-session-001/knob")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"model_id": "mistral"}).to_string()))
+                .body(Body::from(
+                    json!({"knob": "model", "value": "mistral"}).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -174,10 +176,12 @@ async fn set_mode_returns_200() {
     let response = app
         .oneshot(
             Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/mode")
+                .method("PUT")
+                .uri("/api/session/test-session-001/knob")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"mode": "plan"}).to_string()))
+                .body(Body::from(
+                    json!({"knob": "mode", "value": "plan"}).to_string(),
+                ))
                 .unwrap(),
         )
         .await

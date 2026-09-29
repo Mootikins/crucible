@@ -160,10 +160,9 @@ async fn command_model_with_name_switches_model() {
     let json = run(build_test_app(build_state(client)), "/model mistral").await;
     assert_eq!(json["type"], "success");
     assert!(json["result"].as_str().unwrap().contains("mistral"));
-    assert_eq!(
-        mock.received_params(RpcMethod::SessionSwitchModel).unwrap()["model_id"],
-        "mistral"
-    );
+    let params = mock.received_params(RpcMethod::SessionKnobSet).unwrap();
+    assert_eq!(params["knob"], "model");
+    assert_eq!(params["value"], "mistral");
 }
 
 /// `/mode` moves to the mode after the current one in the daemon's list.
@@ -172,10 +171,9 @@ async fn mode_switches_to_the_next_mode() {
     let (mock, client) = start_mock_daemon().await;
     let json = run(build_test_app(build_state(client)), "/mode").await;
     assert_eq!(json["result"], "Mode: plan");
-    assert_eq!(
-        mock.received_params(RpcMethod::SessionSetMode).unwrap()["mode_id"],
-        "plan"
-    );
+    let params = mock.received_params(RpcMethod::SessionKnobSet).unwrap();
+    assert_eq!(params["knob"], "mode");
+    assert_eq!(params["value"], "plan");
 }
 
 #[tokio::test]

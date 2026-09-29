@@ -227,7 +227,8 @@ pub fn session_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(unarchive_session))
         .routes(routes!(cancel_session))
         .routes(routes!(list_models))
-        .routes(routes!(switch_model))
+        .routes(routes!(set_knob))
+        .routes(routes!(get_knob))
         .routes(routes!(list_modes))
         .routes(routes!(list_knobs))
         .routes(routes!(session_status))
@@ -236,7 +237,6 @@ pub fn session_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(connect_kiln))
         .routes(routes!(disconnect_kiln))
         .routes(routes!(set_workspace))
-        .routes(routes!(set_mode, get_mode))
         .routes(routes!(set_session_title))
         .routes(routes!(auto_title))
         .routes(routes!(list_providers))
@@ -856,32 +856,58 @@ impl From<crucible_core::types::SessionKnobSupport> for SessionKnobsResponse {
     }
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-struct SwitchModelRequest {
-    model_id: String,
-}
-
+/// Write one session knob — model, mode, context strategy, precognition or
+/// plugin turn limit. The body names its own knob (`KnobValue`'s tag), so
+/// one route serves all five: a knob added later needs no sibling route.
 #[utoipa::path(
-    post,
-    path = "/api/session/{id}/model",
-    params(("id" = String, Path, description = "The session whose model to switch")),
-    request_body = SwitchModelRequest,
+    put,
+    path = "/api/session/{id}/knob",
+    params(("id" = String, Path, description = "The session to configure")),
+    request_body = crucible_core::types::KnobValue,
     responses(
         (status = 200, body = OkResponse),
-        (status = 502, description = "The daemon could not switch the model"),
+        (status = 422, description = "The session cannot carry the knob, or the value is invalid"),
+        (status = 502, description = "The daemon could not store the value"),
     )
 )]
-async fn switch_model(
+async fn set_knob(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<SwitchModelRequest>,
+    Json(value): Json<crucible_core::types::KnobValue>,
 ) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon
-        .session_switch_model(&id, &req.model_id)
+        .session_knob_set(&id, value)
         .await
         .daemon_err()?;
     Ok(OkResponse::success())
+}
+
+/// Read one session knob, in the same [`crucible_core::types::KnobValue`]
+/// shape [`set_knob`] writes.
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/knob/{knob}",
+    params(
+        ("id" = String, Path, description = "The session to read"),
+        ("knob" = String, Path, description = "The knob to read: model, mode, context_strategy, precognition or plugin_turn_limit"),
+    ),
+    responses(
+        (status = 200, body = crucible_core::types::KnobValue),
+        (status = 422, description = "The session cannot carry the knob"),
+        (status = 502, description = "The daemon could not read the value"),
+    )
+)]
+async fn get_knob(
+    State(state): State<AppState>,
+    Path((id, knob)): Path<(String, crucible_core::types::SessionKnob)>,
+) -> Result<Json<crucible_core::types::KnobValue>, WebError> {
+    let value = state
+        .daemon
+        .session_knob_get(&id, knob)
+        .await
+        .daemon_err()?;
+    Ok(Json(value))
 }
 
 /// Updated session scope, echoed by kiln/workspace mutations.
@@ -956,63 +982,9 @@ async fn set_workspace(
     Ok(Json(daemon_shape(scope, "session.set_workspace")?))
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-struct SetModeRequest {
-    mode: String,
-}
-
-/// Set the session mode (normal/plan/auto). The daemon persists it on the
-/// agent config and applies it to the live handle; confirmation reaches the
-/// UI as a `mode_changed` SSE event.
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/mode",
-    params(("id" = String, Path, description = "The session whose mode to set")),
-    request_body = SetModeRequest,
-    responses(
-        (status = 200, body = OkResponse),
-        (status = 502, description = "The daemon could not set the mode"),
-    )
-)]
-async fn set_mode(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetModeRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_mode(&id, &req.mode)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct ModeResponse {
-    /// The session's mode id. `null` is the normal mode.
-    mode: Option<String>,
-}
-
-/// Read the session mode. `session.get_mode` has existed all along with no web
-/// reader, so the panel could set a mode and then render whatever it last
-/// guessed. Exempt from gate A2e by design (`mode` is not a `config/` knob), so
-/// nothing would have failed if this stayed missing.
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/mode",
-    params(("id" = String, Path, description = "The session whose mode to read")),
-    responses(
-        (status = 200, body = ModeResponse),
-        (status = 502, description = "The daemon could not read the mode"),
-    )
-)]
-async fn get_mode(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ModeResponse>, WebError> {
-    let mode = state.daemon.session_get_mode(&id).await.daemon_err()?;
-    Ok(Json(ModeResponse { mode }))
-}
+// Mode is a knob now: `PUT /api/session/{id}/knob` with
+// `{"knob": "mode", "value": "plan"}`, and `GET
+// /api/session/{id}/knob/mode` to read it. See `set_knob`/`get_knob` above.
 
 #[utoipa::path(
     put,

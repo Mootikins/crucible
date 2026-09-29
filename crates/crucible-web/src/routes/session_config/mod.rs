@@ -1,20 +1,11 @@
-//! Web routes for the daemon's `session.{set,get}_*` config knobs.
+//! Web routes for daemon config that is NOT a [`crucible_core::types::SessionKnob`]:
+//! per-plugin approval and the settings an external ACP agent advertises for
+//! itself.
 //!
-//! One module per concern rather than one file, split by what the knobs mean:
-//! each group keeps its handler, its request/response shape, its route and its
-//! round-trip test together.
-//!
-//! Every knob the daemon advertises in `METHODS` must be reachable from here;
-//! gate **A2e** (`crucible-cli/tests/architecture_tests.rs`) fails when one is
-//! not. Nine of fifteen were missing and nothing noticed, because a knob absent
-//! from the axum Router is not a compile error anywhere.
-//!
-//! **The wire field name is the contract, and it is not always the knob name.**
-//! `session.set_execution_timeout` carries `timeout_secs`; a request struct
-//! named after the knob would compile, pass review, and silently drop the value.
-//! `tests.rs` round-trips each knob through a mock daemon and asserts the
-//! response JSON key, because route existence alone does not prove the value
-//! survives.
+//! Every [`crucible_core::types::SessionKnob`] now rides `set_knob`/`get_knob`
+//! in `routes/session/mod.rs`, one route pair for all five. What stays here
+//! takes a second key (`plugin`) or has no fixed value space (`agent_option`),
+//! so `KnobValue` cannot express it.
 
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -22,7 +13,6 @@ use crate::services::daemon::AppState;
 
 pub(super) mod approval;
 pub(super) mod basic;
-pub(super) mod prompt;
 
 #[cfg(test)]
 mod tests;
@@ -31,19 +21,11 @@ mod tests;
 // each handler's `#[utoipa::path]` attribute through the type the macro
 // generates beside it, and resolves both names in this module's scope.
 pub(super) use approval::{
-    __path_get_plugin_approval, __path_get_plugin_turn_limit, __path_list_plugin_approvals,
-    __path_set_plugin_approval, __path_set_plugin_turn_limit, get_plugin_approval,
-    get_plugin_turn_limit, list_plugin_approvals, set_plugin_approval, set_plugin_turn_limit,
+    __path_get_plugin_approval, __path_list_plugin_approvals, __path_set_plugin_approval,
+    get_plugin_approval, list_plugin_approvals, set_plugin_approval,
 };
 pub(super) use basic::{
-    __path_get_precognition, __path_list_agent_options, __path_set_agent_option,
-    __path_set_precognition, get_precognition, list_agent_options, set_agent_option,
-    set_precognition,
-};
-
-pub(super) use prompt::{
-    __path_get_context_strategy, __path_set_context_strategy, get_context_strategy,
-    set_context_strategy,
+    __path_list_agent_options, __path_set_agent_option, list_agent_options, set_agent_option,
 };
 
 /// Every `/api/session/{id}/config/...` route, as a standalone router the session
@@ -61,10 +43,8 @@ pub(super) use prompt::{
 /// inheriting them.
 pub(super) fn config_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .routes(routes!(set_precognition, get_precognition))
         .routes(routes!(set_plugin_approval, get_plugin_approval))
         .routes(routes!(list_plugin_approvals))
-        .routes(routes!(set_plugin_turn_limit, get_plugin_turn_limit))
         // Not one of Crucible's knobs: the settings the external agent
         // advertised for itself. One path serves both directions because the
         // value belongs to the agent — GET lists what it has, POST sets one,
@@ -73,7 +53,7 @@ pub(super) fn config_routes() -> OpenApiRouter<AppState> {
         // settings panel's calls belong, and because a route outside this
         // group would stop inheriting the auth and limits above.
         .routes(routes!(list_agent_options, set_agent_option))
-        // The nine knobs the daemon advertised that the web could not reach.
-        // Gate A2e keeps the axis from drifting again; these close it.
-        .routes(routes!(set_context_strategy, get_context_strategy))
+    // Every session knob — model, mode, context strategy, precognition,
+    // plugin turn limit — rides `set_knob`/`get_knob` in
+    // `routes/session/mod.rs` now, not a route per knob here.
 }

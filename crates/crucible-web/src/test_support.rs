@@ -859,8 +859,33 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
         RpcMethod::SessionUndo => json!({ "undone": [] }),
         RpcMethod::SessionInteractionRespond => json!(null),
         RpcMethod::SessionListModels => json!({"models": ["llama3.2", "mistral"]}),
-        RpcMethod::SessionSwitchModel => json!(null),
-        RpcMethod::SessionSetMode => json!(null),
+        RpcMethod::SessionKnobSet => json!(null),
+        // Echoes a canned value per knob, keyed by the request's own `knob`
+        // field, so a route test reads back the same shape
+        // `session.knob.set` would have written.
+        RpcMethod::SessionKnobGet => {
+            let request: crucible_core::protocol::requests::Scoped<
+                crucible_core::protocol::requests::KnobRef,
+            > = mock_params(method, msg);
+            let value = match request.body.knob {
+                crucible_core::types::SessionKnob::Model => {
+                    crucible_core::types::KnobValue::Model("llama3.2".to_string())
+                }
+                crucible_core::types::SessionKnob::Mode => {
+                    crucible_core::types::KnobValue::Mode(Some("plan".to_string()))
+                }
+                crucible_core::types::SessionKnob::ContextStrategy => {
+                    crucible_core::types::KnobValue::ContextStrategy("recent".to_string())
+                }
+                crucible_core::types::SessionKnob::Precognition => {
+                    crucible_core::types::KnobValue::Precognition(true)
+                }
+                crucible_core::types::SessionKnob::PluginTurnLimit => {
+                    crucible_core::types::KnobValue::PluginTurnLimit(25)
+                }
+            };
+            as_rpc_result(value)
+        }
         // `{knobs: [{id, supported}]}`, one entry per `SessionKnob::ALL`
         // member. The route answered `null` here until it named its reply.
         RpcMethod::SessionListKnobs => json!({"knobs": [
@@ -1168,17 +1193,11 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             ],
         }),
         RpcMethod::SessionSetAgentOption => json!({ "ok": true }),
-        RpcMethod::SessionSetPrecognition => json!(null),
-        RpcMethod::SessionGetPrecognition => json!({"precognition_enabled": true}),
-        RpcMethod::SessionSetContextStrategy => json!(null),
-        RpcMethod::SessionGetContextStrategy => json!({"context_strategy": "recent"}),
         RpcMethod::SessionSetPluginApproval => json!({"plugin": "alpha", "approval": "ask"}),
-        RpcMethod::SessionSetPluginTurnLimit => json!(null),
         RpcMethod::SessionGetPluginApproval => json!({"plugin": "alpha", "approval": "ask"}),
         RpcMethod::SessionListPluginApprovals => {
             json!({"approvals": {"alpha": "ask", "beta": "stop"}})
         }
-        RpcMethod::SessionGetMode => json!({"mode": "plan"}),
         RpcMethod::SessionRenderMarkdown => {
             json!({"markdown": "# Test Session\n\nExported content"})
         }
@@ -1539,7 +1558,6 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
         | RpcMethod::SessionDismissNotification
         | RpcMethod::NotificationList
         | RpcMethod::NotificationDismiss
-        | RpcMethod::SessionGetPluginTurnLimit
         | RpcMethod::SessionInjectContext
         | RpcMethod::SessionTestInteraction
         | RpcMethod::SessionFork

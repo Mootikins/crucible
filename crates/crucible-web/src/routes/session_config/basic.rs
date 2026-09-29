@@ -16,63 +16,10 @@ use utoipa::ToSchema;
 
 use super::super::session::{daemon_shape, OkResponse};
 
-/// Response for precognition config.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(crate) struct PrecognitionResponse {
-    pub(super) precognition_enabled: bool,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub(crate) struct SetPrecognitionRequest {
-    enabled: bool,
-}
-
-#[utoipa::path(
-    put,
-    path = "/api/session/{id}/config/precognition",
-    params(("id" = String, Path, description = "The session to configure")),
-    request_body = SetPrecognitionRequest,
-    responses(
-        (status = 200, body = OkResponse),
-        (status = 422, description = "The session cannot carry the knob"),
-        (status = 502, description = "The daemon could not store the value"),
-    )
-)]
-pub(crate) async fn set_precognition(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetPrecognitionRequest>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_precognition(&id, req.enabled)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/config/precognition",
-    params(("id" = String, Path, description = "The session to read")),
-    responses(
-        (status = 200, body = PrecognitionResponse),
-        (status = 502, description = "The daemon could not read the value"),
-    )
-)]
-pub(crate) async fn get_precognition(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<PrecognitionResponse>, WebError> {
-    let enabled = state
-        .daemon
-        .session_get_precognition(&id)
-        .await
-        .daemon_err()?;
-    Ok(Json(PrecognitionResponse {
-        precognition_enabled: enabled,
-    }))
-}
+// Precognition is a knob now: `PUT /api/session/{id}/knob` with
+// `{"knob": "precognition", "value": true}`, and `GET
+// /api/session/{id}/knob/precognition` to read it. See
+// `routes/session/mod.rs`'s `set_knob`/`get_knob`.
 
 /// One choice in an agent's select option.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

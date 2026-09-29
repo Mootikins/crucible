@@ -527,25 +527,21 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        Once SessionSwitchModel =>
-        session_switch_model(session_id: &str, model_id: &str)
-        -> () = session_switch_model(&session_id, &model_id);
+        /// Write one session knob. One RPC method serves every
+        /// [`crucible_core::types::KnobValue`] variant — model, mode, context
+        /// strategy, precognition, plugin turn limit — so a knob added later
+        /// needs no sibling row here.
+        Once SessionKnobSet =>
+        session_knob_set(session_id: &str, value: crucible_core::types::KnobValue)
+        -> () = session_knob_set(&session_id, value);
     }
 
     forward_rpc! {
-        Once SessionSetMode =>
-        session_set_mode(session_id: &str, mode_id: &str)
-        -> () = session_set_mode(&session_id, &mode_id);
-    }
-
-    forward_rpc! {
-        /// Beside `session_set_mode` rather than in `daemon_session_config`: `mode`
-        /// is not a `config/` knob — switching it changes tool policy, not a scalar
-        /// setting — and it has its own route pair. A settings panel that can set a
-        /// value it cannot read is how a stale control gets shown.
-        Safe SessionGetMode =>
-        session_get_mode(session_id: &str)
-        -> Option<String> = session_get_mode(&session_id);
+        /// Read one session knob, in the same [`crucible_core::types::KnobValue`]
+        /// shape [`Self::session_knob_set`] writes.
+        Safe SessionKnobGet =>
+        session_knob_get(session_id: &str, knob: crucible_core::types::SessionKnob)
+        -> crucible_core::types::KnobValue = session_knob_get(&session_id, knob);
     }
 
     forward_rpc! {
@@ -635,27 +631,9 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        Once SessionSetPrecognition =>
-        session_set_precognition(session_id: &str, enabled: bool)
-        -> () = session_set_precognition(&session_id, enabled);
-    }
-
-    forward_rpc! {
-        Safe SessionGetPrecognition =>
-        session_get_precognition(session_id: &str)
-        -> bool = session_get_precognition(&session_id);
-    }
-
-    forward_rpc! {
         Once SessionSetPluginApproval =>
         session_set_plugin_approval(session_id: &str, plugin: &str, approval: crucible_core::session::PluginApproval)
         -> () = session_set_plugin_approval(&session_id, &plugin, approval);
-    }
-
-    forward_rpc! {
-        Once SessionSetPluginTurnLimit =>
-        session_set_plugin_turn_limit(session_id: &str, limit: u32)
-        -> () = session_set_plugin_turn_limit(&session_id, limit);
     }
 
     forward_rpc! {

@@ -182,7 +182,10 @@ pub(super) async fn execute_command(
         BuiltinCommand::Model => {
             state
                 .daemon
-                .session_switch_model(&id, args)
+                .session_knob_set(
+                    &id,
+                    crucible_core::types::KnobValue::Model(args.to_string()),
+                )
                 .await
                 .daemon_err()?;
             Ok(CommandResponse::success(format!(
@@ -196,7 +199,10 @@ pub(super) async fn execute_command(
             };
             state
                 .daemon
-                .session_set_mode(&id, next)
+                .session_knob_set(
+                    &id,
+                    crucible_core::types::KnobValue::Mode(Some(next.to_string())),
+                )
                 .await
                 .daemon_err()?;
             Ok(CommandResponse::success(format!("Mode: {next}")))

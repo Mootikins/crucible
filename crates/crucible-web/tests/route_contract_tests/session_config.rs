@@ -17,9 +17,11 @@ async fn set_precognition_returns_200() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/session/test-session-001/config/precognition")
+                .uri("/api/session/test-session-001/knob")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"enabled": true}).to_string()))
+                .body(Body::from(
+                    json!({"knob": "precognition", "value": true}).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -43,7 +45,7 @@ async fn get_precognition_returns_200_with_enabled_field() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/session/test-session-001/config/precognition")
+                .uri("/api/session/test-session-001/knob/precognition")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -57,7 +59,7 @@ async fn get_precognition_returns_200_with_enabled_field() {
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert!(
-        json.get("precognition_enabled").is_some(),
-        "Response must contain precognition_enabled field"
+        json.get("value").is_some(),
+        "Response must contain a value field"
     );
 }

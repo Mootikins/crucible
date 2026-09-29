@@ -208,9 +208,9 @@ async fn list_models_answers_the_declared_shape() {
 #[tokio::test]
 async fn switch_model_answers_the_declared_shape() {
     let ok: OkResponse = shape(
-        "POST",
-        &format!("{SESSION}/model"),
-        Some(json!({"model_id": "mistral"})),
+        "PUT",
+        &format!("{SESSION}/knob"),
+        Some(json!({"knob": "model", "value": "mistral"})),
     )
     .await;
     assert!(ok.ok);
@@ -267,9 +267,9 @@ async fn set_workspace_answers_the_declared_shape() {
 #[tokio::test]
 async fn set_mode_answers_the_declared_shape() {
     let ok: OkResponse = shape(
-        "POST",
-        &format!("{SESSION}/mode"),
-        Some(json!({"mode": "plan"})),
+        "PUT",
+        &format!("{SESSION}/knob"),
+        Some(json!({"knob": "mode", "value": "plan"})),
     )
     .await;
     assert!(ok.ok);
@@ -277,8 +277,12 @@ async fn set_mode_answers_the_declared_shape() {
 
 #[tokio::test]
 async fn get_mode_answers_the_declared_shape() {
-    let mode: ModeResponse = shape("GET", &format!("{SESSION}/mode"), None).await;
-    assert_eq!(mode.mode.as_deref(), Some("plan"));
+    let mode: crucible_core::types::KnobValue =
+        shape("GET", &format!("{SESSION}/knob/mode"), None).await;
+    assert_eq!(
+        mode,
+        crucible_core::types::KnobValue::Mode(Some("plan".to_string()))
+    );
 }
 
 #[tokio::test]
