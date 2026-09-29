@@ -13,7 +13,7 @@ import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { menuContent, menuItem } from '@/components/ui/menu-style';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
-import { attachNativeMenuGuard, tabsToClose, type TabCloseMode } from '@/windowing/context-menu';
+import { attachNativeMenuGuard, tabsToClose, type TabMenuAction } from '@/windowing/context-menu';
 
 // ── Tab titles ─────────────────────────────────────────────────────────
 
@@ -126,34 +126,27 @@ const TabItem: Component<TabItemProps> = (props) => {
       use:draggable
       data-tab-id={props.tab.id}
       {...(props.testId ? { 'data-testid': props.testId } : {})}
-      classList={{
-        // Obsidian's tab language: the active tab is a raised chip (bg lift),
-        // no accent underline. Focus of the containing region reads through
-        // ink weight + a hairline outline, never a colored bar.
-        // `pr-5` reserves the trailing slot's width in the tab's own box, so a
-        // SHORT title is never covered — the overlay only reaches text on a
-        // title long enough to be truncated anyway, which is where the fade
-        // takes over. The slot itself is absolute and costs no layout, so this
-        // padding is the only space the close affordance spends.
-        'group relative flex items-center gap-1 pl-2.5 pr-5 py-1 my-1 mx-0.5 rounded-md cursor-pointer transition-all duration-100':
-          true,
-        'opacity-40 bg-surface-elevated': draggable.isActiveDraggable,
-        'bg-surface-elevated text-shell-ink outline outline-1 -outline-offset-1 outline-hairline-strong':
-          props.isActive && props.isFocused && !draggable.isActiveDraggable,
-        'bg-surface-elevated/70 text-shell-body':
-          props.isActive && !props.isFocused && !draggable.isActiveDraggable,
-        'text-muted hover:text-shell-ink hover:bg-hover-wash':
-          !props.isActive && !draggable.isActiveDraggable,
-      }}
+      // The state rides on data attributes; the theme draws it. The default
+      // theme follows Obsidian: the active tab is a raised chip, and the
+      // focus of the region shows as ink weight and a hairline outline.
+      data-active={props.isActive ? '' : undefined}
+      data-focused={props.isFocused ? '' : undefined}
+      data-modified={props.tab.isModified ? '' : undefined}
+      data-dragging={draggable.isActiveDraggable ? '' : undefined}
+      // `pr-5` reserves the width of the trailing slot in the tab's own box,
+      // so the slot never covers a SHORT title. The slot is absolute and
+      // costs no layout, so this padding is the only space that the close
+      // control uses. It is a layout contract with the slot (`right-1 w-4`).
+      class="wm-tab relative flex items-center pr-5 cursor-pointer"
       onClick={() => props.onClick()}
     >
       <div class="relative w-3.5 h-3.5 flex-shrink-0 cursor-grab active:cursor-grabbing">
         <Show when={Icon} fallback={
-          <IconGripVertical class="w-3.5 h-3.5 text-muted-dark opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+          <IconGripVertical class="wm-tab-grip w-3.5 h-3.5" />
         }>
           <>
-            {Icon && <Icon class={`absolute inset-0 w-3.5 h-3.5 ${props.isActive ? 'text-shell-body' : 'text-muted-dark'} group-hover:opacity-0 transition-opacity duration-150`} />}
-            <IconGripVertical class="absolute inset-0 w-3.5 h-3.5 text-muted-dark opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
+            {Icon && <Icon class="wm-tab-icon absolute inset-0 w-3.5 h-3.5" />}
+            <IconGripVertical class="wm-tab-grip absolute inset-0 w-3.5 h-3.5" />
           </>
         </Show>
       </div>
@@ -163,10 +156,8 @@ const TabItem: Component<TabItemProps> = (props) => {
           because the mask sat on the span whether or not anything was cut. */}
       <span
         ref={setTitleRef}
-        classList={{
-          'text-xs font-medium truncate max-w-(--cru-measure-tab) transition-[mask-image]': true,
-          'tab-title-fade': titleOverflows(),
-        }}
+        class="wm-tab-title truncate max-w-(--cru-measure-tab)"
+        data-overflows={titleOverflows() ? '' : undefined}
         title={elideTabTitle(props.tab.title) === props.tab.title ? undefined : props.tab.title}
       >
         {elideTabTitle(props.tab.title)}
@@ -184,10 +175,7 @@ const TabItem: Component<TabItemProps> = (props) => {
           dirty tab is the one tab you cannot close without aiming. */}
       <span class="pointer-events-none absolute right-1 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center">
         <Show when={props.tab.isModified}>
-          <span
-            class="h-1.5 w-1.5 rounded-full bg-attention transition-opacity group-hover:opacity-0"
-            data-testid="tab-modified-dot"
-          />
+          <span class="wm-tab-dot" data-testid="tab-modified-dot" />
         </Show>
         <Show when={props.closable !== false}>
         <button
@@ -196,10 +184,9 @@ const TabItem: Component<TabItemProps> = (props) => {
             e.stopPropagation();
             props.onClose(e);
           }}
-          classList={{
-            'pointer-events-auto absolute inset-0 flex items-center justify-center rounded-sm transition-opacity hover:bg-hover-wash hover:text-shell-ink focus:opacity-100 focus-ring': true,
-            'opacity-0 group-hover:opacity-100': !props.isActive || props.tab.isModified,
-          }}
+          // The theme hides the control at rest on a tab that is not active,
+          // or that holds a modified dot, and shows it on hover and focus.
+          class="wm-tab-close pointer-events-auto absolute inset-0 flex items-center justify-center"
         >
           <IconClose class="w-3 h-3" />
         </button>
@@ -212,7 +199,7 @@ const TabItem: Component<TabItemProps> = (props) => {
 // ── Insert indicator element ────────────────────────────────────────────
 
 const InsertIndicator: Component = () => (
-  <div class="w-0.5 h-5 bg-primary rounded-full flex-shrink-0 my-auto" />
+  <div class="wm-tab-insert flex-shrink-0 my-auto" />
 );
 
 interface UseTabBarDnDOptions {
@@ -355,7 +342,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
           tabsContainerRef = el;
           props.onTabsContainerRef?.(el);
         }}
-        class="flex-1 flex items-end gap-0.5 overflow-x-auto scrollbar-hide px-1 min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
+        class="wm-tabstrip flex-1 flex items-end overflow-x-auto scrollbar-hide min-w-0 [scrollbar-width:none] [-ms-overflow-style:none]"
       >
         {/* Keyed by tab id, NOT object identity: updateTab replaces the tab
             object on every write (dirty flag, title), and a remounting row
@@ -380,7 +367,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
       <Show when={isOverflowing()}>
         <div class="relative flex-shrink-0">
           <button
-            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash rounded transition-colors focus-ring"
+            class="wm-tabbar-btn flex-shrink-0 flex items-center justify-center"
             aria-label="Show all tabs"
             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
             title="Show all tabs"
@@ -388,15 +375,12 @@ const TabStrip: Component<TabStripProps> = (props) => {
             <ChevronDown class="w-3.5 h-3.5" />
           </button>
           <Show when={showDropdown()}>
-            <div class="absolute right-0 top-full mt-1 z-50 min-w-[160px] max-w-[280px] bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 max-h-[300px] overflow-y-auto">
+            <div class="wm-tab-menu absolute right-0 top-full z-50 min-w-[160px] max-w-[280px] max-h-[300px] overflow-y-auto">
               <For each={props.tabs()}>
                 {(tab) => (
                   <button
-                    class={`w-full px-3 py-1.5 text-left text-xs truncate transition-colors ${
-                      tab.id === props.activeTabId()
-                        ? 'bg-primary/20 text-primary font-medium'
-                        : 'text-shell-body hover:bg-hover-wash'
-                    }`}
+                    class="wm-tab-menu-item w-full text-left truncate"
+                    data-active={tab.id === props.activeTabId() ? '' : undefined}
                     onClick={() => {
                       props.onSelectTab(tab.id);
                       setShowDropdown(false);
@@ -405,7 +389,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
                     }}
                   >
                     {tab.title}
-                    {tab.isModified && <span class="ml-1 text-attention">●</span>}
+                    {tab.isModified && <span class="wm-tab-menu-dot">●</span>}
                   </button>
                 )}
               </For>
@@ -425,21 +409,48 @@ const TabStrip: Component<TabStripProps> = (props) => {
  * intercepted, so the menu is their discoverable home). Every close routes
  * through the dirty-tab confirm guard; a declined confirm skips that tab and
  * continues with the rest.
+ *
+ * The menu also moves the tab between the layout and a floating window, as
+ * the panel menu of an Adobe app does. A tab in a docked pane shows "Pop out".
+ * A tab in a floating window shows "Dock". Both call the store paths that the
+ * pop-out button and the dock button of the title bar call.
+ *
+ * The ribbon uses this menu too, because a theme can hide the tab bars of a
+ * rail. Then the ribbon icon is the only handle of the tab.
  */
-const TabContextMenu: Component<{
+export const TabContextMenu: Component<{
   groupId: () => string;
+  /** The pane that shows the group. Absent for a floating group. */
+  paneId?: () => string | undefined;
   tab: TabType;
   children: JSX.Element;
 }> = (props) => {
-  const closeWith = (mode: TabCloseMode) => {
-    const group = windowStore.tabGroups[props.groupId()];
-    if (!group) return;
-    for (const t of tabsToClose(group.tabs, props.tab.id, mode)) {
-      if (confirmTabClose(t)) windowActions.removeTab(props.groupId(), t.id);
+  const floating = () =>
+    windowStore.floatingWindows.find((w) => w.tabGroupId === props.groupId());
+  const paneId = () => (floating() ? undefined : props.paneId?.() || undefined);
+  const onSelect = (action: TabMenuAction) => {
+    switch (action) {
+      case 'pop-out': {
+        const pane = paneId();
+        if (pane) windowActions.popOutPane(pane, props.tab.id);
+        return;
+      }
+      case 'dock': {
+        const w = floating();
+        if (w) windowActions.dockFloatingWindow(w.id, props.tab.id);
+        return;
+      }
+      default: {
+        const group = windowStore.tabGroups[props.groupId()];
+        if (!group) return;
+        for (const t of tabsToClose(group.tabs, props.tab.id, action)) {
+          if (confirmTabClose(t)) windowActions.removeTab(props.groupId(), t.id);
+        }
+      }
     }
   };
   return (
-    <Menu.Root onSelect={(d) => closeWith(d.value as TabCloseMode)}>
+    <Menu.Root onSelect={(d) => onSelect(d.value as TabMenuAction)}>
       {/* asChild div: the default trigger is a BUTTON and TabItem carries its
           own close button — button-in-button is invalid HTML. */}
       <Menu.ContextTrigger
@@ -475,6 +486,25 @@ const TabContextMenu: Component<{
           >
             Close to the Right
           </Menu.Item>
+          {/* No Pop out on a tab that the policy keeps, or that the policy
+              calls unavailable. The store refuses both, so the row would do
+              nothing. */}
+          <Show when={paneId() && windowActions.canPopOutTab(props.groupId(), props.tab.id)}>
+            <Menu.Item
+              value="pop-out"
+              class={menuItem}
+            >
+              Pop out
+            </Menu.Item>
+          </Show>
+          <Show when={floating()}>
+            <Menu.Item
+              value="dock"
+              class={menuItem}
+            >
+              Dock
+            </Menu.Item>
+          </Show>
           </Menu.Content>
         </Menu.Positioner>
       </Portal>
@@ -518,12 +548,11 @@ const CenterTabBar: Component<{
       use:droppable
       ref={attachNativeMenuGuard}
       {...(edgePos() ? { 'data-testid': `edge-tabbar-${edgePos()}` } : {})}
-      classList={{
-        // Re-asserts the shell's select-none: the strip is drag chrome, and a
-        // pane body re-enabled selection beneath this bar.
-        'flex-shrink-0 flex items-center h-9 bg-shell-bg border-b border-hairline relative select-none': true,
-        'bg-primary/5': droppable.isActiveDroppable,
-      }}
+      data-drop-active={droppable.isActiveDroppable ? '' : undefined}
+      // Re-asserts the shell's select-none: the strip is drag chrome, and a
+      // pane body re-enabled selection beneath this bar. `h-9` is a layout
+      // contract: COLLAPSED_PANE_PX and the ribbon's MARKER_PX are 36px.
+      class="wm-tabbar flex-shrink-0 flex items-center h-9 relative select-none"
     >
       <TabStrip
         tabs={tabs}
@@ -534,7 +563,7 @@ const CenterTabBar: Component<{
           tabsContainerRef = el;
         }}
         renderTab={(tab) => (
-          <TabContextMenu groupId={() => props.groupId} tab={tab()}>
+          <TabContextMenu groupId={() => props.groupId} paneId={() => props.paneId} tab={tab()}>
             <TabItem
               tab={tab()}
               draggableId={`tab:${props.groupId}:${tab().id}`}
@@ -549,13 +578,14 @@ const CenterTabBar: Component<{
           </TabContextMenu>
         )}
       />
-      <div class="flex-shrink-0 flex items-center gap-0.5 px-1">
+      <div class="wm-tabbar-actions flex-shrink-0 flex items-center">
         {/* Edge bars stay minimal (Obsidian sidebars have no pop-out) —
-            edge content reaches floating windows by dragging the tab. */}
+            edge content reaches floating windows by dragging the tab, or by
+            the Pop out row of the tab menu. */}
         {!edgePos() && props.onPopOut && tabs().length > 0 && (
           <button
             onClick={props.onPopOut}
-            class="w-6 h-6 flex items-center justify-center rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors focus-ring"
+            class="wm-tabbar-btn flex items-center justify-center"
             title="Pop out to floating window"
             aria-label="Pop out to floating window"
           >
@@ -564,7 +594,7 @@ const CenterTabBar: Component<{
         )}
       </div>
       {droppable.isActiveDroppable && (
-        <div class="absolute inset-x-0 bottom-0 h-0.5 bg-primary cru-anim-fade" />
+        <div class="wm-tabbar-drop-line absolute inset-x-0 bottom-0" />
       )}
     </div>
   );

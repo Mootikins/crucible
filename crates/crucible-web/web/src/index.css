@@ -8,8 +8,13 @@
  * let vite process each fontsource css with proper asset emission. */
 /* Layer order. Tailwind's own import declares theme, base, components and
    utilities; the FIRST statement fixes the order, so the contract layer must
-   be named before that import or it lands after utilities. */
-@layer cru-theme, theme, base, components, utilities;
+   be named before that import or it lands after utilities.
+
+   `wm-theme` is the default look of the window manager
+   (src/windowing/theme.css). It sits below `utilities`, so a utility class
+   that the app puts on a window-manager part wins over the default look. An
+   unlayered stylesheet wins over every layer. */
+@layer cru-theme, theme, base, components, wm-theme, utilities;
 @import "tailwindcss";
 /* Refinement lanes (2026-09-15). One file per lane so the lanes never edit
    the same block. Tailwind v4 inlines these; they hold no url() assets. An
@@ -896,17 +901,6 @@
   }
   :root[data-theme='light'] .cru-select {
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none'><path d='M2.5 4 5 6.5 7.5 4' stroke='%2366656e' stroke-width='1.1' stroke-linecap='square'/></svg>");
-  }
-
-  /* ── A tab title under its trailing control ─────────────────────────
-     The close button overlays the tab's trailing edge rather than taking
-     a column of its own. A truncated title would run straight into the
-     glyph, so the title's last few pixels fade instead — the same idiom
-     `.fade-scroll` uses on an overflowing row, and the reason neither
-     needs an ellipsis fighting an icon for the same space. */
-  .tab-title-fade {
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
-    mask-image: linear-gradient(to right, black calc(100% - 14px), transparent);
   }
 
   /* ── The composer surface ───────────────────────────────────────────

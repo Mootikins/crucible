@@ -27,6 +27,7 @@ frontend. That backend also stores the saved layout.
 | `context-menu.ts` | The native-fallthrough rule for a custom right-click menu (Shift+right-click, images, links) |
 | `shortcuts.ts` | `ShortcutAction`, `matchShortcut`, `LAYOUT_SHORTCUTS` — the chords the layout owns |
 | `index.ts` | The public entry. It re-exports the names that app code uses. See "The public entry" below |
+| `theme.css` | The default theme: the look of every `wm-*` part, in `@layer wm-theme`. See "Styling" below |
 | `testing/` | `neutralPolicy` — a policy with no product knowledge, shared by the core's own unit tests and the harness page — and `stackRightRail`, which gives a test a column in the right rail |
 | `__tests__/` | The core's unit tests, including `boundary.test.ts` |
 
@@ -44,9 +45,10 @@ can forget to run: it is a Vitest test, so `bun run test` and CI fail the
 build the moment a file under `src/windowing/` reaches into the app.
 
 The design tokens in `src/index.css` are a shared layer that the core uses,
-as it uses `components/ui/`. The core classes name those tokens, for example
-`bg-shell-bg`. The harness page imports that stylesheet, so the core draws
-the same way there as in the app.
+as it uses `components/ui/`. The components do not name those tokens. The
+default theme, `src/windowing/theme.css`, reads them. See "Styling" below.
+The harness page imports both stylesheets, so the core draws the same way
+there as in the app.
 
 ## The public entry
 
@@ -60,9 +62,12 @@ uses, the stored layout types, the chords and the context menu rule.
 rail buttons in `components/shell/RailChrome.tsx`, and those buttons must
 match the core buttons.
 
+The default theme, `src/windowing/theme.css`, is the second public entry. It
+holds CSS only. The app entry (`src/index.tsx`) imports it once.
+
 `boundary.test.ts` also enforces this rule. It reads every file under `src/`
 outside the core and fails when one imports a `@/windowing/<path>` specifier,
-or a relative path into the core other than its index. The test skips
+or a relative path into the core, other than the index or the theme. The test skips
 `src/test-harness/`, every `__tests__` folder and every `*.test.*` file,
 because a test and a harness page may import a core module directly.
 
@@ -194,6 +199,51 @@ chord, and a policy can bind another one.
 - **Not stored.** The serializer does not write `expandedEdge`, so a reload
   opens the plain layout.
 
+## Ribbon placement
+
+`WindowState.ribbonPlacement` sets where the rail ribbons sit. The action is
+`setRibbonPlacement`.
+
+- **`edge`** (the default): the ribbon sits at the window edge and is always
+  in view. The body grows out of it, as in Obsidian.
+- **`panel`**: the ribbon sits inside the rail, on its inside edge next to
+  the centre, in the `[data-edge-card]` element with the body and the resize
+  handle. The whole card slides. A closed rail keeps `RIBBON_WIDTH_PX` in
+  view, so its ribbon stays at the window edge and the body hides itself.
+- **For themes.** `EdgeHost` writes `data-ribbon-placement`. With `edge`,
+  there is no card element.
+- **Not stored.** It is the user's setting: a reset and a restore keep it, and
+  the serializer does not write it.
+
+## Pop out and dock
+
+The right-click menu of a tab moves the tab between the layout and a floating
+window, as the panel menu of an Adobe app does. `TabContextMenu` in
+`TabBar.tsx` holds the menu. The menu also has the three close rows.
+
+- **Pop out.** A tab in a docked pane (the centre or a rail) shows this row.
+  The row calls `popOutPane(paneId, tabId)`, the same action as the pop-out
+  button of the tab bar. With a tab id, the action moves that tab only into
+  a new floating window, and the pane keeps its other tabs. When the tab is
+  the only tab of the pane, the whole group moves, as without a tab id.
+- **Dock.** A tab in a floating window shows this row. The row calls
+  `dockFloatingWindow(windowId, tabId)`, the same action as the dock button
+  of the title bar. With a tab id, the action moves that tab only into the
+  centre tiling, and the window keeps its other tabs. The last tab takes the
+  window with it. A centre whose root is a split takes the tab beside its
+  first pane.
+- **The policy.** `canPopOutTab(groupId, tabId)` is false for a tab that the
+  policy keeps (`mayCloseTab`) or calls unavailable (`unavailableReason`).
+  A closed floating window closes its tabs without a policy check, so a kept
+  tab must stay docked. The menu then shows no Pop out row, and the action
+  refuses the tab.
+- **The ribbon.** Each tab icon of a rail ribbon has the same menu. A theme
+  can hide the tab bars of a rail, and then the icon is the only handle of
+  the tab.
+- **The keyboard.** The menu opens on the `contextmenu` event, so the menu
+  key and `Shift+F10` open it on a focused ribbon icon. The arrow keys move
+  through the rows, and `Enter` chooses a row.
+
 ## Layout queries the app uses
 
 `model/tree.ts` holds the pure queries over a layout. Two of them moved here
@@ -238,12 +288,173 @@ seen still survives the round trip. See [[Web Server]] for the route.
 `loadLayoutOnStartup`, in the same module, calls `windowActions.importLayout`
 with the loaded blob once, at boot, before auto-save arms.
 
+## Styling
+
+The components render structure and state only. The default theme,
+`src/windowing/theme.css`, gives them their look. The app must look the same
+with the theme as it looked with the old utility classes.
+
+- **The components keep layout and behaviour.** This is display, flex,
+  position, z-index, overflow, cursor, pointer events, selection, the sizes
+  that a script reads, and the inline styles of the slide tween and the
+  resize code.
+- **The theme holds the look.** This is every colour, border colour, radius,
+  shadow, outline, font size and weight, opacity, transition and animation,
+  and the paddings, gaps and heights that no script reads.
+- **The theme is in one layer.** Every rule is in `@layer wm-theme`.
+  `src/index.css` puts that layer after `components` and before `utilities`.
+  Thus a utility class on a part wins over the default look. An unlayered
+  stylesheet, for example a plugin theme, wins over every layer.
+- **The theme reads tokens.** Colours read the `--color-*` aliases, so an
+  element that sets `--color-shell-bg` recolours itself. Type, radii and
+  shadows read the `--cru-*` contract directly, because Tailwind writes an
+  alias only when a utility uses it.
+- **Where it loads.** `src/index.tsx`, `windowing-harness.tsx`,
+  `editor-harness.tsx` and the shell mockup import the theme after
+  `index.css`.
+
+### Parts
+
+Each element that the theme styles carries one `wm-<part>` class.
+
+| Part | Element |
+|---|---|
+| `wm-root` | The window manager root |
+| `wm-drag-overlay`, `wm-drag-overlay-title` | The label that follows a tab drag |
+| `wm-edge-host` | One rail |
+| `wm-edge-card` | The card that holds the body, the handle and the ribbon, with `ribbonPlacement: 'panel'`. The default theme gives it no look |
+| `wm-edge-body` | The body of a rail. The default theme gives it no look |
+| `wm-edge-handle` | The line that resizes a rail |
+| `wm-ribbon` | The ribbon |
+| `wm-ribbon-btn` | Every ribbon button. `ribbonBtn` carries it, so the app's rail chrome has it too |
+| `wm-ribbon-toggle` | The button that opens and closes the rail |
+| `wm-ribbon-cmd` | A command button (`RibbonCommand`) |
+| `wm-ribbon-tab` | The icon of one rail tab |
+| `wm-ribbon-leading` | The tab icons of the leading branch of the rail, under the toggle. The default theme gives it no look |
+| `wm-ribbon-trailing` | The tab icons of the trailing branch (the `second` half of the root split), at the far end of the ribbon. The default theme gives it no look |
+| `wm-ribbon-tail` | The pinned cluster at the far end of the ribbon |
+| `wm-icon-letter` | The first letter of a title, when a tab has no icon |
+| `wm-pane-marker` | The marker of one pane in a rail column |
+| `wm-pane-boundary` | The ribbon line that drags the boundary between two panes |
+| `wm-pane` | A pane |
+| `wm-drop-veil` | The veil over a pane during a tab drag |
+| `wm-drop-zone` | An edge zone of a pane. A drop there splits the pane |
+| `wm-no-tab`, `wm-no-tab-label` | A pane whose group has no active tab |
+| `wm-splitter` | The line between the two halves of a split |
+| `wm-empty-pane`, `wm-empty-card`, `wm-empty-title`, `wm-empty-hints`, `wm-empty-hint`, `wm-empty-kbd` | The empty pane and its hints |
+| `wm-tabbar`, `wm-tabstrip`, `wm-tabbar-actions` | The tab bar, its scroll row and its button group |
+| `wm-tabbar-btn` | The pop-out button and the button that lists every tab |
+| `wm-tabbar-drop-line` | The line under a tab bar during a tab drag |
+| `wm-tab-insert` | The mark that shows where a moved tab goes |
+| `wm-tab` | A tab |
+| `wm-tab-icon`, `wm-tab-grip` | The icon of a tab, and the grip that replaces it on hover |
+| `wm-tab-title` | The title of a tab |
+| `wm-tab-dot` | The mark of unsaved work |
+| `wm-tab-close` | The close button of a tab |
+| `wm-tab-menu`, `wm-tab-menu-item`, `wm-tab-menu-dot` | The list of every tab |
+| `wm-floating`, `wm-floating-titlebar`, `wm-floating-title`, `wm-floating-actions`, `wm-floating-btn`, `wm-floating-body` | A floating window |
+| `wm-minimized-bar`, `wm-minimized-btn` | The bar of rolled-up floating windows |
+
+The right-click menu of a tab uses the shared `menuContent` and `menuItem`
+styles of `components/ui/`, as every menu in the app does. The theme does not
+style it.
+
+### States
+
+A state is a data attribute on its part, never a colour class. The component
+writes the raw state. The theme decides which state wins.
+
+| Attribute | Parts | Meaning |
+|---|---|---|
+| `data-active` | `wm-tab`, `wm-tab-menu-item` | The active tab of its group |
+| `data-focused` | `wm-tab` | The pane of the tab has focus |
+| `data-modified` | `wm-tab` | The tab holds unsaved work |
+| `data-dragging` | `wm-tab`, `wm-ribbon-tab`, `wm-splitter`, `wm-pane-boundary` | The element moves now |
+| `data-overflows` | `wm-tab-title` | The box cuts the title |
+| `data-highlighted` | `wm-ribbon-tab` | The tab shows in an open pane |
+| `data-unavailable` | `wm-ribbon-tab` | The policy gives a reason that the tab cannot open |
+| `data-orientation` | `wm-ribbon-tab` | `vertical` or `horizontal` |
+| `data-collapsed` | `wm-pane-marker` | `true` or `false`: the pane shows its tab bar only |
+| `data-locked` | `wm-splitter`, `wm-pane-boundary` | A collapsed or empty side holds the split |
+| `data-drop-active` | `wm-pane`, `wm-drop-zone`, `wm-tabbar`, `wm-ribbon` | A tab drag is over the element |
+| `data-drop-over` | `wm-pane`, `wm-ribbon` | A native drag is over the element. The app sets it (`DROP_OVER_ATTR`) |
+| `data-ribbon-floor` | `wm-ribbon-tail` | The tail claims the far end of the ribbon |
+
+The default theme gives no tint to `data-drop-active` on `wm-tabbar` and
+`wm-ribbon`. The old classes gave none either, because the background colour
+of the bar won over the tint. A theme may add a tint.
+
+### Layout contracts
+
+The components set these sizes. A script reads them, so a theme must not
+change them.
+
+- **The ribbon width.** The ribbon column is 40px wide (`w-10`) and its
+  border is 1px wide (`border-r` or `border-l`). `RIBBON_WIDTH_PX` (41) in
+  `Ribbon.tsx` holds the sum. A closed rail with `ribbonPlacement: 'panel'`
+  keeps this width. A theme may change the border colour only.
+- **The tab bar height.** The tab bar is 36px high (`h-9`), and the border is
+  inside that height. `COLLAPSED_PANE_PX` (`model/pane-collapse.ts`) gives a
+  collapsed pane this height. `MARKER_PX` (`RibbonPaneStrip.tsx`) gives a
+  pane marker this height. The rail toggle has the same height, so it lines
+  up with the topmost tab bar.
+- **The tab trailing slot.** A tab keeps `pr-5`. That padding is the room for
+  the close slot (`right-1 w-4`).
+
+A script that measures an element measures the DOM, so a theme may change the
+other sizes. For example, it may change a tab padding or a button height.
+
+### Published geometry
+
+The ribbon measures the rail and writes the result as custom properties on
+the `wm-ribbon` element. Each value is in px, from the top of the ribbon. A
+theme reads them to place a part. The default theme reads none of them.
+
+| Property | Value |
+|---|---|
+| `--wm-trailing-pane-top` | The top edge of the first pane of the trailing branch. It follows the split during a drag and on a resize. It is absent for a rail of one pane |
+| `--wm-ribbon-ceiling` | The bottom of the leading run: the toggle, the leading tab icons and the `railHead` slot |
+| `--wm-ribbon-floor` | The top of the pinned tail (`wm-ribbon-tail`) |
+| `--wm-ribbon-trailing-height` | The height of `wm-ribbon-trailing` |
+
+`rail-geometry.ts` holds the measure loop, which `RibbonPaneStrip` also uses.
+A ResizeObserver watches the body, the panes and the clusters, and an effect
+measures again when the tree changes its shape.
+
+By default, `wm-ribbon-trailing` sits at the far end of the ribbon. To put the
+trailing tab icons at the top edge of their pane, a theme adds this rule:
+
+```css
+.wm-ribbon-trailing { position: absolute; inset-inline: 0; top: var(--wm-trailing-pane-top); }
+.wm-ribbon-tail { margin-top: auto; }
+```
+
+The second line keeps the tail at the far end, because the cluster left the
+flow. To keep the cluster clear of the leading run and of the tail, write the
+top as `clamp(var(--wm-ribbon-ceiling), var(--wm-trailing-pane-top),
+calc(var(--wm-ribbon-floor) - var(--wm-ribbon-trailing-height)))`. The pane
+marker of that pane sits at the same top, so a theme can add `36px`
+(`MARKER_PX`) to put the icons under the marker. When the cluster leaves the
+flow, the pane markers stop at the tail and not at the cluster.
+
+### The gate
+
+`components/__tests__/theme-gate.test.tsx` renders the window manager with
+open rails, a split centre, tabs, a modified tab, a floating window and a
+rolled-up window. It walks every element in the DOM. It fails when an element
+carries a class that sets a look: a colour, a border colour, a radius, a
+shadow, a ring, an outline, a font size or weight, an opacity, a transition,
+or a variant of one of these. It also fails when the walk does not find one
+of the parts, so the check cannot pass on an empty tree.
+
 ## How to add a windowing feature
 
 1. Decide whether the change is a layout mechanic (belongs in
    `src/windowing/`) or a product decision (belongs in the app — a new
    `WindowPolicy` member's implementation, a new slot, a new content type).
-2. If it is a mechanic, write it under `src/windowing/`, run
+2. If it is a mechanic, write it under `src/windowing/`. Give each new
+   element that has a look a `wm-<part>` class and its state as data
+   attributes, and put its look in `theme.css`. Run
    `bunx vitest run src/windowing/__tests__/boundary.test.ts` to confirm it
    imports nothing from the app, export a new name from `index.ts` only when
    app code needs it, and add its unit test under

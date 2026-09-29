@@ -1,4 +1,4 @@
-import { Component, Show, onCleanup } from 'solid-js';
+import { Component, Show, createSignal, onCleanup } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions, policy } from '@/windowing/store';
@@ -9,6 +9,8 @@ import { useWindowing } from '@/windowing/components/context';
 import { chordLabel } from '@/windowing/shortcuts';
 import { RibbonPaneStrip } from './RibbonPaneStrip';
 import { RibbonCommand, ribbonBtn } from './RibbonButton';
+import { TabContextMenu } from './TabBar';
+import { paneTopIn, railBodyEl, watchRailGeometry } from './rail-geometry';
 import {
   IconPanelLeft,
   IconPanelLeftClose,
@@ -68,22 +70,24 @@ const RibbonTabButton: Component<{
     !isEdgeCollapsed(windowStore.edgePanels[props.position]) &&
     !paneCollapsed();
 
+  // The state rides on data attributes. The theme decides how each one looks.
+  // The tab menu of the tab bar wraps the icon: a theme can hide the tab bars
+  // of a rail, and then this icon is the only handle of the tab.
   return (
+    <TabContextMenu groupId={() => props.groupId} paneId={() => props.paneId} tab={props.tab}>
     <button
       use:draggable
       type="button"
       data-testid={`collapsed-tab-button-${props.position}`}
+      data-orientation={props.isVertical ? 'vertical' : 'horizontal'}
+      data-highlighted={highlighted() ? '' : undefined}
+      data-unavailable={unavailable() ? '' : undefined}
+      data-dragging={draggable.isActiveDraggable ? '' : undefined}
       classList={{
-        'flex items-center justify-center transition-all duration-150': true,
-        'w-10 h-10': props.isVertical,
-        'h-9 px-3': !props.isVertical,
-        'opacity-40': draggable.isActiveDraggable || unavailable(),
+        'wm-ribbon-tab flex items-center justify-center': true,
+        // The column width is part of RIBBON_WIDTH_PX.
+        'w-10': props.isVertical,
         'cursor-not-allowed': unavailable(),
-        'bg-surface-elevated text-shell-ink':
-          highlighted() && !draggable.isActiveDraggable && !unavailable(),
-        'text-muted-dark hover:text-shell-body hover:bg-hover-wash':
-          !highlighted() && !draggable.isActiveDraggable && !unavailable(),
-        'text-muted-dark': unavailable() && !draggable.isActiveDraggable,
       }}
       title={unavailable() ? `${props.tab.title} — ${reason()}` : props.tab.title}
       onClick={handleClick}
@@ -91,11 +95,22 @@ const RibbonTabButton: Component<{
       {props.tab.icon ? (
         <props.tab.icon class="w-4 h-4" />
       ) : (
-        <span class="text-xs truncate max-w-[2rem]">{props.tab.title[0]}</span>
+        <span class="wm-icon-letter truncate max-w-[2rem]">{props.tab.title[0]}</span>
       )}
     </button>
+    </TabContextMenu>
   );
 };
+
+/**
+ * The ribbon's width: a `w-10` button column and its 1px border. With the
+ * ribbon inside the rail, it is the width a closed rail keeps.
+ *
+ * This is a layout contract. The component sets the column width and the
+ * border width, and the slide code reads this number. A theme may change the
+ * border colour. A theme must not change the column width or the border width.
+ */
+export const RIBBON_WIDTH_PX = 41;
 
 /** The always-visible icon bar at the window edge (Obsidian's ribbon):
  * panels grow out of it, so the toggles never move or disappear. The top
@@ -107,6 +122,7 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
   // a viewport coordinate into an offset.
   let ribbonRef: HTMLElement | undefined;
   const panel = () => windowStore.edgePanels[props.position];
+  const insideRail = () => windowStore.ribbonPlacement === 'panel';
 
   // The panel is a layout tree — the ribbon shows every tab across all leaf
   // groups, in tree order. Each leaf group keeps its own active tab (one
@@ -148,6 +164,66 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
   const leadingEntries = () => leafEntries().filter((e) => !trailingPaneIds().has(e.paneId));
   const trailingEntries = () => leafEntries().filter((e) => trailingPaneIds().has(e.paneId));
 
+  // ── The geometry that the ribbon publishes for a theme ──────────────────
+  //
+  // The trailing cluster sits at the far end of the ribbon. A theme can put
+  // it at the top edge of its own pane instead. That position is a look, so
+  // the theme owns it. The component measures the geometry and publishes it
+  // as custom properties on the ribbon, in px from the top of the ribbon:
+  //
+  // - `--wm-trailing-pane-top`: the top edge of the first pane of the
+  //   trailing branch. It follows the split during a drag.
+  // - `--wm-ribbon-ceiling`: the bottom of the leading run (the toggle, the
+  //   leading tabs and the head slot).
+  // - `--wm-ribbon-floor`: the top of the pinned tail.
+  // - `--wm-ribbon-trailing-height`: the height of the trailing cluster.
+  //
+  // A property is absent when its element is absent.
+  let leadingRef: HTMLDivElement | undefined;
+  let tailRef: HTMLDivElement | undefined;
+  const [trailingRef, setTrailingRef] = createSignal<HTMLElement>();
+  const [geometry, setGeometry] = createSignal<Record<string, string>>({});
+
+  /** The first pane of the trailing branch, or null for a single-pane rail. */
+  const trailingPaneId = () => {
+    const root = panel().layout;
+    return root.type === 'split' ? (collectPanes(root.second)[0]?.id ?? null) : null;
+  };
+
+  const measureGeometry = () => {
+    const ribbon = ribbonRef;
+    if (!ribbon) return;
+    const originTop = ribbon.getBoundingClientRect().top;
+    const next: Record<string, string> = {};
+    const px = (n: number) => `${n}px`;
+
+    const body = railBodyEl(props.position);
+    const paneId = trailingPaneId();
+    const paneTop = body && paneId ? paneTopIn(body, paneId, originTop) : null;
+    if (paneTop !== null) next['--wm-trailing-pane-top'] = px(paneTop);
+
+    // The leading run is every flow child before the trailing cluster and the
+    // tail. The pane strip is an overlay, not a part of the run.
+    let ceiling: number | null = null;
+    for (const child of Array.from(ribbon.children)) {
+      if (child === trailingRef() || child === tailRef) break;
+      if (child.hasAttribute('data-ribbon-overlay')) continue;
+      const bottom = child.getBoundingClientRect().bottom - originTop;
+      ceiling = ceiling === null ? bottom : Math.max(ceiling, bottom);
+    }
+    if (ceiling !== null) next['--wm-ribbon-ceiling'] = px(ceiling);
+    if (tailRef) next['--wm-ribbon-floor'] = px(tailRef.getBoundingClientRect().top - originTop);
+    const trailing = trailingRef();
+    if (trailing) next['--wm-ribbon-trailing-height'] = px(trailing.getBoundingClientRect().height);
+    setGeometry(next);
+  };
+
+  watchRailGeometry(props.position, measureGeometry, {
+    extra: () => [leadingRef, trailingRef(), tailRef],
+    // A tab that comes or goes changes the size of a cluster.
+    key: () => `${leadingEntries().length}:${trailingEntries().length}`,
+  });
+
   // Per-PANE markers only earn their space once a rail holds more than one
   // pane. With a single pane the rail's own toggle already is that control,
   // and a lone marker beside it would be two buttons for one thing.
@@ -187,15 +263,18 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
         attachRibbonDrop(el);
       }}
       data-testid={`edge-collapsed-drop-${props.position}`}
+      // `data-drop-over` is DROP_OVER_ATTR (context.tsx): the app sets it for
+      // a native drag. `data-drop-active` marks a tab drag over the ribbon.
+      data-drop-active={droppable.isActiveDroppable ? '' : undefined}
       classList={{
-        // `data-drop-over` is DROP_OVER_ATTR (context.tsx). Tailwind reads
-        // class names as literal text, so the variant names the attribute.
-        'relative flex flex-col bg-shell-bg border-hairline transition-colors data-drop-over:bg-primary/20': true,
-        // Border faces the center/panel it grows toward.
-        'border-r': props.position === 'left',
-        'border-l': props.position === 'right',
-        'bg-primary/20': droppable.isActiveDroppable,
+        'wm-ribbon relative flex flex-col': true,
+        // Border faces the body. At the window edge the body is on the
+        // centre side; inside the rail it is on the window-edge side. The
+        // border width is part of RIBBON_WIDTH_PX; the theme gives its colour.
+        'border-r': (props.position === 'left') !== insideRail(),
+        'border-l': (props.position === 'right') !== insideRail(),
       }}
+      style={geometry()}
     >
       {/* Top slot: this bar's panel toggle — always in view. */}
       <button
@@ -205,7 +284,9 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
         // z-20: the topmost pane's own top edge is y=0, the same 36px this
         // button occupies. The rail toggle owns those pixels, so the overlay
         // never draws a marker there — see RibbonPaneStrip's floor.
-        class={`${ribbonBtn} flex-none relative z-20 bg-shell-bg w-10 h-9 border-b border-hairline`}
+        // h-9 is the tab bar height (COLLAPSED_PANE_PX), so the toggle lines up
+        // with the tab bar of the topmost pane.
+        class={`${ribbonBtn} wm-ribbon-toggle flex-none relative z-20 w-10 h-9`}
         title={isEdgeCollapsed(panel()) ? 'Expand panel' : 'Collapse panel'}
         onClick={() => windowActions.toggleEdgePanel(props.position)}
       >
@@ -217,18 +298,22 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
           would carry a dead sourceGroupId and moveTab would silently no-op.
           Keying also survives updateTab replacing tab objects on every write
           (same trap as TabStrip). */}
-      <Key each={leadingEntries()} by={(e) => `${e.groupId}:${e.tab.id}`}>
-        {(entry) => (
-          <RibbonTabButton
-            position={props.position}
-            tab={entry().tab}
-            groupId={entry().groupId}
-            paneId={entry().paneId}
-            isActive={entry().isActive}
-            isVertical
-          />
-        )}
-      </Key>
+      {/* The leading run. The wrapper holds no look of its own: its part
+          class gives a theme one name for the cluster. */}
+      <div ref={leadingRef} class="wm-ribbon-leading flex flex-none flex-col">
+        <Key each={leadingEntries()} by={(e) => `${e.groupId}:${e.tab.id}`}>
+          {(entry) => (
+            <RibbonTabButton
+              position={props.position}
+              tab={entry().tab}
+              groupId={entry().groupId}
+              paneId={entry().paneId}
+              isActive={entry().isActive}
+              isVertical
+            />
+          )}
+        </Key>
+      </div>
       {/* The pane markers are an OVERLAY, not a row in this flow: each one is
           placed at the top edge of the pane it controls, measured off the
           panel beside it. In the flow they inherited the offset of every fixed
@@ -244,7 +329,13 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
           `data-ribbon-floor` marks that same element for RibbonPaneStrip,
           which bounds its overlay between the ceiling and the floor. */}
       <Show when={trailingEntries().length > 0}>
-        <div class="mt-auto flex flex-none flex-col" data-ribbon-floor>
+        {/* `wm-ribbon-trailing` names the cluster for a theme. A theme can
+            place it at `--wm-trailing-pane-top`; see the geometry above. */}
+        <div
+          ref={setTrailingRef}
+          class="wm-ribbon-trailing mt-auto flex flex-none flex-col"
+          data-ribbon-floor
+        >
           <Key each={trailingEntries()} by={(e) => `${e.groupId}:${e.tab.id}`}>
             {(entry) => (
               <RibbonTabButton
@@ -265,8 +356,9 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
           manager knows whether that cluster exists. z-20 keeps the pane
           markers under it. */}
       <div
-        class="flex flex-none flex-col"
-        classList={{ 'relative z-20 bg-shell-bg mt-auto': trailingEntries().length === 0 }}
+        ref={tailRef}
+        class="wm-ribbon-tail flex flex-none flex-col"
+        classList={{ 'relative z-20 mt-auto': trailingEntries().length === 0 }}
         data-ribbon-floor={trailingEntries().length === 0 ? '' : undefined}
       >
         <Show when={props.position === 'left'}>

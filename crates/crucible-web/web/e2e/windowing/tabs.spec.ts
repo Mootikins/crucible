@@ -149,7 +149,7 @@ test.describe('tab reorder within one bar', () => {
     await page.mouse.down();
     await page.mouse.move(to.x, to.y, { steps: 20 });
 
-    const indicator = page.locator('[class*="bg-primary"][class*="rounded-full"][class*="h-5"]');
+    const indicator = page.locator('.wm-tab-insert');
     await expect(indicator.first()).toBeVisible();
 
     await page.mouse.up();
@@ -170,8 +170,8 @@ test.describe('tab reorder within one bar', () => {
     await expect(overlay).toBeVisible();
     await expect(overlay).toHaveText('Two');
 
-    // The reorder indicator is TabBar's 2px by 20px bar.
-    await expect(page.locator('[class*="w-0.5"][class*="h-5"][class*="bg-primary"]')).toHaveCount(0);
+    // The reorder indicator is TabBar's `wm-tab-insert` part.
+    await expect(page.locator('.wm-tab-insert')).toHaveCount(0);
 
     await page.mouse.up();
     await expect(overlay).toHaveCount(0);

@@ -29,19 +29,19 @@ export const EmptyPane: Component<{
 
   return (
     <div
-      class="flex-1 flex items-center justify-center overflow-hidden p-3"
+      class="wm-empty-pane flex-1 flex items-center justify-center overflow-hidden"
       data-testid="empty-pane"
       data-empty-pane={props.solitary ? 'region' : 'pane'}
     >
-      <div class="w-full max-w-[15rem] rounded-md border border-hairline px-3 py-2.5 text-muted">
-        <p class="text-floor leading-4">{props.solitary ? 'Nothing open' : 'Empty pane'}</p>
+      <div class="wm-empty-card w-full max-w-[15rem]">
+        <p class="wm-empty-title">{props.solitary ? 'Nothing open' : 'Empty pane'}</p>
         <Show when={hints().length > 0}>
-          <ul class="mt-2 flex flex-col gap-1">
+          <ul class="wm-empty-hints flex flex-col">
             <For each={hints()}>
               {(hint) => (
-                <li class="flex items-center justify-between gap-2 text-floor leading-4">
+                <li class="wm-empty-hint flex items-center justify-between">
                   <span class="truncate">{hint.label}</span>
-                  <kbd class="flex-none rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-floor text-muted">
+                  <kbd class="wm-empty-kbd flex-none">
                     {hint.chord}
                   </kbd>
                 </li>

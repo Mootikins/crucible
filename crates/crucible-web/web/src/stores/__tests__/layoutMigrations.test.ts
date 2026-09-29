@@ -84,6 +84,7 @@ function createTestState(): WindowState {
     nextZIndex: 1,
     expandedEdge: null,
     expandExit: 'toggle',
+    ribbonPlacement: 'edge',
   };
 }
 
@@ -293,6 +294,7 @@ describe('layout history and restore', () => {
       nextZIndex: 1,
       expandedEdge: null,
       expandExit: 'toggle',
+      ribbonPlacement: 'edge',
     };
 
     // Serialize and deserialize

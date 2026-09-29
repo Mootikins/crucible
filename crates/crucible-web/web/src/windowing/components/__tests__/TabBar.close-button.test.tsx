@@ -13,9 +13,13 @@ beforeEach(() => configureRails());
 // ("'opacity-0 group-hover:opacity-100': !props.isActive") plus a couple of
 // Tailwind class strings. That breaks on any benign class rename and never
 // proves the button works. Here we render the tab bar with an active and an
-// inactive tab and assert the emitted DOM: the active tab's close button is
-// visible (no opacity-0), the inactive one is hover-revealed (opacity-0), and
-// clicking a close button actually removes the tab.
+// inactive tab and assert the emitted DOM, and clicking a close button
+// actually removes the tab.
+//
+// The look is in `windowing/theme.css`: it hides `.wm-tab-close` at rest on a
+// tab without `data-active`, or with `data-modified`, and shows it on hover
+// and focus. So the DOM contract is the state on the tab and the part class
+// on the button.
 
 let paneId: string;
 let groupId: string;
@@ -40,6 +44,9 @@ beforeEach(() => {
   windowActions.addTab(groupId, { id: 'tab-b', title: 'B.md', contentType: 'file' });
   windowActions.setActiveTab(groupId, 'tab-a');
 });
+
+const tabEl = (container: HTMLElement, tabId: string) =>
+  container.querySelector<HTMLElement>(`[data-tab-id="${tabId}"]`)!;
 
 const closeButton = (container: HTMLElement, tabId: string) =>
   container.querySelector<HTMLButtonElement>(
@@ -66,16 +73,27 @@ describe('TabBar — close button visibility & behavior', () => {
       </DragDropProvider>
     ));
 
+    // Both buttons are the themed part.
+    expect(closeButton(container, 'tab-a')!.classList.contains('wm-tab-close')).toBe(true);
+    expect(closeButton(container, 'tab-b')!.classList.contains('wm-tab-close')).toBe(true);
+
     // tab-a is active → not hidden.
-    const active = closeButton(container, 'tab-a')!;
-    expect(active.className).not.toContain('opacity-0');
+    expect(tabEl(container, 'tab-a').hasAttribute('data-active')).toBe(true);
+    expect(tabEl(container, 'tab-a').hasAttribute('data-modified')).toBe(false);
 
     // tab-b is inactive → hidden until hover/focus.
-    const inactive = closeButton(container, 'tab-b')!;
-    expect(inactive.className).toContain('opacity-0');
-    expect(inactive.className).toContain('group-hover:opacity-100');
-    // Focus reveals it too.
-    expect(inactive.className).toContain('focus:opacity-100');
+    expect(tabEl(container, 'tab-b').hasAttribute('data-active')).toBe(false);
+  });
+
+  it('marks a modified tab, whose dot hides the close button at rest', () => {
+    const { container } = render(() => (
+      <DragDropProvider>
+        <TabBar groupId={groupId} paneId={paneId} />
+      </DragDropProvider>
+    ));
+    windowActions.updateTab(groupId, 'tab-a', { isModified: true });
+    expect(tabEl(container, 'tab-a').hasAttribute('data-modified')).toBe(true);
+    expect(tabEl(container, 'tab-b').hasAttribute('data-modified')).toBe(false);
   });
 
   it('reflects the active tab flipping (visibility follows isActive)', () => {
@@ -87,8 +105,8 @@ describe('TabBar — close button visibility & behavior', () => {
 
     windowActions.setActiveTab(groupId, 'tab-b');
 
-    expect(closeButton(container, 'tab-b')!.className).not.toContain('opacity-0');
-    expect(closeButton(container, 'tab-a')!.className).toContain('opacity-0');
+    expect(tabEl(container, 'tab-b').hasAttribute('data-active')).toBe(true);
+    expect(tabEl(container, 'tab-a').hasAttribute('data-active')).toBe(false);
   });
 
   // The policy may keep a tab; the store then refuses to close it, so the

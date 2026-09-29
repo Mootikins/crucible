@@ -85,7 +85,7 @@ test('pane split by drag works after a delayed layout restore', async ({ page })
     page,
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
     await centerPaneRightFifth(page),
-    '[class*="bg-primary/30"]',
+    '.wm-drop-zone[data-drop-active]',
   );
 
   // A real split creates a resize splitter between the two panes — asserting
@@ -104,7 +104,7 @@ test('drop onto the tab bar of a restored group still moves tabs', async ({ page
     page,
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
     await centerPaneRightFifth(page),
-    '[class*="bg-primary/30"]',
+    '.wm-drop-zone[data-drop-active]',
   );
   await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(1);
 
@@ -116,7 +116,7 @@ test('drop onto the tab bar of a restored group still moves tabs', async ({ page
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
     { x: homeBox.x + homeBox.width + 40, y: homeBox.y + homeBox.height / 2 },
     // CenterTabBar's active-drop underline indicator.
-    '[class*="h-0.5"][class*="bg-primary"]',
+    '.wm-tabbar-drop-line',
   );
 
   // Tab moved back into the first group; the empty pane is pruned.

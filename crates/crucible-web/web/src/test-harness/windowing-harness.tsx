@@ -12,6 +12,7 @@
  * can read and change the store.
  */
 import '@/index.css';
+import '@/windowing/theme.css';
 import { render } from 'solid-js/web';
 import { configureWindowing, windowStore, windowActions } from '@/windowing/store';
 import { WindowManager } from '@/windowing/components/WindowManager';

@@ -34,7 +34,7 @@ test('the shell boots without errors and preserves its regions when toggled', as
     }
   });
   await page.goto('/');
-  const root = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
+  const root = page.locator('div.wm-root.h-screen');
   const center = page.locator('div.flex-1.flex.flex-col.overflow-hidden').first();
   const toggle = page.getByTestId('ribbon-toggle-left');
   await expect(root).toBeVisible();

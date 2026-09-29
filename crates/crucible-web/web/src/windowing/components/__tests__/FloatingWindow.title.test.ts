@@ -8,9 +8,9 @@ describe('FloatingWindow title deduplication', () => {
     const filePath = path.join(__dirname, '../FloatingWindow.tsx');
     const source = fs.readFileSync(filePath, 'utf-8');
 
-    // Find the title bar span (class list carries truncate + text-shell-body)
+    // Find the title bar span (its part class is wm-floating-title)
     const titleBarMatch = source.match(
-      /<span[^>]*class="[^"]*truncate[^"]*text-shell-body[^"]*">\s*\{([^}]+)\}\s*<\/span>/
+      /<span[^>]*class="[^"]*wm-floating-title[^"]*">\s*\{([^}]+)\}\s*<\/span>/
     );
 
     // A non-match is `null` (which IS defined), so guard against null before
@@ -29,7 +29,7 @@ describe('FloatingWindow title deduplication', () => {
     const source = fs.readFileSync(filePath, 'utf-8');
 
     const titleBarMatch = source.match(
-      /<span[^>]*class="[^"]*truncate[^"]*text-shell-body[^"]*">\s*\{([^}]+)\}\s*<\/span>/
+      /<span[^>]*class="[^"]*wm-floating-title[^"]*">\s*\{([^}]+)\}\s*<\/span>/
     );
 
     expect(titleBarMatch).not.toBeNull();

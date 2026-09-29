@@ -146,5 +146,6 @@ export function defaultLayout(): WindowState {
     nextZIndex: 100,
     expandedEdge: null,
     expandExit: 'toggle',
+    ribbonPlacement: 'edge',
   };
 }

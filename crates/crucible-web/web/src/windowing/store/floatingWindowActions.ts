@@ -5,6 +5,7 @@ import type {
   PaneNode,
 } from '../model/types';
 import type { WindowStoreContext } from '../model/tree';
+import type { WindowPolicy } from './policy';
 import {
   collapseEmptyNodes,
   findEdgePanelForPane,
@@ -26,7 +27,20 @@ export interface FloatingWindowActions {
     height?: number,
     opts?: Pick<FloatingWindow, 'transient' | 'showTabBar' | 'title'>
   ): string;
-  popOutPane(paneId: string): string | null;
+  /**
+   * Move a pane's tabs into a new floating window, and return its id.
+   *
+   * With `tabId`, move that one tab only. The pane keeps its other tabs. When
+   * the tab is the only tab of the pane, the whole group moves, as without
+   * `tabId`. The policy guard (`canPopOutTab`) applies to the tab.
+   */
+  popOutPane(paneId: string, tabId?: string): string | null;
+  /**
+   * True when a tab can go into a floating window. A closed floating window
+   * closes its tabs without a policy check, so a tab that the policy keeps
+   * stays docked. A tab that the policy calls unavailable stays docked too.
+   */
+  canPopOutTab(groupId: string, tabId: string): boolean;
   removeFloatingWindow(windowId: string): void;
   closeFloatingWindow(windowId: string): void;
   updateFloatingWindow(windowId: string, updates: Partial<FloatingWindow>): void;
@@ -36,13 +50,54 @@ export interface FloatingWindowActions {
   restoreFloatingWindow(windowId: string): void;
   /** Promote a transient (hover) window to a normal, persisted one. */
   pinFloatingWindow(windowId: string): void;
-  dockFloatingWindow(windowId: string): void;
+  /**
+   * Move a floating window's tabs back into the centre tiling. With `tabId`,
+   * move that one tab only, and the window keeps its other tabs.
+   */
+  dockFloatingWindow(windowId: string, tabId?: string): void;
 }
 
 export function createFloatingWindowActions<C extends string>(
-  context: WindowStoreContext<C>
+  context: WindowStoreContext<C>,
+  policy: () => WindowPolicy<C>,
 ): FloatingWindowActions {
   const { store, setStore } = context;
+
+  const canPopOutTab = (groupId: string, tabId: string): boolean => {
+    const tab = store.tabGroups[groupId]?.tabs.find((t) => t.id === tabId);
+    if (!tab) return false;
+    return policy().mayCloseTab(store, groupId, tabId) && policy().unavailableReason(tab) === null;
+  };
+
+  /**
+   * Move one tab out of its group into a new group, and return the new id.
+   *
+   * The caller makes sure that the group keeps one tab or more. The write is
+   * its own store write: the old row unmounts, and unregisters its solid-dnd
+   * ids, before a new tab bar shows the tab (see `popOutPane`).
+   */
+  const splitTabOff = (groupId: string, tabId: string): string => {
+    const group = store.tabGroups[groupId]!;
+    const index = group.tabs.findIndex((t) => t.id === tabId);
+    const tab = { ...group.tabs[index]! };
+    const rest = group.tabs.filter((t) => t.id !== tabId);
+    const newGroupId = generateId();
+    setStore(
+      produce((s) => {
+        s.tabGroups[groupId] = {
+          ...group,
+          tabs: rest,
+          // The neighbour that takes the place of the tab becomes active.
+          activeTabId:
+            group.activeTabId === tabId
+              ? (rest[Math.min(index, rest.length - 1)]?.id ?? null)
+              : group.activeTabId,
+        };
+        s.tabGroups[newGroupId] = { id: newGroupId, tabs: [tab], activeTabId: tab.id };
+      })
+    );
+    return newGroupId;
+  };
 
   const removeFloatingWindow = (windowId: string) => {
     setStore(
@@ -86,12 +141,23 @@ export function createFloatingWindowActions<C extends string>(
   // never rendered by two tab bars at once — duplicate tab strips, and
   // duplicate solid-dnd draggable/droppable ids, which corrupt the DnD
   // registry ("Cannot remove nonexistent draggable").
-  const popOutPane = (paneId: string): string | null => {
+  const popOutPane = (paneId: string, tabId?: string): string | null => {
     const pane = findPaneAnywhere(store, paneId);
     const groupId = pane?.tabGroupId;
     if (!pane || !groupId) return null;
     const group = store.tabGroups[groupId];
     if (!group || group.tabs.length === 0) return null;
+
+    if (tabId !== undefined) {
+      const tab = group.tabs.find((t) => t.id === tabId);
+      if (!tab || !canPopOutTab(groupId, tabId)) return null;
+      // The tab has neighbours: it leaves alone, and the pane stays.
+      if (group.tabs.length > 1) {
+        return createFloatingWindow(splitTabOff(groupId, tabId), 150, 150, 500, 400, {
+          title: tab.title,
+        });
+      }
+    }
 
     // Region resolved BEFORE the detach — the pane may be collapsed out of
     // its tree below.
@@ -226,7 +292,7 @@ export function createFloatingWindowActions<C extends string>(
     );
   };
 
-  const dockFloatingWindow = (windowId: string) => {
+  const dockFloatingWindow = (windowId: string, tabId?: string) => {
     const window = store.floatingWindows.find((w) => w.id === windowId);
     if (!window) return;
     const tabGroup = store.tabGroups[window.tabGroupId];
@@ -234,6 +300,7 @@ export function createFloatingWindowActions<C extends string>(
       removeFloatingWindow(windowId);
       return;
     }
+    if (tabId !== undefined && !tabGroup.tabs.some((t) => t.id === tabId)) return;
 
     const findEmptyPane = (node: LayoutNode): PaneNode | null => {
       if (node.type === 'pane') {
@@ -244,14 +311,25 @@ export function createFloatingWindowActions<C extends string>(
       return findEmptyPane(node.first) || findEmptyPane(node.second);
     };
 
+    // The target comes first, so that a dock with no target changes nothing.
+    // A split root is no pane, so the first leaf of the tiling takes the new
+    // split. The old lookup found no pane there, and the dock did nothing.
     const firstEmpty = findEmptyPane(store.layout);
+    const mainPane = firstEmpty ? null : findFirstPane(store.layout);
+    if (!firstEmpty && !mainPane) return;
+
+    // One tab with neighbours leaves the window alone; the window stays.
+    // Otherwise the whole group leaves, and the window goes.
+    const single = tabId !== undefined && tabGroup.tabs.length > 1;
+    const groupId = single ? splitTabOff(window.tabGroupId, tabId) : window.tabGroupId;
+    if (!single) removeFloatingWindow(windowId);
+
     if (firstEmpty) {
-      removeFloatingWindow(windowId);
       setStore(
         produce((s) => {
           s.layout = updatePaneInLayout(s.layout, firstEmpty.id, () => ({
             ...firstEmpty,
-            tabGroupId: window.tabGroupId,
+            tabGroupId: groupId,
           }));
           s.activePaneId = firstEmpty.id;
           s.focusedRegion = 'center';
@@ -260,42 +338,35 @@ export function createFloatingWindowActions<C extends string>(
       return;
     }
 
-    const mainPane =
-      store.layout.type === 'pane'
-        ? store.layout
-        : findPaneInLayout(store.layout, store.layout.id);
-
-    if (mainPane && mainPane.type === 'pane') {
-      const newPaneId = generateId();
-      const newSplit: LayoutNode = {
-        id: generateId(),
-        type: 'split',
-        direction: 'horizontal',
-        splitRatio: 0.5,
-        first: mainPane,
-        second: {
-          id: newPaneId,
-          type: 'pane',
-          tabGroupId: window.tabGroupId,
-        },
-      };
-      removeFloatingWindow(windowId);
-      setStore(
-        produce((s) => {
-          s.layout =
-            s.layout.type === 'pane'
-              ? newSplit
-              : replacePaneWithSplit(s.layout, mainPane.id, newSplit);
-          s.activePaneId = newPaneId;
-          s.focusedRegion = 'center';
-        })
-      );
-    }
+    const newPaneId = generateId();
+    const newSplit: LayoutNode = {
+      id: generateId(),
+      type: 'split',
+      direction: 'horizontal',
+      splitRatio: 0.5,
+      first: mainPane!,
+      second: {
+        id: newPaneId,
+        type: 'pane',
+        tabGroupId: groupId,
+      },
+    };
+    setStore(
+      produce((s) => {
+        s.layout =
+          s.layout.type === 'pane'
+            ? newSplit
+            : replacePaneWithSplit(s.layout, mainPane!.id, newSplit);
+        s.activePaneId = newPaneId;
+        s.focusedRegion = 'center';
+      })
+    );
   };
 
   return {
     createFloatingWindow,
     popOutPane,
+    canPopOutTab,
     removeFloatingWindow,
     closeFloatingWindow,
     updateFloatingWindow,

@@ -28,6 +28,7 @@ src/
 │   ├── store/             # The store, the WindowPolicy seam, and the tab/layout/floating actions
 │   ├── components/        # WindowManager, EdgeHost, Ribbon, DockedBody, Pane, TabBar, FloatingWindow, etc.
 │   ├── reveal/             # RevealController and flyoutRect
+│   ├── theme.css           # The default look of every `wm-*` part (@layer wm-theme); the components hold no look (gate: theme-gate.test.tsx)
 │   └── testing/            # neutralPolicy — shared by the core's unit tests and the harness page
 ├── components/          # UI components
 ├── contexts/            # SolidJS context providers (client-local session and editor state)

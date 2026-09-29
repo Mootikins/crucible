@@ -3,10 +3,12 @@ import {
   EDGE_CUES,
   EDGE_MODES,
   EXPAND_EXITS,
+  RIBBON_PLACEMENTS,
   isEdgeCollapsed,
   type EdgeCue,
   type EdgeMode,
   type ExpandExit,
+  type RibbonPlacement,
 } from '@/windowing/model/types';
 
 describe('the closed edge tables', () => {
@@ -16,9 +18,11 @@ describe('the closed edge tables', () => {
     expectTypeOf<Exclude<EdgeMode, (typeof EDGE_MODES)[number]>>().toEqualTypeOf<never>();
     expectTypeOf<Exclude<EdgeCue, (typeof EDGE_CUES)[number]>>().toEqualTypeOf<never>();
     expectTypeOf<Exclude<ExpandExit, (typeof EXPAND_EXITS)[number]>>().toEqualTypeOf<never>();
+    expectTypeOf<Exclude<RibbonPlacement, (typeof RIBBON_PLACEMENTS)[number]>>().toEqualTypeOf<never>();
     expect(new Set(EDGE_MODES).size).toBe(EDGE_MODES.length);
     expect(new Set(EDGE_CUES).size).toBe(EDGE_CUES.length);
     expect(new Set(EXPAND_EXITS).size).toBe(EXPAND_EXITS.length);
+    expect(new Set(RIBBON_PLACEMENTS).size).toBe(RIBBON_PLACEMENTS.length);
   });
 });
 

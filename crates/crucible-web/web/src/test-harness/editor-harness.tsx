@@ -17,6 +17,7 @@
  * real saveFile) so the genuine round-trip code path is exercised end-to-end.
  */
 import '@/index.css';
+import '@/windowing/theme.css';
 import { render } from 'solid-js/web';
 import { Show, For, type Component } from 'solid-js';
 import { DragDropProvider, DragDropSensors } from '@thisbeyond/solid-dnd';

@@ -49,8 +49,8 @@ function DragOverlayContent() {
 
   return (
     <Show when={data()?.type === 'tab' || data()?.type === 'newTab'}>
-      <div data-testid="drag-overlay" class="px-2.5 py-1.5 bg-surface-overlay border border-hairline-strong rounded shadow-lg text-xs text-shell-ink flex items-center gap-1.5 opacity-90">
-        <span class="font-medium truncate max-w-(--cru-measure-tab)" title={title()}>
+      <div data-testid="drag-overlay" class="wm-drag-overlay flex items-center">
+        <span class="wm-drag-overlay-title truncate max-w-(--cru-measure-tab)" title={title()}>
           {elideTabTitle(title())}
         </span>
       </div>
@@ -239,7 +239,9 @@ function InnerManager() {
     windowStore.floatingWindows.filter((w) => !w.isMinimized);
 
   return (
-    <div class="flex flex-col h-screen bg-shell-bg text-shell-ink overflow-hidden select-none">
+    // The components draw structure and state only. `windowing/theme.css`
+    // gives each `wm-*` part its look.
+    <div class="wm-root flex flex-col h-screen overflow-hidden select-none">
       <div class="relative z-0 flex flex-1 overflow-hidden min-h-0">
         {/* The row is a KEYED LIST, not three fixed slots, so a flip MOVES a
             rail across the centre instead of rebuilding it. The two rails

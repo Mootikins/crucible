@@ -200,8 +200,9 @@ describe('the boundary above a marker drags the split', () => {
 
   it('draws a boundary rule above the marker and the tab bar’s rule below it', async () => {
     const { container } = await renderMeasured();
-    // Below: the same hairline underline a TabBar draws.
-    expect(marker(container, 'right-term-pane').className).toContain('border-b');
+    // Below: the same hairline underline a TabBar draws. The theme draws it
+    // on the `wm-pane-marker` part.
+    expect(marker(container, 'right-term-pane').classList.contains('wm-pane-marker')).toBe(true);
     // Above: the boundary, and it names the split it moves. The attribute is
     // deliberately NOT `data-split-id`: that name belongs to the splitter in
     // the panel, and sharing it made the drag measure itself against this 36px

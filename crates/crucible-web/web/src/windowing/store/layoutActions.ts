@@ -3,6 +3,7 @@ import type {
   EdgeCue,
   EdgeMode,
   ExpandExit,
+  RibbonPlacement,
   EdgePanel as EdgePanelType,
   EdgePanelPosition,
   LayoutNode,
@@ -50,6 +51,8 @@ export interface LayoutActions<C extends string = string> {
   toggleEdgeExpanded(position: EdgePanelPosition): void;
   /** Set what ends an expanded rail. See `ExpandExit`. */
   setExpandExit(exit: ExpandExit): void;
+  /** Set where the rail ribbons sit. See `RibbonPlacement`. */
+  setRibbonPlacement(placement: RibbonPlacement): void;
   /** Set how a pane opens from its band. The pane can be in the centre or in a rail. */
   setPaneReveal(paneId: string, reveal: PaneReveal): void;
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null): void;
@@ -130,6 +133,10 @@ export function createLayoutActions<C extends string>(
 
   const setExpandExit = (exit: ExpandExit) => {
     setStore('expandExit', exit);
+  };
+
+  const setRibbonPlacement = (placement: RibbonPlacement) => {
+    setStore('ribbonPlacement', placement);
   };
 
   /**
@@ -442,8 +449,9 @@ export function createLayoutActions<C extends string>(
           s.activePaneId = fresh.activePaneId;
           s.focusedRegion = 'center';
           s.nextZIndex = 100;
-          // The seed's rails replace the expanded one. The exit setting is
-          // the user's, not the layout's, so the reset leaves it alone.
+          // The seed's rails replace the expanded one. The exit setting and
+          // the ribbon placement are the user's, not the layout's, so the
+          // reset leaves them alone.
           s.expandedEdge = null;
           // The same repair as a restore, so that "reset" cannot drift away
           // from the invariant the restore path enforces.
@@ -464,6 +472,7 @@ export function createLayoutActions<C extends string>(
     collapseExpandedEdge,
     toggleEdgeExpanded,
     setExpandExit,
+    setRibbonPlacement,
     setPaneReveal,
     setEdgePanelActiveTab,
     setEdgePanelSize,

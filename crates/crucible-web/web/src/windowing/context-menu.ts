@@ -20,6 +20,12 @@ export function shouldUseNativeMenu(e: MouseEvent): boolean {
 export type TabCloseMode = 'close' | 'close-others' | 'close-right';
 
 /**
+ * Every row of the tab menu. `pop-out` moves a docked tab into a floating
+ * window. `dock` moves a floating tab back into the layout.
+ */
+export type TabMenuAction = TabCloseMode | 'pop-out' | 'dock';
+
+/**
  * The tabs a close action removes (pure — the caller still runs each through
  * the dirty-tab confirm guard).
  */

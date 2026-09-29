@@ -107,6 +107,31 @@ describe('TabBar — the title fade is measured', () => {
     const row = container.querySelector('[data-tab-id="tab-short"]')!;
     const title = [...row.querySelectorAll('span')].find((el) => el.textContent === 'Short')!;
     expect(title.getAttribute('title')).toBeNull();
-    expect(title.className).not.toContain('tab-title-fade');
+    // The theme fades `.wm-tab-title[data-overflows]`.
+    expect(title.classList.contains('wm-tab-title')).toBe(true);
+    expect(title.hasAttribute('data-overflows')).toBe(false);
+  });
+
+  it('marks a title that its box cuts, so the theme can fade it', () => {
+    // jsdom lays nothing out. These two getters give the title a box that is
+    // narrower than its text. They shadow the getters on Element.prototype,
+    // and the `finally` block removes them.
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 300 });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 100 });
+    try {
+      windowActions.addTab(groupId, { id: 'tab-cut', title: 'Cut', contentType: 'file', icon: FileText });
+      const { container } = render(() => (
+        <DragDropProvider>
+          <TabBar groupId={groupId} paneId={paneId} />
+        </DragDropProvider>
+      ));
+      const row = container.querySelector('[data-tab-id="tab-cut"]')!;
+      const title = [...row.querySelectorAll('span')].find((el) => el.textContent === 'Cut')!;
+      expect(title.hasAttribute('data-overflows')).toBe(true);
+    } finally {
+      const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+      delete proto.scrollWidth;
+      delete proto.clientWidth;
+    }
   });
 });

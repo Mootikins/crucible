@@ -14,6 +14,9 @@ import '@fontsource-variable/geist-mono';
 // KaTeX math styling; Vite bundles the woff2 fonts its url()s reference.
 import 'katex/dist/katex.min.css';
 import './index.css';
+// The default look of the window manager. It loads after index.css, which
+// fixes the order of its layer.
+import './windowing/theme.css';
 import { initializeHighlighter } from '@/lib/shiki';
 import { initTheme } from '@/lib/theme';
 import { installSessionEventRoute } from '@/lib/query/routes/session';

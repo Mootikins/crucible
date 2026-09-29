@@ -81,19 +81,24 @@ function mayImportDeep(file: string): boolean {
   );
 }
 
+/** The default theme: the second public entry, a stylesheet with no code. */
+const THEME = 'theme.css';
+
 /**
  * The imports of `src` that pass the public entry, for a file at `file`
- * outside the core. The app imports `@/windowing` and nothing deeper. A
- * relative path may name the core folder or its index, and no other module.
+ * outside the core. The app imports `@/windowing` and the default theme,
+ * and nothing deeper. A relative path may name the core folder, its index or
+ * the theme, and no other module.
  */
 function deepImportsIn(file: string, src: string): string[] {
   return specifiers(src).filter((spec) => {
     if (spec.startsWith('.')) {
       const target = resolve(dirname(file), spec);
-      if (target === ROOT || /^index(\.tsx?)?$/.test(relative(ROOT, target))) return false;
+      const inner = relative(ROOT, target);
+      if (target === ROOT || /^index(\.tsx?)?$/.test(inner) || inner === THEME) return false;
       return target.startsWith(ROOT + sep);
     }
-    return spec.startsWith('@/windowing/');
+    return spec.startsWith('@/windowing/') && spec !== `@/windowing/${THEME}`;
   });
 }
 
@@ -150,6 +155,7 @@ describe('windowing core boundary', () => {
       ['a deep type import', `import type { Tab } from "@/windowing/model/types";`],
       ['a relative path into the core', `import { x } from '../windowing/store';`],
       ['a dynamic deep import', `const m = await import('@/windowing/components/WindowManager');`],
+      ['a stylesheet that is not the theme', `import '@/windowing/other.css';`],
     ])('flags %s', (_name, src) => {
       expect(deepImportsIn(file, src)).toHaveLength(1);
     });
@@ -159,6 +165,8 @@ describe('windowing core boundary', () => {
         `import { windowStore } from '@/windowing';`,
         `import { windowActions } from '../windowing';`,
         `import { WindowManager } from '../windowing/index';`,
+        `import '@/windowing/theme.css';`,
+        `import '../windowing/theme.css';`,
         `import { cn } from '@/lib/cn';`,
         `import { x } from './windowing-helpers';`,
       ].join('\n');

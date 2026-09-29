@@ -132,8 +132,9 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
                 data-testid="resize-splitter"
                 data-split-id={split().id}
                 data-locked={locked() ? 'true' : undefined}
+                data-dragging={isDragging() ? '' : undefined}
                 classList={{
-                  'relative flex-shrink-0 z-10 pointer-events-auto transition-colors': true,
+                  'wm-splitter relative flex-shrink-0 z-10 pointer-events-auto': true,
                   'after:content-[\'\'] after:absolute': !locked(),
                   'w-px': split().direction === 'horizontal',
                   'h-px': split().direction !== 'horizontal',
@@ -141,9 +142,6 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
                     split().direction === 'horizontal' && !locked(),
                   'cursor-row-resize after:inset-x-0 after:-inset-y-1':
                     split().direction !== 'horizontal' && !locked(),
-                  'bg-primary': isDragging(),
-                  'bg-control': locked() && !isDragging(),
-                  'bg-control hover:bg-hover-wash': !locked() && !isDragging(),
                 }}
                 on:pointerdown={(e) => {
                   if (locked()) return;

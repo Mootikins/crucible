@@ -188,6 +188,7 @@ describe('layout round-trip property tests', () => {
             nextZIndex: 1,
             expandedEdge: null,
             expandExit: 'toggle',
+            ribbonPlacement: 'edge',
           };
 
           // Should not throw

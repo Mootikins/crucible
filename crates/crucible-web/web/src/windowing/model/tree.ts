@@ -54,6 +54,7 @@ export function emptyState<C extends string = string>(): WindowState<C> {
     nextZIndex: 100,
     expandedEdge: null,
     expandExit: 'toggle',
+    ribbonPlacement: 'edge',
   };
 }
 

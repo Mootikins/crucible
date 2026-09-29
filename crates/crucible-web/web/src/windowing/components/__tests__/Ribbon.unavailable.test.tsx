@@ -42,6 +42,9 @@ describe('Ribbon — an unavailable tab', () => {
     expect(ok!.getAttribute('title')).toBe('Fine');
     expect(no!.getAttribute('title')).toBe('Remote — needs the host');
     expect(no!.className).toContain('cursor-not-allowed');
+    // The theme greys out `.wm-ribbon-tab[data-unavailable]`.
+    expect(no!.hasAttribute('data-unavailable')).toBe(true);
+    expect(ok!.hasAttribute('data-unavailable')).toBe(false);
 
     // A click does nothing: the rail stays shut.
     fireEvent.click(no!);

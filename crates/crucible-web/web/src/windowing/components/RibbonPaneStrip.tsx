@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createEffect, onCleanup, onMount } from 'solid-js';
+import { Component, Show, createSignal, onCleanup } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
 import { Dynamic } from 'solid-js/web';
 import { windowStore, windowActions } from '@/windowing/store';
@@ -7,11 +7,28 @@ import { isCollapsedLeaf } from '@/windowing/model/pane-collapse';
 import { paneBoundaries, findSplitInLayout } from '@/windowing/model/pane-boundaries';
 import { startSplitDrag } from '@/windowing/components/split-drag';
 import type { EdgePanelPosition, PaneNode } from '@/windowing/model/types';
-import { isEdgeCollapsed } from '@/windowing/model/types';
 import { ribbonBtn } from './RibbonButton';
+import { paneTopIn, railBodyEl, watchRailGeometry } from './rail-geometry';
 
 /** A pane's marker band is exactly a tab bar: TabBar is `h-9`. */
 const MARKER_PX = 36;
+
+/**
+ * The element that holds the far end of the ribbon for the markers.
+ *
+ * It is the `[data-ribbon-floor]` claimant. A theme can take the trailing tab
+ * cluster out of the flow (see `--wm-trailing-pane-top` in Ribbon.tsx). Then
+ * that cluster floats over the rail, and the pinned tail is the real floor.
+ */
+function pinnedFloorEl(ribbon: HTMLElement): HTMLElement | null {
+  const claimant = ribbon.querySelector<HTMLElement>('[data-ribbon-floor]');
+  if (!claimant) return null;
+  const position = getComputedStyle(claimant).position;
+  if (position === 'absolute' || position === 'fixed') {
+    return ribbon.querySelector<HTMLElement>('.wm-ribbon-tail');
+  }
+  return claimant;
+}
 
 /** One pane's marker, placed at the pane's own top edge. */
 interface Band {
@@ -57,12 +74,9 @@ export const RibbonPaneStrip: Component<{
   const [floor, setFloor] = createSignal(Number.POSITIVE_INFINITY);
   const [ceiling, setCeiling] = createSignal(0);
 
-  const bodyEl = () =>
-    document.querySelector<HTMLElement>(`[data-edge-panel-body="${props.position}"]`) ?? undefined;
-
   const measure = () => {
     const ribbon = props.ribbonEl();
-    const body = bodyEl();
+    const body = railBodyEl(props.position);
     if (!ribbon || !body) {
       setBands([]);
       return;
@@ -71,11 +85,11 @@ export const RibbonPaneStrip: Component<{
     const boundaries = paneBoundaries(panel().layout);
     const next: Band[] = [];
     for (const pane of panes()) {
-      const el = body.querySelector<HTMLElement>(`[data-pane-id="${pane.id}"]`);
-      if (!el) continue;
+      const top = paneTopIn(body, pane.id, ribbonTop);
+      if (top === null) continue;
       next.push({
         paneId: pane.id,
-        top: el.getBoundingClientRect().top - ribbonTop,
+        top,
         boundarySplitId: boundaries.get(pane.id) ?? null,
         collapsed: pane.collapsed === true,
       });
@@ -98,54 +112,18 @@ export const RibbonPaneStrip: Component<{
     // height.
     const top = ribbon.querySelector<HTMLElement>('[data-ribbon-ceiling]');
     setCeiling(top ? top.getBoundingClientRect().bottom - ribbonTop : 0);
-    const pinned = ribbon.querySelector<HTMLElement>('[data-ribbon-floor]');
+    const pinned = pinnedFloorEl(ribbon);
     setFloor(pinned ? pinned.getBoundingClientRect().top - ribbonTop : Number.POSITIVE_INFINITY);
   };
 
-  // Re-measure whenever the tree's SHAPE changes (a pane added, removed or
-  // collapsed) — the ResizeObserver below covers every size change, including
-  // a ratio drag, but it cannot fire for a pane that does not exist yet.
-  createEffect(() => {
-    panes()
-      .map((p) => `${p.id}:${p.collapsed === true}`)
-      .join('|');
-    isEdgeCollapsed(panel());
-    queueMicrotask(measure);
-  });
-
-  let observer: ResizeObserver | undefined;
-  const observe = () => {
-    observer?.disconnect();
-    const body = bodyEl();
-    if (!body) return;
-    observer = new ResizeObserver(() => measure());
-    observer.observe(body);
-    for (const pane of panes()) {
-      const el = body.querySelector(`[data-pane-id="${pane.id}"]`);
-      if (el) observer.observe(el);
-    }
-  };
-
-  createEffect(() => {
-    panes()
-      .map((p) => p.id)
-      .join('|');
-    queueMicrotask(observe);
-  });
-
-  onMount(() => {
-    requestAnimationFrame(measure);
-    window.addEventListener('resize', measure);
-  });
-
-  onCleanup(() => {
-    observer?.disconnect();
-    window.removeEventListener('resize', measure);
-  });
+  // The shared watcher measures again on each change of size or shape, and
+  // on each step of a split drag.
+  watchRailGeometry(props.position, measure);
 
   return (
     <div
       data-testid={`ribbon-pane-strip-${props.position}`}
+      data-ribbon-overlay
       class="absolute inset-x-0 top-0 bottom-0 z-10 pointer-events-none"
     >
       {/* KEYED BY PANE. `measure` builds fresh band objects, so a plain For
@@ -245,12 +223,11 @@ const RibbonPaneBand: Component<{ position: EdgePanelPosition; band: Band }> = (
           data-testid={`ribbon-split-handle-${props.position}`}
           data-boundary-split-id={props.band.boundarySplitId}
           data-locked={locked() ? 'true' : undefined}
+          data-dragging={dragging() ? '' : undefined}
           classList={{
-            'absolute inset-x-0 -top-0.5 h-0.5 pointer-events-auto transition-colors': true,
+            'wm-pane-boundary absolute inset-x-0 -top-0.5 h-0.5 pointer-events-auto': true,
             "after:content-[''] after:absolute after:inset-x-0 after:-inset-y-1": !locked(),
             'cursor-row-resize': !locked(),
-            'bg-primary': dragging(),
-            'bg-hairline-strong': !dragging(),
           }}
           on:pointerdown={onHandleDown}
         />
@@ -261,13 +238,12 @@ const RibbonPaneBand: Component<{ position: EdgePanelPosition; band: Band }> = (
         data-pane-id={props.band.paneId}
         data-collapsed={collapsed() ? 'true' : 'false'}
         aria-expanded={!collapsed()}
-        class={`${ribbonBtn} w-full border-b border-hairline pointer-events-auto`}
+        class={`${ribbonBtn} wm-pane-marker w-full pointer-events-auto`}
         style={{ height: `${MARKER_PX}px` }}
-        classList={{ 'text-shell-body': !collapsed() }}
         title={`${collapsed() ? 'Expand' : 'Collapse'} ${label()}`}
         onClick={() => windowActions.togglePaneCollapsed(props.band.paneId)}
       >
-        <Show when={tab()?.icon} fallback={<span class="text-xs">{label()[0]}</span>}>
+        <Show when={tab()?.icon} fallback={<span class="wm-icon-letter">{label()[0]}</span>}>
           {(icon) => <Dynamic component={icon()} class="w-4 h-4" />}
         </Show>
       </button>

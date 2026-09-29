@@ -104,6 +104,19 @@ export type ExpandExit = 'toggle' | 'centre-focus';
 /** Every `ExpandExit`, with the same two checks as `EDGE_MODES`. */
 export const EXPAND_EXITS = ['toggle', 'centre-focus'] as const satisfies readonly ExpandExit[];
 
+/**
+ * Where a rail's ribbon sits.
+ *
+ * `edge`: at the window edge, always in view; the body grows out of it
+ * (Obsidian). `panel`: inside the body, so the ribbon slides in and out with
+ * it, and a closed rail keeps only its toggle (T3 Code, Codex). A look, not a
+ * layout: the serializer does not store it.
+ */
+export type RibbonPlacement = 'edge' | 'panel';
+
+/** Every `RibbonPlacement`, with the same two checks as `EDGE_MODES`. */
+export const RIBBON_PLACEMENTS = ['edge', 'panel'] as const satisfies readonly RibbonPlacement[];
+
 type FocusedRegion = EdgePanelPosition | 'center';
 
 export interface EdgePanel {
@@ -204,6 +217,8 @@ export interface WindowState<C extends string = string> {
   expandedEdge: EdgePanelPosition | null;
   /** What ends an expanded rail. See `ExpandExit`. */
   expandExit: ExpandExit;
+  /** Where the rail ribbons sit. See `RibbonPlacement`. */
+  ribbonPlacement: RibbonPlacement;
 }
 
 export type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';

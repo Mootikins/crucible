@@ -17,10 +17,9 @@ function PaneDropZone(props: {
   return (
     <div
       use:droppable
-      classList={{
-        [props.class]: true,
-        'bg-primary/30': droppable.isActiveDroppable,
-      }}
+      data-drop-zone={props.position}
+      data-drop-active={droppable.isActiveDroppable ? '' : undefined}
+      class={`wm-drop-zone ${props.class}`}
     />
   );
 }
@@ -74,9 +73,8 @@ export const Pane: Component<{ paneId: string }> = (props) => {
 
   // Native drags from outside the window manager reach the pane body through
   // the app's drop target. The app marks the body with
-  // DROP_OVER_ATTR (context.tsx) while a drag hovers it. Tailwind reads class
-  // names as literal text, so the `data-drop-over:` variant below names the
-  // attribute.
+  // DROP_OVER_ATTR (context.tsx) while a drag hovers it. The theme styles
+  // `.wm-pane[data-drop-over]`.
   const attachDrop = (el: HTMLElement) => {
     const cleanup = windowing.slots.attachDropTarget?.(el, tabGroupId);
     onCleanup(() => cleanup?.());
@@ -105,8 +103,8 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     const contentType = activeContentType();
     if (!id || !contentType) {
       return (
-        <div class="flex-1 flex items-center justify-center bg-shell-bg">
-          <div class="text-muted-dark text-sm">No tab selected</div>
+        <div class="wm-no-tab flex-1 flex items-center justify-center">
+          <div class="wm-no-tab-label">No tab selected</div>
         </div>
       );
     }
@@ -147,16 +145,16 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       ref={attachDrop}
       data-pane-id={props.paneId}
       data-pane-collapsed={collapsed() ? 'true' : undefined}
+      // Focus reads through the active tab chip (Obsidian's language), so the
+      // pane carries no focus state of its own.
+      data-drop-active={centerDroppable.isActiveDroppable ? '' : undefined}
       classList={{
-        'relative flex flex-col h-full overflow-hidden transition-all data-drop-over:ring-1 data-drop-over:ring-primary/60': true,
+        'wm-pane relative flex flex-col h-full overflow-hidden': true,
         // The shell root keeps `select-none` so tab drags don't sweep up text
         // selections. A pane hosts the actual content — transcript, code,
         // notes — which exists to be copied, so it re-enables selection; the
         // TabBar below re-asserts `select-none` for the strip itself.
         'select-text': true,
-        // Focus reads through the active tab chip (Obsidian's language) —
-        // no colored ring around the pane itself.
-        'bg-primary/5': centerDroppable.isActiveDroppable,
         'cursor-pointer': collapsed(),
       }}
       onClick={handleClick}
@@ -175,7 +173,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       </Show>
 
       <Show when={centerDroppable.isActiveDroppable}>
-        <div class="absolute inset-0 bg-primary/20 z-10 pointer-events-none cru-anim-fade" />
+        <div class="wm-drop-veil absolute inset-0 z-10 pointer-events-none" />
       </Show>
 
       <div

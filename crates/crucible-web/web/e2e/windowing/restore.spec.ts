@@ -92,7 +92,7 @@ async function splitByDrag(page: Page): Promise<void> {
     page,
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
     await centrePaneRightFifth(page),
-    '[class*="bg-primary/30"]',
+    '.wm-drop-zone[data-drop-active]',
   );
   // A real split creates a resize splitter between the two panes. DOM
   // ancestry is a false positive, because a rail move also changes it.
@@ -123,7 +123,7 @@ test('drop onto the tab bar of a restored group still moves tabs', async ({ page
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
     { x: betaBox.x + betaBox.width + 40, y: betaBox.y + betaBox.height / 2 },
     // The centre tab bar's active-drop underline.
-    '[class*="h-0.5"][class*="bg-primary"]',
+    '.wm-tabbar-drop-line',
   );
 
   // The tab is back in the first group, and the empty pane is pruned.

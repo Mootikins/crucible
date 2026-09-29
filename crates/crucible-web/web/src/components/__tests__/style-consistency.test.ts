@@ -72,7 +72,10 @@ describe('semantic color tokens (no raw palettes)', () => {
 
 describe('motion primitives on structural surfaces', () => {
   it('floating windows pop in', () => {
-    expect(read('windowing/components/FloatingWindow.tsx')).toMatch(/cru-anim-pop/);
+    // The window manager's default theme holds its motion: the component
+    // carries the `wm-floating` part, and the theme animates that part.
+    expect(read('windowing/components/FloatingWindow.tsx')).toMatch(/wm-floating /);
+    expect(read('windowing/theme.css')).toMatch(/\.wm-floating \{[^}]*animation: wm-pop-in/);
   });
 
   it('edge panels slide via one rAF-driven progress (frame + translate locked)', () => {

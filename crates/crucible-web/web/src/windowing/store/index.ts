@@ -83,7 +83,7 @@ const context = { store, setStore };
 export const windowActions: WindowActions = requirePolicy({
   ...createTabActions(context, policy),
   ...createLayoutActions(context, policy),
-  ...createFloatingWindowActions(context),
+  ...createFloatingWindowActions(context, policy),
 });
 
 export { store as windowStore, setStore };
