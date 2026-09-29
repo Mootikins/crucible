@@ -13,7 +13,7 @@ mod types;
 mod tests;
 
 pub use cli_app::{CliAppConfig, SourcesConfig, LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
-pub use errors::{ConfigError, ConfigValidationError};
+pub use errors::ConfigError;
 pub use kiln_name::{InvalidKilnName, KilnName};
 pub use provider::EffectiveLlmConfig;
 #[cfg(feature = "toml")]

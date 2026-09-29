@@ -79,8 +79,8 @@ pub use config::registry::{
 #[cfg(feature = "toml")]
 pub use config::{
     crucible_home, lua_stubs_dir, lua_stubs_dir_in, parse_duration_string, CliAppConfig,
-    ConfigError, ConfigValidationError, EffectiveLlmConfig, InvalidKilnName, KilnName,
-    LoggingConfig, ScheduleEntry, ServerConfig, SourcesConfig, WebConfig, WorkspaceConfig,
+    ConfigError, EffectiveLlmConfig, InvalidKilnName, KilnName, LoggingConfig, ScheduleEntry,
+    ServerConfig, SourcesConfig, WebConfig, WorkspaceConfig,
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use credentials::{

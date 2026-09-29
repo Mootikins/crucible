@@ -708,6 +708,14 @@ with its evidence in the commit that did it:
    `EmitOutcome<E>` directly. `emit_recursive` done: deleted from the trait
    and every impl; `rg -n "\.emit_recursive\("` found only its own two
    tests as callers.
+8. `ConfigValidationError` into `ConfigError` done. Its `MissingField`
+   became `ConfigError::MissingValue` (same shape); its
+   `InvalidValue { reason }` became `ConfigError::InvalidValue { value }`
+   (same two-string shape, `reason` text moved to `value`). The `Multiple`
+   variant was never built (`rg -n "ConfigValidationError::Multiple"` found
+   only the match arm that handled it, no constructor), so it has no
+   `ConfigError` counterpart. `EnrichmentBackendConfig::validate` and the
+   daemon's `EmbeddingError` conversion now use `ConfigError` directly.
 
 ## Step 15. Luau types from the schema
 

@@ -459,79 +459,79 @@ impl EmbeddingProviderConfig {
 
     /// Validate the configuration
     #[must_use = "Configuration validation should be checked"]
-    pub fn validate(&self) -> Result<(), crate::config::ConfigValidationError> {
-        use crate::config::ConfigValidationError;
+    pub fn validate(&self) -> Result<(), crate::config::ConfigError> {
+        use crate::config::ConfigError;
 
         match self {
             Self::OpenAI(c) => {
                 if c.api_key.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
+                    return Err(ConfigError::MissingValue {
                         field: "api_key".to_string(),
                     });
                 }
                 // Basic API key format check (OpenAI keys start with "sk-")
                 if !c.api_key.starts_with("sk-") && c.api_key != "test-key" {
-                    return Err(ConfigValidationError::InvalidValue {
+                    return Err(ConfigError::InvalidValue {
                         field: "api_key".to_string(),
-                        reason: "OpenAI API keys should start with 'sk-'".to_string(),
+                        value: "OpenAI API keys should start with 'sk-'".to_string(),
                     });
                 }
                 if c.model.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
+                    return Err(ConfigError::MissingValue {
                         field: "model".to_string(),
                     });
                 }
                 // Validate base URL format
                 if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
-                    return Err(ConfigValidationError::InvalidValue {
+                    return Err(ConfigError::InvalidValue {
                         field: "base_url".to_string(),
-                        reason: "must start with http:// or https://".to_string(),
+                        value: "must start with http:// or https://".to_string(),
                     });
                 }
                 // Validate timeout is reasonable (1-300 seconds)
                 if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
-                    return Err(ConfigValidationError::InvalidValue {
+                    return Err(ConfigError::InvalidValue {
                         field: "timeout_seconds".to_string(),
-                        reason: "must be between 1 and 300 seconds".to_string(),
+                        value: "must be between 1 and 300 seconds".to_string(),
                     });
                 }
             }
             Self::Ollama(c) => {
                 if c.model.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
+                    return Err(ConfigError::MissingValue {
                         field: "model".to_string(),
                     });
                 }
                 if c.base_url.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
+                    return Err(ConfigError::MissingValue {
                         field: "base_url".to_string(),
                     });
                 }
                 // Validate base URL format
                 if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
-                    return Err(ConfigValidationError::InvalidValue {
+                    return Err(ConfigError::InvalidValue {
                         field: "base_url".to_string(),
-                        reason: "must start with http:// or https://".to_string(),
+                        value: "must start with http:// or https://".to_string(),
                     });
                 }
                 // Validate timeout is reasonable (1-300 seconds)
                 if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
-                    return Err(ConfigValidationError::InvalidValue {
+                    return Err(ConfigError::InvalidValue {
                         field: "timeout_seconds".to_string(),
-                        reason: "must be between 1 and 300 seconds".to_string(),
+                        value: "must be between 1 and 300 seconds".to_string(),
                     });
                 }
             }
             Self::FastEmbed(c) => {
                 if c.model.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
+                    return Err(ConfigError::MissingValue {
                         field: "model".to_string(),
                     });
                 }
                 if c.batch_size == 0 {
-                    return Err(ConfigValidationError::InvalidValue {
+                    return Err(ConfigError::InvalidValue {
                         field: "batch_size".to_string(),
-                        reason: "must be greater than 0".to_string(),
+                        value: "must be greater than 0".to_string(),
                     });
                 }
             }

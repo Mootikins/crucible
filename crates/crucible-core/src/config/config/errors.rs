@@ -2,34 +2,15 @@
 
 use thiserror::Error;
 
-/// Errors that can occur during configuration validation.
-#[derive(Error, Debug, Clone, PartialEq)]
-pub enum ConfigValidationError {
-    /// A required field is missing or empty
-    #[error("Missing required field: {field}")]
-    MissingField {
-        /// Name of the missing field
-        field: String,
-    },
-
-    /// A field contains an invalid value
-    #[error("Invalid value for {field}: {reason}")]
-    InvalidValue {
-        /// Name of the field with invalid value
-        field: String,
-        /// Reason why the value is invalid
-        reason: String,
-    },
-
-    /// Multiple validation errors occurred
-    #[error("Multiple validation errors: {errors:?}")]
-    Multiple {
-        /// List of validation errors
-        errors: Vec<String>,
-    },
-}
-
 /// Errors that can occur during configuration operations.
+///
+/// This also carries configuration *validation* failures
+/// (`EnrichmentBackendConfig::validate`): a missing field is
+/// `MissingValue`, and an invalid field is `InvalidValue` with the
+/// explanation in `value`. A second `ConfigValidationError` type used to
+/// carry these under different variant names (`MissingField`,
+/// `InvalidValue { reason }`); it added a type with the same two shapes and
+/// no reader that needed them kept apart.
 #[derive(Error, Debug)]
 pub enum ConfigError {
     /// Configuration value is missing.

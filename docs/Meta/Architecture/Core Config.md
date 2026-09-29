@@ -80,7 +80,7 @@ defines the `Spec`/`SpecEntry` data shape and the rank-merge algebra, but
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-core/src/config/config/cli_app.rs` | 1468 | `CliAppConfig`/`SourcesConfig` — the composite, legacy (pre-Lua-boot) config struct: load, provenance annotation, kiln/project resolution, source-priority order. |
-| `crates/crucible-core/src/config/config/errors.rs` | 83 | `ConfigError`/`ConfigValidationError` — the crate-boundary error types. |
+| `crates/crucible-core/src/config/config/errors.rs` | 83 | `ConfigError` — the crate-boundary error type. `EnrichmentBackendConfig::validate` returns it directly (`MissingValue`/`InvalidValue`); a second `ConfigValidationError` type used to carry validation failures under different variant names and is gone. |
 | `crates/crucible-core/src/config/config/kiln_name.rs` | 499 | `KilnName` — the validated, case-folding, case-preserving kiln identifier. |
 | `crates/crucible-core/src/config/config/mod.rs` | 59 | Re-export hub plus `crucible_home`/`lua_stubs_dir` helpers. |
 | `crates/crucible-core/src/config/config/provider.rs` | 27 | `EffectiveLlmConfig` — the resolved provider settings, with a redacting `Debug`. |
