@@ -182,7 +182,7 @@ impl LlmStateStore {
                     .providers
                     .entry(name.to_string())
                     .or_insert_with(|| LlmProviderConfig {
-                        provider_type: provider_type,
+                        provider_type,
                         ..Default::default()
                     });
             entry.provider_type = provider_type;

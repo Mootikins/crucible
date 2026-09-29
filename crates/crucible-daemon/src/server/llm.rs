@@ -83,7 +83,7 @@ pub(crate) async fn handle_llm_register_provider(
     // papered over, because a silent disagreement here is a lie in the reply.
     let applied = if outcome == SelectionOutcome::Additive {
         let mut entry = LlmProviderConfig {
-            provider_type: provider_type,
+            provider_type,
             ..Default::default()
         };
         entry.default_model = Some(params.model.clone());
