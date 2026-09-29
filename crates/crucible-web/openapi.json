@@ -350,7 +350,7 @@
           {
             "name": "path",
             "in": "query",
-            "description": "Absolute path of the `.canvas` file.",
+            "description": "The ABSOLUTE path of the file. The daemon decides which root holds it,\nand whether that root serves it.",
             "required": true,
             "schema": {
               "type": "string"
@@ -646,7 +646,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CommentBody"
+                "$ref": "#/components/schemas/DiffCommentRequest"
               }
             }
           },
@@ -681,7 +681,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DeleteCommentBody"
+                "$ref": "#/components/schemas/DiffCommentKey"
               }
             }
           },
@@ -715,7 +715,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ResolveCommentBody"
+                "$ref": "#/components/schemas/DiffCommentKey"
               }
             }
           },
@@ -941,7 +941,7 @@
           {
             "name": "path",
             "in": "query",
-            "description": "ABSOLUTE path of the file. The daemon decides which root holds it and\nwhether that root serves it; this shape does not.",
+            "description": "The ABSOLUTE path of the file. The daemon decides which root holds it,\nand whether that root serves it.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1072,7 +1072,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FsPathBody"
+                "$ref": "#/components/schemas/FsPathRequest"
               }
             }
           },
@@ -1107,7 +1107,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FsMoveBody"
+                "$ref": "#/components/schemas/FsMoveRequest"
               }
             }
           },
@@ -1142,7 +1142,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FsPathBody"
+                "$ref": "#/components/schemas/FsPathRequest"
               }
             }
           },
@@ -1232,7 +1232,7 @@
           {
             "name": "path",
             "in": "query",
-            "description": "ABSOLUTE path of the file. The daemon decides which root holds it and\nwhether that root serves it; this shape does not.",
+            "description": "The ABSOLUTE path of the file. The daemon decides which root holds it,\nand whether that root serves it.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1380,7 +1380,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "Absolute path of the kiln.",
+            "description": "The absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1413,7 +1413,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "Absolute path of the kiln.",
+            "description": "The absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1445,7 +1445,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "Absolute path of the kiln.",
+            "description": "The absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1842,7 +1842,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InstallRequest"
+                "$ref": "#/components/schemas/PluginInstallRequest"
               }
             }
           },
@@ -1891,7 +1891,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CommandRequest"
+                "$ref": "#/components/schemas/PluginRunCommandRequest"
               }
             }
           },
@@ -1973,7 +1973,7 @@
           {
             "name": "key",
             "in": "query",
-            "description": "Narrow to one contribution kind.",
+            "description": "Narrow the reply to one contribution kind.",
             "required": false,
             "schema": {
               "type": "string"
@@ -2630,7 +2630,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CloneRequest"
+                "$ref": "#/components/schemas/ScmCloneRequest"
               }
             }
           },
@@ -6066,32 +6066,6 @@
         ],
         "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
-      "CloneRequest": {
-        "type": "object",
-        "required": [
-          "url"
-        ],
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "Remote repo: https://…, git@host:…, or `owner/repo` shorthand."
-          },
-          "dest": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where to put the clone. Absolute, and it must not exist. Absent takes\n`[workspace] root_dir/<repo-name>`."
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The project name for the clone. Absent takes the name in the URL."
-          }
-        }
-      },
       "Column": {
         "type": "object",
         "required": [
@@ -6206,19 +6180,6 @@
           }
         ],
         "description": "Where a command comes from, and so who runs it."
-      },
-      "CommandRequest": {
-        "type": "object",
-        "description": "One plugin command invocation.",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "args": {}
-        }
       },
       "CommandResponse": {
         "type": "object",
@@ -6395,75 +6356,6 @@
           "human",
           "agent"
         ]
-      },
-      "CommentBody": {
-        "type": "object",
-        "description": "`POST /api/diff/comment` — anchor a comment to a line range of one file\nof a diffset.",
-        "required": [
-          "source",
-          "path",
-          "side",
-          "line_start",
-          "body"
-        ],
-        "properties": {
-          "source": {
-            "$ref": "#/components/schemas/DiffsetSource",
-            "description": "The diffset of the file."
-          },
-          "root": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Absolute path of the root of the file. A session record and a\nproposal need it, because each can have more than one root. A branch\nsource names its own root."
-          },
-          "path": {
-            "type": "string",
-            "description": "The path of the file relative to the root, on the current side."
-          },
-          "from": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The old path of a renamed file. A base-side comment quotes this path."
-          },
-          "side": {
-            "$ref": "#/components/schemas/CommentSide",
-            "description": "The side that the line numbers count on."
-          },
-          "line_start": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The first line, 1-based.",
-            "minimum": 0
-          },
-          "line_end": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "One past the last line. Absent means one line.",
-            "minimum": 0
-          },
-          "body": {
-            "type": "string"
-          },
-          "author": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/CommentAuthor",
-                "description": "Absent means a human."
-              }
-            ]
-          }
-        },
-        "additionalProperties": false
       },
       "CommentRef": {
         "type": "object",
@@ -6768,9 +6660,21 @@
           "failed"
         ]
       },
-      "DeleteCommentBody": {
+      "DeleteResponse": {
         "type": "object",
-        "description": "`POST /api/diff/comment/delete` — remove one comment of a diffset from\nthe store.",
+        "description": "Response for session deletion.",
+        "required": [
+          "deleted"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DiffCommentKey": {
+        "type": "object",
+        "description": "One comment of the diffset of `source`: the request of\n`diff.resolve_comment` and `diff.delete_comment`.\n\n[`crate::diff::CommentRef`] names a comment too, but its wire field is\n`id`. The two methods here send `comment_id`, so the shapes stay apart.\nA key that the type does not know is refused, as in [`DiffCommentRequest`].",
         "required": [
           "source",
           "comment_id"
@@ -6785,18 +6689,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "DeleteResponse": {
-        "type": "object",
-        "description": "Response for session deletion.",
-        "required": [
-          "deleted"
-        ],
-        "properties": {
-          "deleted": {
-            "type": "boolean"
-          }
-        }
       },
       "DiffCommentReply": {
         "type": "object",
@@ -6813,6 +6705,79 @@
             "$ref": "#/components/schemas/Comment"
           }
         }
+      },
+      "DiffCommentRequest": {
+        "type": "object",
+        "description": "Request for `diff.comment`: anchor a comment to a line range of one file\nof the diffset of `source`.\n\nA key that the type does not know is refused, not dropped. A caller that\nsends a field of another shape, for example a `session_id`, learns of the\nmistake. The web route reads this type, so the rule holds at each edge.",
+        "required": [
+          "source",
+          "path",
+          "side",
+          "line_start",
+          "body"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/DiffsetSource",
+            "description": "The diffset of the file."
+          },
+          "root": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PhysicalRoot",
+                "description": "The absolute path of the root of the file. A session record and a\nproposal need it, because each can have more than one root. A branch\nsource names its own root."
+              }
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "The path relative to the root, on the current side."
+          },
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The old path of a renamed file. A comment on the base side quotes\nthe text of this path."
+          },
+          "side": {
+            "$ref": "#/components/schemas/CommentSide",
+            "description": "The side that the line numbers count on."
+          },
+          "line_start": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The first line, 1-based.",
+            "minimum": 0
+          },
+          "line_end": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "One past the last line. Absent means `line_start + 1`: one line.",
+            "minimum": 0
+          },
+          "body": {
+            "type": "string"
+          },
+          "author": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CommentAuthor",
+                "description": "Absent means a human wrote the comment."
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "DiffCommentsReply": {
         "type": "object",
@@ -7678,33 +7643,6 @@
           }
         }
       },
-      "FsMoveBody": {
-        "type": "object",
-        "required": [
-          "root",
-          "kind",
-          "from_rel",
-          "to_rel"
-        ],
-        "properties": {
-          "root": {
-            "type": "string",
-            "description": "Absolute path of the root both ends sit inside."
-          },
-          "kind": {
-            "$ref": "#/components/schemas/FsRootKind",
-            "description": "Which allowlist the daemon checks `root` against."
-          },
-          "from_rel": {
-            "type": "string",
-            "description": "Root-relative POSIX path of the entry to move."
-          },
-          "to_rel": {
-            "type": "string",
-            "description": "Root-relative POSIX path it takes."
-          }
-        }
-      },
       "FsMoveReply": {
         "type": "object",
         "description": "What `fs.move` answers.\n\nThe two link-report keys are absent for a move the link index does not\nwatch — a directory, an asset, a project file — which is the shape the\nbrowser already reads. They were written as a `json!` literal beside the\nhandler, where nothing held them to the reply the web route promises.",
@@ -7732,8 +7670,37 @@
           }
         }
       },
-      "FsPathBody": {
+      "FsMoveRequest": {
         "type": "object",
+        "description": "Request for `fs.move`.",
+        "required": [
+          "root",
+          "kind",
+          "from_rel",
+          "to_rel"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "Absolute path of the root that holds both ends."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FsRootKind",
+            "description": "`\"project\"` or `\"kiln\"`. It selects the allowlist that the daemon\nchecks `root` against."
+          },
+          "from_rel": {
+            "type": "string",
+            "description": "Root-relative POSIX path of the entry to move."
+          },
+          "to_rel": {
+            "type": "string",
+            "description": "Root-relative POSIX path that the entry takes."
+          }
+        }
+      },
+      "FsPathRequest": {
+        "type": "object",
+        "description": "Request for `fs.mkdir` and `fs.trash`: one path inside one root.",
         "required": [
           "root",
           "kind",
@@ -7742,11 +7709,11 @@
         "properties": {
           "root": {
             "type": "string",
-            "description": "Absolute path of the root the entry sits inside."
+            "description": "Absolute path of the root that holds the entry."
           },
           "kind": {
             "$ref": "#/components/schemas/FsRootKind",
-            "description": "Which allowlist the daemon checks `root` against."
+            "description": "`\"project\"` or `\"kiln\"`. It selects the allowlist that the daemon\nchecks `root` against."
           },
           "rel_path": {
             "type": "string",
@@ -7756,7 +7723,7 @@
       },
       "FsRootKind": {
         "type": "string",
-        "description": "The two roots a mutation may name, and the allowlist each one selects.\n\nThis describes the wire; the field that carries it stays a `String` so that\nan unknown kind is refused by the daemon, in the daemon's own sentence,\nrather than by a body rejection that says only \"unknown variant\".\n`every_root_kind_is_one_the_daemon_admits` walks an exhaustive match, so a\nthird kind cannot reach the document without a decision about it.",
+        "description": "The two roots that an `fs.*` mutation may name, and the allowlist that\neach one selects.\n\nThis type describes the wire. The field that carries it stays a `String`,\nso the daemon refuses an unknown kind in its own sentence. A body\nrejection would say only \"unknown variant\". A web test walks an\nexhaustive match, so a third kind cannot reach the document without a\ndecision about it.",
         "enum": [
           "project",
           "kiln"
@@ -7937,30 +7904,6 @@
         "enum": [
           "indeterminate"
         ]
-      },
-      "InstallRequest": {
-        "type": "object",
-        "required": [
-          "url"
-        ],
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "Plugin URL (e.g. \"user/repo\" or full git URL)."
-          },
-          "branch": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "pin": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
       },
       "InteractionRespondResponse": {
         "type": "object",
@@ -9361,6 +9304,31 @@
           }
         }
       },
+      "PluginInstallRequest": {
+        "type": "object",
+        "description": "Request for `plugin.install`.",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The plugin URL, for example `user/repo` or a full git URL."
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "PluginListResponse": {
         "type": "object",
         "description": "What `GET /api/plugins` answers.\n\nThe daemon's own `plugin.list` reply carries this same data under\n`plugin_info` (see `crucible_core::types::PluginListReply`); this route\nrenames it to `plugins`, which is the key the plugins panel has always\nread. The row type is not renamed: [`PluginInfo`] is the core type,\nforwarded unchanged.",
@@ -9527,6 +9495,28 @@
           },
           "result": {
             "description": "Whatever the command's Lua `fn` returned.\n\nOpaque, like publications and options: what a command returns is the\nplugin's vocabulary, and a shape validated here would be one only\ntoday's plugins could send."
+          }
+        }
+      },
+      "PluginRunCommandRequest": {
+        "type": "object",
+        "description": "Request for `plugin.run_command`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "args": {
+            "description": "Whatever the command's Lua `fn` expects. `null` when the caller sends\nnothing; the command then gets an empty table."
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session the user ran the command from, when there is one. The\ncommand reads it as `ctx.session_id`, so a command that acts on \"this\nsession\" does not need the user to type an id."
           }
         }
       },
@@ -10386,24 +10376,6 @@
           }
         }
       },
-      "ResolveCommentBody": {
-        "type": "object",
-        "description": "`POST /api/diff/comment/resolve` — mark one comment of a diffset\nresolved.",
-        "required": [
-          "source",
-          "comment_id"
-        ],
-        "properties": {
-          "source": {
-            "$ref": "#/components/schemas/DiffsetSource",
-            "description": "The diffset of the comment."
-          },
-          "comment_id": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
       "ResolveProposalBody": {
         "type": "object",
         "description": "The body of a resolve: the text that the user settled for one file.",
@@ -10522,6 +10494,33 @@
             "propertyNames": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ScmCloneRequest": {
+        "type": "object",
+        "description": "Request for `scm.clone`.",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The remote repo: `https://…`, `git@host:…`, or the `owner/repo`\nshorthand."
+          },
+          "dest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where to put the clone. Absolute, and it must not exist. Absent takes\n`[workspace] root_dir/<repo-name>`."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The project name of the clone. Absent takes the name in the URL."
           }
         }
       },

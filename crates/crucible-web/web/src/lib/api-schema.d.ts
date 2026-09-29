@@ -2641,17 +2641,6 @@ export interface components {
             /** @enum {string} */
             type: "transcript";
         };
-        CloneRequest: {
-            /**
-             * @description Where to put the clone. Absolute, and it must not exist. Absent takes
-             *     `[workspace] root_dir/<repo-name>`.
-             */
-            dest?: string | null;
-            /** @description The project name for the clone. Absent takes the name in the URL. */
-            name?: string | null;
-            /** @description Remote repo: https://…, git@host:…, or `owner/repo` shorthand. */
-            url: string;
-        };
         Column: {
             display_name: string;
             property: string;
@@ -2680,11 +2669,6 @@ export interface components {
         } | {
             /** @enum {string} */
             kind: "agent";
-        };
-        /** @description One plugin command invocation. */
-        CommandRequest: {
-            args?: unknown;
-            name: string;
         };
         /**
          * @description What one built-in command produced.
@@ -2764,38 +2748,6 @@ export interface components {
          * @enum {string}
          */
         CommentAuthor: "human" | "agent";
-        /**
-         * @description `POST /api/diff/comment` — anchor a comment to a line range of one file
-         *     of a diffset.
-         */
-        CommentBody: {
-            author?: null | components["schemas"]["CommentAuthor"];
-            body: string;
-            /** @description The old path of a renamed file. A base-side comment quotes this path. */
-            from?: string | null;
-            /**
-             * Format: int32
-             * @description One past the last line. Absent means one line.
-             */
-            line_end?: number | null;
-            /**
-             * Format: int32
-             * @description The first line, 1-based.
-             */
-            line_start: number;
-            /** @description The path of the file relative to the root, on the current side. */
-            path: string;
-            /**
-             * @description Absolute path of the root of the file. A session record and a
-             *     proposal need it, because each can have more than one root. A branch
-             *     source names its own root.
-             */
-            root?: string | null;
-            /** @description The side that the line numbers count on. */
-            side: components["schemas"]["CommentSide"];
-            /** @description The diffset of the file. */
-            source: components["schemas"]["DiffsetSource"];
-        };
         /**
          * @description A reference to one stored comment that a client attaches to a chat
          *     message.
@@ -2992,23 +2944,61 @@ export interface components {
         };
         /** @enum {string} */
         DelegationStatus: "running" | "complete" | "failed";
-        /**
-         * @description `POST /api/diff/comment/delete` — remove one comment of a diffset from
-         *     the store.
-         */
-        DeleteCommentBody: {
-            comment_id: string;
-            /** @description The diffset of the comment. */
-            source: components["schemas"]["DiffsetSource"];
-        };
         /** @description Response for session deletion. */
         DeleteResponse: {
             deleted: boolean;
+        };
+        /**
+         * @description One comment of the diffset of `source`: the request of
+         *     `diff.resolve_comment` and `diff.delete_comment`.
+         *
+         *     [`crate::diff::CommentRef`] names a comment too, but its wire field is
+         *     `id`. The two methods here send `comment_id`, so the shapes stay apart.
+         *     A key that the type does not know is refused, as in [`DiffCommentRequest`].
+         */
+        DiffCommentKey: {
+            comment_id: string;
+            /** @description The diffset of the comment. */
+            source: components["schemas"]["DiffsetSource"];
         };
         /** @description What `diff.comment` answers: the stored comment and its diffset. */
         DiffCommentReply: {
             comment: components["schemas"]["Comment"];
             diffset: components["schemas"]["DiffsetId"];
+        };
+        /**
+         * @description Request for `diff.comment`: anchor a comment to a line range of one file
+         *     of the diffset of `source`.
+         *
+         *     A key that the type does not know is refused, not dropped. A caller that
+         *     sends a field of another shape, for example a `session_id`, learns of the
+         *     mistake. The web route reads this type, so the rule holds at each edge.
+         */
+        DiffCommentRequest: {
+            author?: null | components["schemas"]["CommentAuthor"];
+            body: string;
+            /**
+             * @description The old path of a renamed file. A comment on the base side quotes
+             *     the text of this path.
+             */
+            from?: string | null;
+            /**
+             * Format: int32
+             * @description One past the last line. Absent means `line_start + 1`: one line.
+             */
+            line_end?: number | null;
+            /**
+             * Format: int32
+             * @description The first line, 1-based.
+             */
+            line_start: number;
+            /** @description The path relative to the root, on the current side. */
+            path: string;
+            root?: null | components["schemas"]["PhysicalRoot"];
+            /** @description The side that the line numbers count on. */
+            side: components["schemas"]["CommentSide"];
+            /** @description The diffset of the file. */
+            source: components["schemas"]["DiffsetSource"];
         };
         /**
          * @description What `diff.comments` answers: each comment, oldest first, with its range
@@ -3354,16 +3344,6 @@ export interface components {
             /** @description Always true. A refusal is an error status, not a `false`. */
             created: boolean;
         };
-        FsMoveBody: {
-            /** @description Root-relative POSIX path of the entry to move. */
-            from_rel: string;
-            /** @description Which allowlist the daemon checks `root` against. */
-            kind: components["schemas"]["FsRootKind"];
-            /** @description Absolute path of the root both ends sit inside. */
-            root: string;
-            /** @description Root-relative POSIX path it takes. */
-            to_rel: string;
-        };
         /**
          * @description What `fs.move` answers.
          *
@@ -3386,22 +3366,41 @@ export interface components {
              */
             skipped?: components["schemas"]["SkippedRef"][];
         };
-        FsPathBody: {
-            /** @description Which allowlist the daemon checks `root` against. */
+        /** @description Request for `fs.move`. */
+        FsMoveRequest: {
+            /** @description Root-relative POSIX path of the entry to move. */
+            from_rel: string;
+            /**
+             * @description `"project"` or `"kiln"`. It selects the allowlist that the daemon
+             *     checks `root` against.
+             */
+            kind: components["schemas"]["FsRootKind"];
+            /** @description Absolute path of the root that holds both ends. */
+            root: string;
+            /** @description Root-relative POSIX path that the entry takes. */
+            to_rel: string;
+        };
+        /** @description Request for `fs.mkdir` and `fs.trash`: one path inside one root. */
+        FsPathRequest: {
+            /**
+             * @description `"project"` or `"kiln"`. It selects the allowlist that the daemon
+             *     checks `root` against.
+             */
             kind: components["schemas"]["FsRootKind"];
             /** @description Root-relative POSIX path of the entry. */
             rel_path: string;
-            /** @description Absolute path of the root the entry sits inside. */
+            /** @description Absolute path of the root that holds the entry. */
             root: string;
         };
         /**
-         * @description The two roots a mutation may name, and the allowlist each one selects.
+         * @description The two roots that an `fs.*` mutation may name, and the allowlist that
+         *     each one selects.
          *
-         *     This describes the wire; the field that carries it stays a `String` so that
-         *     an unknown kind is refused by the daemon, in the daemon's own sentence,
-         *     rather than by a body rejection that says only "unknown variant".
-         *     `every_root_kind_is_one_the_daemon_admits` walks an exhaustive match, so a
-         *     third kind cannot reach the document without a decision about it.
+         *     This type describes the wire. The field that carries it stays a `String`,
+         *     so the daemon refuses an unknown kind in its own sentence. A body
+         *     rejection would say only "unknown variant". A web test walks an
+         *     exhaustive match, so a third kind cannot reach the document without a
+         *     decision about it.
          * @enum {string}
          */
         FsRootKind: "project" | "kiln";
@@ -3494,12 +3493,6 @@ export interface components {
          * @enum {string}
          */
         IndeterminateProgress: "indeterminate";
-        InstallRequest: {
-            branch?: string | null;
-            pin?: string | null;
-            /** @description Plugin URL (e.g. "user/repo" or full git URL). */
-            url: string;
-        };
         /** @description The answer this route gives when the daemon took the response. */
         InteractionRespondResponse: {
             /** @description Always `true`. A refusal is an error status, not a `false`. */
@@ -4179,6 +4172,13 @@ export interface components {
              */
             watch: string;
         };
+        /** @description Request for `plugin.install`. */
+        PluginInstallRequest: {
+            branch?: string | null;
+            pin?: string | null;
+            /** @description The plugin URL, for example `user/repo` or a full git URL. */
+            url: string;
+        };
         /**
          * @description What `GET /api/plugins` answers.
          *
@@ -4282,6 +4282,21 @@ export interface components {
              *     today's plugins could send.
              */
             result: unknown;
+        };
+        /** @description Request for `plugin.run_command`. */
+        PluginRunCommandRequest: {
+            /**
+             * @description Whatever the command's Lua `fn` expects. `null` when the caller sends
+             *     nothing; the command then gets an empty table.
+             */
+            args?: unknown;
+            name: string;
+            /**
+             * @description The session the user ran the command from, when there is one. The
+             *     command reads it as `ctx.session_id`, so a command that acts on "this
+             *     session" does not need the user to type an id.
+             */
+            session_id?: string | null;
         };
         PluginTurnLimitResponse: {
             /** Format: int32 */
@@ -4642,15 +4657,6 @@ export interface components {
             root: string;
         };
         /**
-         * @description `POST /api/diff/comment/resolve` — mark one comment of a diffset
-         *     resolved.
-         */
-        ResolveCommentBody: {
-            comment_id: string;
-            /** @description The diffset of the comment. */
-            source: components["schemas"]["DiffsetSource"];
-        };
-        /**
          * @description Where a wikilink target landed.
          *
          *     `absolutePath` is camelCase while every sibling reply is snake_case: the
@@ -4720,6 +4726,21 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /** @description Request for `scm.clone`. */
+        ScmCloneRequest: {
+            /**
+             * @description Where to put the clone. Absolute, and it must not exist. Absent takes
+             *     `[workspace] root_dir/<repo-name>`.
+             */
+            dest?: string | null;
+            /** @description The project name of the clone. Absent takes the name in the URL. */
+            name?: string | null;
+            /**
+             * @description The remote repo: `https://…`, `git@host:…`, or the `owner/repo`
+             *     shorthand.
+             */
+            url: string;
         };
         /** @description Response for the `scm.clone` RPC. */
         ScmCloneResponse: {
@@ -5564,17 +5585,14 @@ export type SchemaCanvasResponse = components['schemas']['CanvasResponse'];
 export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedResponse'];
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
 export type SchemaChatEvent = components['schemas']['ChatEvent'];
-export type SchemaCloneRequest = components['schemas']['CloneRequest'];
 export type SchemaColumn = components['schemas']['Column'];
 export type SchemaCommandEffect = components['schemas']['CommandEffect'];
 export type SchemaCommandKind = components['schemas']['CommandKind'];
-export type SchemaCommandRequest = components['schemas']['CommandRequest'];
 export type SchemaCommandResponse = components['schemas']['CommandResponse'];
 export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
 export type SchemaComment = components['schemas']['Comment'];
 export type SchemaCommentAnchor = components['schemas']['CommentAnchor'];
 export type SchemaCommentAuthor = components['schemas']['CommentAuthor'];
-export type SchemaCommentBody = components['schemas']['CommentBody'];
 export type SchemaCommentRef = components['schemas']['CommentRef'];
 export type SchemaCommentSide = components['schemas']['CommentSide'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
@@ -5586,9 +5604,10 @@ export type SchemaCreateEntryParams = components['schemas']['CreateEntryParams']
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDelegationConfig = components['schemas']['DelegationConfig'];
 export type SchemaDelegationStatus = components['schemas']['DelegationStatus'];
-export type SchemaDeleteCommentBody = components['schemas']['DeleteCommentBody'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
+export type SchemaDiffCommentKey = components['schemas']['DiffCommentKey'];
 export type SchemaDiffCommentReply = components['schemas']['DiffCommentReply'];
+export type SchemaDiffCommentRequest = components['schemas']['DiffCommentRequest'];
 export type SchemaDiffCommentsReply = components['schemas']['DiffCommentsReply'];
 export type SchemaDiffDeleteCommentReply = components['schemas']['DiffDeleteCommentReply'];
 export type SchemaDiffFileEntry = components['schemas']['DiffFileEntry'];
@@ -5611,9 +5630,9 @@ export type SchemaFsEntry = components['schemas']['FsEntry'];
 export type SchemaFsEvent = components['schemas']['FsEvent'];
 export type SchemaFsListing = components['schemas']['FsListing'];
 export type SchemaFsMkdirResponse = components['schemas']['FsMkdirResponse'];
-export type SchemaFsMoveBody = components['schemas']['FsMoveBody'];
 export type SchemaFsMoveReply = components['schemas']['FsMoveReply'];
-export type SchemaFsPathBody = components['schemas']['FsPathBody'];
+export type SchemaFsMoveRequest = components['schemas']['FsMoveRequest'];
+export type SchemaFsPathRequest = components['schemas']['FsPathRequest'];
 export type SchemaFsRootKind = components['schemas']['FsRootKind'];
 export type SchemaFsTrashReply = components['schemas']['FsTrashReply'];
 export type SchemaGrepHit = components['schemas']['GrepHit'];
@@ -5623,7 +5642,6 @@ export type SchemaGroup = components['schemas']['Group'];
 export type SchemaHashMap = components['schemas']['HashMap'];
 export type SchemaImageFit = components['schemas']['ImageFit'];
 export type SchemaIndeterminateProgress = components['schemas']['IndeterminateProgress'];
-export type SchemaInstallRequest = components['schemas']['InstallRequest'];
 export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
 export type SchemaInteractionResponseRequest = components['schemas']['InteractionResponseRequest'];
 export type SchemaItemBody = components['schemas']['ItemBody'];
@@ -5671,6 +5689,7 @@ export type SchemaPluginCommandsReply = components['schemas']['PluginCommandsRep
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginInstallOutcome = components['schemas']['PluginInstallOutcome'];
 export type SchemaPluginInstallReply = components['schemas']['PluginInstallReply'];
+export type SchemaPluginInstallRequest = components['schemas']['PluginInstallRequest'];
 export type SchemaPluginListResponse = components['schemas']['PluginListResponse'];
 export type SchemaPluginOptionCallReply = components['schemas']['PluginOptionCallReply'];
 export type SchemaPluginOptionsReply = components['schemas']['PluginOptionsReply'];
@@ -5679,6 +5698,7 @@ export type SchemaPluginPublicationsReply = components['schemas']['PluginPublica
 export type SchemaPluginReloadReply = components['schemas']['PluginReloadReply'];
 export type SchemaPluginRemoveReply = components['schemas']['PluginRemoveReply'];
 export type SchemaPluginRunCommandReply = components['schemas']['PluginRunCommandReply'];
+export type SchemaPluginRunCommandRequest = components['schemas']['PluginRunCommandRequest'];
 export type SchemaPluginTurnLimitResponse = components['schemas']['PluginTurnLimitResponse'];
 export type SchemaPrecognition = components['schemas']['Precognition'];
 export type SchemaPrecognitionNote = components['schemas']['PrecognitionNote'];
@@ -5709,13 +5729,13 @@ export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
 export type SchemaRejectProposalBody = components['schemas']['RejectProposalBody'];
 export type SchemaReorderGroupsParams = components['schemas']['ReorderGroupsParams'];
 export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
-export type SchemaResolveCommentBody = components['schemas']['ResolveCommentBody'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaRow = components['schemas']['Row'];
 export type SchemaRowHeight = components['schemas']['RowHeight'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
+export type SchemaScmCloneRequest = components['schemas']['ScmCloneRequest'];
 export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
 export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearchResponse'];
@@ -6131,7 +6151,10 @@ export interface operations {
     get_canvas: {
         parameters: {
             query: {
-                /** @description Absolute path of the `.canvas` file. */
+                /**
+                 * @description The ABSOLUTE path of the file. The daemon decides which root holds it,
+                 *     and whether that root serves it.
+                 */
                 path: string;
             };
             header?: never;
@@ -6425,7 +6448,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CommentBody"];
+                "application/json": components["schemas"]["DiffCommentRequest"];
             };
         };
         responses: {
@@ -6462,7 +6485,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DeleteCommentBody"];
+                "application/json": components["schemas"]["DiffCommentKey"];
             };
         };
         responses: {
@@ -6499,7 +6522,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ResolveCommentBody"];
+                "application/json": components["schemas"]["DiffCommentKey"];
             };
         };
         responses: {
@@ -6663,8 +6686,8 @@ export interface operations {
         parameters: {
             query: {
                 /**
-                 * @description ABSOLUTE path of the file. The daemon decides which root holds it and
-                 *     whether that root serves it; this shape does not.
+                 * @description The ABSOLUTE path of the file. The daemon decides which root holds it,
+                 *     and whether that root serves it.
                  */
                 path: string;
             };
@@ -6778,7 +6801,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FsPathBody"];
+                "application/json": components["schemas"]["FsPathRequest"];
             };
         };
         responses: {
@@ -6815,7 +6838,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FsMoveBody"];
+                "application/json": components["schemas"]["FsMoveRequest"];
             };
         };
         responses: {
@@ -6852,7 +6875,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FsPathBody"];
+                "application/json": components["schemas"]["FsPathRequest"];
             };
         };
         responses: {
@@ -6947,8 +6970,8 @@ export interface operations {
         parameters: {
             query: {
                 /**
-                 * @description ABSOLUTE path of the file. The daemon decides which root holds it and
-                 *     whether that root serves it; this shape does not.
+                 * @description The ABSOLUTE path of the file. The daemon decides which root holds it,
+                 *     and whether that root serves it.
                  */
                 path: string;
             };
@@ -7147,7 +7170,7 @@ export interface operations {
     list_kiln_files: {
         parameters: {
             query: {
-                /** @description Absolute path of the kiln. */
+                /** @description The absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;
@@ -7176,7 +7199,7 @@ export interface operations {
     kiln_graph: {
         parameters: {
             query: {
-                /** @description Absolute path of the kiln. */
+                /** @description The absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;
@@ -7205,7 +7228,7 @@ export interface operations {
     list_kiln_notes: {
         parameters: {
             query: {
-                /** @description Absolute path of the kiln. */
+                /** @description The absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;
@@ -7645,7 +7668,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["InstallRequest"];
+                "application/json": components["schemas"]["PluginInstallRequest"];
             };
         };
         responses: {
@@ -7833,7 +7856,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CommandRequest"];
+                "application/json": components["schemas"]["PluginRunCommandRequest"];
             };
         };
         responses: {
@@ -7923,7 +7946,7 @@ export interface operations {
     list_publications: {
         parameters: {
             query?: {
-                /** @description Narrow to one contribution kind. */
+                /** @description Narrow the reply to one contribution kind. */
                 key?: string;
             };
             header: {
@@ -8424,7 +8447,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CloneRequest"];
+                "application/json": components["schemas"]["ScmCloneRequest"];
             };
         };
         responses: {
