@@ -1,9 +1,9 @@
 //! Wire types of the `lua` RPC methods. The client serializes each type,
 //! and the daemon handler deserializes the same type.
 
+/// The body of `lua.init_session`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaInitSessionRequest {
-    pub session_id: String,
+pub struct LuaSessionInit {
     /// Optional because the handler treats it as optional: an absent path falls
     /// back to the daemon's data root. It was a required `String` while the
     /// server read it with `optional_param!`, so the type claimed a guarantee
@@ -114,8 +114,8 @@ pub struct LuaRunPluginTestsResponse {
     pub message: Option<String>,
 }
 
+/// The body of `lua.register_commands`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaRegisterCommandsRequest {
-    pub session_id: String,
+pub struct LuaCommands {
     pub commands: Vec<serde_json::Value>,
 }

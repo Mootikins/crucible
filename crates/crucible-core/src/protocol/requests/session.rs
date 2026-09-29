@@ -208,20 +208,18 @@ fn default_replay_speed() -> f64 {
     1.0
 }
 
-/// Request for `session.events_after`.
+/// The body of `session.events_after`, inside `Scoped`.
 ///
 /// `after` is the caller's seq cursor: the last event it APPLIED. The reply
 /// carries the persisted wire envelopes strictly past it, in order.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionEventsAfterRequest {
-    pub session_id: String,
+pub struct EventCursor {
     pub after: u64,
 }
 
-/// Request for `session.send_message`.
+/// The body of `session.send_message`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionSendMessageRequest {
-    pub session_id: String,
+pub struct MessageInput {
     pub content: String,
     /// An absent value means an interactive turn.
     #[serde(default = "super::common::default_true")]
@@ -239,32 +237,31 @@ pub struct SessionSendMessageRequest {
     pub comments: Vec<crate::diff::CommentRef>,
 }
 
-/// Request for `session.interaction_respond`.
+/// The body of `session.interaction_respond`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionInteractionRespondRequest {
-    pub session_id: String,
+pub struct InteractionAnswer {
     pub request_id: String,
     pub response: serde_json::Value,
 }
 
-/// Request for `session.inject_context`.
+/// The body of `session.inject_context`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionInjectContextRequest {
-    pub session_id: String,
+pub struct ContextInjection {
     /// `system`, `user` or `assistant` — anything else is `INVALID_PARAMS`.
     pub role: String,
     pub content: String,
 }
 
-/// Request for `session.test_interaction` — the developer-facing prod that
-/// emits an `interaction_requested` event nobody is waiting on.
+/// The body of `session.test_interaction`, inside `Scoped`.
 ///
-/// Every field but `session_id` is optional and every default is a canned
+/// The method is the developer-facing prod that emits an
+/// `interaction_requested` event nobody is waiting on.
+///
+/// Every field is optional and every default is a canned
 /// example, because the method exists to check that a client renders a modal
 /// at all.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionTestInteractionRequest {
-    pub session_id: String,
+pub struct TestInteraction {
     /// `ask` (the default) or `permission`.
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub interaction_type: Option<String>,
@@ -276,29 +273,28 @@ pub struct SessionTestInteractionRequest {
     pub action: Option<String>,
 }
 
-/// Request for `session.fork`.
+/// The body of `session.fork`, inside `Scoped`.
 ///
-/// `session_id` names the PARENT; the fork reports its own id as `id`.
+/// The session id of the envelope names the PARENT. The fork reports its
+/// own id as `id`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionForkRequest {
-    pub session_id: String,
+pub struct ForkPoint {
     /// Copy only the first N user/assistant/system messages. All of them when
     /// omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub up_to: Option<u64>,
 }
 
-/// Request for `session.dismiss_notification`.
+/// The body of `session.dismiss_notification`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionDismissNotificationRequest {
-    pub session_id: String,
+pub struct NotificationKey {
     pub notification_id: String,
 }
 
-/// Request for `session.set_title`.
+/// The body of `session.set_title`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionSetTitleRequest {
-    pub session_id: String,
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Title {
     pub title: String,
 }
 
@@ -333,10 +329,9 @@ pub struct SessionListPersistedRequest {
     pub limit: Option<usize>,
 }
 
-/// Request for `session.render_markdown`.
+/// The body of `session.render_markdown`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionRenderMarkdownRequest {
-    pub session_id: String,
+pub struct MarkdownOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_timestamps: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -347,10 +342,9 @@ pub struct SessionRenderMarkdownRequest {
     pub max_content_length: Option<usize>,
 }
 
-/// Request for `session.export_to_file`.
+/// The body of `session.export_to_file`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionExportToFileRequest {
-    pub session_id: String,
+pub struct ExportOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

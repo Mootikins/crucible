@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
+use crucible_core::protocol::requests::{ForkPoint, Scoped, SessionSwitchModelRequest};
 use crucible_core::protocol::requests::{ListAllModelsRequest, ListProvidersRequest};
-use crucible_core::protocol::requests::{Scoped, SessionForkRequest, SessionSwitchModelRequest};
 
 pub(crate) async fn handle_session_switch_model(
     req: Request,
@@ -174,7 +174,7 @@ pub(crate) async fn handle_session_fork(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let params = match typed_params::<SessionForkRequest>(&req) {
+    let params = match typed_params::<Scoped<ForkPoint>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -183,7 +183,7 @@ pub(crate) async fn handle_session_fork(
         Ok(None) => return session_not_found(req.id, &params.session_id),
         Err(error) => return internal_error(req.id, error),
     };
-    match am.fork_session(parent, params.up_to).await {
+    match am.fork_session(parent, params.body.up_to).await {
         Ok((child, count)) => Response::success(
             req.id,
             serde_json::json!({

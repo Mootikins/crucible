@@ -3625,22 +3625,6 @@ export interface components {
             kilns: components["schemas"]["KilnRow"][];
         };
         /**
-         * @description The body of `POST /connect_kiln` and `POST /disconnect_kiln`.
-         *
-         *     Named without the `Session` prefix its siblings drop, because the daemon's
-         *     RPC client declares a `SessionKilnRequest` that is a different shape going
-         *     the other way: that one is `Serialize` and carries `session_id`, this one is
-         *     `Deserialize` and takes the id from the URL path.
-         */
-        KilnRequest: {
-            /**
-             * @description The kiln's registry NAME, validated on the way in — a browser that sent
-             *     a path gets a 422 rather than a session attached to a directory the
-             *     registration floor never saw.
-             */
-            kiln: string;
-        };
-        /**
          * @description One kiln, as `kiln.list` reports it.
          *
          *     Every key is written on every row, including the two an older reader
@@ -3863,6 +3847,18 @@ export interface components {
              *     session's agent can hold back.
              */
             writes: components["schemas"]["WriteModeRow"];
+        };
+        /**
+         * @description The body of `session.connect_kiln` and `session.disconnect_kiln`, inside
+         *     `Scoped`.
+         */
+        NamedKiln: {
+            /**
+             * @description The registry NAME of the kiln. The parse refuses a path, so a caller
+             *     that sends a path gets an error, and no session attaches a directory
+             *     that nobody registered.
+             */
+            kiln: string;
         };
         /**
          * @description What `get_note_by_name` answers: the note's own facts, without the heavy
@@ -5108,13 +5104,6 @@ export interface components {
             path: string;
             value?: unknown;
         };
-        SetTitleRequest: {
-            title: string;
-        };
-        SetWorkspaceRequest: {
-            /** @description Omitted/null → detach: the session is then left with no workspace. */
-            workspace?: string | null;
-        };
         /**
          * @description What a client draws.
          *
@@ -5340,6 +5329,10 @@ export interface components {
         SystemEvent: components["schemas"]["PublicationChangedEvent"] | components["schemas"]["ProposalChangedEvent"];
         /** @enum {string} */
         TextField: "text" | "thinking";
+        /** @description The body of `session.set_title`, inside `Scoped`. */
+        Title: {
+            title: string;
+        };
         /** @description Response for title operations. */
         TitleResponse: {
             title: string;
@@ -5480,6 +5473,18 @@ export interface components {
         /** @description One wikilink target, as [`NoteByNameReply::wikilinks`] reports it. */
         WikilinkTarget: {
             target: string;
+        };
+        /**
+         * @description The body of `session.set_workspace`, inside `Scoped`.
+         *
+         *     `workspace: None` detaches.
+         */
+        WorkspaceChoice: {
+            /**
+             * @description The workspace path. An absent or `null` value detaches: the session
+             *     then has no workspace.
+             */
+            workspace?: string | null;
         };
         /** @description The error envelope a bare stale-base refusal carries. */
         WriteErrorRow: {
@@ -5628,7 +5633,6 @@ export type SchemaKilnGraphLink = components['schemas']['KilnGraphLink'];
 export type SchemaKilnGraphNote = components['schemas']['KilnGraphNote'];
 export type SchemaKilnGraphReply = components['schemas']['KilnGraphReply'];
 export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
-export type SchemaKilnRequest = components['schemas']['KilnRequest'];
 export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
@@ -5645,6 +5649,7 @@ export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
 export type SchemaModeResponse = components['schemas']['ModeResponse'];
 export type SchemaModeRow = components['schemas']['ModeRow'];
+export type SchemaNamedKiln = components['schemas']['NamedKiln'];
 export type SchemaNoteByNameReply = components['schemas']['NoteByNameReply'];
 export type SchemaNoteListResponse = components['schemas']['NoteListResponse'];
 export type SchemaNoteListRow = components['schemas']['NoteListRow'];
@@ -5742,8 +5747,6 @@ export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApp
 export type SchemaSetPluginTurnLimitRequest = components['schemas']['SetPluginTurnLimitRequest'];
 export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitionRequest'];
 export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
-export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
-export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
 export type SchemaShape = components['schemas']['Shape'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillsReply = components['schemas']['SkillsReply'];
@@ -5764,6 +5767,7 @@ export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
 export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
 export type SchemaTextField = components['schemas']['TextField'];
+export type SchemaTitle = components['schemas']['Title'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaToolStatus = components['schemas']['ToolStatus'];
@@ -5778,6 +5782,7 @@ export type SchemaViewOptions = components['schemas']['ViewOptions'];
 export type SchemaViewSummary = components['schemas']['ViewSummary'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
 export type SchemaWikilinkTarget = components['schemas']['WikilinkTarget'];
+export type SchemaWorkspaceChoice = components['schemas']['WorkspaceChoice'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
 export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
 export type SchemaWriteOutcome = components['schemas']['WriteOutcome'];
@@ -9235,7 +9240,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["KilnRequest"];
+                "application/json": components["schemas"]["NamedKiln"];
             };
         };
         responses: {
@@ -9275,7 +9280,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["KilnRequest"];
+                "application/json": components["schemas"]["NamedKiln"];
             };
         };
         responses: {
@@ -9651,7 +9656,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SetTitleRequest"];
+                "application/json": components["schemas"]["Title"];
             };
         };
         responses: {
@@ -9720,7 +9725,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SetWorkspaceRequest"];
+                "application/json": components["schemas"]["WorkspaceChoice"];
             };
         };
         responses: {

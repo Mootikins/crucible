@@ -194,215 +194,224 @@ fn session_page_methods() {
 fn session_scoped_methods() {
     golden(
         "session.events_after",
-        &[SessionEventsAfterRequest {
-            session_id: "s1".into(),
-            after: 42,
-        }],
+        &[Scoped::new("s1", EventCursor { after: 42 })],
     );
     golden(
         "session.send_message",
         &[
-            SessionSendMessageRequest {
-                session_id: "s1".into(),
-                content: "hello".into(),
-                is_interactive: false,
-                permission_mode: Some("plan".into()),
-                comments: vec![crate::diff::CommentRef {
-                    id: "c1".into(),
-                    source: branch(),
-                }],
-            },
-            SessionSendMessageRequest {
-                session_id: "s1".into(),
-                content: "hello".into(),
-                is_interactive: true,
-                permission_mode: None,
-                comments: Vec::new(),
-            },
+            Scoped::new(
+                "s1",
+                MessageInput {
+                    content: "hello".into(),
+                    is_interactive: false,
+                    permission_mode: Some("plan".into()),
+                    comments: vec![crate::diff::CommentRef {
+                        id: "c1".into(),
+                        source: branch(),
+                    }],
+                },
+            ),
+            Scoped::new(
+                "s1",
+                MessageInput {
+                    content: "hello".into(),
+                    is_interactive: true,
+                    permission_mode: None,
+                    comments: Vec::new(),
+                },
+            ),
         ],
     );
     golden(
         "session.interaction_respond",
-        &[SessionInteractionRespondRequest {
-            session_id: "s1".into(),
-            request_id: "r1".into(),
-            response: json!({"kind": "ask", "selected": ["yes"]}),
-        }],
+        &[Scoped::new(
+            "s1",
+            InteractionAnswer {
+                request_id: "r1".into(),
+                response: json!({"kind": "ask", "selected": ["yes"]}),
+            },
+        )],
     );
     golden(
         "session.inject_context",
-        &[SessionInjectContextRequest {
-            session_id: "s1".into(),
-            role: "system".into(),
-            content: "context".into(),
-        }],
+        &[Scoped::new(
+            "s1",
+            ContextInjection {
+                role: "system".into(),
+                content: "context".into(),
+            },
+        )],
     );
     golden(
         "session.test_interaction",
         &[
-            SessionTestInteractionRequest {
-                session_id: "s1".into(),
-                interaction_type: Some("permission".into()),
-                question: Some("Why?".into()),
-                action: Some("rm -rf".into()),
-            },
-            SessionTestInteractionRequest {
-                session_id: "s1".into(),
-                interaction_type: None,
-                question: None,
-                action: None,
-            },
+            Scoped::new(
+                "s1",
+                TestInteraction {
+                    interaction_type: Some("permission".into()),
+                    question: Some("Why?".into()),
+                    action: Some("rm -rf".into()),
+                },
+            ),
+            Scoped::new(
+                "s1",
+                TestInteraction {
+                    interaction_type: None,
+                    question: None,
+                    action: None,
+                },
+            ),
         ],
     );
     golden(
         "session.fork",
         &[
-            SessionForkRequest {
-                session_id: "s1".into(),
-                up_to: Some(4),
-            },
-            SessionForkRequest {
-                session_id: "s1".into(),
-                up_to: None,
-            },
+            Scoped::new("s1", ForkPoint { up_to: Some(4) }),
+            Scoped::new("s1", ForkPoint { up_to: None }),
         ],
     );
     golden(
         "session.dismiss_notification",
-        &[SessionDismissNotificationRequest {
-            session_id: "s1".into(),
-            notification_id: "n1".into(),
-        }],
+        &[Scoped::new(
+            "s1",
+            NotificationKey {
+                notification_id: "n1".into(),
+            },
+        )],
     );
     golden(
         "session.set_title",
-        &[SessionSetTitleRequest {
-            session_id: "s1".into(),
-            title: "A title".into(),
-        }],
+        &[Scoped::new(
+            "s1",
+            Title {
+                title: "A title".into(),
+            },
+        )],
     );
     golden(
         "session.render_markdown",
         &[
-            SessionRenderMarkdownRequest {
-                session_id: "s1".into(),
-                include_timestamps: Some(true),
-                include_tokens: Some(false),
-                include_tools: Some(true),
-                max_content_length: Some(80),
-            },
-            SessionRenderMarkdownRequest {
-                session_id: "s1".into(),
-                include_timestamps: None,
-                include_tokens: None,
-                include_tools: None,
-                max_content_length: None,
-            },
+            Scoped::new(
+                "s1",
+                MarkdownOptions {
+                    include_timestamps: Some(true),
+                    include_tokens: Some(false),
+                    include_tools: Some(true),
+                    max_content_length: Some(80),
+                },
+            ),
+            Scoped::new(
+                "s1",
+                MarkdownOptions {
+                    include_timestamps: None,
+                    include_tokens: None,
+                    include_tools: None,
+                    max_content_length: None,
+                },
+            ),
         ],
     );
     golden(
         "session.export_to_file",
         &[
-            SessionExportToFileRequest {
-                session_id: "s1".into(),
-                output_path: Some("/tmp/out.md".into()),
-                include_timestamps: Some(true),
-            },
-            SessionExportToFileRequest {
-                session_id: "s1".into(),
-                output_path: None,
-                include_timestamps: None,
-            },
+            Scoped::new(
+                "s1",
+                ExportOptions {
+                    output_path: Some("/tmp/out.md".into()),
+                    include_timestamps: Some(true),
+                },
+            ),
+            Scoped::new(
+                "s1",
+                ExportOptions {
+                    output_path: None,
+                    include_timestamps: None,
+                },
+            ),
         ],
     );
     golden(
         "session.configure_agent",
-        &[SessionConfigureAgentRequest {
-            session_id: "s1".into(),
-            agent: json!({"agent_type": "internal", "model": "m"}),
-        }],
+        &[Scoped::new(
+            "s1",
+            AgentConfig {
+                agent: json!({"agent_type": "internal", "model": "m"}),
+            },
+        )],
     );
     golden(
         "session.set_plugin_approval",
-        &[SessionPluginApprovalRequest {
-            session_id: "s1".into(),
-            plugin: "p".into(),
-            approval: "allow".into(),
-        }],
+        &[Scoped::new(
+            "s1",
+            PluginApprovalChange {
+                plugin: "p".into(),
+                approval: "allow".into(),
+            },
+        )],
     );
     golden(
         "session.get_plugin_approval",
-        &[SessionPluginRequest {
-            session_id: "s1".into(),
-            plugin: "p".into(),
-        }],
+        &[Scoped::new("s1", PluginRef { plugin: "p".into() })],
     );
     golden(
         "session.undo",
         &[
-            SessionUndoRequest {
-                session_id: "s1".into(),
-                count: Some(2),
-            },
-            SessionUndoRequest {
-                session_id: "s1".into(),
-                count: None,
-            },
+            Scoped::new("s1", UndoCount { count: Some(2) }),
+            Scoped::new("s1", UndoCount { count: None }),
         ],
     );
     golden(
         "session.connect_kiln",
-        &[SessionKilnRequest {
-            session_id: "s1".into(),
-            kiln: kiln_name(),
-        }],
+        &[Scoped::new("s1", NamedKiln { kiln: kiln_name() })],
     );
     golden(
         "session.set_workspace",
         &[
-            SessionSetWorkspaceRequest {
-                session_id: "s1".into(),
-                workspace: Some("/work".into()),
-            },
-            SessionSetWorkspaceRequest {
-                session_id: "s1".into(),
-                workspace: None,
-            },
+            Scoped::new(
+                "s1",
+                WorkspaceChoice {
+                    workspace: Some("/work".into()),
+                },
+            ),
+            Scoped::new("s1", WorkspaceChoice { workspace: None }),
         ],
     );
     golden(
         "session.add_notification",
-        &[SessionAddNotificationRequest {
-            session_id: "s1".into(),
-            notification: serde_json::from_value(json!({
-                "id": "n1",
-                "kind": "toast",
-                "message": "hi",
-                "scope": {},
-                "created_at": null,
-            }))
-            .expect("a notification reads"),
-        }],
+        &[Scoped::new(
+            "s1",
+            NewNotification {
+                notification: serde_json::from_value(json!({
+                    "id": "n1",
+                    "kind": "toast",
+                    "message": "hi",
+                    "scope": {},
+                    "created_at": null,
+                }))
+                .expect("a notification reads"),
+            },
+        )],
     );
     golden(
         "lua.init_session",
         &[
-            LuaInitSessionRequest {
-                session_id: "s1".into(),
-                kiln_path: Some("/kiln".into()),
-            },
-            LuaInitSessionRequest {
-                session_id: "s1".into(),
-                kiln_path: None,
-            },
+            Scoped::new(
+                "s1",
+                LuaSessionInit {
+                    kiln_path: Some("/kiln".into()),
+                },
+            ),
+            Scoped::new("s1", LuaSessionInit { kiln_path: None }),
         ],
     );
     golden(
         "lua.register_commands",
-        &[LuaRegisterCommandsRequest {
-            session_id: "s1".into(),
-            commands: vec![json!({"name": "hello"})],
-        }],
+        &[Scoped::new(
+            "s1",
+            LuaCommands {
+                commands: vec![json!({"name": "hello"})],
+            },
+        )],
     );
 }
 
@@ -427,24 +436,30 @@ fn workflow_methods() {
     written(
         "workflow.start",
         &[
-            WorkflowStartRequest {
-                session_id: "s1".into(),
-                source: "# Flow".into(),
-                path: Some("flow.md".into()),
-            },
-            WorkflowStartRequest {
-                session_id: "s1".into(),
-                source: "# Flow".into(),
-                path: None,
-            },
+            Scoped::new(
+                "s1",
+                WorkflowSource {
+                    source: "# Flow".into(),
+                    path: Some("flow.md".into()),
+                },
+            ),
+            Scoped::new(
+                "s1",
+                WorkflowSource {
+                    source: "# Flow".into(),
+                    path: None,
+                },
+            ),
         ],
     );
     written(
         "workflow.approve_gate",
-        &[WorkflowApproveGateRequest {
-            session_id: "s1".into(),
-            gate_id: "g1".into(),
-        }],
+        &[Scoped::new(
+            "s1",
+            GateRef {
+                gate_id: "g1".into(),
+            },
+        )],
     );
 }
 

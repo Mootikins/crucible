@@ -1,9 +1,9 @@
 //! Wire types of the `workflow` RPC methods. The client serializes each type,
 //! and the daemon handler deserializes the same type.
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowStartRequest {
-    pub session_id: String,
+/// The body of `workflow.start`, inside `Scoped`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorkflowSource {
     /// Full markdown source of the workflow note (frontmatter + body).
     pub source: String,
     /// Optional path used for title fallback / error messages.
@@ -11,8 +11,8 @@ pub struct WorkflowStartRequest {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowApproveGateRequest {
-    pub session_id: String,
+/// The body of `workflow.approve_gate`, inside `Scoped`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GateRef {
     pub gate_id: String,
 }

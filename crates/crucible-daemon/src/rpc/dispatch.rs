@@ -21,7 +21,7 @@ use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
 use crucible_core::config::ConfigSource;
-use crucible_core::protocol::requests::{Scoped, SessionCreateRequest, SessionSetTitleRequest};
+use crucible_core::protocol::requests::{Scoped, SessionCreateRequest, Title};
 use crucible_core::protocol::{RpcMethod, METHODS};
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
@@ -1222,11 +1222,11 @@ impl RpcDispatcher {
     async fn handle_set_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
         // The client's own request type, not a second spelling of its two
         // fields (gate A6).
-        let p = crate::rpc::params::parse_params::<SessionSetTitleRequest>(req)?;
+        let p = crate::rpc::params::parse_params::<Scoped<Title>>(req)?;
 
         self.ctx
             .sessions
-            .set_title(&p.session_id, p.title.clone())
+            .set_title(&p.session_id, p.body.title.clone())
             .await
             .map_err(|e| RpcError {
                 code: crate::protocol::INVALID_PARAMS,
@@ -1236,7 +1236,7 @@ impl RpcDispatcher {
 
         Ok(serde_json::json!({
             "session_id": p.session_id,
-            "title": p.title,
+            "title": p.body.title,
         }))
     }
 

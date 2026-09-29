@@ -179,10 +179,12 @@ impl DaemonClient {
         let reply: serde_json::Value = self
             .typed_call(
                 RpcMethod::SessionDismissNotification,
-                SessionDismissNotificationRequest {
-                    session_id: session_id.to_string(),
-                    notification_id: notification_id.to_string(),
-                },
+                Scoped::new(
+                    session_id.to_string(),
+                    NotificationKey {
+                        notification_id: notification_id.to_string(),
+                    },
+                ),
             )
             .await?;
         reply["success"]
@@ -283,13 +285,15 @@ impl DaemonClient {
     ) -> Result<SendOutcome> {
         self.typed_call(
             RpcMethod::SessionSendMessage,
-            SessionSendMessageRequest {
-                session_id: session_id.to_string(),
-                content: content.to_string(),
-                is_interactive,
-                permission_mode,
-                comments: Vec::new(),
-            },
+            Scoped::new(
+                session_id.to_string(),
+                MessageInput {
+                    content: content.to_string(),
+                    is_interactive,
+                    permission_mode,
+                    comments: Vec::new(),
+                },
+            ),
         )
         .await
     }
@@ -306,13 +310,15 @@ impl DaemonClient {
     ) -> Result<SendOutcome> {
         self.typed_call(
             RpcMethod::SessionSendMessage,
-            SessionSendMessageRequest {
-                session_id: session_id.to_string(),
-                content: content.to_string(),
-                is_interactive,
-                permission_mode: None,
-                comments: comments.to_vec(),
-            },
+            Scoped::new(
+                session_id.to_string(),
+                MessageInput {
+                    content: content.to_string(),
+                    is_interactive,
+                    permission_mode: None,
+                    comments: comments.to_vec(),
+                },
+            ),
         )
         .await
     }
@@ -332,11 +338,13 @@ impl DaemonClient {
     ) -> Result<()> {
         self.typed_unit_call(
             RpcMethod::SessionInteractionRespond,
-            SessionInteractionRespondRequest {
-                session_id: session_id.to_string(),
-                request_id: request_id.to_string(),
-                response: serde_json::to_value(response)?,
-            },
+            Scoped::new(
+                session_id.to_string(),
+                InteractionAnswer {
+                    request_id: request_id.to_string(),
+                    response: serde_json::to_value(response)?,
+                },
+            ),
         )
         .await
     }
@@ -366,10 +374,12 @@ impl DaemonClient {
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> Result<()> {
         self.typed_unit_call(
             RpcMethod::SessionSetTitle,
-            SessionSetTitleRequest {
-                session_id: session_id.to_string(),
-                title: title.to_string(),
-            },
+            Scoped::new(
+                session_id.to_string(),
+                Title {
+                    title: title.to_string(),
+                },
+            ),
         )
         .await
     }
@@ -418,10 +428,7 @@ impl DaemonClient {
     ) -> Result<Vec<crucible_core::protocol::SessionEventMessage>> {
         self.typed_call(
             RpcMethod::SessionEventsAfter,
-            SessionEventsAfterRequest {
-                session_id: session_id.to_string(),
-                after,
-            },
+            Scoped::new(session_id.to_string(), EventCursor { after }),
         )
         .await
     }
@@ -458,13 +465,15 @@ impl DaemonClient {
         let resp: SessionRenderMarkdownResponse = self
             .typed_call(
                 RpcMethod::SessionRenderMarkdown,
-                SessionRenderMarkdownRequest {
-                    session_id: session_id.to_string(),
-                    include_timestamps,
-                    include_tokens,
-                    include_tools,
-                    max_content_length,
-                },
+                Scoped::new(
+                    session_id.to_string(),
+                    MarkdownOptions {
+                        include_timestamps,
+                        include_tokens,
+                        include_tools,
+                        max_content_length,
+                    },
+                ),
             )
             .await?;
         Ok(resp.markdown)
@@ -480,11 +489,13 @@ impl DaemonClient {
         let resp: SessionExportToFileResponse = self
             .typed_call(
                 RpcMethod::SessionExportToFile,
-                SessionExportToFileRequest {
-                    session_id: session_id.to_string(),
-                    output_path: output_path.map(|p| p.to_string_lossy().to_string()),
-                    include_timestamps,
-                },
+                Scoped::new(
+                    session_id.to_string(),
+                    ExportOptions {
+                        output_path: output_path.map(|p| p.to_string_lossy().to_string()),
+                        include_timestamps,
+                    },
+                ),
             )
             .await?;
         Ok(resp.output_path)

@@ -12,7 +12,9 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use crucible_core::protocol::requests::{Page, SessionAgentSpec, SessionCreateParams};
+use crucible_core::protocol::requests::{
+    NamedKiln, Page, SessionAgentSpec, SessionCreateParams, Title, WorkspaceChoice,
+};
 use crucible_core::session::SessionSearchResponse;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -904,27 +906,12 @@ async fn switch_model(
     Ok(OkResponse::success())
 }
 
-/// The body of `POST /connect_kiln` and `POST /disconnect_kiln`.
-///
-/// Named without the `Session` prefix its siblings drop, because the daemon's
-/// RPC client declares a `SessionKilnRequest` that is a different shape going
-/// the other way: that one is `Serialize` and carries `session_id`, this one is
-/// `Deserialize` and takes the id from the URL path.
-#[derive(Debug, Deserialize, ToSchema)]
-struct KilnRequest {
-    /// The kiln's registry NAME, validated on the way in — a browser that sent
-    /// a path gets a 422 rather than a session attached to a directory the
-    /// registration floor never saw.
-    #[schema(value_type = String)]
-    kiln: crucible_core::config::KilnName,
-}
-
 /// Updated session scope, echoed by kiln/workspace mutations.
 #[utoipa::path(
     post,
     path = "/api/session/{id}/kilns/connect",
     params(("id" = String, Path, description = "The session to attach the kiln to")),
-    request_body = KilnRequest,
+    request_body = NamedKiln,
     responses(
         (status = 200, body = SessionScopeResponse),
         (status = 422, description = "The body named a path rather than a registry name"),
@@ -934,7 +921,7 @@ struct KilnRequest {
 async fn connect_kiln(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<KilnRequest>,
+    Json(req): Json<NamedKiln>,
 ) -> Result<Json<SessionScopeResponse>, WebError> {
     let scope = state
         .daemon
@@ -948,7 +935,7 @@ async fn connect_kiln(
     post,
     path = "/api/session/{id}/kilns/disconnect",
     params(("id" = String, Path, description = "The session to detach the kiln from")),
-    request_body = KilnRequest,
+    request_body = NamedKiln,
     responses(
         (status = 200, body = SessionScopeResponse),
         (status = 422, description = "The body named a path rather than a registry name"),
@@ -958,7 +945,7 @@ async fn connect_kiln(
 async fn disconnect_kiln(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<KilnRequest>,
+    Json(req): Json<NamedKiln>,
 ) -> Result<Json<SessionScopeResponse>, WebError> {
     let scope = state
         .daemon
@@ -968,18 +955,11 @@ async fn disconnect_kiln(
     Ok(Json(daemon_shape(scope, "session.disconnect_kiln")?))
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-struct SetWorkspaceRequest {
-    /// Omitted/null → detach: the session is then left with no workspace.
-    #[schema(value_type = Option<String>)]
-    workspace: Option<PathBuf>,
-}
-
 #[utoipa::path(
     put,
     path = "/api/session/{id}/workspace",
     params(("id" = String, Path, description = "The session whose workspace to set")),
-    request_body = SetWorkspaceRequest,
+    request_body = WorkspaceChoice,
     responses(
         (status = 200, body = SessionScopeResponse),
         (status = 502, description = "The daemon could not set the workspace"),
@@ -988,11 +968,11 @@ struct SetWorkspaceRequest {
 async fn set_workspace(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<SetWorkspaceRequest>,
+    Json(req): Json<WorkspaceChoice>,
 ) -> Result<Json<SessionScopeResponse>, WebError> {
     let scope = state
         .daemon
-        .session_set_workspace(&id, req.workspace.as_deref())
+        .session_set_workspace(&id, req.workspace.as_deref().map(std::path::Path::new))
         .await
         .daemon_err()?;
     Ok(Json(daemon_shape(scope, "session.set_workspace")?))
@@ -1056,16 +1036,11 @@ async fn get_mode(
     Ok(Json(ModeResponse { mode }))
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-struct SetTitleRequest {
-    title: String,
-}
-
 #[utoipa::path(
     put,
     path = "/api/session/{id}/title",
     params(("id" = String, Path, description = "The session to rename")),
-    request_body = SetTitleRequest,
+    request_body = Title,
     responses(
         (status = 200, body = OkResponse),
         (status = 502, description = "The daemon could not set the title"),
@@ -1074,7 +1049,7 @@ struct SetTitleRequest {
 async fn set_session_title(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<SetTitleRequest>,
+    Json(req): Json<Title>,
 ) -> Result<Json<OkResponse>, WebError> {
     state
         .daemon

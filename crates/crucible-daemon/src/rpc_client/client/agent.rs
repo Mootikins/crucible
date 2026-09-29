@@ -21,10 +21,12 @@ impl DaemonClient {
     ) -> Result<()> {
         self.typed_unit_call(
             RpcMethod::SessionConfigureAgent,
-            SessionConfigureAgentRequest {
-                session_id: session_id.to_string(),
-                agent: serde_json::to_value(agent)?,
-            },
+            Scoped::new(
+                session_id.to_string(),
+                AgentConfig {
+                    agent: serde_json::to_value(agent)?,
+                },
+            ),
         )
         .await
     }
@@ -49,10 +51,7 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionConnectKiln,
-            SessionKilnRequest {
-                session_id: session_id.to_string(),
-                kiln: kiln.clone(),
-            },
+            Scoped::new(session_id.to_string(), NamedKiln { kiln: kiln.clone() }),
         )
         .await
     }
@@ -66,10 +65,7 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionDisconnectKiln,
-            SessionKilnRequest {
-                session_id: session_id.to_string(),
-                kiln: kiln.clone(),
-            },
+            Scoped::new(session_id.to_string(), NamedKiln { kiln: kiln.clone() }),
         )
         .await
     }
@@ -82,10 +78,12 @@ impl DaemonClient {
     ) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionSetWorkspace,
-            SessionSetWorkspaceRequest {
-                session_id: session_id.to_string(),
-                workspace: workspace.map(|p| p.to_string_lossy().to_string()),
-            },
+            Scoped::new(
+                session_id.to_string(),
+                WorkspaceChoice {
+                    workspace: workspace.map(|p| p.to_string_lossy().to_string()),
+                },
+            ),
         )
         .await
     }
@@ -109,11 +107,13 @@ impl DaemonClient {
     ) -> Result<()> {
         self.typed_unit_call(
             RpcMethod::SessionSetPluginApproval,
-            SessionPluginApprovalRequest {
-                session_id: session_id.to_owned(),
-                plugin: plugin.to_owned(),
-                approval: approval.as_str().to_owned(),
-            },
+            Scoped::new(
+                session_id.to_owned(),
+                PluginApprovalChange {
+                    plugin: plugin.to_owned(),
+                    approval: approval.as_str().to_owned(),
+                },
+            ),
         )
         .await
     }
@@ -151,10 +151,12 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call_with_retry(
                 RpcMethod::SessionGetPluginApproval,
-                SessionPluginRequest {
-                    session_id: session_id.to_owned(),
-                    plugin: plugin.to_owned(),
-                },
+                Scoped::new(
+                    session_id.to_owned(),
+                    PluginRef {
+                        plugin: plugin.to_owned(),
+                    },
+                ),
             )
             .await?;
         Ok(serde_json::from_value(result["approval"].clone())?)
@@ -421,10 +423,7 @@ impl DaemonClient {
         let resp: serde_json::Value = self
             .typed_call(
                 RpcMethod::SessionUndo,
-                SessionUndoRequest {
-                    session_id: session_id.to_string(),
-                    count: Some(count),
-                },
+                Scoped::new(session_id.to_string(), UndoCount { count: Some(count) }),
             )
             .await?;
         let undone = resp

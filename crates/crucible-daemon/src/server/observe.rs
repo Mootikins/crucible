@@ -3,8 +3,8 @@ use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::server::session::scope::caller_kiln_scope;
 use crate::session_manager::{KilnFilter, KilnScope};
 use crucible_core::protocol::requests::{
-    SessionCleanupRequest, SessionEventsAfterRequest, SessionExportToFileRequest,
-    SessionListPersistedRequest, SessionRenderMarkdownRequest,
+    EventCursor, ExportOptions, MarkdownOptions, Scoped, SessionCleanupRequest,
+    SessionListPersistedRequest,
 };
 use crucible_core::session::SessionSummary;
 
@@ -20,7 +20,7 @@ use crucible_core::session::SessionSummary;
 /// log, a cursor past the end, and an unknown id all answer the same clean
 /// empty tail — a reconnect must not fail for having nothing to replay.
 pub(crate) async fn handle_session_events_after(req: Request, sessions_root: &Path) -> Response {
-    let params = match typed_params::<SessionEventsAfterRequest>(&req) {
+    let params = match typed_params::<Scoped<EventCursor>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -30,7 +30,7 @@ pub(crate) async fn handle_session_events_after(req: Request, sessions_root: &Pa
     };
     let session_dir = session_id.dir_under(sessions_root);
 
-    match crate::observe::events_after(&session_dir, params.after).await {
+    match crate::observe::events_after(&session_dir, params.body.after).await {
         Ok(events) => match serde_json::to_value(&events) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),
@@ -154,7 +154,7 @@ pub(crate) async fn handle_session_list_persisted(
 ///   - `max_content_length` (u64, optional): Truncation limit (default 0 = no limit)
 ///     Returns: { markdown: "..." }
 pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: &Path) -> Response {
-    let params = match typed_params::<SessionRenderMarkdownRequest>(&req) {
+    let params = match typed_params::<Scoped<MarkdownOptions>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -163,10 +163,10 @@ pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: 
         Err(response) => return *response,
     };
     let session_dir = session_id.dir_under(sessions_root);
-    let include_timestamps = params.include_timestamps.unwrap_or(false);
-    let include_tokens = params.include_tokens.unwrap_or(true);
-    let include_tools = params.include_tools.unwrap_or(true);
-    let max_content_length = params.max_content_length.unwrap_or(0);
+    let include_timestamps = params.body.include_timestamps.unwrap_or(false);
+    let include_tokens = params.body.include_tokens.unwrap_or(true);
+    let include_tools = params.body.include_tools.unwrap_or(true);
+    let max_content_length = params.body.max_content_length.unwrap_or(0);
 
     let transcript = match crate::observe::load_transcript(&session_dir).await {
         Ok(transcript) => transcript,
@@ -276,7 +276,7 @@ async fn export_destination(
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
 ///     Returns: { status: "ok", output_path: "..." }
 pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &Path) -> Response {
-    let params = match typed_params::<SessionExportToFileRequest>(&req) {
+    let params = match typed_params::<Scoped<ExportOptions>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -284,8 +284,8 @@ pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &
         Ok(id) => id,
         Err(response) => return *response,
     };
-    let output_path = params.output_path.as_deref();
-    let timestamps = params.include_timestamps.unwrap_or(false);
+    let output_path = params.body.output_path.as_deref();
+    let timestamps = params.body.include_timestamps.unwrap_or(false);
 
     let session_dir = session_id.dir_under(sessions_root);
 

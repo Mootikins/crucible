@@ -266,8 +266,9 @@ fn shared_request_type_failures(
              request type, not a JSON literal"
         ));
     }
+    // A session-scoped method reads its body inside the `Scoped<T>` envelope.
     let parsed = Regex::new(&format!(
-        r"typed_params::<\s*{}\s*>",
+        r"typed_params::<\s*(?:Scoped<\s*)?{}\s*>?\s*>",
         regex::escape(request_type)
     ))
     .unwrap();
@@ -303,17 +304,17 @@ const SCOPE_METHODS: &[ScopeMethod] = &[
     ScopeMethod {
         client_fn: "session_connect_kiln",
         server_fn: "handle_session_connect_kiln",
-        request_type: "SessionKilnRequest",
+        request_type: "NamedKiln",
     },
     ScopeMethod {
         client_fn: "session_disconnect_kiln",
         server_fn: "handle_session_disconnect_kiln",
-        request_type: "SessionKilnRequest",
+        request_type: "NamedKiln",
     },
     ScopeMethod {
         client_fn: "session_set_workspace",
         server_fn: "handle_session_set_workspace",
-        request_type: "SessionSetWorkspaceRequest",
+        request_type: "WorkspaceChoice",
     },
 ];
 

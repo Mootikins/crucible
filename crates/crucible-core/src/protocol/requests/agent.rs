@@ -1,14 +1,13 @@
 //! Wire types of the `agent` RPC methods. The client serializes each type,
 //! and the daemon handler deserializes the same type.
 
-/// Request for `session.configure_agent`.
+/// The body of `session.configure_agent`, inside `Scoped`.
 ///
 /// `agent` stays a `Value` on purpose: the handler answers a distinct
 /// `Invalid agent config: {e}` for an `agent` that is not a `SessionAgent`,
 /// and typing the field here would fold that into the generic params error.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionConfigureAgentRequest {
-    pub session_id: String,
+pub struct AgentConfig {
     pub agent: serde_json::Value,
 }
 
@@ -26,18 +25,16 @@ pub struct SessionSetModeRequest {
     pub mode_id: String,
 }
 
-/// Request for `session.set_plugin_approval`.
+/// The body of `session.set_plugin_approval`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionPluginApprovalRequest {
-    pub session_id: String,
+pub struct PluginApprovalChange {
     pub plugin: String,
     pub approval: String,
 }
 
-/// Request for `session.get_plugin_approval`.
+/// The body of `session.get_plugin_approval`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionPluginRequest {
-    pub session_id: String,
+pub struct PluginRef {
     pub plugin: String,
 }
 
@@ -58,10 +55,11 @@ pub struct SessionSetPrecognitionRequest {
     pub precognition_enabled: bool,
 }
 
-/// Request for `session.undo`. An absent `count` undoes one turn.
+/// The body of `session.undo`, inside `Scoped`.
+///
+/// An absent `count` undoes one turn.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionUndoRequest {
-    pub session_id: String,
+pub struct UndoCount {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<usize>,
 }
@@ -167,26 +165,26 @@ pub struct ListProvidersRequest {
     pub include_models: Option<bool>,
 }
 
-/// Request for `session.connect_kiln` / `session.disconnect_kiln`.
+/// The body of `session.connect_kiln` and `session.disconnect_kiln`, inside
+/// `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionKilnRequest {
-    pub session_id: String,
-    /// The kiln's registry NAME. It was `kiln_path` — a directory the caller
-    /// chose — and that is the door the registration floor now stands in front
-    /// of: a path here would attach a kiln nobody registered.
-    ///
-    /// Typed, not a `String`: both callers already hold a validated
-    /// [`KilnName`] and were widening it back with `to_string()` for one hop.
-    /// `KilnName` serializes as its inner string, so the wire is unchanged.
-    ///
-    /// [`KilnName`]: crate::config::KilnName
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct NamedKiln {
+    /// The registry NAME of the kiln. The parse refuses a path, so a caller
+    /// that sends a path gets an error, and no session attaches a directory
+    /// that nobody registered.
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub kiln: crate::config::KilnName,
 }
 
-/// Request for `session.set_workspace`. `workspace: None` detaches.
+/// The body of `session.set_workspace`, inside `Scoped`.
+///
+/// `workspace: None` detaches.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionSetWorkspaceRequest {
-    pub session_id: String,
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WorkspaceChoice {
+    /// The workspace path. An absent or `null` value detaches: the session
+    /// then has no workspace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
 }

@@ -19,13 +19,10 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/create.rs",
     ),
     (
-        "LuaInitSessionRequest",
+        "Scoped<LuaSessionInit>",
         "crates/crucible-daemon/src/server/lua.rs",
     ),
-    (
-        "Scoped<()>",
-        "crates/crucible-daemon/src/server/lua.rs",
-    ),
+    ("Scoped<()>", "crates/crucible-daemon/src/server/lua.rs"),
     (
         "LuaDiscoverPluginsRequest",
         "crates/crucible-daemon/src/server/lua.rs",
@@ -39,7 +36,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/lua.rs",
     ),
     (
-        "LuaRegisterCommandsRequest",
+        "Scoped<LuaCommands>",
         "crates/crucible-daemon/src/server/lua.rs",
     ),
     (
@@ -125,10 +122,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "ScmCloneRequest",
         "crates/crucible-daemon/src/server/plugins.rs",
     ),
-    (
-        "Scoped<()>",
-        "crates/crucible-daemon/src/server/plugins.rs",
-    ),
+    ("Scoped<()>", "crates/crucible-daemon/src/server/plugins.rs"),
     (
         "PluginInstallRequest",
         "crates/crucible-daemon/src/server/plugin_install.rs",
@@ -155,11 +149,11 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/lifecycle.rs",
     ),
     (
-        "SessionRenderMarkdownRequest",
+        "Scoped<MarkdownOptions>",
         "crates/crucible-daemon/src/server/observe.rs",
     ),
     (
-        "SessionExportToFileRequest",
+        "Scoped<ExportOptions>",
         "crates/crucible-daemon/src/server/observe.rs",
     ),
     (
@@ -175,7 +169,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/models.rs",
     ),
     (
-        "SessionForkRequest",
+        "Scoped<ForkPoint>",
         "crates/crucible-daemon/src/server/session/models.rs",
     ),
     (
@@ -187,7 +181,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
-        "SessionDismissNotificationRequest",
+        "Scoped<NotificationKey>",
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
@@ -203,19 +197,19 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),
     (
-        "SessionConfigureAgentRequest",
+        "Scoped<AgentConfig>",
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),
     (
-        "SessionInjectContextRequest",
+        "Scoped<ContextInjection>",
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),
     (
-        "SessionInteractionRespondRequest",
+        "Scoped<InteractionAnswer>",
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),
     (
-        "SessionTestInteractionRequest",
+        "Scoped<TestInteraction>",
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),
     (
@@ -235,13 +229,10 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
     // `parse_params::<T>` rather than `typed_params::<T>`. The gate reads the
     // turbofish, not the helper's name.
     (
-        "SessionSetTitleRequest",
+        "Scoped<Title>",
         "crates/crucible-daemon/src/rpc/dispatch.rs",
     ),
-    (
-        "Scoped<()>",
-        "crates/crucible-daemon/src/rpc/dispatch.rs",
-    ),
+    ("Scoped<()>", "crates/crucible-daemon/src/rpc/dispatch.rs"),
     // Step 6, part 4 of the simplification plan: the handlers that read
     // their fields by hand with `require_param!` now deserialize these.
     ("PathRequest", "crates/crucible-daemon/src/server/kiln.rs"),
@@ -284,11 +275,11 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/observe.rs",
     ),
     (
-        "SessionPluginApprovalRequest",
+        "Scoped<PluginApprovalChange>",
         "crates/crucible-daemon/src/server/session/approval.rs",
     ),
     (
-        "SessionPluginRequest",
+        "Scoped<PluginRef>",
         "crates/crucible-daemon/src/server/session/approval.rs",
     ),
     (
@@ -304,11 +295,11 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/list.rs",
     ),
     (
-        "SessionSendMessageRequest",
+        "Scoped<MessageInput>",
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),
     (
-        "SessionAddNotificationRequest",
+        "Scoped<NewNotification>",
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
@@ -332,15 +323,15 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/params.rs",
     ),
     (
-        "SessionUndoRequest",
+        "Scoped<UndoCount>",
         "crates/crucible-daemon/src/server/session/params.rs",
     ),
     (
-        "SessionKilnRequest",
+        "Scoped<NamedKiln>",
         "crates/crucible-daemon/src/server/session/scope.rs",
     ),
     (
-        "SessionSetWorkspaceRequest",
+        "Scoped<WorkspaceChoice>",
         "crates/crucible-daemon/src/server/session/scope.rs",
     ),
     // `resolve_workspace_target` reads `workspace_target` before the create

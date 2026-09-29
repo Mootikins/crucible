@@ -5,7 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_core::protocol::requests::{LuaInitSessionRequest, Scoped};
+use crucible_core::protocol::requests::{LuaSessionInit, Scoped};
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::DaemonClient;
 use std::path::PathBuf;
@@ -961,10 +961,12 @@ async fn init_lua_session(session_id: &str, kiln_root: &std::path::Path) -> bool
             return false;
         }
     };
-    let init_params = LuaInitSessionRequest {
-        session_id: session_id.to_string(),
-        kiln_path: Some(kiln_root.to_string_lossy().to_string()),
-    };
+    let init_params = Scoped::new(
+        session_id.to_string(),
+        LuaSessionInit {
+            kiln_path: Some(kiln_root.to_string_lossy().to_string()),
+        },
+    );
     match client.lua_init_session(init_params).await {
         Ok(response) => {
             debug!(session_id = %response.session_id, "Initialized Lua session via daemon RPC");

@@ -3613,7 +3613,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KilnRequest"
+                "$ref": "#/components/schemas/NamedKiln"
               }
             }
           },
@@ -3657,7 +3657,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KilnRequest"
+                "$ref": "#/components/schemas/NamedKiln"
               }
             }
           },
@@ -4082,7 +4082,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetTitleRequest"
+                "$ref": "#/components/schemas/Title"
               }
             }
           },
@@ -4157,7 +4157,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetWorkspaceRequest"
+                "$ref": "#/components/schemas/WorkspaceChoice"
               }
             }
           },
@@ -8364,19 +8364,6 @@
           }
         }
       },
-      "KilnRequest": {
-        "type": "object",
-        "description": "The body of `POST /connect_kiln` and `POST /disconnect_kiln`.\n\nNamed without the `Session` prefix its siblings drop, because the daemon's\nRPC client declares a `SessionKilnRequest` that is a different shape going\nthe other way: that one is `Serialize` and carries `session_id`, this one is\n`Deserialize` and takes the id from the URL path.",
-        "required": [
-          "kiln"
-        ],
-        "properties": {
-          "kiln": {
-            "type": "string",
-            "description": "The kiln's registry NAME, validated on the way in — a browser that sent\na path gets a 422 rather than a session attached to a directory the\nregistration floor never saw."
-          }
-        }
-      },
       "KilnRow": {
         "type": "object",
         "description": "One kiln, as `kiln.list` reports it.\n\nEvery key is written on every row, including the two an older reader\ntreated as optional, so this reply carries no absent-versus-false\nambiguity.",
@@ -8723,6 +8710,19 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "NamedKiln": {
+        "type": "object",
+        "description": "The body of `session.connect_kiln` and `session.disconnect_kiln`, inside\n`Scoped`.",
+        "required": [
+          "kiln"
+        ],
+        "properties": {
+          "kiln": {
+            "type": "string",
+            "description": "The registry NAME of the kiln. The parse refuses a path, so a caller\nthat sends a path gets an error, and no session attaches a directory\nthat nobody registered."
           }
         }
       },
@@ -11418,29 +11418,6 @@
           }
         }
       },
-      "SetTitleRequest": {
-        "type": "object",
-        "required": [
-          "title"
-        ],
-        "properties": {
-          "title": {
-            "type": "string"
-          }
-        }
-      },
-      "SetWorkspaceRequest": {
-        "type": "object",
-        "properties": {
-          "workspace": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Omitted/null → detach: the session is then left with no workspace."
-          }
-        }
-      },
       "Shape": {
         "type": "string",
         "description": "What a client draws.\n\nOne variant, because one renderer exists. `Tree`, `Table` and `KeyValue`\narrive **with** their renderers, not ahead of them: the exhaustive match\non this enum is what forces that.",
@@ -11890,6 +11867,18 @@
           "thinking"
         ]
       },
+      "Title": {
+        "type": "object",
+        "description": "The body of `session.set_title`, inside `Scoped`.",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "TitleResponse": {
         "type": "object",
         "description": "Response for title operations.",
@@ -12258,6 +12247,19 @@
         "properties": {
           "target": {
             "type": "string"
+          }
+        }
+      },
+      "WorkspaceChoice": {
+        "type": "object",
+        "description": "The body of `session.set_workspace`, inside `Scoped`.\n\n`workspace: None` detaches.",
+        "properties": {
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The workspace path. An absent or `null` value detaches: the session\nthen has no workspace."
           }
         }
       },

@@ -11,7 +11,7 @@ use super::DaemonClient;
 impl DaemonClient {
     pub async fn lua_init_session(
         &self,
-        params: LuaInitSessionRequest,
+        params: Scoped<LuaSessionInit>,
     ) -> Result<LuaInitSessionResponse> {
         self.typed_call(RpcMethod::LuaInitSession, params).await
     }

@@ -1,8 +1,8 @@
 use super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    LuaDiscoverPluginsRequest, LuaGenerateStubsRequest, LuaInitSessionRequest,
-    LuaPluginHealthRequest, LuaRegisterCommandsRequest, Scoped,
+    LuaCommands, LuaDiscoverPluginsRequest, LuaGenerateStubsRequest, LuaPluginHealthRequest,
+    LuaSessionInit, Scoped,
 };
 
 pub(crate) async fn handle_lua_init_session(
@@ -10,7 +10,7 @@ pub(crate) async fn handle_lua_init_session(
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match typed_params::<LuaInitSessionRequest>(&req) {
+    let params = match typed_params::<Scoped<LuaSessionInit>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -19,6 +19,7 @@ pub(crate) async fn handle_lua_init_session(
     // `#[serde(alias = "kiln")]` on the struct, so the alias is documented where
     // the field is rather than only here.
     let kiln_root = params
+        .body
         .kiln_path
         .as_deref()
         .map(PathBuf::from)
@@ -443,12 +444,12 @@ pub(crate) async fn handle_lua_register_commands(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let params = match typed_params::<LuaRegisterCommandsRequest>(&req) {
+    let params = match typed_params::<Scoped<LuaCommands>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = params.session_id.as_str();
-    let commands = &params.commands;
+    let commands = &params.body.commands;
 
     let Some(state) = lua_session_state(lua_sessions, session_id) else {
         return session_not_found(req.id, session_id);

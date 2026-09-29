@@ -2,8 +2,7 @@ use super::super::*;
 use crate::agent_manager::commands::SlashRoute;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    Scoped, SessionConfigureAgentRequest, SessionInjectContextRequest,
-    SessionInteractionRespondRequest, SessionSendMessageRequest, SessionTestInteractionRequest,
+    AgentConfig, ContextInjection, InteractionAnswer, MessageInput, Scoped, TestInteraction,
 };
 use crucible_core::types::SendOutcome;
 
@@ -11,22 +10,23 @@ pub(crate) async fn handle_session_configure_agent(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let params = match typed_params::<SessionConfigureAgentRequest>(&req) {
+    let params = match typed_params::<Scoped<AgentConfig>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = &params.session_id;
 
-    let agent: crucible_core::session::SessionAgent = match serde_json::from_value(params.agent) {
-        Ok(a) => a,
-        Err(e) => {
-            return Response::error(
-                req.id,
-                INVALID_PARAMS,
-                format!("Invalid agent config: {}", e),
-            );
-        }
-    };
+    let agent: crucible_core::session::SessionAgent =
+        match serde_json::from_value(params.body.agent) {
+            Ok(a) => a,
+            Err(e) => {
+                return Response::error(
+                    req.id,
+                    INVALID_PARAMS,
+                    format!("Invalid agent config: {}", e),
+                );
+            }
+        };
 
     match am.configure_agent(session_id, agent).await {
         Ok(()) => Response::success(
@@ -57,14 +57,14 @@ pub(crate) async fn handle_session_send_message(
     event_tx: &crate::EventBus,
     admission: crate::server::diff::Admission<'_>,
 ) -> Response {
-    let params = match typed_params::<SessionSendMessageRequest>(&req) {
+    let params = match typed_params::<Scoped<MessageInput>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = params.session_id.as_str();
-    let content = params.content.as_str();
-    let is_interactive = params.is_interactive;
-    let permission_override = params.permission_mode.as_deref().and_then(|s| {
+    let content = params.body.content.as_str();
+    let is_interactive = params.body.is_interactive;
+    let permission_override = params.body.permission_mode.as_deref().and_then(|s| {
         s.parse::<crucible_core::config::components::permissions::PermissionMode>()
             .ok()
     });
@@ -100,7 +100,7 @@ pub(crate) async fn handle_session_send_message(
         Err(e) => return agent_error_to_response(req.id, e),
     }
 
-    let comments = &params.comments;
+    let comments = &params.body.comments;
     // The client sends references only. The daemon builds the block of each
     // comment, and refuses the message when a reference names no open comment.
     let review_context = if comments.is_empty()
@@ -277,7 +277,7 @@ pub(crate) async fn handle_session_inject_context(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionInjectContextRequest>(&req) {
+    let params = match typed_params::<Scoped<ContextInjection>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -288,8 +288,8 @@ pub(crate) async fn handle_session_inject_context(
         am,
         event_tx,
         session_id,
-        &params.role,
-        &params.content,
+        &params.body.role,
+        &params.body.content,
         None,
     )
     .await
@@ -382,14 +382,14 @@ pub(crate) async fn handle_session_interaction_respond(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionInteractionRespondRequest>(&req) {
+    let params = match typed_params::<Scoped<InteractionAnswer>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
-    let (session_id, request_id) = (&params.session_id, &params.request_id);
+    let (session_id, request_id) = (&params.session_id, &params.body.request_id);
 
     let response: crucible_core::interaction::InteractionResponse =
-        match serde_json::from_value(params.response) {
+        match serde_json::from_value(params.body.response) {
             Ok(r) => r,
             Err(e) => {
                 return Response::error(
@@ -435,18 +435,19 @@ pub(crate) async fn handle_session_test_interaction(
     req: Request,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionTestInteractionRequest>(&req) {
+    let params = match typed_params::<Scoped<TestInteraction>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = &params.session_id;
 
-    let interaction_type = params.interaction_type.as_deref().unwrap_or("ask");
+    let interaction_type = params.body.interaction_type.as_deref().unwrap_or("ask");
     let request_id = format!("test-{}", uuid::Uuid::new_v4());
 
     let request = match interaction_type {
         "ask" => {
             let question = params
+                .body
                 .question
                 .as_deref()
                 .unwrap_or("Test question: Which option do you prefer?");
@@ -461,7 +462,7 @@ pub(crate) async fn handle_session_test_interaction(
             })
         }
         "permission" => {
-            let action = params.action.as_deref().unwrap_or("rm -rf /tmp/test");
+            let action = params.body.action.as_deref().unwrap_or("rm -rf /tmp/test");
             // The typed request, so a client decodes the shape a real
             // permission prompt has.
             match serde_json::to_value(crucible_core::interaction::InteractionRequest::Permission(
@@ -521,7 +522,7 @@ mod tests {
         }
     }
 
-    /// `SessionTestInteractionRequest` renames `interaction_type` to the wire
+    /// `TestInteraction` renames `interaction_type` to the wire
     /// name `type`. A rename that did not take would silently fall back to the
     /// `ask` default and this method would stop being able to emit a
     /// permission prompt at all.

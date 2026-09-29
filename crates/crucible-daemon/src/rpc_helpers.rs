@@ -59,7 +59,7 @@ pub fn session_id_field(
 mod tests {
     use super::typed_params;
     use crate::protocol::{Request, RequestId, INVALID_PARAMS};
-    use crucible_core::protocol::requests::SessionUndoRequest;
+    use crucible_core::protocol::requests::{Scoped, UndoCount};
     use serde_json::json;
 
     fn request(params: serde_json::Value) -> Request {
@@ -74,10 +74,10 @@ mod tests {
     #[test]
     fn a_request_with_every_field_parses() {
         let params = json!({"session_id": "s", "count": 2});
-        let parsed = typed_params::<SessionUndoRequest>(&request(params))
-            .expect("a complete request parses");
+        let parsed =
+            typed_params::<Scoped<UndoCount>>(&request(params)).expect("a complete request parses");
         assert_eq!(parsed.session_id, "s");
-        assert_eq!(parsed.count, Some(2));
+        assert_eq!(parsed.body.count, Some(2));
     }
 
     /// A missing or invalid field answers INVALID_PARAMS, as `require_param!`
@@ -89,7 +89,7 @@ mod tests {
             json!({"session_id": 7}),
             json!({"session_id": "s", "count": "two"}),
         ] {
-            let response = *typed_params::<SessionUndoRequest>(&request(params.clone()))
+            let response = *typed_params::<Scoped<UndoCount>>(&request(params.clone()))
                 .expect_err("the request must be refused");
             let error = response.error.expect("an error response");
             assert_eq!(error.code, INVALID_PARAMS, "{params}");

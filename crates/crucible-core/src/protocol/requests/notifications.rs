@@ -16,13 +16,12 @@ pub struct NotificationListRequest {
     pub all: bool,
 }
 
-/// Request for `session.add_notification`.
+/// The body of `session.add_notification`, inside `Scoped`.
 ///
 /// `notification` is the whole [`Notification`], so a malformed one answers
 /// `INVALID_PARAMS` with the reason from its own deserializer.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionAddNotificationRequest {
-    pub session_id: String,
+pub struct NewNotification {
     pub notification: Notification,
 }
 

@@ -30,7 +30,7 @@ pub(crate) async fn handle_session_create(req: Request, ctx: &RpcContext) -> Res
     // it has wire-format tests (`rpc_client/client/mod.rs`), and it lives in
     // this crate — so there is no reason for the server to re-derive fourteen
     // field names by hand. It did, and the fourteen happened to agree; nothing
-    // asserted that they would. (`LuaInitSessionRequest.config` is the same
+    // asserted that they would. (`LuaSessionInit.config` is the same
     // shape and does NOT agree — the client serializes it, no handler reads it.)
     //
     // Unknown fields are tolerated on purpose (no `deny_unknown_fields`): a

@@ -13,7 +13,7 @@ use crucible_core::parser::types::{
     extract_yaml_frontmatter, CheckboxStatus, ParsedNote, WorkflowDoc, WorkflowStep,
 };
 use crucible_core::protocol::requests::SessionCreateParams;
-use crucible_core::protocol::requests::{WorkflowApproveGateRequest, WorkflowStartRequest};
+use crucible_core::protocol::requests::{GateRef, Scoped, WorkflowSource};
 use crucible_core::text::truncate_chars;
 use crucible_core::EXCLUDED_DIRS;
 use serde::Serialize;
@@ -407,11 +407,13 @@ async fn run_start(config: CliAppConfig, target: &str, _session: Option<&str>) -
     println!();
 
     let result = client
-        .workflow_start(WorkflowStartRequest {
-            session_id: session_id.clone(),
-            source,
-            path: Some(path.display().to_string()),
-        })
+        .workflow_start(Scoped::new(
+            session_id.clone(),
+            WorkflowSource {
+                source,
+                path: Some(path.display().to_string()),
+            },
+        ))
         .await
         .context("workflow.start RPC failed")?;
 
@@ -428,10 +430,7 @@ async fn run_approve(session: &str, gate: Option<&str>) -> Result<()> {
     };
 
     let result = client
-        .workflow_approve_gate(WorkflowApproveGateRequest {
-            session_id: session.to_string(),
-            gate_id,
-        })
+        .workflow_approve_gate(Scoped::new(session.to_string(), GateRef { gate_id }))
         .await
         .context("workflow.approve_gate RPC failed")?;
 

@@ -2,7 +2,7 @@ use super::super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
     Scoped, SessionPluginTurnLimitRequest, SessionSetContextStrategyRequest, SessionSetModeRequest,
-    SessionSetPrecognitionRequest, SessionUndoRequest,
+    SessionSetPrecognitionRequest, UndoCount,
 };
 
 use crucible_core::session::ContextStrategy;
@@ -204,12 +204,12 @@ pub(crate) async fn handle_session_undo(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionUndoRequest>(&req) {
+    let params = match typed_params::<Scoped<UndoCount>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
     let session_id = params.session_id.as_str();
-    let count = params.count.unwrap_or(1);
+    let count = params.body.count.unwrap_or(1);
 
     match am.undo(session_id, count, Some(event_tx)).await {
         Ok(summaries) => Response::success(

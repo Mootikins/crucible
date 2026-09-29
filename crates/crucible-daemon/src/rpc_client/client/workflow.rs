@@ -13,15 +13,12 @@ use super::DaemonClient;
 use crucible_core::protocol::requests::Scoped;
 
 impl DaemonClient {
-    pub async fn workflow_start(&self, req: WorkflowStartRequest) -> Result<serde_json::Value> {
+    pub async fn workflow_start(&self, req: Scoped<WorkflowSource>) -> Result<serde_json::Value> {
         self.call(RpcMethod::WorkflowStart, serde_json::to_value(req)?)
             .await
     }
 
-    pub async fn workflow_approve_gate(
-        &self,
-        req: WorkflowApproveGateRequest,
-    ) -> Result<serde_json::Value> {
+    pub async fn workflow_approve_gate(&self, req: Scoped<GateRef>) -> Result<serde_json::Value> {
         self.call(RpcMethod::WorkflowApproveGate, serde_json::to_value(req)?)
             .await
     }

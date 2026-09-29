@@ -58,7 +58,7 @@ pub(crate) async fn handle_mcp_start(
 ) -> Response {
     // The client's own request type is the contract (gate A6): it derives
     // `Deserialize`, the client serializes it, and re-deriving its five field
-    // names here is what let `LuaInitSessionRequest.config` drift.
+    // names here is what let `LuaSessionInit.config` drift.
     let params = match typed_params::<McpStartRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,

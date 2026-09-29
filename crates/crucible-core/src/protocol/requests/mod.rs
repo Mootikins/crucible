@@ -46,13 +46,13 @@ mod old_payloads {
         let search: SearchTextRequest = parse(json!({"kiln": "k", "query": "q"}));
         assert_eq!(search.limit, 20);
 
-        let send: SessionSendMessageRequest = parse(json!({"session_id": "s", "content": "c"}));
-        assert!(send.is_interactive);
-        assert!(send.comments.is_empty());
+        let send: Scoped<MessageInput> = parse(json!({"session_id": "s", "content": "c"}));
+        assert!(send.body.is_interactive);
+        assert!(send.body.comments.is_empty());
 
-        let send: SessionSendMessageRequest =
+        let send: Scoped<MessageInput> =
             parse(json!({"session_id": "s", "content": "c", "comments": null}));
-        assert!(send.comments.is_empty());
+        assert!(send.body.comments.is_empty());
 
         let precognition: SessionSetPrecognitionRequest = parse(json!({"session_id": "s"}));
         assert!(precognition.precognition_enabled);
@@ -60,8 +60,8 @@ mod old_payloads {
         let cleanup: SessionCleanupRequest = parse(json!({"older_than_days": 3}));
         assert!(!cleanup.dry_run && !cleanup.all_kilns && cleanup.kilns.is_empty());
 
-        let undo: SessionUndoRequest = parse(json!({"session_id": "s"}));
-        assert_eq!(undo.count, None);
+        let undo: Scoped<UndoCount> = parse(json!({"session_id": "s"}));
+        assert_eq!(undo.body.count, None);
 
         let listed: SessionListRequest = parse(json!({}));
         assert!(listed.kilns.is_empty());
