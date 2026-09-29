@@ -459,10 +459,7 @@ impl CrucibleAcpAgent {
                 Error::internal_error()
             })?;
 
-        let daemon_session_id = create["session_id"]
-            .as_str()
-            .ok_or_else(Error::internal_error)?
-            .to_string();
+        let daemon_session_id = create.id.to_string();
 
         // Now that we know the id, narrow the wildcard down to this session so
         // an idle connection can't buffer other sessions' events unboundedly.

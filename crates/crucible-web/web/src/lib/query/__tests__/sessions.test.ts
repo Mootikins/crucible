@@ -46,8 +46,9 @@ function session(id: string, over: Partial<Session> = {}): Session {
 /**
  * What the daemon's list route answers.
  *
- * The rows go on the wire unchanged: `Session` IS `SessionRow` now, so there
- * is no second spelling for a fixture to convert between.
+ * The rows go on the wire unchanged: `Session` IS the generated
+ * `SessionSummary` now, so there is no second spelling for a fixture to
+ * convert between.
  */
 function listReply(rows: Session[]): { sessions: Session[]; total: number } {
   return { sessions: rows, total: rows.length };

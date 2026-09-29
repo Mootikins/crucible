@@ -470,11 +470,14 @@ async fn test_session_create_and_get() {
         })
         .await
         .unwrap();
-    let session_id = result["session_id"].as_str().unwrap();
+    let session_id = result.id.as_str();
 
     let session = client.session_get(session_id).await.unwrap();
-    assert_eq!(session["session_id"], session_id);
-    assert_eq!(session["type"], "chat");
+    assert_eq!(session.id.as_str(), session_id);
+    assert_eq!(
+        session.session_type,
+        crucible_core::session::SessionType::Chat
+    );
 }
 
 #[tokio::test]
@@ -485,7 +488,7 @@ async fn test_session_list() {
         .session_list(None, None, None, None, None)
         .await
         .unwrap();
-    assert!(result.is_array() || result.is_object());
+    assert_eq!(result.total, result.sessions.len());
 }
 
 #[tokio::test]
@@ -506,7 +509,7 @@ async fn test_session_lifecycle() {
         })
         .await
         .unwrap();
-    let session_id = result["session_id"].as_str().unwrap();
+    let session_id = result.id.as_str();
 
     let pause_result = client.session_pause(session_id).await;
     assert!(pause_result.is_ok());
@@ -536,7 +539,7 @@ async fn test_session_subscribe_unsubscribe() {
         })
         .await
         .unwrap();
-    let session_id = result["session_id"].as_str().unwrap();
+    let session_id = result.id.as_str();
 
     let sub_result = client.session_subscribe(&[session_id]).await;
     assert!(sub_result.is_ok());

@@ -129,9 +129,8 @@ fn create_session_beside(home: &Path, beside: &str) -> String {
             .await
             .expect("connect");
         let open = client.session_get(beside).await.expect("session.get");
-        let kilns: Vec<crucible_core::config::KilnName> =
-            serde_json::from_value(open["kilns"].clone()).expect("kilns");
-        let workspace = open["workspace"].as_str().map(PathBuf::from);
+        let kilns = open.kilns.clone();
+        let workspace = open.workspace.clone();
         let created = client
             .session_create(SessionCreateParams {
                 session_type: "chat".into(),
@@ -144,10 +143,7 @@ fn create_session_beside(home: &Path, beside: &str) -> String {
             })
             .await
             .expect("session.create");
-        created["session_id"]
-            .as_str()
-            .expect("session_id")
-            .to_string()
+        created.id.to_string()
     })
 }
 

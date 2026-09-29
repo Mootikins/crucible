@@ -57,7 +57,7 @@ pub(crate) async fn get_plugin_turn_limit(
     Path(id): Path<String>,
 ) -> Result<Json<PluginTurnLimitResponse>, WebError> {
     let session = state.daemon.session_get(&id).await.daemon_err()?;
-    let limit = session["plugin_turn_limit"].as_u64().unwrap_or(25) as u32;
+    let limit = session.plugin_turn_limit;
     Ok(Json(PluginTurnLimitResponse { limit }))
 }
 

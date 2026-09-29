@@ -297,7 +297,17 @@ parent; `from_profile` leaves `env_overrides` empty, because the ACP
 launcher reads the profile's own `env` map from config at every spawn rather
 than have a copy in the session row win over the session's own overrides.
 `SessionSummary` (`session/types/summary.rs`) is a `From<&Session>` listing
-projection the daemon fills in further. `ContextStrategy`/`RecordingMode`/
+projection, and it is the one reply shape of `session.create` and
+`session.list`: every field the record always has (`id`, `session_type`,
+`kilns`, `workspace`, `state`, `started_at`, `event_count`, `archived`) is
+required, not `Option`; only a field the record can genuinely lack
+(`title`, `agent_model`, `last_activity`, `parent_session_id`) is
+`Option`. `SessionDetail` (same file) is what `session.get` answers: a
+`SessionSummary` flattened onto the wire (`#[serde(flatten)]`) plus the
+full-record fields (`agent`, `continued_from`, `plugin_approvals`,
+`plugin_turn_limit`, `recording_mode`), required wherever the record
+always has a value. `SessionDetail` derefs to `SessionSummary`.
+`ContextStrategy`/`RecordingMode`/
 `SessionType`/`SessionState` (`session/types/config.rs`, `enums.rs`) are
 small closed sets. The daemon's session storage, `agent_manager`, and server
 RPC handlers create, hold, and mutate all of these; `crucible-cli` and

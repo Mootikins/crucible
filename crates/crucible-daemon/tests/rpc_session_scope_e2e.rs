@@ -52,10 +52,7 @@ async fn create_session(client: &DaemonClient) -> String {
         .await
         .expect("session_create failed");
 
-    result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string()
+    result.id.to_string()
 }
 
 #[tokio::test]
@@ -91,7 +88,14 @@ async fn connect_then_disconnect_kiln_roundtrips() {
 
     // Persisted: session.get reflects the final set.
     let session = client.session_get(&session_id).await.unwrap();
-    assert_eq!(session["kilns"].as_array(), Some(&created_with));
+    assert_eq!(
+        session
+            .kilns
+            .iter()
+            .map(|k| k.to_string())
+            .collect::<Vec<_>>(),
+        vec!["kiln".to_string()]
+    );
 
     server.shutdown().await;
 }
@@ -155,7 +159,7 @@ async fn set_workspace_is_refused_and_the_session_keeps_its_workspace() {
         })
         .await
         .expect("session_create failed");
-    let session_id = result["session_id"].as_str().unwrap().to_string();
+    let session_id = result.id.to_string();
 
     let err = client
         .session_set_workspace(&session_id, Some(other.path()))
@@ -177,8 +181,8 @@ async fn set_workspace_is_refused_and_the_session_keeps_its_workspace() {
 
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
-        session["workspace"].as_str().unwrap(),
-        created_in.path().to_string_lossy(),
+        session.workspace.as_deref(),
+        Some(created_in.path()),
         "the session must keep the workspace it was created with"
     );
 
@@ -224,8 +228,12 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
     // Session scope is unchanged — the rejected kiln was never added.
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
-        session["kilns"].as_array(),
-        Some(&vec![serde_json::json!("kiln")])
+        session
+            .kilns
+            .iter()
+            .map(|k| k.to_string())
+            .collect::<Vec<_>>(),
+        vec!["kiln".to_string()]
     );
 
     server.shutdown().await;

@@ -2,10 +2,10 @@ use super::super::*;
 use super::scope::caller_kiln_scope;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    SessionIdRequest, SessionListRequest, SessionSearchRequest,
+    SessionIdRequest, SessionListReply, SessionListRequest, SessionSearchRequest,
 };
 
-use crucible_core::session::{SessionState, SessionSummary, SessionType};
+use crucible_core::session::{SessionDetail, SessionState, SessionSummary, SessionType};
 
 /// List sessions.
 ///
@@ -151,33 +151,10 @@ pub(crate) async fn handle_session_list(
         sessions.retain(|s| s.parent_session_id.is_none());
     }
 
-    let sessions_json: Vec<_> = sessions
-        .iter()
-        .map(|s| {
-            serde_json::json!({
-                "session_id": s.id,
-                "type": s.session_type.as_prefix(),
-                "kilns": s.kilns,
-                "workspace": s.workspace,
-                "state": format!("{}", s.state),
-                "started_at": s.started_at.to_rfc3339(),
-                "last_activity": s.last_activity.map(|t| t.to_rfc3339()),
-                "title": s.title,
-                "agent_model": s.agent_model,
-                "event_count": s.event_count,
-                "archived": s.archived,
-                "parent_session_id": s.parent_session_id,
-            })
-        })
-        .collect();
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "sessions": sessions_json,
-            "total": sessions_json.len(),
-        }),
-    )
+    let total = sessions.len();
+    let reply = serde_json::to_value(SessionListReply { sessions, total })
+        .expect("a session list reply serializes");
+    Response::success(req.id, reply)
 }
 
 /// Search persisted session transcripts.
@@ -309,26 +286,9 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
     };
     match session {
         Some(session) => {
-            let mut response = serde_json::json!({
-                "session_id": session.id,
-                "type": session.session_type.as_prefix(),
-                "kilns": session.kilns,
-                "workspace": session.workspace,
-                "state": format!("{}", session.state),
-                "started_at": session.started_at.to_rfc3339(),
-                "title": session.title,
-                "continued_from": session.continued_from,
-                "parent_session_id": session.parent_session_id,
-                "agent": session.agent,
-                "plugin_approvals": session.plugin_approvals,
-                "plugin_turn_limit": session.plugin_turn_limit,
-            });
-
-            if let Some(mode) = session.recording_mode {
-                response["recording_mode"] = serde_json::json!(format!("{}", mode));
-            }
-
-            Response::success(req.id, response)
+            let detail = SessionDetail::from(&session);
+            let reply = serde_json::to_value(detail).expect("a session detail reply serializes");
+            Response::success(req.id, reply)
         }
         None => session_not_found(req.id, session_id),
     }

@@ -69,10 +69,7 @@ async fn create_session(client: &DaemonClient) -> String {
         })
         .await
         .expect("session_create failed");
-    resp["session_id"]
-        .as_str()
-        .expect("session_id must be a string")
-        .to_string()
+    resp.id.to_string()
 }
 
 #[tokio::test]

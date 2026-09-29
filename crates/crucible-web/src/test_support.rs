@@ -745,14 +745,19 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             if session_type == "__no_session_id__" {
                 json!({})
             } else {
-                // The daemon's own projection (`server/session/create.rs:45`):
-                // no `started_at` and no `title`, unlike `session.get`.
+                // The daemon's own projection (`server/session/create.rs`):
+                // the full `SessionSummary` — every required field has a
+                // real value the moment the record exists, `event_count: 0`
+                // included.
                 json!({
                     "session_id": "test-session-001",
                     "type": "chat",
                     "kilns": ["test-kiln"],
                     "workspace": "/tmp/test-kiln",
                     "state": "active",
+                    "started_at": "2026-01-01T00:00:00Z",
+                    "event_count": 0,
+                    "archived": false,
                     "agent_model": "ollama:llama3.2",
                 })
             }
@@ -797,6 +802,8 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             "workspace": "/tmp/test-kiln",
             "state": "active",
             "started_at": "2026-01-01T00:00:00Z",
+            "event_count": 0,
+            "archived": false,
             "title": null,
             "continued_from": null,
             "parent_session_id": null,
@@ -806,7 +813,7 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
                 "model": "ollama:llama3.2",
                 "system_prompt": "",
                 "precognition_enabled": true,
-                "context_strategy": "recent"
+                "context_strategy": "Truncate"
             }
         }),
         // `server/session/lifecycle.rs:13` and `:33` answer the state change,

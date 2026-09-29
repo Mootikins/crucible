@@ -40,13 +40,15 @@ const SESSION: &str = "/api/session/test-session-001";
 
 #[tokio::test]
 async fn create_session_answers_the_declared_shape() {
-    let row: SessionRow = shape("POST", "/api/session", Some(json!({}))).await;
-    assert_eq!(row.session_id, "test-session-001");
+    let row: crucible_core::session::SessionSummary =
+        shape("POST", "/api/session", Some(json!({}))).await;
+    assert_eq!(row.id.as_str(), "test-session-001");
 }
 
 #[tokio::test]
 async fn list_sessions_answers_the_declared_shape() {
-    let list: SessionListResponse = shape("GET", "/api/session/list", None).await;
+    let list: crucible_core::protocol::requests::SessionListReply =
+        shape("GET", "/api/session/list", None).await;
     assert_eq!(list.total, 0);
 }
 
@@ -77,11 +79,15 @@ async fn an_unscoped_search_carries_the_daemon_s_note() {
 
 #[tokio::test]
 async fn get_session_answers_the_declared_shape() {
-    let row: SessionRow = shape("GET", SESSION, None).await;
+    let row: crucible_core::session::SessionDetail = shape("GET", SESSION, None).await;
     // `type` on the wire, and the model is nested rather than flat — the
-    // divergence `SessionRow` exists to absorb.
-    assert_eq!(row.session_type, "chat");
+    // divergence the one core `SessionDetail` type now carries directly.
+    assert_eq!(row.session_type, crucible_core::session::SessionType::Chat);
     assert_eq!(row.agent_model, None);
+    assert_eq!(
+        row.agent.as_ref().map(|a| a.model.as_str()),
+        Some("ollama:llama3.2")
+    );
 }
 
 #[tokio::test]
@@ -302,14 +308,17 @@ async fn list_providers_answers_the_declared_shape() {
 // The reply structs carry the daemon's object through unchanged
 // =========================================================================
 
-/// `session.get`'s own object survives `SessionRow` field for field.
+/// `session.get`'s own object survives `SessionDetail` field for field.
 ///
-/// The fixture is the daemon's projection (`server/session/list.rs:302`),
+/// The fixture is the daemon's projection (`server/session/list.rs`),
 /// including the nested `agent` record whose other fields no client reads.
 /// Naming the reply had to keep every one of them, so this compares the whole
-/// object rather than one field.
+/// object rather than one field. `title`, `continued_from`,
+/// `parent_session_id` and `last_activity` are absent here because the
+/// session has none of them — they are genuinely optional, not withheld by
+/// the method.
 #[test]
-fn a_session_row_writes_back_the_object_session_get_sent() {
+fn a_session_detail_writes_back_the_object_session_get_sent() {
     let sent = json!({
         "session_id": "test-session-001",
         "type": "chat",
@@ -317,9 +326,10 @@ fn a_session_row_writes_back_the_object_session_get_sent() {
         "workspace": "/tmp/test-kiln",
         "state": "active",
         "started_at": "2026-01-01T00:00:00Z",
-        "title": null,
-        "continued_from": null,
-        "parent_session_id": null,
+        "event_count": 0,
+        "archived": false,
+        "plugin_approvals": {},
+        "plugin_turn_limit": 25,
         "agent": {
             "agent_type": "internal",
             "provider": "ollama",
@@ -327,25 +337,25 @@ fn a_session_row_writes_back_the_object_session_get_sent() {
             "mode": "edit",
             "system_prompt": "",
             "precognition_enabled": true,
-            "context_strategy": "recent"
+            "context_strategy": "Truncate"
         }
     });
 
-    let row: SessionRow = serde_json::from_value(sent.clone()).expect("the row reads the object");
+    let row: crucible_core::session::SessionDetail =
+        serde_json::from_value(sent.clone()).expect("the row reads the object");
     assert_eq!(
         serde_json::to_value(row).expect("the row writes JSON"),
         sent
     );
 }
 
-/// `session.list`'s row survives the same struct, including the three fields
-/// `session.get` never sends.
+/// `session.list`'s object survives the same struct.
 ///
-/// A field absent from one shape must stay absent, not arrive as `null`: that
-/// is what the `Option<Option<T>>` fields buy, and it is what keeps one struct
-/// honest about two daemon objects.
+/// `SessionSummary` has no `agent` field at all — that lives on
+/// `SessionDetail`, which only `session.get` answers — so there is no
+/// per-method trick needed to keep it out of a listing reply.
 #[test]
-fn a_session_row_writes_back_the_object_session_list_sent() {
+fn a_session_summary_writes_back_the_object_session_list_sent() {
     let sent = json!({
         "session_id": "test-session-001",
         "type": "chat",
@@ -353,20 +363,16 @@ fn a_session_row_writes_back_the_object_session_list_sent() {
         "workspace": null,
         "state": "active",
         "started_at": "2026-01-01T00:00:00Z",
-        "last_activity": null,
         "title": "Merkle tree sync design",
         "agent_model": "ollama:llama3.2",
         "event_count": 12,
-        "archived": false,
-        "parent_session_id": null
+        "archived": false
     });
 
-    let row: SessionRow = serde_json::from_value(sent.clone()).expect("the row reads the object");
+    let row: crucible_core::session::SessionSummary =
+        serde_json::from_value(sent.clone()).expect("the row reads the object");
     let written = serde_json::to_value(row).expect("the row writes JSON");
     assert_eq!(written, sent);
-    // The three fields `session.get` omits are absent there and present here,
-    // and neither spelling turns into the other.
-    assert!(written.get("agent").is_none());
 }
 
 /// The two resume shapes read back as the variant that wrote them.

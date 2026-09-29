@@ -14,6 +14,7 @@ use crate::serde_helpers::default_true;
 /// a session. The configuration is inlined (not just a reference) so that
 /// sessions are self-contained and reproducible.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionAgent {
     /// Agent type: "acp" (external) or "internal" (built-in)
     pub agent_type: String,

@@ -88,10 +88,7 @@ async fn a_session_is_stored_under_the_injected_data_home_and_never_in_its_kiln(
             isolation: None,
         })
         .await?;
-    let session_id = created["session_id"]
-        .as_str()
-        .expect("session_id")
-        .to_string();
+    let session_id = created.id.to_string();
 
     let meta = server.sessions_root().join(&session_id).join("meta.json");
     assert!(
@@ -131,12 +128,7 @@ async fn sessions_from_different_kilns_share_one_storage_root() -> Result<()> {
                 isolation: None,
             })
             .await?;
-        ids.push(
-            created["session_id"]
-                .as_str()
-                .expect("session_id")
-                .to_string(),
-        );
+        ids.push(created.id.to_string());
     }
 
     for id in &ids {

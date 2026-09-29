@@ -361,7 +361,7 @@ async fn no_kiln_notices(daemon: &TestDaemon) -> Vec<serde_json::Value> {
             })
             .await
             .unwrap();
-        let session_id = created["session_id"].as_str().unwrap();
+        let session_id = created.id.as_str();
         client
             .session_configure_agent(session_id, &agent)
             .await

@@ -2181,6 +2181,14 @@ export interface components {
         ArchiveResponse: {
             archived: boolean;
         };
+        /**
+         * @description Unified backend type for all providers.
+         *
+         *     Backends are the underlying services that provide AI capabilities.
+         *     Some backends support only embeddings, some only chat, and some support both.
+         * @enum {string}
+         */
+        BackendType: "ollama" | "openai" | "anthropic" | "cohere" | "vertexai" | "fastembed" | "burn" | "githubcopilot" | "openrouter" | "zai" | "custom" | "mock";
         /** @description A note whose wikilinks point at the focused note. */
         BacklinkRow: {
             /**
@@ -2817,6 +2825,11 @@ export interface components {
              */
             rejected: string[];
         };
+        /**
+         * @description Strategy for managing conversation context when it exceeds the token budget.
+         * @enum {string}
+         */
+        ContextStrategy: "Truncate" | "Summarize";
         ContextStrategyResponse: {
             /**
              * @description The strategy's string spelling, or `null` where the session carries no
@@ -2873,6 +2886,35 @@ export interface components {
             provider?: string | null;
             session_type?: string;
             workspace?: string | null;
+        };
+        /** @description Delegation configuration for an ACP agent */
+        DelegationConfig: {
+            /** @description List of agent names this agent can delegate to */
+            allowed_targets?: string[] | null;
+            /** @description Whether delegation is enabled for this agent */
+            enabled?: boolean;
+            /**
+             * Format: int32
+             * @description Maximum number of concurrent delegations a session can spawn (default 3)
+             */
+            max_concurrent_delegations?: number;
+            /**
+             * Format: int32
+             * @description Maximum delegation depth: a delegation whose child would exceed this
+             *     depth is rejected. `max_depth = 0` disables delegation entirely;
+             *     `1` (the default) allows delegation but no nesting; `2` lets a
+             *     delegated child delegate once more, and so on. Depth is derived from
+             *     the child session's parent chain at every level.
+             */
+            max_depth?: number;
+            /** @description Maximum size of delegation result in bytes (default 51200) */
+            result_max_bytes?: number;
+            /**
+             * Format: int64
+             * @description Seconds a delegated child may run before it is cancelled (default 300).
+             *     Applies to blocking and background delegations alike.
+             */
+            timeout_secs?: number;
         };
         /** @enum {string} */
         DelegationStatus: "running" | "complete" | "failed";
@@ -3384,6 +3426,9 @@ export interface components {
              *     group, in the form the note stores. Null means "delete the property".
              */
             write_value: unknown;
+        };
+        HashMap: {
+            [key: string]: "allow" | "ask" | "deny";
         };
         /**
          * @description How a cards or kanban cover image fills its box.
@@ -4421,6 +4466,11 @@ export interface components {
         RecentsResponse: {
             recents: components["schemas"]["RecentFile"][];
         };
+        /**
+         * @description Recording granularity for session events.
+         * @enum {string}
+         */
+        RecordingMode: "coarse" | "granular";
         RecordRecentRequest: {
             /** @description Absolute path of the file that was opened. */
             abs_path: string;
@@ -4667,20 +4717,53 @@ export interface components {
             result: unknown;
         };
         /**
-         * @description The agent record `session.get` nests inside a session.
+         * @description Agent configuration bound to a session.
          *
-         *     Two fields are named because a client reads them: `model`, which
-         *     `session.list` sends flat as `agent_model`, and `mode`. Every other field
-         *     of the daemon's record rides in `rest`, so this projection narrows what the
-         *     document describes without dropping anything from the reply.
+         *     This captures everything needed to reconstruct an agent when resuming
+         *     a session. The configuration is inlined (not just a reference) so that
+         *     sessions are self-contained and reproducible.
          */
-        SessionAgentRow: {
-            /** @description The session mode id. Absent when the session is in the normal mode. */
+        SessionAgent: {
+            /** @description Source agent card name (for reference, not used for reconstruction) */
+            agent_card_name?: string | null;
+            /** @description Human-readable description of this agent (from ACP agent profile) */
+            agent_description?: string | null;
+            /** @description ACP agent name (e.g., "opencode", "claude") - only for ACP agents */
+            agent_name?: string | null;
+            /** @description Agent type: "acp" (external) or "internal" (built-in) */
+            agent_type: string;
+            /** @description Context window token budget. None = no limit. */
+            context_budget?: number | null;
+            /** @description Strategy for truncating context when over budget. */
+            context_strategy?: components["schemas"]["ContextStrategy"];
+            delegation_config?: null | components["schemas"]["DelegationConfig"];
+            /** @description Custom endpoint URL (for self-hosted models) */
+            endpoint?: string | null;
+            /** @description Environment variable overrides for ACP agents */
+            env_overrides?: {
+                [key: string]: string;
+            };
+            /** @description Maximum context window tokens */
+            max_context_tokens?: number | null;
+            /** @description MCP servers this agent can use */
+            mcp_servers?: string[];
+            /**
+             * @description Session mode id ("ask" | "plan" | "auto"). Persisted so a mode set
+             *     before the first message (no live handle yet) still applies when the
+             *     agent handle is created, and survives handle eviction. `None` = normal.
+             */
             mode?: string | null;
-            /** @description The model this session's agent runs. */
+            /** @description Model identifier (e.g., "llama3.2", "gpt-4o", "claude-3-5-sonnet") */
             model: string;
-        } & {
-            [key: string]: unknown;
+            /** @description Whether Precognition (auto-RAG) is enabled for this session (default: true) */
+            precognition_enabled?: boolean;
+            /** @description LLM provider identifier (typed backend) */
+            provider: components["schemas"]["BackendType"];
+            /** @description Provider key (e.g., "ollama", "openai", "anthropic") - only for internal agents */
+            provider_key?: string | null;
+            /** @description System prompt (full text, inlined from agent card if applicable) */
+            system_prompt: string;
+            tool_policy?: null | components["schemas"]["HashMap"];
         };
         /** @description One entry of a session's command catalog. */
         SessionCommand: components["schemas"]["CommandKind"] & {
@@ -4689,6 +4772,30 @@ export interface components {
             input_hint?: string | null;
             /** @description The name after the slash. */
             name: string;
+        };
+        /**
+         * @description The full session record, as `session.get` answers it: every
+         *     [`SessionSummary`] field, flattened onto the wire, plus the fields a
+         *     caller needs to start a session like this one.
+         */
+        SessionDetail: components["schemas"]["SessionSummary"] & {
+            agent?: null | components["schemas"]["SessionAgent"];
+            /** @description The session this one continues, when it continues one. */
+            continued_from?: string | null;
+            /**
+             * @description Per-plugin approval state. Every session record has this map, empty
+             *     or not.
+             */
+            plugin_approvals?: {
+                [key: string]: components["schemas"]["PluginApproval"];
+            };
+            /**
+             * Format: int32
+             * @description Turns a plugin-started session may run before the daemon stops it.
+             *     Every session record has a value, defaulted if never set.
+             */
+            plugin_turn_limit: number;
+            recording_mode?: null | components["schemas"]["RecordingMode"];
         };
         /**
          * @description One persisted session event, as `session.resume_from_storage` replays it.
@@ -4726,6 +4833,14 @@ export interface components {
             /** @description The session type prefix. */
             type: string;
         };
+        /**
+         * @description A session identifier that is safe to join onto a directory.
+         *
+         *     Guaranteed by construction to be a single, ordinary path component:
+         *     non-empty, no separators, no `.`/`..`, no NUL, no leading dot, and drawn
+         *     from `[A-Za-z0-9._-]`. See the module docs for why that matters.
+         */
+        SessionId: string;
         /** @description What `GET /api/session/{id}/knobs` answers. */
         SessionKnobsResponse: {
             /**
@@ -4744,9 +4859,14 @@ export interface components {
             /** @description The state the session is in now. */
             state: string;
         };
-        /** @description What `GET /api/session/list` answers. */
-        SessionListResponse: {
-            sessions: components["schemas"]["SessionRow"][];
+        /**
+         * @description Reply from `session.list`.
+         *
+         *     One `SessionSummary` per session, listing-shaped: see
+         *     `crate::session::SessionSummary` for which fields a listing fills.
+         */
+        SessionListReply: {
+            sessions: components["schemas"]["SessionSummary"][];
             /** @description How many sessions the reply carries. */
             total: number;
         };
@@ -4764,62 +4884,6 @@ export interface components {
              *     `id`, `kind` and `message`, as `notification_added` carries them.
              */
             notifications: Record<string, never>[];
-        };
-        /**
-         * @description One session, as every session route answers it.
-         *
-         *     Three daemon methods build three different objects for one entity.
-         *     `session.create` sends no `started_at` and no `title`. `session.get` nests
-         *     the model under `agent` and sends no `event_count`, `last_activity` or
-         *     `archived`. `session.list` sends the model flat and sends all three. This
-         *     declares the union once, so a client reads one type instead of reconciling
-         *     three. The divergence is a daemon bug (`server/session/list.rs:155` against
-         *     `:302`); this route does not fix it.
-         *
-         *     A field that one shape omits and another sends as `null` carries
-         *     `Option<Option<T>>`. The outer level is "the daemon wrote no key", the
-         *     inner one is "the key is null". Both spellings then reach the browser as
-         *     the daemon wrote them, which is what keeps this projection lossless.
-         */
-        SessionRow: {
-            agent?: null | components["schemas"]["SessionAgentRow"];
-            /**
-             * @description The resolved model. `session.get` does not send it; read `agent.model`
-             *     there.
-             */
-            agent_model?: string | null;
-            /** @description Whether the session is archived. Only `session.list` sends it. */
-            archived?: boolean | null;
-            /** @description The session this one continues. Only `session.get` sends it. */
-            continued_from?: string | null;
-            /**
-             * Format: int64
-             * @description How many events the transcript holds. Only `session.list` sends it.
-             */
-            event_count?: number | null;
-            /** @description Every kiln the session can query, by registry name. */
-            kilns: string[];
-            /** @description The last event's time. Only `session.list` sends it. */
-            last_activity?: string | null;
-            /** @description The parent of a delegated session. `session.create` does not send it. */
-            parent_session_id?: string | null;
-            /**
-             * @description How the session records its transcript. `session.get` sends it only
-             *     when the session has a recording mode.
-             */
-            recording_mode?: string | null;
-            /** @description The session id. The wire name is `session_id`, never `id`. */
-            session_id: string;
-            /** @description When the session started. `session.create` does not send it. */
-            started_at?: string | null;
-            /** @description The session state, such as `active` or `paused`. */
-            state: string;
-            /** @description The session title. `session.create` does not send it. */
-            title?: string | null;
-            /** @description The session type prefix, such as `chat`. */
-            type: string;
-            /** @description The session's working directory. `null` is a session with no workspace. */
-            workspace?: string | null;
         };
         /** @description The session scope that a kiln or workspace mutation echoes. */
         SessionScopeResponse: {
@@ -4861,6 +4925,11 @@ export interface components {
             total: number;
         };
         /**
+         * @description Current state of a session.
+         * @enum {string}
+         */
+        SessionState: "active" | "paused" | "compacting" | "ended";
+        /**
          * @description What `GET /api/session/{id}/status` answers.
          *
          *     Each item is the daemon's [`StatusDisplayItem`], the same type that the
@@ -4878,6 +4947,53 @@ export interface components {
              */
             status: components["schemas"]["StatusDisplayItem"][];
         };
+        /**
+         * @description Summary of a session for listing. The one core reply shape for
+         *     `session.list` and `session.create`.
+         *
+         *     A lighter-weight version of Session without full event history.
+         */
+        SessionSummary: {
+            /** @description Agent model name (for display), when the session has an agent. */
+            agent_model?: string | null;
+            /** @description Whether this session is archived. */
+            archived: boolean;
+            /** @description Number of events in the session. */
+            event_count: number;
+            /** @description Kilns this session can query, by registry name. See [`Session::kilns`]. */
+            kilns?: string[];
+            /**
+             * Format: date-time
+             * @description Last activity timestamp, when the session has run at least once.
+             *     Absent for legacy sessions that predate the field.
+             */
+            last_activity?: string | null;
+            /**
+             * @description Parent session id for delegated child sessions, when this session is
+             *     one. `#[serde(default)]` keeps old meta files valid.
+             */
+            parent_session_id?: string | null;
+            /** @description Session ID. The wire name is `session_id`, never `id`. */
+            session_id: components["schemas"]["SessionId"];
+            /**
+             * Format: date-time
+             * @description When the session started. Every session has one.
+             */
+            started_at: string;
+            /** @description Current state */
+            state: components["schemas"]["SessionState"];
+            /** @description The session title, when one has been set. */
+            title?: string | null;
+            /** @description Session type, sent as its lowercase prefix (`"chat"`, `"agent"`, …). */
+            type: components["schemas"]["SessionType"];
+            /** @description Workspace, when the session has one. See [`Session::workspace`]. */
+            workspace?: string | null;
+        };
+        /**
+         * @description Type of session, determines logging format and behavior.
+         * @enum {string}
+         */
+        SessionType: "chat" | "agent" | "workflow" | "plugin";
         SetAgentOptionRequest: {
             option_id: string;
             value: string;
@@ -5370,6 +5486,7 @@ export type SchemaAgentOptionsResponse = components['schemas']['AgentOptionsResp
 export type SchemaAgentProfileEntry = components['schemas']['AgentProfileEntry'];
 export type SchemaAnchoredEdit = components['schemas']['AnchoredEdit'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
+export type SchemaBackendType = components['schemas']['BackendType'];
 export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
 export type SchemaBacklinksResponse = components['schemas']['BacklinksResponse'];
 export type SchemaBaseValue = components['schemas']['BaseValue'];
@@ -5400,9 +5517,11 @@ export type SchemaCommentSideRow = components['schemas']['CommentSideRow'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
+export type SchemaContextStrategy = components['schemas']['ContextStrategy'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateEntryParams = components['schemas']['CreateEntryParams'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
+export type SchemaDelegationConfig = components['schemas']['DelegationConfig'];
 export type SchemaDelegationStatus = components['schemas']['DelegationStatus'];
 export type SchemaDeleteCommentBody = components['schemas']['DeleteCommentBody'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
@@ -5440,6 +5559,7 @@ export type SchemaGrepHit = components['schemas']['GrepHit'];
 export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
 export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
 export type SchemaGroup = components['schemas']['Group'];
+export type SchemaHashMap = components['schemas']['HashMap'];
 export type SchemaImageFit = components['schemas']['ImageFit'];
 export type SchemaIndeterminateProgress = components['schemas']['IndeterminateProgress'];
 export type SchemaInstallRequest = components['schemas']['InstallRequest'];
@@ -5516,6 +5636,7 @@ export type SchemaPutNoteRequest = components['schemas']['PutNoteRequest'];
 export type SchemaQueryResult = components['schemas']['QueryResult'];
 export type SchemaRecentFile = components['schemas']['RecentFile'];
 export type SchemaRecentsResponse = components['schemas']['RecentsResponse'];
+export type SchemaRecordingMode = components['schemas']['RecordingMode'];
 export type SchemaRecordRecentRequest = components['schemas']['RecordRecentRequest'];
 export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
 export type SchemaRejectProposalBody = components['schemas']['RejectProposalBody'];
@@ -5535,20 +5656,24 @@ export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearch
 export type SchemaSemanticSearchRow = components['schemas']['SemanticSearchRow'];
 export type SchemaSendMessageRequest = components['schemas']['SendMessageRequest'];
 export type SchemaSendOutcome = components['schemas']['SendOutcome'];
-export type SchemaSessionAgentRow = components['schemas']['SessionAgentRow'];
+export type SchemaSessionAgent = components['schemas']['SessionAgent'];
 export type SchemaSessionCommand = components['schemas']['SessionCommand'];
+export type SchemaSessionDetail = components['schemas']['SessionDetail'];
 export type SchemaSessionHistoryEvent = components['schemas']['SessionHistoryEvent'];
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
+export type SchemaSessionId = components['schemas']['SessionId'];
 export type SchemaSessionKnobsResponse = components['schemas']['SessionKnobsResponse'];
 export type SchemaSessionLifecycleResponse = components['schemas']['SessionLifecycleResponse'];
-export type SchemaSessionListResponse = components['schemas']['SessionListResponse'];
+export type SchemaSessionListReply = components['schemas']['SessionListReply'];
 export type SchemaSessionModesResponse = components['schemas']['SessionModesResponse'];
 export type SchemaSessionNotificationsResponse = components['schemas']['SessionNotificationsResponse'];
-export type SchemaSessionRow = components['schemas']['SessionRow'];
 export type SchemaSessionScopeResponse = components['schemas']['SessionScopeResponse'];
 export type SchemaSessionSearchMatch = components['schemas']['SessionSearchMatch'];
 export type SchemaSessionSearchResponse = components['schemas']['SessionSearchResponse'];
+export type SchemaSessionState = components['schemas']['SessionState'];
 export type SchemaSessionStatusResponse = components['schemas']['SessionStatusResponse'];
+export type SchemaSessionSummary = components['schemas']['SessionSummary'];
+export type SchemaSessionType = components['schemas']['SessionType'];
 export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionRequest'];
 export type SchemaSetContextStrategyRequest = components['schemas']['SetContextStrategyRequest'];
 export type SchemaSetModeRequest = components['schemas']['SetModeRequest'];
@@ -8377,7 +8502,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionRow"];
+                    "application/json": components["schemas"]["SessionSummary"];
                 };
             };
             /** @description The request named an endpoint, an agent type or a card the server refuses */
@@ -8413,7 +8538,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionRow"];
+                    "application/json": components["schemas"]["SessionDetail"];
                 };
             };
             /** @description The daemon could not read the session */
@@ -9580,7 +9705,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionListResponse"];
+                    "application/json": components["schemas"]["SessionListReply"];
                 };
             };
             /** @description The `kiln` query carried a path rather than a registry name */

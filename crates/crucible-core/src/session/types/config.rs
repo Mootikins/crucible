@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 /// Strategy for managing conversation context when it exceeds the token budget.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ContextStrategy {
     /// Drop oldest non-system messages until under budget (default)
     #[default]

@@ -74,7 +74,7 @@ async fn session_count(client: &DaemonClient) -> usize {
         .session_list(None, None, None, None, Some(true))
         .await
         .expect("session.list failed");
-    result["sessions"].as_array().map(|a| a.len()).unwrap_or(0)
+    result.sessions.len()
 }
 
 /// Write an agent card into the kiln's `.crucible/agents/`.
@@ -113,20 +113,20 @@ async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
 
     assert_eq!(created["agent_model"].as_str(), Some("llama3.2"));
 
-    let session_id = created["session_id"].as_str().unwrap();
+    let session_id = created["session_id"].as_str().expect("session_id");
     let session = client.session_get(session_id).await.unwrap();
-    let agent = &session["agent"];
-    assert_eq!(agent["agent_type"], "internal");
-    assert_eq!(agent["agent_card_name"], "researcher");
+    let agent = session.agent.as_ref().expect("agent must be configured");
+    assert_eq!(agent.agent_type, "internal");
+    assert_eq!(agent.agent_card_name.as_deref(), Some("researcher"));
     // A card is an internal agent, never an ACP profile: `agent_name` must stay
     // clear, because a set `agent_name` is what forces `TrustLevel::Cloud` at
     // runtime (`trust_resolution.rs`).
     assert!(
-        agent["agent_name"].is_null(),
-        "a card must not set agent_name, got: {}",
-        agent["agent_name"]
+        agent.agent_name.is_none(),
+        "a card must not set agent_name, got: {:?}",
+        agent.agent_name
     );
-    assert_eq!(agent["system_prompt"], "You are a researcher.");
+    assert_eq!(agent.system_prompt, "You are a researcher.");
 
     server.shutdown().await;
 }
@@ -178,9 +178,15 @@ async fn agent_name_without_agent_type_still_resolves_a_card() {
         .await
         .expect("create with legacy agent_name failed");
 
-    let session_id = created["session_id"].as_str().unwrap();
+    let session_id = created["session_id"].as_str().expect("session_id");
     let session = client.session_get(session_id).await.unwrap();
-    assert_eq!(session["agent"]["agent_card_name"], "researcher");
+    assert_eq!(
+        session
+            .agent
+            .as_ref()
+            .and_then(|a| a.agent_card_name.as_deref()),
+        Some("researcher")
+    );
 
     server.shutdown().await;
 }
@@ -286,31 +292,37 @@ async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
         .await
         .expect("create with an ACP profile failed");
 
-    let session_id = created["session_id"].as_str().unwrap();
+    let session_id = created.id.as_str();
     let session = client.session_get(session_id).await.unwrap();
-    let agent = &session["agent"];
-    assert_eq!(agent["agent_type"], "acp");
+    let agent = session.agent.as_ref().expect("agent must be configured");
+    assert_eq!(agent.agent_type, "acp");
     // `acp_launch::build_client_config` reads exactly this field to pick the
     // command; without it the launch falls back to exec'ing the literal `acp`.
-    assert_eq!(agent["agent_name"], "claude");
-    assert_eq!(agent["env_overrides"]["OPENCODE_MODEL"], "chosen-model");
+    assert_eq!(agent.agent_name.as_deref(), Some("claude"));
+    assert_eq!(
+        agent
+            .env_overrides
+            .get("OPENCODE_MODEL")
+            .map(String::as_str),
+        Some("chosen-model")
+    );
     assert!(
-        agent["agent_card_name"].is_null(),
-        "the same-named card must not be consulted, got: {}",
-        agent["agent_card_name"]
+        agent.agent_card_name.is_none(),
+        "the same-named card must not be consulted, got: {:?}",
+        agent.agent_card_name
     );
     // `from_profile` leaves the prompt empty and `apply_session_defaults` then
     // fills in the daemon's default, so the assertion is about provenance, not
     // emptiness: whatever it is, it is not the card's.
-    let prompt = agent["system_prompt"].as_str().unwrap_or_default();
+    let prompt = agent.system_prompt.as_str();
     assert!(
         !prompt.contains("I am the card"),
         "the card's prompt must not leak onto an ACP agent, got: {prompt}"
     );
 
     assert_eq!(
-        client.session_get(session_id).await.unwrap()["state"],
-        "active"
+        client.session_get(session_id).await.unwrap().state,
+        crucible_core::session::SessionState::Active
     );
 
     server.shutdown().await;
@@ -329,7 +341,7 @@ async fn configure_agent_keeps_an_acp_profile_name() {
         .session_create(base_params_in("internal", card_kiln_name()))
         .await
         .expect("plain create failed");
-    let session_id = created["session_id"].as_str().unwrap().to_string();
+    let session_id = created.id.to_string();
 
     // The minimal ACP agent: everything else on `SessionAgent` has a serde
     // default, and spelling only the load-bearing fields keeps the test
@@ -352,13 +364,13 @@ async fn configure_agent_keeps_an_acp_profile_name() {
         .expect("configure_agent with an ACP profile failed");
 
     let session = client.session_get(&session_id).await.unwrap();
-    let agent = &session["agent"];
-    assert_eq!(agent["agent_type"], "acp");
-    assert_eq!(agent["agent_name"], "claude");
+    let agent = session.agent.as_ref().expect("agent must be configured");
+    assert_eq!(agent.agent_type, "acp");
+    assert_eq!(agent.agent_name.as_deref(), Some("claude"));
     assert!(
-        agent["agent_card_name"].is_null(),
-        "configure_agent must not reinterpret an ACP name as a card, got: {}",
-        agent["agent_card_name"]
+        agent.agent_card_name.is_none(),
+        "configure_agent must not reinterpret an ACP name as a card, got: {:?}",
+        agent.agent_card_name
     );
 
     server.shutdown().await;
@@ -377,27 +389,27 @@ async fn internal_spec_configures_agent_with_config_defaults() {
         .await
         .expect("create with internal spec failed");
 
-    let model = created["agent_model"]
-        .as_str()
-        .expect("create response must carry agent_model");
+    let model = created
+        .agent_model
+        .as_deref()
+        .expect("create response must carry agent_model")
+        .to_string();
     assert!(!model.is_empty(), "resolved model must be non-empty");
 
     // session.get reflects the daemon-configured agent.
-    let session_id = created["session_id"].as_str().unwrap();
+    let session_id = created.id.as_str();
     let session = client.session_get(session_id).await.unwrap();
-    let agent = &session["agent"];
-    assert!(
-        agent.is_object(),
-        "agent should be configured as part of create, got: {agent}"
-    );
-    assert_eq!(agent["agent_type"], "internal");
+    let agent = session
+        .agent
+        .as_ref()
+        .expect("agent should be configured as part of create");
+    assert_eq!(agent.agent_type, "internal");
     assert_eq!(
-        agent["model"].as_str(),
-        Some(model),
+        agent.model, model,
         "session.get model must match the create response"
     );
     assert!(
-        agent["provider_key"].is_string(),
+        agent.provider_key.is_some(),
         "internal default must set a provider_key"
     );
 
@@ -420,14 +432,17 @@ async fn internal_spec_applies_provider_and_model_overrides() {
         .await
         .expect("create with overrides failed");
 
-    assert_eq!(created["agent_model"].as_str(), Some("claude-sonnet-5"));
+    assert_eq!(created.agent_model.as_deref(), Some("claude-sonnet-5"));
 
-    let session_id = created["session_id"].as_str().unwrap();
+    let session_id = created.id.as_str();
     let session = client.session_get(session_id).await.unwrap();
-    let agent = &session["agent"];
-    assert_eq!(agent["provider"], "anthropic");
-    assert_eq!(agent["model"], "claude-sonnet-5");
-    assert_eq!(agent["endpoint"], "https://api.anthropic.com");
+    let agent = session.agent.as_ref().expect("agent must be configured");
+    assert_eq!(
+        agent.provider,
+        crucible_core::config::BackendType::Anthropic
+    );
+    assert_eq!(agent.model, "claude-sonnet-5");
+    assert_eq!(agent.endpoint.as_deref(), Some("https://api.anthropic.com"));
 
     server.shutdown().await;
 }
@@ -474,17 +489,17 @@ async fn create_without_spec_leaves_agent_unconfigured() {
         .await
         .expect("plain create failed");
     assert!(
-        created["agent_model"].is_null(),
-        "no spec ⇒ no resolved model in the response, got: {}",
-        created["agent_model"]
+        created.agent_model.is_none(),
+        "no spec ⇒ no resolved model in the response, got: {:?}",
+        created.agent_model
     );
 
-    let session_id = created["session_id"].as_str().unwrap();
+    let session_id = created.id.as_str();
     let session = client.session_get(session_id).await.unwrap();
     assert!(
-        session["agent"].is_null(),
-        "no spec ⇒ agent must remain unconfigured, got: {}",
-        session["agent"]
+        session.agent.is_none(),
+        "no spec ⇒ agent must remain unconfigured, got: {:?}",
+        session.agent
     );
 
     server.shutdown().await;
@@ -552,7 +567,7 @@ async fn configure_agent_refuses_an_internal_endpoint() {
         .session_create(base_params("internal"))
         .await
         .expect("plain create failed");
-    let session_id = created["session_id"].as_str().unwrap().to_string();
+    let session_id = created.id.to_string();
 
     for endpoint in INTERNAL_ENDPOINTS {
         let err = client
@@ -579,9 +594,9 @@ async fn configure_agent_refuses_an_internal_endpoint() {
     }
     let session = client.session_get(&session_id).await.unwrap();
     assert!(
-        session["agent"].is_null(),
-        "a refused configure must not store the agent, got: {}",
-        session["agent"]
+        session.agent.is_none(),
+        "a refused configure must not store the agent, got: {:?}",
+        session.agent
     );
 
     server.shutdown().await;
@@ -606,9 +621,12 @@ async fn the_default_ollama_endpoint_is_accepted_but_an_unconfigured_loopback_po
         .session_create_with_agent(base_params("internal"), spec)
         .await
         .expect("the default Ollama endpoint must be accepted");
-    let session_id = created["session_id"].as_str().unwrap();
+    let session_id = created.id.as_str();
     let session = client.session_get(session_id).await.unwrap();
-    assert_eq!(session["agent"]["endpoint"], "http://localhost:11434");
+    assert_eq!(
+        session.agent.as_ref().and_then(|a| a.endpoint.as_deref()),
+        Some("http://localhost:11434")
+    );
 
     let spec = SessionAgentSpec {
         provider: Some("openai".to_string()),

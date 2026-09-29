@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 /// Recording granularity for session events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RecordingMode {
     /// Coarse-grained recording (default): only major events
@@ -36,6 +37,7 @@ impl std::fmt::Display for RecordingMode {
 
 /// Type of session, determines logging format and behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionType {
     /// User/assistant conversation (interactive chat)
@@ -84,6 +86,7 @@ impl FromStr for SessionType {
 
 /// Current state of a session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
     /// Session is actively processing

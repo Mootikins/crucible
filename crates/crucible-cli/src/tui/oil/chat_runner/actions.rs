@@ -1296,14 +1296,9 @@ async fn search_sessions(
     query: &str,
 ) -> anyhow::Result<String> {
     let session = client.session_get(session_id).await?;
-    let kilns: Vec<crucible_core::config::KilnName> = session["kilns"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|kiln| kiln.as_str())
-        .filter_map(|kiln| crucible_core::config::KilnName::parse(kiln).ok())
-        .collect();
-    let found = client.session_search(query, &kilns, Some(10)).await?;
+    let found = client
+        .session_search(query, &session.kilns, Some(10))
+        .await?;
     Ok(found.to_text(query))
 }
 
@@ -1386,14 +1381,11 @@ async fn fetch_resumable_sessions(
     };
     if let Some(current) = current {
         let session = client.session_get(current).await?;
-        request.kilns = session
-            .get("kilns")
-            .and_then(|kilns| serde_json::from_value(kilns.clone()).ok())
-            .unwrap_or_default();
+        request.kilns = session.kilns.iter().map(|k| k.to_string()).collect();
         request.workspace = session
-            .get("workspace")
-            .and_then(|w| w.as_str())
-            .map(str::to_string);
+            .workspace
+            .as_ref()
+            .map(|w| w.to_string_lossy().to_string());
     }
     let listed: serde_json::Value = client.typed_call(RpcMethod::SessionList, request).await?;
     Ok(resumable_sessions(

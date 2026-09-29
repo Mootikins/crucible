@@ -16,16 +16,10 @@ pub(super) async fn show(config: CliAppConfig, id: String, format: String) -> Re
                     println!("{json}");
                 }
                 _ => {
-                    println!(
-                        "Session ID: {}",
-                        result["session_id"].as_str().unwrap_or("?")
-                    );
-                    println!("Type: {}", result["type"].as_str().unwrap_or("?"));
-                    println!("State: {}", result["state"].as_str().unwrap_or("?"));
-                    let kilns: Vec<&str> = result["kilns"]
-                        .as_array()
-                        .map(|a| a.iter().filter_map(|k| k.as_str()).collect())
-                        .unwrap_or_default();
+                    println!("Session ID: {}", result.id.as_str());
+                    println!("Type: {}", result.session_type.as_prefix());
+                    println!("State: {}", result.state);
+                    let kilns: Vec<&str> = result.kilns.iter().map(|k| k.as_str()).collect();
                     println!(
                         "Kilns: {}",
                         if kilns.is_empty() {
@@ -34,17 +28,13 @@ pub(super) async fn show(config: CliAppConfig, id: String, format: String) -> Re
                             kilns.join(", ")
                         }
                     );
-                    let started = result["started_at"]
-                        .as_str()
-                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                        .map(|dt| {
-                            dt.with_timezone(&chrono::Local)
-                                .format("%Y-%m-%d %H:%M:%S")
-                                .to_string()
-                        })
-                        .unwrap_or_else(|| "?".to_string());
+                    let started = result
+                        .started_at
+                        .with_timezone(&chrono::Local)
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string();
                     println!("Started: {}", started);
-                    if let Some(title) = result["title"].as_str() {
+                    if let Some(title) = result.title.as_deref() {
                         println!("Title: {}", title);
                     }
                 }

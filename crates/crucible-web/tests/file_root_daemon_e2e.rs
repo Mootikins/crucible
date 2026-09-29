@@ -59,13 +59,12 @@ async fn session_workspace(daemon: &DaemonClient, workspace: Option<&Path>) -> P
         })
         .await
         .expect("session.create");
-    let id = created["session_id"].as_str().expect("a session id");
+    let id = created.id.as_str();
     let session = daemon.session_get(id).await.expect("session.get");
-    PathBuf::from(
-        session["workspace"]
-            .as_str()
-            .unwrap_or_else(|| panic!("the session has a workspace: {session}")),
-    )
+    session
+        .workspace
+        .clone()
+        .unwrap_or_else(|| panic!("the session has a workspace: {session:?}"))
 }
 
 async fn get(app: &Router, uri: &str) -> (StatusCode, Value) {

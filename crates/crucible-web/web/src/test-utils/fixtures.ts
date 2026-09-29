@@ -21,6 +21,7 @@ export const mockSession = {
   agent_model: 'ollama:neural-chat',
   started_at: '2026-03-10T10:00:00Z',
   event_count: 42,
+  archived: false,
 } satisfies Session;
 
 /**

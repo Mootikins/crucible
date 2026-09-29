@@ -13,6 +13,7 @@ use uuid::Uuid;
 /// Serialized forms accepted (matching the documented card format):
 /// `true`/`"allow"` → Allow, `"ask"` → Ask, `false`/`"deny"` → Deny.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ToolPolicy {
     /// Auto-approve: the tool never prompts for this agent.

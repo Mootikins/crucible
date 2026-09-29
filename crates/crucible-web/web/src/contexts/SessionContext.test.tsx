@@ -6,7 +6,7 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetSessionsForTests } from '@/lib/query/sessions';
 import { statusBarActions } from '@/stores/statusBarStore';
 import { getBus, resetBusForTests } from '@/lib/bus';
-import type { Session } from '@/lib/types';
+import type { Session, SessionDetail } from '@/lib/types';
 
 // No `vi.mock('@/lib/api')`. The context reads the daemon through
 // `lib/query/sessions.ts` now, so each case answers ROUTES: that is what
@@ -17,7 +17,7 @@ const LIST = 'GET /api/session/list';
 const PROVIDERS = 'GET /api/providers';
 
 /** One session as the daemon sends it, which `lib/api.ts` maps. */
-function wire(over: Partial<Session> & { id: string }): Record<string, unknown> {
+function wire(over: Partial<SessionDetail> & { id: string }): Record<string, unknown> {
   return {
     session_id: over.id,
     type: over.type ?? 'chat',

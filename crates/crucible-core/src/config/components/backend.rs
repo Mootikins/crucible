@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// Backends are the underlying services that provide AI capabilities.
 /// Some backends support only embeddings, some only chat, and some support both.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum BackendType {
     // === Multi-capability backends (embeddings + chat) ===

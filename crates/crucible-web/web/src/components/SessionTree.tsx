@@ -45,7 +45,11 @@ export const SessionRow: Component<{
           props.onSelect();
         }
       }}
-      title={props.session.kilns.length ? `kilns · ${props.session.kilns.join(', ')}` : undefined}
+      title={
+        props.session.kilns?.length
+          ? `kilns · ${props.session.kilns.join(', ')}`
+          : undefined
+      }
       /*
        * ONE line, ONE height, indented under its project.
        *

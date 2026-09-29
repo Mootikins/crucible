@@ -184,10 +184,7 @@ fn session_load_replays_the_recorded_transcript() {
             })
             .await
             .expect("session.create");
-        let id = created["session_id"]
-            .as_str()
-            .expect("session_id")
-            .to_string();
+        let id = created.id.to_string();
         client.session_pause(&id).await.expect("session.pause");
         id
     });

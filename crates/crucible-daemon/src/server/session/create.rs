@@ -6,7 +6,7 @@ use crucible_core::protocol::requests::SessionCreateRequest;
 use super::spawn_setup_task;
 use crate::kiln_registry::refuse_forbidden_scope;
 use crucible_core::config::{KilnName, McpConfig};
-use crucible_core::session::{Session, SessionType};
+use crucible_core::session::{Session, SessionSummary, SessionType};
 
 /// Why a `session.create` failed, split by who can fix it.
 ///
@@ -41,20 +41,15 @@ pub(crate) async fn handle_session_create(req: Request, ctx: &RpcContext) -> Res
     };
 
     match ctx.create_session_resolved(&params).await {
-        Ok(session) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session.id,
-                "type": session.session_type.as_prefix(),
-                "kilns": session.kilns,
-                "workspace": session.workspace,
-                "state": format!("{}", session.state),
-                // Present only when the daemon configured the agent as part
-                // of create; lets callers render the model without a
-                // separate session.get. Null/absent otherwise.
-                "agent_model": session.agent.as_ref().map(|a| a.model.clone()),
-            }),
-        ),
+        Ok(session) => {
+            // The full summary: the record exists by the time this handler
+            // answers, so every required field — `started_at`, `event_count`
+            // (0, nothing has run yet), `archived` (false) — has a real
+            // value, not a placeholder.
+            let summary = SessionSummary::from(&session);
+            let reply = serde_json::to_value(summary).expect("a session summary serializes");
+            Response::success(req.id, reply)
+        }
         Err(SessionCreateError::Invalid(message)) => {
             Response::error(req.id, INVALID_PARAMS, message)
         }

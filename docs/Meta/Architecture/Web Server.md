@@ -239,11 +239,17 @@ Paths are relative to the repository root. Line counts are as recorded at
 - **`ReplayPolicy`** (`crates/crucible-web/src/services/forwarding.rs`) —
   `Safe` or `Once`, declared per RPC forwarder; consumed by
   `ReconnectingDaemon::forward_rpc`.
-- **`SessionRow`**/`ResumeSessionResponse`/`daemon_shape`
-  (`crates/crucible-web/src/routes/session/mod.rs`) — the session reply
-  decoder shared by every session handler; `ResumeSessionResponse` is a
+- **`crucible_core::session::{SessionSummary, SessionDetail}`**/
+  `ResumeSessionResponse`/`daemon_shape`
+  (`crates/crucible-web/src/routes/session/mod.rs`) — `session.create` and
+  `session.list` answer the full core `SessionSummary` (a `session.list`
+  reply is `crucible_core::protocol::requests::SessionListReply`, a
+  `Vec<SessionSummary>` and a count); `session.get` answers
+  `SessionDetail`, a `SessionSummary` flattened onto the wire plus the
+  full-record fields. Every route returns the core type unchanged rather
+  than decoding into a web-local row. `ResumeSessionResponse` is a
   `#[serde(untagged)]` enum whose variant order is load-bearing (`Restored`
-  must precede `Live`, tested by `shape_tests.rs`). `daemon_shape` is also
+  must precede `Live`, tested by `shape_tests.rs`). `daemon_shape` is still
   the decoder `crates/crucible-web/src/routes/diff.rs`'s `reply_row` calls
   for every diffset/comment reply. `ModeRow.writes: WriteModeRow`
   (`Apply`/`Propose`, mirroring `crucible_core::types::WriteMode` in

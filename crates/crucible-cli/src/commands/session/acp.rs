@@ -206,7 +206,7 @@ pub(super) mod rpc {
             )
             .await?;
 
-        let mut sessions = result["sessions"].as_array().cloned().unwrap_or_default();
+        let mut sessions = result.sessions;
 
         if sessions.is_empty() {
             println!("No daemon sessions found.");
@@ -231,20 +231,16 @@ pub(super) mod rpc {
                 println!("{}", "-".repeat(80));
 
                 for session in &sessions {
-                    let started = session["started_at"]
-                        .as_str()
-                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                        .map(|dt| {
-                            dt.with_timezone(&chrono::Local)
-                                .format("%Y-%m-%d %H:%M")
-                                .to_string()
-                        })
-                        .unwrap_or_else(|| "?".to_string());
+                    let started = session
+                        .started_at
+                        .with_timezone(&chrono::Local)
+                        .format("%Y-%m-%d %H:%M")
+                        .to_string();
                     println!(
                         "{:<40} {:<10} {:<10} {}",
-                        session["session_id"].as_str().unwrap_or("?"),
-                        session["type"].as_str().unwrap_or("?"),
-                        session["state"].as_str().unwrap_or("?"),
+                        session.id.as_str(),
+                        session.session_type.as_prefix(),
+                        session.state,
                         started,
                     );
                 }
@@ -314,7 +310,7 @@ pub(super) mod rpc {
             }
         };
 
-        let session_id = result["session_id"].as_str().unwrap_or("unknown");
+        let session_id = result.id.as_str();
 
         if let Some(t) = params.title {
             client.session_set_title(session_id, t).await?;
@@ -325,14 +321,7 @@ pub(super) mod rpc {
         // Echoed from the daemon's answer, not re-derived from local config:
         // the daemon owns the kiln-set fallback, so a locally guessed kiln
         // would be wrong for every kiln-less create.
-        let kilns: Vec<String> = result["kilns"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|k| k.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let kilns: Vec<String> = result.kilns.iter().map(|k| k.to_string()).collect();
 
         if is_quiet {
             println!("{}", session_id);

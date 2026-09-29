@@ -185,10 +185,7 @@ async fn session(
         })
         .await
         .expect("create the session");
-    let id = created["session_id"]
-        .as_str()
-        .expect("session.create answers a session_id")
-        .to_string();
+    let id = created.id.to_string();
     client
         .session_configure_agent(&id, agent)
         .await

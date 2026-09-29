@@ -6,7 +6,7 @@ import type { components } from './api-schema';
  * `api-schema.d.ts` is produced from `crates/crucible-web/openapi.json`, which
  * `utoipa` writes from the axum router. A shape declared twice drifts; a shape
  * aliased once cannot. The names stay the ones the app already imports, so a
- * component reads `Session` and gets `SessionRow`.
+ * component reads `Session` and gets `SessionSummary`.
  *
  * A type that describes CLIENT state keeps its hand-written form, and says so
  * on its declaration. Those shapes never cross the wire, so the daemon has no
@@ -72,10 +72,10 @@ export interface Message {
 // Session Types (matching Rust SessionSummary)
 // =============================================================================
 
-export type SessionState = Schemas['SessionRow']['state'];
+export type SessionState = Schemas['SessionSummary']['state'];
 /** A session type prefix, such as `chat`. Open on the wire: the daemon names
  * the types and a client that closed the set would drop a new one. */
-export type SessionType = Schemas['SessionRow']['type'];
+export type SessionType = Schemas['SessionSummary']['type'];
 
 /**
  * One session, as every session route answers with it.
@@ -89,7 +89,16 @@ export type SessionType = Schemas['SessionRow']['type'];
  * through `sessionWorkspace()`, which also folds the empty string a
  * pre-nullable payload carries.
  */
-export type Session = Schemas['SessionRow'];
+export type Session = Schemas['SessionSummary'];
+
+/**
+ * What `GET /api/session/{id}` answers: every `Session` field, plus the
+ * fields only a full record carries — `agent` (nesting the persisted mode,
+ * read through `session.agent?.mode`), `continued_from` and
+ * `plugin_approvals`. `session.list` and `session.create` answer the plain
+ * `Session`; only the single-session read answers this.
+ */
+export type SessionDetail = Schemas['SessionDetail'];
 
 /**
  * The body of `POST /api/session`, with the two fields the document cannot

@@ -106,26 +106,6 @@ fn help_line(command: &SessionCommand) -> String {
     }
 }
 
-/// The kiln set a `session.get` payload reports, as `session.search` wants it.
-///
-/// The **whole** set, because search scope is kiln-set overlap: a session on
-/// `[A, B]` that searched with only `A` found nothing in a session on `[B]`
-/// despite the two sharing a corpus. An empty set is passed through as empty —
-/// a kiln-less session overlaps nothing, and the daemon answers accordingly.
-fn session_scope_kilns(session: &serde_json::Value) -> Vec<crucible_core::config::KilnName> {
-    session
-        .get("kilns")
-        .and_then(|v| v.as_array())
-        .map(|kilns| {
-            kilns
-                .iter()
-                .filter_map(|v| v.as_str())
-                .filter_map(|v| crucible_core::config::KilnName::parse(v).ok())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// Run one built-in command in a session.
 ///
 /// The composer sends only built-in commands here. Any other command is a
@@ -175,10 +155,16 @@ pub(super) async fn execute_command(
             if args.is_empty() {
                 return Ok(CommandResponse::error("Usage: /search <query>"));
             }
+            // Search scope is kiln-set overlap, so `/search` has to hand the
+            // daemon every kiln the session reaches: the **whole** set. A
+            // session on `[A, B]` searched with only `A` found nothing in a
+            // session on `[B]` despite the two sharing a corpus. An empty set
+            // is passed through as empty — a kiln-less session overlaps
+            // nothing, and the daemon answers accordingly.
             let session = state.daemon.session_get(&id).await.daemon_err()?;
             let found = state
                 .daemon
-                .session_search(args, &session_scope_kilns(&session), Some(10))
+                .session_search(args, &session.kilns, Some(10))
                 .await
                 .daemon_err()?;
             Ok(CommandResponse::success(found.to_text(args)))
@@ -296,42 +282,14 @@ mod tests {
         assert!(lines[2].contains("Test Session two"), "{}", reply.result);
     }
 
-    /// Search scope is kiln-set overlap, so `/search` has to hand the daemon
-    /// every kiln the session reaches. Sending only the first tested a
-    /// fraction of the caller's reach: a session on `[A, B]` found nothing in
-    /// a session on `[B]`.
-    #[test]
-    fn search_scope_is_the_sessions_whole_kiln_set() {
-        let session = serde_json::json!({ "kilns": ["kiln-a", "kiln-b"] });
-        assert_eq!(
-            session_scope_kilns(&session),
-            vec![
-                crucible_core::config::KilnName::parse("kiln-a").unwrap(),
-                crucible_core::config::KilnName::parse("kiln-b").unwrap()
-            ]
-        );
-    }
-
-    /// A `kilns` array carrying a path — a stale client, or a session file
-    /// written before names — contributes NOTHING rather than a scope member
-    /// that matches nothing. The daemon then sees an empty set and answers with
-    /// no matches, instead of a set it would refuse as unresolvable.
-    #[test]
-    fn a_path_shaped_kiln_is_not_a_scope_member() {
-        let session = serde_json::json!({ "kilns": ["/kilns/a", "kiln-b"] });
-        assert_eq!(
-            session_scope_kilns(&session),
-            vec![crucible_core::config::KilnName::parse("kiln-b").unwrap()],
-            "a path is not a kiln name"
-        );
-    }
-
-    /// Zero kilns is a legitimate session shape (tools-only), not a missing
-    /// value to substitute for: an empty scope overlaps nothing and the daemon
-    /// answers with no matches.
-    #[test]
-    fn a_kiln_less_session_searches_with_an_empty_scope() {
-        assert!(session_scope_kilns(&serde_json::json!({ "kilns": [] })).is_empty());
-        assert!(session_scope_kilns(&serde_json::json!({})).is_empty());
-    }
+    // `session_scope_kilns` used to read `session["kilns"]` off an untyped
+    // `serde_json::Value` and filter out a path-shaped or malformed entry —
+    // the daemon's own reply, so a filtered entry could only mean protocol
+    // drift. `session.get` now answers the typed `SessionSummary`, whose
+    // `kilns: Vec<KilnName>` is valid by construction: a value that failed
+    // to parse as a `KilnName` fails to deserialize the whole reply, rather
+    // than silently dropping out of the search scope. `/search` reads
+    // `session.kilns` directly (see `execute_command` above); the three
+    // tests that lived here — the whole-set case, the path-filter case, and
+    // the kiln-less case — tested a filter that no longer exists.
 }

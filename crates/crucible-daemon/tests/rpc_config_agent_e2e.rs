@@ -42,10 +42,7 @@ async fn setup_session_with_agent(server: &common::InProcessDaemon) -> (String, 
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let agent = SessionAgent {
         mode: None,
@@ -143,10 +140,7 @@ async fn test_configure_agent_sets_agent() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let agent = SessionAgent {
         mode: None,
@@ -180,16 +174,16 @@ async fn test_configure_agent_sets_agent() {
         .await
         .expect("session_get failed");
 
-    let model = session["agent"]["model"]
-        .as_str()
-        .expect("model should be string");
-    assert_eq!(model, "gpt-4o", "Agent model should be gpt-4o");
-
-    let provider = session["agent"]["provider"].as_str().unwrap_or("");
-    assert!(
-        provider.to_lowercase().contains("openai") || provider == "OpenAi",
-        "Agent provider should be OpenAi, got: {}",
-        provider
+    let agent = session
+        .agent
+        .as_ref()
+        .expect("session should have an agent");
+    assert_eq!(agent.model, "gpt-4o", "Agent model should be gpt-4o");
+    assert_eq!(
+        agent.provider,
+        crucible_core::config::BackendType::OpenAI,
+        "Agent provider should be OpenAI, got: {:?}",
+        agent.provider
     );
 
     server.shutdown().await;

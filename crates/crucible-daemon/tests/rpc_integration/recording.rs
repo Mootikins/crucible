@@ -28,15 +28,7 @@ async fn test_session_create_with_granular_recording_mode() {
         .await
         .expect("session_create with recording_mode failed");
 
-    // Verify response contains session_id
-    assert!(
-        result["session_id"].is_string(),
-        "Response should contain session_id as string"
-    );
-
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string");
+    let session_id = result.id.as_str();
     assert!(!session_id.is_empty(), "session_id should not be empty");
 
     server.shutdown().await;
@@ -65,15 +57,7 @@ async fn test_session_create_with_no_recording_mode() {
         .await
         .expect("session_create without recording_mode failed");
 
-    // Verify response contains session_id
-    assert!(
-        result["session_id"].is_string(),
-        "Response should contain session_id as string"
-    );
-
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string");
+    let session_id = result.id.as_str();
     assert!(!session_id.is_empty(), "session_id should not be empty");
 
     server.shutdown().await;

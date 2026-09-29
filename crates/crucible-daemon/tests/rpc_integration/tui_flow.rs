@@ -28,7 +28,7 @@ async fn test_tui_sessions_command_flow() {
         })
         .await
         .expect("session_create 1 failed");
-    let session1_id = session1["session_id"].as_str().unwrap();
+    let session1_id = session1.id.as_str();
 
     let session2 = client
         .session_create(SessionCreateParams {
@@ -42,7 +42,7 @@ async fn test_tui_sessions_command_flow() {
         })
         .await
         .expect("session_create 2 failed");
-    let session2_id = session2["session_id"].as_str().unwrap();
+    let session2_id = session2.id.as_str();
 
     let list_result = client
         .session_list(
@@ -55,15 +55,12 @@ async fn test_tui_sessions_command_flow() {
         .await
         .expect("session_list failed");
 
-    let sessions = list_result["sessions"]
-        .as_array()
-        .expect("result.sessions should be array");
-    assert!(sessions.len() >= 2, "Should have at least 2 sessions");
+    assert!(
+        list_result.sessions.len() >= 2,
+        "Should have at least 2 sessions"
+    );
 
-    let ids: Vec<&str> = sessions
-        .iter()
-        .filter_map(|s| s["session_id"].as_str())
-        .collect();
+    let ids: Vec<&str> = list_result.sessions.iter().map(|s| s.id.as_str()).collect();
     assert!(ids.contains(&session1_id), "Should contain session 1");
     assert!(ids.contains(&session2_id), "Should contain session 2");
 
@@ -91,9 +88,7 @@ async fn test_tui_resume_command_flow() {
         })
         .await
         .expect("session_create failed");
-    let session_id = create_result["session_id"]
-        .as_str()
-        .expect("should have session_id");
+    let session_id = create_result.id.as_str();
 
     client
         .session_pause(session_id)
@@ -138,10 +133,7 @@ async fn test_tui_daemon_agent_full_flow() {
         })
         .await
         .expect("session_create failed");
-    let session_id = create_result["session_id"]
-        .as_str()
-        .expect("should have session_id")
-        .to_string();
+    let session_id = create_result.id.to_string();
 
     client
         .session_subscribe(&[&session_id])

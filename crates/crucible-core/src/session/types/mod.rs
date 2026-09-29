@@ -21,4 +21,4 @@ pub use review::{
     SkipKind, SnapshotId,
 };
 pub use session::{IsolationRecord, IsolationRequirement, PluginApproval, Session};
-pub use summary::SessionSummary;
+pub use summary::{SessionDetail, SessionSummary};

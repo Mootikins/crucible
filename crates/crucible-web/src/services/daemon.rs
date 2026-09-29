@@ -352,7 +352,7 @@ impl ReconnectingDaemon {
             params: SessionCreateParams,
             agent: SessionAgentSpec,
         )
-        -> serde_json::Value = session_create_with_agent(params, agent);
+        -> crucible_core::session::SessionSummary = session_create_with_agent(params, agent);
     }
 
     forward_rpc! {
@@ -364,7 +364,7 @@ impl ReconnectingDaemon {
             state: Option<&str> => state.map(str::to_owned),
             include_archived: Option<bool>,
         )
-        -> serde_json::Value = session_list(
+        -> crucible_core::protocol::requests::SessionListReply = session_list(
             kiln.as_ref(), workspace.as_deref(), session_type.as_deref(),
             state.as_deref(), include_archived,
         );
@@ -382,7 +382,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe SessionGet =>
         session_get(session_id: &str)
-        -> serde_json::Value = session_get(&session_id);
+        -> crucible_core::session::SessionDetail = session_get(&session_id);
     }
 
     forward_rpc! {

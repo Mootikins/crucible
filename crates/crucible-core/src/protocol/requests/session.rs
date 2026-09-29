@@ -424,3 +424,15 @@ pub struct SessionRenderMarkdownResponse {
 pub struct SessionExportToFileResponse {
     pub output_path: String,
 }
+
+/// Reply from `session.list`.
+///
+/// One `SessionSummary` per session, listing-shaped: see
+/// `crate::session::SessionSummary` for which fields a listing fills.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionListReply {
+    pub sessions: Vec<crate::session::SessionSummary>,
+    /// How many sessions the reply carries.
+    pub total: usize,
+}

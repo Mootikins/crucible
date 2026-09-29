@@ -52,10 +52,7 @@ async fn test_event_streaming_with_background_reader() {
         })
         .await
         .expect("session_create failed");
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("should have session_id")
-        .to_string();
+    let session_id = result.id.to_string();
 
     client
         .session_subscribe(&[&session_id])

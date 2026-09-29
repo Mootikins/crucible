@@ -28,9 +28,7 @@ async fn test_session_create_and_list() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string");
+    let session_id = result.id.as_str();
     assert!(!session_id.is_empty(), "session_id should not be empty");
 
     let list = client
@@ -44,17 +42,12 @@ async fn test_session_create_and_list() {
         .await
         .expect("session_list failed");
 
-    let sessions = list["sessions"]
-        .as_array()
-        .expect("sessions should be array");
-    assert!(!sessions.is_empty(), "Should have at least one session");
+    assert!(
+        !list.sessions.is_empty(),
+        "Should have at least one session"
+    );
 
-    let found = sessions.iter().any(|s| {
-        s["session_id"]
-            .as_str()
-            .map(|id| id == session_id)
-            .unwrap_or(false)
-    });
+    let found = list.sessions.iter().any(|s| s.id.as_str() == session_id);
     assert!(found, "Created session should be in list");
 
     server.shutdown().await;
@@ -83,10 +76,7 @@ async fn test_session_subscribe_and_unsubscribe() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     client
         .session_subscribe(&[&session_id])
@@ -127,10 +117,7 @@ async fn test_session_configure_agent() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let agent = SessionAgent {
         mode: None,
@@ -185,10 +172,7 @@ async fn test_session_send_message_returns_message_id() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let result = client
         .session_send_message(&session_id, "Hello!", true)
@@ -238,10 +222,7 @@ async fn test_send_message_with_is_interactive_false_accepted() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let result = client
         .session_send_message(&session_id, "Hello from headless!", false)
@@ -286,10 +267,7 @@ async fn test_send_message_with_permission_override_accepted() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let result = client
         .session_send_message_with_permissions(
@@ -339,10 +317,7 @@ async fn test_session_cancel() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let cancelled = client
         .session_cancel(&session_id)
@@ -377,7 +352,7 @@ async fn session_clear_is_the_users_clear() {
         })
         .await
         .unwrap();
-    let id = created["session_id"].as_str().unwrap();
+    let id = created.id.as_str();
     client.session_subscribe(&[id]).await.unwrap();
 
     client.session_clear(id).await.unwrap();

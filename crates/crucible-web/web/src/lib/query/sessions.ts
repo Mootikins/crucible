@@ -21,7 +21,7 @@ import {
   unarchiveSession,
 } from '@/lib/api';
 import { readLocalCache, writeLocalCache } from '@/lib/local-cache';
-import type { CreateSessionParams, Session } from '@/lib/types';
+import type { CreateSessionParams, Session, SessionDetail } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -142,7 +142,7 @@ export function useSession(id: Accessor<string | null>): UseQueryResult<Session,
  * the pane being restored, and the status bar reads the same record through
  * `useSession`. One key, so a reload that opens one pane asks once.
  */
-export function fetchSessionOnce(id: string): Promise<Session> {
+export function fetchSessionOnce(id: string): Promise<SessionDetail> {
   return seededClient().ensureQueryData({
     queryKey: keys.session(id),
     queryFn: () => getSession(id),

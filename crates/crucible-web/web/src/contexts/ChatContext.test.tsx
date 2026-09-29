@@ -52,6 +52,7 @@ const mockSession: Session = {
   agent_model: 'test-model',
   started_at: new Date().toISOString(),
   event_count: 0,
+  archived: false,
 };
 
 // ---- What each route answers this case. The outer beforeEach sets the
@@ -457,6 +458,7 @@ describe('session switching', () => {
     agent_model: 'test-model',
     started_at: new Date().toISOString(),
     event_count: 0,
+    archived: false,
   };
 
   function DynamicTestWrapper(props: { children: any }) {

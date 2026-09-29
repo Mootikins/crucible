@@ -41,6 +41,7 @@ const MAX_LEN: usize = 128;
 /// non-empty, no separators, no `.`/`..`, no NUL, no leading dot, and drawn
 /// from `[A-Za-z0-9._-]`. See the module docs for why that matters.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(transparent)]
 pub struct SessionId(String);
 

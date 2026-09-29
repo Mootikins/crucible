@@ -24,6 +24,7 @@ const session = (id = 's1'): Session => ({
   agent_model: null,
   started_at: '2026-01-01T00:00:00Z',
   event_count: 0,
+  archived: false,
 });
 
 const MODES = 'GET /api/session/s1/modes';

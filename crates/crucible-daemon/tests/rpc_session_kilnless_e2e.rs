@@ -42,7 +42,7 @@ async fn start_server() -> InProcessDaemon {
 }
 
 /// Create a session with an empty kiln set — the tools-only path.
-async fn create_kilnless_session(client: &DaemonClient) -> serde_json::Value {
+async fn create_kilnless_session(client: &DaemonClient) -> crucible_core::session::SessionSummary {
     client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
@@ -66,21 +66,18 @@ async fn kilnless_create_succeeds_and_returns_active_session() {
 
     let created = create_kilnless_session(&client).await;
 
-    let session_id = created["session_id"]
-        .as_str()
-        .expect("session_id should be a string");
+    let session_id = created.id.as_str();
     assert!(!session_id.is_empty(), "session_id must be non-empty");
     assert_eq!(
-        created["type"].as_str(),
-        Some("chat"),
+        created.session_type,
+        crucible_core::session::SessionType::Chat,
         "kiln-less session should keep its requested type"
     );
 
     // The response echoes the resolved kiln set, and for a kiln-less create
     // it is empty — the data root is emphatically not substituted in.
-    assert_eq!(
-        created["kilns"].as_array().map(Vec::as_slice),
-        Some(&[][..]),
+    assert!(
+        created.kilns.is_empty(),
         "a kiln-less create must attach no kiln at all"
     );
 
@@ -95,15 +92,14 @@ async fn kilnless_session_persists_an_empty_kiln_set() {
         .expect("Failed to connect");
 
     let created = create_kilnless_session(&client).await;
-    let session_id = created["session_id"].as_str().unwrap().to_string();
+    let session_id = created.id.to_string();
 
     // Re-read via session.get: empty on the wire must be empty on disk too.
     // The data root in particular must not have crept back in — it encloses
     // the sessions root, and an allowed root there is the transcript leak.
     let session = client.session_get(&session_id).await.unwrap();
-    assert_eq!(
-        session["kilns"].as_array().map(Vec::as_slice),
-        Some(&[][..]),
+    assert!(
+        session.kilns.is_empty(),
         "a kiln-less session must persist an empty kiln set, not {}",
         server.data_home().display()
     );
@@ -119,19 +115,19 @@ async fn kilnless_no_workspace_gets_session_scratch_dir() {
         .expect("Failed to connect");
 
     let created = create_kilnless_session(&client).await;
-    let session_id = created["session_id"].as_str().unwrap().to_string();
+    let session_id = created.id.to_string();
 
     // With no workspace provided, the session gets its own session-unique
     // scratch workspace under `<data_home>/workspaces/<session_id>` — NOT the
     // kiln path. This is the session's filesystem containment boundary.
     let session = client.session_get(&session_id).await.unwrap();
-    assert!(session["kilns"].as_array().unwrap().is_empty());
-    let workspace = session["workspace"].as_str().expect("workspace present");
+    assert!(session.kilns.is_empty());
+    let workspace = session.workspace.as_deref().expect("workspace present");
 
     let expected = server.data_home().join("workspaces").join(&session_id);
     assert_eq!(
         workspace,
-        expected.to_str().unwrap(),
+        expected.as_path(),
         "kiln-less workspace should be a session-unique scratch dir under <data_home>/workspaces"
     );
     assert!(
@@ -152,7 +148,7 @@ async fn kilnless_session_composes_with_scope_mutations() {
         .expect("Failed to connect");
 
     let created = create_kilnless_session(&client).await;
-    let session_id = created["session_id"].as_str().unwrap().to_string();
+    let session_id = created.id.to_string();
 
     // A kiln-less session must still accept the mid-session scope RPCs: connect
     // an extra kiln, then disconnect it, round-tripping back to empty.
@@ -186,9 +182,8 @@ async fn kilnless_session_composes_with_scope_mutations() {
     // session was created with, rather than leaving a substituted default
     // behind.
     let session = client.session_get(&session_id).await.unwrap();
-    assert_eq!(
-        session["kilns"].as_array().map(Vec::as_slice),
-        Some(&[][..]),
+    assert!(
+        session.kilns.is_empty(),
         "scope mutations must round-trip back to the empty kiln set"
     );
 

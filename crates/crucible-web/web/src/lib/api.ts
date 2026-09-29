@@ -24,6 +24,7 @@ import type {
   ProviderTarget,
   SemanticHit,
   Session,
+  SessionDetail,
   SessionHistoryResponse,
   SessionScope,
   SessionSearchResponse,
@@ -851,7 +852,7 @@ export async function searchSessions(
   };
 }
 
-export async function getSession(id: string): Promise<Session> {
+export async function getSession(id: string): Promise<SessionDetail> {
   return decode(
     await client.GET('/api/session/{id}', { params: { path: { id } } }),
     'Failed to get session',

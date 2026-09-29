@@ -50,10 +50,7 @@ async fn test_interaction_event_flows_to_receiver() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     client
         .session_subscribe(&[session_id.as_str()])

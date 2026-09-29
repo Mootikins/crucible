@@ -35,10 +35,7 @@ async fn create_session(client: &DaemonClient, _kiln: &std::path::Path) -> Strin
         .await
         .expect("session_create failed");
 
-    result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string()
+    result.id.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -68,9 +65,7 @@ async fn test_session_create_returns_id() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be a string");
+    let session_id = result.id.as_str();
     assert!(!session_id.is_empty(), "session_id must not be empty");
 
     server.shutdown().await;
@@ -99,13 +94,10 @@ async fn test_session_list_includes_created() {
         .await
         .expect("session_list failed");
 
-    let sessions = list["sessions"]
-        .as_array()
-        .expect("sessions should be array");
-
-    let found = sessions
+    let found = list
+        .sessions
         .iter()
-        .any(|s| s["session_id"].as_str() == Some(session_id.as_str()));
+        .any(|s| s.id.as_str() == session_id.as_str());
     assert!(found, "Created session {session_id} must appear in list");
 
     server.shutdown().await;
@@ -130,13 +122,13 @@ async fn test_session_get_returns_details() {
 
     // Verify the returned session has the correct ID and an active state
     assert_eq!(
-        session["session_id"].as_str(),
-        Some(session_id.as_str()),
+        session.id.as_str(),
+        session_id.as_str(),
         "Returned session_id must match"
     );
     assert_eq!(
-        session["state"].as_str(),
-        Some("active"),
+        session.state,
+        crucible_core::session::SessionState::Active,
         "Newly created session should be active"
     );
 
@@ -167,10 +159,7 @@ async fn test_session_pause_changes_state() {
         .await
         .expect("session_get after pause failed");
 
-    let state = session["state"]
-        .as_str()
-        .expect("state should be string")
-        .to_lowercase();
+    let state = session.state.to_string().to_lowercase();
     assert!(
         state.contains("pause"),
         "Session state should indicate paused, got: {state}"
@@ -215,10 +204,7 @@ async fn test_session_resume_changes_state() {
         .await
         .expect("session_get after resume failed");
 
-    let get_state = session["state"]
-        .as_str()
-        .expect("state should be string")
-        .to_lowercase();
+    let get_state = session.state.to_string().to_lowercase();
     assert!(
         get_state.contains("active"),
         "session_get should confirm active state, got: {get_state}"
@@ -255,7 +241,7 @@ async fn test_session_end_removes_from_list() {
                 let msg = e.to_string();
                 msg.contains("not found") || msg.contains("Not found")
             }
-            Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
+            Ok(val) => val.state == crucible_core::session::SessionState::Ended,
         };
         if settled || tokio::time::Instant::now() >= deadline {
             break;
@@ -270,7 +256,7 @@ async fn test_session_end_removes_from_list() {
             let msg = e.to_string();
             msg.contains("not found") || msg.contains("Not found")
         }
-        Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
+        Ok(val) => val.state == crucible_core::session::SessionState::Ended,
     };
     assert!(
         is_gone,
@@ -289,11 +275,10 @@ async fn test_session_end_removes_from_list() {
         .await
         .expect("session_list failed");
 
-    let empty = vec![];
-    let sessions = list["sessions"].as_array().unwrap_or(&empty);
-    let still_active = sessions
+    let still_active = list
+        .sessions
         .iter()
-        .any(|s| s["session_id"].as_str() == Some(session_id.as_str()));
+        .any(|s| s.id.as_str() == session_id.as_str());
     assert!(
         !still_active,
         "Ended session must not appear in active session list"
@@ -320,7 +305,7 @@ async fn test_session_full_lifecycle() {
         .session_get(&session_id)
         .await
         .expect("session_get failed");
-    assert_eq!(session["state"].as_str(), Some("active"));
+    assert_eq!(session.state, crucible_core::session::SessionState::Active);
 
     // 3. Pause
     client
@@ -331,7 +316,7 @@ async fn test_session_full_lifecycle() {
         .session_get(&session_id)
         .await
         .expect("session_get after pause failed");
-    let state = session["state"].as_str().unwrap_or("").to_lowercase();
+    let state = session.state.to_string().to_lowercase();
     assert!(state.contains("pause"), "Expected paused, got: {state}");
 
     // 4. Resume
@@ -343,14 +328,7 @@ async fn test_session_full_lifecycle() {
         .session_get(&session_id)
         .await
         .expect("session_get after resume failed");
-    assert_eq!(
-        session["state"]
-            .as_str()
-            .unwrap_or("")
-            .to_lowercase()
-            .as_str(),
-        "active"
-    );
+    assert_eq!(session.state, crucible_core::session::SessionState::Active);
 
     // 5. End
     client
@@ -365,7 +343,7 @@ async fn test_session_full_lifecycle() {
             let msg = e.to_string();
             msg.contains("not found") || msg.contains("Not found")
         }
-        Ok(val) => val.get("state").and_then(|s| s.as_str()) == Some("ended"),
+        Ok(val) => val.state == crucible_core::session::SessionState::Ended,
     };
     assert!(ended, "Session should be ended, got: {get_result:?}");
 
@@ -416,11 +394,10 @@ async fn test_session_delete_removes_session() {
         .await
         .expect("session_list failed");
 
-    let empty = vec![];
-    let sessions = list["sessions"].as_array().unwrap_or(&empty);
-    let still_listed = sessions
+    let still_listed = list
+        .sessions
         .iter()
-        .any(|s| s["session_id"].as_str() == Some(session_id.as_str()));
+        .any(|s| s.id.as_str() == session_id.as_str());
     assert!(
         !still_listed,
         "Deleted session must not appear in session list"
@@ -556,12 +533,10 @@ async fn test_session_list_excludes_archived_by_default() {
         .await
         .expect("session_list failed");
 
-    let empty = vec![];
-    let sessions = list["sessions"].as_array().unwrap_or(&empty);
-
-    let found_archived = sessions
+    let found_archived = list
+        .sessions
         .iter()
-        .any(|s| s["session_id"].as_str() == Some(session_a.as_str()));
+        .any(|s| s.id.as_str() == session_a.as_str());
     assert!(
         !found_archived,
         "Archived session should NOT appear in default listing"
@@ -602,15 +577,14 @@ async fn test_session_list_includes_archived_when_requested() {
         .await
         .expect("session_list failed");
 
-    let empty = vec![];
-    let sessions = list["sessions"].as_array().unwrap_or(&empty);
-
-    let found_a = sessions
+    let found_a = list
+        .sessions
         .iter()
-        .any(|s| s["session_id"].as_str() == Some(session_a.as_str()));
-    let found_b = sessions
+        .any(|s| s.id.as_str() == session_a.as_str());
+    let found_b = list
+        .sessions
         .iter()
-        .any(|s| s["session_id"].as_str() == Some(session_b.as_str()));
+        .any(|s| s.id.as_str() == session_b.as_str());
     assert!(
         found_a,
         "Archived session should appear when include_archived=true"

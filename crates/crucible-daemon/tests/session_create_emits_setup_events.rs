@@ -123,10 +123,7 @@ async fn session_create_emits_setup_events_for_internal_agent() {
         .await
         .expect("session_create failed");
 
-    let session_id = resp["session_id"]
-        .as_str()
-        .expect("session_id must be string")
-        .to_string();
+    let session_id = resp.id.to_string();
 
     let expected: HashSet<&str> = [
         "session_initialized",
@@ -220,10 +217,7 @@ async fn session_create_omits_llm_events_for_acp_agent() {
         .await
         .expect("session_create failed");
 
-    let session_id = resp["session_id"]
-        .as_str()
-        .expect("session_id must be string")
-        .to_string();
+    let session_id = resp.id.to_string();
 
     // For ACP we assert on *absence* of LLM events, so a collector that
     // early-exits the moment the common events arrive would never see a

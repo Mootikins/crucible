@@ -10,6 +10,7 @@ const session = (over: Partial<Session>): Session => ({
   started_at: new Date(now).toISOString(),
   last_activity: new Date(now).toISOString(),
   archived: false,
+  event_count: 0,
   kilns: [],
   ...over,
 });

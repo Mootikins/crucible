@@ -66,6 +66,19 @@ fn assert_state(result: &serde_json::Value, expected: &str, context: &str) {
     );
 }
 
+/// Helper: assert a `SessionSummary`'s state contains the expected substring.
+fn assert_summary_state(
+    summary: &crucible_core::session::SessionSummary,
+    expected: &str,
+    context: &str,
+) {
+    let state = summary.state.to_string();
+    assert!(
+        state.to_lowercase().contains(&expected.to_lowercase()),
+        "{context}: expected state to contain '{expected}', got '{state}'"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Full user workflow test
 // ---------------------------------------------------------------------------
@@ -117,10 +130,7 @@ async fn test_complete_user_flow() {
         .await
         .expect("session.create failed");
 
-    let session_id = create_result["session_id"]
-        .as_str()
-        .expect("response should contain session_id")
-        .to_string();
+    let session_id = create_result.id.to_string();
     assert!(!session_id.is_empty(), "session_id must not be empty");
 
     // Verify initial state is Active
@@ -128,7 +138,7 @@ async fn test_complete_user_flow() {
         .session_get(&session_id)
         .await
         .expect("session.get failed");
-    assert_state(&session, "active", "New session");
+    assert_summary_state(&session, "active", "New session");
 
     // ── Step 3: Configure agent ───────────────────────────────────────────
     let agent = mock_agent_config();
@@ -143,10 +153,11 @@ async fn test_complete_user_flow() {
         .await
         .expect("session.get after configure failed");
     let agent_json = session
-        .get("agent")
+        .agent
+        .as_ref()
         .expect("Session should have agent after configure");
     assert_eq!(
-        agent_json["model"].as_str().unwrap_or(""),
+        agent_json.model.as_str(),
         "test-model",
         "Agent model should match configured value"
     );
@@ -216,7 +227,7 @@ async fn test_complete_user_flow() {
         .session_get(&session_id)
         .await
         .expect("session.get after pause failed");
-    assert_state(&session, "paused", "session.get after pause");
+    assert_summary_state(&session, "paused", "session.get after pause");
 
     // ── Step 7: Resume session ────────────────────────────────────────────
     let resume_result = client
@@ -230,7 +241,7 @@ async fn test_complete_user_flow() {
         .session_get(&session_id)
         .await
         .expect("session.get after resume failed");
-    assert_state(&session, "active", "session.get after resume");
+    assert_summary_state(&session, "active", "session.get after resume");
 
     // ── Step 8: Export session ────────────────────────────────────────────
     // Try to render the session's events as markdown. Keyed on the session
@@ -343,10 +354,7 @@ async fn test_user_flow_session_list_reflects_state() {
         })
         .await
         .expect("session.create failed");
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id")
-        .to_string();
+    let session_id = result.id.to_string();
 
     // List active sessions — should contain our session
     let list = client
@@ -359,13 +367,8 @@ async fn test_user_flow_session_list_reflects_state() {
         )
         .await
         .expect("session.list failed");
-    let sessions = list["sessions"]
-        .as_array()
-        .expect("sessions should be array");
     assert!(
-        sessions
-            .iter()
-            .any(|s| s["session_id"].as_str() == Some(&session_id)),
+        list.sessions.iter().any(|s| s.id.as_str() == session_id),
         "Active session should appear in list"
     );
 
@@ -378,7 +381,7 @@ async fn test_user_flow_session_list_reflects_state() {
         .session_get(&session_id)
         .await
         .expect("get after pause");
-    assert_state(&session, "paused", "List after pause");
+    assert_summary_state(&session, "paused", "List after pause");
 
     // Resume → verify
     client
@@ -389,7 +392,7 @@ async fn test_user_flow_session_list_reflects_state() {
         .session_get(&session_id)
         .await
         .expect("get after resume");
-    assert_state(&session, "active", "List after resume");
+    assert_summary_state(&session, "active", "List after resume");
 
     // End → verify via the end response itself
     let end_result = client.session_end(&session_id).await.expect("end failed");

@@ -69,132 +69,12 @@ struct TitleResponse {
     title: String,
 }
 
-/// Read a present `null` as a present-and-null value rather than as an absent
-/// key.
-///
-/// `Option<Option<T>>` alone cannot tell the two apart on the way in: serde
-/// reads a `null` into the outer `None`, which then writes no key at all. The
-/// three session shapes differ by exactly that distinction, so it has to
-/// survive the round trip.
-fn present_or_null<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Option::<T>::deserialize(deserializer).map(Some)
-}
-
-/// One session, as every session route answers it.
-///
-/// Three daemon methods build three different objects for one entity.
-/// `session.create` sends no `started_at` and no `title`. `session.get` nests
-/// the model under `agent` and sends no `event_count`, `last_activity` or
-/// `archived`. `session.list` sends the model flat and sends all three. This
-/// declares the union once, so a client reads one type instead of reconciling
-/// three. The divergence is a daemon bug (`server/session/list.rs:155` against
-/// `:302`); this route does not fix it.
-///
-/// A field that one shape omits and another sends as `null` carries
-/// `Option<Option<T>>`. The outer level is "the daemon wrote no key", the
-/// inner one is "the key is null". Both spellings then reach the browser as
-/// the daemon wrote them, which is what keeps this projection lossless.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct SessionRow {
-    /// The session id. The wire name is `session_id`, never `id`.
-    session_id: String,
-    /// The session type prefix, such as `chat`.
-    #[serde(rename = "type")]
-    session_type: String,
-    /// Every kiln the session can query, by registry name.
-    kilns: Vec<String>,
-    /// The session's working directory. `null` is a session with no workspace.
-    workspace: Option<String>,
-    /// The session state, such as `active` or `paused`.
-    state: String,
-    /// When the session started. `session.create` does not send it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    started_at: Option<String>,
-    /// The session title. `session.create` does not send it.
-    #[serde(
-        default,
-        deserialize_with = "present_or_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    title: Option<Option<String>>,
-    /// The resolved model. `session.get` does not send it; read `agent.model`
-    /// there.
-    #[serde(
-        default,
-        deserialize_with = "present_or_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    agent_model: Option<Option<String>>,
-    /// The last event's time. Only `session.list` sends it.
-    #[serde(
-        default,
-        deserialize_with = "present_or_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    last_activity: Option<Option<String>>,
-    /// How many events the transcript holds. Only `session.list` sends it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    event_count: Option<u64>,
-    /// Whether the session is archived. Only `session.list` sends it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    archived: Option<bool>,
-    /// The parent of a delegated session. `session.create` does not send it.
-    #[serde(
-        default,
-        deserialize_with = "present_or_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    parent_session_id: Option<Option<String>>,
-    /// The session this one continues. Only `session.get` sends it.
-    #[serde(
-        default,
-        deserialize_with = "present_or_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    continued_from: Option<Option<String>>,
-    /// The session's agent record. Only `session.get` sends it.
-    #[serde(
-        default,
-        deserialize_with = "present_or_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    agent: Option<Option<SessionAgentRow>>,
-    /// How the session records its transcript. `session.get` sends it only
-    /// when the session has a recording mode.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    recording_mode: Option<String>,
-}
-
-/// The agent record `session.get` nests inside a session.
-///
-/// Two fields are named because a client reads them: `model`, which
-/// `session.list` sends flat as `agent_model`, and `mode`. Every other field
-/// of the daemon's record rides in `rest`, so this projection narrows what the
-/// document describes without dropping anything from the reply.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct SessionAgentRow {
-    /// The model this session's agent runs.
-    model: String,
-    /// The session mode id. Absent when the session is in the normal mode.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    mode: Option<String>,
-    /// Every other field of the daemon's agent record, carried verbatim.
-    #[serde(flatten)]
-    #[schema(value_type = HashMap<String, serde_json::Value>)]
-    rest: serde_json::Map<String, serde_json::Value>,
-}
-
-/// What `GET /api/session/list` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SessionListResponse {
-    sessions: Vec<SessionRow>,
-    /// How many sessions the reply carries.
-    total: usize,
-}
+// `session.create`, `session.list` and `session.get` all answer the core
+// `SessionSummary` (or `SessionListReply`, a `Vec<SessionSummary>` with a
+// count). The daemon used to build three shapes by hand for one entity, and
+// this route used to declare a fourth — a hand-written union, `SessionRow`
+// — to read all three. There is one shape now, so this route returns it
+// unchanged: no row, no `Option<Option<T>>` present-or-null trick.
 
 /// One persisted session event, as `session.resume_from_storage` replays it.
 ///
@@ -437,7 +317,7 @@ fn default_session_type() -> String {
     path = "/api/session",
     request_body = CreateSessionRequest,
     responses(
-        (status = 200, body = SessionRow),
+        (status = 200, body = crucible_core::session::SessionSummary),
         (status = 422, description = "The request named an endpoint, an agent type or a card the server refuses"),
         (status = 502, description = "The daemon could not create the session"),
     )
@@ -445,7 +325,7 @@ fn default_session_type() -> String {
 async fn create_session(
     State(state): State<AppState>,
     Json(req): Json<CreateSessionRequest>,
-) -> Result<Json<SessionRow>, WebError> {
+) -> Result<Json<crucible_core::session::SessionSummary>, WebError> {
     // Validate agent_type up front: an unrecognized value (e.g. "ACP",
     // "internal-x") must be rejected, not silently forwarded to the daemon as a
     // junk string while taking the internal branch.
@@ -500,14 +380,13 @@ async fn create_session(
 
     // A create response without a usable session_id (protocol drift) would
     // otherwise leave the browser with no stream it can open; fail loudly here.
-    let session_id = result["session_id"].as_str().unwrap_or("");
-    if session_id.is_empty() {
+    if result.id.as_str().is_empty() {
         return Err(WebError::Daemon(
             "daemon returned no session_id from session.create".to_string(),
         ));
     }
 
-    Ok(Json(daemon_shape(result, "session.create")?))
+    Ok(Json(result))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -531,7 +410,7 @@ struct ListSessionsQuery {
     path = "/api/session/list",
     params(ListSessionsQuery),
     responses(
-        (status = 200, body = SessionListResponse),
+        (status = 200, body = crucible_core::protocol::requests::SessionListReply),
         (status = 422, description = "The `kiln` query carried a path rather than a registry name"),
         (status = 502, description = "The daemon could not list the sessions"),
     )
@@ -539,7 +418,7 @@ struct ListSessionsQuery {
 async fn list_sessions(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<ListSessionsQuery>,
-) -> Result<Json<SessionListResponse>, WebError> {
+) -> Result<Json<crucible_core::protocol::requests::SessionListReply>, WebError> {
     let result = state
         .daemon
         .session_list(
@@ -552,7 +431,7 @@ async fn list_sessions(
         .await
         .daemon_err()?;
 
-    Ok(Json(daemon_shape(result, "session.list")?))
+    Ok(Json(result))
 }
 
 /// `GET /api/sessions/search?q=…&kiln=…&kiln=…&limit=…`
@@ -633,17 +512,17 @@ async fn search_sessions(
     path = "/api/session/{id}",
     params(("id" = String, Path, description = "The session to read")),
     responses(
-        (status = 200, body = SessionRow),
+        (status = 200, body = crucible_core::session::SessionDetail),
         (status = 502, description = "The daemon could not read the session"),
     )
 )]
 async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<SessionRow>, WebError> {
+) -> Result<Json<crucible_core::session::SessionDetail>, WebError> {
     let result = state.daemon.session_get(&id).await.daemon_err()?;
 
-    Ok(Json(daemon_shape(result, "session.get")?))
+    Ok(Json(result))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -1288,22 +1167,10 @@ async fn export_session(
         Ok(md) => md,
         Err(_) => {
             // Fallback: construct basic markdown from session metadata
-            let title = session
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Untitled Session");
-            let started_at = session
-                .get("started_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let model = session
-                .get("agent_model")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let state_str = session
-                .get("state")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
+            let title = session.title.as_deref().unwrap_or("Untitled Session");
+            let started_at = session.started_at.to_rfc3339();
+            let model = session.agent_model.as_deref().unwrap_or("unknown");
+            let state_str = session.state.to_string();
 
             format!(
                 "# {}\n\n- **Date**: {}\n- **Model**: {}\n- **State**: {}\n\n---\n\n*Session events are not yet persisted. Export will be available after the session is paused or ended.*\n",

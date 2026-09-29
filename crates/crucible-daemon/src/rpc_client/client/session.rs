@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use crucible_core::config::KilnName;
 use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
+use crucible_core::session::{SessionDetail, SessionSummary};
 use crucible_core::types::SendOutcome;
 use std::path::Path;
 
@@ -66,7 +67,7 @@ impl DaemonClient {
     // Session RPC Methods
     // =========================================================================
 
-    pub async fn session_create(&self, params: SessionCreateParams) -> Result<serde_json::Value> {
+    pub async fn session_create(&self, params: SessionCreateParams) -> Result<SessionSummary> {
         self.typed_call(RpcMethod::SessionCreate, build_create_request(params, None))
             .await
     }
@@ -79,7 +80,7 @@ impl DaemonClient {
         &self,
         params: SessionCreateParams,
         agent: SessionAgentSpec,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<SessionSummary> {
         self.typed_call(
             RpcMethod::SessionCreate,
             build_create_request(params, Some(agent)),
@@ -94,7 +95,7 @@ impl DaemonClient {
         session_type: Option<&str>,
         state: Option<&str>,
         include_archived: Option<bool>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<SessionListReply> {
         self.session_list_with_children(
             kiln,
             workspace,
@@ -116,7 +117,7 @@ impl DaemonClient {
         state: Option<&str>,
         include_archived: Option<bool>,
         include_children: Option<bool>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<SessionListReply> {
         self.typed_call(
             RpcMethod::SessionList,
             SessionListRequest {
@@ -131,9 +132,11 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_get(&self, session_id: &str) -> Result<serde_json::Value> {
-        self.session_id_call(RpcMethod::SessionGet, session_id)
-            .await
+    pub async fn session_get(&self, session_id: &str) -> Result<SessionDetail> {
+        let reply = self
+            .session_id_call(RpcMethod::SessionGet, session_id)
+            .await?;
+        Ok(serde_json::from_value(reply)?)
     }
 
     /// `session.status` — the status list of a session.

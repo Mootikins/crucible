@@ -22,6 +22,7 @@ pub struct AcpConfig {
 
 /// Delegation configuration for an ACP agent
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DelegationConfig {
     /// Whether delegation is enabled for this agent
     #[serde(default)]

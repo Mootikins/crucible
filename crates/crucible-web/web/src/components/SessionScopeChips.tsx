@@ -158,7 +158,7 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
   const toggleKiln = (name: string) => {
     const s = session();
     if (!s) return;
-    if (s.kilns.includes(name)) {
+    if ((s.kilns ?? []).includes(name)) {
       void mutate(() => disconnect.mutateAsync({ id: s.session_id, kiln: name }));
     } else {
       void mutate(() => connect.mutateAsync({ id: s.session_id, kiln: name }));

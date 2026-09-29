@@ -400,11 +400,7 @@ async fn run_start(config: CliAppConfig, target: &str, _session: Option<&str>) -
         })
         .await
         .context("failed to create workflow session")?;
-    let session_id = create_resp
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("daemon returned no session_id on session.create"))?
-        .to_string();
+    let session_id = create_resp.id.to_string();
 
     println!("Started workflow session: {}", session_id);
     println!("Workflow: {}", path.display());

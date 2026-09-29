@@ -418,21 +418,52 @@ Kept, with the reason:
 
 ## Step 10. Typed core replies
 
-**Now.** 130 daemon handlers build their reply with `json!`: 583 sites in
-`crates/crucible-daemon/src/server` and `src/rpc`. The daemon builds three
-session shapes by hand (`server/session/list.rs`, `session_bridge.rs`).
-The web crate has no typed reply to publish, so it declares 146 `ToSchema`
-row types and decodes the daemon `Value` with `daemon_shape` (43 calls).
+**Status: the session replies are done; the other domains remain.** 130
+daemon handlers build their reply with `json!`: 583 sites in
+`crates/crucible-daemon/src/server`
+and `src/rpc` at the step's start. Provider, mode, knob, agent-option,
+plugin, surface, skill, fs, kiln, comment and search still need their pass.
 
-**Change.** Give each session, provider, mode, knob, agent-option, plugin,
-surface, skill, fs, kiln, comment and search reply one core type with
-`ToSchema`. The daemon returns it, and the web route returns it unchanged.
-Delete the web row types that copy a core type. Keep web-local types
-(login, terminal, layout, recents).
+**Done for session.** `session.create`, `session.list` and `session.get`
+answered three hand-built shapes (`server/session/list.rs`,
+`server/session/create.rs`, `session_bridge.rs`) and the web declared a
+fourth, `SessionRow`, a hand-written union with an `Option<Option<T>>`
+present-or-null trick to reconcile them. `session.create` and
+`session.list` now both answer the full
+`crucible_core::session::SessionSummary` — every field the record always
+has (`session_id`, `type`, `kilns`, `workspace`, `state`, `started_at`,
+`event_count`, `archived`) is required, not optional; only a field the
+record can genuinely lack (`title`, `agent_model`, `last_activity`,
+`parent_session_id`) is `Option`. A `session.list` reply is
+`crucible_core::protocol::requests::SessionListReply`, a
+`Vec<SessionSummary>` and a count. `session.get` answers a new
+`crucible_core::session::SessionDetail`: a `SessionSummary` flattened onto
+the wire, plus the fields only a full record carries (`agent`,
+`continued_from`, `plugin_approvals`, `plugin_turn_limit`,
+`recording_mode`), required wherever the record always has a value
+(`plugin_approvals`, `plugin_turn_limit`). `SessionDetail` derefs to
+`SessionSummary`, so a caller reads `detail.id`/`detail.state` directly.
+`SessionSummary`, `SessionDetail`, `SessionAgent`, `ContextStrategy`,
+`BackendType`, `DelegationConfig`, `ToolPolicy`, `RecordingMode`,
+`SessionType`, `SessionState` and `SessionId` gained `ToSchema` behind the
+`openapi` feature. `crucible-web` deleted `SessionRow`, `SessionAgentRow`,
+`SessionListResponse` and the `present_or_null` helper; the routes return
+the core type unchanged. `DaemonClient::session_create`,
+`session_create_with_agent`, `session_list` and
+`session_list_with_children` return `SessionSummary`/`SessionListReply`;
+`session_get` returns `SessionDetail`. `json!(<struct>)` at each of these
+call sites is `serde_json::to_value(..).expect(..)`, matching the
+convention `messaging.rs` already used.
+
+**Change, for what remains.** Give each provider, mode, knob, agent-option,
+plugin, surface, skill, fs, kiln, comment and search reply one core type
+with `ToSchema`. The daemon returns it, and the web route returns it
+unchanged. Delete the web row types that copy a core type. Keep web-local
+types (login, terminal, layout, recents).
 
 **Proof.** A deleted row that a route still names does not compile. The
 route contract tests and `openapi_contract` pass. The web crate has about
-90 types.
+90 types once every domain is done.
 
 ## Step 11. One event vocabulary to the browser
 

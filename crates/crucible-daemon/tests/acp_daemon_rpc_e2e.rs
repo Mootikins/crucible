@@ -122,10 +122,7 @@ async fn an_acp_turn_reaches_a_socket_subscriber_as_session_events() {
         .await
         .expect("create an ACP session over RPC");
 
-    let session_id = created["session_id"]
-        .as_str()
-        .expect("session.create returns a session_id")
-        .to_string();
+    let session_id = created.id.to_string();
 
     client
         .session_configure_agent(&session_id, &acp_agent_streaming(MOCK_ANSWER))
@@ -205,10 +202,7 @@ async fn an_acp_session_survives_a_second_turn_on_the_same_agent() {
         })
         .await
         .expect("create an ACP session over RPC");
-    let session_id = created["session_id"]
-        .as_str()
-        .expect("session.create returns a session_id")
-        .to_string();
+    let session_id = created.id.to_string();
 
     client
         .session_configure_agent(&session_id, &acp_agent_streaming(MOCK_ANSWER))

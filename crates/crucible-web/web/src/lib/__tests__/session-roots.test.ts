@@ -50,11 +50,12 @@ const session = (over: Partial<Session> = {}): Session => ({
   type: 'chat',
   kilns: [],
   workspace: null,
-  state: 'idle',
+  state: 'active',
   title: null,
   agent_model: null,
   started_at: '2026-01-01T00:00:00Z',
   event_count: 0,
+  archived: false,
   ...over,
 });
 

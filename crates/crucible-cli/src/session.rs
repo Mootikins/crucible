@@ -232,12 +232,14 @@ pub async fn open_session(
 }
 
 /// The workspace of a `session.get` reply, when the session has one.
-fn session_workspace(session: &serde_json::Value) -> Option<std::path::PathBuf> {
+fn session_workspace(
+    session: &crucible_core::session::SessionSummary,
+) -> Option<std::path::PathBuf> {
     session
-        .get("workspace")
-        .and_then(|w| w.as_str())
-        .filter(|w| !w.is_empty())
-        .map(std::path::PathBuf::from)
+        .workspace
+        .as_ref()
+        .filter(|w| !w.as_os_str().is_empty())
+        .cloned()
 }
 
 /// The prompts of `session_id` that wait for an answer.
@@ -329,13 +331,8 @@ async fn resolve_session_id(
                 )
                 .await?;
 
-            let empty = vec![];
-            let sessions = sessions.as_array().unwrap_or(&empty);
-            if let Some(session) = sessions.first() {
-                let id = session["session_id"]
-                    .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid session data"))?
-                    .to_string();
+            if let Some(session) = sessions.sessions.first() {
+                let id = session.id.to_string();
                 info!("Resuming most recent daemon session: {}", id);
                 client.session_resume(&id).await?;
                 id
@@ -400,10 +397,7 @@ async fn create_new_daemon_session(
         )
         .await?;
 
-    let session_id = result["session_id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("No session_id in response"))?
-        .to_string();
+    let session_id = result.id.to_string();
 
     info!("Created new daemon session: {}", session_id);
     Ok(session_id)
@@ -428,7 +422,8 @@ mod tests {
             while let Some(line) = lines.next_line().await.unwrap() {
                 let req: serde_json::Value = serde_json::from_str(&line).unwrap();
                 let response = serde_json::json!({"jsonrpc":"2.0", "id":req["id"],
-                    "result":{"session_id":"fixture"}});
+                    "result":{"session_id":"fixture", "type":"chat", "kilns":[], "state":"active",
+                        "started_at":"2026-01-01T00:00:00Z", "event_count":0, "archived":false}});
                 write
                     .write_all(format!("{response}\n").as_bytes())
                     .await
@@ -516,17 +511,21 @@ mod tests {
 
     #[test]
     fn the_workspace_comes_from_the_session_reply() {
-        let with = serde_json::json!({ "workspace": "/work/project" });
+        use crucible_core::session::{Session, SessionSummary, SessionType};
+
+        let summary_with = |workspace: Option<&str>| {
+            let session = Session::new(SessionType::Chat, Vec::new())
+                .with_workspace(workspace.map(std::path::PathBuf::from));
+            SessionSummary::from(&session)
+        };
+
+        let with = summary_with(Some("/work/project"));
         assert_eq!(
             session_workspace(&with),
             Some(std::path::PathBuf::from("/work/project"))
         );
-        for without in [
-            serde_json::json!({ "workspace": null }),
-            serde_json::json!({ "workspace": "" }),
-            serde_json::json!({}),
-        ] {
-            assert_eq!(session_workspace(&without), None, "{without}");
+        for without in [summary_with(None), summary_with(Some(""))] {
+            assert_eq!(session_workspace(&without), None, "{without:?}");
         }
     }
 

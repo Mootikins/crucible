@@ -24,7 +24,7 @@ async fn plugin_approval_round_trips_over_socket_and_on_attach() {
         })
         .await
         .unwrap();
-    let id = created["session_id"].as_str().unwrap();
+    let id = created.id.as_str();
 
     client
         .session_set_plugin_approval(id, "alpha", PluginApproval::Ask)
@@ -50,8 +50,14 @@ async fn plugin_approval_round_trips_over_socket_and_on_attach() {
         2
     );
     assert_eq!(
-        client.session_get(id).await.unwrap()["plugin_approvals"]["beta"],
-        "stop"
+        client
+            .session_get(id)
+            .await
+            .unwrap()
+            .plugin_approvals
+            .get("beta")
+            .copied(),
+        Some(PluginApproval::Stop)
     );
 
     // A second client that attaches later reads the value and changes it.
@@ -105,7 +111,7 @@ async fn chat_session(client: &DaemonClient) -> String {
         })
         .await
         .unwrap();
-    created["session_id"].as_str().unwrap().to_owned()
+    created.id.as_str().to_owned()
 }
 
 /// The attach read (`session.status`) over the socket, decoded as the TUI
@@ -205,10 +211,7 @@ async fn test_session_switch_model() {
         .await
         .expect("session_create failed");
 
-    let session_id = result["session_id"]
-        .as_str()
-        .expect("session_id should be string")
-        .to_string();
+    let session_id = result.id.to_string();
 
     let agent = SessionAgent {
         mode: None,
@@ -248,9 +251,12 @@ async fn test_session_switch_model() {
         .await
         .expect("session_get failed");
 
-    let model = session["agent"]["model"]
-        .as_str()
-        .expect("model should be string");
+    let model = session
+        .agent
+        .as_ref()
+        .expect("agent must be configured")
+        .model
+        .as_str();
     assert_eq!(model, "gpt-4", "Model should be updated in session");
 
     server.shutdown().await;
@@ -282,7 +288,7 @@ async fn test_session_set_mode_round_trip() {
         })
         .await
         .expect("session_create failed");
-    let session_id = result["session_id"].as_str().unwrap().to_string();
+    let session_id = result.id.to_string();
 
     let agent = SessionAgent {
         mode: None,
@@ -312,7 +318,11 @@ async fn test_session_set_mode_round_trip() {
     // No mode set yet: session.get carries no mode field.
     let session = client.session_get(&session_id).await.unwrap();
     assert!(
-        session["agent"]["mode"].is_null(),
+        session
+            .agent
+            .as_ref()
+            .and_then(|a| a.mode.as_deref())
+            .is_none(),
         "fresh session has no persisted mode"
     );
 
@@ -323,7 +333,7 @@ async fn test_session_set_mode_round_trip() {
 
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
-        session["agent"]["mode"].as_str(),
+        session.agent.as_ref().and_then(|a| a.mode.as_deref()),
         Some("plan"),
         "mode persists and round-trips through session.get"
     );
@@ -340,13 +350,19 @@ async fn test_session_set_mode_round_trip() {
     // Switching again overwrites.
     client.session_set_mode(&session_id, "ask").await.unwrap();
     let session = client.session_get(&session_id).await.unwrap();
-    assert_eq!(session["agent"]["mode"].as_str(), Some("ask"));
+    assert_eq!(
+        session.agent.as_ref().and_then(|a| a.mode.as_deref()),
+        Some("ask")
+    );
 
     // Unknown modes are rejected loudly, not persisted.
     let err = client.session_set_mode(&session_id, "yolo").await;
     assert!(err.is_err(), "unknown mode must be rejected");
     let session = client.session_get(&session_id).await.unwrap();
-    assert_eq!(session["agent"]["mode"].as_str(), Some("ask"));
+    assert_eq!(
+        session.agent.as_ref().and_then(|a| a.mode.as_deref()),
+        Some("ask")
+    );
 
     server.shutdown().await;
 }
