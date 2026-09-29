@@ -44,15 +44,16 @@ at the same time. Each step leaves the tree working.
 | 7. One test server (done) | 18 test-server copies, a hand mock | M | step 6 helps |
 | 8. Local duplicates (done) | about ten small copies | S each | none |
 | 9. Dead code (done) | unused modules and features | S | none |
-| 10. Typed core replies | about 100 web wire types, about 300 `json!` replies | M | step 6 |
-| 11. One event vocabulary to the browser | `ChatEvent`, 29 TS copies | M | step 10 |
-| 12. Typed RPC rows | the `Value` client methods, 15 request halves | M | step 10 |
-| 13. Simpler core APIs | 11 core types, 32 constructors | S | step 12 |
-| 14. Luau types from the schema | 7 Luau contract copies, 1 Lua view | M | step 12 |
-| 15. The last TS copies | about 16 TS types | S | step 11 |
-| 16. One daemon test fixture (done) | `Daemon` (`tests/proposals.rs`), `Fixture` (`tests/acp_review_comment_context_e2e.rs`), one of two `Rig` types (`session_bridge/tests/`) | S | none |
-| 17. Enums on the wire | 1 type, string fields | S | step 12 |
-| 18. Research: internal types | proposes the rest of the budget | S | step 12 |
+| 10. Typed core replies (done, except the knob replies of step 13) | 36 web row types; 6 were net deletions, the rest became core types | M | step 6 |
+| 11. One event vocabulary to the browser | `ChatEvent` and 2 more web types, 29 TS copies: about 32 | M | step 10 |
+| 12. One request body per shape | about 35: 19 web request copies, 6 core shape copies, 10 local `Params` | M | step 10 |
+| 13. One generic knob | about 11 types, 10 RPC methods, about 90 per-knob functions | M | step 12 |
+| 14. Simpler core APIs and the audit list | about 40 | S each | step 12 |
+| 15. Luau types from the schema | about 8 | M | step 12 |
+| 16. The last TS copies | about 16 | S | step 11 |
+| 17. One daemon test fixture (done) | 3 test types | S | none |
+| 18. Enums on the wire | about 0, string fields become enums | S | step 12 |
+| 19. Owner decisions | 9 to about 150, see the step | L | steps 11 to 13 |
 
 Size: S is days, M is one to two weeks, L is three to six weeks.
 
@@ -63,8 +64,14 @@ that only moves or renames code does not count.
 
 At `514c4cc3b`, the tree has 2595 types: 1867 Rust types in `crates/*/src`,
 701 hand-written TypeScript types and 27 Luau types. The target is 15 percent
-fewer: 2206 or less. Steps 10 to 17 delete about 220. Step 18 must find the
-rest in the types that stay inside one crate.
+fewer: 2206 or less. At `2f1736802` the count is 2584.
+
+The audit of step 18 of the old plan read every crate. Most types that look
+alike are separate contracts: a raw read and a resolved record, a create
+input and a query filter, a render node and a stateful component. Merging
+them would make required fields optional. Steps 11 to 18 therefore give
+about 140 types, about 6 percent. Only step 19, which changes the web
+layer or removes features, can reach 15 percent.
 
 The count:
 
@@ -418,152 +425,163 @@ Kept, with the reason:
 
 ## Step 10. Typed core replies
 
-**Status: the session replies are done; the other domains remain.** 130
-daemon handlers build their reply with `json!`: 583 sites in
-`crates/crucible-daemon/src/server`
-and `src/rpc` at the step's start. Provider, mode, knob, agent-option,
-plugin, surface, skill, fs, kiln, comment and search still need their pass.
+**Status: done, except the provider, mode, knob and agent-option replies,
+which step 13 changes.** The session, skill, surface, comment, search, kiln,
+fs and plugin replies are core types with `ToSchema`. The daemon builds each
+one, and the web route returns it unchanged.
 
-**Done for session.** `session.create`, `session.list` and `session.get`
-answered three hand-built shapes (`server/session/list.rs`,
-`server/session/create.rs`, `session_bridge.rs`) and the web declared a
-fourth, `SessionRow`, a hand-written union with an `Option<Option<T>>`
-present-or-null trick to reconcile them. `session.create` and
-`session.list` now both answer the full
-`crucible_core::session::SessionSummary` — every field the record always
-has (`session_id`, `type`, `kilns`, `workspace`, `state`, `started_at`,
-`event_count`, `archived`) is required, not optional; only a field the
-record can genuinely lack (`title`, `agent_model`, `last_activity`,
-`parent_session_id`) is `Option`. A `session.list` reply is
-`crucible_core::protocol::requests::SessionListReply`, a
-`Vec<SessionSummary>` and a count. `session.get` answers a new
-`crucible_core::session::SessionDetail`: a `SessionSummary` flattened onto
-the wire, plus the fields only a full record carries (`agent`,
-`continued_from`, `plugin_approvals`, `plugin_turn_limit`,
-`recording_mode`), required wherever the record always has a value
-(`plugin_approvals`, `plugin_turn_limit`). `SessionDetail` derefs to
-`SessionSummary`, so a caller reads `detail.id`/`detail.state` directly.
-`SessionSummary`, `SessionDetail`, `SessionAgent`, `ContextStrategy`,
-`BackendType`, `DelegationConfig`, `ToolPolicy`, `RecordingMode`,
-`SessionType`, `SessionState` and `SessionId` gained `ToSchema` behind the
-`openapi` feature. `crucible-web` deleted `SessionRow`, `SessionAgentRow`,
-`SessionListResponse` and the `present_or_null` helper; the routes return
-the core type unchanged. `DaemonClient::session_create`,
-`session_create_with_agent`, `session_list` and
-`session_list_with_children` return `SessionSummary`/`SessionListReply`;
-`session_get` returns `SessionDetail`. `json!(<struct>)` at each of these
-call sites is `serde_json::to_value(..).expect(..)`, matching the
-convention `messaging.rs` already used.
-
-**Change, for what remains.** Give each provider, mode, knob, agent-option,
-plugin, surface, skill, fs, kiln, comment and search reply one core type
-with `ToSchema`. The daemon returns it, and the web route returns it
-unchanged. Delete the web row types that copy a core type. Keep web-local
-types (login, terminal, layout, recents).
-
-**Proof.** A deleted row that a route still names does not compile. The
-route contract tests and `openapi_contract` pass. The web crate has about
-90 types once every domain is done.
+**What it gave.** Where a web row copied an existing core type, the web row
+went (surfaces, comments, skills: 13 types). Where the daemon built the
+reply with `json!`, no type existed, so one web row became one core type
+(search, plugins: 0 or +1 each). The typed replies found a real drift: a
+test double answered `plugin.commands` with a shape that the daemon never
+sends.
 
 ## Step 11. One event vocabulary to the browser
 
 **Now.** `ChatEvent` in `crates/crucible-web/src/events.rs` re-encodes each
 `SessionEventPayload` into 21 variants of its own. `normalize_interaction`
-flattens a permission request. The browser reducer reads this second
-vocabulary, and `lib/types.ts` copies 29 wire types by hand.
+flattens a permission request. `lib/types.ts` copies 29 wire types by hand.
 
 **Change.** Give `ToSchema` to the event payloads, the interaction types and
 the tool-call types. The SSE route sends `SessionEventMessage`. Delete
-`ChatEvent`, `normalize_interaction` and the TS copies; alias the
-generated types.
+`ChatEvent`, `PrecognitionNote`, `SessionHistoryEvent`,
+`normalize_interaction` and the TS copies; alias the generated types.
 
 **Proof.** The transcript parity test and the reducer tests pass against the
 generated union.
 
-## Step 12. Typed RPC rows
+## Step 12. One request body per shape
 
-**Now.** `rpc_methods!` names each method, not its types. The client has
-methods that return `Value`, and the daemon has 11 local `Params` structs.
+**Now.** Core has one request type per RPC method: 96 `*Request` types. 31
+of them carry `session_id`. Methods with one shape still have separate
+types (`GetNoteByNameRequest` and `GetBacklinksRequest`; `KilnGraphRequest`
+and `NoteListRequest`; `DiffGetRequest` and `DiffCommentsRequest`;
+`DiffResolveCommentRequest` and `DiffDeleteCommentRequest`;
+`SessionHistoryRequest` and `SessionResumeFromStorageRequest`;
+`LuaShutdownSessionRequest` and `SessionIdRequest`). The web takes
+`session_id` or another id from the URL path, so it declares its own body
+types: 19 of them equal a core request, or equal it minus the id. The
+daemon declares 12 local `Params` in `rpc/dispatch.rs` and
+`rpc/workflow_handlers.rs`; 3 of them copy a core request.
 
-**Change.** Each request type names its method and its reply, in the same
-macro row: `impl RpcRequest for SessionCreateRequest { type Reply; const
-METHOD }`. `DaemonClient::call<Req>` replaces the `Value` methods. Each
-handler returns `Result<Reply, RpcError>`. Delete the local `Params`,
-`SessionCreateParams`, `SessionAgentSpec`, `EmptyParams` and
-`LuaShutdownSessionRequest`. No marker type per method.
+**Change.**
+1. Name each core body for its shape, not for its method, and let methods
+   with one shape share it.
+2. A session-scoped method takes `Scoped<T> { session_id, #[serde(flatten)]
+   body: T }`. The JSON on the wire does not change: no core request uses
+   `deny_unknown_fields`, and the web builds its bodies with `session_id` at
+   the top level. `Scoped<T>` is RPC-only, so it needs no `ToSchema`; the web
+   declares `T`.
+3. The web route takes `Path(id)` and `Json<T>` or `Query<T>` of the core
+   body. Delete the 19 web copies.
+4. Replace the daemon's local `Params` with core bodies. Delete
+   `SessionCreateParams`, `SessionAgentSpec`, `EmptyParams`.
+5. Each body names its method and reply in the `rpc_methods!` row, and
+   `DaemonClient::call<Req>` replaces the methods that return `Value`.
 
-**Proof.** A row with no reply type does not compile. The knob RPC matrix
-and the RPC integration tests pass.
+A client and a daemon of different builds never talk: the client restarts
+a daemon whose `build_sha` differs. So no method needs an old alias.
 
-## Step 13. Simpler core APIs
+**Proof.** A route that names a deleted type does not compile. New golden
+request fixtures prove that the JSON of each changed method stays the same.
+`wire_request_types_are_deserialized_not_hand_plucked`, the route contract
+tests and `openapi_contract` pass.
 
-**Change.** Merge the two `TokenUsage` types. Replace `LlmToolDefinition`
-and `FunctionDefinition` with `ToolDefinition`. Put `ToolResultBody` in
-place of `ChatToolResult`'s strings. Merge the two `SearchResult` types.
-Replace `DocumentId` with a plain id. Delete `LlmProviderConfigBuilder`.
-Replace the 32 named constructors of `SessionEventMessage` with one
-`typed(payload)`. Type the four `Value` fields whose shape is known.
+## Step 13. One generic knob
+
+**Now.** Each of the five `SessionKnob` values (model, mode, context
+strategy, precognition, plugin turn limit) has its own RPC method pair, core
+request type, handler, client method, web route pair, web request and
+response types, TUI message and TS hook: about 90 functions and 11 types in
+all. Mode sits on `AgentHandle`, not on `SessionKnobs`. The AGENTS.md
+cross-layer checklist exists because of this.
+
+**Change.** One RPC pair, `session.knob.set { session_id, knob, value }` and
+`session.knob.get { session_id, knob }`, with `value: KnobValue`, an enum
+with one variant per knob. The daemon validates the value once and applies
+it through the existing `on_acp` table, so the ACP rules stay in one place.
+The web gets one route pair. The TUI's `:set` and `/mode` send the knob and
+the value. Delete the per-knob methods, types, routes, client methods,
+messages and hooks. Replace the cross-layer checklist with the few steps
+that a new knob still needs.
+
+**Proof.** The knob RPC matrix (`chat_runner/tests/knob_rpc.rs`) covers each
+knob through the one pair: set, get and resume. The architecture tests find
+each knob in the TUI and the web client.
+
+## Step 14. Simpler core APIs and the audit list
+
+**Change.** Delete what the audit found, each with its evidence in the
+audit record:
+- core: the two `TokenUsage` types and the TS copy; `LlmToolDefinition` and
+  `FunctionDefinition`; `ChatToolResult`'s strings; the two `SearchResult`;
+  `DocumentId`; `LlmProviderConfigBuilder`; the 32 named constructors of
+  `SessionEventMessage`; `ConfigValidationError` into `ConfigError`; the dead
+  `EventRing`, `EventError`, `ModelCapability`, `UnifiedModelInfo`; the four
+  `Value` fields whose shape is known; the unread fields of `ToolDefinition`
+  and `ModeDescriptor`.
+- across crates: `ModeStance` (lua) into core `PermissionMode`; `Unprompted`
+  (daemon) into `PermissionDecision`; the TS `PermissionScope`.
+- error enums whose variants no caller matches become `anyhow`:
+  `watch::Error`, `SkillError`, `BackgroundError`, `ModelListingError`,
+  `ReplayError`, and the others that a sweep finds.
+- small copies: `RenderedOverlay` (oil), the identical one-field tool
+  parameter structs, `ModelInfoBuilder`, `ExecuteMultiKilnSearchParams`,
+  the duplicate test `Daemon` in `server/diff.rs`, the web path and kiln
+  query copies, the TS `PaneDropPosition` and `Rect` copies.
 
 **Proof.** `cargo check --workspace` and the golden wire tests pass.
 
-## Step 14. Luau types from the schema
+## Step 15. Luau types from the schema
 
 **Change.** Add `LuaType::from_json_schema` in
 `crates/crucible-lua/src/signature.rs` and a `Json<T>` binding wrapper, so
 a binding's declaration comes from the core schema. `cru.d.luau` gets one
 `export type` for each core type that Lua reaches. Delete the hand Luau
-contract types (`PERMISSION_REQUEST`, `AgentKeys`, `TranscriptRow`, the
-`ToolResult` copies, `Interception`) and the Lua `PermissionRequest` view.
+contract types (`PERMISSION_REQUEST`, the `ToolResult` copies,
+`Interception`, `OilStyle` and the six style fields that `OilProps` repeats)
+and the Lua `PermissionRequest` view.
 
-**Proof.** `stubs::verify` runs in `just lint types`, and `luau-lsp`
-checks `runtime/` against the generated file.
+**Proof.** `stubs::verify` runs in `just lint types`, and `luau-lsp` checks
+`runtime/` against the generated file.
 
-## Step 15. The last TS copies
+## Step 16. The last TS copies
 
 **Change.** Replace the remaining hand TS wire types (`GrepHit`,
 `SemanticHit`, the Bases and file request types, four `api.ts` types) with
-aliases of the generated schema.
+aliases of the generated schema. Keep one `rel_path` mapper, or none.
 
 **Proof.** `tsc --noEmit` and the web unit tests pass.
 
-## Step 16. One daemon test fixture (done)
+## Step 17. One daemon test fixture
 
-**Change.** `tests/proposals.rs`'s `struct Daemon` and
-`tests/acp_review_comment_context_e2e.rs`'s `struct Fixture` each bound their
-own daemon: a `DaemonClient`, a shutdown `broadcast::Sender` and a server
-`JoinHandle`. Both now bind through `InProcessDaemon`/`InProcessDaemonBuilder`
-(`crucible_daemon::test_support`), which gained an `AcpConfig` option and an
-event-subscribing connect method for the fixture that needed them.
+**Status: done.** The two daemon test files that bound their own daemon use
+the shared `InProcessDaemon`, and the two plugin-bridge rigs are one `Rig`.
+The other local fixtures build different things, so they stay.
 
-`session_bridge/tests/reflection.rs` and `session_bridge/tests/auto_title.rs`
-each built the same shape of `Rig` — a cleared provider environment, a mock
-chat endpoint, a `SessionManager`, an `AgentManager` and a plugin loader with
-one shipped plugin active — for two different plugins. One `Rig`, in the new
-`session_bridge/tests/rig.rs`, now builds both, through `Rig::reflection` and
-`Rig::auto_title`.
-
-`agent_manager/tests/session_stop.rs`'s `Rig` binds no socket at all: it
-drives an `RpcContext`/`AgentManager` pair directly, the same shape
-`agent_manager/tests/revive_isolation.rs`'s `Daemon` builds. It is not a
-daemon-socket fixture, so it stayed as it was.
-
-**Proof.** The daemon tests pass.
-
-## Step 17. Enums on the wire
+## Step 18. Enums on the wire
 
 **Change.** Use the existing enums, not strings, for `session_type`,
-`agent_type`, `recording_mode`, `state` and `FsPathRequest.kind`. The
-generated TS and Luau types then hold literal unions.
+`agent_type`, `recording_mode`, `state`, `FsPathRequest.kind` and
+`FsMoveRequest.kind`. The generated TS and Luau types then hold literal
+unions.
 
 **Proof.** The serde round-trip tests and `openapi_contract` pass.
 
-## Step 18. Research: internal types
+## Step 19. Owner decisions
 
-About three quarters of the types stay inside one crate, for example
-`agent_manager` (80), `tools` (64) and the TUI (148). Steps 10 to 17 do not
-touch them. After step 12, count again, then find internal types that
-merge or go, crate by crate. The result is a plan for the rest of the
-budget in the section above.
+Each item changes behavior, a plugin API or a rule of this plan. None starts
+without the owner's decision.
+
+| Item | Deletes | Cost |
+|---|---|---|
+| The web talks RPC through one generic proxy route (`POST /api/rpc/{method}` with the session cookie and a method allow list), with generated TS for each core type | most of the 156 web Rust types, 119 routes, 87 forwarding functions, most of the 104 functions and 128 types in `lib/api.ts` and `lib/query`: about 150 types | Reverses "The web REST layer as a whole" in the list below. Needs a security review of the allow list. L |
+| The fullscreen multi-pane prototype (`FullscreenShell`, `ChatPane`, `PluginBuffer`) | 3, with their tests, bench and example | No production path reaches it |
+| Popup requests become single-select panels | `PopupRequest`, `PopupResponse` | Changes `cru.ui.popup` and both client renderers |
+| An ask becomes a batch of one | `AskRequest`, `AskResponse` | Changes `cru.ui.ask` and both client renderers |
+| The workflow engine emits `WorkflowPayload` | `WorkflowEvent` | One translator reads it |
+| `daemon.capabilities` drops its constant flags | `CapabilityFlags` | An outside client may read them |
 
 ## What not to merge
 
