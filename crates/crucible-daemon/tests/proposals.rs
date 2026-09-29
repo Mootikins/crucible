@@ -11,85 +11,65 @@ use crucible_core::note_edit::disk_hash;
 use crucible_core::proposal::{Proposal, ProposalAuthor, ProposalFile, ProposalState};
 use crucible_core::session::{PhysicalRoot, SessionId};
 use crucible_daemon::proposals::{proposals_root, ProposalStore};
-use crucible_daemon::{DaemonClient, Server};
+use crucible_daemon::test_support::{InProcessDaemon, InProcessDaemonBuilder};
+use crucible_daemon::DaemonClient;
 
 const BASE: &str = "one\ntwo\nthree\n";
 
-struct Daemon {
-    _dir: tempfile::TempDir,
-    kiln: PathBuf,
-    data: PathBuf,
-    client: DaemonClient,
-    shutdown: tokio::sync::broadcast::Sender<()>,
-    task: tokio::task::JoinHandle<anyhow::Result<()>>,
+/// The name the tests register their one kiln under.
+const KILN: &str = "notes";
+
+/// A daemon with one registered kiln, and a client connected to it. With
+/// `open`, the client opens the kiln.
+async fn start(open: bool) -> (InProcessDaemon, DaemonClient) {
+    let daemon = InProcessDaemonBuilder::new()
+        .expect("a fresh data home")
+        .with_kiln(KILN)
+        .start()
+        .await
+        .expect("bind the daemon");
+    let client = daemon.connect().await;
+    if open {
+        client.kiln_open(&daemon.kiln_dir(KILN)).await.unwrap();
+    }
+    (daemon, client)
 }
 
-impl Daemon {
-    /// A daemon with one registered kiln. With `open`, the client opens it.
-    async fn start(open: bool) -> Self {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let dir = tempfile::tempdir().unwrap();
-        let kiln = dir.path().join("kiln");
-        std::fs::create_dir(&kiln).unwrap();
-        let data = dir.path().join("data");
-        let socket = dir.path().join("daemon.sock");
-        let server =
-            Server::bind_with_data_home_and_kilns(&socket, data.clone(), &[("notes", &kiln)])
-                .await
-                .unwrap();
-        let shutdown = server.shutdown_handle();
-        let task = tokio::spawn(server.run());
-        let client = DaemonClient::connect_to(&socket).await.unwrap();
-        if open {
-            client.kiln_open(&kiln).await.unwrap();
-        }
-        Self {
-            _dir: dir,
-            kiln,
-            data,
-            client,
-            shutdown,
-            task,
-        }
-    }
+fn kiln_file(daemon: &InProcessDaemon, path: &str) -> PathBuf {
+    daemon.kiln_dir(KILN).join(path)
+}
 
-    fn file(&self, path: &str) -> PathBuf {
-        self.kiln.join(path)
-    }
+fn read(daemon: &InProcessDaemon, path: &str) -> String {
+    std::fs::read_to_string(kiln_file(daemon, path)).unwrap()
+}
 
-    fn read(&self, path: &str) -> String {
-        std::fs::read_to_string(self.file(path)).unwrap()
+/// Propose `new_text` for each path in the `notes` kiln, from the base `BASE`.
+fn propose(daemon: &InProcessDaemon, writes: &[(&str, &str)]) -> Proposal {
+    let store = ProposalStore::new(proposals_root(daemon.data_home()));
+    let session = SessionId::parse("aux-proposals").unwrap();
+    let mut proposal = None;
+    for (path, new_text) in writes {
+        proposal = Some(
+            store
+                .record_write(
+                    ProposalAuthor::Plugin {
+                        name: "consolidation".into(),
+                    },
+                    &session,
+                    PhysicalRoot::from_top_level(daemon.kiln_dir(KILN)),
+                    path,
+                    text_base(BASE),
+                    new_text.to_string(),
+                )
+                .unwrap(),
+        );
     }
+    proposal.expect("at least one write")
+}
 
-    /// Propose `new_text` for each path, from the base `BASE`.
-    fn propose(&self, writes: &[(&str, &str)]) -> Proposal {
-        let store = ProposalStore::new(proposals_root(&self.data));
-        let session = SessionId::parse("aux-proposals").unwrap();
-        let mut proposal = None;
-        for (path, new_text) in writes {
-            proposal = Some(
-                store
-                    .record_write(
-                        ProposalAuthor::Plugin {
-                            name: "consolidation".into(),
-                        },
-                        &session,
-                        PhysicalRoot::from_top_level(&self.kiln),
-                        path,
-                        text_base(BASE),
-                        new_text.to_string(),
-                    )
-                    .unwrap(),
-            );
-        }
-        proposal.expect("at least one write")
-    }
-
-    async fn stop(self) {
-        drop(self.client);
-        self.shutdown.send(()).unwrap();
-        self.task.await.unwrap().unwrap();
-    }
+async fn stop(daemon: InProcessDaemon, client: DaemonClient) {
+    drop(client);
+    daemon.shutdown().await;
 }
 
 fn text_base(text: &str) -> ExpectedBase {
@@ -105,45 +85,48 @@ fn write(path: &Path, text: &str) {
 
 #[tokio::test]
 async fn accept_on_an_unchanged_file_writes_it() {
-    let daemon = Daemon::start(true).await;
-    write(&daemon.file("a.md"), BASE);
-    let proposal = daemon.propose(&[("a.md", "ONE\ntwo\nthree\n")]);
+    let (daemon, client) = start(true).await;
+    write(&kiln_file(&daemon, "a.md"), BASE);
+    let proposal = propose(&daemon, &[("a.md", "ONE\ntwo\nthree\n")]);
 
-    let accepted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+    let accepted = client.proposal_accept(&proposal.id).await.unwrap();
 
     assert_eq!(accepted.state, ProposalState::Accepted);
-    assert_eq!(daemon.read("a.md"), "ONE\ntwo\nthree\n");
+    assert_eq!(read(&daemon, "a.md"), "ONE\ntwo\nthree\n");
     // The file keeps the state, so a second read agrees.
-    let again = daemon.client.proposal_get(&proposal.id).await.unwrap();
+    let again = client.proposal_get(&proposal.id).await.unwrap();
     assert_eq!(again.state, ProposalState::Accepted);
-    daemon.stop().await;
+    stop(daemon, client).await;
 }
 
 #[tokio::test]
 async fn accept_after_an_outside_edit_merges_cleanly() {
-    let daemon = Daemon::start(true).await;
-    write(&daemon.file("a.md"), BASE);
-    let proposal = daemon.propose(&[("a.md", "ONE\ntwo\nthree\n")]);
-    write(&daemon.file("a.md"), "one\ntwo\nTHREE\n");
+    let (daemon, client) = start(true).await;
+    write(&kiln_file(&daemon, "a.md"), BASE);
+    let proposal = propose(&daemon, &[("a.md", "ONE\ntwo\nthree\n")]);
+    write(&kiln_file(&daemon, "a.md"), "one\ntwo\nTHREE\n");
 
-    let accepted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+    let accepted = client.proposal_accept(&proposal.id).await.unwrap();
 
     assert_eq!(accepted.state, ProposalState::Accepted);
-    assert_eq!(daemon.read("a.md"), "ONE\ntwo\nTHREE\n");
-    daemon.stop().await;
+    assert_eq!(read(&daemon, "a.md"), "ONE\ntwo\nTHREE\n");
+    stop(daemon, client).await;
 }
 
 #[tokio::test]
 async fn accept_with_a_conflict_writes_nothing_and_is_conflicted() {
-    let daemon = Daemon::start(true).await;
-    write(&daemon.file("a.md"), BASE);
-    write(&daemon.file("b.md"), BASE);
+    let (daemon, client) = start(true).await;
+    write(&kiln_file(&daemon, "a.md"), BASE);
+    write(&kiln_file(&daemon, "b.md"), BASE);
     // `a.md` has no outside edit and writes cleanly alone. `b.md` conflicts,
     // so the accept must not write `a.md` either.
-    let proposal = daemon.propose(&[("a.md", "ONE\ntwo\nthree\n"), ("b.md", "uno\ntwo\nthree\n")]);
-    write(&daemon.file("b.md"), "eins\ntwo\nthree\n");
+    let proposal = propose(
+        &daemon,
+        &[("a.md", "ONE\ntwo\nthree\n"), ("b.md", "uno\ntwo\nthree\n")],
+    );
+    write(&kiln_file(&daemon, "b.md"), "eins\ntwo\nthree\n");
 
-    let conflicted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+    let conflicted = client.proposal_accept(&proposal.id).await.unwrap();
 
     let ProposalState::Conflicted { files } = &conflicted.state else {
         panic!("expected a conflict, got {:?}", conflicted.state);
@@ -152,43 +135,41 @@ async fn accept_with_a_conflict_writes_nothing_and_is_conflicted() {
     assert_eq!(files[0].path, "b.md");
     assert_eq!(files[0].disk_text, "eins\ntwo\nthree\n");
     assert!(!files[0].regions.is_empty());
-    assert_eq!(daemon.read("a.md"), BASE);
-    assert_eq!(daemon.read("b.md"), "eins\ntwo\nthree\n");
-    daemon.stop().await;
+    assert_eq!(read(&daemon, "a.md"), BASE);
+    assert_eq!(read(&daemon, "b.md"), "eins\ntwo\nthree\n");
+    stop(daemon, client).await;
 }
 
 #[tokio::test]
 async fn resolve_writes_the_settled_text() {
-    let daemon = Daemon::start(true).await;
-    write(&daemon.file("a.md"), BASE);
-    let proposal = daemon.propose(&[("a.md", "uno\ntwo\nthree\n")]);
-    write(&daemon.file("a.md"), "eins\ntwo\nthree\n");
-    let conflicted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+    let (daemon, client) = start(true).await;
+    write(&kiln_file(&daemon, "a.md"), BASE);
+    let proposal = propose(&daemon, &[("a.md", "uno\ntwo\nthree\n")]);
+    write(&kiln_file(&daemon, "a.md"), "eins\ntwo\nthree\n");
+    let conflicted = client.proposal_accept(&proposal.id).await.unwrap();
     assert!(matches!(conflicted.state, ProposalState::Conflicted { .. }));
 
-    let resolved = daemon
-        .client
+    let resolved = client
         .proposal_resolve(&proposal.id, "a.md", "uno eins\ntwo\nthree\n")
         .await
         .unwrap();
 
     assert_eq!(resolved.state, ProposalState::Accepted);
-    assert_eq!(daemon.read("a.md"), "uno eins\ntwo\nthree\n");
-    daemon.stop().await;
+    assert_eq!(read(&daemon, "a.md"), "uno eins\ntwo\nthree\n");
+    stop(daemon, client).await;
 }
 
 #[tokio::test]
 async fn resolve_after_another_move_stays_conflicted() {
-    let daemon = Daemon::start(true).await;
-    write(&daemon.file("a.md"), BASE);
-    let proposal = daemon.propose(&[("a.md", "uno\ntwo\nthree\n")]);
-    write(&daemon.file("a.md"), "eins\ntwo\nthree\n");
-    daemon.client.proposal_accept(&proposal.id).await.unwrap();
+    let (daemon, client) = start(true).await;
+    write(&kiln_file(&daemon, "a.md"), BASE);
+    let proposal = propose(&daemon, &[("a.md", "uno\ntwo\nthree\n")]);
+    write(&kiln_file(&daemon, "a.md"), "eins\ntwo\nthree\n");
+    client.proposal_accept(&proposal.id).await.unwrap();
     // The disk moves again on the same line before the user settles the text.
-    write(&daemon.file("a.md"), "one again\ntwo\nthree\n");
+    write(&kiln_file(&daemon, "a.md"), "one again\ntwo\nthree\n");
 
-    let resolved = daemon
-        .client
+    let resolved = client
         .proposal_resolve(&proposal.id, "a.md", "uno eins\ntwo\nthree\n")
         .await
         .unwrap();
@@ -199,47 +180,49 @@ async fn resolve_after_another_move_stays_conflicted() {
     assert_eq!(files.len(), 1, "{files:?}");
     assert_eq!(files[0].disk_text, "one again\ntwo\nthree\n");
     assert!(!files[0].regions.is_empty());
-    assert_eq!(daemon.read("a.md"), "one again\ntwo\nthree\n");
-    daemon.stop().await;
+    assert_eq!(read(&daemon, "a.md"), "one again\ntwo\nthree\n");
+    stop(daemon, client).await;
 }
 
 #[tokio::test]
 async fn a_proposal_on_a_closed_kiln_goes_stale_at_list() {
     // The client does not open the kiln, so no watcher sees the edit.
-    let daemon = Daemon::start(false).await;
-    write(&daemon.file("a.md"), BASE);
-    let proposal = daemon.propose(&[("a.md", "ONE\ntwo\nthree\n")]);
-    write(&daemon.file("a.md"), "one\ntwo\nTHREE\n");
+    let (daemon, client) = start(false).await;
+    write(&kiln_file(&daemon, "a.md"), BASE);
+    let proposal = propose(&daemon, &[("a.md", "ONE\ntwo\nthree\n")]);
+    write(&kiln_file(&daemon, "a.md"), "one\ntwo\nTHREE\n");
 
-    let listed = daemon.client.proposal_list(false).await.unwrap();
+    let listed = client.proposal_list(false).await.unwrap();
 
     let row = listed.iter().find(|p| p.id == proposal.id).unwrap();
     assert_eq!(row.state, ProposalState::Stale);
     // The check writes the state, so a read of the one proposal agrees.
-    let got = daemon.client.proposal_get(&proposal.id).await.unwrap();
+    let got = client.proposal_get(&proposal.id).await.unwrap();
     assert_eq!(got.state, ProposalState::Stale);
-    daemon.stop().await;
+    stop(daemon, client).await;
 }
 
 #[tokio::test]
 async fn resolve_waits_for_every_settled_text() {
-    let daemon = Daemon::start(true).await;
-    write(&daemon.file("a.md"), BASE);
-    write(&daemon.file("b.md"), BASE);
-    let proposal = daemon.propose(&[("a.md", "uno\ntwo\nthree\n"), ("b.md", "uno\ntwo\nthree\n")]);
-    write(&daemon.file("a.md"), "eins\ntwo\nthree\n");
-    write(&daemon.file("b.md"), "eins\ntwo\nthree\n");
-    let conflicted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+    let (daemon, client) = start(true).await;
+    write(&kiln_file(&daemon, "a.md"), BASE);
+    write(&kiln_file(&daemon, "b.md"), BASE);
+    let proposal = propose(
+        &daemon,
+        &[("a.md", "uno\ntwo\nthree\n"), ("b.md", "uno\ntwo\nthree\n")],
+    );
+    write(&kiln_file(&daemon, "a.md"), "eins\ntwo\nthree\n");
+    write(&kiln_file(&daemon, "b.md"), "eins\ntwo\nthree\n");
+    let conflicted = client.proposal_accept(&proposal.id).await.unwrap();
     let ProposalState::Conflicted { files } = &conflicted.state else {
         panic!("expected a conflict, got {:?}", conflicted.state);
     };
     assert_eq!(files.len(), 2, "{files:?}");
     // Now `b.md` merges cleanly with its proposed text. The user did not
     // settle it yet, so the first resolve must still write nothing.
-    write(&daemon.file("b.md"), "one\ntwo\nTHREE\n");
+    write(&kiln_file(&daemon, "b.md"), "one\ntwo\nTHREE\n");
 
-    let first = daemon
-        .client
+    let first = client
         .proposal_resolve(&proposal.id, "a.md", "uno eins\ntwo\nthree\n")
         .await
         .unwrap();
@@ -250,22 +233,21 @@ async fn resolve_waits_for_every_settled_text() {
     };
     assert_eq!(files.len(), 1, "{files:?}");
     assert_eq!(files[0].path, "b.md");
-    assert_eq!(daemon.read("a.md"), "eins\ntwo\nthree\n");
-    assert_eq!(daemon.read("b.md"), "one\ntwo\nTHREE\n");
+    assert_eq!(read(&daemon, "a.md"), "eins\ntwo\nthree\n");
+    assert_eq!(read(&daemon, "b.md"), "one\ntwo\nTHREE\n");
     // The disk goes back to the text of the conflict, so the settled text
     // writes with no merge.
-    write(&daemon.file("b.md"), "eins\ntwo\nthree\n");
+    write(&kiln_file(&daemon, "b.md"), "eins\ntwo\nthree\n");
 
-    let second = daemon
-        .client
+    let second = client
         .proposal_resolve(&proposal.id, "b.md", "uno zwei\ntwo\nthree\n")
         .await
         .unwrap();
 
     assert_eq!(second.state, ProposalState::Accepted);
-    assert_eq!(daemon.read("a.md"), "uno eins\ntwo\nthree\n");
-    assert_eq!(daemon.read("b.md"), "uno zwei\ntwo\nthree\n");
-    daemon.stop().await;
+    assert_eq!(read(&daemon, "a.md"), "uno eins\ntwo\nthree\n");
+    assert_eq!(read(&daemon, "b.md"), "uno zwei\ntwo\nthree\n");
+    stop(daemon, client).await;
 }
 
 enum FileDecision {
@@ -277,21 +259,20 @@ enum FileDecision {
 /// Legacy path-only decisions must fail when the path names two files.
 /// The real socket must carry the refusal without changing either kiln.
 async fn file_decision_in_two_kilns(decision: FileDecision, qualified: bool) {
-    let daemon = Daemon::start(true).await;
-    let other = daemon._dir.path().join("other-kiln");
+    let (daemon, client) = start(true).await;
+    let other = daemon.data_home().join("other-kiln");
     std::fs::create_dir(&other).unwrap();
-    daemon
-        .client
+    client
         .kiln_register("other", &other, false, false)
         .await
         .unwrap();
-    write(&daemon.file("a.md"), BASE);
+    write(&kiln_file(&daemon, "a.md"), BASE);
     write(&other.join("a.md"), BASE);
 
-    let store = ProposalStore::new(proposals_root(&daemon.data));
+    let store = ProposalStore::new(proposals_root(daemon.data_home()));
     let session = SessionId::parse("aux-two-kilns").unwrap();
     let mut proposal = None;
-    for root in [&daemon.kiln, &other] {
+    for root in [daemon.kiln_dir(KILN), other.clone()] {
         proposal = Some(
             store
                 .record_write(
@@ -309,16 +290,16 @@ async fn file_decision_in_two_kilns(decision: FileDecision, qualified: bool) {
     }
     let proposal = proposal.unwrap();
     if matches!(decision, FileDecision::Resolve) {
-        write(&daemon.file("a.md"), "outside\n");
+        write(&kiln_file(&daemon, "a.md"), "outside\n");
         write(&other.join("a.md"), "outside\n");
-        let conflicted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+        let conflicted = client.proposal_accept(&proposal.id).await.unwrap();
         let ProposalState::Conflicted { files } = conflicted.state else {
             panic!("both files must conflict before testing resolution");
         };
         assert_eq!(files.len(), 2);
     }
-    let before = daemon.client.proposal_get(&proposal.id).await.unwrap();
-    let first_before = daemon.read("a.md");
+    let before = client.proposal_get(&proposal.id).await.unwrap();
+    let first_before = read(&daemon, "a.md");
     let second_before = std::fs::read_to_string(other.join("a.md")).unwrap();
     let selected = vec!["a.md".to_string()];
     let files = vec![ProposalFile {
@@ -330,63 +311,48 @@ async fn file_decision_in_two_kilns(decision: FileDecision, qualified: bool) {
         root: PhysicalRoot::from_top_level("/unregistered"),
         path: "a.md".into(),
     }];
-    assert!(daemon
-        .client
+    assert!(client
         .proposal_accept_files(&proposal.id, &[], &unknown)
         .await
         .is_err());
-    assert!(daemon
-        .client
+    assert!(client
         .proposal_reject_files(&proposal.id, &selected, &files, None)
         .await
         .is_err());
-    assert_eq!(
-        daemon.client.proposal_get(&proposal.id).await.unwrap(),
-        before
-    );
+    assert_eq!(client.proposal_get(&proposal.id).await.unwrap(), before);
     let result = match decision {
         FileDecision::Accept if qualified => {
-            daemon
-                .client
+            client
                 .proposal_accept_files(&proposal.id, &[], &files)
                 .await
         }
         FileDecision::Reject if qualified => {
-            daemon
-                .client
+            client
                 .proposal_reject_files(&proposal.id, &[], &files, None)
                 .await
         }
         FileDecision::Resolve if qualified => {
-            daemon
-                .client
+            client
                 .proposal_resolve_file(&proposal.id, "a.md", Some(&files[0].root), "resolved\n")
                 .await
         }
-        FileDecision::Accept => {
-            daemon
-                .client
-                .proposal_accept_paths(&proposal.id, &selected)
-                .await
-        }
+        FileDecision::Accept => client.proposal_accept_paths(&proposal.id, &selected).await,
         FileDecision::Reject => {
-            daemon
-                .client
+            client
                 .proposal_reject_paths(&proposal.id, &selected, None)
                 .await
         }
         FileDecision::Resolve => {
-            daemon
-                .client
+            client
                 .proposal_resolve(&proposal.id, "a.md", "resolved\n")
                 .await
         }
     };
-    let stored = daemon.client.proposal_get(&proposal.id).await.unwrap();
-    let first_text = daemon.read("a.md");
+    let stored = client.proposal_get(&proposal.id).await.unwrap();
+    let first_text = read(&daemon, "a.md");
     let second_text = std::fs::read_to_string(other.join("a.md")).unwrap();
-    let first_root = PhysicalRoot::from_top_level(&daemon.kiln);
-    daemon.stop().await;
+    let first_root = PhysicalRoot::from_top_level(daemon.kiln_dir(KILN));
+    stop(daemon, client).await;
 
     if qualified {
         let decided = result.unwrap();

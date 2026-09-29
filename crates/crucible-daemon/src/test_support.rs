@@ -805,6 +805,19 @@ impl InProcessDaemon {
             .expect("connect to the in-process test daemon")
     }
 
+    /// [`Self::connect`], with the session-event receiver too, for a test
+    /// that waits on a broadcast event rather than polling an RPC.
+    pub async fn connect_with_events(
+        &self,
+    ) -> (
+        crate::DaemonClient,
+        tokio::sync::mpsc::UnboundedReceiver<crate::SessionEvent>,
+    ) {
+        crate::DaemonClient::connect_to_with_events(&self.socket_path)
+            .await
+            .expect("connect to the in-process test daemon")
+    }
+
     /// Send the shutdown signal and wait for `server.run()` to actually
     /// return, rather than a fixed sleep guessing how long that takes.
     pub async fn shutdown(self) {
@@ -821,6 +834,7 @@ pub struct InProcessDaemonBuilder {
     kilns: Vec<(String, std::path::PathBuf, bool)>,
     ready_timeout: Duration,
     xdg_runtime_socket: bool,
+    acp_config: Option<crucible_core::config::components::acp::AcpConfig>,
 }
 
 impl InProcessDaemonBuilder {
@@ -834,6 +848,7 @@ impl InProcessDaemonBuilder {
             kilns: Vec::new(),
             ready_timeout: Duration::from_secs(5),
             xdg_runtime_socket: false,
+            acp_config: None,
         })
     }
 
@@ -848,6 +863,7 @@ impl InProcessDaemonBuilder {
             kilns: Vec::new(),
             ready_timeout: Duration::from_secs(5),
             xdg_runtime_socket: false,
+            acp_config: None,
         }
     }
 
@@ -901,6 +917,17 @@ impl InProcessDaemonBuilder {
         self
     }
 
+    /// Bind with `config` as the daemon's `[acp]` configuration, so a test
+    /// can run a session through a configured ACP agent profile (a mock
+    /// binary, most often) instead of only the internal route.
+    pub fn with_acp_config(
+        mut self,
+        config: crucible_core::config::components::acp::AcpConfig,
+    ) -> Self {
+        self.acp_config = Some(config);
+        self
+    }
+
     pub async fn start(self) -> anyhow::Result<InProcessDaemon> {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -932,6 +959,7 @@ impl InProcessDaemonBuilder {
             &socket_path,
             self.data_home.clone(),
             &entries,
+            self.acp_config.clone(),
         )
         .await?;
         let shutdown_handle = server.shutdown_handle();

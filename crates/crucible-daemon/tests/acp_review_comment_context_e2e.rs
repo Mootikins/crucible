@@ -34,8 +34,10 @@ use crucible_core::config::{AcpConfig, BackendType};
 use crucible_core::diff::{CommentRef, DiffsetSource};
 use crucible_core::protocol::requests::{DiffCommentRequest, SessionCreateParams};
 use crucible_core::session::{CommentSide, PhysicalRoot, SessionAgent};
-use crucible_daemon::test_support::{git, init_repo, kiln_name};
-use crucible_daemon::{BindWithPluginConfigParams, DaemonClient, Server, SessionEvent};
+use crucible_daemon::test_support::{
+    git, init_repo, kiln_name, InProcessDaemon, InProcessDaemonBuilder,
+};
+use crucible_daemon::{DaemonClient, SessionEvent};
 use tempfile::TempDir;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -62,200 +64,178 @@ const KILN: &str = "notes";
 /// A cold spawn, an ACP handshake and a turn.
 const TURN_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// A daemon over a temp data root, with one kiln and one git project.
-struct Fixture {
-    _dir: TempDir,
-    repo: PathBuf,
-    data: PathBuf,
-    root: PhysicalRoot,
-    client: DaemonClient,
-    events: UnboundedReceiver<SessionEvent>,
-    shutdown: tokio::sync::broadcast::Sender<()>,
-    task: tokio::task::JoinHandle<anyhow::Result<()>>,
-}
+/// A daemon over a temp data root, with one kiln and one git project, plus
+/// the repository's own directory (which the daemon does not own) and the
+/// client and events the tests drive it with.
+///
+/// A repository on `feature` with one uncommitted edit, registered as a
+/// project, and a daemon that serves it.
+async fn start() -> (
+    TempDir,
+    InProcessDaemon,
+    DaemonClient,
+    UnboundedReceiver<SessionEvent>,
+    PathBuf,
+    PhysicalRoot,
+) {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let repo_dir = TempDir::new().expect("temp dir for the repository");
+    let repo = repo_dir.path().join("repo");
+    init_repo(&repo, &[("a.rs", "one\ntwo\nthree\n")]).await;
+    git(&repo, &["branch", "-M", "main"]).await;
+    git(&repo, &["checkout", "-q", "-b", "feature"]).await;
+    std::fs::write(repo.join("a.rs"), "one\nTWO\nthree\n").expect("edit the file");
 
-impl Fixture {
-    /// A repository on `feature` with one uncommitted edit, registered as a
-    /// project, and a daemon that serves it.
-    async fn start() -> Self {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let dir = TempDir::new().expect("temp dir");
-        let repo = dir.path().join("repo");
-        init_repo(&repo, &[("a.rs", "one\ntwo\nthree\n")]).await;
-        git(&repo, &["branch", "-M", "main"]).await;
-        git(&repo, &["checkout", "-q", "-b", "feature"]).await;
-        std::fs::write(repo.join("a.rs"), "one\nTWO\nthree\n").expect("edit the file");
-
-        let kiln = dir.path().join("kiln");
-        std::fs::create_dir_all(&kiln).expect("kiln dir");
-        let data = dir.path().join("data");
-        let socket = dir.path().join("daemon.sock");
-        // The daemon runs an ACP agent only through a profile, so the mock
-        // binary gets one. The script travels in the session agent's env.
-        let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
-            path: socket.clone(),
-            config_home: Some(data.join("config")),
-            data_home: Some(data.clone()),
-            app_config: Some(serde_json::json!({
-                "kilns": { KILN: kiln.to_string_lossy() }
-            })),
-            acp_config: Some(AcpConfig {
-                agents: [(MOCK_PROFILE.to_string(), mock_profile(BTreeMap::new()))].into(),
-                ..Default::default()
-            }),
+    // The daemon runs an ACP agent only through a profile, so the mock
+    // binary gets one. The script travels in the session agent's env.
+    let daemon = InProcessDaemonBuilder::new()
+        .expect("a fresh data home")
+        .with_kiln(KILN)
+        .with_acp_config(AcpConfig {
+            agents: [(MOCK_PROFILE.to_string(), mock_profile(BTreeMap::new()))].into(),
             ..Default::default()
         })
+        .start()
         .await
         .expect("bind the daemon");
-        let shutdown = server.shutdown_handle();
-        let task = tokio::spawn(server.run());
 
-        let (client, events) = DaemonClient::connect_to_with_events(&socket)
-            .await
-            .expect("connect to the daemon socket");
-        client
-            .session_subscribe(&["*"])
-            .await
-            .expect("subscribe to every session");
-        let project = client
-            .project_register(&repo)
-            .await
-            .expect("register the repository");
+    let (client, events) = daemon.connect_with_events().await;
+    client
+        .session_subscribe(&["*"])
+        .await
+        .expect("subscribe to every session");
+    let project = client
+        .project_register(&repo)
+        .await
+        .expect("register the repository");
+    let root = PhysicalRoot::from_top_level(project.path);
 
-        Self {
-            _dir: dir,
-            repo,
-            data,
-            root: PhysicalRoot::from_top_level(project.path),
-            client,
-            events,
-            shutdown,
-            task,
+    (repo_dir, daemon, client, events, repo, root)
+}
+
+/// The branch diffset of the repository: the merge base with the default
+/// branch, against the working tree.
+fn source(root: &PhysicalRoot) -> DiffsetSource {
+    DiffsetSource::Branch {
+        root: root.clone(),
+        base: String::new(),
+        head: None,
+    }
+}
+
+/// Store one comment on lines 1 and 2 of the current side of `a.rs`, and
+/// return a reference to it.
+///
+/// The range spans a kept line and the edited one, so the hunk holds both
+/// the removed row and the added row. A range over the edited line alone
+/// would show the addition only, and the test could not tell a real hunk
+/// from a single quoted line.
+async fn comment(client: &DaemonClient, root: &PhysicalRoot) -> CommentRef {
+    let reply = client
+        .diff_comment(DiffCommentRequest {
+            source: source(root),
+            root: Some(root.clone()),
+            path: "a.rs".to_string(),
+            from: None,
+            side: CommentSide::Current,
+            line_start: 1,
+            line_end: Some(3),
+            body: COMMENT_BODY.to_string(),
+            author: None,
+        })
+        .await
+        .expect("store the comment");
+    CommentRef {
+        id: reply.comment.id,
+        source: source(root),
+    }
+}
+
+/// Make `endpoint` the configured `chat.endpoint`, through the RPC a
+/// settings UI uses. The daemon refuses a loopback endpoint that a request
+/// names unless the operator configured it, and a mock provider listens
+/// on loopback.
+async fn configure_endpoint(client: &DaemonClient, endpoint: &str) {
+    client
+        .call(
+            RpcMethod::ConfigSet,
+            serde_json::json!({ "values": { "chat.endpoint": endpoint } }),
+        )
+        .await
+        .expect("set chat.endpoint");
+}
+
+/// Create a chat session over the repository. `agent_type` is what
+/// `session.create` records; `agent` is what it then runs.
+async fn session(
+    client: &DaemonClient,
+    repo: &Path,
+    agent_type: &str,
+    agent: &SessionAgent,
+) -> String {
+    let created = client
+        .session_create(SessionCreateParams {
+            session_type: "chat".to_string(),
+            kilns: vec![kiln_name(KILN)],
+            workspace: Some(repo.to_path_buf()),
+            recording_mode: None,
+            recording_path: None,
+            agent_type: Some(agent_type.to_string()),
+            isolation: None,
+        })
+        .await
+        .expect("create the session");
+    let id = created["session_id"]
+        .as_str()
+        .expect("session.create answers a session_id")
+        .to_string();
+    client
+        .session_configure_agent(&id, agent)
+        .await
+        .expect("configure the agent");
+    id
+}
+
+/// Wait until `session` reports `event`.
+async fn wait_for(events: &mut UnboundedReceiver<SessionEvent>, session: &str, event: &str) {
+    let deadline = tokio::time::Instant::now() + TURN_TIMEOUT;
+    loop {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(!left.is_zero(), "{event} never arrived for {session}");
+        match tokio::time::timeout(left, events.recv()).await {
+            Ok(Some(got)) if got.session_id == session && got.event == event => return,
+            Ok(Some(_)) => continue,
+            Ok(None) => panic!("the event stream closed before {event}"),
+            Err(_) => panic!("{event} never arrived for {session}"),
         }
     }
+}
 
-    /// The branch diffset of the repository: the merge base with the default
-    /// branch, against the working tree.
-    fn source(&self) -> DiffsetSource {
-        DiffsetSource::Branch {
-            root: self.root.clone(),
-            base: String::new(),
-            head: None,
-        }
-    }
+/// Every line of the session log, as text.
+fn log(daemon: &InProcessDaemon, session: &str) -> String {
+    let path = daemon
+        .data_home()
+        .join("sessions")
+        .join(session)
+        .join("session.jsonl");
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
 
-    /// Store one comment on lines 1 and 2 of the current side of `a.rs`, and
-    /// return a reference to it.
-    ///
-    /// The range spans a kept line and the edited one, so the hunk holds both
-    /// the removed row and the added row. A range over the edited line alone
-    /// would show the addition only, and the test could not tell a real hunk
-    /// from a single quoted line.
-    async fn comment(&self) -> CommentRef {
-        let reply = self
-            .client
-            .diff_comment(DiffCommentRequest {
-                source: self.source(),
-                root: Some(self.root.clone()),
-                path: "a.rs".to_string(),
-                from: None,
-                side: CommentSide::Current,
-                line_start: 1,
-                line_end: Some(3),
-                body: COMMENT_BODY.to_string(),
-                author: None,
-            })
-            .await
-            .expect("store the comment");
-        CommentRef {
-            id: reply.comment.id,
-            source: self.source(),
-        }
-    }
+/// The accepted-context lines of the session log.
+///
+/// `SessionInput::accept` writes one `context_injected` event per
+/// accepted block. An ACP session must have none.
+fn injections(daemon: &InProcessDaemon, session: &str) -> Vec<String> {
+    log(daemon, session)
+        .lines()
+        .filter(|line| line.contains("\"event\":\"context_injected\""))
+        .map(str::to_string)
+        .collect()
+}
 
-    /// Create a chat session over the repository. `agent_type` is what
-    /// `session.create` records; `agent` is what it then runs.
-    /// Make `endpoint` the configured `chat.endpoint`, through the RPC a
-    /// settings UI uses. The daemon refuses a loopback endpoint that a request
-    /// names unless the operator configured it, and a mock provider listens
-    /// on loopback.
-    async fn configure_endpoint(&self, endpoint: &str) {
-        self.client
-            .call(
-                RpcMethod::ConfigSet,
-                serde_json::json!({ "values": { "chat.endpoint": endpoint } }),
-            )
-            .await
-            .expect("set chat.endpoint");
-    }
-
-    async fn session(&self, agent_type: &str, agent: &SessionAgent) -> String {
-        let created = self
-            .client
-            .session_create(SessionCreateParams {
-                session_type: "chat".to_string(),
-                kilns: vec![kiln_name(KILN)],
-                workspace: Some(self.repo.clone()),
-                recording_mode: None,
-                recording_path: None,
-                agent_type: Some(agent_type.to_string()),
-                isolation: None,
-            })
-            .await
-            .expect("create the session");
-        let id = created["session_id"]
-            .as_str()
-            .expect("session.create answers a session_id")
-            .to_string();
-        self.client
-            .session_configure_agent(&id, agent)
-            .await
-            .expect("configure the agent");
-        id
-    }
-
-    /// Wait until `session` reports `event`.
-    async fn wait_for(&mut self, session: &str, event: &str) {
-        let deadline = tokio::time::Instant::now() + TURN_TIMEOUT;
-        loop {
-            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
-            assert!(!left.is_zero(), "{event} never arrived for {session}");
-            match tokio::time::timeout(left, self.events.recv()).await {
-                Ok(Some(got)) if got.session_id == session && got.event == event => return,
-                Ok(Some(_)) => continue,
-                Ok(None) => panic!("the event stream closed before {event}"),
-                Err(_) => panic!("{event} never arrived for {session}"),
-            }
-        }
-    }
-
-    /// Every line of the session log, as text.
-    fn log(&self, session: &str) -> String {
-        let path = self
-            .data
-            .join("sessions")
-            .join(session)
-            .join("session.jsonl");
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
-    }
-
-    /// The accepted-context lines of the session log.
-    ///
-    /// `SessionInput::accept` writes one `context_injected` event per
-    /// accepted block. An ACP session must have none.
-    fn injections(&self, session: &str) -> Vec<String> {
-        self.log(session)
-            .lines()
-            .filter(|line| line.contains("\"event\":\"context_injected\""))
-            .map(str::to_string)
-            .collect()
-    }
-
-    async fn stop(self) {
-        drop(self.client);
-        let _ = self.shutdown.send(());
-        let _ = self.task.await;
-    }
+async fn stop(daemon: InProcessDaemon, client: DaemonClient) {
+    drop(client);
+    daemon.shutdown().await;
 }
 
 /// An ACP agent that runs the mock binary, streams `ANSWER` and logs each
@@ -325,13 +305,12 @@ async fn empty_provider() -> wiremock::MockServer {
 /// else, and the comment the user attached might as well not exist.
 #[tokio::test]
 async fn an_attached_comment_reaches_the_acp_wire_prompt() {
-    let mut fixture = Fixture::start().await;
-    let capture = fixture._dir.path().join("acp_prompt.txt");
-    let reference = fixture.comment().await;
-    let session = fixture.session("acp", &acp_agent(&capture)).await;
+    let (repo_dir, daemon, client, mut events, repo, root) = start().await;
+    let capture = repo_dir.path().join("acp_prompt.txt");
+    let reference = comment(&client, &root).await;
+    let session = session(&client, &repo, "acp", &acp_agent(&capture)).await;
 
-    fixture
-        .client
+    client
         .session_send_message_with_comments(
             &session,
             USER_MESSAGE,
@@ -340,7 +319,7 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
         )
         .await
         .expect("the daemon accepts the message");
-    fixture.wait_for(&session, "message_complete").await;
+    wait_for(&mut events, &session, "message_complete").await;
 
     let prompt = last_prompt(&capture).expect("the agent process must log the prompt it received");
 
@@ -367,7 +346,7 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
         "the block must come before the user content; the agent received: {prompt:?}"
     );
 
-    fixture.stop().await;
+    stop(daemon, client).await;
 }
 
 /// The control. A second turn with no reference must carry no block, or the
@@ -375,13 +354,12 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
 /// into every prompt of the session.
 #[tokio::test]
 async fn a_later_turn_without_a_reference_carries_no_block() {
-    let mut fixture = Fixture::start().await;
-    let capture = fixture._dir.path().join("acp_prompt.txt");
-    let reference = fixture.comment().await;
-    let session = fixture.session("acp", &acp_agent(&capture)).await;
+    let (repo_dir, daemon, client, mut events, repo, root) = start().await;
+    let capture = repo_dir.path().join("acp_prompt.txt");
+    let reference = comment(&client, &root).await;
+    let session = session(&client, &repo, "acp", &acp_agent(&capture)).await;
 
-    fixture
-        .client
+    client
         .session_send_message_with_comments(
             &session,
             USER_MESSAGE,
@@ -390,14 +368,13 @@ async fn a_later_turn_without_a_reference_carries_no_block() {
         )
         .await
         .expect("the daemon accepts the first message");
-    fixture.wait_for(&session, "message_complete").await;
+    wait_for(&mut events, &session, "message_complete").await;
 
-    fixture
-        .client
+    client
         .session_send_message(&session, "and now something else", true)
         .await
         .expect("the daemon accepts the second message");
-    fixture.wait_for(&session, "message_complete").await;
+    wait_for(&mut events, &session, "message_complete").await;
 
     let prompt = last_prompt(&capture).expect("the second prompt");
     assert!(
@@ -406,7 +383,7 @@ async fn a_later_turn_without_a_reference_carries_no_block() {
     );
     assert!(prompt.contains("and now something else"));
 
-    fixture.stop().await;
+    stop(daemon, client).await;
 }
 
 /// The difference between the two routes, asserted in one place.
@@ -419,18 +396,15 @@ async fn a_later_turn_without_a_reference_carries_no_block() {
 #[tokio::test]
 async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
     let provider = empty_provider().await;
-    let mut fixture = Fixture::start().await;
-    let capture = fixture._dir.path().join("acp_prompt.txt");
-    let reference = fixture.comment().await;
+    let (repo_dir, daemon, client, mut events, repo, root) = start().await;
+    let capture = repo_dir.path().join("acp_prompt.txt");
+    let reference = comment(&client, &root).await;
 
-    let acp = fixture.session("acp", &acp_agent(&capture)).await;
-    fixture.configure_endpoint(&provider.uri()).await;
-    let internal = fixture
-        .session("internal", &internal_agent(&provider.uri()))
-        .await;
+    let acp = session(&client, &repo, "acp", &acp_agent(&capture)).await;
+    configure_endpoint(&client, &provider.uri()).await;
+    let internal = session(&client, &repo, "internal", &internal_agent(&provider.uri())).await;
 
-    fixture
-        .client
+    client
         .session_send_message_with_comments(
             &acp,
             USER_MESSAGE,
@@ -440,10 +414,9 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
         .await
         .expect("the daemon accepts the ACP message");
     // The ACP turn has to finish: the agent process logs the prompt.
-    fixture.wait_for(&acp, "message_complete").await;
+    wait_for(&mut events, &acp, "message_complete").await;
 
-    fixture
-        .client
+    client
         .session_send_message_with_comments(
             &internal,
             USER_MESSAGE,
@@ -456,20 +429,20 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
     // accepted context while it assembles the input, which is before it
     // calls the provider, so the reply to the send is already later than
     // the write.
-    fixture.wait_for(&internal, "user_message").await;
+    wait_for(&mut events, &internal, "user_message").await;
 
     assert!(
-        fixture.injections(&acp).is_empty(),
+        injections(&daemon, &acp).is_empty(),
         "an ACP session owns its history and must store no injected context; log: {}",
-        fixture.log(&acp)
+        log(&daemon, &acp)
     );
 
-    let accepted = fixture.injections(&internal);
+    let accepted = injections(&daemon, &internal);
     assert_eq!(
         accepted.len(),
         1,
         "the internal session must store one injected block; log: {}",
-        fixture.log(&internal)
+        log(&daemon, &internal)
     );
     let line: serde_json::Value = serde_json::from_str(&accepted[0]).expect("the line is JSON");
     assert_eq!(
@@ -501,7 +474,7 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
         "the ACP agent still receives the block in its prompt: {prompt:?}"
     );
 
-    fixture.stop().await;
+    stop(daemon, client).await;
 }
 
 /// An unknown comment id refuses the message, with one wording for both
@@ -509,25 +482,28 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
 /// had been duplicated per route.
 #[tokio::test]
 async fn an_unknown_comment_id_refuses_both_routes_alike() {
-    let fixture = Fixture::start().await;
-    let capture = fixture._dir.path().join("acp_prompt.txt");
+    let (repo_dir, daemon, client, _events, repo, root) = start().await;
+    let capture = repo_dir.path().join("acp_prompt.txt");
 
-    let acp = fixture.session("acp", &acp_agent(&capture)).await;
+    let acp = session(&client, &repo, "acp", &acp_agent(&capture)).await;
     // The refusal happens before the daemon builds the agent, so this
     // endpoint is never called.
-    fixture.configure_endpoint("http://127.0.0.1:1/").await;
-    let internal = fixture
-        .session("internal", &internal_agent("http://127.0.0.1:1/"))
-        .await;
+    configure_endpoint(&client, "http://127.0.0.1:1/").await;
+    let internal = session(
+        &client,
+        &repo,
+        "internal",
+        &internal_agent("http://127.0.0.1:1/"),
+    )
+    .await;
     let unknown = CommentRef {
         id: "nope".to_string(),
-        source: fixture.source(),
+        source: source(&root),
     };
 
     let mut refusals = Vec::new();
     for session in [&acp, &internal] {
-        let error = fixture
-            .client
+        let error = client
             .session_send_message_with_comments(
                 session,
                 USER_MESSAGE,
@@ -554,5 +530,5 @@ async fn an_unknown_comment_id_refuses_both_routes_alike() {
         "a refused message must start no ACP turn"
     );
 
-    fixture.stop().await;
+    stop(daemon, client).await;
 }

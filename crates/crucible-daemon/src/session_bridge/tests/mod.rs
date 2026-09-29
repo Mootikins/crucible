@@ -14,6 +14,7 @@ mod message_rows;
 mod persisted_history;
 mod reflection;
 mod review;
+mod rig;
 mod session_json;
 
 use crucible_core::config::{BackendType, LlmConfig};

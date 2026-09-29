@@ -1,172 +1,15 @@
 //! The shipped plugin, not a replacement hook: end → provider → proposal →
 //! rejection → the rejected title for the next pass.
 
+use super::rig::{is_chat_request, Rig, NOTE};
 use super::*;
-use crate::daemon_plugins::DaemonPluginLoader;
 use crate::observe::LogEvent;
-use crate::test_support::{kiln_name, temp_session_manager_with_kilns};
+use crate::test_support::kiln_name;
 use crucible_core::session::SessionState;
-use crucible_lua::{manifest::PluginSource, DaemonSessionApi};
+use crucible_lua::DaemonSessionApi;
 use serde_json::json;
-use wiremock::{Mock, MockServer, ResponseTemplate};
-
-/// The reviewer's note in every provider answer of the fixture.
-const NOTE: &str = "# Remember\n\nUse the daemon as the only storage owner.\n";
-
-/// The reviewer's chat route, and only it. The daemon also POSTs `/api/show`
-/// to probe the model's context window when it creates the pass's session
-/// (the session-create setup task), and whether that probe lands before the
-/// test tears the mock down is a race: an endpoint that answered it made the
-/// "one tool call and one continuation" count below three on a fresh runner.
-/// A chat request is the one that reaches the chat route.
-fn is_chat_request(request: &wiremock::Request) -> bool {
-    request.method.as_str() == "POST" && request.url.path().ends_with("/api/chat")
-}
-
-/// A daemon with the shipped reflection plugin active, a provider fixture that
-/// proposes [`NOTE`], and the kiln `knowledge`.
-struct Rig {
-    // Dropped last: the provider environment stays clear while the rig lives.
-    _env_guards: Vec<crucible_core::test_support::EnvVarGuard>,
-    _env_lock: std::sync::MutexGuard<'static, ()>,
-    tmp: TempDir,
-    kiln: TempDir,
-    provider: MockServer,
-    sessions: Arc<crate::session_manager::SessionManager>,
-    agents: Arc<AgentManager>,
-    ctx: Arc<RpcContext>,
-    bridge: Arc<DaemonSessionBridge>,
-    lua: Arc<mlua::Lua>,
-    observed: broadcast::Receiver<crucible_core::protocol::SessionEventMessage>,
-}
 
 impl Rig {
-    /// Boot the rig. `hook_lua` runs on the plugin VM before the reflection
-    /// plugin activates, so a test can put a stand-in plugin hook there.
-    ///
-    /// The environment lock is held across the awaits on purpose, for the
-    /// life of the rig: nextest runs each test in its own process, so it
-    /// waits for nothing, and it keeps the provider environment clear.
-    #[allow(clippy::await_holding_lock)]
-    async fn new(hook_lua: Option<&str>) -> Self {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        // The provider table is the one this test injects: the daemon's own
-        // enumeration also reads the process environment's credentials, so a
-        // developer's `GLM_AUTH_TOKEN` (or `OPENAI_API_KEY`, …) would put a
-        // real endpoint on the setup path. nextest runs each test in its own
-        // process, so the guard races with nothing.
-        let env_lock = crate::agent_manager::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let env_guards = crate::agent_manager::clear_provider_env();
-
-        let provider = MockServer::start().await;
-        Mock::given(is_chat_request)
-            .respond_with(move |request: &wiremock::Request| {
-                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-                let has_result = body["messages"].as_array().unwrap().iter().any(|m| m["role"] == "tool");
-                let message = if has_result {
-                    json!({"role": "assistant", "content": "Saved one lesson for review."})
-                } else {
-                    json!({"role": "assistant", "content": "", "tool_calls": [{"id": "lesson", "function": {
-                        "name": "create_note", "arguments": {"path": "Remember.md", "content": NOTE}
-                    }}]})
-                };
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "application/x-ndjson")
-                    .set_body_string(format!("{}\n{}\n", json!({"model": "reflection-fixture", "message": message, "done": false}), json!({"done": true, "done_reason": "stop"})))
-            })
-            .mount(&provider)
-            .await;
-
-        let tmp = TempDir::new().unwrap();
-        let kiln = TempDir::new().unwrap();
-        let sessions = temp_session_manager_with_kilns(&[("knowledge", kiln.path())]);
-        let shared_loader = Arc::new(tokio::sync::Mutex::new(None));
-        let (events, observed) = crate::EventBus::channel(128);
-        let kilns = Arc::new(KilnManager::with_event_tx(
-            events.clone(),
-            Some(crucible_core::config::EmbeddingProviderConfig::mock(Some(
-                384,
-            ))),
-            crucible_core::config::default_max_precognition_chars(),
-        ));
-        let mut llm = bridge_llm_config();
-        llm.providers.get_mut("ollama").unwrap().endpoint = Some(provider.uri());
-        let mut loader = DaemonPluginLoader::new(HashMap::new()).unwrap();
-        let lua = loader.plugin_lua();
-        let previous = crucible_lua::set_source(&lua, crucible_lua::LuaSource::Builtin);
-        lua.load(crucible_lua::BUILTIN_INIT_LUA).exec().unwrap();
-        crucible_lua::set_source(&lua, previous);
-        let agents = Arc::new(
-            AgentManager::new(AgentManagerParams {
-                kiln_manager: kilns.clone(),
-                session_manager: sessions.clone(),
-                background_manager: Arc::new(BackgroundJobManager::new(events.clone())),
-                mcp_gateway: None,
-                llm_config: Some(llm),
-                acp_config: None,
-                context_config: None,
-                permission_config: None,
-                plugin_loader: Some(shared_loader.clone()),
-                source_roots: Default::default(),
-                review_snapshot_root: tmp.path().join("snapshots"),
-            })
-            .with_modes(Some(loader.mode_registry())),
-        );
-        let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
-            kilns,
-            sessions.clone(),
-            agents.clone(),
-            Arc::new(crate::project_manager::ProjectManager::new(
-                tmp.path().join("projects.json"),
-            )),
-            events,
-            tmp.path().into(),
-            shared_loader.clone(),
-        ));
-        let bridge = Arc::new(DaemonSessionBridge::new(ctx.clone()));
-        loader.upgrade_with_sessions(bridge.clone()).unwrap();
-        loader
-            .upgrade_with_tools(Arc::new(
-                crate::tools_bridge::DaemonToolsBridge::new(
-                    Arc::new(crate::tools::workspace::WorkspaceTools::new(tmp.path())),
-                    None,
-                )
-                .with_active_tools(agents.active_tools(), sessions.clone()),
-            ))
-            .unwrap();
-        agents.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
-        agents.set_plugin_tool_registry(loader.plugin_registry());
-        agents.set_isolation(loader.isolation());
-        if let Some(code) = hook_lua {
-            loader.eval(code).await.unwrap();
-        }
-        loader
-            .add_plugin_paths(&[(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins"),
-                PluginSource::Runtime,
-            )])
-            .unwrap();
-        loader.activate_plugin("reflection").await.unwrap();
-        loader.eval(r#"require("reflection").setup({ model = "reflection-fixture", min_turns = 1, timeout = 5 })"#).await.unwrap();
-        *shared_loader.lock().await = Some(loader);
-
-        Self {
-            _env_guards: env_guards,
-            _env_lock: env_lock,
-            tmp,
-            kiln,
-            provider,
-            sessions,
-            agents,
-            ctx,
-            bridge,
-            lua,
-            observed,
-        }
-    }
-
     /// A finished chat session in `knowledge` with one user turn, on
     /// `workspace`.
     async fn finished_session(
@@ -234,7 +77,7 @@ impl Rig {
 
 #[tokio::test]
 async fn shipped_reflection_proposes_a_note_on_session_end() {
-    let rig = Rig::new(None).await;
+    let rig = Rig::reflection(None).await;
     let Rig {
         tmp,
         kiln,
@@ -438,7 +281,7 @@ end, { required = true })
 /// and the pass only wrote a log line.
 #[tokio::test]
 async fn an_isolated_session_gets_its_review_on_its_own_workspace() {
-    let rig = Rig::new(Some(ISOLATES_EVERY_WORKSPACE)).await;
+    let rig = Rig::reflection(Some(ISOLATES_EVERY_WORKSPACE)).await;
     let workspace = rig.tmp.path().join("project");
     std::fs::create_dir_all(&workspace).unwrap();
     let source = rig.finished_session(Some(workspace.clone())).await;
@@ -470,7 +313,7 @@ async fn an_isolated_session_gets_its_review_on_its_own_workspace() {
 /// workspace either.
 #[tokio::test]
 async fn a_session_with_no_workspace_gets_a_review_with_no_workspace() {
-    let rig = Rig::new(None).await;
+    let rig = Rig::reflection(None).await;
     let source = rig.finished_session(None).await;
 
     let output = rig.review(&source.id).await;
@@ -517,7 +360,7 @@ async fn courier_session(rig: &Rig, request_review: bool) -> String {
 /// `chat` session, so every such session was reviewed like a user's own.
 #[tokio::test]
 async fn a_plugin_session_is_reviewed_only_when_its_plugin_asks() {
-    let rig = Rig::new(None).await;
+    let rig = Rig::reflection(None).await;
 
     let silent = courier_session(&rig, false).await;
     assert_eq!(
@@ -541,7 +384,7 @@ async fn a_plugin_session_is_reviewed_only_when_its_plugin_asks() {
 /// A session that a user created is reviewed as before, with no event.
 #[tokio::test]
 async fn a_user_session_is_reviewed_without_a_request() {
-    let rig = Rig::new(None).await;
+    let rig = Rig::reflection(None).await;
     let source = rig.finished_session(None).await;
 
     assert!(rig.review(&source.id).await.is_some());

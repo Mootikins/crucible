@@ -50,7 +50,7 @@ at the same time. Each step leaves the tree working.
 | 13. Simpler core APIs | 11 core types, 32 constructors | S | step 12 |
 | 14. Luau types from the schema | 7 Luau contract copies, 1 Lua view | M | step 12 |
 | 15. The last TS copies | about 16 TS types | S | step 11 |
-| 16. One daemon test fixture | about 11 test types | S | none |
+| 16. One daemon test fixture (done) | `Daemon` (`tests/proposals.rs`), `Fixture` (`tests/acp_review_comment_context_e2e.rs`), one of two `Rig` types (`session_bridge/tests/`) | S | none |
 | 17. Enums on the wire | 1 type, string fields | S | step 12 |
 | 18. Research: internal types | proposes the rest of the budget | S | step 12 |
 
@@ -495,10 +495,26 @@ aliases of the generated schema.
 
 **Proof.** `tsc --noEmit` and the web unit tests pass.
 
-## Step 16. One daemon test fixture
+## Step 16. One daemon test fixture (done)
 
-**Change.** Replace the local `Fixture`, `Rig` and `Daemon` test types in
-the daemon with one fixture in `crates/crucible-daemon/src/test_support.rs`.
+**Change.** `tests/proposals.rs`'s `struct Daemon` and
+`tests/acp_review_comment_context_e2e.rs`'s `struct Fixture` each bound their
+own daemon: a `DaemonClient`, a shutdown `broadcast::Sender` and a server
+`JoinHandle`. Both now bind through `InProcessDaemon`/`InProcessDaemonBuilder`
+(`crucible_daemon::test_support`), which gained an `AcpConfig` option and an
+event-subscribing connect method for the fixture that needed them.
+
+`session_bridge/tests/reflection.rs` and `session_bridge/tests/auto_title.rs`
+each built the same shape of `Rig` — a cleared provider environment, a mock
+chat endpoint, a `SessionManager`, an `AgentManager` and a plugin loader with
+one shipped plugin active — for two different plugins. One `Rig`, in the new
+`session_bridge/tests/rig.rs`, now builds both, through `Rig::reflection` and
+`Rig::auto_title`.
+
+`agent_manager/tests/session_stop.rs`'s `Rig` binds no socket at all: it
+drives an `RpcContext`/`AgentManager` pair directly, the same shape
+`agent_manager/tests/revive_isolation.rs`'s `Daemon` builds. It is not a
+daemon-socket fixture, so it stayed as it was.
 
 **Proof.** The daemon tests pass.
 

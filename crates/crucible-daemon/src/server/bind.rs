@@ -209,11 +209,12 @@ impl Server {
             .iter()
             .map(|(name, dir)| (*name, *dir, false))
             .collect();
-        Self::bind_with_data_home_and_kiln_entries(path, data_home, &eager).await
+        Self::bind_with_data_home_and_kiln_entries(path, data_home, &eager, None).await
     }
 
     /// As [`Self::bind_with_data_home_and_kilns`], with each entry's `lazy`
-    /// flag.
+    /// flag, and the `[acp]` configuration when a test runs a session through
+    /// a configured ACP agent profile.
     ///
     /// A fixture needs this once boot opens the eager entries: a test that
     /// proves "nothing opened this kiln" has to register one that boot leaves
@@ -224,6 +225,7 @@ impl Server {
         path: &Path,
         data_home: std::path::PathBuf,
         kilns: &[(&str, &Path, bool)],
+        acp_config: Option<crucible_core::config::components::acp::AcpConfig>,
     ) -> Result<Self> {
         let entries: serde_json::Map<String, serde_json::Value> = kilns
             .iter()
@@ -249,6 +251,7 @@ impl Server {
                     .into_iter()
                     .collect(),
             )),
+            acp_config,
             ..Default::default()
         })
         .await
