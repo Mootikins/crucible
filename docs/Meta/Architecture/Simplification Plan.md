@@ -673,7 +673,12 @@ with its evidence in the commit that did it:
    four fields that are all `Option<u32>`, because
    `TurnPayload::MessageComplete` can carry a partial usage report. A merge
    would put `Option` on the required fields of the first type, which the
-   plan's design rules forbid.
+   plan's design rules forbid. The TS `TokenUsage`
+   (`crucible-web/web/src/lib/types.ts`) stays hand-written too, but for a
+   different reason: its own doc comment already says it is client-local —
+   `itemToMessage` builds it from a transcript segment's `usage` and nothing
+   sends it back over the wire, so there is no generated schema for it to
+   alias.
 4. `SearchResult` merge: skipped. `types/database.rs::SearchResult` carries
    `document_id`/`score`/`highlights`/`snippet`/`kiln`/`block`.
    `storage/note_store.rs::SearchResult` carries a whole `NoteRecord` and a
