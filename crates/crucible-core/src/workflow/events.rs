@@ -43,6 +43,7 @@ pub enum WorkflowEvent {
 /// stream as a `workflow.assessed` message. Kept in core so that
 /// factory/consumer share one shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AssessmentOutcome {
     pub description: String,
     pub command: String,

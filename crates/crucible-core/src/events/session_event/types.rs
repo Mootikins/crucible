@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Type of note modification.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum NoteChangeType {
@@ -49,6 +50,7 @@ impl std::fmt::Display for NoteChangeType {
 /// };
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum FileChangeKind {

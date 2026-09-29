@@ -681,13 +681,20 @@ fn golden_interaction_requested() {
         call: None,
         layer: None,
         origin: None,
+        pattern: None,
     });
     let m = SessionEventMessage::interaction_requested("s1", "r-1", &request);
+    // `interaction_requested` fills `pattern` from `suggested_pattern`
+    // before the request goes on the wire — see its doc comment.
     assert_eq!(
         wire(&m, "interaction_requested"),
         serde_json::json!({
             "request_id": "r-1",
-            "request": {"kind": "permission", "action": {"type": "bash", "tokens": ["ls"]}},
+            "request": {
+                "kind": "permission",
+                "action": {"type": "bash", "tokens": ["ls"]},
+                "pattern": "ls",
+            },
         })
     );
 }

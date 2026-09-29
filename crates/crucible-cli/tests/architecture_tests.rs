@@ -993,10 +993,10 @@ const WIRE_NAME_HOMES: &[&str] = &["crates/crucible-core/src/protocol/session_ev
 /// replaced its one cross-crate use with a fresh literal in `crucible-web`, so
 /// the name was written in two crates with nothing comparing them. Nothing
 /// noticed: the cross-language gate that exists
-/// (`crucible-web`'s `every_sse_event_name_is_in_the_document`) compares
-/// `ChatEvent::event_name()` to the tag the same enum serialises under, and
-/// these two events travel their own SSE streams, so neither side of it names
-/// either one.
+/// (`crucible-web`'s `every_session_event_wire_name_is_in_the_document`)
+/// compares `SessionEventPayload`'s own wire names to the tags the document
+/// declares, and these two events travel their own SSE streams, so neither
+/// side of it names either one.
 ///
 /// **This gate FORBIDS rather than REQUIRES.** A gate that requires an entry
 /// is satisfiable by not adding the entry — a failure the history of this

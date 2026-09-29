@@ -44,6 +44,7 @@ event_payload! {
     /// Turn-stream events, adjacently tagged so the enum's serialization *is* the
     /// `{event, data}` pair the envelope carries.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum TurnPayload {
         /// Context before this marker remains in the transcript but is excluded
@@ -112,6 +113,13 @@ event_payload! {
             /// `session.jsonl` line an older daemon wrote predates the field.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             stop_reason: Option<crate::turn::StopReason>,
+            /// The note a client draws under a reply the provider cut off, in
+            /// the words of [`crate::turn::StopReason::user_notice`] — the
+            /// daemon words it once, here, so that a client with no access to
+            /// the wording, such as the web page, need not repeat it. Absent
+            /// when the reason needs no note, which is every normal turn.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            stop_notice: Option<String>,
         },
         /// Field order is load-bearing: `serde_json` is built with
         /// `preserve_order`, so the declaration order here is the key order on the
@@ -124,6 +132,7 @@ event_payload! {
             #[serde(default)]
             tool: String,
             #[serde(default)]
+            #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
             args: Value,
             #[serde(default, skip_serializing_if = "Option::is_none")]
             description: Option<String>,
@@ -154,6 +163,7 @@ event_payload! {
             #[serde(default)]
             call_id: String,
             #[serde(default)]
+            #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
             args: Value,
             #[serde(default, skip_serializing_if = "Option::is_none")]
             display: Option<Box<CanonicalToolCall>>,
@@ -174,7 +184,12 @@ event_payload! {
             call_id: String,
             #[serde(default)]
             tool: String,
+            /// The success/failure envelope. Typed for the schema as
+            /// [`ToolResultBody`]; still decoded as `Value` at runtime so a
+            /// shape neither variant covers still reaches a client — see
+            /// [`ToolResultBody::of`].
             #[serde(default)]
+            #[cfg_attr(feature = "openapi", schema(value_type = ToolResultBody))]
             result: Value,
             #[serde(default)]
             terminate: bool,
@@ -346,11 +361,13 @@ impl TurnPayload {
 /// "the `{"result"|"error": …}` envelope": a two-key description of a four-key
 /// reality. `spill_path` and `render` are the other two.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(untagged)]
 pub enum ToolResultBody {
     Ok {
         /// Arbitrary JSON: a string for most tools, an object for structured
         /// ones. Never assume `as_str()`.
+        #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
         result: Value,
         /// Set when the output was spilled to disk (≥10KB, spillable tool).
         /// The referenced file lives under the session dir and outlives the

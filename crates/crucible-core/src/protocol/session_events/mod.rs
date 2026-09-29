@@ -82,6 +82,14 @@
 // expand from the same literal. Payload fields remain ordinary Rust/serde
 // declarations. `"name" as CONST =>` also declares `Self::CONST` for a crate
 // that must name the event rather than build one.
+//
+// Every invocation must carry
+// `#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]` in its
+// `$enum_meta`, even a test-only one: the macro also emits a per-variant
+// `#[cfg_attr(feature = "openapi", schema(rename = $wire))]`, and `schema` is
+// a helper attribute that only a `ToSchema` derive on the SAME item
+// registers. Omitting the derive fails the build with "cannot find attribute
+// `schema`" the moment the `openapi` feature is on.
 macro_rules! event_payload {
     (
         $(#[$enum_meta:meta])*
@@ -97,6 +105,15 @@ macro_rules! event_payload {
             $(
                 $(#[$variant_meta])*
                 #[serde(rename = $wire)]
+                // `utoipa::ToSchema` does not see a per-variant `serde(rename
+                // = …)` whose literal came from a `macro_rules!` substitution
+                // — it renders the Rust variant ident instead of the wire
+                // name, though the identical attribute typed by hand works.
+                // `schema(rename = …)` is utoipa's own attribute and is read
+                // through the normal path either way, so it is the
+                // authoritative source once `openapi` is on; harmless
+                // (ignored) when it is off.
+                #[cfg_attr(feature = "openapi", schema(rename = $wire))]
                 $variant $fields,
             )*
         }
@@ -138,7 +155,14 @@ use serde_json::Value;
 ///
 /// Construct with [`SessionEventMessage::typed`](crate::protocol::SessionEventMessage::typed);
 /// read with [`SessionEventMessage::payload`](crate::protocol::SessionEventMessage::payload).
+/// `ToSchema` reads the bare `#[serde(untagged)]` below even though this
+/// enum derives no `Serialize`: [`SessionEventPayload::to_wire`] is what
+/// actually serializes it, and it always yields one of the eight groups'
+/// own `{event, data}` shape, never a wrapper around one — which is what
+/// `untagged` documents to a reader of `openapi.json`.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", serde(untagged))]
 pub enum SessionEventPayload {
     Turn(TurnPayload),
     Setup(SetupPayload),

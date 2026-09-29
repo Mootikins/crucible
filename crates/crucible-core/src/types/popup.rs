@@ -15,6 +15,7 @@ use serde_json::Value;
 ///
 /// [`crate::interaction::PanelItem`] is an alias of this type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PopupEntry {
     /// Primary display text (required)
     pub label: String,
@@ -25,6 +26,7 @@ pub struct PopupEntry {
 
     /// Arbitrary data returned to caller on selection (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<serde_json::Value>))]
     pub data: Option<Value>,
 }
 

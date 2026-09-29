@@ -272,9 +272,9 @@ sequenceDiagram
    `crates/crucible-web/src/services/daemon.rs` reads the daemon's raw event
    channel and calls `EventBroker::dispatch` for every event, which fans it
    into the per-session channel `subscribe_events` handed out; `event_stream`
-   projects it through `ChatEvent::from_daemon_event` in
-   `crates/crucible-web/src/events.rs`. See flow 12 for the system-scoped
-   sibling of this stream.
+   forwards it as the daemon's own `{event, data}` pair — `to_sse` in
+   `crates/crucible-web/src/routes/chat.rs`. See flow 12 for the
+   system-scoped sibling of this stream.
 
 See [[Agent Manager]] for the full gate pipeline and precognition,
 [[Tools and Admission]] for dispatch/containment, [[TUI Chat App]] and

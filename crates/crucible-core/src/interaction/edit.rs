@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// Format hint for artifact content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactFormat {
     /// Markdown content.
@@ -25,6 +26,7 @@ pub enum ArtifactFormat {
 
 /// Request to edit an artifact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EditRequest {
     /// The content to edit.
     pub content: String,
@@ -61,6 +63,7 @@ impl EditRequest {
 
 /// Response from editing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EditResponse {
     /// The modified content.
     pub modified: String,
@@ -81,6 +84,7 @@ impl EditResponse {
 
 /// Request to show content to the user (display only, no response).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ShowRequest {
     /// The content to display.
     pub content: String,

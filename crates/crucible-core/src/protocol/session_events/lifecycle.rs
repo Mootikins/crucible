@@ -41,6 +41,7 @@ event_payload! {
     /// The `delegation_*` names predate the current delegation system and are
     /// preserved for subscriber compatibility.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum JobPayload {
         /// `delegation_id` and `child_session_id` always hold the same value —
@@ -115,6 +116,7 @@ event_payload! {
 event_payload! {
     /// Review and undo events.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum ReviewPayload {
         /// The session's composed diff moved: a hunk was accepted, rejected,
@@ -150,6 +152,7 @@ event_payload! {
     /// carries only the id: the list itself is fetched, so the event says
     /// "re-read" rather than shipping a projection that can go stale.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum NotificationPayload {
         "notification_added" => NotificationAdded {
@@ -177,6 +180,7 @@ event_payload! {
     /// entirely, which `to_wire` then reports as `null`; today's producers emit
     /// `{}`. `{}` and `null` are different JSON.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum WorkflowPayload {
         "workflow.step_started" => WorkflowStepStarted {
@@ -226,6 +230,7 @@ event_payload! {
     /// Daemon-wide events that are not scoped to one turn: file-watch, kiln
     /// processing, UI config, webhooks, replay.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum SystemPayload {
         /// `kind` is a typed [`FileChangeKind`] rather than a string built with
@@ -237,12 +242,14 @@ event_payload! {
         /// matching the two-arm string match it replaces.
         "file_changed" => FileChanged {
             #[serde(with = "lossy_path")]
+            #[cfg_attr(feature = "openapi", schema(value_type = String))]
             path: PathBuf,
             #[serde(default)]
             kind: FileChangeKind,
         },
         "file_deleted" => FileDeleted {
             #[serde(with = "lossy_path")]
+            #[cfg_attr(feature = "openapi", schema(value_type = String))]
             path: PathBuf,
         },
         /// Carries `from`/`to` and **no** `path`. The consumer that rebuilt the
@@ -250,8 +257,10 @@ event_payload! {
         /// was broadcast and could never reach a Lua handler.
         "file_moved" => FileMoved {
             #[serde(with = "lossy_path")]
+            #[cfg_attr(feature = "openapi", schema(value_type = String))]
             from: PathBuf,
             #[serde(with = "lossy_path")]
+            #[cfg_attr(feature = "openapi", schema(value_type = String))]
             to: PathBuf,
         },
         "classification_required" => ClassificationRequired {
@@ -259,6 +268,7 @@ event_payload! {
             /// path — see the internal `SessionEvent` variant for why. Absent
             /// from the wire, not `null`, when no entry claims the kiln.
             #[serde(default, skip_serializing_if = "Option::is_none")]
+            #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
             kiln: Option<crate::config::KilnName>,
         },
         /// One producer: `handle_kiln_open` (`crucible-daemon/src/server/kiln.rs`),
@@ -295,6 +305,7 @@ event_payload! {
         /// missing from it is a key the daemon released. A payload that is not
         /// addressed to one session therefore omits the member rather than carrying
         /// an empty set.
+        #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
         "ui_style_changed" => UiStyleChanged(Value),
         /// Replacement status list for one session. Clients can paint the payload
         /// immediately; attach uses `session.status` for the initial snapshot.
@@ -357,11 +368,16 @@ event_payload! {
         /// for the same operation; this is the event that says they were a move.
         "note:renamed" => NoteRenamed { from: String, to: String },
         /// A Bases mutation has reached disk. Proposed writes do not emit this.
-        "base:changed" => BaseChanged { path: String, change: Value },
+        "base:changed" => BaseChanged {
+            path: String,
+            #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
+            change: Value,
+        },
         "webhook:received" => WebhookReceived {
             #[serde(default)]
             name: String,
             #[serde(default)]
+            #[cfg_attr(feature = "openapi", schema(value_type = std::collections::HashMap<String, serde_json::Value>))]
             headers: serde_json::Map<String, Value>,
             #[serde(default)]
             body: String,

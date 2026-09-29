@@ -69,7 +69,6 @@ Paths are relative to the repository root. Line counts are as recorded at
 | --- | --- | --- |
 | `crates/crucible-web/src/assets.rs` | 201 | Serves the embedded SolidJS bundle or a `--static-dir` override. |
 | `crates/crucible-web/src/error.rs` | 246 | `WebError`, the crate's one error enum (now including `Conflict`), and its HTTP/JSON projection. |
-| `crates/crucible-web/src/events.rs` | 1222 | `ChatEvent` (now including `TurnFinished` and per-call `render` fields), the browser-facing SSE event enum, and its projection from the daemon's `SessionEvent`/`SessionEventPayload`. |
 | `crates/crucible-web/src/fs_events.rs` | 138 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
 | `crates/crucible-web/src/server.rs` | 710 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases route groups. |
 | `crates/crucible-web/src/test_support.rs` | 1860 | Shared test daemons and fixtures for every route test in this crate: the mock daemon, whose reply `match` is exhaustive over `RpcMethod`, and `start_real_daemon_with_kilns`, a real in-process daemon. |
@@ -209,21 +208,25 @@ Paths are relative to the repository root. Line counts are as recorded at
   flight — rather than `Daemon` (502). `rpc_error_parts` (same file) is
   `pub(crate)` so `routes/bases.rs` can reuse the same JSON-RPC code/message
   split to map the daemon's bases-specific `NOT_FOUND` code to 404.
-- **`ChatEvent`** (`crates/crucible-web/src/events.rs`) and **`FsEvent`**
-  (`crates/crucible-web/src/fs_events.rs`) — the browser-facing SSE
-  vocabularies. `ChatEvent::from_daemon_event` and `FsEvent::from_daemon_event`
-  are the one-way projection from the daemon's canonical `SessionEvent`/
-  `SessionEventPayload`; the web layer never invents its own wording (see
-  `stop_notice` in Boundaries and invariants). `ChatEvent::TurnFinished`
-  carries the turn's terminal `status`/`stop_reason`/`error`, and the
-  browser ends a turn on it rather than on `message_complete`.
-  `ChatEvent::ToolCall.display` (the daemon's `CanonicalToolCall` JSON) now
-  carries the call's proposed diffs itself, so `ToolCall` no longer has a
-  separate `diffs` field; `ChatEvent::ToolResult`/`ToolResultError` each
-  gained a `render` field, the finished call's `crucible_core::types::ToolRender`.
-  `ChatEvent::Transcript { seq, ops }` carries the ops of the daemon's
-  transcript fold (`crucible_core::transcript::TranscriptOp`). The daemon
-  puts them on the live copy of an event only.
+- **The chat SSE stream carries one vocabulary, not two.** The route
+  (`crates/crucible-web/src/routes/chat.rs`, function `to_sse`) forwards the
+  daemon's own `{event, data}` pair for every session event — the same shape
+  `SessionEventMessage` and `session.jsonl` carry — with the SSE `event:`
+  field set to `event.event`. There is no second, web-only enum re-encoding
+  each event: `crucible_core::protocol::session_events::SessionEventPayload`
+  carries `ToSchema`, so `openapi.json` and the generated
+  `web/src/lib/api-schema.d.ts` describe the real wire union, and
+  `web/src/lib/types.ts` aliases it as `SessionEvent`. A live event that
+  changed the transcript still sends a second frame, `transcript`
+  (`TranscriptFrame` in `routes/chat.rs`), with the same `id:` as the first.
+  `ChatEvent::from_daemon_event` and `normalize_interaction`, which used to
+  build the second vocabulary and flatten permission requests, are gone; a
+  permission request's suggested grant (`PermRequest.pattern`) is now filled
+  in once, by `SessionEventMessage::interaction_requested`
+  (`crates/crucible-core/src/protocol/rpc/mod.rs`), before the request
+  reaches any client. **`FsEvent`** (`crates/crucible-web/src/fs_events.rs`)
+  is the one remaining browser-facing projection enum, for the filesystem
+  watcher stream, which this step did not touch.
 - **`ApiKeyState`**, **`HostPolicy`**, **`SessionStore`**, **`ShellGateState`**
   (`crates/crucible-web/src/middleware/auth/mod.rs`, `host/mod.rs`,
   `session.rs`, `shell.rs`) — the auth/host/session state consumed by
@@ -359,14 +362,16 @@ sequenceDiagram
     CoreDaemon-->>Interest: events begin forwarding
     Interest-->>Reconnecting: EventStream
     Reconnecting-->>Route: EventStream yields SessionEvent
-    Route->>Route: ChatEvent::from_daemon_event
+    Route->>Route: to_sse (event.event, event.data)
     Route-->>Browser: SSE frame
     Route-->>Browser: transcript frame (when the event has ops)
 ```
 
 `to_sse` in `crates/crucible-web/src/routes/chat.rs` turns one daemon event
-into one or two SSE frames. The first frame is the `ChatEvent` projection.
-When the live event has transcript ops, a second frame follows. Its name is
+into one or two SSE frames. The first frame's `event:` name is `event.event`
+and its `data:` is `{"event": event.event, "data": event.data}` — the
+daemon's own pair, forwarded, not re-encoded. When the live event has
+transcript ops, a second frame follows. Its name is
 `transcript`, its `id:` is the seq of the event, and its data is
 `{"type": "transcript", "seq": <seq or null>, "ops": [...]}`. A replayed
 event comes from the stored log, so it has no ops and no second frame. The
@@ -699,15 +704,23 @@ losing or duplicating the decision.
   `forward_rpc!` entry in the matching `services/daemon*.rs` file with an
   explicit `ReplayPolicy`. Its body or query is the core request type; do
   not declare a web copy.
-- **A new SSE event vocabulary member** is added to `ChatEvent`
-  (`crates/crucible-web/src/events.rs`), `FsEvent`
+- **A new chat SSE event vocabulary member** is added to one of the eight
+  payload groups under `crates/crucible-core/src/protocol/session_events/`
+  (`TurnPayload`, `SetupPayload`, `SettingsPayload`, `JobPayload`,
+  `ReviewPayload`, `NotificationPayload`, `WorkflowPayload`, `SystemPayload`)
+  with a `ToSchema` derive gated on the crate's `openapi` feature. It reaches
+  the browser with no web-side edit: `just web-contract` regenerates
+  `openapi.json` and `api-schema.d.ts`, and `web/src/lib/api.ts`'s
+  `SSE_EVENT_TYPES` and `web/src/contexts/chatEventReducer.ts`'s exhaustive
+  `switch` on `event.event` both fail `bun run typecheck` until the new name
+  is named there. A new filesystem-watcher event still goes on `FsEvent`
   (`crates/crucible-web/src/fs_events.rs`), or a dedicated side-channel type
   like `PublicationChangedEvent` (`crates/crucible-web/src/routes/plugin.rs`),
   `SurfaceChangedEvent` (`crates/crucible-web/src/routes/surface.rs`), or
   `ProposalChangedEvent` (`crates/crucible-web/src/routes/events.rs`). A
   side-channel event name must have a matching entry in the frontend's
   `SIDE_CHANNEL_EVENTS` table (`crates/crucible-web/web/src/lib/api.ts`),
-  checked by `events.rs`'s `every_side_channel_event_name_has_a_frontend_listener`,
+  checked by `routes/chat.rs`'s `every_side_channel_event_name_has_a_frontend_listener`,
   which parses that table rather than grepping for `addEventListener` calls.
 - **A new session knob** lands under
   `crates/crucible-web/src/routes/session_config/`, registered in
@@ -724,9 +737,9 @@ losing or duplicating the decision.
 - **Inline unit tests** (`#[cfg(test)] mod tests` in nearly every
   production file) cover per-file behavior: asset serving
   (`assets.rs`), error mapping including the new `BUSY`-to-`Conflict`
-  classification (`error.rs`), event projection and a cross-language drift
-  guard against the frontend source (`events.rs`), diffset/comment routes
-  against the daemon's real `Comment` type (`diff.rs`),
+  classification (`error.rs`), the SSE frame shape and two cross-language
+  drift guards against the frontend source (`routes/chat.rs`),
+  diffset/comment routes against the daemon's real `Comment` type (`diff.rs`),
   CORS/CSP/Host-header layering (`server.rs`),
   auth/session/host/shell logic (all of `middleware/auth/`), and per-route
   shape and validation behavior across `routes/*.rs`.

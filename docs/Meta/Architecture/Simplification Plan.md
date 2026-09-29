@@ -45,7 +45,7 @@ at the same time. Each step leaves the tree working.
 | 8. Local duplicates (done) | about ten small copies | S each | none |
 | 9. Dead code (done) | unused modules and features | S | none |
 | 10. Typed core replies (done, except the knob replies of step 13) | 36 web row types; 6 were net deletions, the rest became core types | M | step 6 |
-| 11. One event vocabulary to the browser | `ChatEvent` and 2 more web types, 29 TS copies: about 32 | M | step 10 |
+| 11. One event vocabulary to the browser (done: Rust −1, TS −10; the hand copies became generated aliases) | `ChatEvent` and 2 more web types, 29 TS copies: about 32 | M | step 10 |
 | 12. One request body per shape (in part: 33 types went; 4 web bodies and the typed `call` remain) | about 35: 19 web request copies, 6 core shape copies, 10 local `Params` | M | step 10 |
 | 13. One generic knob | about 11 types, 10 RPC methods, about 90 per-knob functions | M | step 12 |
 | 14. Simpler core APIs and the audit list | about 40 | S each | step 12 |
@@ -173,8 +173,9 @@ still use the split.
   strings in `crates/crucible-cli/src/tui/oil/chat_runner/commands.rs`.
 - `cru acp` matches event names as strings in `classify_event` in
   `crates/crucible-cli/src/commands/acp/translate.rs`.
-- The web backend re-encodes each event as `ChatEvent` in
-  `crates/crucible-web/src/events.rs`.
+- The web backend re-encodes each event as `ChatEvent` (deleted in step 11;
+  the SSE route now forwards the daemon's own `{event, data}` pair — see
+  `crates/crucible-web/src/routes/chat.rs`).
 - The Lua bridge shapes its own payloads in
   `crates/crucible-daemon/src/session_bridge.rs`.
 
@@ -483,19 +484,56 @@ sends.
 
 ## Step 11. One event vocabulary to the browser
 
-**Now.** `ChatEvent` in `crates/crucible-web/src/events.rs` re-encodes each
-`SessionEventPayload` into 21 variants of its own. `normalize_interaction`
-flattens a permission request. `lib/types.ts` copies 29 wire types by hand.
+**Status: done.** The deleted `ChatEvent` enum used to re-encode each
+`SessionEventPayload` into 21 variants of its own; the deleted
+`normalize_interaction` function flattened a permission request;
+`lib/types.ts` copied 29 wire types by hand.
 
-**Change.** Give `ToSchema` to the event payloads, the interaction types and
-the tool-call types. The SSE route sends `SessionEventMessage`. Delete
-`ChatEvent`, `PrecognitionNote`, `SessionHistoryEvent`,
-`normalize_interaction` and the TS copies; alias the generated types.
+`ToSchema` (behind the `openapi` feature) now reaches the event payload
+groups (`protocol/session_events/*.rs`), the interaction types
+(`interaction/*.rs`) and the tool-call types they reference
+(`CanonicalToolCall`, `ToolRender`, `RawToolCall`, `FileDiff`). The
+`event_payload!` macro gained a per-variant `#[schema(rename = ...)]`, needed
+because `utoipa`'s adjacently-tagged schema does not see a per-variant
+`#[serde(rename = ...)]` whose literal came from a macro substitution.
+`crates/crucible-web/src/routes/chat.rs`'s `to_sse` sends the daemon's own
+`{event, data}` pair — no re-encoding — and the route's `#[utoipa::path]`
+names `ChatSseFrame` (`SessionEventPayload | TranscriptFrame`), so
+`openapi.json` and the generated `web/src/lib/api-schema.d.ts` describe the
+real wire union. `ChatEvent`, `ChatEvent::from_daemon_event`,
+`normalize_interaction`, `PrecognitionNote` and the web-local
+`SessionHistoryEvent` struct are deleted; `crucible_core::protocol::rpc::SessionEventMessage`
+(now `ToSchema`) replaces the last one. `web/src/lib/types.ts` aliases the
+generated `SessionEvent`/`TranscriptFrame`/`InteractionRequest`/
+`InteractionResponse`/`CanonicalToolCall`/`ToolRender`/`RawToolCall`/`FileDiff`
+unions instead of copying them by hand. `PermRequest.pattern` (the "always
+allow" suggestion) and `MessageComplete.stop_notice` (the stop-reason
+wording) are now fields the daemon fills in once —
+`SessionEventMessage::interaction_requested` and
+`SessionEventMessage::message_complete` — rather than values the web layer
+re-derived from a flattened request or a copied wording table.
+
+`web/src/contexts/chatEventReducer.ts` now switches on
+`SessionEventPayload['event']` directly (no `SessionEvent` passthrough
+wrapper) and ends in an exhaustive `never` check, so a variant added to any
+of the eight payload groups fails `bun run typecheck` — in the reducer and
+in `web/src/lib/api.ts`'s `SSE_EVENT_TYPES` completeness check — until it is
+named. Proved once with a scratch `"scratch_demo_event"` variant added to
+`SystemPayload`, regenerated, observed to fail both checks, then reverted.
+
+**Proof.** `routes::chat::tests::a_live_event_sends_its_transcript_ops_as_a_second_frame`
+pins the live SSE wire shape byte for byte. The reducer's exhaustive switch
+and `SSE_EVENT_TYPES`'s completeness check are the generated-union proof;
+`web/src/contexts/chatEventReducer.test.ts` and
+`web/src/lib/__tests__/api-schema.test.ts` exercise them. `just web-contract`
+and `bun run typecheck` are clean; the full frontend suite (305 files, 3453
+tests) and the full Rust workspace test suite pass.
 
 **Done when.**
 - `ChatEvent`, `from_daemon_event`, `normalize_interaction`,
-  `PrecognitionNote`, `SessionHistoryEvent` and the 29 hand TS copies are
-  gone: about 32 types fewer.
+  `PrecognitionNote`, `SessionHistoryEvent` and the hand TS field lists are
+  gone. Measured: the count fell by 11 (Rust −1, TS −10), not 32, because an
+  alias of a generated type still counts as one declaration.
 - A new `SessionEventPayload` variant reaches the browser's TS union with no
   hand edit, and the reducer's exhaustive switch fails `tsc` until it
   handles the variant. The change cost of an event falls from about 5 places

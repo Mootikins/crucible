@@ -17,6 +17,7 @@ use crate::types::CanonicalToolCall;
 ///
 /// Determines how long a permission grant remains valid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionScope {
     /// Grant permission for this single action only.
@@ -32,6 +33,7 @@ pub enum PermissionScope {
 
 /// Types of permission requests.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PermAction {
     /// Permission to execute a bash command.
@@ -54,6 +56,7 @@ pub enum PermAction {
         /// Tool name.
         name: String,
         /// Tool arguments.
+        #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
         args: JsonValue,
     },
 }
@@ -63,6 +66,7 @@ pub enum PermAction {
 /// Supports token-based pattern building for vim-style permission UIs
 /// where users can expand/contract the permission scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PermRequest {
     /// The action requiring permission.
     pub action: PermAction,
@@ -90,6 +94,17 @@ pub struct PermRequest {
     /// The origin of the turn that asks, as the `user_message` names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<crate::turn::TurnOrigin>,
+    /// The grant that "always allow" saves, from [`Self::suggested_pattern`].
+    ///
+    /// `None` on a freshly built request: the callers below build the
+    /// action first, and the pattern depends on it. `#[allow(dead_code)]`
+    /// callers do not read `None`; the one place that broadcasts a
+    /// permission request to a client (`SessionEventMessage::interaction_requested`)
+    /// fills it in before the request goes on the wire, so a client — the
+    /// web page cannot call Rust — reads a value the daemon has already
+    /// decided once, instead of re-deriving it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
 }
 
 impl PermRequest {
@@ -107,6 +122,7 @@ impl PermRequest {
             call: None,
             layer: None,
             origin: None,
+            pattern: None,
         }
     }
 
@@ -124,6 +140,7 @@ impl PermRequest {
             call: None,
             layer: None,
             origin: None,
+            pattern: None,
         }
     }
 
@@ -141,6 +158,7 @@ impl PermRequest {
             call: None,
             layer: None,
             origin: None,
+            pattern: None,
         }
     }
 
@@ -155,6 +173,7 @@ impl PermRequest {
             call: None,
             layer: None,
             origin: None,
+            pattern: None,
         }
     }
 
@@ -176,6 +195,7 @@ impl PermRequest {
             })),
             layer: None,
             origin: None,
+            pattern: None,
         }
     }
 
@@ -214,6 +234,19 @@ impl PermRequest {
     /// read `rm build/tmp.o` and the offered grant was `rm *`, which covers
     /// `rm -rf /home/user/project` on every project, for as long as the store
     /// file lives. See [`crate::config::PatternStore::matches_bash`].
+    /// Fill [`Self::pattern`] from [`Self::suggested_pattern`].
+    ///
+    /// The one call site is `SessionEventMessage::interaction_requested`: the
+    /// daemon decides the suggestion once, there, before the request reaches
+    /// any client. A caller that builds a `PermRequest` for its own use (the
+    /// TUI, a permission-gate check) calls [`Self::suggested_pattern`]
+    /// directly and never needs this.
+    #[must_use]
+    pub fn with_suggested_pattern(mut self) -> Self {
+        self.pattern = self.suggested_pattern();
+        self
+    }
+
     pub fn suggested_pattern(&self) -> Option<String> {
         let derived;
         let call = match (&self.call, &self.action) {
@@ -269,6 +302,7 @@ impl PermRequest {
 
 /// Response to a permission request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PermResponse {
     pub allowed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]

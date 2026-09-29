@@ -12,7 +12,13 @@ use std::path::{Path, PathBuf};
 ///
 /// Notifications are identified by a unique ID and carry a kind that determines
 /// their display behavior and lifecycle.
+/// [`ToSchema`](utoipa::ToSchema) mirrors the struct's declared fields, not
+/// the hand-written `Serialize` impl below: it always shows `scope` and
+/// `created_at`, where the wire omits a global scope and an absent time. A
+/// reader that expects the leaner wire form still decodes it, because both
+/// fields already default when absent.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Notification {
     pub id: String,
     pub kind: NotificationKind,
@@ -27,12 +33,15 @@ pub struct Notification {
 /// Who may see a notification. Empty means everyone. A session scope
 /// wins over the other two: only that session sees the notification.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NotificationScope {
     /// The canonical workspace path, when the notification belongs to one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
     pub workspace: Option<PathBuf>,
     /// The kilns it belongs to, when any.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Vec<String>))]
     pub kilns: Vec<crate::config::KilnName>,
     /// The one session it belongs to, when the engine reported it for that
     /// session.
@@ -154,6 +163,7 @@ impl Notification {
 
 /// The kind of notification, determining display and lifecycle behavior.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationKind {
     /// Auto-dismissing informational message

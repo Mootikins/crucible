@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Supports single-select, multi-select, and free-text input modes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AskRequest {
     /// The question text to display.
     pub question: String,
@@ -63,6 +64,7 @@ impl AskRequest {
 
 /// Response to an [`AskRequest`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AskResponse {
     /// Indices of selected choices (empty if using "other").
     #[serde(default)]
@@ -107,6 +109,7 @@ impl AskResponse {
 /// Supports 1-4 questions shown together. Each question has choices,
 /// and an "Other" free-text option is always implicitly available.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AskBatch {
     /// Correlation id.
     ///
@@ -117,6 +120,7 @@ pub struct AskBatch {
     /// this field made the function uncallable — "missing field `id`" before
     /// any client saw the request.
     #[serde(default = "uuid::Uuid::new_v4")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub id: uuid::Uuid,
     /// Questions to ask (1-4).
     pub questions: Vec<AskQuestion>,
@@ -146,6 +150,7 @@ impl Default for AskBatch {
 
 /// A single question in an [`AskBatch`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AskQuestion {
     /// Short label (max 12 chars) displayed as header.
     pub header: String,
@@ -198,6 +203,7 @@ impl AskQuestion {
 
 /// Response to an [`AskBatch`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AskBatchResponse {
     /// The request id this answers, as the client received it.
     ///
@@ -234,6 +240,7 @@ impl AskBatchResponse {
 
 /// Answer to a single question in an [`AskBatch`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct QuestionAnswer {
     /// Selected choice indices (empty if "Other" was chosen).
     #[serde(default)]

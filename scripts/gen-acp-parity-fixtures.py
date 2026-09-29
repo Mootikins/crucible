@@ -158,6 +158,11 @@ internal = common_head + [
                 # The prompt holds the diffs once, so its call has none.
                 "call": display("edit_file", "file_edit"),
                 "layer": "ask mode",
+                # `SessionEventMessage::interaction_requested` fills the
+                # suggested grant once, daemon-side, before the request goes
+                # on the wire — a `file_edit` call with one path suggests
+                # that path.
+                "pattern": "greeting.rs",
             },
         },
     ),

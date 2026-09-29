@@ -408,7 +408,14 @@ multi-path or path-less edit, or a call nothing names) — and, when it
 returns `Some`, the pattern is never wider than the action a user actually
 saw. `crucible-lua`'s `cru.ui.*` API, `crucible-daemon`'s
 `agent_manager`/`session_bridge`, and both the TUI and web renderers all
-consume this vocabulary.
+consume this vocabulary. Every type here has `ToSchema` behind the crate's
+`openapi` feature, so `crucible-web`'s SSE route and `pending_interactions`
+route publish this exact vocabulary to `openapi.json`, and the web bundle's
+`InteractionRequest`/`InteractionResponse` alias the generated union instead
+of copying it by hand (see the SSE stream note below). `PermRequest.pattern`
+is filled in once, by `SessionEventMessage::interaction_requested`, before a
+request reaches any client — a field the daemon decides, not a field the
+browser re-derives.
 
 **The event system.** Two disjoint vocabularies exist by design.
 `EventEmitter` (`events/emitter.rs`) backs the legacy but still-live
@@ -424,6 +431,18 @@ is declared through a shared `event_payload!` macro, which pairs one
 `WIRE_NAMES` list, any named constant, and a `declares` predicate, so the
 name list cannot drift from the enum it describes.
 `TurnPayload::as_scripting_event` is the one bridge between the two.
+Every group enum, and every payload struct it carries, has `ToSchema` behind
+the `openapi` feature — including a per-variant `#[schema(rename = ...)]`
+the `event_payload!` macro now emits, because `utoipa`'s adjacently-tagged
+schema does not see a per-variant `#[serde(rename = ...)]` whose literal came
+from a macro substitution (it renders the Rust variant name instead of the
+wire name; the identical attribute typed by hand works). The SSE chat route
+(`crates/crucible-web/src/routes/chat.rs`) sends `SessionEventPayload`'s own
+`{event, data}` shape, so `openapi.json` and the generated
+`web/src/lib/api-schema.d.ts` describe the real wire vocabulary — one event
+vocabulary, not a second one the web layer re-encodes. See the [[Web
+Server]] page for `to_sse` and the browser's exhaustive `chatEventReducer`
+switch.
 
 **Wire protocol.** `SessionEventMessage` (`protocol/rpc/mod.rs`) is the
 `{event, data}` envelope every daemon broadcast travels as, built through

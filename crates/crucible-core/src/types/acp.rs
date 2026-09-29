@@ -48,6 +48,7 @@ pub mod schema {
 /// from ACP's `ToolCallContent::Diff`, generated from tool arguments, or
 /// computed by comparing file states.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FileDiff {
     /// Path to the modified file
     pub path: String,

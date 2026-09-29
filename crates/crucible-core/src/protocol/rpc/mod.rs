@@ -93,11 +93,18 @@ pub const INTERNAL_ERROR: i32 = -32603;
 pub const BUSY: i32 = -32009;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionEventMessage {
     #[serde(rename = "type")]
     pub msg_type: String,
     pub session_id: String,
+    /// The event name, such as `user_message` or `text_delta`.
     pub event: String,
+    /// The event payload. Its shape follows `event` — see
+    /// [`crate::protocol::session_events::SessionEventPayload`] for the
+    /// typed union. Untyped here on purpose: a stored transcript replays an
+    /// event name a newer daemon minted, which this build cannot type.
+    #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
     pub data: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<DateTime<Utc>>,
@@ -436,6 +443,9 @@ impl SessionEventMessage {
                 cache_read_tokens: usage.and_then(|u| u.cache_read_tokens),
                 cache_creation_tokens: usage.and_then(|u| u.cache_creation_tokens),
                 stop_reason,
+                stop_notice: stop_reason
+                    .and_then(|r| r.user_notice())
+                    .map(str::to_string),
             },
         )
     }
@@ -469,11 +479,20 @@ impl SessionEventMessage {
         request_id: impl Into<String>,
         request: &crate::interaction::InteractionRequest,
     ) -> Self {
+        // A permission request's suggested grant is decided once, here,
+        // before the request reaches any client — the browser holds no Rust
+        // and cannot call `PermRequest::suggested_pattern` itself.
+        let request = match request.clone() {
+            crate::interaction::InteractionRequest::Permission(perm) => {
+                crate::interaction::InteractionRequest::Permission(perm.with_suggested_pattern())
+            }
+            other => other,
+        };
         Self::typed(
             session_id,
             TurnPayload::InteractionRequested {
                 request_id: request_id.into(),
-                request: request.clone(),
+                request,
             },
         )
     }

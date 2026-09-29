@@ -39,6 +39,7 @@ event_payload! {
     /// daemon re-emits the same event from the turn stream. Consumers treat it as a
     /// plain assignment, so a late one needs no special case.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum SetupPayload {
         "session_initialized" => SessionInitialized(SessionInitializedPayload),
@@ -69,6 +70,7 @@ event_payload! {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionInitializedPayload {
     pub model: String,
     pub mode: String,
@@ -88,22 +90,27 @@ pub struct SessionInitializedPayload {
     /// `workspace_path` beside it stays a path: the agent runs commands there,
     /// so the directory is the fact being reported.
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(value_type = Vec<String>))]
     pub kilns: Vec<crate::config::KilnName>,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub workspace_path: PathBuf,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProvidersListedPayload {
     pub providers: Vec<ProviderInfo>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ContextLimitResolvedPayload {
     pub limit: usize,
     pub source: ContextLimitSource,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ContextLimitSource {
     ProviderApi,
@@ -133,21 +140,25 @@ pub enum ContextLimitSource {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WorkspaceIndexedPayload {
     pub files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KilnNotesIndexedPayload {
     pub notes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginsDiscoveredPayload {
     pub plugins: Vec<PluginStatusEntry>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct McpServersReadyPayload {
     pub servers: Vec<McpServerInfo>,
 }

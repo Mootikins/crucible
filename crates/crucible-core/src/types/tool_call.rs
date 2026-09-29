@@ -61,6 +61,7 @@ impl BuiltinKind {
 
 /// One tool call, classified.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CanonicalToolCall {
     /// The open kind name. The default matcher and [`Self::crucible_tool`]
     /// give a [`BuiltinKind`].
@@ -107,6 +108,7 @@ pub struct CanonicalToolCall {
 /// It holds meaning, not terminal text and not HTML. Each client draws the
 /// line and the fields in its own way.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ToolRender {
     /// The one line that says what the call does, for example a command
     /// line, a path, a URL or a query.
@@ -134,8 +136,10 @@ impl From<&str> for ToolRender {
 /// One fact of a [`ToolRender`]. The value is JSON, so a client can draw a
 /// structured value, for example `rawInput`, in its own way.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RenderField {
     pub label: String,
+    #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
     pub value: Value,
 }
 

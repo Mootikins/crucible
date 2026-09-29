@@ -63,6 +63,7 @@ pub enum ChatError {
 /// Metadata about a note found during Precognition enrichment.
 /// Carried through RPC so TUI/web can display which notes informed the response.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PrecognitionNoteInfo {
     pub title: String,
     /// Which kiln the note came from, by registry name.
@@ -74,6 +75,7 @@ pub struct PrecognitionNoteInfo {
     /// this change holds a basename under the old key, and it must be dropped
     /// on read rather than parsed as if it were a name.
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
     pub kiln: Option<crate::config::KilnName>,
     /// Search relevance score from the vector index. Defaults for payloads
     /// recorded before the field existed.

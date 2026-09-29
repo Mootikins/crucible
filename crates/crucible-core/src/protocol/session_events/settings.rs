@@ -12,6 +12,7 @@ event_payload! {
     /// Session-settings events, adjacently tagged so the enum's serialization *is*
     /// the `{event, data}` pair the envelope carries.
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     pub enum SettingsPayload {
         "model_switched" => ModelSwitched {
@@ -30,9 +31,11 @@ event_payload! {
         /// its workspace (`null` for a session with no workspace).
         "scope_changed" => ScopeChanged {
             #[serde(default)]
+            #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
             workspace: Option<PathBuf>,
             /// Always serialized, as `[]` when empty.
             #[serde(default)]
+            #[cfg_attr(feature = "openapi", schema(value_type = Vec<String>))]
             kilns: Vec<crate::config::KilnName>,
         },
         "title_changed" => TitleChanged {

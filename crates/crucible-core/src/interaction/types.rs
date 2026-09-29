@@ -34,6 +34,7 @@ use super::permission::{PermRequest, PermResponse};
 ///     ]);
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PopupRequest {
     /// Title/prompt to display above the popup.
     pub title: String,
@@ -77,6 +78,7 @@ impl PopupRequest {
 
 /// Response to a [`PopupRequest`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PopupResponse {
     /// Index of the selected entry (if any).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -136,6 +138,7 @@ pub type PanelItem = PopupEntry;
 
 /// Render/behavior hints for an interactive panel.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PanelHints {
     /// Show filter/search input for fuzzy matching.
     #[serde(default)]
@@ -203,6 +206,7 @@ impl PanelHints {
 ///     .hints(PanelHints::new().filterable());
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct InteractivePanel {
     /// Header/prompt text displayed above the panel.
     pub header: String,
@@ -269,6 +273,7 @@ impl PanelState {
 
 /// Result when an interactive panel closes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PanelResult {
     /// Whether the user cancelled (Escape).
     #[serde(default)]
@@ -316,6 +321,7 @@ impl PanelResult {
 /// This enum wraps all interaction primitives for use in event systems
 /// and channels.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InteractionRequest {
     /// Question with optional choices.
@@ -410,6 +416,7 @@ impl From<InteractivePanel> for InteractionRequest {
 
 /// Unified interaction response type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InteractionResponse {
     /// Response to an ask request.

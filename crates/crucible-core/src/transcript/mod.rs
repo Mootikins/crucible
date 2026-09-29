@@ -71,7 +71,6 @@ pub enum ItemBody {
     UserTurn {
         content: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
         origin: Option<TurnOrigin>,
         /// The notes that Precognition gave this turn, when it ran.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,14 +96,13 @@ pub enum ItemBody {
     ToolCard {
         call_id: String,
         name: String,
-        #[cfg_attr(feature = "openapi", schema(value_type = Object))]
+        #[cfg_attr(feature = "openapi", schema(value_type = serde_json::Value))]
         args: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         auto_approved: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
         display: Option<Box<CanonicalToolCall>>,
         status: ToolStatus,
         /// The output, as text.
@@ -195,7 +193,6 @@ pub struct Precognition {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub query_summary: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "openapi", schema(value_type = Vec<Object>))]
     pub notes: Vec<PrecognitionNoteInfo>,
 }
 

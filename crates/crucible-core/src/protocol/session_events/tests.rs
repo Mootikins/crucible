@@ -172,6 +172,7 @@ fn declared_events_have_unique_routes() {
 
 event_payload! {
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
     #[serde(tag = "event", content = "data")]
     enum MetadataProbe {
         /// A name whose spelling cannot be inferred from its Rust identifier.

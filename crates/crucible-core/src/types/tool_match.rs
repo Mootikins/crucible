@@ -31,6 +31,7 @@ use super::tool_call::{is_shell_tool, BuiltinKind, CanonicalToolCall};
 /// This is provenance. No policy reads it. It has no status and no
 /// `rawOutput`, because those describe the result, not the call.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RawToolCall {
     /// The ACP `toolCallId`. Some agents put the tool name in it, for
@@ -41,16 +42,27 @@ pub struct RawToolCall {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The ACP tool kind. Opaque on the wire: `ToolKind` is an ACP protocol
+    /// type this crate does not derive `ToSchema` for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
     pub kind: Option<ToolKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<serde_json::Value>))]
     pub raw_input: Option<Value>,
+    /// The touched locations. Opaque on the wire: `ToolCallLocation` is an
+    /// ACP protocol type this crate does not derive `ToSchema` for.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Vec<serde_json::Value>))]
     pub locations: Vec<ToolCallLocation>,
+    /// The call's content frames. Opaque on the wire, for the same reason
+    /// as `locations`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Vec<serde_json::Value>))]
     pub content: Vec<ToolCallContent>,
     /// The ACP `_meta` object, as opaque JSON.
     #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<serde_json::Value>))]
     pub meta: Option<Value>,
 }
 

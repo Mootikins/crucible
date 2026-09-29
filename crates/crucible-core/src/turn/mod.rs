@@ -144,6 +144,7 @@ pub enum TurnEvent {
 /// calls dispatched, and the turn after them ends for some other reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(strum::EnumIter))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
     /// Model finished naturally.
@@ -187,10 +188,11 @@ impl StopReason {
     /// needs no note.
     ///
     /// **This is the only wording.** The TUI calls the function. The browser
-    /// cannot, so `crucible_web::ChatEvent::MessageComplete` carries the
-    /// answer as `stop_notice` and the page draws the string the daemon sent.
-    /// A second wording in TypeScript is what this replaced, and the two had
-    /// already drifted — a capital letter and a full stop. The gate
+    /// cannot, so `TurnPayload::MessageComplete` itself carries the answer as
+    /// `stop_notice` — filled in once, by `SessionEventMessage::message_complete`
+    /// — and the page draws the string the daemon sent. A second wording in
+    /// TypeScript is what this replaced, and the two had already drifted — a
+    /// capital letter and a full stop. The gate
     /// `the_frontend_words_no_stop_reason_notice` in `crucible-web` refuses a
     /// new one.
     ///
@@ -213,6 +215,7 @@ impl StopReason {
 /// in-process caller of `send_message_notified`. [`StopReason`] tells why ONE
 /// provider call stopped. This tells what happened to the turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TurnStatus {
     /// The turn ran to its end.
@@ -238,6 +241,7 @@ pub enum TurnStatus {
 /// The serde form is the `origin` of the `user_message` event and of the
 /// render payload: `{"kind": "plugin", "name": "goal"}` or `{"kind": "user"}`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", content = "name", rename_all = "snake_case")]
 pub enum TurnOrigin {
     /// A person sent the message through a client.
