@@ -18,9 +18,10 @@ use crucible_core::canvas::containment::{
 };
 use crucible_core::canvas::{Canvas, NodeKind};
 use crucible_core::file_write::FileEncoding;
+use crucible_core::protocol::requests::PathRequest;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use super::helpers::MAX_CONTENT_SIZE;
@@ -31,13 +32,6 @@ use crate::{error::WebResultExt, WebError};
 
 pub fn canvas_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new().routes(routes!(get_canvas, put_canvas))
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct CanvasPathQuery {
-    /// Absolute path of the `.canvas` file.
-    path: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -104,7 +98,7 @@ struct CanvasSavedResponse {
 #[utoipa::path(
     get,
     path = "/api/canvas",
-    params(CanvasPathQuery),
+    params(PathRequest),
     responses(
         (status = 200, body = CanvasResponse),
         (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
@@ -115,7 +109,7 @@ struct CanvasSavedResponse {
 )]
 async fn get_canvas(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<CanvasPathQuery>,
+    axum::extract::Query(query): axum::extract::Query<PathRequest>,
 ) -> Result<Json<CanvasResponse>, WebError> {
     // The daemon decides which root holds the canvas, and its answer resolves
     // symlinks: a `.canvas` that is a link out of its root is not read.

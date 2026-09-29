@@ -9,26 +9,13 @@ use crate::{error::WebResultExt, WebError};
 use axum::{extract::State, Json};
 // The daemon owns the `scm.clone` reply, so this route answers its type
 // rather than a second copy of it.
+use crucible_core::protocol::requests::ScmCloneRequest;
 use crucible_daemon::ScmCloneResponse;
-use serde::Deserialize;
-use std::path::PathBuf;
-use utoipa::ToSchema;
+use std::path::Path;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn scm_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new().routes(routes!(clone_repo))
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-struct CloneRequest {
-    /// Remote repo: https://…, git@host:…, or `owner/repo` shorthand.
-    url: String,
-    /// Where to put the clone. Absolute, and it must not exist. Absent takes
-    /// `[workspace] root_dir/<repo-name>`.
-    #[schema(value_type = Option<String>)]
-    dest: Option<PathBuf>,
-    /// The project name for the clone. Absent takes the name in the URL.
-    name: Option<String>,
 }
 
 /// `POST /api/scm/clone` — clone a remote repo and register it as a project.
@@ -40,7 +27,7 @@ struct CloneRequest {
 #[utoipa::path(
     post,
     path = "/api/scm/clone",
-    request_body = CloneRequest,
+    request_body = ScmCloneRequest,
     responses(
         (status = 200, body = ScmCloneResponse),
         (status = 422, description = "The daemon refuses the URL or the destination, and says why"),
@@ -49,11 +36,15 @@ struct CloneRequest {
 )]
 async fn clone_repo(
     State(state): State<AppState>,
-    Json(req): Json<CloneRequest>,
+    Json(req): Json<ScmCloneRequest>,
 ) -> Result<Json<ScmCloneResponse>, WebError> {
     let result = state
         .daemon
-        .scm_clone(&req.url, req.dest.as_deref(), req.name.as_deref())
+        .scm_clone(
+            &req.url,
+            req.dest.as_deref().map(Path::new),
+            req.name.as_deref(),
+        )
         .await
         .daemon_err()?;
     Ok(Json(result))

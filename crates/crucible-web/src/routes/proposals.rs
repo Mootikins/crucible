@@ -14,8 +14,9 @@ use axum::{
     Json,
 };
 use crucible_core::proposal::{Proposal, ProposalFile, ProposalId};
+use crucible_core::protocol::requests::ProposalListRequest;
 use serde::Deserialize;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn proposal_routes() -> OpenApiRouter<AppState> {
@@ -34,20 +35,11 @@ fn proposal_id(raw: &str) -> Result<ProposalId, WebError> {
         .map_err(|_| WebError::Validation(format!("not a proposal id: {raw:?}")))
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct ListQuery {
-    /// Also list the proposals that left the Inbox: accepted, rejected and
-    /// dismissed.
-    #[serde(default)]
-    all: bool,
-}
-
 /// `GET /api/proposals` — the proposals in the Inbox, oldest first.
 #[utoipa::path(
     get,
     path = "/api/proposals",
-    params(ListQuery),
+    params(ProposalListRequest),
     responses(
         (status = 200, body = Vec<Proposal>),
         (status = 502, description = "The daemon could not read the proposals"),
@@ -55,7 +47,7 @@ struct ListQuery {
 )]
 async fn list_proposals(
     State(state): State<AppState>,
-    Query(query): Query<ListQuery>,
+    Query(query): Query<ProposalListRequest>,
 ) -> Result<Json<Vec<Proposal>>, WebError> {
     let proposals = state.daemon.proposal_list(query.all).await.daemon_err()?;
     Ok(Json(proposals))

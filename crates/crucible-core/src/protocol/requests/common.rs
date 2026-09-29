@@ -83,14 +83,21 @@ pub struct Page {
 pub struct EmptyParams {}
 
 /// Request for methods that take only a kiln path.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct KilnPathRequest {
+    /// The absolute path of the kiln.
     pub kiln: String,
 }
 
 /// Request for methods that take only a filesystem path.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct PathRequest {
+    /// The ABSOLUTE path of the file. The daemon decides which root holds it,
+    /// and whether that root serves it.
     pub path: String,
 }
 

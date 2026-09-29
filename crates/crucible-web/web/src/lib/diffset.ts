@@ -19,7 +19,7 @@ export type UnreadableRoot = Schemas['UnreadableRoot'];
 export type DiffComment = Schemas['Comment'];
 export type ListedComment = Schemas['ListedComment'];
 export type CommentSide = Schemas['CommentSide'];
-export type NewDiffComment = Schemas['CommentBody'];
+export type NewDiffComment = Schemas['DiffCommentRequest'];
 /** A reference to a stored comment that a chat message attaches. */
 export type CommentRef = Schemas['CommentRef'];
 

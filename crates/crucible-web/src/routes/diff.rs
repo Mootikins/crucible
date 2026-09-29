@@ -17,12 +17,12 @@ use axum::{
 use crucible_core::diff::{DiffFileText, Diffset, DiffsetSource};
 use crucible_core::proposal::ProposalId;
 use crucible_core::protocol::requests::{
-    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffDeleteCommentReply,
-    DiffFileRequest, DiffResolveCommentReply,
+    DiffCommentKey, DiffCommentReply, DiffCommentRequest, DiffCommentsReply,
+    DiffDeleteCommentReply, DiffFileRequest, DiffResolveCommentReply,
 };
-use crucible_core::session::{CommentAuthor, CommentSide, PhysicalRoot, SessionId};
+use crucible_core::session::{PhysicalRoot, SessionId};
 use serde::Deserialize;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::IntoParams;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn diff_routes() -> OpenApiRouter<AppState> {
@@ -218,72 +218,6 @@ async fn get_diff_file(
     Ok(Json(text))
 }
 
-/// `POST /api/diff/comment` — anchor a comment to a line range of one file
-/// of a diffset.
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-struct CommentBody {
-    /// The diffset of the file.
-    source: DiffsetSource,
-    /// Absolute path of the root of the file. A session record and a
-    /// proposal need it, because each can have more than one root. A branch
-    /// source names its own root.
-    #[serde(default)]
-    root: Option<String>,
-    /// The path of the file relative to the root, on the current side.
-    path: String,
-    /// The old path of a renamed file. A base-side comment quotes this path.
-    #[serde(default)]
-    from: Option<String>,
-    /// The side that the line numbers count on.
-    side: CommentSide,
-    /// The first line, 1-based.
-    line_start: u32,
-    /// One past the last line. Absent means one line.
-    #[serde(default)]
-    line_end: Option<u32>,
-    body: String,
-    /// Absent means a human.
-    #[serde(default)]
-    author: Option<CommentAuthor>,
-}
-
-impl From<CommentBody> for DiffCommentRequest {
-    fn from(body: CommentBody) -> Self {
-        DiffCommentRequest {
-            source: body.source,
-            root: body.root.map(PhysicalRoot::from_top_level),
-            path: body.path,
-            from: body.from,
-            side: body.side,
-            line_start: body.line_start,
-            line_end: body.line_end,
-            body: body.body,
-            author: body.author,
-        }
-    }
-}
-
-/// `POST /api/diff/comment/resolve` — mark one comment of a diffset
-/// resolved.
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-struct ResolveCommentBody {
-    /// The diffset of the comment.
-    source: DiffsetSource,
-    comment_id: String,
-}
-
-/// `POST /api/diff/comment/delete` — remove one comment of a diffset from
-/// the store.
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-struct DeleteCommentBody {
-    /// The diffset of the comment.
-    source: DiffsetSource,
-    comment_id: String,
-}
-
 /// `POST /api/diff/comment` — anchor a comment to a line range of one file of
 /// a branch diff or of a session record.
 ///
@@ -293,7 +227,7 @@ struct DeleteCommentBody {
 #[utoipa::path(
     post,
     path = "/api/diff/comment",
-    request_body = CommentBody,
+    request_body = DiffCommentRequest,
     responses(
         (status = 200, body = DiffCommentReply),
         (status = 422, description = "The daemon refuses the source, the root, the path or the range, and says why"),
@@ -302,9 +236,9 @@ struct DeleteCommentBody {
 )]
 async fn post_diff_comment(
     State(state): State<AppState>,
-    Json(body): Json<CommentBody>,
+    Json(body): Json<DiffCommentRequest>,
 ) -> Result<Json<DiffCommentReply>, WebError> {
-    let reply = state.daemon.diff_comment(&body.into()).await.daemon_err()?;
+    let reply = state.daemon.diff_comment(&body).await.daemon_err()?;
     Ok(Json(reply))
 }
 
@@ -312,7 +246,7 @@ async fn post_diff_comment(
 #[utoipa::path(
     post,
     path = "/api/diff/comment/resolve",
-    request_body = ResolveCommentBody,
+    request_body = DiffCommentKey,
     responses(
         (status = 200, body = DiffResolveCommentReply),
         (status = 422, description = "The diffset has no such comment, or the daemon refuses the source"),
@@ -321,7 +255,7 @@ async fn post_diff_comment(
 )]
 async fn post_diff_resolve_comment(
     State(state): State<AppState>,
-    Json(body): Json<ResolveCommentBody>,
+    Json(body): Json<DiffCommentKey>,
 ) -> Result<Json<DiffResolveCommentReply>, WebError> {
     let reply = state
         .daemon
@@ -339,7 +273,7 @@ async fn post_diff_resolve_comment(
 #[utoipa::path(
     post,
     path = "/api/diff/comment/delete",
-    request_body = DeleteCommentBody,
+    request_body = DiffCommentKey,
     responses(
         (status = 200, body = DiffDeleteCommentReply),
         (status = 422, description = "The diffset has no such comment, or the daemon refuses the source"),
@@ -348,7 +282,7 @@ async fn post_diff_resolve_comment(
 )]
 async fn post_diff_delete_comment(
     State(state): State<AppState>,
-    Json(body): Json<DeleteCommentBody>,
+    Json(body): Json<DiffCommentKey>,
 ) -> Result<Json<DiffDeleteCommentReply>, WebError> {
     let reply = state
         .daemon

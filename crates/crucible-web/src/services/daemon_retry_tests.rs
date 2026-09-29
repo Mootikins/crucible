@@ -152,7 +152,7 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
             match method {
                 "plugin.run_command" => peer
                     .daemon
-                    .plugin_run_command("test", json!({}))
+                    .plugin_run_command("test", json!({}), None)
                     .await
                     .map(|_| ()),
                 "plugin.option_execute" => {

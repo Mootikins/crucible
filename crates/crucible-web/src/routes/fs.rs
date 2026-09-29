@@ -15,9 +15,10 @@ use axum::{
 // say so in a comment — "byte-identical to the TypeScript `FsEntry`" — which
 // is the kind of contract that cannot fail a build. The routes read the types
 // instead.
+use crucible_core::protocol::requests::{FsListDirRequest, FsMoveRequest, FsPathRequest};
 use crucible_daemon::{FsListing, FsMoveReply, FsTrashReply};
 use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn fs_routes() -> OpenApiRouter<AppState> {
@@ -29,38 +30,6 @@ pub fn fs_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(fs_event_stream))
 }
 
-/// The two roots a mutation may name, and the allowlist each one selects.
-///
-/// This describes the wire; the field that carries it stays a `String` so that
-/// an unknown kind is refused by the daemon, in the daemon's own sentence,
-/// rather than by a body rejection that says only "unknown variant".
-/// `every_root_kind_is_one_the_daemon_admits` walks an exhaustive match, so a
-/// third kind cannot reach the document without a decision about it.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-enum FsRootKind {
-    /// A registered project, or a session's own workspace folder.
-    Project,
-    /// A registered kiln.
-    Kiln,
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct FsListQuery {
-    /// Absolute path of the root to list inside.
-    root: String,
-    /// Root-relative POSIX path of the directory. Empty lists the root.
-    #[serde(default)]
-    rel_path: String,
-    /// Include entries git ignores. The file tree sends `true`.
-    #[serde(default)]
-    show_ignored: bool,
-    /// Include dotfiles. `.git` never lists, whatever this says.
-    #[serde(default)]
-    show_hidden: bool,
-}
-
 /// `GET /api/fs/list` — one directory level inside a registered root.
 ///
 /// All security (registry allowlist, path containment, symlink/dotfile
@@ -69,7 +38,7 @@ struct FsListQuery {
 #[utoipa::path(
     get,
     path = "/api/fs/list",
-    params(FsListQuery),
+    params(FsListDirRequest),
     responses(
         (status = 200, body = FsListing),
         (status = 422, description = "The daemon refuses the root or the relative path, and says why"),
@@ -78,7 +47,7 @@ struct FsListQuery {
 )]
 async fn list_dir(
     State(state): State<AppState>,
-    Query(query): Query<FsListQuery>,
+    Query(query): Query<FsListDirRequest>,
 ) -> Result<Json<FsListing>, WebError> {
     let listing = state
         .daemon
@@ -94,19 +63,6 @@ async fn list_dir(
     Ok(Json(listing))
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-struct FsMoveBody {
-    /// Absolute path of the root both ends sit inside.
-    root: String,
-    /// Which allowlist the daemon checks `root` against.
-    #[schema(value_type = FsRootKind)]
-    kind: String,
-    /// Root-relative POSIX path of the entry to move.
-    from_rel: String,
-    /// Root-relative POSIX path it takes.
-    to_rel: String,
-}
-
 /// `POST /api/fs/move` — move or rename one entry within one root.
 ///
 /// The file-tree drag-and-drop backend. All security (allowlist, containment,
@@ -116,7 +72,7 @@ struct FsMoveBody {
 #[utoipa::path(
     post,
     path = "/api/fs/move",
-    request_body = FsMoveBody,
+    request_body = FsMoveRequest,
     responses(
         (status = 200, body = FsMoveReply),
         (status = 422, description = "The daemon refuses the root, either path, or an overwrite, and says why"),
@@ -125,7 +81,7 @@ struct FsMoveBody {
 )]
 async fn move_path(
     State(state): State<AppState>,
-    Json(body): Json<FsMoveBody>,
+    Json(body): Json<FsMoveRequest>,
 ) -> Result<Json<FsMoveReply>, WebError> {
     let outcome = state
         .daemon
@@ -133,17 +89,6 @@ async fn move_path(
         .await
         .daemon_err()?;
     Ok(Json(outcome))
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-struct FsPathBody {
-    /// Absolute path of the root the entry sits inside.
-    root: String,
-    /// Which allowlist the daemon checks `root` against.
-    #[schema(value_type = FsRootKind)]
-    kind: String,
-    /// Root-relative POSIX path of the entry.
-    rel_path: String,
 }
 
 /// What `POST /api/fs/mkdir` answers.
@@ -162,7 +107,7 @@ struct FsMkdirResponse {
 #[utoipa::path(
     post,
     path = "/api/fs/mkdir",
-    request_body = FsPathBody,
+    request_body = FsPathRequest,
     responses(
         (status = 200, body = FsMkdirResponse),
         (status = 422, description = "The daemon refuses the root or the relative path, and says why"),
@@ -171,7 +116,7 @@ struct FsMkdirResponse {
 )]
 async fn mkdir_path(
     State(state): State<AppState>,
-    Json(body): Json<FsPathBody>,
+    Json(body): Json<FsPathRequest>,
 ) -> Result<Json<FsMkdirResponse>, WebError> {
     state
         .daemon
@@ -188,7 +133,7 @@ async fn mkdir_path(
 #[utoipa::path(
     post,
     path = "/api/fs/trash",
-    request_body = FsPathBody,
+    request_body = FsPathRequest,
     responses(
         (status = 200, body = FsTrashReply),
         (status = 422, description = "The daemon refuses the root or the relative path, and says why"),
@@ -197,7 +142,7 @@ async fn mkdir_path(
 )]
 async fn trash_path(
     State(state): State<AppState>,
-    Json(body): Json<FsPathBody>,
+    Json(body): Json<FsPathRequest>,
 ) -> Result<Json<FsTrashReply>, WebError> {
     let outcome = state
         .daemon
@@ -245,6 +190,7 @@ mod tests {
     use crate::test_support::{
         mock_fs_listing, mock_fs_move_reply, mock_fs_trash_reply, request_json, shape, survives,
     };
+    use crucible_core::protocol::requests::FsRootKind;
     use crucible_daemon::{SkipReason, SkippedRef};
     use serde_json::json;
 

@@ -3,7 +3,10 @@
 
 /// Request for `plugin.publications`. An absent `key` asks for every key.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct PluginPublicationsRequest {
+    /// Narrow the reply to one contribution kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
 }
@@ -70,6 +73,7 @@ pub struct PluginOptionCallRequest {
 
 /// Request for `plugin.run_command`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginRunCommandRequest {
     pub name: String,
     /// Whatever the command's Lua `fn` expects. `null` when the caller sends
@@ -85,7 +89,9 @@ pub struct PluginRunCommandRequest {
 
 /// Request for `plugin.install`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginInstallRequest {
+    /// The plugin URL, for example `user/repo` or a full git URL.
     pub url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,

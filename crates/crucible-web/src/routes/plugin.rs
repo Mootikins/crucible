@@ -5,6 +5,9 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use crucible_core::protocol::requests::{
+    PluginInstallRequest, PluginPublicationsRequest, PluginRunCommandRequest,
+};
 use crucible_core::protocol::SystemPayload;
 use crucible_core::types::{
     PluginCommandsReply, PluginInfo, PluginInstallReply, PluginOptionCallReply, PluginOptionsReply,
@@ -68,14 +71,6 @@ pub fn plugin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(run_command))
 }
 
-/// One plugin command invocation.
-#[derive(Debug, Deserialize, ToSchema)]
-struct CommandRequest {
-    name: String,
-    #[serde(default)]
-    args: serde_json::Value,
-}
-
 /// One read, write, or button press against a plugin's settings tree.
 ///
 /// A single endpoint because the three differ only in which Lua callback they
@@ -120,14 +115,6 @@ fn option_action_schema() -> utoipa::openapi::schema::Object {
                 .map(option_action_spelling),
         ))
         .build()
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-struct InstallRequest {
-    /// Plugin URL (e.g. "user/repo" or full git URL).
-    url: String,
-    branch: Option<String>,
-    pin: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -189,7 +176,7 @@ pub(crate) type PublicationsByKey = crucible_core::types::PluginPublications;
     get,
     path = "/api/plugins/publications",
     params(
-        PublicationsQuery,
+        PluginPublicationsRequest,
         ("x-crucible-plugin" = String, Header, description = CALLER_HEADER_DOC),
     ),
     responses(
@@ -201,7 +188,7 @@ pub(crate) type PublicationsByKey = crucible_core::types::PluginPublications;
 async fn list_publications(
     State(state): State<AppState>,
     caller: PluginCaller,
-    Query(q): Query<PublicationsQuery>,
+    Query(q): Query<PluginPublicationsRequest>,
 ) -> Result<Json<PluginPublicationsReply>, WebError> {
     let publications = state.daemon.plugin_publications(q.key).await.daemon_err()?;
     Ok(Json(PluginPublicationsReply {
@@ -267,19 +254,6 @@ async fn list_commands(
 ) -> Result<Json<PluginCommandsReply>, WebError> {
     let commands = state.daemon.plugin_commands().await.daemon_err()?;
     Ok(Json(PluginCommandsReply { commands }))
-}
-
-/// `?key=` narrows to one contribution kind.
-///
-/// Without it every caller receives every plugin's published data. That is
-/// more than a block drawing one key needs, and — once third-party block code
-/// can run — more than it should be handed.
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct PublicationsQuery {
-    /// Narrow to one contribution kind.
-    #[serde(default)]
-    key: Option<String>,
 }
 
 /// `GET /api/plugins/options` — the settings trees plugins declared.
@@ -423,7 +397,7 @@ impl PublicationChangedEvent {
     post,
     path = "/api/plugins/command",
     params(("x-crucible-plugin" = String, Header, description = CALLER_HEADER_DOC)),
-    request_body = CommandRequest,
+    request_body = PluginRunCommandRequest,
     responses(
         (status = 200, body = PluginRunCommandReply),
         (status = 403, description = "No caller identity was sent, or the command belongs to another plugin"),
@@ -434,7 +408,7 @@ impl PublicationChangedEvent {
 async fn run_command(
     State(state): State<AppState>,
     caller: PluginCaller,
-    Json(req): Json<CommandRequest>,
+    Json(req): Json<PluginRunCommandRequest>,
 ) -> Result<Json<PluginRunCommandReply>, WebError> {
     if req.name.trim().is_empty() {
         return Err(WebError::Validation(
@@ -444,7 +418,7 @@ async fn run_command(
     refuse_another_plugins_command(&state, &caller, &req.name).await?;
     let result = state
         .daemon
-        .plugin_run_command(&req.name, req.args)
+        .plugin_run_command(&req.name, req.args, req.session_id.as_deref())
         .await
         .daemon_err()?;
     Ok(Json(result))
@@ -527,7 +501,7 @@ async fn reload_plugin(
     post,
     path = "/api/plugins",
     params(("x-crucible-plugin" = String, Header, description = CALLER_HEADER_DOC)),
-    request_body = InstallRequest,
+    request_body = PluginInstallRequest,
     responses(
         (status = 200, body = PluginInstallReply),
         (status = 403, description = "The caller is not the app"),
@@ -538,7 +512,7 @@ async fn reload_plugin(
 async fn install_plugin(
     State(state): State<AppState>,
     caller: PluginCaller,
-    Json(req): Json<InstallRequest>,
+    Json(req): Json<PluginInstallRequest>,
 ) -> Result<Json<PluginInstallReply>, WebError> {
     // The largest of the plugin routes: it clones code from a URL the caller
     // chose and loads it. Nothing a block draws needs this.

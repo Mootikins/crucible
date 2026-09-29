@@ -1434,7 +1434,7 @@ export async function reloadPlugin(name: string): Promise<PluginReloadResult> {
   );
 }
 
-export type InstallPluginParams = Schemas['InstallRequest'];
+export type InstallPluginParams = Schemas['PluginInstallRequest'];
 
 /**
  * What an install did.

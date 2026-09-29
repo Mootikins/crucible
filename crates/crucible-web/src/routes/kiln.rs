@@ -1,4 +1,3 @@
-use crate::routes::helpers::KilnPathQuery;
 use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -12,10 +11,10 @@ use base64::Engine as _;
 use crucible_core::file_write::{FileContent, FileEncoding, FileReadReply, FileReadRequest};
 use crucible_core::note_edit::{AnchoredEdit, EditRefusal};
 use crucible_core::note_merge::Region;
-use crucible_core::protocol::requests::KilnGraphReply;
+use crucible_core::protocol::requests::{KilnGraphReply, KilnPathRequest, PathRequest};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn kiln_routes() -> OpenApiRouter<AppState> {
@@ -30,14 +29,6 @@ pub fn kiln_routes() -> OpenApiRouter<AppState> {
 // =========================================================================
 // Query / Request types
 // =========================================================================
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct FilePathQuery {
-    /// ABSOLUTE path of the file. The daemon decides which root holds it and
-    /// whether that root serves it; this shape does not.
-    path: String,
-}
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct PutFileRequest {
@@ -98,7 +89,7 @@ struct KilnFilesResponse {
 #[utoipa::path(
     get,
     path = "/api/kiln/files",
-    params(KilnPathQuery),
+    params(KilnPathRequest),
     responses(
         (status = 200, body = KilnFilesResponse),
         (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
@@ -106,16 +97,18 @@ struct KilnFilesResponse {
 )]
 async fn list_kiln_files(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
+    axum::extract::Query(query): axum::extract::Query<KilnPathRequest>,
 ) -> Result<Json<KilnFilesResponse>, WebError> {
-    Ok(Json(kiln_file_listing(&state, &query.kiln).await?))
+    Ok(Json(
+        kiln_file_listing(&state, Path::new(&query.kiln)).await?,
+    ))
 }
 
 /// `GET /api/kiln/notes?kiln=<path>` — list notes in a kiln with metadata.
 #[utoipa::path(
     get,
     path = "/api/kiln/notes",
-    params(KilnPathQuery),
+    params(KilnPathRequest),
     responses(
         (status = 200, body = KilnFilesResponse),
         (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
@@ -123,9 +116,11 @@ async fn list_kiln_files(
 )]
 async fn list_kiln_notes(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
+    axum::extract::Query(query): axum::extract::Query<KilnPathRequest>,
 ) -> Result<Json<KilnFilesResponse>, WebError> {
-    Ok(Json(kiln_file_listing(&state, &query.kiln).await?))
+    Ok(Json(
+        kiln_file_listing(&state, Path::new(&query.kiln)).await?,
+    ))
 }
 
 /// The listing both routes answer. One body, so the two cannot drift apart
@@ -152,7 +147,7 @@ async fn kiln_file_listing(state: &AppState, kiln: &Path) -> Result<KilnFilesRes
 #[utoipa::path(
     get,
     path = "/api/kiln/graph",
-    params(KilnPathQuery),
+    params(KilnPathRequest),
     responses(
         (status = 200, body = KilnGraphReply),
         (status = 502, description = "The daemon could not build the graph, or answered a shape this route cannot read"),
@@ -160,9 +155,13 @@ async fn kiln_file_listing(state: &AppState, kiln: &Path) -> Result<KilnFilesRes
 )]
 async fn kiln_graph(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
+    axum::extract::Query(query): axum::extract::Query<KilnPathRequest>,
 ) -> Result<Json<KilnGraphReply>, WebError> {
-    let graph = state.daemon.kiln_graph(&query.kiln).await.daemon_err()?;
+    let graph = state
+        .daemon
+        .kiln_graph(Path::new(&query.kiln))
+        .await
+        .daemon_err()?;
     Ok(Json(graph))
 }
 
@@ -172,7 +171,7 @@ async fn kiln_graph(
 #[utoipa::path(
     get,
     path = "/api/kiln/file",
-    params(FilePathQuery),
+    params(PathRequest),
     responses(
         (status = 200, body = KilnFileResponse),
         (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
@@ -183,7 +182,7 @@ async fn kiln_graph(
 )]
 async fn get_kiln_file(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
+    axum::extract::Query(query): axum::extract::Query<PathRequest>,
 ) -> Result<Json<KilnFileResponse>, WebError> {
     // The editor addresses files by ABSOLUTE path (a note's `path`).
     let reply = read_through_daemon(&state, &query.path, FileEncoding::Text)
@@ -260,7 +259,7 @@ pub(super) fn text_of(content: Option<FileContent>) -> Result<Option<(String, St
 #[utoipa::path(
     get,
     path = "/api/file/raw",
-    params(FilePathQuery),
+    params(PathRequest),
     responses(
         (
             status = 200,
@@ -275,7 +274,7 @@ pub(super) fn text_of(content: Option<FileContent>) -> Result<Option<(String, St
 )]
 async fn get_raw_file(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
+    axum::extract::Query(query): axum::extract::Query<PathRequest>,
 ) -> Result<Response, WebError> {
     let reply = read_through_daemon(&state, &query.path, FileEncoding::Base64).await?;
     let bytes = match reply.content {

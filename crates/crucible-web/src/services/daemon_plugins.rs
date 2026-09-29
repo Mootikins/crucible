@@ -77,8 +77,8 @@ impl ReconnectingDaemon {
         /// a branch list depends on which project is selected and on what happened
         /// in the repo since, so it cannot be published once and cached.
         Once PluginRunCommand =>
-        plugin_run_command(name: &str, args: serde_json::Value)
-        -> crucible_core::types::PluginRunCommandReply = plugin_run_command(&name, args);
+        plugin_run_command(name: &str, args: serde_json::Value, session: Option<&str> => session.map(str::to_string))
+        -> crucible_core::types::PluginRunCommandReply = plugin_run_command_in(&name, args, session.as_deref());
     }
 
     forward_rpc! {

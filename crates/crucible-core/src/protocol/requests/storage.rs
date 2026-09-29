@@ -277,11 +277,18 @@ pub struct GrepSearchRequest {
 
 /// Request for `fs.list_dir`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct FsListDirRequest {
+    /// Absolute path of the root to list inside.
     pub root: String,
+    /// Root-relative POSIX path of the directory. Empty lists the root.
+    #[serde(default)]
     pub rel_path: String,
+    /// Include entries git ignores. The file tree sends `true`.
     #[serde(default)]
     pub show_ignored: bool,
+    /// Include dotfiles. `.git` never lists, whatever this says.
     #[serde(default)]
     pub show_hidden: bool,
 }
@@ -314,11 +321,19 @@ pub struct DiffFileRequest {
 
 /// Request for `diff.comment`: anchor a comment to a line range of one file
 /// of the diffset of `source`.
+///
+/// A key that the type does not know is refused, not dropped. A caller that
+/// sends a field of another shape, for example a `session_id`, learns of the
+/// mistake. The web route reads this type, so the rule holds at each edge.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffCommentRequest {
+    /// The diffset of the file.
     pub source: crate::diff::DiffsetSource,
-    /// The root of the file. A session record needs it, as in
-    /// [`DiffFileRequest::root`].
+    /// The absolute path of the root of the file. A session record and a
+    /// proposal need it, because each can have more than one root. A branch
+    /// source names its own root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root: Option<crate::session::PhysicalRoot>,
     /// The path relative to the root, on the current side.
@@ -353,7 +368,9 @@ pub struct DiffCommentReply {
 ///
 /// [`crate::diff::CommentRef`] names a comment too, but its wire field is
 /// `id`. The two methods here send `comment_id`, so the shapes stay apart.
+/// A key that the type does not know is refused, as in [`DiffCommentRequest`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffCommentKey {
     /// The diffset of the comment.
@@ -379,22 +396,51 @@ pub struct DiffDeleteCommentReply {
     pub deleted: bool,
 }
 
+/// The two roots that an `fs.*` mutation may name, and the allowlist that
+/// each one selects.
+///
+/// This type describes the wire. The field that carries it stays a `String`,
+/// so the daemon refuses an unknown kind in its own sentence. A body
+/// rejection would say only "unknown variant". A web test walks an
+/// exhaustive match, so a third kind cannot reach the document without a
+/// decision about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum FsRootKind {
+    /// A registered project, or the workspace folder of a session.
+    Project,
+    /// A registered kiln.
+    Kiln,
+}
+
 /// Request for `fs.move`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FsMoveRequest {
+    /// Absolute path of the root that holds both ends.
     pub root: String,
-    /// `"project"` or `"kiln"` — selects the daemon-side allowlist.
+    /// `"project"` or `"kiln"`. It selects the allowlist that the daemon
+    /// checks `root` against.
+    #[cfg_attr(feature = "openapi", schema(value_type = FsRootKind))]
     pub kind: String,
+    /// Root-relative POSIX path of the entry to move.
     pub from_rel: String,
+    /// Root-relative POSIX path that the entry takes.
     pub to_rel: String,
 }
 
 /// Request for `fs.mkdir` and `fs.trash`: one path inside one root.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FsPathRequest {
+    /// Absolute path of the root that holds the entry.
     pub root: String,
-    /// `"project"` or `"kiln"` — selects the daemon-side allowlist.
+    /// `"project"` or `"kiln"`. It selects the allowlist that the daemon
+    /// checks `root` against.
+    #[cfg_attr(feature = "openapi", schema(value_type = FsRootKind))]
     pub kind: String,
+    /// Root-relative POSIX path of the entry.
     pub rel_path: String,
 }
 
@@ -408,12 +454,16 @@ pub struct NoteRenameRequest {
 
 /// Request for `scm.clone`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScmCloneRequest {
+    /// The remote repo: `https://…`, `git@host:…`, or the `owner/repo`
+    /// shorthand.
     pub url: String,
-    /// Absolute, must not exist; overrides `[workspace] root_dir/<repo-name>`.
+    /// Where to put the clone. Absolute, and it must not exist. Absent takes
+    /// `[workspace] root_dir/<repo-name>`.
     #[serde(default)]
     pub dest: Option<String>,
-    /// Overrides the repo name derived from the URL.
+    /// The project name of the clone. Absent takes the name in the URL.
     #[serde(default)]
     pub name: Option<String>,
 }
