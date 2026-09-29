@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use crucible_daemon::{SkillDetail, SkillsReply};
+use crucible_core::types::{SkillDetail, SkillsReply};
 use serde::Deserialize;
 use std::path::PathBuf;
 use utoipa::IntoParams;

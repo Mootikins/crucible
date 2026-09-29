@@ -462,7 +462,7 @@ impl DaemonClient {
         kiln_path: &Path,
         workspace: Option<&Path>,
         scope_filter: Option<&str>,
-    ) -> Result<crate::SkillsReply> {
+    ) -> Result<crucible_core::types::SkillsReply> {
         self.typed_call(
             RpcMethod::SkillsList,
             SkillsListRequest {
@@ -480,7 +480,7 @@ impl DaemonClient {
         name: &str,
         kiln_path: &Path,
         workspace: Option<&Path>,
-    ) -> Result<crate::SkillDetail> {
+    ) -> Result<crucible_core::types::SkillDetail> {
         self.typed_call(
             RpcMethod::SkillsGet,
             SkillsGetRequest {
@@ -499,7 +499,7 @@ impl DaemonClient {
         kiln_path: &Path,
         workspace: Option<&Path>,
         limit: Option<usize>,
-    ) -> Result<crate::SkillsReply> {
+    ) -> Result<crucible_core::types::SkillsReply> {
         self.typed_call(
             RpcMethod::SkillsSearch,
             SkillsSearchRequest {

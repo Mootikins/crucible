@@ -23,6 +23,7 @@ pub mod notification;
 pub mod plugin_status;
 pub mod popup;
 pub mod provider_info;
+pub mod skill;
 pub mod status_item;
 pub mod tool_call;
 pub mod tool_match;
@@ -80,6 +81,9 @@ pub use crate::types::status_item::{
     IndeterminateProgress, StatusDisplayItem, StatusItemKind, StatusProgress,
     PLUGIN_APPROVAL_ACTION, PLUGIN_TURNS_ID_PREFIX,
 };
+
+// Re-export skill discovery types (`skills.*` RPCs).
+pub use crate::types::skill::{SkillDetail, SkillSummary, SkillsReply};
 
 // NOTE: `mcp_status::McpServerInfo` is intentionally NOT re-exported at
 // `types::` top-level to avoid collision with `traits::mcp::McpServerInfo`
