@@ -1,6 +1,6 @@
 //! Session recording and replay RPC tests.
 
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;
@@ -16,14 +16,13 @@ async fn test_session_create_with_granular_recording_mode() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
             recording_mode: Some("granular".to_string()),
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("session_create with recording_mode failed");
@@ -45,14 +44,12 @@ async fn test_session_create_with_no_recording_mode() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            ..Default::default()
         })
         .await
         .expect("session_create without recording_mode failed");

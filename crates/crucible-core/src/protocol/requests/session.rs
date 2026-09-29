@@ -2,7 +2,6 @@
 //! and the daemon handler deserializes the same type.
 
 use crate::config::KilnName;
-use std::path::PathBuf;
 /// Request for `session.create`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SessionCreateRequest {
@@ -111,6 +110,19 @@ pub struct SessionCreateRequest {
     pub plugin: Option<String>,
 }
 
+impl SessionCreateRequest {
+    /// The wire form of a kiln set, by registry NAME.
+    ///
+    /// An empty set is absent on the wire, so the daemon resolves its
+    /// default set. Names, not paths: the daemon resolves them against the
+    /// `[kilns]` registry, and a path would name a directory that the
+    /// registration floor never saw.
+    pub fn kiln_set(kilns: impl IntoIterator<Item = KilnName>) -> Option<Vec<String>> {
+        let kilns: Vec<String> = kilns.into_iter().map(|kiln| kiln.to_string()).collect();
+        (!kilns.is_empty()).then_some(kilns)
+    }
+}
+
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -119,52 +131,6 @@ fn is_false(b: &bool) -> bool {
 /// hand-plucking used to do (`optional_param!(req, "type", …).unwrap_or("chat")`).
 fn default_session_type() -> String {
     "chat".to_string()
-}
-
-/// Parameters for creating a session.
-#[derive(Debug, Clone)]
-pub struct SessionCreateParams {
-    pub session_type: String,
-    /// The session's whole kiln set, by registry NAME. Empty is a legitimate
-    /// value, not a request for a default: it creates a tools-only session with
-    /// no corpus (§4.1). The daemon no longer substitutes its data root, which
-    /// is the parent of the sessions root and would put every transcript in
-    /// scope.
-    ///
-    /// Names rather than paths because the daemon resolves them against the
-    /// `[kilns]` registry: a path here would name a directory the registration
-    /// floor never saw, which is the door names exist to close.
-    pub kilns: Vec<KilnName>,
-    pub workspace: Option<PathBuf>,
-    pub recording_mode: Option<String>,
-    pub recording_path: Option<PathBuf>,
-    /// "acp" | "internal"; None treated as "internal" for back-compat.
-    pub agent_type: Option<String>,
-    /// Isolation override; see [`SessionCreateRequest::isolation`]. `None`
-    /// (the overwhelmingly common case) omits the field entirely.
-    pub isolation: Option<serde_json::Value>,
-}
-
-/// Optional agent spec for `session.create` that asks the daemon to resolve and
-/// configure the session's agent server-side (the "daemon owns defaults" path).
-///
-/// `agent_name` selects an ACP profile (with `agent_type == "acp"`);
-/// `agent_card` selects an agent card on an internal session; the
-/// provider/model/endpoint fields override internal-agent config defaults. An
-/// all-`None` spec on an internal session means "use the config defaults as-is".
-#[derive(Debug, Clone, Default)]
-pub struct SessionAgentSpec {
-    pub agent_name: Option<String>,
-    /// Agent-card name for an internal session. Mutually exclusive with
-    /// `agent_name` — the daemon refuses both (`INVALID_PARAMS`).
-    pub agent_card: Option<String>,
-    pub provider: Option<String>,
-    pub provider_key: Option<String>,
-    pub model: Option<String>,
-    pub endpoint: Option<String>,
-    pub env_overrides: std::collections::HashMap<String, String>,
-    pub system_prompt: Option<String>,
-    pub mcp_servers: Option<Vec<String>>,
 }
 
 /// Request for `session.list`.

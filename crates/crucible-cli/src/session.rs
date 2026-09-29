@@ -9,7 +9,7 @@
 //! 2. The config setting `chat.agent_preference`.
 //! 3. The internal agent.
 
-use crucible_core::protocol::requests::{SessionAgentSpec, SessionCreateParams};
+use crucible_core::protocol::requests::SessionCreateRequest;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -357,44 +357,43 @@ async fn create_new_daemon_session(
     params: &AgentInitParams,
     agent_type: &str,
 ) -> Result<String> {
-    let create = SessionCreateParams {
+    let create = SessionCreateRequest {
         session_type: "chat".into(),
-        kilns: config.session_kiln_name().into_iter().collect(),
-        workspace: Some(workspace.to_path_buf()),
+        kilns: SessionCreateRequest::kiln_set(config.session_kiln_name()),
+        workspace: Some(workspace.to_string_lossy().into_owned()),
         recording_mode: params.recording_mode.clone(),
-        recording_path: params.recording_path.clone(),
+        recording_path: params
+            .recording_path
+            .clone()
+            .map(|p| p.to_string_lossy().into_owned()),
         agent_type: Some(agent_type.into()),
-        isolation: None,
+        ..Default::default()
     };
     let legacy_chat_defaults = agent_type == "internal"
         && params.provider_key.is_none()
         && config.llm.default_provider().is_none();
     let result = client
-        .session_create_with_agent(
-            create,
-            SessionAgentSpec {
-                agent_name: (agent_type == "acp")
-                    .then(|| {
-                        params
-                            .agent_name
-                            .clone()
-                            .or_else(|| config.acp.default_agent.clone())
-                    })
-                    .flatten(),
-                agent_card: params.agent_card.clone(),
-                provider_key: params.provider_key.clone(),
-                env_overrides: params.env_overrides.clone(),
-                // Legacy [chat] fallbacks are client config inputs, not a second
-                // SessionAgent constructor. Provider and card defaults stay daemon-owned.
-                model: legacy_chat_defaults
-                    .then(|| config.chat.model.clone())
-                    .flatten(),
-                endpoint: legacy_chat_defaults
-                    .then(|| config.chat.endpoint.clone())
-                    .flatten(),
-                ..Default::default()
-            },
-        )
+        .session_create(SessionCreateRequest {
+            configure_agent: true,
+            agent_name: (agent_type == "acp")
+                .then(|| {
+                    params
+                        .agent_name
+                        .clone()
+                        .or_else(|| config.acp.default_agent.clone())
+                })
+                .flatten(),
+            agent_card: params.agent_card.clone(),
+            provider_key: params.provider_key.clone(),
+            env_overrides: params.env_overrides.clone(),
+            model: legacy_chat_defaults
+                .then(|| config.chat.model.clone())
+                .flatten(),
+            endpoint: legacy_chat_defaults
+                .then(|| config.chat.endpoint.clone())
+                .flatten(),
+            ..create
+        })
         .await?;
 
     let session_id = result.id.to_string();

@@ -9,9 +9,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::types::extract_string_array;
-use super::DaemonClient;
+use super::{DaemonClient, NO_PARAMS};
+use crucible_core::protocol::requests::NameRequest;
 use crucible_core::protocol::requests::Scoped;
-use crucible_core::protocol::requests::{EmptyParams, NameRequest};
 
 impl DaemonClient {
     pub async fn session_configure_agent(
@@ -497,7 +497,7 @@ impl DaemonClient {
 
     /// List all available agent profiles (builtins + configured).
     pub async fn agents_list_profiles(&self) -> Result<crate::AgentProfilesReply> {
-        self.typed_call(RpcMethod::AgentsListProfiles, EmptyParams {})
+        self.typed_call(RpcMethod::AgentsListProfiles, NO_PARAMS)
             .await
     }
 

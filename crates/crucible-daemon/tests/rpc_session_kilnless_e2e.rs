@@ -26,7 +26,7 @@
 mod common;
 
 use common::{InProcessDaemon, InProcessDaemonBuilder};
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_daemon::DaemonClient;
 
 /// One registered kiln, so the scope mutations below have a NAME to attach.
@@ -44,14 +44,9 @@ async fn start_server() -> InProcessDaemon {
 /// Create a session with an empty kiln set — the tools-only path.
 async fn create_kilnless_session(client: &DaemonClient) -> crucible_core::session::SessionSummary {
     client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("kiln-less session_create failed")

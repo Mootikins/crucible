@@ -12,7 +12,7 @@ use clap::Subcommand;
 use crucible_core::parser::types::{
     extract_yaml_frontmatter, CheckboxStatus, ParsedNote, WorkflowDoc, WorkflowStep,
 };
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::protocol::requests::{GateRef, Scoped, WorkflowSource};
 use crucible_core::text::truncate_chars;
 use crucible_core::EXCLUDED_DIRS;
@@ -389,14 +389,10 @@ async fn run_start(config: CliAppConfig, target: &str, _session: Option<&str>) -
     // follow-up — keeps this slice small and the invariant simple
     // (one active workflow per session).
     let create_resp = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "workflow".to_string(),
-            kilns: config.session_kiln_name().into_iter().collect(),
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(config.session_kiln_name()),
+            ..Default::default()
         })
         .await
         .context("failed to create workflow session")?;

@@ -8,7 +8,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::test_support::{InProcessDaemon, InProcessDaemonBuilder};
 use crucible_daemon::DaemonClient;
@@ -48,14 +48,15 @@ async fn fixture() -> Fixture {
 /// Create a session in the fixture kiln. Answers the session's workspace.
 async fn session_workspace(daemon: &DaemonClient, workspace: Option<&Path>) -> PathBuf {
     let created = daemon
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: workspace.map(Path::to_path_buf),
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            workspace: workspace
+                .map(Path::to_path_buf)
+                .map(|p| p.to_string_lossy().into_owned()),
+            ..Default::default()
         })
         .await
         .expect("session.create");

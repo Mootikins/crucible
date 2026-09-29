@@ -6,7 +6,7 @@
 mod common;
 
 use crucible_core::config::BackendType;
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::session::SessionAgent;
 use crucible_daemon::DaemonClient;
 
@@ -30,14 +30,12 @@ async fn setup_session_with_agent(server: &common::InProcessDaemon) -> (String, 
         .expect("Failed to connect");
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            ..Default::default()
         })
         .await
         .expect("session_create failed");
@@ -128,14 +126,12 @@ async fn test_configure_agent_sets_agent() {
         .expect("Failed to connect");
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            ..Default::default()
         })
         .await
         .expect("session_create failed");

@@ -24,7 +24,7 @@ mod common;
 
 use anyhow::Result;
 use common::{InProcessDaemon, InProcessDaemonBuilder};
-use crucible_core::protocol::requests::{SessionAgentSpec, SessionCreateParams};
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::DaemonClient;
 
@@ -48,23 +48,19 @@ fn card_kiln_name() -> crucible_core::config::KilnName {
 
 /// Base params for a kiln-less internal session — the daemon resolves the kiln
 /// to its (injected) data root.
-fn base_params(agent_type: &str) -> SessionCreateParams {
-    SessionCreateParams {
+fn base_params(agent_type: &str) -> SessionCreateRequest {
+    SessionCreateRequest {
         session_type: "chat".to_string(),
-        kilns: vec![],
-        workspace: None,
-        recording_mode: None,
-        recording_path: None,
         agent_type: Some(agent_type.to_string()),
-        isolation: None,
+        ..Default::default()
     }
 }
 
 /// [`base_params`] with the card kiln attached — for the tests whose fixture
 /// card must actually be discoverable.
-fn base_params_in(agent_type: &str, kiln: crucible_core::config::KilnName) -> SessionCreateParams {
-    SessionCreateParams {
-        kilns: vec![kiln],
+fn base_params_in(agent_type: &str, kiln: crucible_core::config::KilnName) -> SessionCreateRequest {
+    SessionCreateRequest {
+        kilns: SessionCreateRequest::kiln_set([kiln]),
         ..base_params(agent_type)
     }
 }
@@ -282,13 +278,14 @@ async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
         .await
         .unwrap();
 
-    let spec = SessionAgentSpec {
+    let spec = SessionCreateRequest {
+        configure_agent: true,
         agent_name: Some("claude".to_string()),
         env_overrides: [("OPENCODE_MODEL".into(), "chosen-model".into())].into(),
-        ..Default::default()
+        ..base_params_in("acp", card_kiln_name())
     };
     let created = client
-        .session_create_with_agent(base_params_in("acp", card_kiln_name()), spec)
+        .session_create(spec)
         .await
         .expect("create with an ACP profile failed");
 
@@ -385,7 +382,10 @@ async fn internal_spec_configures_agent_with_config_defaults() {
     // provider configured in the isolated data root, that is the built-in
     // Ollama / default-model fallback.
     let created = client
-        .session_create_with_agent(base_params("internal"), SessionAgentSpec::default())
+        .session_create(SessionCreateRequest {
+            configure_agent: true,
+            ..base_params("internal")
+        })
         .await
         .expect("create with internal spec failed");
 
@@ -421,14 +421,15 @@ async fn internal_spec_applies_provider_and_model_overrides() {
     let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
-    let spec = SessionAgentSpec {
+    let spec = SessionCreateRequest {
+        configure_agent: true,
         provider: Some("anthropic".to_string()),
         model: Some("claude-sonnet-5".to_string()),
         endpoint: Some("https://api.anthropic.com".to_string()),
-        ..Default::default()
+        ..base_params("internal")
     };
     let created = client
-        .session_create_with_agent(base_params("internal"), spec)
+        .session_create(spec)
         .await
         .expect("create with overrides failed");
 
@@ -454,12 +455,13 @@ async fn unknown_acp_profile_errors_without_creating_a_session() {
 
     let before = session_count(&client).await;
 
-    let spec = SessionAgentSpec {
+    let spec = SessionCreateRequest {
+        configure_agent: true,
         agent_name: Some("no-such-agent-xyz".to_string()),
-        ..Default::default()
+        ..base_params("acp")
     };
     let err = client
-        .session_create_with_agent(base_params("acp"), spec)
+        .session_create(spec)
         .await
         .expect_err("unknown ACP profile must fail the create");
     assert!(
@@ -527,14 +529,15 @@ async fn create_refuses_an_internal_endpoint_without_creating_a_session() {
 
     for endpoint in INTERNAL_ENDPOINTS {
         let before = session_count(&client).await;
-        let spec = SessionAgentSpec {
+        let spec = SessionCreateRequest {
+            configure_agent: true,
             provider: Some("openai".to_string()),
             model: Some("gpt-4o".to_string()),
             endpoint: Some((*endpoint).to_string()),
-            ..Default::default()
+            ..base_params("internal")
         };
         let err = client
-            .session_create_with_agent(base_params("internal"), spec)
+            .session_create(spec)
             .await
             .expect_err("an internal endpoint must refuse the create");
         let message = err.to_string();
@@ -611,14 +614,15 @@ async fn the_default_ollama_endpoint_is_accepted_but_an_unconfigured_loopback_po
     let server = start_server().await.expect("start server");
     let client = server.connect().await;
 
-    let spec = SessionAgentSpec {
+    let spec = SessionCreateRequest {
+        configure_agent: true,
         provider: Some("ollama".to_string()),
         model: Some("llama3.2".to_string()),
         endpoint: Some("http://localhost:11434".to_string()),
-        ..Default::default()
+        ..base_params("internal")
     };
     let created = client
-        .session_create_with_agent(base_params("internal"), spec)
+        .session_create(spec)
         .await
         .expect("the default Ollama endpoint must be accepted");
     let session_id = created.id.as_str();
@@ -628,14 +632,15 @@ async fn the_default_ollama_endpoint_is_accepted_but_an_unconfigured_loopback_po
         Some("http://localhost:11434")
     );
 
-    let spec = SessionAgentSpec {
+    let spec = SessionCreateRequest {
+        configure_agent: true,
         provider: Some("openai".to_string()),
         model: Some("gpt-4o".to_string()),
         endpoint: Some("http://127.0.0.1:8081".to_string()),
-        ..Default::default()
+        ..base_params("internal")
     };
     let err = client
-        .session_create_with_agent(base_params("internal"), spec)
+        .session_create(spec)
         .await
         .expect_err("an unconfigured loopback endpoint must refuse the create");
     assert!(err.to_string().contains("-32602"), "got: {err}");

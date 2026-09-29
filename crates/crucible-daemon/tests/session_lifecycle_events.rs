@@ -14,7 +14,7 @@
 
 mod common;
 
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use std::time::Duration;
@@ -58,14 +58,13 @@ async fn wait_for_event(
 
 async fn create_session(client: &DaemonClient) -> String {
     let resp = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
             agent_type: Some("internal".to_string()),
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("session_create failed");

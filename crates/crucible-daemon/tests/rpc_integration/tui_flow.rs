@@ -1,7 +1,7 @@
 //! TUI flow tests: sessions command, resume command, full daemon-agent flow.
 
 use crucible_core::config::BackendType;
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;
@@ -17,28 +17,26 @@ async fn test_tui_sessions_command_flow() {
         .expect("Failed to connect");
 
     let session1 = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: Some(workspace_dir.path().to_path_buf()),
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            workspace: Some(workspace_dir.path().to_string_lossy().into_owned()),
+            ..Default::default()
         })
         .await
         .expect("session_create 1 failed");
     let session1_id = session1.id.as_str();
 
     let session2 = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: Some(workspace_dir.path().to_path_buf()),
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            workspace: Some(workspace_dir.path().to_string_lossy().into_owned()),
+            ..Default::default()
         })
         .await
         .expect("session_create 2 failed");
@@ -77,14 +75,12 @@ async fn test_tui_resume_command_flow() {
         .expect("Failed to connect");
 
     let create_result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            ..Default::default()
         })
         .await
         .expect("session_create failed");
@@ -122,14 +118,12 @@ async fn test_tui_daemon_agent_full_flow() {
         .expect("Failed to connect");
 
     let create_result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            ..Default::default()
         })
         .await
         .expect("session_create failed");

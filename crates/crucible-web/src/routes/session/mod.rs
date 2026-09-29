@@ -13,7 +13,7 @@ use axum::{
     Json,
 };
 use crucible_core::protocol::requests::{
-    NamedKiln, Page, SessionAgentSpec, SessionCreateParams, Title, WorkspaceChoice,
+    NamedKiln, Page, SessionCreateRequest, Title, WorkspaceChoice,
 };
 use crucible_core::session::SessionSearchResponse;
 use serde::{Deserialize, Serialize};
@@ -354,29 +354,25 @@ async fn create_session(
     // the resolved model in `agent_model`. The web no longer keeps its own copy
     // of "what is the default agent". Kilns are forwarded verbatim, empty set
     // included — see `CreateSessionRequest::kilns`.
-    let agent_spec = SessionAgentSpec {
-        agent_name: req.agent_name.clone(),
-        agent_card: req.agent_card.clone(),
-        provider: req.provider.clone(),
-        provider_key: None,
-        model: req.model.clone(),
-        endpoint: req.endpoint.clone(),
-        ..Default::default()
-    };
-
-    let params = SessionCreateParams {
-        session_type: req.session_type.clone(),
-        kilns: req.kilns.clone(),
-        workspace: req.workspace.clone(),
-        recording_mode: None,
-        recording_path: None,
-        agent_type: req.agent_type.clone(),
-        isolation: req.isolation.clone(),
-    };
-
     let result = state
         .daemon
-        .session_create_with_agent(params, agent_spec)
+        .session_create(SessionCreateRequest {
+            session_type: req.session_type.clone(),
+            kilns: SessionCreateRequest::kiln_set(req.kilns.clone()),
+            workspace: req
+                .workspace
+                .as_deref()
+                .map(|p| p.to_string_lossy().into_owned()),
+            agent_type: req.agent_type.clone(),
+            isolation: req.isolation.clone(),
+            configure_agent: true,
+            agent_name: req.agent_name.clone(),
+            agent_card: req.agent_card.clone(),
+            provider: req.provider.clone(),
+            model: req.model.clone(),
+            endpoint: req.endpoint.clone(),
+            ..Default::default()
+        })
         .await
         .daemon_err()?;
 

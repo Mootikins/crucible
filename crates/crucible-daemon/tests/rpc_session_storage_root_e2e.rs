@@ -16,7 +16,7 @@ mod common;
 
 use anyhow::Result;
 use common::{InProcessDaemon, InProcessDaemonBuilder};
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_daemon::DaemonClient;
 use std::path::{Path, PathBuf};
 
@@ -78,14 +78,12 @@ async fn a_session_is_stored_under_the_injected_data_home_and_never_in_its_kiln(
     let client = DaemonClient::connect_to(server.socket_path()).await?;
 
     let created = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln-a")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln-a",
+            )]),
+            ..Default::default()
         })
         .await?;
     let session_id = created.id.to_string();
@@ -118,14 +116,12 @@ async fn sessions_from_different_kilns_share_one_storage_root() -> Result<()> {
     let mut ids = Vec::new();
     for kiln in ["kiln-a", "kiln-b"] {
         let created = client
-            .session_create(SessionCreateParams {
+            .session_create(SessionCreateRequest {
                 session_type: "chat".to_string(),
-                kilns: vec![crucible_daemon::test_support::kiln_name(kiln)],
-                workspace: None,
-                recording_mode: None,
-                recording_path: None,
-                agent_type: None,
-                isolation: None,
+                kilns: SessionCreateRequest::kiln_set(vec![
+                    crucible_daemon::test_support::kiln_name(kiln),
+                ]),
+                ..Default::default()
             })
             .await?;
         ids.push(created.id.to_string());

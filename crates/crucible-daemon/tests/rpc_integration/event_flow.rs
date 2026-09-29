@@ -5,7 +5,7 @@
 //! - Concurrent RPC calls while in event mode.
 //! - Daemon agent error surfaces to chat error.
 
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_daemon::DaemonClient;
 
 use super::server::TestServer;
@@ -41,14 +41,12 @@ async fn test_event_streaming_with_background_reader() {
     let client = Arc::new(client);
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
+            ..Default::default()
         })
         .await
         .expect("session_create failed");

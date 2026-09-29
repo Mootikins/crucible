@@ -32,7 +32,7 @@ use std::time::Duration;
 
 use crucible_core::config::{AcpConfig, BackendType};
 use crucible_core::diff::{CommentRef, DiffsetSource};
-use crucible_core::protocol::requests::{DiffCommentRequest, SessionCreateParams};
+use crucible_core::protocol::requests::{DiffCommentRequest, SessionCreateRequest};
 use crucible_core::session::{CommentSide, PhysicalRoot, SessionAgent};
 use crucible_daemon::test_support::{
     git, init_repo, kiln_name, InProcessDaemon, InProcessDaemonBuilder,
@@ -174,14 +174,12 @@ async fn session(
     agent: &SessionAgent,
 ) -> String {
     let created = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_name(KILN)],
-            workspace: Some(repo.to_path_buf()),
-            recording_mode: None,
-            recording_path: None,
+            kilns: SessionCreateRequest::kiln_set(vec![kiln_name(KILN)]),
+            workspace: Some(repo.to_string_lossy().into_owned()),
             agent_type: Some(agent_type.to_string()),
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("create the session");

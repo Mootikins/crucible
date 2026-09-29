@@ -161,9 +161,12 @@ pub mod workflow;
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 pub use session::decode_status_items;
-pub use types::SessionEvent;
 
-use crucible_core::protocol::requests::EmptyParams;
+/// The params of a method that takes none: an empty JSON object. The daemon
+/// has always received `{}` for these methods, not `null`.
+pub(super) const NO_PARAMS: std::collections::BTreeMap<&str, ()> =
+    std::collections::BTreeMap::new();
+pub use types::SessionEvent;
 
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
 
@@ -857,17 +860,17 @@ impl DaemonClient {
     // =========================================================================
 
     pub async fn ping(&self) -> Result<String> {
-        let result: serde_json::Value = self.typed_call(RpcMethod::Ping, EmptyParams {}).await?;
+        let result: serde_json::Value = self.typed_call(RpcMethod::Ping, NO_PARAMS).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        let _: serde_json::Value = self.typed_call(RpcMethod::Shutdown, EmptyParams {}).await?;
+        let _: serde_json::Value = self.typed_call(RpcMethod::Shutdown, NO_PARAMS).await?;
         Ok(())
     }
 
     pub async fn capabilities(&self) -> Result<DaemonCapabilities> {
-        self.typed_call(RpcMethod::DaemonCapabilities, EmptyParams {})
+        self.typed_call(RpcMethod::DaemonCapabilities, NO_PARAMS)
             .await
     }
 
@@ -904,27 +907,23 @@ impl DaemonClient {
     }
 
     pub async fn plugin_list(&self) -> Result<Vec<String>> {
-        let result: crucible_core::types::PluginListReply = self
-            .typed_call(RpcMethod::PluginList, EmptyParams {})
-            .await?;
+        let result: crucible_core::types::PluginListReply =
+            self.typed_call(RpcMethod::PluginList, NO_PARAMS).await?;
         Ok(result.plugins)
     }
 
     /// Like [`plugin_list`] but returns the richer `plugin_info` array
     /// (name, version, source, state, dir, capability counts).
     pub async fn plugin_list_info(&self) -> Result<Vec<crucible_core::types::PluginInfo>> {
-        let result: crucible_core::types::PluginListReply = self
-            .typed_call(RpcMethod::PluginList, EmptyParams {})
-            .await?;
+        let result: crucible_core::types::PluginListReply =
+            self.typed_call(RpcMethod::PluginList, NO_PARAMS).await?;
         Ok(result.plugin_info)
     }
 
     /// The merged spec, one row per entry: the `spec` array of `plugin.list`.
     /// An older daemon answers no `spec`, which reads as an empty list.
     pub async fn plugin_list_spec(&self) -> Result<Vec<PluginSpecRow>> {
-        let result: serde_json::Value = self
-            .typed_call(RpcMethod::PluginList, EmptyParams {})
-            .await?;
+        let result: serde_json::Value = self.typed_call(RpcMethod::PluginList, NO_PARAMS).await?;
         match result.get("spec") {
             Some(rows) => Ok(serde_json::from_value(rows.clone())?),
             None => Ok(Vec::new()),
@@ -1072,7 +1071,7 @@ impl DaemonClient {
     /// same slash-command set.
     pub async fn plugin_commands(&self) -> Result<Vec<crucible_core::types::PluginCommand>> {
         let result: crucible_core::types::PluginCommandsReply = self
-            .typed_call(RpcMethod::PluginCommands, EmptyParams {})
+            .typed_call(RpcMethod::PluginCommands, NO_PARAMS)
             .await?;
         Ok(result.commands)
     }

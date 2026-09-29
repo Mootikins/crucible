@@ -15,7 +15,7 @@
 
 mod common;
 
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use std::collections::HashSet;
 use std::time::Duration;
@@ -111,14 +111,13 @@ async fn session_create_emits_setup_events_for_internal_agent() {
         .expect("pre-subscribe failed");
 
     let resp = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
             agent_type: Some("internal".to_string()),
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("session_create failed");
@@ -205,14 +204,13 @@ async fn session_create_omits_llm_events_for_acp_agent() {
         .expect("pre-subscribe failed");
 
     let resp = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                "kiln",
+            )]),
             agent_type: Some("acp".to_string()),
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("session_create failed");

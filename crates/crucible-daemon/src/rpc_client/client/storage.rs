@@ -7,8 +7,8 @@ use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 use std::path::{Path, PathBuf};
 
-use super::DaemonClient;
-use crucible_core::protocol::requests::{EmptyParams, KilnPathRequest, NameRequest, PathRequest};
+use super::{DaemonClient, NO_PARAMS};
+use crucible_core::protocol::requests::{KilnPathRequest, NameRequest, PathRequest};
 
 use crate::storage::sqlite::FtsResult;
 
@@ -137,7 +137,7 @@ impl DaemonClient {
     /// Not [`Self::kiln_list`], which lists the kilns that happen to be OPEN.
     /// This is the registry: what a session may name.
     pub async fn kiln_registry_list(&self) -> Result<serde_json::Value> {
-        self.typed_call(RpcMethod::KilnRegistryList, EmptyParams {})
+        self.typed_call(RpcMethod::KilnRegistryList, NO_PARAMS)
             .await
     }
 
@@ -153,7 +153,7 @@ impl DaemonClient {
     }
 
     pub async fn kiln_list(&self) -> Result<Vec<KilnRow>> {
-        self.typed_call(RpcMethod::KilnList, EmptyParams {}).await
+        self.typed_call(RpcMethod::KilnList, NO_PARAMS).await
     }
 
     // =========================================================================
@@ -596,12 +596,12 @@ impl DaemonClient {
 
     /// Stop the daemon-managed MCP server.
     pub async fn mcp_stop(&self) -> Result<serde_json::Value> {
-        self.typed_call(RpcMethod::McpStop, EmptyParams {}).await
+        self.typed_call(RpcMethod::McpStop, NO_PARAMS).await
     }
 
     /// Get the status of the daemon-managed MCP server.
     pub async fn mcp_status(&self) -> Result<crate::McpStatus> {
-        self.typed_call(RpcMethod::McpStatus, EmptyParams {}).await
+        self.typed_call(RpcMethod::McpStatus, NO_PARAMS).await
     }
 
     /// Turn one verified webhook delivery into a `webhook:received` event.
@@ -669,7 +669,7 @@ impl DaemonClient {
     }
 
     pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
-        self.typed_call_with_retry(RpcMethod::ProjectList, EmptyParams {})
+        self.typed_call_with_retry(RpcMethod::ProjectList, NO_PARAMS)
             .await
     }
 
@@ -679,7 +679,7 @@ impl DaemonClient {
     /// the two-layer view: `[projects.*]` the user authored beside
     /// `projects.json` the daemon wrote.
     pub async fn project_registry_list(&self) -> Result<serde_json::Value> {
-        self.typed_call(RpcMethod::ProjectRegistryList, EmptyParams {})
+        self.typed_call(RpcMethod::ProjectRegistryList, NO_PARAMS)
             .await
     }
 

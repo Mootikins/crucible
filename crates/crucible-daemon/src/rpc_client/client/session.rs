@@ -12,54 +12,6 @@ use std::path::Path;
 
 use super::DaemonClient;
 
-// =========================================================================
-// Session RPC Request/Response Types
-// =========================================================================
-
-/// Build the wire request. `agent = Some(..)` sets `configure_agent = true` so
-/// the daemon resolves + configures the agent as part of create; `None` keeps
-/// the back-compat "create agent-less, configure later" shape.
-pub(super) fn build_create_request(
-    params: SessionCreateParams,
-    agent: Option<SessionAgentSpec>,
-) -> SessionCreateRequest {
-    let configure_agent = agent.is_some();
-    let agent = agent.unwrap_or_default();
-    SessionCreateRequest {
-        session_type: params.session_type,
-        kilns: if params.kilns.is_empty() {
-            None
-        } else {
-            Some(params.kilns.iter().map(KilnName::to_string).collect())
-        },
-        workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
-        // No Rust client names a workspace target. The plugin bridge and raw
-        // JSON callers do.
-        workspace_target: None,
-        recording_mode: params.recording_mode,
-        recording_path: params
-            .recording_path
-            .map(|p| p.to_string_lossy().to_string()),
-        agent_type: params.agent_type,
-        isolation: params.isolation,
-        configure_agent,
-        agent_name: agent.agent_name,
-        agent_card: agent.agent_card,
-        // No Rust client sets a per-session tool policy at create; the plugin
-        // bridge deserializes the request straight from a Lua table.
-        tool_policy: None,
-        provider: agent.provider,
-        provider_key: agent.provider_key,
-        model: agent.model,
-        endpoint: agent.endpoint,
-        env_overrides: agent.env_overrides,
-        system_prompt: agent.system_prompt,
-        mcp_servers: agent.mcp_servers,
-        // No Rust client creates a plugin session.
-        plugin: None,
-    }
-}
-
 // --- Session RPC Response Types ---
 
 impl DaemonClient {
@@ -67,25 +19,14 @@ impl DaemonClient {
     // Session RPC Methods
     // =========================================================================
 
-    pub async fn session_create(&self, params: SessionCreateParams) -> Result<SessionSummary> {
-        self.typed_call(RpcMethod::SessionCreate, build_create_request(params, None))
-            .await
-    }
-
-    /// Create a session AND have the daemon resolve + configure its agent in one
-    /// call (the "daemon owns default-agent resolution" path). The response
-    /// carries the resolved `agent_model`. An unknown ACP profile fails with
-    /// `INVALID_PARAMS` and no session is created.
-    pub async fn session_create_with_agent(
-        &self,
-        params: SessionCreateParams,
-        agent: SessionAgentSpec,
-    ) -> Result<SessionSummary> {
-        self.typed_call(
-            RpcMethod::SessionCreate,
-            build_create_request(params, Some(agent)),
-        )
-        .await
+    /// Create a session.
+    ///
+    /// With `configure_agent`, the daemon also resolves and configures the
+    /// agent of the session in the same call, and the reply carries the
+    /// resolved `agent_model`. An unknown ACP profile then fails with
+    /// `INVALID_PARAMS`, and no session is made.
+    pub async fn session_create(&self, request: SessionCreateRequest) -> Result<SessionSummary> {
+        self.typed_call(RpcMethod::SessionCreate, request).await
     }
 
     pub async fn session_list(

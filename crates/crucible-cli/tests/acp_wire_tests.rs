@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_daemon::DaemonClient;
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -173,14 +173,11 @@ fn session_load_replays_the_recorded_transcript() {
         }
         let client = client.expect("the child's daemon never came up");
         let created = client
-            .session_create(SessionCreateParams {
+            .session_create(SessionCreateRequest {
                 session_type: "chat".to_string(),
-                kilns: Vec::new(),
-                workspace: Some(kiln.clone()),
-                recording_mode: None,
-                recording_path: None,
+                workspace: Some(kiln.to_string_lossy().into_owned()),
                 agent_type: Some("internal".to_string()),
-                isolation: None,
+                ..Default::default()
             })
             .await
             .expect("session.create");

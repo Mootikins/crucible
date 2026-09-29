@@ -78,10 +78,6 @@ pub struct Page {
     pub offset: Option<usize>,
 }
 
-/// Empty request for methods that take no parameters.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct EmptyParams {}
-
 /// Request for methods that take only a kiln path.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]

@@ -323,7 +323,7 @@ async fn test_daemon_notification_list_and_dismiss_contract() {
 /// Send the first message of two kiln-less sessions in one workspace, with
 /// Precognition on. Returns the no-kiln notices in the ring.
 async fn no_kiln_notices(daemon: &TestDaemon) -> Vec<serde_json::Value> {
-    use crucible_core::protocol::requests::SessionCreateParams;
+    use crucible_core::protocol::requests::SessionCreateRequest;
     use crucible_daemon::rpc_client::DaemonClient;
     let client = DaemonClient::connect_to(&daemon.socket_path).await.unwrap();
     let workspace = daemon.home().join("workspace");
@@ -350,14 +350,10 @@ async fn no_kiln_notices(daemon: &TestDaemon) -> Vec<serde_json::Value> {
     };
     for _ in 0..2 {
         let created = client
-            .session_create(SessionCreateParams {
+            .session_create(SessionCreateRequest {
                 session_type: "chat".to_string(),
-                kilns: Vec::new(),
-                workspace: Some(workspace.clone()),
-                recording_mode: None,
-                recording_path: None,
-                agent_type: None,
-                isolation: None,
+                workspace: Some(workspace.to_string_lossy().into_owned()),
+                ..Default::default()
             })
             .await
             .unwrap();

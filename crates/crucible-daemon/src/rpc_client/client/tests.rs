@@ -1,4 +1,3 @@
-use crate::rpc_client::client::session::build_create_request;
 use crate::rpc_client::client::*;
 use crate::Server;
 use crucible_core::protocol::requests::LuaSessionInit;
@@ -257,23 +256,17 @@ fn session_create_request_omits_agent_type_when_none() {
 /// it must not land in `agent_name` — that field launches an ACP subprocess.
 #[test]
 fn agent_spec_card_reaches_the_wire_as_agent_card() {
-    let req = build_create_request(
-        SessionCreateParams {
+    let req = SessionCreateRequest {
+        configure_agent: true,
+        agent_card: Some("researcher".to_string()),
+        system_prompt: Some("Explicit instructions".into()),
+        mcp_servers: Some(vec![]),
+        ..SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
             agent_type: Some("internal".to_string()),
-            isolation: None,
-        },
-        Some(SessionAgentSpec {
-            agent_card: Some("researcher".to_string()),
-            system_prompt: Some("Explicit instructions".into()),
-            mcp_servers: Some(vec![]),
             ..Default::default()
-        }),
-    );
+        }
+    };
     let json = serde_json::to_value(&req).unwrap();
     assert_eq!(json["agent_card"], "researcher");
     assert_eq!(json["system_prompt"], "Explicit instructions");
@@ -456,14 +449,10 @@ async fn test_session_create_and_get() {
     let _tmp = TempDir::new().unwrap();
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crate::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crate::test_support::kiln_name("kiln")]),
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -495,14 +484,10 @@ async fn test_session_lifecycle() {
     let _tmp = TempDir::new().unwrap();
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crate::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crate::test_support::kiln_name("kiln")]),
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -525,14 +510,10 @@ async fn test_session_subscribe_unsubscribe() {
     let _tmp = TempDir::new().unwrap();
 
     let result = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crate::test_support::kiln_name("kiln")],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
-            agent_type: None,
-            isolation: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crate::test_support::kiln_name("kiln")]),
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -937,46 +918,38 @@ fn a_daemon_that_ignores_the_request_is_still_killed() {
 #[test]
 fn the_session_create_request_matches_its_golden_fixture() {
     let cases = [
-        build_create_request(
-            SessionCreateParams {
-                session_type: "chat".to_string(),
-                kilns: vec![],
-                workspace: None,
-                recording_mode: None,
-                recording_path: None,
-                agent_type: None,
-                isolation: None,
-            },
-            None,
-        ),
-        build_create_request(
-            SessionCreateParams {
+        SessionCreateRequest {
+            session_type: "chat".to_string(),
+            ..Default::default()
+        },
+        SessionCreateRequest {
+            configure_agent: true,
+            agent_name: None,
+            agent_card: Some("researcher".to_string()),
+            provider: Some("ollama".to_string()),
+            provider_key: Some("local".to_string()),
+            model: Some("llama3".to_string()),
+            endpoint: Some("http://localhost:11434".to_string()),
+            env_overrides: std::collections::HashMap::from([(
+                "KEY".to_string(),
+                "value".to_string(),
+            )]),
+            system_prompt: Some("Be brief.".to_string()),
+            mcp_servers: Some(vec![]),
+            ..SessionCreateRequest {
                 session_type: "agent".to_string(),
-                kilns: vec![
+                kilns: SessionCreateRequest::kiln_set(vec![
                     crate::test_support::kiln_name("docs"),
                     crate::test_support::kiln_name("notes"),
-                ],
-                workspace: Some(std::path::PathBuf::from("/work")),
+                ]),
+                workspace: Some("/work".to_string()),
                 recording_mode: Some("granular".to_string()),
-                recording_path: Some(std::path::PathBuf::from("/tmp/rec.jsonl")),
+                recording_path: Some("/tmp/rec.jsonl".to_string()),
                 agent_type: Some("internal".to_string()),
                 isolation: Some(serde_json::json!(false)),
-            },
-            Some(SessionAgentSpec {
-                agent_name: None,
-                agent_card: Some("researcher".to_string()),
-                provider: Some("ollama".to_string()),
-                provider_key: Some("local".to_string()),
-                model: Some("llama3".to_string()),
-                endpoint: Some("http://localhost:11434".to_string()),
-                env_overrides: std::collections::HashMap::from([(
-                    "KEY".to_string(),
-                    "value".to_string(),
-                )]),
-                system_prompt: Some("Be brief.".to_string()),
-                mcp_servers: Some(vec![]),
-            }),
-        ),
+                ..Default::default()
+            }
+        },
     ];
     let actual = serde_json::to_value(cases).unwrap();
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -984,4 +957,19 @@ fn the_session_create_request_matches_its_golden_fixture() {
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     let expected: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
     assert_eq!(actual, expected, "the session.create JSON changed");
+}
+
+/// `ping`, `shutdown`, `kiln.list` and the other methods that take no params:
+/// the client sends an empty object, as the fixture records.
+#[test]
+fn the_empty_params_match_their_golden_fixture() {
+    let actual = serde_json::to_value([super::NO_PARAMS]).unwrap();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/golden/requests/no_params.json");
+    let expected: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        actual, expected,
+        "the params of a method without params changed"
+    );
 }

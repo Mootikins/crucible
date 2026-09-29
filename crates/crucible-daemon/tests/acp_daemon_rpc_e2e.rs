@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use common::TestDaemon;
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::session::SessionAgent;
 use crucible_daemon::rpc_client::DaemonClient;
 use crucible_daemon::SessionEvent;
@@ -110,14 +110,13 @@ async fn an_acp_turn_reaches_a_socket_subscriber_as_session_events() {
         .expect("subscribe to all sessions");
 
     let created = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name(TestDaemon::KILN)],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                TestDaemon::KILN,
+            )]),
             agent_type: Some("acp".to_string()),
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("create an ACP session over RPC");
@@ -191,14 +190,13 @@ async fn an_acp_session_survives_a_second_turn_on_the_same_agent() {
         .expect("subscribe to all sessions");
 
     let created = client
-        .session_create(SessionCreateParams {
+        .session_create(SessionCreateRequest {
             session_type: "chat".to_string(),
-            kilns: vec![crucible_daemon::test_support::kiln_name(TestDaemon::KILN)],
-            workspace: None,
-            recording_mode: None,
-            recording_path: None,
+            kilns: SessionCreateRequest::kiln_set(vec![crucible_daemon::test_support::kiln_name(
+                TestDaemon::KILN,
+            )]),
             agent_type: Some("acp".to_string()),
-            isolation: None,
+            ..Default::default()
         })
         .await
         .expect("create an ACP session over RPC");

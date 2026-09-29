@@ -4,7 +4,7 @@ use crucible_core::config::CliAppConfig;
 use crucible_core::protocol::requests::{
     DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffDeleteCommentReply,
     DiffFileRequest, DiffResolveCommentReply, GetBacklinksReply, KilnGraphReply, KilnRow,
-    NoteByNameReply, NoteListRow, SessionAgentSpec, SessionCreateParams, VectorHit,
+    NoteByNameReply, NoteListRow, SessionCreateRequest, VectorHit,
 };
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
@@ -348,11 +348,8 @@ impl ReconnectingDaemon {
         /// one call (ACP profile or config-derived internal defaults). The daemon
         /// owns default resolution, so the web never builds its own copy.
         Once SessionCreate =>
-        session_create_with_agent(
-            params: SessionCreateParams,
-            agent: SessionAgentSpec,
-        )
-        -> crucible_core::session::SessionSummary = session_create_with_agent(params, agent);
+        session_create(request: SessionCreateRequest)
+        -> crucible_core::session::SessionSummary = session_create(request);
     }
 
     forward_rpc! {

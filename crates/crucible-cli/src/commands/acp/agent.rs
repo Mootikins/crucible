@@ -29,7 +29,7 @@ use agent_client_protocol::{
 };
 use crucible_core::config::CliAppConfig;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
-use crucible_core::protocol::requests::SessionCreateParams;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use crucible_core::types::SendOutcome;
 use crucible_daemon::{DaemonClient, SessionEvent};
 use tokio::sync::{mpsc, Mutex};
@@ -444,14 +444,12 @@ impl CrucibleAcpAgent {
         })?;
 
         let create = client
-            .session_create(SessionCreateParams {
+            .session_create(SessionCreateRequest {
                 session_type: "chat".to_string(),
-                kilns: self.config.session_kiln_name().into_iter().collect(),
-                workspace: Some(workspace),
-                recording_mode: None,
-                recording_path: None,
+                kilns: SessionCreateRequest::kiln_set(self.config.session_kiln_name()),
+                workspace: Some(workspace.to_string_lossy().into_owned()),
                 agent_type: Some("internal".to_string()),
-                isolation: None,
+                ..Default::default()
             })
             .await
             .map_err(|e| {
