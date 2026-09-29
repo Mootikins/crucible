@@ -5,9 +5,9 @@ import type { ModeDescriptor } from '@/lib/types';
 const mockSwitchMode = vi.fn();
 let currentMode = 'ask';
 let modes: ModeDescriptor[] = [
-  { id: 'ask', name: 'Ask', description: null, icon: null, color: null, writes: 'apply' },
-  { id: 'plan', name: 'Plan', description: null, icon: null, color: null, writes: 'apply' },
-  { id: 'auto', name: 'Auto', description: null, icon: null, color: null, writes: 'apply' },
+  { id: 'ask', name: 'Ask', description: null, icon: null, writes: 'apply' },
+  { id: 'plan', name: 'Plan', description: null, icon: null, writes: 'apply' },
+  { id: 'auto', name: 'Auto', description: null, icon: null, writes: 'apply' },
 ];
 
 vi.mock('@/contexts/ChatContext', () => ({
@@ -24,9 +24,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   currentMode = 'ask';
   modes = [
-    { id: 'ask', name: 'Ask', description: null, icon: null, color: null, writes: 'apply' },
-    { id: 'plan', name: 'Plan', description: null, icon: null, color: null, writes: 'apply' },
-    { id: 'auto', name: 'Auto', description: null, icon: null, color: null, writes: 'apply' },
+    { id: 'ask', name: 'Ask', description: null, icon: null, writes: 'apply' },
+    { id: 'plan', name: 'Plan', description: null, icon: null, writes: 'apply' },
+    { id: 'auto', name: 'Auto', description: null, icon: null, writes: 'apply' },
   ];
 });
 
@@ -62,8 +62,8 @@ describe('ChatModeControl — the trigger', () => {
 
   it('names a Lua-declared mode it has no icon for', () => {
     modes = [
-      { id: 'ask', name: 'Ask', description: null, icon: null, color: null, writes: 'apply' },
-      { id: 'review', name: 'Review', description: null, icon: null, color: null, writes: 'apply' },
+      { id: 'ask', name: 'Ask', description: null, icon: null, writes: 'apply' },
+      { id: 'review', name: 'Review', description: null, icon: null, writes: 'apply' },
     ];
     currentMode = 'review';
     render(() => <ChatModeControl />);
@@ -154,7 +154,6 @@ describe('ChatModeControl — the rows', () => {
         name: 'Ask',
         description: 'Asks about everything',
         icon: null,
-        color: null,
         writes: 'apply',
       },
     ];
@@ -165,8 +164,8 @@ describe('ChatModeControl — the rows', () => {
 
   it('draws a Lua-declared mode as its name alone, with no icon slot', () => {
     modes = [
-      { id: 'ask', name: 'Ask', description: null, icon: null, color: null, writes: 'apply' },
-      { id: 'review', name: 'Review', description: null, icon: null, color: null, writes: 'apply' },
+      { id: 'ask', name: 'Ask', description: null, icon: null, writes: 'apply' },
+      { id: 'review', name: 'Review', description: null, icon: null, writes: 'apply' },
     ];
     render(() => <ChatModeControl />);
     fireEvent.click(trigger());
@@ -182,7 +181,6 @@ describe('ChatModeControl — the rows', () => {
         name: 'Review',
         description: null,
         icon: 'eye',
-        color: null,
         writes: 'apply',
       },
     ];
@@ -195,13 +193,12 @@ describe('ChatModeControl — the rows', () => {
 
   it('says which mode proposes its note changes instead of writing them', () => {
     modes = [
-      { id: 'auto', name: 'Auto', description: null, icon: null, color: null, writes: 'apply' },
+      { id: 'auto', name: 'Auto', description: null, icon: null, writes: 'apply' },
       {
         id: 'propose',
         name: 'Propose',
         description: null,
         icon: null,
-        color: null,
         writes: 'propose',
       },
     ];
@@ -244,7 +241,6 @@ describe('ChatModeControl — the rows', () => {
         name: 'Manual',
         description: null,
         icon: null,
-        color: null,
         writes: 'apply',
       },
       {
@@ -252,7 +248,6 @@ describe('ChatModeControl — the rows', () => {
         name: 'Accept edits',
         description: null,
         icon: null,
-        color: null,
         writes: 'apply',
       },
       {
@@ -260,7 +255,6 @@ describe('ChatModeControl — the rows', () => {
         name: 'Bypass permissions',
         description: null,
         icon: null,
-        color: null,
         writes: 'apply',
       },
     ];

@@ -754,8 +754,6 @@ struct ModeRow {
     description: Option<String>,
     /// An emoji or an icon name.
     icon: Option<String>,
-    /// A hex colour.
-    color: Option<String>,
     /// What a note write in this mode does, already degraded to what this
     /// session's agent can hold back.
     writes: WriteModeRow,
@@ -768,7 +766,6 @@ impl From<crucible_core::types::mode::ModeDescriptor> for ModeRow {
             name: mode.name,
             description: mode.description,
             icon: mode.icon,
-            color: mode.color,
             writes: mode.writes.into(),
         }
     }

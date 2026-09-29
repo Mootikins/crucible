@@ -131,7 +131,7 @@ impl BuiltinMode {
 /// A mode descriptor with UI presentation metadata
 ///
 /// This type extends the ACP SessionMode with additional fields for UI display,
-/// such as icon and color. It can be created from a SessionMode for interoperability
+/// such as an icon. It can be created from a SessionMode for interoperability
 /// with the ACP protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModeDescriptor {
@@ -143,8 +143,6 @@ pub struct ModeDescriptor {
     pub description: Option<String>,
     /// Optional icon for UI display (emoji or icon name)
     pub icon: Option<String>,
-    /// Optional color for UI display (hex color code)
-    pub color: Option<String>,
     /// What a note write in this mode does.
     ///
     /// Carries the *effective* value, see [`ModeDescriptor::degraded_for`].
@@ -219,7 +217,6 @@ impl From<&SessionMode> for ModeDescriptor {
             name: mode.name.clone(),
             description: mode.description.clone(),
             icon: None,
-            color: None,
             // ACP's `SessionMode` has no field for this. The Lua mode
             // declaration holds it, so `session.list_modes` sets it from the
             // mode registry after this conversion.
@@ -292,7 +289,6 @@ mod tests {
             Some("Read-only exploration mode".to_string())
         );
         assert_eq!(descriptor.icon, None);
-        assert_eq!(descriptor.color, None);
     }
 
     #[test]
@@ -313,7 +309,6 @@ mod tests {
             name: "Ask".to_string(),
             description: Some("desc".to_string()),
             icon: Some("⚡".to_string()),
-            color: Some("#000".to_string()),
             writes: WriteMode::Propose,
         };
 

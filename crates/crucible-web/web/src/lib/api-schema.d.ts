@@ -3826,8 +3826,6 @@ export interface components {
          *     the reason [`WriteModeRow`] gives.
          */
         ModeRow: {
-            /** @description A hex colour. */
-            color?: string | null;
             description?: string | null;
             /** @description An emoji or an icon name. */
             icon?: string | null;

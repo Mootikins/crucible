@@ -8628,13 +8628,6 @@
             ],
             "description": "An emoji or an icon name."
           },
-          "color": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "A hex colour."
-          },
           "writes": {
             "$ref": "#/components/schemas/WriteModeRow",
             "description": "What a note write in this mode does, already degraded to what this\nsession's agent can hold back."

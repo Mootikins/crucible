@@ -44,7 +44,6 @@ const mode = (id: string, writes: ModeDescriptor['writes'] = 'apply'): ModeDescr
   name: id,
   description: null,
   icon: null,
-  color: null,
   writes,
 });
 

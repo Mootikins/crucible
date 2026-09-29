@@ -1497,8 +1497,11 @@ Production items that only tests use:
 - `ShellGateState.credentials` is `Some` exactly when `allow_remote` is true
   (`crucible-web/src/middleware/auth/shell.rs:103`).
 - `SessionAgent.capabilities` and `agent_description` are written by
-  `from_profile` and read by nobody. `ModeDescriptor.icon` and `.color` have no
-  `Some` path (`crucible-core/src/types/mode.rs:171-211`).
+  `from_profile` and read by nobody. `ModeDescriptor.icon` still has no `Some`
+  path (`crucible-core/src/types/mode.rs`); it stays because the web mode
+  control reads it in anticipation of a future write path. `.color` had the
+  same absent path and no reader anywhere, so the simplification plan
+  deleted it.
 - `ConversationTree::fanout` and `collect`, `NodeMeta`, `NodeContent::Marker`
   are reserved for workflows that do not exist (`crucible-core/src/turn/tree.rs:251`).
 - `ToolRef` constructors are bypassed; the daemon builds the struct literal

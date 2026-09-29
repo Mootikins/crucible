@@ -127,7 +127,6 @@ impl SessionKnobs for FakeAcpAgent {
                 name: name.to_string(),
                 description: None,
                 icon: None,
-                color: None,
                 writes: Default::default(),
             })
             .collect()

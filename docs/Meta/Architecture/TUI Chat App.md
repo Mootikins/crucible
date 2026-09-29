@@ -131,7 +131,7 @@ This subsystem must not own:
   delegation or a precognition result. A test sends wire events through
   `EventFeed` (`fullscreen/fixtures.rs`), which runs the core fold and the
   runner converter. `ModesLoaded` carries
-  `Vec<ModeDescriptor>` (id, name, description, icon, color, `writes`), not
+  `Vec<ModeDescriptor>` (id, name, description, icon, `writes`), not
   bare ids, because a mode's `writes: WriteMode` (`Apply`/`Propose`) must
   reach the TUI to badge the mode and gate `:proposals`.
   `ChatAppMsg::ProposalChanged` is the inbound counterpart of the

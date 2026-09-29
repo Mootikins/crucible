@@ -57,7 +57,6 @@ pub(crate) fn mode_descriptors(ids: &[&str]) -> Vec<crucible_core::types::mode::
             name: crucible_lua::humanize_mode_id(id),
             description: None,
             icon: None,
-            color: None,
             writes: Default::default(),
         })
         .collect()

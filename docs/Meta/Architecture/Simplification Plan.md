@@ -690,6 +690,13 @@ with its evidence in the commit that did it:
    `with_api_key_env_var_name` had no caller outside its own doc example, so
    its replacement (`default_api_key_env_var`) went too once confirmed
    unread.
+10. `ModeDescriptor.icon`/`.color` done in part: `.color` deleted — no writer
+    ever set it to `Some` (`rg -n '"\.color\s*=|color:"'` found only the
+    struct field and two deliberate `None`/`null` cases) and no reader
+    exists in the daemon, the TUI or the web client. `.icon` stays: the web
+    mode control (`ChatModeControl.tsx`) reads `mode.icon` even though no
+    Rust path yet sets it to `Some`, so it is not unread. Regenerated
+    `openapi.json` and `api-schema.d.ts` with `just web-contract`.
 
 ## Step 15. Luau types from the schema
 
