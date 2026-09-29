@@ -8,8 +8,7 @@ import { collectLeafGroupIds, firstLeafGroupId } from '@/windowing/model/tree';
 import type { Tab } from '@/windowing/model/types';
 import { setState, state } from './state';
 import { ICONS, type MockType } from './policy';
-
-const basename = (p: string) => p.split('/').pop() ?? p;
+import { basename } from './components/path';
 let nextDoc = 1;
 const noteTab = (path: string): Tab<MockType> => ({
   id: `doc:${nextDoc++}`,
@@ -18,6 +17,18 @@ const noteTab = (path: string): Tab<MockType> => ({
   icon: ICONS.note,
   metadata: { path },
 });
+
+/** Run a layout change as a view transition, so an expand morphs instead of jumping. */
+export function withTransition(change: () => void) {
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (doc.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) doc.startViewTransition(change);
+  else change();
+}
+
+/** Put the caret in the session's composer (Ctrl+L, the note's ask button, New session). */
+export function focusComposer() {
+  document.querySelector<HTMLTextAreaElement>('.mk-composer textarea')?.focus();
+}
 
 /** The centre group that holds a tab, if any. */
 function centreGroupHolding(tabId: string): string | null {
@@ -101,11 +112,9 @@ function collectPaneIdsHolding(groupId: string): string | null {
   return walk(windowStore.layout);
 }
 
-const basenameOf = (p: string) => p.split('/').pop() ?? p;
-
 /** Show a path in a tab without a history move. */
 function show(groupId: string, tabId: string, path: string) {
-  windowActions.updateTab(groupId, tabId, { title: basenameOf(path), metadata: { path } });
+  windowActions.updateTab(groupId, tabId, { title: basename(path), metadata: { path } });
 }
 
 /** Navigate a document tab: drop the forward entries, then push the path. */

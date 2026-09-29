@@ -19,16 +19,21 @@ import { configureWindowing, windowActions, windowStore } from '@/windowing/stor
 import { WindowManager } from '@/windowing/components/WindowManager';
 import type { Tab } from '@/windowing/model/types';
 import { mockPolicy, type MockType } from './policy';
-import { mockSlots } from './chrome';
-import { applyTweaks } from './toolbox';
-import { ChangesView, FilesPanel, NoteView, SessionView, SessionsPanel, TerminalView } from './panels';
+import { applyTweaks } from './tweaks';
 import { setFocusedNote } from './state';
-import { openNote } from './actions';
+import { focusComposer, openNote } from './actions';
+import { TerminalView } from './components/terminal/TerminalView';
+import { ChangesContainer } from './containers/ChangesContainer';
+import { FilesPanelContainer } from './containers/FilesPanelContainer';
+import { NoteContainer } from './containers/NoteContainer';
+import { mockSlots } from './containers/RailContainer';
+import { SessionContainer } from './containers/SessionContainer';
+import { SessionsPanelContainer } from './containers/SessionsPanelContainer';
 
 configureWindowing(
   mockPolicy((action) => {
     if (action === 'focusComposer') {
-      document.querySelector<HTMLTextAreaElement>('.mk-composer textarea')?.focus();
+      focusComposer();
       return true;
     }
     return false;
@@ -52,16 +57,16 @@ const renderContent = (tab: () => Tab) => {
   const t = tab() as Tab<MockType>;
   switch (t.contentType) {
     case 'sessions':
-      return <SessionsPanel />;
+      return <SessionsPanelContainer />;
     case 'files':
-      return <FilesPanel />;
+      return <FilesPanelContainer />;
     case 'note':
       // Read through `tab()`: a navigation replaces the path in place.
-      return <NoteView tabId={t.id} path={tab().metadata?.path as string} />;
+      return <NoteContainer tabId={t.id} path={tab().metadata?.path as string} />;
     case 'changes':
-      return <ChangesView sid={t.metadata?.sid as string} />;
+      return <ChangesContainer sid={t.metadata?.sid as string} />;
     case 'session':
-      return <SessionView sid={t.metadata?.sid as string | undefined} />;
+      return <SessionContainer sid={t.metadata?.sid as string | undefined} />;
     case 'terminal':
       return <TerminalView />;
   }
@@ -71,10 +76,7 @@ render(
   () => (
     <WindowManager
       renderContent={renderContent}
-      slots={mockSlots(
-        () => document.querySelector<HTMLTextAreaElement>('.mk-composer textarea')?.focus(),
-        () => openNote('Index'),
-      )}
+      slots={mockSlots(focusComposer, () => openNote('Index'))}
     >
       <FocusedNoteTracker />
     </WindowManager>

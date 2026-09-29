@@ -418,7 +418,7 @@ body { background: var(--mk-nav); }
 [data-testid='edge-host-right'][data-edge-expanded] > div:not([data-testid]) > div { padding-left: var(--mk-gap); }
 [data-testid='edge-host-left'][data-edge-expanded] > div:not([data-testid]) > div { padding-right: var(--mk-gap); }
 /* The core's swap button swaps the rails; the mockup's own button swaps
-   what opens in the centre instead (chrome.tsx). */
+   what opens in the centre instead (containers/RailContainer.tsx). */
 [data-testid='ribbon-cmd-swap-sides'] { display: none; }
 
 /* Vertical tabs in the rails (toolbox, on by default). A rail pane shows no
@@ -587,8 +587,24 @@ body { background: var(--mk-nav); }
    6px down in their strip. */
 :root:root:root [data-testid='edge-host-right'] [data-edge-panel-body] > div { margin-top: calc(var(--mk-gap) + 6px); }
 
+/* Horizontal tabs: the title is the grab handle, so the icon never turns
+   into the grip. A Markdown note shows no icon; its title names it. Other
+   kinds (a session, the changes view) keep their icon. */
+.wm-tab-grip { display: none; }
+.wm-tab:hover .wm-tab-icon { opacity: 1; }
+.wm-tab .wm-tab-title { cursor: grab; }
+.wm-tab[data-dragging] .wm-tab-title { cursor: grabbing; }
+.wm-tab[data-content-type='note'] .wm-tab-lead { display: none; }
+
+/* The window controls, in a tab bar or a note bar, are icon buttons too. */
+.wm-window-controls button { background: transparent !important; border-radius: 0; color: var(--cru-color-muted-dark); }
+.wm-window-controls button:hover { color: var(--cru-color-ink); }
+
 /* Popouts take the main tone. */
 .wm-floating { --color-shell-bg: transparent; background: var(--mk-main); }
+/* A floating window has the same tab system as the centre: a strip in the
+   lower tone, and an open tab cut out of the pane tone. */
+.wm-floating { --mk-pane-bg: var(--mk-main-solid); --mk-strip: var(--mk-nav-solid); --mk-foot: 8px; }
 .mk-pop { background: var(--mk-main); }
 
 /* Back and forward, before the path. A button that cannot act fades. */

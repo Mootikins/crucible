@@ -5,16 +5,18 @@
 import { createStore, produce } from 'solid-js/store';
 import { createSignal } from 'solid-js';
 import { NOTE_TEXT } from './data';
-
-export type SessionStatus = 'need' | 'run' | 'owe' | 'idle';
+import type { RootKey } from './components/files/FileTree';
+import type { HunkState } from './components/review/types';
+import type { TranscriptItem } from './components/session/types';
+import type { SessionMarkStatus } from './components/sessions/types';
 
 export interface Session {
   title: string;
   group: string;
-  roots: ('folder' | 'docs' | 'crucible')[];
+  roots: RootKey[];
   /** A categorical canvas slot, reused as the session's identity colour. */
   color: string;
-  status: SessionStatus;
+  status: SessionMarkStatus;
   time: string;
   model: string;
   mode: 'Ask' | 'Auto' | 'Plan';
@@ -22,28 +24,14 @@ export interface Session {
   plugin?: boolean;
 }
 
-export type Item =
-  | { t: 'user'; text: string; time: string; queued?: boolean }
-  | { t: 'precog'; notes: [string, number][] }
-  | { t: 'thinking'; secs: number }
-  | { t: 'record'; text: string }
-  | { t: 'text'; md: string; elapsed?: string; tokens?: string }
-  | {
-      t: 'tool';
-      id: string;
-      name: string;
-      path?: string;
-      arg?: string;
-      hunk?: string;
-      st: 'ok' | 'ask' | 'err' | 'review' | 'run';
-      out?: string;
-    };
+/** A transcript item. The components own the shape; this store fills it. */
+type Item = TranscriptItem;
 
 export interface Hunk {
   session: string;
   path: string;
   call?: string;
-  state: 'pending' | 'accepted' | 'rejected' | 'absent';
+  state: HunkState;
   external?: boolean;
   /** Lines of a hunk whose note carries no text in the mockup. */
   del?: string[];
@@ -129,6 +117,13 @@ const [state, setState] = createStore({
 });
 
 export { state, setState };
+
+/** The notes each session used, for the dot on a tree row. */
+export const TOUCHED: Record<string, string[]> = {
+  s1: ['Help/Concepts/Precognition', 'Help/Concepts/Semantic Search'],
+  s2: ['Help/Concepts/Review Ledger'],
+  s3: ['Help/Concepts/Kilns', 'Help/Tags', 'Organization Styles/Zettelkasten', 'Help/Concepts/Session Compaction'],
+};
 
 /** The note that has focus in the centre, for the composer's context chip. */
 export const [focusedNote, setFocusedNote] = createSignal<string | null>('Help/Concepts/Precognition');
