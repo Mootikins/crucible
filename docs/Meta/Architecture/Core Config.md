@@ -52,7 +52,7 @@ defines the `Spec`/`SpecEntry` data shape and the rank-merge algebra, but
 | `crates/crucible-core/src/config/components/cli.rs` | 111 | `CliConfig`/`HighlightingConfig`/`ChatScreen` — terminal syntax-highlighting settings and where the chat TUI draws (`cli.screen`, alternate-screen default). |
 | `crates/crucible-core/src/config/components/context.rs` | 84 | `ContextConfig` — which project-rules files (`AGENTS.md`, `.rules`, …) a session loads. |
 | `crates/crucible-core/src/config/components/defaults.rs` | 105 | Shared default endpoints, models and lists that `backend.rs` and `enrichment.rs` read from. |
-| `crates/crucible-core/src/config/components/llm.rs` | 774 | `LlmConfig`/`LlmProviderConfig`/builder — named provider instances and the specialty-to-model map. |
+| `crates/crucible-core/src/config/components/llm.rs` | 765 | `LlmConfig`/`LlmProviderConfig` (`Default`-derived, no builder) — named provider instances and the specialty-to-model map. |
 | `crates/crucible-core/src/config/components/mcp.rs` | 219 | `McpConfig`/`UpstreamServerConfig`/`TransportType` — upstream MCP server connections. |
 | `crates/crucible-core/src/config/components/mod.rs` | 37 | Re-export hub for every `components::*` type. |
 | `crates/crucible-core/src/config/components/trust.rs` | 272 | `TrustLevel`/`DataClassification` — the trust-versus-sensitivity policy primitive. |
@@ -80,7 +80,7 @@ defines the `Spec`/`SpecEntry` data shape and the rank-merge algebra, but
 | Path | Lines | Role |
 |---|---|---|
 | `crates/crucible-core/src/config/config/cli_app.rs` | 1468 | `CliAppConfig`/`SourcesConfig` — the composite, legacy (pre-Lua-boot) config struct: load, provenance annotation, kiln/project resolution, source-priority order. |
-| `crates/crucible-core/src/config/config/errors.rs` | 83 | `ConfigError` — the crate-boundary error type. `EnrichmentBackendConfig::validate` returns it directly (`MissingValue`/`InvalidValue`); a second `ConfigValidationError` type used to carry validation failures under different variant names and is gone. |
+| `crates/crucible-core/src/config/config/errors.rs` | 64 | `ConfigError` — the crate-boundary error type. `EnrichmentBackendConfig::validate` returns it directly (`MissingValue`/`InvalidValue`); a second `ConfigValidationError` type used to carry validation failures under different variant names and is gone. |
 | `crates/crucible-core/src/config/config/kiln_name.rs` | 499 | `KilnName` — the validated, case-folding, case-preserving kiln identifier. |
 | `crates/crucible-core/src/config/config/mod.rs` | 59 | Re-export hub plus `crucible_home`/`lua_stubs_dir` helpers. |
 | `crates/crucible-core/src/config/config/provider.rs` | 27 | `EffectiveLlmConfig` — the resolved provider settings, with a redacting `Debug`. |

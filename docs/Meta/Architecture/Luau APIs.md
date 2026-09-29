@@ -60,7 +60,7 @@ this page's files.
 | `crates/crucible-lua/src/http.rs` | 272 | `cru.http.*` — `get`/`post`/`put`/`delete`/`patch`/`request` over `crucible_core::http::HttpExecutor`. |
 | `crates/crucible-lua/src/json_query.rs` | 958 | `oq` module — multi-format parse/encode/query (JSON/YAML/TOML/TOON) and the JSON↔Lua bridge used crate-wide. |
 | `crates/crucible-lua/src/mcp.rs` | 97 | `cru.mcp` stub — always-empty answers for the stub-generator VM; plugins reach MCP through daemon gateway tools instead. |
-| `crates/crucible-lua/src/modes.rs` | 769 | `cru.modes` — agent modes a Lua table declares (`ModeDefinition`, `ModeStance`, `ToolSelector`, `WriteMode`); the daemon reads these for tool visibility, permission stance and whether a note write applies or becomes a proposal. |
+| `crates/crucible-lua/src/modes.rs` | 748 | `cru.modes` — agent modes a Lua table declares (`ModeDefinition`, `ModeStance` — a type alias of core `PermissionMode` — `ToolSelector`, `WriteMode`); the daemon reads these for tool visibility, permission stance and whether a note write applies or becomes a proposal. |
 | `crates/crucible-lua/src/notify.rs` | 595 | `cru.log.notify`/`notify_once`/`levels` and the `NotificationSink` trait the daemon implements. |
 | `crates/crucible-lua/src/oil.rs` | 1370 | `cru.oil.*` — builds `crucible_oil::Node` trees (`text`, `col`, `row`, `popup`, `component`, …) from Lua. |
 | `crates/crucible-lua/src/paths.rs` | 288 | `cru.paths.*` — read-only session/workspace/plugin-state/config directory lookups. |
