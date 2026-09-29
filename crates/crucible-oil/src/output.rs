@@ -1,6 +1,5 @@
 use crate::ansi::visual_rows;
 use crate::overlay::{composite_overlays, Overlay};
-use crate::planning::RenderedOverlay;
 use crossterm::{cursor, execute, terminal};
 use std::io::{self, Stdout, Write};
 
@@ -113,7 +112,7 @@ impl<W: Write> OutputBuffer<W> {
     pub fn render_with_overlays(
         &mut self,
         content: &str,
-        overlays: &[RenderedOverlay],
+        overlays: &[Overlay],
     ) -> io::Result<bool> {
         let mut all_lines: Vec<String> = collapse_blank_lines(content);
         // The reserve goes on before the overlays, so an overlay finds the
@@ -275,24 +274,13 @@ impl<W: Write> OutputBuffer<W> {
 
     /// Composite overlays onto the tail the terminal shows, so scrolled rows
     /// stay untouched.
-    fn composite_visible_overlays(&self, lines: &mut Vec<String>, overlays: &[RenderedOverlay]) {
+    fn composite_visible_overlays(&self, lines: &mut Vec<String>, overlays: &[Overlay]) {
         if overlays.is_empty() {
             return;
         }
-        let overlay_refs: Vec<Overlay> = overlays
-            .iter()
-            .map(|o| Overlay {
-                lines: o.lines.clone(),
-                anchor: o.anchor,
-            })
-            .collect();
         let split = lines.len().saturating_sub(self.terminal_height);
         let tail = lines.split_off(split);
-        lines.extend(composite_overlays(
-            &tail,
-            &overlay_refs,
-            self.terminal_width,
-        ));
+        lines.extend(composite_overlays(&tail, overlays, self.terminal_width));
     }
 
     /// Clear the viewport from terminal.
@@ -577,7 +565,7 @@ mod tests {
     /// rows above the prompt instead of pushing the prompt down the screen.
     #[test]
     fn an_overlay_taller_than_the_content_does_not_grow_a_reserved_frame() {
-        let overlay = [RenderedOverlay {
+        let overlay = [Overlay {
             lines: (0..6).map(|i| format!("item{i}")).collect(),
             anchor: crate::overlay::OverlayAnchor::FromBottom(2),
         }];

@@ -62,7 +62,7 @@ impl Debouncer {
         }
 
         let key = if self.deduplicate {
-            crate::watch::utils::EventUtils::deduplication_key(&event)
+            crate::watch::utils::deduplication_key(&event)
         } else {
             // Use unique key if deduplication is disabled
             format!(

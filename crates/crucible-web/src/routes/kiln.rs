@@ -1,3 +1,4 @@
+use crate::routes::helpers::KilnPathQuery;
 use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -13,7 +14,7 @@ use crucible_core::note_edit::{AnchoredEdit, EditRefusal};
 use crucible_core::note_merge::Region;
 use crucible_core::protocol::requests::KilnGraphReply;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -29,14 +30,6 @@ pub fn kiln_routes() -> OpenApiRouter<AppState> {
 // =========================================================================
 // Query / Request types
 // =========================================================================
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct KilnPathQuery {
-    /// Absolute path of the kiln to read.
-    #[param(value_type = String)]
-    kiln: PathBuf,
-}
 
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -630,6 +623,7 @@ mod tests {
     use crate::test_support::{request_json_in_kilns, shape, shape_in_kilns};
     use crucible_core::config::ProjectFileAccess;
     use crucible_core::note_edit::disk_hash;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     // =====================================================================

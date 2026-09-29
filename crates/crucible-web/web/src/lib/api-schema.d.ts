@@ -7142,7 +7142,7 @@ export interface operations {
     list_kiln_files: {
         parameters: {
             query: {
-                /** @description Absolute path of the kiln to read. */
+                /** @description Absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;
@@ -7171,7 +7171,7 @@ export interface operations {
     kiln_graph: {
         parameters: {
             query: {
-                /** @description Absolute path of the kiln to read. */
+                /** @description Absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;
@@ -7200,7 +7200,7 @@ export interface operations {
     list_kiln_notes: {
         parameters: {
             query: {
-                /** @description Absolute path of the kiln to read. */
+                /** @description Absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;
@@ -7422,7 +7422,7 @@ export interface operations {
     get_note: {
         parameters: {
             query: {
-                /** @description Absolute path of the kiln that holds the note. */
+                /** @description Absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;
@@ -9858,7 +9858,7 @@ export interface operations {
     get_skill: {
         parameters: {
             query: {
-                /** @description The kiln to discover the skill from. */
+                /** @description Absolute path of the kiln. */
                 kiln: string;
             };
             header?: never;

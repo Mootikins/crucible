@@ -1,4 +1,4 @@
-use super::helpers::{validate_note_name, MAX_CONTENT_SIZE};
+use super::helpers::{validate_note_name, KilnPathQuery, MAX_CONTENT_SIZE};
 use crucible_core::protocol::requests::{
     BacklinkEntry, KilnRow, NoteByNameReply, NoteListRow, VectorHit,
 };
@@ -289,7 +289,7 @@ struct ResolveQuery {
     path = "/api/notes/{name}",
     params(
         ("name" = String, Path, description = "The note's name or kiln-relative path"),
-        KilnQuery,
+        KilnPathQuery,
     ),
     responses(
         (status = 200, body = NoteByNameReply),
@@ -301,7 +301,7 @@ struct ResolveQuery {
 async fn get_note(
     State(state): State<AppState>,
     Path(name): Path<String>,
-    axum::extract::Query(query): axum::extract::Query<KilnQuery>,
+    axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
 ) -> Result<Json<NoteByNameReply>, WebError> {
     // Security: Validate note name doesn't contain path traversal
     validate_note_name(&name)?;
@@ -316,14 +316,6 @@ async fn get_note(
         Some(n) => Ok(Json(n)),
         None => Err(WebError::NotFound(format!("Note '{name}' not found"))),
     }
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct KilnQuery {
-    /// Absolute path of the kiln that holds the note.
-    #[param(value_type = String)]
-    kiln: PathBuf,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]

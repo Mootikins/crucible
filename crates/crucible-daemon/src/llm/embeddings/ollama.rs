@@ -569,15 +569,15 @@ mod tests {
     }
 
     #[test]
-    fn test_model_info_builder() {
+    fn test_model_info_struct_update() {
         use crate::llm::embeddings::provider::{ModelFamily, ModelInfo};
 
-        let model = ModelInfo::builder()
-            .name("test-model")
-            .dimensions(768)
-            .family(ModelFamily::Bert)
-            .recommended(true)
-            .build();
+        let model = ModelInfo {
+            dimensions: Some(768),
+            family: Some(ModelFamily::Bert),
+            recommended: true,
+            ..ModelInfo::new("test-model")
+        };
 
         assert_eq!(model.name, "test-model");
         assert_eq!(model.dimensions, Some(768));
@@ -590,7 +590,10 @@ mod tests {
     fn test_model_info_compatibility() {
         use crate::llm::embeddings::provider::ModelInfo;
 
-        let model = ModelInfo::builder().name("test").dimensions(768).build();
+        let model = ModelInfo {
+            dimensions: Some(768),
+            ..ModelInfo::new("test")
+        };
 
         assert!(model.is_compatible_dimensions(768));
         assert!(!model.is_compatible_dimensions(1536));

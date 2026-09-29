@@ -348,10 +348,11 @@ pub(crate) async fn handle_diff_file(req: Request, admission: Admission<'_>) -> 
 mod tests {
     use super::*;
     use crate::protocol::RpcError;
+    use crate::server::diff_test_daemon::{repo, working_tree, Daemon};
     use crate::test_support::{git, init_repo};
     use crucible_core::diff::{DiffFileEntry, FileStatus};
     use crucible_core::types::acp::MAX_DIFF_BYTES;
-    use serde_json::{json, Value};
+    use serde_json::json;
     use std::fs;
     use tempfile::TempDir;
 
@@ -367,63 +368,9 @@ mod tests {
         assert_eq!(code, crate::protocol::INTERNAL_ERROR);
     }
 
-    /// The daemon state of one test: a project registry, a kiln manager and
-    /// a session manager, each under a temp directory.
-    struct Daemon {
-        projects: Arc<ProjectManager>,
-        kilns: Arc<KilnManager>,
-        sessions: Arc<SessionManager>,
-        review: Arc<ReviewLedgers>,
-        proposals: ProposalStore,
-        _store: TempDir,
-    }
-
     impl Daemon {
-        fn new() -> Self {
-            let store = TempDir::new().unwrap();
-            Self {
-                projects: Arc::new(ProjectManager::new(store.path().join("projects.json"))),
-                kilns: Arc::new(KilnManager::new()),
-                sessions: Arc::new(SessionManager::with_storage(
-                    crate::test_support::temp_session_storage(),
-                )),
-                review: Arc::new(ReviewLedgers::for_tests(store.path().join("snapshots"))),
-                proposals: ProposalStore::new(store.path().join("proposals")),
-                _store: store,
-            }
-        }
-
-        fn admission(&self) -> Admission<'_> {
-            Admission {
-                projects: &self.projects,
-                kilns: &self.kilns,
-                sessions: &self.sessions,
-                review: &self.review,
-                proposals: &self.proposals,
-            }
-        }
-
-        async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
-            let req = Request {
-                jsonrpc: "2.0".to_string(),
-                id: Some(RequestId::Number(1)),
-                method: method.to_string(),
-                params,
-            };
-            let resp = match method {
-                "diff.get" => handle_diff_get(req, self.admission()).await,
-                "diff.file" => handle_diff_file(req, self.admission()).await,
-                other => panic!("no handler for {other}"),
-            };
-            match resp.error {
-                Some(error) => Err(error),
-                None => Ok(resp.result.expect("a success has a result")),
-            }
-        }
-
         async fn get(&self, source: &DiffsetSource) -> Result<Diffset, RpcError> {
-            let value = self.call("diff.get", json!({ "source": source })).await?;
-            Ok(serde_json::from_value(value).unwrap())
+            self.call("diff.get", json!({ "source": source })).await
         }
 
         async fn file(
@@ -448,36 +395,13 @@ mod tests {
                 from: from.map(str::to_string),
                 root: root.cloned(),
             };
-            let value = self
-                .call("diff.file", serde_json::to_value(request).unwrap())
-                .await?;
-            Ok(serde_json::from_value(value).unwrap())
+            self.call("diff.file", request).await
         }
-    }
-
-    /// A registered repository on `main` with `files` in one commit, and a
-    /// checked-out branch `feature`.
-    async fn repo(daemon: &Daemon, files: &[(&str, &str)]) -> (TempDir, PathBuf) {
-        let tmp = TempDir::new().unwrap();
-        init_repo(tmp.path(), files).await;
-        git(tmp.path(), &["branch", "-M", "main"]).await;
-        git(tmp.path(), &["checkout", "-q", "-b", "feature"]).await;
-        let root = daemon.projects.register(tmp.path()).unwrap().path;
-        (tmp, root)
     }
 
     async fn commit_all(dir: &Path) {
         git(dir, &["add", "-A"]).await;
         git(dir, &["commit", "-q", "-m", "change"]).await;
-    }
-
-    /// The branch source of `root` with the default base and the working tree.
-    fn working_tree(root: &Path) -> DiffsetSource {
-        DiffsetSource::Branch {
-            root: PhysicalRoot::from_top_level(root),
-            base: String::new(),
-            head: None,
-        }
     }
 
     fn entry<'a>(diffset: &'a Diffset, path: &str) -> &'a DiffFileEntry {

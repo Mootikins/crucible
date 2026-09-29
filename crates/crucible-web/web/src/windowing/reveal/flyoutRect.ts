@@ -1,4 +1,4 @@
-import type { EdgePanelPosition } from '../model/types';
+import type { EdgePanelPosition, Rect } from '../model/types';
 
 /** The smallest flyout side, in px, while the viewport has room for it. */
 export const FLYOUT_MIN = 100;
@@ -6,13 +6,6 @@ export const FLYOUT_MIN = 100;
 export const FLYOUT_MARGIN = 8;
 /** The default flyout height, as a part of the viewport height. */
 export const FLYOUT_HEIGHT_FRACTION = 0.5;
-
-export interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
 export interface FlyoutParams {
   position: EdgePanelPosition;

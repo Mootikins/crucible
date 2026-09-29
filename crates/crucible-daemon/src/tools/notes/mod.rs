@@ -39,8 +39,7 @@ pub(crate) use propose::Disposition;
 pub use propose::{author_of, NoteWrites, TurnWriteMode};
 
 pub use params::{
-    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
-    UpdateNoteParams,
+    CreateNoteParams, ListNotesParams, NotePathParams, ReadNoteParams, UpdateNoteParams,
 };
 
 #[derive(Clone)]
@@ -285,7 +284,7 @@ impl NoteTools {
     #[tool(description = "Read note metadata without loading full content")]
     pub async fn read_metadata(
         &self,
-        params: Parameters<ReadMetadataParams>,
+        params: Parameters<NotePathParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let path = ensure_md_suffix(params.path);
@@ -407,7 +406,7 @@ impl NoteTools {
     #[tool(description = "Delete a note from the kiln")]
     pub async fn delete_note(
         &self,
-        params: Parameters<DeleteNoteParams>,
+        params: Parameters<NotePathParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         // A proposal holds new text, not a removal, so a delete cannot wait
         // for review.

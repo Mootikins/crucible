@@ -33,8 +33,7 @@ use std::sync::Arc;
 
 // Re-export parameter types from individual modules
 use super::notes::{
-    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
-    UpdateNoteParams,
+    CreateNoteParams, ListNotesParams, NotePathParams, ReadNoteParams, UpdateNoteParams,
 };
 use super::search::{GrepNotesParams, PropertySearchParams, SemanticSearchParams};
 
@@ -419,7 +418,7 @@ impl CrucibleMcpServer {
     #[tool(description = "Read note metadata without loading full content")]
     pub async fn read_metadata(
         &self,
-        params: Parameters<ReadMetadataParams>,
+        params: Parameters<NotePathParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         self.note_tools.read_metadata(params).await
     }
@@ -435,7 +434,7 @@ impl CrucibleMcpServer {
     #[tool(description = "Delete a note from the kiln")]
     pub async fn delete_note(
         &self,
-        params: Parameters<DeleteNoteParams>,
+        params: Parameters<NotePathParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         self.note_tools.delete_note(params).await
     }

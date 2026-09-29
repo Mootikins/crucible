@@ -6,34 +6,19 @@ mod queue;
 pub use debouncer::Debouncer;
 pub use queue::EventQueue;
 
-use crate::watch::FileEvent;
+use crate::watch::{FileEvent, FileEventKind};
 
-/// Utility functions for file event processing.
-pub struct EventUtils;
-
-impl EventUtils {
-    /// Create a deduplication key for an event.
-    pub fn deduplication_key(event: &FileEvent) -> String {
-        match &event.kind {
-            crate::watch::events::FileEventKind::Created => {
-                format!("create:{}", event.path.display())
-            }
-            crate::watch::events::FileEventKind::Modified => {
-                format!("modify:{}", event.path.display())
-            }
-            crate::watch::events::FileEventKind::Deleted => {
-                format!("delete:{}", event.path.display())
-            }
-            crate::watch::events::FileEventKind::Moved { from, to } => {
-                format!("move:{}->{}", from.display(), to.display())
-            }
-            crate::watch::events::FileEventKind::Batch(_) => {
-                format!("batch:{}", event.path.display())
-            }
-            crate::watch::events::FileEventKind::Rescan => "rescan".to_string(),
-            crate::watch::events::FileEventKind::Unknown(_) => {
-                format!("unknown:{}", event.path.display())
-            }
+/// Create a deduplication key for an event.
+pub fn deduplication_key(event: &FileEvent) -> String {
+    match &event.kind {
+        FileEventKind::Created => format!("create:{}", event.path.display()),
+        FileEventKind::Modified => format!("modify:{}", event.path.display()),
+        FileEventKind::Deleted => format!("delete:{}", event.path.display()),
+        FileEventKind::Moved { from, to } => {
+            format!("move:{}->{}", from.display(), to.display())
         }
+        FileEventKind::Batch(_) => format!("batch:{}", event.path.display()),
+        FileEventKind::Rescan => "rescan".to_string(),
+        FileEventKind::Unknown(_) => format!("unknown:{}", event.path.display()),
     }
 }

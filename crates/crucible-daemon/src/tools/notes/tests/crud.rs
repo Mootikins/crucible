@@ -1,9 +1,6 @@
 //! CRUD operation tests for `NoteTools`.
 
-use super::super::{
-    CreateNoteParams, DeleteNoteParams, NoteTools, ReadMetadataParams, ReadNoteParams,
-    UpdateNoteParams,
-};
+use super::super::{CreateNoteParams, NotePathParams, NoteTools, ReadNoteParams, UpdateNoteParams};
 use super::create_name_resolution_kiln;
 use rmcp::handler::server::wrapper::Parameters;
 use tempfile::TempDir;
@@ -346,7 +343,7 @@ async fn test_delete_note() {
 
     // Delete note
     let result = note_tools
-        .delete_note(Parameters(DeleteNoteParams {
+        .delete_note(Parameters(NotePathParams {
             path: "delete.md".to_string(),
         }))
         .await;
@@ -393,7 +390,7 @@ async fn test_read_metadata_with_frontmatter() {
 
     // Read metadata
     let result = note_tools
-        .read_metadata(Parameters(ReadMetadataParams {
+        .read_metadata(Parameters(NotePathParams {
             path: "test.md".to_string(),
         }))
         .await;
@@ -436,7 +433,7 @@ async fn test_read_metadata_without_frontmatter() {
 
     // Read metadata
     let result = note_tools
-        .read_metadata(Parameters(ReadMetadataParams {
+        .read_metadata(Parameters(NotePathParams {
             path: "test.md".to_string(),
         }))
         .await;

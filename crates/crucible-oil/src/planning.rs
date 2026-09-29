@@ -1,7 +1,7 @@
 use crate::layout::LayoutEngine;
 
 use crate::node::{Node, OverlayNode};
-use crate::overlay::{extract_overlays, filter_overlays, OverlayAnchor};
+use crate::overlay::{composite_overlays, extract_overlays, filter_overlays, Overlay};
 use crate::render::{render_tree, render_tree_with_engine, RenderResult, NATURAL_HEIGHT};
 
 /// Graduated content ready for terminal output.
@@ -17,16 +17,10 @@ pub struct Graduation {
 }
 
 #[derive(Debug, Clone)]
-pub struct RenderedOverlay {
-    pub lines: Vec<String>,
-    pub anchor: OverlayAnchor,
-}
-
-#[derive(Debug, Clone)]
 pub struct FramePlan {
     pub frame_no: u64,
     pub viewport: RenderResult,
-    pub overlays: Vec<RenderedOverlay>,
+    pub overlays: Vec<Overlay>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,8 +37,6 @@ impl FrameSnapshot {
     }
 
     pub fn viewport_with_overlays(&self, width: usize) -> String {
-        use crate::overlay::{composite_overlays, Overlay};
-
         if self.plan.overlays.is_empty() {
             return self.plan.viewport.content.clone();
         }
@@ -56,16 +48,7 @@ impl FrameSnapshot {
             .lines()
             .map(String::from)
             .collect();
-        let overlay_refs: Vec<Overlay> = self
-            .plan
-            .overlays
-            .iter()
-            .map(|o| Overlay {
-                lines: o.lines.clone(),
-                anchor: o.anchor,
-            })
-            .collect();
-        let composited = composite_overlays(&base_lines, &overlay_refs, width);
+        let composited = composite_overlays(&base_lines, &self.plan.overlays, width);
         composited.join("\r\n")
     }
 
@@ -138,13 +121,13 @@ impl FramePlanner {
         }
     }
 
-    fn render_overlays(&self, overlay_nodes: &[OverlayNode]) -> Vec<RenderedOverlay> {
+    fn render_overlays(&self, overlay_nodes: &[OverlayNode]) -> Vec<Overlay> {
         overlay_nodes
             .iter()
             .map(|overlay_node| {
                 let result = render_tree(&overlay_node.child, self.width, self.height);
                 let lines: Vec<String> = result.content.lines().map(String::from).collect();
-                RenderedOverlay {
+                Overlay {
                     lines,
                     anchor: overlay_node.anchor,
                 }

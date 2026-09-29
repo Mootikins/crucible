@@ -6,8 +6,7 @@ import { windowStore, windowActions } from '@/windowing/store';
 import { regionOfPane } from '@/windowing/model/tree';
 import { hasTabsOutsidePane } from '@/windowing/model/pane-content';
 import { useWindowing } from '@/windowing/components/context';
-
-type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
+import type { PaneDropPosition } from '@/windowing/model/types';
 
 function PaneDropZone(props: {
   position: PaneDropPosition;

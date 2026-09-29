@@ -1380,7 +1380,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "Absolute path of the kiln to read.",
+            "description": "Absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1413,7 +1413,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "Absolute path of the kiln to read.",
+            "description": "Absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1445,7 +1445,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "Absolute path of the kiln to read.",
+            "description": "Absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1715,7 +1715,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "Absolute path of the kiln that holds the note.",
+            "description": "Absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"
@@ -4347,7 +4347,7 @@
           {
             "name": "kiln",
             "in": "query",
-            "description": "The kiln to discover the skill from.",
+            "description": "Absolute path of the kiln.",
             "required": true,
             "schema": {
               "type": "string"

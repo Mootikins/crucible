@@ -36,9 +36,10 @@ pub struct ReadNoteParams {
     pub(super) end_line: Option<usize>,
 }
 
-/// Parameters for reading metadata
+/// Parameters for a tool that names one note by its path: `read_metadata`
+/// and `delete_note`.
 #[derive(Deserialize, JsonSchema)]
-pub struct ReadMetadataParams {
+pub struct NotePathParams {
     pub(super) path: String,
 }
 
@@ -51,12 +52,6 @@ pub struct UpdateNoteParams {
     /// New frontmatter for the note (if None, frontmatter is preserved)
     #[schemars(schema_with = "optional_json_object_schema")]
     pub(super) frontmatter: Option<serde_json::Value>,
-}
-
-/// Parameters for deleting a note
-#[derive(Deserialize, JsonSchema)]
-pub struct DeleteNoteParams {
-    pub(super) path: String,
 }
 
 /// Parameters for listing notes

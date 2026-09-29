@@ -1,8 +1,7 @@
 //! Path-traversal and symlink-escape tests for `NoteTools`.
 
 use super::super::{
-    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
-    UpdateNoteParams,
+    CreateNoteParams, ListNotesParams, NotePathParams, ReadNoteParams, UpdateNoteParams,
 };
 use super::create_name_resolution_kiln;
 use rmcp::handler::server::wrapper::Parameters;
@@ -113,7 +112,7 @@ async fn test_delete_note_path_traversal() {
     let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
-        .delete_note(Parameters(DeleteNoteParams {
+        .delete_note(Parameters(NotePathParams {
             path: "../../etc/passwd".to_string(),
         }))
         .await;
@@ -167,7 +166,7 @@ async fn test_read_metadata_path_traversal() {
     let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
-        .read_metadata(Parameters(ReadMetadataParams {
+        .read_metadata(Parameters(NotePathParams {
             path: "../../../etc/passwd".to_string(),
         }))
         .await;
@@ -330,7 +329,7 @@ async fn update_and_delete_note_refuse_a_file_that_is_not_a_note() {
     assert!(err.message.contains("not a note"), "{}", err.message);
 
     let err = note_tools
-        .delete_note(Parameters(DeleteNoteParams {
+        .delete_note(Parameters(NotePathParams {
             path: "init.lua".to_string(),
         }))
         .await

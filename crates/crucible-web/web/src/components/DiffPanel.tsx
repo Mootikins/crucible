@@ -1022,21 +1022,21 @@ const ResolveButton: Component<{ onResolve: () => Promise<void> }> = (props) => 
   );
 };
 
-interface FileBodyProps {
-  source: DiffsetSource;
-  /** The chat that a new comment attaches to. */
-  session?: string;
-  file: DiffFileEntry;
-  comments: ListedComment[];
-  onResolve: (commentId: string) => Promise<void>;
-  chips: ChipActions;
-  split: boolean;
-  wrap: boolean;
-  hunks: HunkChoice;
-  onHunkToggle: (label: string) => void;
-}
-
-const FileBody: Component<FileBodyProps> = (props) => {
+const FileBody: Component<
+  Pick<
+    FileSectionProps,
+    | 'source'
+    | 'session'
+    | 'file'
+    | 'comments'
+    | 'onResolve'
+    | 'chips'
+    | 'split'
+    | 'wrap'
+    | 'hunks'
+    | 'onHunkToggle'
+  >
+> = (props) => {
   const text = useDiffFile(
     () => props.source,
     () => props.file,

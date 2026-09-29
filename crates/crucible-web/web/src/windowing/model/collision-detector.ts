@@ -12,8 +12,8 @@
  *    center droppable, with center as the fallback.
  */
 import type { CollisionDetector } from '@thisbeyond/solid-dnd';
+import type { Rect } from './types';
 
-type Rect = { x: number; y: number; width: number; height: number };
 type Point = { x: number; y: number };
 
 export interface DroppableLike {

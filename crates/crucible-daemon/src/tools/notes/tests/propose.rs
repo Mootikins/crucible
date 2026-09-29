@@ -1,8 +1,6 @@
 //! The note tools in a turn whose write mode is `propose`.
 
-use super::super::{
-    CreateNoteParams, DeleteNoteParams, NoteWrites, TurnWriteMode, UpdateNoteParams,
-};
+use super::super::{CreateNoteParams, NotePathParams, NoteWrites, TurnWriteMode, UpdateNoteParams};
 use crate::proposals::{proposals_root, ProposalStore};
 use crucible_core::file_write::ExpectedBase;
 use crucible_core::note_edit::disk_hash;
@@ -289,7 +287,7 @@ async fn delete_note_in_propose_mode_refuses_and_keeps_the_file() {
 
     let error = f
         .tools
-        .delete_note(Parameters(DeleteNoteParams {
+        .delete_note(Parameters(NotePathParams {
             path: "note.md".to_string(),
         }))
         .await

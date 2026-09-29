@@ -445,20 +445,40 @@ mod tests {
         assert_eq!(error, 4);
     }
 
+    /// A sink that refuses its first `refusals` requests and records every
+    /// later one. `calls` counts every request, refused or not.
     #[derive(Default)]
-    struct Recording(std::sync::Mutex<Vec<NotifyRequest>>);
+    struct TestSink {
+        refusals: usize,
+        calls: std::sync::Mutex<usize>,
+        sent: std::sync::Mutex<Vec<NotifyRequest>>,
+    }
 
-    impl NotificationSink for Recording {
+    impl TestSink {
+        fn refusing(refusals: usize) -> Self {
+            Self {
+                refusals,
+                ..Self::default()
+            }
+        }
+    }
+
+    impl NotificationSink for TestSink {
         fn notify(&self, request: NotifyRequest) -> Result<(), String> {
-            self.0.lock().unwrap().push(request);
+            let mut calls = self.calls.lock().unwrap();
+            *calls += 1;
+            if *calls <= self.refusals {
+                return Err("hub refused the request".to_string());
+            }
+            self.sent.lock().unwrap().push(request);
             Ok(())
         }
     }
 
     /// A VM with the notify module and a recording sink behind it.
-    fn lua_with_sink() -> (Lua, Arc<Recording>) {
+    fn lua_with_sink() -> (Lua, Arc<TestSink>) {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
-        let sink = Arc::new(Recording::default());
+        let sink = Arc::new(TestSink::default());
         upgrade_with_notify_sink(&lua, sink.clone(), Some("chat-1".into())).unwrap();
         (lua, sink)
     }
@@ -473,7 +493,7 @@ mod tests {
         .exec()
         .unwrap();
 
-        let sent = sink.0.lock().unwrap();
+        let sent = sink.sent.lock().unwrap();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].notification.message, "saved");
         assert!(matches!(
@@ -495,7 +515,7 @@ mod tests {
 
         lua.load(r#"cru.log.notify("saved")"#).exec().unwrap();
 
-        let sent = sink.0.lock().unwrap();
+        let sent = sink.sent.lock().unwrap();
         assert_eq!(sent.len(), 1);
         assert!(sent[0].kiln.is_none());
         assert!(sent[0].workspace.is_none());
@@ -514,60 +534,36 @@ mod tests {
         .exec()
         .unwrap();
 
-        let sent = sink.0.lock().unwrap();
+        let sent = sink.sent.lock().unwrap();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].notification.message, "Only once");
         assert_eq!(sent[0].session_id.as_deref(), Some("chat-1"));
         assert!(get_pending_notifications(&lua).unwrap().is_empty());
     }
 
-    struct Refusing;
-
-    impl NotificationSink for Refusing {
-        fn notify(&self, _request: NotifyRequest) -> Result<(), String> {
-            Err("hub is gone".to_string())
-        }
-    }
-
     #[test]
     fn a_sink_error_raises_in_lua() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
-        upgrade_with_notify_sink(&lua, Arc::new(Refusing), None).unwrap();
+        let sink = Arc::new(TestSink::refusing(usize::MAX));
+        upgrade_with_notify_sink(&lua, sink.clone(), None).unwrap();
 
         let err = lua.load(r#"cru.log.notify("saved")"#).exec().unwrap_err();
-        assert!(err.to_string().contains("hub is gone"), "{err}");
-    }
-
-    /// Refuses the first request, records every later one.
-    #[derive(Default)]
-    struct RefusesOnce {
-        calls: std::sync::Mutex<usize>,
-        sent: std::sync::Mutex<Vec<NotifyRequest>>,
-    }
-
-    impl NotificationSink for RefusesOnce {
-        fn notify(&self, request: NotifyRequest) -> Result<(), String> {
-            let mut calls = self.calls.lock().unwrap();
-            *calls += 1;
-            if *calls == 1 {
-                return Err("hub is busy".to_string());
-            }
-            self.sent.lock().unwrap().push(request);
-            Ok(())
-        }
+        assert!(err.to_string().contains("hub refused the request"), "{err}");
+        assert_eq!(*sink.calls.lock().unwrap(), 1);
+        assert!(sink.sent.lock().unwrap().is_empty());
     }
 
     #[test]
     fn notify_once_marks_a_message_shown_only_after_the_sink_took_it() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
-        let sink = Arc::new(RefusesOnce::default());
+        let sink = Arc::new(TestSink::refusing(1));
         upgrade_with_notify_sink(&lua, sink.clone(), None).unwrap();
 
         let err = lua
             .load(r#"return cru.log.notify_once("Only once")"#)
             .eval::<bool>()
             .unwrap_err();
-        assert!(err.to_string().contains("hub is busy"), "{err}");
+        assert!(err.to_string().contains("hub refused the request"), "{err}");
 
         let second: bool = lua
             .load(r#"return cru.log.notify_once("Only once")"#)

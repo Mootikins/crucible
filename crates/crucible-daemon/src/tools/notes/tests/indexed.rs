@@ -4,7 +4,7 @@
 //! does not know is answered from disk. Both paths serve the same kiln, so a
 //! test can put one note in each and ask for both.
 
-use super::super::{ListNotesParams, NoteTools, ReadMetadataParams};
+use super::super::{ListNotesParams, NotePathParams, NoteTools};
 use crate::storage::sqlite::config::SqliteConfig;
 use crate::storage::sqlite::connection::SqlitePool;
 use crate::storage::sqlite::note_store::SqliteNoteStore;
@@ -72,7 +72,7 @@ async fn read_metadata_answers_from_the_store_when_the_note_is_indexed() {
 
     let reply = parse(
         tools
-            .read_metadata(Parameters(ReadMetadataParams {
+            .read_metadata(Parameters(NotePathParams {
                 path: "notes/indexed".to_string(),
             }))
             .await
@@ -95,7 +95,7 @@ async fn read_metadata_answers_from_disk_when_the_note_is_not_indexed() {
 
     let reply = parse(
         tools
-            .read_metadata(Parameters(ReadMetadataParams {
+            .read_metadata(Parameters(NotePathParams {
                 path: "notes/fresh.md".to_string(),
             }))
             .await
@@ -147,7 +147,7 @@ async fn a_deleted_file_is_not_answered_from_its_stale_index_row() {
     std::fs::remove_file(kiln.path().join("notes/indexed.md")).unwrap();
 
     let err = tools
-        .read_metadata(Parameters(ReadMetadataParams {
+        .read_metadata(Parameters(NotePathParams {
             path: "notes/indexed.md".to_string(),
         }))
         .await

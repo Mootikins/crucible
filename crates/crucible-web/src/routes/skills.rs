@@ -1,3 +1,4 @@
+use super::helpers::KilnPathQuery;
 use crate::error::WebResultExt;
 use crate::services::daemon::AppState;
 use crate::WebError;
@@ -26,14 +27,6 @@ struct ListQuery {
     kiln: PathBuf,
     /// Keep only the skills this discovery scope found.
     scope: Option<String>,
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct GetQuery {
-    /// The kiln to discover the skill from.
-    #[param(value_type = String)]
-    kiln: PathBuf,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -76,7 +69,7 @@ async fn list_skills(
 #[utoipa::path(
     get,
     path = "/api/skills/{name}",
-    params(("name" = String, Path, description = "The skill's name"), GetQuery),
+    params(("name" = String, Path, description = "The skill's name"), KilnPathQuery),
     responses(
         (status = 200, body = SkillDetail),
         (status = 422, description = "No skill of that name is discoverable from this kiln"),
@@ -86,7 +79,7 @@ async fn list_skills(
 async fn get_skill(
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Query(query): Query<GetQuery>,
+    Query(query): Query<KilnPathQuery>,
 ) -> Result<Json<SkillDetail>, WebError> {
     let result = state
         .daemon

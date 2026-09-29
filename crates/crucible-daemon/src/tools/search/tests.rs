@@ -809,8 +809,7 @@ fn test_tool_schemas_llama_cpp_compatible() {
         CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams,
     };
     use crate::tools::notes::{
-        CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
-        UpdateNoteParams,
+        CreateNoteParams, ListNotesParams, NotePathParams, ReadNoteParams, UpdateNoteParams,
     };
 
     let sanitize = |raw: schemars::Schema| -> String {
@@ -841,16 +840,12 @@ fn test_tool_schemas_llama_cpp_compatible() {
             sanitize(schemars::schema_for!(ReadNoteParams)),
         ),
         (
-            "ReadMetadataParams",
-            sanitize(schemars::schema_for!(ReadMetadataParams)),
+            "NotePathParams",
+            sanitize(schemars::schema_for!(NotePathParams)),
         ),
         (
             "UpdateNoteParams",
             sanitize(schemars::schema_for!(UpdateNoteParams)),
-        ),
-        (
-            "DeleteNoteParams",
-            sanitize(schemars::schema_for!(DeleteNoteParams)),
         ),
         (
             "ListNotesParams",

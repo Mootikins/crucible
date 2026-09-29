@@ -17,8 +17,7 @@ use crate::tools::mcp_server::{
     CancelJobParams, DelegateSessionParams, GetJobResultParams, ListJobsParams, SkillViewParams,
 };
 use crate::tools::notes::{
-    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
-    UpdateNoteParams,
+    CreateNoteParams, ListNotesParams, NotePathParams, ReadNoteParams, UpdateNoteParams,
 };
 use crate::tools::search::{GrepNotesParams, PropertySearchParams, SemanticSearchParams};
 use crate::tools::tool_discovery::{
@@ -584,7 +583,7 @@ impl ToolExecutor for McpToolExecutor {
             }
             "read_metadata" => {
                 self.server
-                    .read_metadata(Self::parse_params::<ReadMetadataParams>(params)?)
+                    .read_metadata(Self::parse_params::<NotePathParams>(params)?)
                     .await
             }
             "update_note" => {
@@ -594,7 +593,7 @@ impl ToolExecutor for McpToolExecutor {
             }
             "delete_note" => {
                 self.server
-                    .delete_note(Self::parse_params::<DeleteNoteParams>(params)?)
+                    .delete_note(Self::parse_params::<NotePathParams>(params)?)
                     .await
             }
             "list_notes" => {

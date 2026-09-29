@@ -1,15 +1,3 @@
-/// Parameters for executing a multi-kiln search.
-struct ExecuteMultiKilnSearchParams<'a> {
-    session_id: &'a str,
-    sources: &'a [KilnSearchSource],
-    query_embedding: Vec<f32>,
-    agent_config: &'a SessionAgent,
-    session: &'a crucible_core::session::Session,
-    event_tx: &'a crate::EventBus,
-    original_content: &'a str,
-    rerank: &'a RerankStage,
-}
-
 use super::*;
 use crate::agent_manager::vm_pass::{run_handlers, PluginHandlers};
 use crate::multi_kiln_search::{search_across_kilns_with_stage, RerankStage};
@@ -385,19 +373,26 @@ impl AgentManager {
     /// Execute a vector search across the given kiln sources. A kiln that
     /// failed, or the whole search, is reported in one warning notification.
     /// `None` when the whole search failed (after the precognition event).
+    #[allow(clippy::too_many_arguments)] // one call site passes each value once
     async fn execute_multi_kiln_search(
         &self,
-        params: ExecuteMultiKilnSearchParams<'_>,
+        session_id: &str,
+        sources: &[KilnSearchSource],
+        query_embedding: Vec<f32>,
+        agent_config: &SessionAgent,
+        session: &crucible_core::session::Session,
+        event_tx: &crate::EventBus,
+        original_content: &str,
+        rerank: &RerankStage,
     ) -> Option<Vec<crucible_core::SearchResult>> {
-        let provider_trust =
-            resolve_provider_trust(params.agent_config, self.llm_config().as_deref());
+        let provider_trust = resolve_provider_trust(agent_config, self.llm_config().as_deref());
         match search_across_kilns_with_stage(
-            params.sources,
-            params.query_embedding,
+            sources,
+            query_embedding,
             crate::agent_manager::configured::precognition_results(),
             Some(provider_trust),
-            params.session.workspace.as_deref(),
-            Some(params.rerank),
+            session.workspace.as_deref(),
+            Some(rerank),
         )
         .await
         {
@@ -405,25 +400,20 @@ impl AgentManager {
                 if !failures.is_empty() {
                     let message = format!("Precognition could not search: {}", failures.join("; "));
                     self.notify(
-                        params.session_id,
+                        session_id,
                         crucible_core::types::Notification::warning(message),
                     );
                 }
                 Some(hits)
             }
             Err(error) => {
-                warn!(session_id = %params.session_id, error = %error, "Precognition search across kilns failed");
+                warn!(session_id = %session_id, error = %error, "Precognition search across kilns failed");
                 let message = format!("Precognition search failed: {error}");
                 self.notify(
-                    params.session_id,
+                    session_id,
                     crucible_core::types::Notification::warning(message),
                 );
-                emit_precognition_event(
-                    params.event_tx,
-                    params.session_id,
-                    params.original_content,
-                    Vec::new(),
-                );
+                emit_precognition_event(event_tx, session_id, original_content, Vec::new());
                 None
             }
         }
@@ -528,16 +518,16 @@ impl AgentManager {
             RerankStage::new(Some(session_id.to_string()), vms)
         };
         let mut results = self
-            .execute_multi_kiln_search(ExecuteMultiKilnSearchParams {
+            .execute_multi_kiln_search(
                 session_id,
-                sources: &sources,
+                &sources,
                 query_embedding,
                 agent_config,
                 session,
                 event_tx,
                 original_content,
-                rerank: &rerank,
-            })
+                &rerank,
+            )
             .await?;
 
         let char_budget = self.kiln_manager.max_precognition_chars();

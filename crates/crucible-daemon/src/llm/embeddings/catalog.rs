@@ -257,19 +257,17 @@ pub fn parse_model_name(name: &str) -> EmbeddingResult<EmbeddingModel> {
 #[must_use]
 pub fn model_info(model: &EmbeddingModel) -> ModelInfo {
     let entry = entry(model);
-    let mut builder = ModelInfo::builder()
-        .name(entry.canonical_name.clone())
-        .family(family_of(&entry.canonical_name))
-        .dimensions(entry.dimensions)
-        .format("onnx")
-        .recommended(entry.curated);
-    if let Some(millions) = entry.parameter_millions {
-        builder = builder.parameter_size(ParameterSize::new(millions, true));
+    ModelInfo {
+        family: Some(family_of(&entry.canonical_name)),
+        dimensions: Some(entry.dimensions),
+        format: Some("onnx".to_string()),
+        recommended: entry.curated,
+        parameter_size: entry
+            .parameter_millions
+            .map(|millions| ParameterSize::new(millions, true)),
+        max_tokens: entry.max_input_tokens.map(|tokens| tokens as usize),
+        ..ModelInfo::new(entry.canonical_name.clone())
     }
-    if let Some(tokens) = entry.max_input_tokens {
-        builder = builder.max_tokens(tokens as usize);
-    }
-    builder.build()
 }
 
 /// The directory fastembed reads and writes models in.

@@ -217,7 +217,8 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
-    /// Create a new ModelInfo with just a name (minimal constructor)
+    /// Create a new ModelInfo with just a name. To set other fields, use
+    /// struct update syntax: `ModelInfo { dimensions: Some(768), ..ModelInfo::new(name) }`.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -236,11 +237,6 @@ impl ModelInfo {
         }
     }
 
-    /// Create a builder for constructing ModelInfo instances
-    pub fn builder() -> ModelInfoBuilder {
-        ModelInfoBuilder::default()
-    }
-
     /// Get the display name, falling back to name if not set
     pub fn display_name(&self) -> &str {
         self.display_name.as_deref().unwrap_or(&self.name)
@@ -249,127 +245,6 @@ impl ModelInfo {
     /// Check if this model is compatible with a required dimension count
     pub fn is_compatible_dimensions(&self, required_dims: usize) -> bool {
         self.dimensions.is_none_or(|dims| dims == required_dims)
-    }
-}
-
-/// Builder for ModelInfo instances
-#[derive(Default)]
-pub struct ModelInfoBuilder {
-    name: Option<String>,
-    display_name: Option<String>,
-    family: Option<ModelFamily>,
-    dimensions: Option<usize>,
-    size_bytes: Option<u64>,
-    parameter_size: Option<ParameterSize>,
-    quantization: Option<String>,
-    format: Option<String>,
-    modified_at: Option<DateTime<Utc>>,
-    digest: Option<String>,
-    max_tokens: Option<usize>,
-    recommended: bool,
-    metadata: Option<serde_json::Value>,
-}
-
-impl ModelInfoBuilder {
-    /// Set the model name (required)
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into());
-        self
-    }
-
-    /// Set the display name
-    pub fn display_name(mut self, display_name: impl Into<String>) -> Self {
-        self.display_name = Some(display_name.into());
-        self
-    }
-
-    /// Set the model family
-    pub fn family(mut self, family: ModelFamily) -> Self {
-        self.family = Some(family);
-        self
-    }
-
-    /// Set the embedding dimensions
-    pub fn dimensions(mut self, dimensions: usize) -> Self {
-        self.dimensions = Some(dimensions);
-        self
-    }
-
-    /// Set the model size in bytes
-    pub fn size_bytes(mut self, size_bytes: u64) -> Self {
-        self.size_bytes = Some(size_bytes);
-        self
-    }
-
-    /// Set the parameter size
-    pub fn parameter_size(mut self, parameter_size: ParameterSize) -> Self {
-        self.parameter_size = Some(parameter_size);
-        self
-    }
-
-    /// Set the quantization level
-    pub fn quantization(mut self, quantization: impl Into<String>) -> Self {
-        self.quantization = Some(quantization.into());
-        self
-    }
-
-    /// Set the model format
-    pub fn format(mut self, format: impl Into<String>) -> Self {
-        self.format = Some(format.into());
-        self
-    }
-
-    /// Set the modification timestamp
-    pub fn modified_at(mut self, modified_at: DateTime<Utc>) -> Self {
-        self.modified_at = Some(modified_at);
-        self
-    }
-
-    /// Set the digest/hash
-    pub fn digest(mut self, digest: impl Into<String>) -> Self {
-        self.digest = Some(digest.into());
-        self
-    }
-
-    /// Set the maximum token count
-    pub fn max_tokens(mut self, max_tokens: usize) -> Self {
-        self.max_tokens = Some(max_tokens);
-        self
-    }
-
-    /// Mark as recommended
-    pub fn recommended(mut self, recommended: bool) -> Self {
-        self.recommended = recommended;
-        self
-    }
-
-    /// Set additional metadata
-    pub fn metadata(mut self, metadata: serde_json::Value) -> Self {
-        self.metadata = Some(metadata);
-        self
-    }
-
-    /// Build the ModelInfo instance
-    ///
-    /// # Panics
-    ///
-    /// Panics if `name` was not set
-    pub fn build(self) -> ModelInfo {
-        ModelInfo {
-            name: self.name.expect("name is required"),
-            display_name: self.display_name,
-            family: self.family,
-            dimensions: self.dimensions,
-            size_bytes: self.size_bytes,
-            parameter_size: self.parameter_size,
-            quantization: self.quantization,
-            format: self.format,
-            modified_at: self.modified_at,
-            digest: self.digest,
-            max_tokens: self.max_tokens,
-            recommended: self.recommended,
-            metadata: self.metadata,
-        }
     }
 }
 
