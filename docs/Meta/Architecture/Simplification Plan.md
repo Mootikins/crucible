@@ -702,10 +702,10 @@ with its evidence in the commit that did it:
     mode control (`ChatModeControl.tsx`) reads `mode.icon` even though no
     Rust path yet sets it to `Some`, so it is not unread. Regenerated
     `openapi.json` and `api-schema.d.ts` with `just web-contract`.
-9. `EventRing` done: deleted `crates/crucible-core/src/events/ring.rs`; no
-   caller outside its own tests named it. `ModelCapability`/`UnifiedModelInfo`
-   done: deleted `crates/crucible-core/src/traits/provider.rs` whole, since
-   every item in it was read only by its own tests. `EventError` done: no
+9. `EventRing` done: deleted (formerly `events/ring.rs` in `crucible-core`);
+   no caller outside its own tests named it. `ModelCapability`/`UnifiedModelInfo`
+   done: deleted (formerly `traits/provider.rs` in `crucible-core`) whole,
+   since every item in it was read only by its own tests. `EventError` done: no
    real `EventEmitter` implementation (`DaemonEventBridge`, `Kept` in
    `indexing.rs`'s tests) ever returned `Err`, and the one caller that
    matched `Err` (`indexing.rs`) matched it only to log — fail-open by
