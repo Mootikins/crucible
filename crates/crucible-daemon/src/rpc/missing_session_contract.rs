@@ -145,11 +145,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             not_found(),
         ),
         ("session.fork", json!({}), not_found()),
-        (
-            "session.switch_model",
-            json!({"model_id": "m"}),
-            not_found(),
-        ),
         ("session.list_models", json!({}), not_found()),
         ("session.list_modes", json!({}), not_found()),
         ("session.commands", json!({}), not_found()),
@@ -178,21 +173,15 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ("session.undo", json!({}), not_found()),
         ("session.can_undo", json!({}), not_found()),
         ("session.undo_depth", json!({}), not_found()),
-        // the typed setters and every generated config getter
-        ("session.set_mode", json!({"mode_id": "ask"}), not_found()),
-        ("session.get_mode", json!({}), not_found()),
+        // Every knob shares these two methods now — model, mode, context
+        // strategy, precognition, plugin turn limit alike — so one
+        // representative row of each covers the class.
         (
-            "session.set_context_strategy",
-            json!({"context_strategy": "truncate"}),
+            "session.knob.set",
+            json!({"knob": "model", "value": "m"}),
             not_found(),
         ),
-        ("session.get_context_strategy", json!({}), not_found()),
-        (
-            "session.set_precognition",
-            json!({"precognition": true}),
-            not_found(),
-        ),
-        ("session.get_precognition", json!({}), not_found()),
+        ("session.knob.get", json!({"knob": "model"}), not_found()),
         ("session.history", json!({}), not_found()),
         // ── 2. refuses, naming the OPERATION and never the session ──────────
         // The session-manager state machine answers before anything reports a

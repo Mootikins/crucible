@@ -496,7 +496,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
     /// The mode a plugin's session runs its turns in.
     ///
-    /// Straight to `AgentManager::set_mode`, which is what `session.set_mode`
+    /// Straight to `AgentManager::set_mode`, which is what `session.knob.set` (mode)
     /// calls: the mode is validated against the modes *that session* offers,
     /// persisted on its agent so a later turn sees it, and pushed to a live
     /// handle. An unknown id comes back as the error naming the valid ids,

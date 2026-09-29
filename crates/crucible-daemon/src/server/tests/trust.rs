@@ -206,7 +206,7 @@ async fn untrusted_provider_internal_kiln_returns_error() {
 /// The trust gate is attach-time by design — `tools/search.rs` passes
 /// `provider_trust: None` precisely because "connected kilns pass the trust
 /// gate at attach time". That is sound only if attach-time state cannot be
-/// invalidated later, and `session.switch_model` invalidated it: create on a
+/// invalidated later, and `session.knob.set` (model) invalidated it: create on a
 /// local provider with a confidential kiln (gate passes), switch to a cloud
 /// provider (nothing re-checked), and the kiln's contents are then retrievable
 /// by a provider that was never cleared for them.

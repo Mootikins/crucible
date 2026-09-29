@@ -38,7 +38,6 @@ pub(crate) use messaging::{
 };
 pub(crate) use models::{
     handle_models_list, handle_providers_list, handle_session_fork, handle_session_list_models,
-    handle_session_switch_model,
 };
 pub(crate) use modes::{
     handle_session_commands, handle_session_list_agent_options, handle_session_list_knobs,
@@ -49,11 +48,8 @@ pub(crate) use notifications::{
     handle_session_list_notifications,
 };
 pub(crate) use params::{
-    handle_session_cache_stats, handle_session_can_undo, handle_session_get_context_strategy,
-    handle_session_get_mode, handle_session_get_plugin_turn_limit, handle_session_get_precognition,
-    handle_session_set_context_strategy, handle_session_set_mode,
-    handle_session_set_plugin_turn_limit, handle_session_set_precognition, handle_session_undo,
-    handle_session_undo_depth,
+    handle_session_cache_stats, handle_session_can_undo, handle_session_knob_get,
+    handle_session_knob_set, handle_session_undo, handle_session_undo_depth,
 };
 pub(crate) use scope::{
     handle_session_connect_kiln, handle_session_disconnect_kiln, handle_session_set_workspace,

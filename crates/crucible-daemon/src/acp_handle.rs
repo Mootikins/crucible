@@ -385,7 +385,7 @@ impl AgentHandle for AcpAgentHandle {
 /// `precognition` belongs to the session's `AgentConfig`: the daemon turn
 /// loop reads it from the config before it calls the handle, and the ACP wire
 /// has no field for it. A value stored here would reach nothing, so the
-/// handle refuses the setter. A client sets it with `session.set_precognition`.
+/// handle refuses the setter. A client sets it with `session.knob.set` (precognition).
 #[async_trait]
 impl SessionKnobs for AcpAgentHandle {
     /// ACP carries no system prompt; the agent owns its own.

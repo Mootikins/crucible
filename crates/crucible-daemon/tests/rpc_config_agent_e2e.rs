@@ -84,30 +84,40 @@ async fn test_precognition_round_trip() {
     let server = start_server().await;
     let (session_id, client) = setup_session_with_agent(&server).await;
 
+    use crucible_core::types::{KnobValue, SessionKnob};
+
     client
-        .session_set_precognition(&session_id, false)
+        .session_knob_set(&session_id, KnobValue::Precognition(false))
         .await
-        .expect("set_precognition false failed");
+        .expect("session.knob.set(precognition, false) failed");
 
     let enabled = client
-        .session_get_precognition(&session_id)
+        .session_knob_get(&session_id, SessionKnob::Precognition)
         .await
-        .expect("get_precognition failed");
+        .expect("session.knob.get(precognition) failed");
 
-    assert!(!enabled, "Precognition should be false after set(false)");
+    assert_eq!(
+        enabled,
+        KnobValue::Precognition(false),
+        "Precognition should be false after set(false)"
+    );
 
     // Flip back to true
     client
-        .session_set_precognition(&session_id, true)
+        .session_knob_set(&session_id, KnobValue::Precognition(true))
         .await
-        .expect("set_precognition true failed");
+        .expect("session.knob.set(precognition, true) failed");
 
     let enabled = client
-        .session_get_precognition(&session_id)
+        .session_knob_get(&session_id, SessionKnob::Precognition)
         .await
-        .expect("get_precognition failed");
+        .expect("session.knob.get(precognition) failed");
 
-    assert!(enabled, "Precognition should be true after set(true)");
+    assert_eq!(
+        enabled,
+        KnobValue::Precognition(true),
+        "Precognition should be true after set(true)"
+    );
 
     server.shutdown().await;
 }
@@ -221,12 +231,13 @@ async fn test_precognition_default_value() {
 
     // Agent was configured with precognition_enabled: true
     let enabled = client
-        .session_get_precognition(&session_id)
+        .session_knob_get(&session_id, crucible_core::types::SessionKnob::Precognition)
         .await
-        .expect("get_precognition failed");
+        .expect("session.knob.get(precognition) failed");
 
-    assert!(
+    assert_eq!(
         enabled,
+        crucible_core::types::KnobValue::Precognition(true),
         "Precognition should be true from the initial agent configuration"
     );
 
@@ -265,24 +276,21 @@ async fn all_config_knobs_round_trip_over_the_wire() {
         }};
     }
 
+    use crucible_core::types::{KnobValue, SessionKnob};
+
     round_trip!(
         "context_strategy",
-        client.session_set_context_strategy(&sid, "summarize"),
-        client.session_get_context_strategy(&sid),
-        Some("summarize".to_string())
+        client.session_knob_set(&sid, KnobValue::ContextStrategy("summarize".to_string())),
+        client.session_knob_get(&sid, SessionKnob::ContextStrategy),
+        KnobValue::ContextStrategy("summarize".to_string())
     );
 
-    // precognition's getter returns bool (not Option) — check it directly.
-    if let Err(e) = client.session_set_precognition(&sid, false).await {
-        failures.push(format!("precognition: set failed: {e}"));
-    } else {
-        match client.session_get_precognition(&sid).await {
-            Ok(false) => {}
-            Ok(true) => failures
-                .push("precognition: set(false) did not survive the wire (got true)".to_string()),
-            Err(e) => failures.push(format!("precognition: get failed: {e}")),
-        }
-    }
+    round_trip!(
+        "precognition",
+        client.session_knob_set(&sid, KnobValue::Precognition(false)),
+        client.session_knob_get(&sid, SessionKnob::Precognition),
+        KnobValue::Precognition(false)
+    );
 
     assert!(
         failures.is_empty(),
@@ -306,11 +314,14 @@ async fn test_config_get_on_nonexistent_session_fails() {
         .expect("Failed to connect");
 
     let result = client
-        .session_get_context_strategy("nonexistent-session-id")
+        .session_knob_get(
+            "nonexistent-session-id",
+            crucible_core::types::SessionKnob::ContextStrategy,
+        )
         .await;
     assert!(
         result.is_err(),
-        "get_context_strategy should fail for nonexistent session"
+        "session.knob.get(context_strategy) should fail for nonexistent session"
     );
 
     server.shutdown().await;

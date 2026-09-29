@@ -1,48 +1,12 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::{ForkPoint, Scoped, SessionSwitchModelRequest};
+use crucible_core::protocol::requests::{ForkPoint, Scoped};
 use crucible_core::protocol::requests::{ListAllModelsRequest, ListProvidersRequest};
 
-pub(crate) async fn handle_session_switch_model(
-    req: Request,
-    am: &Arc<AgentManager>,
-    event_tx: &crate::EventBus,
-) -> Response {
-    let params = match typed_params::<SessionSwitchModelRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let (session_id, model_id) = (&params.session_id, &params.model_id);
-
-    match am.switch_model(session_id, model_id, Some(event_tx)).await {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "model_id": model_id,
-                "switched": true,
-            }),
-        ),
-        Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            session_not_found(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
-            agent_not_configured(req.id, &id)
-        }
-        Err(crate::agent_manager::AgentError::ConcurrentRequest(id)) => Response::error(
-            req.id,
-            INVALID_PARAMS,
-            format!(
-                "Cannot switch model while request is in progress for session: {}",
-                id
-            ),
-        ),
-        Err(crate::agent_manager::AgentError::InvalidModelId(msg)) => {
-            Response::error(req.id, INVALID_PARAMS, msg)
-        }
-        Err(e) => internal_error(req.id, e),
-    }
-}
+// `session.switch_model` is gone: `session.knob.set` writes the model knob
+// now, and `handle_session_knob_set` in `params.rs` carries the same apply
+// logic (the ACP live-handle path, the provider re-resolve, the persisted
+// value for display/resume).
 
 pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
     let params = match typed_params::<Scoped<()>>(&req) {

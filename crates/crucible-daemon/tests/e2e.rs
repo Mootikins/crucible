@@ -434,7 +434,7 @@ async fn test_e2e_model_switching() {
 
     // 4. Switch to new model
     let switch_request = format!(
-        r#"{{"jsonrpc":"2.0","id":4,"method":"session.switch_model","params":{{"session_id":"{}","model_id":"switched-model"}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":4,"method":"session.knob.set","params":{{"session_id":"{}","knob":"model","value":"switched-model"}}}}"#,
         session_id
     );
     let response = conn.call(&switch_request).await;
@@ -445,7 +445,7 @@ async fn test_e2e_model_switching() {
     );
     let result = get_result(&response);
     assert_eq!(
-        result.get("switched").and_then(|v| v.as_bool()),
+        result.get("set").and_then(|v| v.as_bool()),
         Some(true),
         "Should indicate switch succeeded"
     );

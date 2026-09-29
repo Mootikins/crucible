@@ -671,22 +671,6 @@ impl DaemonClient {
             .await
     }
 
-    /// Fetch a nullable field from a session-scoped RPC method.
-    pub(super) async fn get_session_option<T>(
-        &self,
-        method: RpcMethod,
-        session_id: &str,
-        field: &str,
-        extract: impl FnOnce(&serde_json::Value) -> Option<T>,
-    ) -> Result<Option<T>> {
-        let result: serde_json::Value = self
-            .typed_call_with_retry(method, Scoped::session(session_id.to_string()))
-            .await?;
-        Ok(result
-            .get(field)
-            .and_then(|v| if v.is_null() { None } else { extract(v) }))
-    }
-
     /// Default per-request timeout for [`Self::call`] (event mode only).
     const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 

@@ -1517,7 +1517,7 @@ impl AgentHandle for GenaiAgentHandle {
 /// the daemon turn loop in `agent_manager/messaging/send.rs` reads it from the
 /// config before it calls the handle. A value stored here would never reach
 /// that loop, so the handle refuses the setter. A client sets it with
-/// `session.set_precognition`.
+/// `session.knob.set` (precognition).
 #[async_trait]
 impl SessionKnobs for GenaiAgentHandle {
     fn get_system_prompt(&self) -> Option<String> {
@@ -2349,7 +2349,7 @@ mod tests {
     /// normal/plan/auto with `InvalidMode`. The resume path applies the
     /// persisted mode best-effort and only `warn!`s, so after a handle
     /// eviction the session silently ran the handle's default while
-    /// `session.get_mode` kept reporting the user's mode — reported one mode,
+    /// `session.knob.get` (mode) kept reporting the user's mode — reported one mode,
     /// enforced another.
     #[tokio::test]
     async fn set_mode_str_accepts_a_lua_declared_mode() {

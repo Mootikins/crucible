@@ -229,8 +229,8 @@ async fn sigterm_does_not_wait_for_a_session_write_that_never_completes() {
     );
     let switched = conn
         .call_method(
-            "session.switch_model",
-            serde_json::json!({ "session_id": session_id, "model_id": "other" }),
+            "session.knob.set",
+            serde_json::json!({ "session_id": session_id, "knob": "model", "value": "other" }),
             4,
         )
         .await;

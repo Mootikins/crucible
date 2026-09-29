@@ -566,6 +566,14 @@ impl AgentManager {
         Ok(agent_config.mode)
     }
 
+    /// The stored model id. `switch_model` is the writer; on an ACP session
+    /// the value is for display and resume only, since the external agent
+    /// owns the actual model choice.
+    pub fn get_model(&self, session_id: &str) -> Result<String, AgentError> {
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
+        Ok(agent_config.model)
+    }
+
     pub async fn set_precognition(
         &self,
         session_id: &str,

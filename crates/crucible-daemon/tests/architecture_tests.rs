@@ -160,95 +160,28 @@ fn fn_body(src: &str, signature: &str) -> String {
     balanced(src, open)
 }
 
-/// The argument list of the `session_config_getter!(...)` macro invocation whose
-/// first argument is `handler` — from the opening paren through its match.
-fn macro_invocation(src: &str, handler: &str) -> String {
-    let at = src
-        .find(handler)
-        .unwrap_or_else(|| panic!("handler not found: {handler}"));
-    let open = src[..at]
-        .rfind('(')
-        .unwrap_or_else(|| panic!("no '(' before handler: {handler}"));
-    balanced(src, open)
-}
-
-/// The source region that declares a server config handler: either the body of
-/// a hand-written `fn <handler>(...)` or the argument list of the
-/// `session_config_getter!` macro invocation that generates it. The result
-/// field-name literals appear verbatim in both forms, so the same regex scans
-/// work regardless of which form a given knob uses.
-fn server_decl(params: &str, handler: &str) -> String {
-    if params.contains(&format!("fn {handler}(")) {
-        fn_body(params, &format!("fn {handler}("))
-    } else {
-        macro_invocation(params, handler)
-    }
-}
-
 fn captures(re: &str, hay: &str) -> BTreeSet<String> {
     let re = Regex::new(re).unwrap();
     re.captures_iter(hay).map(|c| c[1].to_string()).collect()
 }
 
 // ===========================================================================
-// A1 — RPC field-name parity for session config get/set pairs.
+// A1 — RPC field-name parity, per-knob, is GONE.
 //
-// The historical bug class: the client serializes a request field under one
-// JSON name (e.g. `context_budget`) while the daemon handler reads a
-// different name (e.g. `budget`), so the value is silently dropped.
+// Every knob now shares one write method (`session.knob.set`) and one read
+// method (`session.knob.get`), and both sides — the client in
+// `rpc_client/client/agent.rs` and the handler in
+// `server/session/params.rs` — deserialize the same core type,
+// `crucible_core::types::KnobValue` (set) or
+// `crucible_core::protocol::requests::KnobRef` (get). The historical bug
+// class this gate caught — a client field name that disagrees with the
+// server's — is now a compile error: there is one type, so there is only one
+// spelling to type out.
 //
-// The request direction: the client setter and the server handler name the
-// same request type from `crucible_core::protocol::requests`. The client
-// builds it, and the handler deserializes it with `typed_params::<T>`. One
-// type has one set of field names, so the compiler keeps them equal. This
-// gate checks that both sides name the type of the row.
-//
-// The result direction: the handler writes a JSON literal, and the client
-// reads a JSON literal. The gate diffs the two field-name sets. The getters
-// come from the `session_config_getter!` macro in `server/session/params.rs`,
-// and `server_decl` reads either a hand-written fn body or the macro
-// invocation.
-//
-// Adding a knob is one row in CONFIG_METHODS.
+// The scope-mutation pairs below (`session.connect_kiln` etc.) are NOT
+// knobs — they keep their own hand-written request/response shapes, so their
+// parity gate stays.
 // ===========================================================================
-
-struct ConfigMethod {
-    /// The `session.{set,get}_<suffix>` method-name stem, which is also the
-    /// stem of both the client (`session_{set,get}_<suffix>`) and server
-    /// (`handle_session_{set,get}_<suffix>`) function names.
-    suffix: &'static str,
-    /// The request type of `session.set_<suffix>`. The client setter builds
-    /// it, and the server handler deserializes it.
-    request_type: &'static str,
-    /// JSON field the *response* carries (besides `session_id`): the server's
-    /// result-key name must equal the name the client reads back.
-    result_field: &'static str,
-}
-
-const CONFIG_METHODS: &[ConfigMethod] = &[
-    ConfigMethod {
-        suffix: "mode",
-        request_type: "SessionSetModeRequest",
-        result_field: "mode",
-    },
-    ConfigMethod {
-        suffix: "precognition",
-        request_type: "SessionSetPrecognitionRequest",
-        result_field: "precognition_enabled",
-    },
-    ConfigMethod {
-        suffix: "context_strategy",
-        request_type: "SessionSetContextStrategyRequest",
-        result_field: "context_strategy",
-    },
-    ConfigMethod {
-        suffix: "plugin_turn_limit",
-        request_type: "SessionPluginTurnLimitRequest",
-        result_field: "limit",
-    },
-];
-
-const SESSION_ID: &str = "session_id";
 
 /// The failures for one setter whose client and server sides must both name
 /// `request_type`: the client builds it, and the server deserializes it.
@@ -357,155 +290,6 @@ fn rpc_scope_mutation_field_names_match_across_the_wire() {
         failures.is_empty(),
         "RPC scope-mutation field-name parity violations (fix the client/server \
          field name, not this test):\n  - {}",
-        failures.join("\n  - ")
-    );
-}
-
-// UNIQUE: client/server field-name parity crosses two files in JSON literals; the type system doesn't track serde_json field names across an RPC boundary (the original bug: thinking_budget vs budget silently dropped values).
-#[test]
-fn rpc_config_field_names_match_across_the_wire() {
-    let root = workspace_root();
-    let client = read(&root.join("crates/crucible-daemon/src/rpc_client/client/agent.rs"));
-    let server = read(&root.join("crates/crucible-daemon/src/server/session/params.rs"));
-
-    let mut failures = Vec::new();
-
-    for m in CONFIG_METHODS {
-        // --- request parity (the `set` direction) ---------------------------
-        let client_set = fn_body(&client, &format!("fn session_set_{}(", m.suffix));
-        let server_set = server_decl(&server, &format!("handle_session_set_{}", m.suffix));
-        failures.extend(shared_request_type_failures(
-            &format!("session.set_{}", m.suffix),
-            m.request_type,
-            &client_set,
-            &server_set,
-        ));
-
-        // --- result parity (the `get` direction) ----------------------------
-        let client_get = fn_body(&client, &format!("fn session_get_{}(", m.suffix));
-        let server_get = server_decl(&server, &format!("handle_session_get_{}", m.suffix));
-
-        // Client result reads: bare `"field"` literals (method names contain
-        // `.` and so never match this identifier-only pattern).
-        let mut client_res = captures(r#""([a-z_][a-z0-9_]*)""#, &client_get);
-        client_res.remove(SESSION_ID);
-
-        // Server result field: bare `"field"` literals. This matches both the
-        // macro invocation's field argument (`session_config_getter!(.., "field")`)
-        // and a hand-written handler's `"field":` response-json key. Method-name
-        // strings contain `.` and so never match this identifier-only pattern.
-        let mut server_res = captures(r#""([a-z_][a-z0-9_]*)""#, &server_get);
-        server_res.remove(SESSION_ID);
-
-        let expected: BTreeSet<String> = [m.result_field.to_string()].into_iter().collect();
-        if client_res != expected {
-            failures.push(format!(
-                "session.get_{}: client reads result fields {client_res:?}, expected {expected:?}",
-                m.suffix
-            ));
-        }
-        if server_res != expected {
-            failures.push(format!(
-                "session.get_{}: server returns result fields {server_res:?}, expected {expected:?} \
-                 (client reads {client_res:?})",
-                m.suffix
-            ));
-        }
-    }
-
-    assert!(
-        failures.is_empty(),
-        "RPC field-name parity violations (fix the client/server field name, \
-         not this test):\n  - {}",
-        failures.join("\n  - ")
-    );
-}
-
-/// Completeness companion to the parity gate above: CONFIG_METHODS is
-/// hand-maintained, so a newly added knob would otherwise escape the
-/// field-name check silently. Discover every `session_{set,get}_*` accessor
-/// on the client and every `handle_session_{set,get}_*` handler on the server
-/// and require each to have a CONFIG_METHODS row (and vice versa — a row
-/// whose knob was deleted must be removed).
-// UNIQUE: guards the parity-gate table above against silent drift — clippy has no rule that diff-checks a hand-maintained CONFIG_METHODS array against the actual `session_set_*`/`handle_session_set_*` accessor functions discovered in source. Without this, a new knob bypasses the wire-parity test silently.
-#[test]
-fn config_methods_table_covers_every_knob() {
-    let root = workspace_root();
-    let client = read(&root.join("crates/crucible-daemon/src/rpc_client/client/agent.rs"));
-    let server = read(&root.join("crates/crucible-daemon/src/server/session/params.rs"));
-
-    let table: BTreeSet<String> = CONFIG_METHODS
-        .iter()
-        .map(|m| m.suffix.to_string())
-        .collect();
-
-    // Scope mutations (session.set_workspace) share the `session_set_` prefix
-    // but are covered by the SCOPE_METHODS parity gate above, not
-    // CONFIG_METHODS.
-    let scope_owned: BTreeSet<String> = SCOPE_METHODS
-        .iter()
-        .filter_map(|m| m.client_fn.strip_prefix("session_set_"))
-        .map(str::to_string)
-        .collect();
-
-    // Setters that are not session knobs, and so have no `get_` twin for this
-    // gate to pair them with. Named here rather than given a contrived getter,
-    // because the gate's contract — a set/get pair whose field names must
-    // agree — genuinely does not describe them.
-    //
-    // `agent_option` sets a setting the EXTERNAL AGENT advertised for itself.
-    // Crucible does not own the value and does not store it: the agent reports
-    // its whole option list back, which `session.list_agent_options` reads. A
-    // `session.get_agent_option` would be a second way to read one row of that
-    // list and a second thing to keep in step.
-    // Per-plugin approval has a second key (`plugin`) and its handler lives in
-    // approval.rs. The scalar config table below cannot express that shape;
-    // the socket and web route round-trip tests cover its fields.
-    let per_plugin: BTreeSet<String> = ["plugin_approval"].iter().map(|s| s.to_string()).collect();
-    let not_a_knob: BTreeSet<String> = ["agent_option", "plugin_approval"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let scope_owned = &scope_owned | &not_a_knob;
-
-    let sides = [
-        (
-            "client set",
-            &captures(r"fn session_set_([a-z0-9_]+)\(", &client) - &scope_owned,
-        ),
-        (
-            "client get",
-            &captures(r"fn session_get_([a-z0-9_]+)\(", &client) - &per_plugin,
-        ),
-        (
-            "server set",
-            captures(r"handle_session_set_([a-z0-9_]+)", &server),
-        ),
-        (
-            "server get",
-            captures(r"handle_session_get_([a-z0-9_]+)", &server),
-        ),
-    ];
-
-    let mut failures = Vec::new();
-    for (side, discovered) in &sides {
-        for missing in discovered.difference(&table) {
-            failures.push(format!(
-                "{side} knob `{missing}` has no CONFIG_METHODS row — add one so the \
-                 field-name parity gate covers it"
-            ));
-        }
-        for stale in table.difference(discovered) {
-            failures.push(format!(
-                "CONFIG_METHODS row `{stale}` has no matching {side} accessor — \
-                 remove the row or restore the knob"
-            ));
-        }
-    }
-
-    assert!(
-        failures.is_empty(),
-        "CONFIG_METHODS drift:\n  - {}",
         failures.join("\n  - ")
     );
 }

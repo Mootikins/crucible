@@ -233,7 +233,12 @@ async fn test_session_switch_model() {
         .await
         .expect("configure_agent failed");
 
-    let result = client.session_switch_model(&session_id, "gpt-4").await;
+    let result = client
+        .session_knob_set(
+            &session_id,
+            crucible_core::types::KnobValue::Model("gpt-4".to_string()),
+        )
+        .await;
     assert!(
         result.is_ok(),
         "session_switch_model should succeed: {:?}",
@@ -319,9 +324,12 @@ async fn test_session_set_mode_round_trip() {
     );
 
     client
-        .session_set_mode(&session_id, "plan")
+        .session_knob_set(
+            &session_id,
+            crucible_core::types::KnobValue::Mode(Some("plan".to_string())),
+        )
         .await
-        .expect("session_set_mode should succeed");
+        .expect("session.knob.set(mode) should succeed");
 
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
@@ -329,18 +337,24 @@ async fn test_session_set_mode_round_trip() {
         Some("plan"),
         "mode persists and round-trips through session.get"
     );
+    let mode = client
+        .session_knob_get(&session_id, crucible_core::types::SessionKnob::Mode)
+        .await
+        .unwrap();
     assert_eq!(
-        client
-            .session_get_mode(&session_id)
-            .await
-            .unwrap()
-            .as_deref(),
-        Some("plan"),
-        "session.get_mode returns what session.set_mode stored"
+        mode,
+        crucible_core::types::KnobValue::Mode(Some("plan".to_string())),
+        "session.knob.get(mode) returns what session.knob.set(mode) stored"
     );
 
     // Switching again overwrites.
-    client.session_set_mode(&session_id, "ask").await.unwrap();
+    client
+        .session_knob_set(
+            &session_id,
+            crucible_core::types::KnobValue::Mode(Some("ask".to_string())),
+        )
+        .await
+        .unwrap();
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
         session.agent.as_ref().and_then(|a| a.mode.as_deref()),
@@ -348,7 +362,12 @@ async fn test_session_set_mode_round_trip() {
     );
 
     // Unknown modes are rejected loudly, not persisted.
-    let err = client.session_set_mode(&session_id, "yolo").await;
+    let err = client
+        .session_knob_set(
+            &session_id,
+            crucible_core::types::KnobValue::Mode(Some("yolo".to_string())),
+        )
+        .await;
     assert!(err.is_err(), "unknown mode must be rejected");
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(

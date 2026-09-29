@@ -364,9 +364,7 @@ async fn test_client_capabilities() {
     assert!(caps.capabilities.events);
     assert!(caps.capabilities.model_switching);
     assert!(caps.methods.contains(&"ping".to_string()));
-    assert!(caps
-        .methods
-        .contains(&"session.set_context_strategy".to_string()));
+    assert!(caps.methods.contains(&"session.knob.set".to_string()));
 }
 
 #[tokio::test]

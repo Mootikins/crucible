@@ -12,6 +12,7 @@ use super::types::extract_string_array;
 use super::{DaemonClient, NO_PARAMS};
 use crucible_core::protocol::requests::NameRequest;
 use crucible_core::protocol::requests::Scoped;
+use crucible_core::types::{KnobValue, SessionKnob};
 
 impl DaemonClient {
     pub async fn session_configure_agent(
@@ -31,13 +32,23 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_switch_model(&self, session_id: &str, model_id: &str) -> Result<()> {
+    /// Write one knob's value. One RPC method for every knob, so a knob added
+    /// later needs no sibling method here — the caller builds the
+    /// [`KnobValue`] variant for the knob it wants to change.
+    pub async fn session_knob_set(&self, session_id: &str, value: KnobValue) -> Result<()> {
         self.typed_unit_call(
-            RpcMethod::SessionSwitchModel,
-            SessionSwitchModelRequest {
-                session_id: session_id.to_string(),
-                model_id: model_id.to_string(),
-            },
+            RpcMethod::SessionKnobSet,
+            Scoped::new(session_id.to_string(), value),
+        )
+        .await
+    }
+
+    /// Read one knob's value, in the same [`KnobValue`] shape
+    /// [`Self::session_knob_set`] writes.
+    pub async fn session_knob_get(&self, session_id: &str, knob: SessionKnob) -> Result<KnobValue> {
+        self.typed_call_with_retry(
+            RpcMethod::SessionKnobGet,
+            Scoped::new(session_id.to_string(), KnobRef { knob }),
         )
         .await
     }
@@ -88,17 +99,6 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn session_set_mode(&self, session_id: &str, mode_id: &str) -> Result<()> {
-        self.typed_unit_call(
-            RpcMethod::SessionSetMode,
-            SessionSetModeRequest {
-                session_id: session_id.to_string(),
-                mode_id: mode_id.to_string(),
-            },
-        )
-        .await
-    }
-
     pub async fn session_set_plugin_approval(
         &self,
         session_id: &str,
@@ -116,31 +116,6 @@ impl DaemonClient {
             ),
         )
         .await
-    }
-
-    pub async fn session_set_plugin_turn_limit(&self, session_id: &str, limit: u32) -> Result<()> {
-        self.typed_unit_call(
-            RpcMethod::SessionSetPluginTurnLimit,
-            SessionPluginTurnLimitRequest {
-                session_id: session_id.to_owned(),
-                limit,
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_plugin_turn_limit(&self, session_id: &str) -> Result<u32> {
-        let result: serde_json::Value = self
-            .typed_call_with_retry(
-                RpcMethod::SessionGetPluginTurnLimit,
-                Scoped::session(session_id.to_string()),
-            )
-            .await?;
-        let limit = result
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| anyhow::anyhow!("session.get_plugin_turn_limit omitted limit"))?;
-        Ok(u32::try_from(limit)?)
     }
 
     pub async fn session_get_plugin_approval(
@@ -351,67 +326,6 @@ impl DaemonClient {
             })
             .unwrap_or_default();
         Ok(providers)
-    }
-
-    /// Set whether Precognition (auto-RAG) is enabled for a session.
-    pub async fn session_set_precognition(&self, session_id: &str, enabled: bool) -> Result<()> {
-        self.typed_unit_call(
-            RpcMethod::SessionSetPrecognition,
-            SessionSetPrecognitionRequest {
-                session_id: session_id.to_string(),
-                precognition_enabled: enabled,
-            },
-        )
-        .await
-    }
-
-    /// Get whether Precognition is enabled for a session.
-    pub async fn session_get_precognition(&self, session_id: &str) -> Result<bool> {
-        let result: serde_json::Value = self
-            .typed_call_with_retry(
-                RpcMethod::SessionGetPrecognition,
-                Scoped::session(session_id.to_string()),
-            )
-            .await?;
-
-        let enabled = result
-            .get("precognition_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        Ok(enabled)
-    }
-
-    pub async fn session_get_mode(&self, session_id: &str) -> Result<Option<String>> {
-        self.get_session_option(RpcMethod::SessionGetMode, session_id, "mode", |v| {
-            v.as_str().map(|s| s.to_string())
-        })
-        .await
-    }
-
-    pub async fn session_set_context_strategy(
-        &self,
-        session_id: &str,
-        strategy: &str,
-    ) -> Result<()> {
-        self.typed_unit_call(
-            RpcMethod::SessionSetContextStrategy,
-            SessionSetContextStrategyRequest {
-                session_id: session_id.to_string(),
-                context_strategy: strategy.to_string(),
-            },
-        )
-        .await
-    }
-
-    pub async fn session_get_context_strategy(&self, session_id: &str) -> Result<Option<String>> {
-        self.get_session_option(
-            RpcMethod::SessionGetContextStrategy,
-            session_id,
-            "context_strategy",
-            |v| v.as_str().map(String::from),
-        )
-        .await
     }
 
     /// Undo the last N agent turns for a session.

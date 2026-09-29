@@ -173,10 +173,6 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/models.rs",
     ),
     (
-        "SessionSwitchModelRequest",
-        "crates/crucible-daemon/src/server/session/models.rs",
-    ),
-    (
         "Scoped<()>",
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
@@ -307,19 +303,11 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/params.rs",
     ),
     (
-        "SessionSetModeRequest",
+        "Scoped<KnobValue>",
         "crates/crucible-daemon/src/server/session/params.rs",
     ),
     (
-        "SessionSetPrecognitionRequest",
-        "crates/crucible-daemon/src/server/session/params.rs",
-    ),
-    (
-        "SessionPluginTurnLimitRequest",
-        "crates/crucible-daemon/src/server/session/params.rs",
-    ),
-    (
-        "SessionSetContextStrategyRequest",
+        "Scoped<KnobRef>",
         "crates/crucible-daemon/src/server/session/params.rs",
     ),
     (

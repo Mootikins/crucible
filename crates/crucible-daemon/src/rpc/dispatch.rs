@@ -63,33 +63,6 @@ macro_rules! forward {
     };
 }
 
-// Route a filtered `session.set_*` / `session.get_*` method string to its
-// server handler. Every method literal stays paired with its handler at the
-// call site (greppable, wire-name-explicit); the shared call shape lives here.
-macro_rules! dispatch_session_setter {
-    ($req:expr, $agents:expr, $event_tx:expr, { $($method:literal => $handler:ident),+ $(,)? }) => {
-        match $req.method.as_str() {
-            $(
-                $method => {
-                    crate::server::session::$handler($req.clone(), $agents, $event_tx).await
-                }
-            )+
-            _ => unreachable!("dispatch match already filtered to known setter methods"),
-        }
-    };
-}
-
-macro_rules! dispatch_session_getter {
-    ($req:expr, $agents:expr, { $($method:literal => $handler:ident),+ $(,)? }) => {
-        match $req.method.as_str() {
-            $(
-                $method => crate::server::session::$handler($req.clone(), $agents).await,
-            )+
-            _ => unreachable!("dispatch match already filtered to known getter methods"),
-        }
-    };
-}
-
 pub struct RpcDispatcher {
     /// Shared rather than owned: `Server` keeps a clone so plugin boot can hand
     /// the same context to the Lua session bridge, and both paths must see one
@@ -141,16 +114,21 @@ impl RpcDispatcher {
                 to_response(id, self.handle_generate_title(&req).await)
             }
 
-            // Session config get/set handlers — each pair delegates to
-            // server::session::handle_session_{set,get}_<name> with uniform signatures.
-            RpcMethod::SessionSetContextStrategy | RpcMethod::SessionSetPrecognition => {
-                to_response(id, self.dispatch_session_config_setter(&req).await)
-            }
-            RpcMethod::SessionGetMode
-            | RpcMethod::SessionGetContextStrategy
-            | RpcMethod::SessionGetPrecognition => {
-                to_response(id, self.dispatch_session_config_getter(&req).await)
-            }
+            // Every session knob shares one write method and one read
+            // method; `handle_session_knob_{set,get}` dispatch on the
+            // `KnobValue`/`SessionKnob` the body names.
+            RpcMethod::SessionKnobSet => forward!(
+                id,
+                crate::server::session::handle_session_knob_set(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::SessionKnobGet => forward!(
+                id,
+                crate::server::session::handle_session_knob_get(req.clone(), &self.ctx.agents)
+            ),
             RpcMethod::SessionCacheStats => forward!(
                 id,
                 crate::server::session::handle_session_cache_stats(req.clone(), &self.ctx.agents)
@@ -514,14 +492,6 @@ impl RpcDispatcher {
                     )
                 )
             }
-            RpcMethod::SessionSwitchModel => forward!(
-                id,
-                crate::server::session::handle_session_switch_model(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx
-                )
-            ),
             RpcMethod::SessionConnectKiln => forward!(
                 id,
                 crate::server::session::handle_session_connect_kiln(
@@ -552,35 +522,12 @@ impl RpcDispatcher {
                     )
                 )
             }
-            RpcMethod::SessionSetMode => forward!(
-                id,
-                crate::server::session::handle_session_set_mode(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx
-                )
-            ),
             RpcMethod::SessionSetPluginApproval => forward!(
                 id,
                 crate::server::session::handle_session_set_plugin_approval(
                     req.clone(),
                     &self.ctx.agents,
                     &self.ctx.event_tx
-                )
-            ),
-            RpcMethod::SessionSetPluginTurnLimit => forward!(
-                id,
-                crate::server::session::handle_session_set_plugin_turn_limit(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.event_tx
-                )
-            ),
-            RpcMethod::SessionGetPluginTurnLimit => forward!(
-                id,
-                crate::server::session::handle_session_get_plugin_turn_limit(
-                    req.clone(),
-                    &self.ctx.agents
                 )
             ),
             RpcMethod::SessionGetPluginApproval => forward!(
@@ -1248,30 +1195,6 @@ impl RpcDispatcher {
             "session_id": p.session_id,
             "title": title,
         }))
-    }
-
-    /// Route a `session.set_*` method to the corresponding server handler.
-    ///
-    /// All session config setters share the signature `(Request, &AgentManager, &Sender) -> Response`.
-    /// This avoids a dozen near-identical one-line forwarding methods.
-    async fn dispatch_session_config_setter(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = dispatch_session_setter!(req, &self.ctx.agents, &self.ctx.event_tx, {
-            "session.set_context_strategy" => handle_session_set_context_strategy,
-            "session.set_precognition" => handle_session_set_precognition,
-        });
-        map_server_resp(resp)
-    }
-
-    /// Route a `session.get_*` method to the corresponding server handler.
-    ///
-    /// All session config getters share the signature `(Request, &AgentManager) -> Response`.
-    async fn dispatch_session_config_getter(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = dispatch_session_getter!(req, &self.ctx.agents, {
-            "session.get_mode" => handle_session_get_mode,
-            "session.get_context_strategy" => handle_session_get_context_strategy,
-            "session.get_precognition" => handle_session_get_precognition,
-        });
-        map_server_resp(resp)
     }
 
     // ── Session lifecycle wrappers ────────────────────────────────────────────
@@ -3497,7 +3420,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let result = resp.result.unwrap();
         let methods = result["methods"].as_array().unwrap();
         assert!(methods.iter().any(|m| m == "ping"));
-        assert!(methods.iter().any(|m| m == "session.set_context_strategy"));
+        assert!(methods.iter().any(|m| m == "session.knob.set"));
     }
 
     #[tokio::test]

@@ -17,30 +17,32 @@ async fn test_session_switch_model_rpc_success_and_empty_model_error() {
         json!({
             "jsonrpc": "2.0",
             "id": 82,
-            "method": "session.switch_model",
+            "method": "session.knob.set",
             "params": {
                 "session_id": session_id,
-                "model_id": "mock-switched"
+                "knob": "model",
+                "value": "mock-switched"
             }
         }),
     )
     .await;
     assert!(
         ok_response["error"].is_null(),
-        "session.switch_model failed: {ok_response:?}"
+        "session.knob.set(model) failed: {ok_response:?}"
     );
-    assert_eq!(ok_response["result"]["switched"], true);
-    assert_eq!(ok_response["result"]["model_id"], "mock-switched");
+    assert_eq!(ok_response["result"]["set"], true);
+    assert_eq!(ok_response["result"]["knob"], "model");
 
     let err_response = rpc_call(
         &mut client,
         json!({
             "jsonrpc": "2.0",
             "id": 83,
-            "method": "session.switch_model",
+            "method": "session.knob.set",
             "params": {
                 "session_id": session_id,
-                "model_id": "   "
+                "knob": "model",
+                "value": "   "
             }
         }),
     )
@@ -187,12 +189,15 @@ async fn session_list_modes_reports_the_session_s_own_current_mode() {
         json!({
             "jsonrpc": "2.0",
             "id": 113,
-            "method": "session.set_mode",
-            "params": { "session_id": session_id, "mode_id": "plan" }
+            "method": "session.knob.set",
+            "params": { "session_id": session_id, "knob": "mode", "value": "plan" }
         }),
     )
     .await;
-    assert!(set["error"].is_null(), "session.set_mode failed: {set:?}");
+    assert!(
+        set["error"].is_null(),
+        "session.knob.set(mode) failed: {set:?}"
+    );
 
     let after = rpc_call(
         &mut client,
@@ -214,14 +219,14 @@ async fn session_list_modes_reports_the_session_s_own_current_mode() {
         json!({
             "jsonrpc": "2.0",
             "id": 115,
-            "method": "session.get_mode",
-            "params": { "session_id": session_id }
+            "method": "session.knob.get",
+            "params": { "session_id": session_id, "knob": "mode" }
         }),
     )
     .await;
     assert_eq!(
-        get["result"]["mode"], after["result"]["current_mode_id"],
-        "session.get_mode and session.list_modes must not disagree"
+        get["result"]["value"], after["result"]["current_mode_id"],
+        "session.knob.get(mode) and session.list_modes must not disagree"
     );
 
     let err = rpc_call(
