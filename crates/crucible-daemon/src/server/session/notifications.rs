@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    SessionAddNotificationRequest, SessionDismissNotificationRequest, SessionIdRequest,
+    Scoped, SessionAddNotificationRequest, SessionDismissNotificationRequest,
 };
 
 /// The session, live or in storage, or the refusal when it is neither. A
@@ -52,7 +52,7 @@ pub(crate) async fn handle_session_list_notifications(
     sessions: &Arc<crate::session_manager::SessionManager>,
     hub: &Arc<crate::notifications::NotificationHub>,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

@@ -9192,9 +9192,9 @@ export interface operations {
     get_session_history: {
         parameters: {
             query?: {
-                /** @description How many events to return. */
+                /** @description How many items to return. */
                 limit?: number;
-                /** @description How many events to skip. */
+                /** @description How many items to skip. */
                 offset?: number;
             };
             header?: never;

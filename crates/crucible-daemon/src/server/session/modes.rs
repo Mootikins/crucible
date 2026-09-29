@@ -1,6 +1,6 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
-use crucible_core::protocol::requests::SessionIdRequest;
+use crucible_core::protocol::requests::Scoped;
 
 /// The modes a session can be in, and which one it is in now.
 ///
@@ -25,7 +25,7 @@ pub(crate) async fn handle_session_list_modes(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -76,7 +76,7 @@ pub(crate) async fn handle_session_commands(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -111,7 +111,7 @@ pub(crate) async fn handle_session_list_knobs(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -157,7 +157,7 @@ pub(crate) async fn handle_session_list_agent_options(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

@@ -1,8 +1,8 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    SessionIdRequest, SessionPluginTurnLimitRequest, SessionSetContextStrategyRequest,
-    SessionSetModeRequest, SessionSetPrecognitionRequest, SessionUndoRequest,
+    Scoped, SessionPluginTurnLimitRequest, SessionSetContextStrategyRequest, SessionSetModeRequest,
+    SessionSetPrecognitionRequest, SessionUndoRequest,
 };
 
 use crucible_core::session::ContextStrategy;
@@ -30,7 +30,7 @@ macro_rules! session_config_getter {
     };
     (@impl $fn_name:ident, $method:ident, $field:tt, |$value:ident| $render:expr) => {
         pub(crate) async fn $fn_name(req: Request, am: &Arc<AgentManager>) -> Response {
-            let params = match typed_params::<SessionIdRequest>(&req) {
+            let params = match typed_params::<Scoped<()>>(&req) {
                 Ok(p) => p,
                 Err(response) => return *response,
             };
@@ -238,7 +238,7 @@ pub(crate) async fn handle_session_undo(
 }
 
 pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -263,7 +263,7 @@ pub(crate) async fn handle_session_can_undo(req: Request, am: &Arc<AgentManager>
 }
 
 pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -291,7 +291,7 @@ pub(crate) async fn handle_session_undo_depth(req: Request, am: &Arc<AgentManage
 /// `hit_rate` is `null` until at least one completion has reported cache
 /// fields, distinguishing "never had a cache event" from "0%".
 pub(crate) async fn handle_session_cache_stats(req: Request, am: &Arc<AgentManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

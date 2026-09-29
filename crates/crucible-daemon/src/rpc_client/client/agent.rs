@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use super::types::extract_string_array;
 use super::DaemonClient;
-use crucible_core::protocol::requests::SessionIdRequest;
+use crucible_core::protocol::requests::Scoped;
 use crucible_core::protocol::requests::{EmptyParams, NameRequest};
 
 impl DaemonClient {
@@ -133,9 +133,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call_with_retry(
                 RpcMethod::SessionGetPluginTurnLimit,
-                SessionIdRequest {
-                    session_id: session_id.to_string(),
-                },
+                Scoped::session(session_id.to_string()),
             )
             .await?;
         let limit = result
@@ -169,9 +167,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call_with_retry(
                 RpcMethod::SessionListPluginApprovals,
-                SessionIdRequest {
-                    session_id: session_id.to_owned(),
-                },
+                Scoped::session(session_id.to_owned()),
             )
             .await?;
         Ok(serde_json::from_value(result["approvals"].clone())?)
@@ -181,9 +177,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call_with_retry(
                 RpcMethod::SessionListModels,
-                SessionIdRequest {
-                    session_id: session_id.to_string(),
-                },
+                Scoped::session(session_id.to_string()),
             )
             .await?;
 
@@ -198,9 +192,7 @@ impl DaemonClient {
     pub async fn session_list_agent_options(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call_with_retry(
             RpcMethod::SessionListAgentOptions,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
+            Scoped::session(session_id.to_string()),
         )
         .await
     }
@@ -238,9 +230,7 @@ impl DaemonClient {
     ) -> Result<crucible_core::types::SessionKnobSupport> {
         self.typed_call_with_retry(
             RpcMethod::SessionListKnobs,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
+            Scoped::session(session_id.to_string()),
         )
         .await
     }
@@ -257,9 +247,7 @@ impl DaemonClient {
         let reply: Reply = self
             .typed_call_with_retry(
                 RpcMethod::SessionCommands,
-                SessionIdRequest {
-                    session_id: session_id.to_string(),
-                },
+                Scoped::session(session_id.to_string()),
             )
             .await?;
         Ok(reply.commands)
@@ -271,9 +259,7 @@ impl DaemonClient {
     ) -> Result<crucible_core::types::mode::SessionModes> {
         self.typed_call_with_retry(
             RpcMethod::SessionListModes,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
+            Scoped::session(session_id.to_string()),
         )
         .await
     }
@@ -382,9 +368,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call_with_retry(
                 RpcMethod::SessionGetPrecognition,
-                SessionIdRequest {
-                    session_id: session_id.to_string(),
-                },
+                Scoped::session(session_id.to_string()),
             )
             .await?;
 

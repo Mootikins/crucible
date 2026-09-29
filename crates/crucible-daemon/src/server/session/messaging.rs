@@ -2,7 +2,7 @@ use super::super::*;
 use crate::agent_manager::commands::SlashRoute;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    SessionConfigureAgentRequest, SessionIdRequest, SessionInjectContextRequest,
+    Scoped, SessionConfigureAgentRequest, SessionInjectContextRequest,
     SessionInteractionRespondRequest, SessionSendMessageRequest, SessionTestInteractionRequest,
 };
 use crucible_core::types::SendOutcome;
@@ -306,7 +306,7 @@ pub(crate) async fn handle_session_inject_context(
 }
 
 pub(crate) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -329,7 +329,7 @@ pub(crate) async fn handle_session_clear(
     am: &Arc<AgentManager>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

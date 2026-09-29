@@ -21,9 +21,7 @@ use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
 use crucible_core::config::ConfigSource;
-use crucible_core::protocol::requests::{
-    SessionCreateRequest, SessionIdRequest, SessionSetTitleRequest,
-};
+use crucible_core::protocol::requests::{Scoped, SessionCreateRequest, SessionSetTitleRequest};
 use crucible_core::protocol::{RpcMethod, METHODS};
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
@@ -1243,7 +1241,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_generate_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let p = crate::rpc::params::parse_params::<SessionIdRequest>(req)?;
+        let p = crate::rpc::params::parse_params::<Scoped<()>>(req)?;
 
         let title = self
             .ctx
@@ -1391,7 +1389,7 @@ impl RpcDispatcher {
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .or_else(|| {
-                crate::rpc::params::parse_params::<SessionIdRequest>(req)
+                crate::rpc::params::parse_params::<Scoped<()>>(req)
                     .ok()
                     .map(|p| p.session_id)
             });

@@ -4,8 +4,8 @@ use crate::daemon_plugins::PluginServiceFn;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
     NameRequest, PathRequest, PluginOptionCallRequest, PluginOptionsRequest,
-    PluginPublicationsRequest, PluginRunCommandRequest, PluginSpecRow, ScmCloneRequest,
-    SessionIdRequest, SurfaceGetReply, SurfaceListReply, SurfaceRequest,
+    PluginPublicationsRequest, PluginRunCommandRequest, PluginSpecRow, ScmCloneRequest, Scoped,
+    SurfaceGetReply, SurfaceListReply, SurfaceRequest,
 };
 
 /// Drain extracted service functions, spawn each, and record the handle
@@ -135,7 +135,7 @@ pub(crate) async fn handle_session_status(
     req: Request,
     agents: &Arc<crate::agent_manager::AgentManager>,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

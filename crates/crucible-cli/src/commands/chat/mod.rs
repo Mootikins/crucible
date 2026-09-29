@@ -5,7 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_core::protocol::requests::{LuaInitSessionRequest, LuaShutdownSessionRequest};
+use crucible_core::protocol::requests::{LuaInitSessionRequest, Scoped};
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::DaemonClient;
 use std::path::PathBuf;
@@ -681,7 +681,7 @@ async fn run_interactive_chat(
         );
         if let Some(client) = setup_client.as_ref() {
             for session_id in opened {
-                let shutdown_params = LuaShutdownSessionRequest { session_id };
+                let shutdown_params = Scoped::session(session_id);
                 if let Err(e) = client.lua_shutdown_session(shutdown_params).await {
                     warn!("Failed to shutdown Lua session via daemon RPC: {}", e);
                 }
@@ -1001,7 +1001,7 @@ async fn fetch_resume_history(
 )> {
     let client = crate::common::daemon_client().await?;
     let result = client
-        .session_resume_from_storage(session_id, None, None)
+        .session_resume_from_storage(session_id, Default::default())
         .await?;
 
     let history = result

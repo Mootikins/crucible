@@ -18,7 +18,7 @@ impl DaemonClient {
 
     pub async fn lua_shutdown_session(
         &self,
-        params: LuaShutdownSessionRequest,
+        params: Scoped<()>,
     ) -> Result<LuaShutdownSessionResponse> {
         self.typed_call(RpcMethod::LuaShutdownSession, params).await
     }

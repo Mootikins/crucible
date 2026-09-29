@@ -3559,7 +3559,7 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "How many events to return.",
+            "description": "How many items to return.",
             "required": false,
             "schema": {
               "type": "integer",
@@ -3569,7 +3569,7 @@
           {
             "name": "offset",
             "in": "query",
-            "description": "How many events to skip.",
+            "description": "How many items to skip.",
             "required": false,
             "schema": {
               "type": "integer",

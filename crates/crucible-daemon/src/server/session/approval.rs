@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    SessionIdRequest, SessionPluginApprovalRequest, SessionPluginRequest,
+    Scoped, SessionPluginApprovalRequest, SessionPluginRequest,
 };
 use crucible_core::session::PluginApproval;
 
@@ -64,7 +64,7 @@ pub(crate) async fn handle_session_list_plugin_approvals(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

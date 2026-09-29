@@ -2,7 +2,7 @@ use super::super::*;
 use super::scope::caller_kiln_scope;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    SessionIdRequest, SessionListReply, SessionListRequest, SessionSearchRequest,
+    Scoped, SessionListReply, SessionListRequest, SessionSearchRequest,
 };
 
 use crucible_core::session::{SessionDetail, SessionState, SessionSummary, SessionType};
@@ -272,7 +272,7 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
 }
 
 pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

@@ -3,13 +3,11 @@ use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::session_lifecycle::{SessionLifecycle, StopCause, StopError, Stopped};
 use crate::SessionError;
 use crucible_core::protocol::requests::SessionReplayRequest;
-use crucible_core::protocol::requests::{
-    SessionHistoryRequest, SessionIdRequest, SessionResumeFromStorageRequest,
-};
+use crucible_core::protocol::requests::{Page, Scoped};
 use crucible_core::session::{SessionId, SessionState};
 
 pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecycle) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -47,7 +45,7 @@ fn stop_error(req_id: Option<RequestId>, operation: &str, err: StopError) -> Res
 }
 
 pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -94,7 +92,7 @@ pub(crate) async fn handle_session_resume_from_storage(
     req: Request,
     sm: &Arc<SessionManager>,
 ) -> Response {
-    let params = match typed_params::<SessionResumeFromStorageRequest>(&req) {
+    let params = match typed_params::<Scoped<Page>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -102,7 +100,7 @@ pub(crate) async fn handle_session_resume_from_storage(
         Ok(id) => id,
         Err(response) => return *response,
     };
-    let (limit, offset) = (params.limit, params.offset);
+    let (limit, offset) = (params.body.limit, params.body.offset);
 
     // Resume session from storage
     let session = match sm.resume_session_from_storage(session_id).await {
@@ -121,7 +119,7 @@ pub(crate) async fn handle_session_resume_from_storage(
 /// do that, so this reads memory or storage and changes nothing: the session
 /// keeps its state, it does not enter memory, and no hook runs.
 pub(crate) async fn handle_session_history(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let params = match typed_params::<SessionHistoryRequest>(&req) {
+    let params = match typed_params::<Scoped<Page>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -134,7 +132,7 @@ pub(crate) async fn handle_session_history(req: Request, sm: &Arc<SessionManager
         Ok(None) => return session_not_found(req.id, session_id),
         Err(e) => return internal_error(req.id, e),
     };
-    history_reply(req.id, &session, sm, params.limit, params.offset).await
+    history_reply(req.id, &session, sm, params.body.limit, params.body.offset).await
 }
 
 /// The session and one page of its stored events.
@@ -194,7 +192,7 @@ async fn history_reply(
 }
 
 pub(crate) async fn handle_session_end(req: Request, lifecycle: &SessionLifecycle) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -217,7 +215,7 @@ pub(crate) async fn handle_session_end(req: Request, lifecycle: &SessionLifecycl
 /// Deleting the parent deletes its delegated children too: the stop owner
 /// stops each child the same way.
 pub(crate) async fn handle_session_delete(req: Request, lifecycle: &SessionLifecycle) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -242,7 +240,7 @@ pub(crate) async fn handle_session_delete(req: Request, lifecycle: &SessionLifec
 /// Children are lifecycle-subordinate: archiving the parent archives its
 /// delegated children too, through the same stop.
 pub(crate) async fn handle_session_archive(req: Request, lifecycle: &SessionLifecycle) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -273,7 +271,7 @@ pub(crate) async fn handle_session_unarchive(
     am: &Arc<AgentManager>,
     events: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -339,7 +337,7 @@ pub(crate) async fn handle_session_replay(
 }
 
 pub(crate) async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

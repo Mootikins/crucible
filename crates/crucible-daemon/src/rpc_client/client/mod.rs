@@ -664,13 +664,8 @@ impl DaemonClient {
         method: RpcMethod,
         session_id: &str,
     ) -> Result<serde_json::Value> {
-        self.typed_call(
-            method,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
-        )
-        .await
+        self.typed_call(method, Scoped::session(session_id.to_string()))
+            .await
     }
 
     /// Fetch a nullable field from a session-scoped RPC method.
@@ -682,12 +677,7 @@ impl DaemonClient {
         extract: impl FnOnce(&serde_json::Value) -> Option<T>,
     ) -> Result<Option<T>> {
         let result: serde_json::Value = self
-            .typed_call_with_retry(
-                method,
-                SessionIdRequest {
-                    session_id: session_id.to_string(),
-                },
-            )
+            .typed_call_with_retry(method, Scoped::session(session_id.to_string()))
             .await?;
         Ok(result
             .get(field)

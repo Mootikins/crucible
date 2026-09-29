@@ -23,7 +23,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/lua.rs",
     ),
     (
-        "LuaShutdownSessionRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/lua.rs",
     ),
     (
@@ -126,7 +126,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/plugins.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/plugins.rs",
     ),
     (
@@ -141,15 +141,17 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "SessionReplayRequest",
         "crates/crucible-daemon/src/server/session/lifecycle.rs",
     ),
-    // `SessionIdRequest` is the one-field shape a dozen methods share, so it
-    // earns a row per server file that deserializes it — the row IS "this file
-    // reads the wire contract instead of re-spelling `session_id`".
+    // `Scoped<()>` is the params of each method that names only a session. A
+    // dozen methods share it, so it has a row for each server file that
+    // deserializes it: the row says "this file reads the wire contract, and
+    // does not spell `session_id` again". A session-scoped method names its
+    // row as `Scoped<Body>`, the turbofish that the file writes.
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/lifecycle.rs",
     ),
     (
-        "SessionResumeFromStorageRequest",
+        "Scoped<Page>",
         "crates/crucible-daemon/src/server/session/lifecycle.rs",
     ),
     (
@@ -161,15 +163,15 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/observe.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/list.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/modes.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/models.rs",
     ),
     (
@@ -181,7 +183,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/models.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
@@ -197,7 +199,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/notifications.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/messaging.rs",
     ),
     (
@@ -237,7 +239,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/rpc/dispatch.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/rpc/dispatch.rs",
     ),
     // Step 6, part 4 of the simplification plan: the handlers that read
@@ -255,14 +257,8 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "ListNotesRequest",
         "crates/crucible-daemon/src/server/kiln.rs",
     ),
-    (
-        "NoteRef",
-        "crates/crucible-daemon/src/server/kiln.rs",
-    ),
-    (
-        "KilnRef",
-        "crates/crucible-daemon/src/server/kiln.rs",
-    ),
+    ("NoteRef", "crates/crucible-daemon/src/server/kiln.rs"),
+    ("KilnRef", "crates/crucible-daemon/src/server/kiln.rs"),
     (
         "NoteUpsertRequest",
         "crates/crucible-daemon/src/server/kiln.rs",
@@ -296,7 +292,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/approval.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/approval.rs",
     ),
     (
@@ -316,7 +312,7 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
-        "SessionIdRequest",
+        "Scoped<()>",
         "crates/crucible-daemon/src/server/session/params.rs",
     ),
     (

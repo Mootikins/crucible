@@ -195,18 +195,6 @@ pub struct SessionListRequest {
     pub include_children: Option<bool>,
 }
 
-/// Shared request for methods that only require a `session_id`.
-///
-/// Used by: `session.get`, `session.status`, `session.pause`, `session.resume`,
-/// `session.end`, `session.cancel`, `session.list_models`, `session.list_modes`,
-/// `session.list_notifications`,
-/// `session.get_precognition`, `session.archive`, `session.unarchive`,
-/// `session.delete`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionIdRequest {
-    pub session_id: String,
-}
-
 /// Request for `session.replay`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionReplayRequest {
@@ -218,27 +206,6 @@ pub struct SessionReplayRequest {
 
 fn default_replay_speed() -> f64 {
     1.0
-}
-
-/// Request for `session.resume_from_storage`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionResumeFromStorageRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<usize>,
-}
-
-/// Request for `session.history`: one page of a session's stored events,
-/// read without making the session live.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionHistoryRequest {
-    pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<usize>,
 }
 
 /// Request for `session.events_after`.

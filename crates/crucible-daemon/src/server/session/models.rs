@@ -1,9 +1,7 @@
 use super::super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{ListAllModelsRequest, ListProvidersRequest};
-use crucible_core::protocol::requests::{
-    SessionForkRequest, SessionIdRequest, SessionSwitchModelRequest,
-};
+use crucible_core::protocol::requests::{Scoped, SessionForkRequest, SessionSwitchModelRequest};
 
 pub(crate) async fn handle_session_switch_model(
     req: Request,
@@ -47,7 +45,7 @@ pub(crate) async fn handle_session_switch_model(
 }
 
 pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

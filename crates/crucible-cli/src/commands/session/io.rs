@@ -38,7 +38,15 @@ pub(super) async fn history_transcript(
     session_id: &str,
 ) -> Result<Transcript> {
     // No page of raw events: the transcript is the fold of the whole log.
-    let history = client.session_history(session_id, Some(0), None).await?;
+    let history = client
+        .session_history(
+            session_id,
+            crucible_core::protocol::requests::Page {
+                limit: Some(0),
+                offset: None,
+            },
+        )
+        .await?;
     let transcript = history
         .get("transcript")
         .cloned()

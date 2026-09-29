@@ -588,7 +588,13 @@ impl CrucibleAcpAgent {
         // `session.events_after` answers an unknown id with.
         let mut projection = HostProjection::default();
         match client
-            .session_history(&daemon_session_id, Some(0), None)
+            .session_history(
+                &daemon_session_id,
+                crucible_core::protocol::requests::Page {
+                    limit: Some(0),
+                    offset: None,
+                },
+            )
             .await
         {
             Ok(reply) => {

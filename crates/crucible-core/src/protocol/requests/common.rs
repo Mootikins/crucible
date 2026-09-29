@@ -30,6 +30,54 @@ pub struct CapabilityFlags {
     pub model_switching: bool,
 }
 
+/// The params of a method that acts on one session.
+///
+/// `session_id` names the session. `body` holds the other fields of the
+/// method. The JSON puts `session_id` beside the fields of the body, at the
+/// top level, so the wire is the same as a flat struct. A method that takes
+/// only the session uses `Scoped<()>`.
+///
+/// Only the RPC uses this envelope. A web route takes the session id from
+/// its URL path, and declares only `T`. So this type has no `ToSchema`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Scoped<T> {
+    pub session_id: String,
+    #[serde(flatten)]
+    pub body: T,
+}
+
+impl<T> Scoped<T> {
+    pub fn new(session_id: impl Into<String>, body: T) -> Self {
+        Self {
+            session_id: session_id.into(),
+            body,
+        }
+    }
+}
+
+impl Scoped<()> {
+    /// The params of a method that takes only the session.
+    pub fn session(session_id: impl Into<String>) -> Self {
+        Self::new(session_id, ())
+    }
+}
+
+/// One page of a list: the body of `session.history` and
+/// `session.resume_from_storage`.
+///
+/// An absent `limit` or `offset` lets the daemon choose.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct Page {
+    /// How many items to return.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    /// How many items to skip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+}
+
 /// Empty request for methods that take no parameters.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EmptyParams {}
@@ -185,6 +233,38 @@ mod tests {
         assert_eq!(kilns(json!({ "kilns": [] })).unwrap(), Vec::<String>::new());
         assert_eq!(kilns(json!({ "kilns": ["a", "b"] })).unwrap(), ["a", "b"]);
         assert_eq!(kilns(json!({ "kiln": "a" })).unwrap(), ["a"]);
+    }
+
+    /// `Scoped<()>` writes the session id alone. It reads a payload with more
+    /// fields, as the flat `SessionIdRequest` did, and refuses a payload
+    /// without the id.
+    #[test]
+    fn a_scoped_unit_is_the_session_id_alone() {
+        let written = serde_json::to_value(super::Scoped::session("s1")).unwrap();
+        assert_eq!(written, json!({ "session_id": "s1" }));
+
+        let read: super::Scoped<()> =
+            serde_json::from_value(json!({ "session_id": "s1", "extra": 1 })).unwrap();
+        assert_eq!(read, super::Scoped::session("s1"));
+
+        assert!(serde_json::from_value::<super::Scoped<()>>(json!({})).is_err());
+    }
+
+    /// The fields of the body sit beside `session_id`, and an absent
+    /// optional field stays absent.
+    #[test]
+    fn a_scoped_body_writes_its_fields_at_the_top_level() {
+        let page = super::Scoped::new(
+            "s1",
+            super::Page {
+                limit: Some(5),
+                offset: None,
+            },
+        );
+        let written = serde_json::to_value(&page).unwrap();
+        assert_eq!(written, json!({ "session_id": "s1", "limit": 5 }));
+        let read: super::Scoped<super::Page> = serde_json::from_value(written).unwrap();
+        assert_eq!(read, page);
     }
 
     /// A member that is not a string names no kiln. The parse refuses it. It

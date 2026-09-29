@@ -208,9 +208,7 @@ impl DaemonClient {
     pub async fn session_delete(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionDelete,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
+            Scoped::session(session_id.to_string()),
         )
         .await
     }
@@ -218,9 +216,7 @@ impl DaemonClient {
     pub async fn session_archive(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionArchive,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
+            Scoped::session(session_id.to_string()),
         )
         .await
     }
@@ -228,9 +224,7 @@ impl DaemonClient {
     pub async fn session_unarchive(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionUnarchive,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
+            Scoped::session(session_id.to_string()),
         )
         .await
     }
@@ -253,16 +247,11 @@ impl DaemonClient {
     pub async fn session_resume_from_storage(
         &self,
         session_id: &str,
-        limit: Option<usize>,
-        offset: Option<usize>,
+        page: Page,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionResumeFromStorage,
-            SessionResumeFromStorageRequest {
-                session_id: session_id.to_string(),
-                limit,
-                offset,
-            },
+            Scoped::new(session_id, page),
         )
         .await
     }
@@ -270,21 +259,9 @@ impl DaemonClient {
     /// One page of a session's stored events. Unlike
     /// [`Self::session_resume_from_storage`], the session stays as it is: an
     /// ended session stays ended, and no start hook runs.
-    pub async fn session_history(
-        &self,
-        session_id: &str,
-        limit: Option<usize>,
-        offset: Option<usize>,
-    ) -> Result<serde_json::Value> {
-        self.typed_call(
-            RpcMethod::SessionHistory,
-            SessionHistoryRequest {
-                session_id: session_id.to_string(),
-                limit,
-                offset,
-            },
-        )
-        .await
+    pub async fn session_history(&self, session_id: &str, page: Page) -> Result<serde_json::Value> {
+        self.typed_call(RpcMethod::SessionHistory, Scoped::new(session_id, page))
+            .await
     }
 
     pub async fn session_send_message(
@@ -379,9 +356,7 @@ impl DaemonClient {
         let resp: SessionCancelResponse = self
             .typed_call(
                 RpcMethod::SessionCancel,
-                SessionIdRequest {
-                    session_id: session_id.to_string(),
-                },
+                Scoped::session(session_id.to_string()),
             )
             .await?;
 
@@ -404,9 +379,7 @@ impl DaemonClient {
     pub async fn session_generate_title(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             RpcMethod::SessionGenerateTitle,
-            SessionIdRequest {
-                session_id: session_id.to_string(),
-            },
+            Scoped::session(session_id.to_string()),
         )
         .await
     }

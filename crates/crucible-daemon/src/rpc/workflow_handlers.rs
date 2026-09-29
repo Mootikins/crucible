@@ -38,7 +38,7 @@ use crate::workflow_handlers::DaemonInlineHandler;
 use crate::workflow_registry::{ExecutionHandle, WorkflowStatusSnapshot};
 use crucible_core::config::components::permissions::PermissionEngine;
 use crucible_core::parser::types::{extract_yaml_frontmatter, ParsedNote, WorkflowDoc};
-use crucible_core::protocol::requests::SessionIdRequest;
+use crucible_core::protocol::requests::Scoped;
 use crucible_core::protocol::Request;
 use crucible_core::workflow::{
     DefaultHandler, DispatchTable, GateHandler, WorkflowEvent, WorkflowExecution, WorkflowSnapshot,
@@ -162,7 +162,7 @@ pub async fn handle_workflow_status(
     ctx: &RpcContext,
     req: &Request,
 ) -> RpcResult<serde_json::Value> {
-    let p: SessionIdRequest = parse_params(req)?;
+    let p: Scoped<()> = parse_params(req)?;
 
     let handle = resolve_or_rehydrate(ctx, &p.session_id)
         .await

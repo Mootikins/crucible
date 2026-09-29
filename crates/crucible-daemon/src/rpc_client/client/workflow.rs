@@ -10,7 +10,7 @@ use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 
 use super::DaemonClient;
-use crucible_core::protocol::requests::SessionIdRequest;
+use crucible_core::protocol::requests::Scoped;
 
 impl DaemonClient {
     pub async fn workflow_start(&self, req: WorkflowStartRequest) -> Result<serde_json::Value> {
@@ -29,9 +29,7 @@ impl DaemonClient {
     pub async fn workflow_status(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             RpcMethod::WorkflowStatus,
-            serde_json::to_value(SessionIdRequest {
-                session_id: session_id.to_string(),
-            })?,
+            serde_json::to_value(Scoped::session(session_id.to_string()))?,
         )
         .await
     }
@@ -39,9 +37,7 @@ impl DaemonClient {
     pub async fn workflow_cancel(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             RpcMethod::WorkflowCancel,
-            serde_json::to_value(SessionIdRequest {
-                session_id: session_id.to_string(),
-            })?,
+            serde_json::to_value(Scoped::session(session_id.to_string()))?,
         )
         .await
     }

@@ -461,7 +461,7 @@ pub(super) mod rpc {
             Err(e) if e.to_string().contains("not found") => {
                 eprintln!("Session not in memory, loading from storage...");
                 client
-                    .session_resume_from_storage(session_id, None, None)
+                    .session_resume_from_storage(session_id, Default::default())
                     .await?;
                 client
                     .session_send_message_with_permissions(
@@ -683,7 +683,7 @@ pub(super) mod rpc {
 
     pub(crate) async fn load(client: &DaemonClient, session_id: &str) -> Result<()> {
         let result = client
-            .session_resume_from_storage(session_id, None, None)
+            .session_resume_from_storage(session_id, Default::default())
             .await?;
 
         println!("Loaded session: {}", session_id);

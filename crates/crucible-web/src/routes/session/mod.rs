@@ -12,7 +12,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use crucible_core::protocol::requests::{SessionAgentSpec, SessionCreateParams};
+use crucible_core::protocol::requests::{Page, SessionAgentSpec, SessionCreateParams};
 use crucible_core::session::SessionSearchResponse;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -525,19 +525,10 @@ async fn get_session(
     Ok(Json(result))
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct HistoryQuery {
-    /// How many events to return.
-    limit: Option<usize>,
-    /// How many events to skip.
-    offset: Option<usize>,
-}
-
 #[utoipa::path(
     get,
     path = "/api/session/{id}/history",
-    params(("id" = String, Path, description = "The session to replay"), HistoryQuery),
+    params(("id" = String, Path, description = "The session to replay"), Page),
     responses(
         (status = 200, body = SessionHistoryResponse),
         (status = 502, description = "The daemon could not read the transcript"),
@@ -546,15 +537,11 @@ struct HistoryQuery {
 async fn get_session_history(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    axum::extract::Query(query): axum::extract::Query<HistoryQuery>,
+    axum::extract::Query(page): axum::extract::Query<Page>,
 ) -> Result<Json<SessionHistoryResponse>, WebError> {
     // A read, so the session stays as it is. `session.resume_from_storage`
     // would make an ended session live and run its start checks.
-    let result = state
-        .daemon
-        .session_history(&id, query.limit, query.offset)
-        .await
-        .daemon_err()?;
+    let result = state.daemon.session_history(&id, page).await.daemon_err()?;
 
     Ok(Json(daemon_shape(result, "session.history")?))
 }
@@ -600,7 +587,7 @@ async fn resume_session(
         Err(_) => {
             let result = state
                 .daemon
-                .session_resume_from_storage(&id, None, None)
+                .session_resume_from_storage(&id, Default::default())
                 .await
                 .map_err(|e| map_session_not_found(e, &id))?;
             ResumeSessionResponse::Restored(daemon_shape(result, "session.resume_from_storage")?)

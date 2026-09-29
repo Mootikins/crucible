@@ -169,18 +169,7 @@ fn diff_comment_method() {
 fn session_id_methods() {
     // `session.get`, `session.pause`, `session.end`, `lua.shutdown_session`,
     // `workflow.cancel` and the other methods that name only a session.
-    golden(
-        "session_id",
-        &[SessionIdRequest {
-            session_id: "s1".into(),
-        }],
-    );
-    golden(
-        "session_id",
-        &[LuaShutdownSessionRequest {
-            session_id: "s1".into(),
-        }],
-    );
+    golden("session_id", &[Scoped::session("s1")]);
 }
 
 #[test]
@@ -189,31 +178,14 @@ fn session_page_methods() {
     golden(
         "session_page",
         &[
-            SessionHistoryRequest {
-                session_id: "s1".into(),
-                limit: Some(10),
-                offset: Some(20),
-            },
-            SessionHistoryRequest {
-                session_id: "s1".into(),
-                limit: None,
-                offset: None,
-            },
-        ],
-    );
-    golden(
-        "session_page",
-        &[
-            SessionResumeFromStorageRequest {
-                session_id: "s1".into(),
-                limit: Some(10),
-                offset: Some(20),
-            },
-            SessionResumeFromStorageRequest {
-                session_id: "s1".into(),
-                limit: None,
-                offset: None,
-            },
+            Scoped::new(
+                "s1",
+                Page {
+                    limit: Some(10),
+                    offset: Some(20),
+                },
+            ),
+            Scoped::new("s1", Page::default()),
         ],
     );
 }

@@ -2,7 +2,7 @@ use super::*;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
     LuaDiscoverPluginsRequest, LuaGenerateStubsRequest, LuaInitSessionRequest,
-    LuaPluginHealthRequest, LuaRegisterCommandsRequest, LuaShutdownSessionRequest,
+    LuaPluginHealthRequest, LuaRegisterCommandsRequest, Scoped,
 };
 
 pub(crate) async fn handle_lua_init_session(
@@ -151,7 +151,7 @@ pub(crate) async fn handle_lua_shutdown_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let params = match typed_params::<LuaShutdownSessionRequest>(&req) {
+    let params = match typed_params::<Scoped<()>>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

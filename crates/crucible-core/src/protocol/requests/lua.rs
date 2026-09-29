@@ -25,11 +25,6 @@ pub struct LuaInitSessionResponse {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaShutdownSessionRequest {
-    pub session_id: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LuaShutdownSessionResponse {
     pub shutdown: bool,
 }

@@ -389,14 +389,14 @@ impl ReconnectingDaemon {
         /// One page of a session's stored events, read without making the
         /// session live.
         Safe SessionHistory =>
-        session_history(session_id: &str, limit: Option<usize>, offset: Option<usize>)
-        -> serde_json::Value = session_history(&session_id, limit, offset);
+        session_history(session_id: &str, page: crucible_core::protocol::requests::Page)
+        -> serde_json::Value = session_history(&session_id, page);
     }
 
     forward_rpc! {
         Once SessionResumeFromStorage =>
-        session_resume_from_storage(session_id: &str, limit: Option<usize>, offset: Option<usize>)
-        -> serde_json::Value = session_resume_from_storage(&session_id, limit, offset);
+        session_resume_from_storage(session_id: &str, page: crucible_core::protocol::requests::Page)
+        -> serde_json::Value = session_resume_from_storage(&session_id, page);
     }
     forward_rpc! {
         /// The persisted wire envelopes past a seq cursor — the tail the chat
