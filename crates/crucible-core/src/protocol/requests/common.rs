@@ -217,13 +217,13 @@ mod tests {
     use serde_json::json;
 
     #[derive(Debug, serde::Deserialize)]
-    struct Scoped {
+    struct KilnSetProbe {
         #[serde(default, alias = "kiln", deserialize_with = "kiln_set")]
         kilns: Vec<String>,
     }
 
     fn kilns(value: serde_json::Value) -> Result<Vec<String>, serde_json::Error> {
-        serde_json::from_value::<Scoped>(value).map(|s| s.kilns)
+        serde_json::from_value::<KilnSetProbe>(value).map(|s| s.kilns)
     }
 
     #[test]
