@@ -293,7 +293,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::GetNoteByName,
-                GetNoteByNameRequest {
+                NoteRef {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     name: name.to_string(),
                     scope,
@@ -320,7 +320,7 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::GetBacklinks,
-                GetBacklinksRequest {
+                NoteRef {
                     kiln: kiln_path.to_string_lossy().to_string(),
                     name: name.to_string(),
                     scope,
@@ -345,7 +345,7 @@ impl DaemonClient {
     ) -> Result<KilnGraphReply> {
         self.typed_call(
             RpcMethod::KilnGraph,
-            KilnGraphRequest {
+            KilnRef {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 scope,
             },
@@ -460,7 +460,7 @@ impl DaemonClient {
     ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
         self.typed_call(
             RpcMethod::NoteList,
-            NoteListRequest {
+            KilnRef {
                 kiln: kiln_path.to_string_lossy().to_string(),
                 scope,
             },
@@ -710,7 +710,7 @@ impl DaemonClient {
     ) -> Result<crucible_core::diff::Diffset> {
         self.typed_call_with_retry(
             RpcMethod::DiffGet,
-            DiffGetRequest {
+            DiffsetRef {
                 source: source.clone(),
             },
         )
@@ -763,7 +763,7 @@ impl DaemonClient {
     ) -> Result<DiffResolveCommentReply> {
         self.typed_call(
             RpcMethod::DiffResolveComment,
-            DiffResolveCommentRequest {
+            DiffCommentKey {
                 source: source.clone(),
                 comment_id: comment_id.to_string(),
             },
@@ -781,7 +781,7 @@ impl DaemonClient {
     ) -> Result<DiffDeleteCommentReply> {
         self.typed_call(
             RpcMethod::DiffDeleteComment,
-            DiffDeleteCommentRequest {
+            DiffCommentKey {
                 source: source.clone(),
                 comment_id: comment_id.to_string(),
             },
@@ -799,7 +799,7 @@ impl DaemonClient {
     ) -> Result<DiffCommentsReply> {
         self.typed_call_with_retry(
             RpcMethod::DiffComments,
-            DiffCommentsRequest {
+            DiffsetRef {
                 source: source.clone(),
             },
         )

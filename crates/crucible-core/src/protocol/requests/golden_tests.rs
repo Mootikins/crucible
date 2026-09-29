@@ -38,8 +38,8 @@ fn golden<T: Serialize + DeserializeOwned>(name: &str, cases: &[T]) {
         let text = serde_json::to_string_pretty(&actual).expect("JSON writes") + "\n";
         std::fs::write(&path, text).expect("the fixture is writable");
     }
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let expected: Value = serde_json::from_str(&text).expect("the fixture is JSON");
     assert_eq!(
         actual,
@@ -84,27 +84,12 @@ fn note_ref_methods() {
     golden(
         "note_ref",
         &[
-            GetNoteByNameRequest {
+            NoteRef {
                 kiln: "/kiln".into(),
                 name: "Note".into(),
                 scope: Some(scope()),
             },
-            GetNoteByNameRequest {
-                kiln: "/kiln".into(),
-                name: "Note".into(),
-                scope: None,
-            },
-        ],
-    );
-    golden(
-        "note_ref",
-        &[
-            GetBacklinksRequest {
-                kiln: "/kiln".into(),
-                name: "Note".into(),
-                scope: Some(scope()),
-            },
-            GetBacklinksRequest {
+            NoteRef {
                 kiln: "/kiln".into(),
                 name: "Note".into(),
                 scope: None,
@@ -114,29 +99,16 @@ fn note_ref_methods() {
 }
 
 #[test]
-fn kiln_scope_methods() {
+fn kiln_ref_methods() {
     // `kiln.graph` and `note.list`.
     golden(
-        "kiln_scope",
+        "kiln_ref",
         &[
-            KilnGraphRequest {
+            KilnRef {
                 kiln: "/kiln".into(),
                 scope: Some(scope()),
             },
-            KilnGraphRequest {
-                kiln: "/kiln".into(),
-                scope: None,
-            },
-        ],
-    );
-    golden(
-        "kiln_scope",
-        &[
-            NoteListRequest {
-                kiln: "/kiln".into(),
-                scope: Some(scope()),
-            },
-            NoteListRequest {
+            KilnRef {
                 kiln: "/kiln".into(),
                 scope: None,
             },
@@ -147,8 +119,7 @@ fn kiln_scope_methods() {
 #[test]
 fn diffset_ref_methods() {
     // `diff.get` and `diff.comments`.
-    golden("diffset_ref", &[DiffGetRequest { source: branch() }]);
-    golden("diffset_ref", &[DiffCommentsRequest { source: branch() }]);
+    golden("diffset_ref", &[DiffsetRef { source: branch() }]);
 }
 
 #[test]
@@ -156,14 +127,7 @@ fn diff_comment_key_methods() {
     // `diff.resolve_comment` and `diff.delete_comment`.
     golden(
         "diff_comment_key",
-        &[DiffResolveCommentRequest {
-            source: branch(),
-            comment_id: "c1".into(),
-        }],
-    );
-    golden(
-        "diff_comment_key",
-        &[DiffDeleteCommentRequest {
+        &[DiffCommentKey {
             source: branch(),
             comment_id: "c1".into(),
         }],

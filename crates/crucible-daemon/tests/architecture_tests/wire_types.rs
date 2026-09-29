@@ -256,15 +256,11 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/kiln.rs",
     ),
     (
-        "GetNoteByNameRequest",
+        "NoteRef",
         "crates/crucible-daemon/src/server/kiln.rs",
     ),
     (
-        "GetBacklinksRequest",
-        "crates/crucible-daemon/src/server/kiln.rs",
-    ),
-    (
-        "KilnGraphRequest",
+        "KilnRef",
         "crates/crucible-daemon/src/server/kiln.rs",
     ),
     (
@@ -273,10 +269,6 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
     ),
     (
         "NotePathRequest",
-        "crates/crucible-daemon/src/server/kiln.rs",
-    ),
-    (
-        "NoteListRequest",
         "crates/crucible-daemon/src/server/kiln.rs",
     ),
     (

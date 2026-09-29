@@ -9,12 +9,11 @@ use super::*;
 use crate::kiln_manager::request_scope;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    BacklinkEntry, EmbedQueryRequest, GetBacklinksReply, GetBacklinksRequest, GetNoteByNameRequest,
-    KilnGraphLink, KilnGraphNote, KilnGraphReply, KilnGraphRequest, KilnOpenRequest,
-    KilnRegisterRequest, KilnRow, ListNotesRequest, NameRequest, NoteByNameReply, NoteListRequest,
-    NoteListRow, NotePathRequest, NoteUpsertRequest, PathRequest, ProcessBatchRequest,
-    ProcessFileRequest, SearchTextRequest, SearchVectorsRequest, SuggestLinksRequest, VectorHit,
-    WikilinkTarget,
+    BacklinkEntry, EmbedQueryRequest, GetBacklinksReply, KilnGraphLink, KilnGraphNote,
+    KilnGraphReply, KilnOpenRequest, KilnRef, KilnRegisterRequest, KilnRow, ListNotesRequest,
+    NameRequest, NoteByNameReply, NoteListRow, NotePathRequest, NoteRef, NoteUpsertRequest,
+    PathRequest, ProcessBatchRequest, ProcessFileRequest, SearchTextRequest, SearchVectorsRequest,
+    SuggestLinksRequest, VectorHit, WikilinkTarget,
 };
 use crucible_core::storage::Scope;
 
@@ -722,7 +721,7 @@ pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Re
 }
 
 pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Response {
-    let params = match typed_params::<GetNoteByNameRequest>(&req) {
+    let params = match typed_params::<NoteRef>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -765,7 +764,7 @@ pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
 }
 
 pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) -> Response {
-    let params = match typed_params::<GetBacklinksRequest>(&req) {
+    let params = match typed_params::<NoteRef>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -817,7 +816,7 @@ pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) ->
 }
 
 pub(crate) async fn handle_kiln_graph(req: Request, km: &Arc<KilnManager>) -> Response {
-    let params = match typed_params::<KilnGraphRequest>(&req) {
+    let params = match typed_params::<KilnRef>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -1030,7 +1029,7 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
 }
 
 pub(crate) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
-    let params = match typed_params::<NoteListRequest>(&req) {
+    let params = match typed_params::<KilnRef>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

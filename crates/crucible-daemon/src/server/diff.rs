@@ -32,7 +32,7 @@ use crate::server::fs::project_root;
 use crate::server::session::review::ensure_record_loaded;
 use crate::session_manager::SessionManager;
 use crate::tools::containment::reject_non_normal;
-use crucible_core::protocol::requests::{DiffFileRequest, DiffGetRequest};
+use crucible_core::protocol::requests::{DiffFileRequest, DiffsetRef};
 
 /// The refusal for a root that no admission names.
 pub(crate) const DIFF_ROOT_NOT_ADMITTED: &str =
@@ -328,7 +328,7 @@ pub(crate) fn answer<T: serde::Serialize>(
 
 /// Handle the `diff.get` RPC.
 pub(crate) async fn handle_diff_get(req: Request, admission: Admission<'_>) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<DiffGetRequest>(&req) {
+    let params = match crate::rpc_helpers::typed_params::<DiffsetRef>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

@@ -30,9 +30,8 @@ use crate::server::diff::{
 use crate::server::session::review::emit_review_changed;
 use crucible_core::protocol::requests::ListedComment;
 use crucible_core::protocol::requests::{
-    DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
-    DiffDeleteCommentReply, DiffDeleteCommentRequest, DiffResolveCommentReply,
-    DiffResolveCommentRequest,
+    DiffCommentKey, DiffCommentReply, DiffCommentRequest, DiffCommentsReply,
+    DiffDeleteCommentReply, DiffResolveCommentReply, DiffsetRef,
 };
 
 /// A review error as an RPC refusal.
@@ -330,7 +329,7 @@ async fn diff_comment(
 async fn diff_resolve_comment(
     admission: &Admission<'_>,
     event_tx: &crate::EventBus,
-    request: &DiffResolveCommentRequest,
+    request: &DiffCommentKey,
 ) -> Result<DiffResolveCommentReply, Refusal> {
     let served = serve(admission, &request.source).await?;
     let diffset = served.diffset();
@@ -352,7 +351,7 @@ async fn diff_resolve_comment(
 async fn diff_delete_comment(
     admission: &Admission<'_>,
     event_tx: &crate::EventBus,
-    request: &DiffDeleteCommentRequest,
+    request: &DiffCommentKey,
 ) -> Result<DiffDeleteCommentReply, Refusal> {
     let served = serve(admission, &request.source).await?;
     let diffset = served.diffset();
@@ -500,7 +499,7 @@ fn proposal_texts(
 
 async fn diff_comments(
     admission: &Admission<'_>,
-    request: &DiffCommentsRequest,
+    request: &DiffsetRef,
 ) -> Result<DiffCommentsReply, Refusal> {
     let served = serve(admission, &request.source).await?;
     let diffset = served.diffset();
@@ -546,7 +545,7 @@ pub(crate) async fn handle_diff_resolve_comment(
     admission: Admission<'_>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<DiffResolveCommentRequest>(&req) {
+    let params = match typed_params::<DiffCommentKey>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -562,7 +561,7 @@ pub(crate) async fn handle_diff_delete_comment(
     admission: Admission<'_>,
     event_tx: &crate::EventBus,
 ) -> Response {
-    let params = match typed_params::<DiffDeleteCommentRequest>(&req) {
+    let params = match typed_params::<DiffCommentKey>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -574,7 +573,7 @@ pub(crate) async fn handle_diff_delete_comment(
 
 /// Handle the `diff.comments` RPC.
 pub(crate) async fn handle_diff_comments(req: Request, admission: Admission<'_>) -> Response {
-    let params = match typed_params::<DiffCommentsRequest>(&req) {
+    let params = match typed_params::<DiffsetRef>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };

@@ -48,36 +48,26 @@ pub struct LlmRegisterProviderRequest {
     pub make_default: bool,
 }
 
-/// Request for `get_note_by_name`.
+/// One note of one kiln, found by its name: the request of
+/// `get_note_by_name` and `get_backlinks`.
 ///
-/// `scope` is the request authority — defaults server-side to
-/// `Scope::Workspace { path: kiln }` when absent.
+/// `scope` is the request authority. When it is absent, the daemon uses
+/// `Scope::Workspace { path: kiln }`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GetNoteByNameRequest {
+pub struct NoteRef {
     pub kiln: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
 }
 
-/// Request for `get_backlinks`.
+/// One kiln, read under one authority: the request of `kiln.graph` and
+/// `note.list`.
 ///
-/// `scope` is the request authority — defaults server-side to
-/// `Scope::Workspace { path: kiln }` when absent.
+/// `scope` is the request authority. When it is absent, the daemon uses
+/// `Scope::Workspace { path: kiln }`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GetBacklinksRequest {
-    pub kiln: String,
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crate::storage::Scope>,
-}
-
-/// Request for `kiln.graph`.
-///
-/// `scope` is the request authority — defaults server-side to
-/// `Scope::Workspace { path: kiln }` when absent.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct KilnGraphRequest {
+pub struct KilnRef {
     pub kiln: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<crate::storage::Scope>,
@@ -103,15 +93,6 @@ pub struct SuggestLinksRequest {
 pub struct NoteUpsertRequest {
     pub kiln: String,
     pub note: serde_json::Value,
-}
-
-/// Request for `note.list`. `scope` is the request authority; absent →
-/// server defaults to `Scope::Workspace { path: kiln }`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct NoteListRequest {
-    pub kiln: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scope: Option<crate::storage::Scope>,
 }
 
 /// Request for `note.get` and `note.delete`.
@@ -305,12 +286,13 @@ pub struct FsListDirRequest {
     pub show_hidden: bool,
 }
 
-/// Request for `diff.get`.
+/// One diffset, named by its source: the request of `diff.get` and
+/// `diff.comments`.
 ///
 /// For a branch source, an empty `base` asks the daemon for the default
 /// branch. The reply then names the branch that the daemon used.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DiffGetRequest {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffsetRef {
     pub source: crate::diff::DiffsetSource,
 }
 
@@ -366,10 +348,15 @@ pub struct DiffCommentReply {
     pub comment: crate::session::Comment,
 }
 
-/// Request for `diff.resolve_comment`: mark one comment of the diffset of
-/// `source` resolved.
+/// One comment of the diffset of `source`: the request of
+/// `diff.resolve_comment` and `diff.delete_comment`.
+///
+/// [`crate::diff::CommentRef`] names a comment too, but its wire field is
+/// `id`. The two methods here send `comment_id`, so the shapes stay apart.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DiffResolveCommentRequest {
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DiffCommentKey {
+    /// The diffset of the comment.
     pub source: crate::diff::DiffsetSource,
     pub comment_id: String,
 }
@@ -383,14 +370,6 @@ pub struct DiffResolveCommentReply {
     pub resolved: bool,
 }
 
-/// Request for `diff.delete_comment`: remove one comment of the diffset of
-/// `source` from the store.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DiffDeleteCommentRequest {
-    pub source: crate::diff::DiffsetSource,
-    pub comment_id: String,
-}
-
 /// What `diff.delete_comment` answers.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -398,12 +377,6 @@ pub struct DiffDeleteCommentReply {
     pub diffset: crate::diff::DiffsetId,
     pub comment_id: String,
     pub deleted: bool,
-}
-
-/// Request for `diff.comments`: the comments of the diffset of `source`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DiffCommentsRequest {
-    pub source: crate::diff::DiffsetSource,
 }
 
 /// Request for `fs.move`.

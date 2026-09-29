@@ -13,7 +13,7 @@ impl Daemon {
     async fn comments(&self, source: &DiffsetSource) -> Result<DiffCommentsReply, RpcError> {
         self.call(
             "diff.comments",
-            DiffCommentsRequest {
+            DiffsetRef {
                 source: source.clone(),
             },
         )
@@ -27,7 +27,7 @@ impl Daemon {
     ) -> Result<DiffResolveCommentReply, RpcError> {
         self.call(
             "diff.resolve_comment",
-            DiffResolveCommentRequest {
+            DiffCommentKey {
                 source: source.clone(),
                 comment_id: comment_id.to_string(),
             },
@@ -42,7 +42,7 @@ impl Daemon {
     ) -> Result<DiffDeleteCommentReply, RpcError> {
         self.call(
             "diff.delete_comment",
-            DiffDeleteCommentRequest {
+            DiffCommentKey {
                 source: source.clone(),
                 comment_id: comment_id.to_string(),
             },

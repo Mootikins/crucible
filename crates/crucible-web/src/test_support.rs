@@ -10,8 +10,7 @@ use axum::Router;
 use crucible_core::config::CliAppConfig;
 #[cfg(any(test, feature = "test-utils"))]
 use crucible_core::protocol::requests::{
-    DiffCommentReply, DiffCommentRequest, DiffCommentsRequest, DiffDeleteCommentRequest,
-    DiffFileRequest, DiffGetRequest, DiffResolveCommentRequest,
+    DiffCommentKey, DiffCommentReply, DiffCommentRequest, DiffFileRequest, DiffsetRef,
 };
 #[cfg(any(test, feature = "test-utils"))]
 use crucible_core::protocol::rpc::RpcMethod;
@@ -989,7 +988,7 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
         }
         RpcMethod::ProjectList => as_rpc_result(vec![mock_project()]),
         RpcMethod::DiffGet => {
-            let request: DiffGetRequest =
+            let request: DiffsetRef =
                 serde_json::from_value(msg["params"].clone()).expect("diff.get params");
             as_rpc_result(mock_diffset_for(request.source))
         }
@@ -1004,7 +1003,7 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             as_rpc_result(mock_diff_comment_for(&request))
         }
         RpcMethod::DiffResolveComment => {
-            let request: DiffResolveCommentRequest =
+            let request: DiffCommentKey =
                 serde_json::from_value(msg["params"].clone()).expect("diff.resolve_comment params");
             json!({
                 "diffset": request.source.id(),
@@ -1013,7 +1012,7 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             })
         }
         RpcMethod::DiffDeleteComment => {
-            let request: DiffDeleteCommentRequest =
+            let request: DiffCommentKey =
                 serde_json::from_value(msg["params"].clone()).expect("diff.delete_comment params");
             json!({
                 "diffset": request.source.id(),
@@ -1024,7 +1023,7 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
         // One comment whose quoted text is gone: the `outdated` flag reaches
         // the browser only if the route keeps it.
         RpcMethod::DiffComments => {
-            let request: DiffCommentsRequest =
+            let request: DiffsetRef =
                 serde_json::from_value(msg["params"].clone()).expect("diff.comments params");
             json!({
                 "diffset": request.source.id(),
