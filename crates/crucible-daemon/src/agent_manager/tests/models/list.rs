@@ -185,7 +185,7 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
         "ollama-local".to_string(),
         LlmProviderConfig {
             provider_type: BackendType::Ollama,
-            endpoint: Some((ollama_endpoint).into()),
+            endpoint: Some(ollama_endpoint),
             available_models: Some(vec!["llama3.2".to_string()]),
             ..Default::default()
         },

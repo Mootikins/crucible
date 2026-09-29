@@ -244,7 +244,7 @@ async fn test_list_models_integration_multi_provider() {
         "ollama-int".to_string(),
         LlmProviderConfig {
             provider_type: BackendType::Ollama,
-            endpoint: Some((ollama_endpoint).into()),
+            endpoint: Some(ollama_endpoint),
             ..Default::default()
         },
     );

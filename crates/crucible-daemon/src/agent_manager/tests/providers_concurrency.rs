@@ -113,7 +113,7 @@ async fn unresponsive_providers_are_probed_concurrently() {
             format!("stalled{i}"),
             LlmProviderConfig {
                 provider_type: BackendType::OpenAI,
-                endpoint: Some((stalling_endpoint(delay).await).into()),
+                endpoint: Some(stalling_endpoint(delay).await),
                 ..Default::default()
             },
         );
