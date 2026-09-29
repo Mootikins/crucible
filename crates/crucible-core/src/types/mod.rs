@@ -8,7 +8,7 @@
 //! Domain types are currently defined in their respective modules:
 //! - ACP types: `acp` (FileDiff); callers import them by the `types::acp` path
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
-//! - Database types: `types::database` (SearchResult, DocumentId, Record, etc.)
+//! - Database types: `types::database` (SearchResult, Record, etc.)
 //! - Hash type: `parser::types::BlockHash`, the one content hash
 //!
 //! This module serves as a central re-export point for types that cross module boundaries.
@@ -38,7 +38,7 @@ pub use crate::parser::types::{
 };
 
 // Re-export database domain types (canonical definitions in types::database)
-pub use self::database::{DocumentId, SearchResult};
+pub use self::database::SearchResult;
 
 // Re-export ACP schema types from agent-client-protocol-schema
 pub use crate::types::acp::schema::{

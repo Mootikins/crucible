@@ -828,7 +828,7 @@ fn block_record_to_lua(
 /// span.
 fn hit_to_lua(lua: &Lua, hit: &crucible_core::types::SearchResult) -> Result<Value, mlua::Error> {
     let table = lua.create_table()?;
-    table.set("path", hit.document_id.0.as_str())?;
+    table.set("path", hit.document_id.as_str())?;
     if let Some(block) = &hit.block {
         table.set("span_start", block.span_start)?;
         table.set("span_end", block.span_end)?;

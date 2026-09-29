@@ -612,7 +612,7 @@ pub(crate) async fn handle_search_vectors(
             let hits: Vec<VectorHit> = results
                 .into_iter()
                 .map(|hit| VectorHit {
-                    document_id: hit.document_id.0,
+                    document_id: hit.document_id,
                     score: hit.score,
                     block: hit.block,
                     snippet: hit.snippet,

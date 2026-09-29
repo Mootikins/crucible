@@ -11,7 +11,6 @@ use crucible_core::storage::{
 };
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::types::SearchResult as KnowledgeSearchResult;
-use crucible_core::DocumentId;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -221,7 +220,7 @@ impl KnowledgeRepository for DaemonStorageClient {
             .into_iter()
             .filter(|hit| hit.score >= 0.5)
             .map(|hit| KnowledgeSearchResult {
-                document_id: DocumentId(hit.document_id),
+                document_id: hit.document_id,
                 score: hit.score,
                 highlights: None,
                 snippet: hit.snippet,

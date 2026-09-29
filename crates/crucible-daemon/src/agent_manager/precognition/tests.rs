@@ -9,7 +9,6 @@ use super::*;
 #[cfg(test)]
 mod format_precognition_context_tests {
     use super::*;
-    use crucible_core::types::database::DocumentId;
 
     fn make_result(
         doc_id: &str,
@@ -18,7 +17,7 @@ mod format_precognition_context_tests {
         kiln: Option<&str>,
     ) -> crucible_core::SearchResult {
         crucible_core::SearchResult {
-            document_id: DocumentId(doc_id.to_string()),
+            document_id: doc_id.to_string(),
             score,
             highlights: None,
             snippet: snippet.map(|s| s.to_string()),
@@ -189,7 +188,6 @@ mod format_precognition_context_tests {
 #[cfg(test)]
 mod precognition_format_hook_tests {
     use super::*;
-    use crucible_core::types::database::DocumentId;
 
     fn make_result(
         doc_id: &str,
@@ -198,7 +196,7 @@ mod precognition_format_hook_tests {
         kiln: Option<&str>,
     ) -> crucible_core::SearchResult {
         crucible_core::SearchResult {
-            document_id: DocumentId(doc_id.to_string()),
+            document_id: doc_id.to_string(),
             score,
             highlights: None,
             snippet: snippet.map(|s| s.to_string()),
@@ -422,7 +420,6 @@ mod precognition_format_hook_tests {
 #[cfg(test)]
 mod precognition_select_hook_tests {
     use super::*;
-    use crucible_core::types::database::DocumentId;
 
     /// A handler VM, shaped like the daemon's — the only VM that holds them.
     fn make_handler_vm() -> crate::agent_manager::PluginHandlers {
@@ -443,7 +440,7 @@ mod precognition_select_hook_tests {
 
     fn make_result(doc_id: &str, score: f64, snippet: &str) -> crucible_core::SearchResult {
         crucible_core::SearchResult {
-            document_id: DocumentId(doc_id.to_string()),
+            document_id: doc_id.to_string(),
             score,
             highlights: None,
             snippet: Some(snippet.to_string()),
@@ -918,7 +915,7 @@ fn a_block_hit_is_injected_as_a_passage_with_its_location() {
     use crucible_core::types::database::BlockRef;
 
     let results = vec![crucible_core::SearchResult {
-        document_id: crucible_core::DocumentId("guide.md".to_string()),
+        document_id: "guide.md".to_string(),
         score: 0.91,
         highlights: None,
         snippet: Some("run the command with the flag you need".to_string()),
@@ -941,7 +938,7 @@ fn a_block_hit_is_injected_as_a_passage_with_its_location() {
 #[test]
 fn a_note_hit_still_reads_as_a_whole_note() {
     let results = vec![crucible_core::SearchResult {
-        document_id: crucible_core::DocumentId("guide.md".to_string()),
+        document_id: "guide.md".to_string(),
         score: 0.42,
         highlights: None,
         snippet: Some("the whole file".to_string()),
@@ -964,7 +961,7 @@ fn a_mixed_result_set_says_how_many_of_each() {
 
     let results = vec![
         crucible_core::SearchResult {
-            document_id: crucible_core::DocumentId("a.md".to_string()),
+            document_id: "a.md".to_string(),
             score: 0.9,
             highlights: None,
             snippet: Some("a passage".to_string()),
@@ -977,7 +974,7 @@ fn a_mixed_result_set_says_how_many_of_each() {
             }),
         },
         crucible_core::SearchResult {
-            document_id: crucible_core::DocumentId("b.md".to_string()),
+            document_id: "b.md".to_string(),
             score: 0.8,
             highlights: None,
             snippet: Some("a file".to_string()),

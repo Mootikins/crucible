@@ -612,10 +612,9 @@ pub(crate) const PRECOGNITION_TAG: &str = "precognition";
 fn result_title(result: &crucible_core::SearchResult) -> String {
     result
         .document_id
-        .0
         .split('/')
         .next_back()
-        .unwrap_or(&result.document_id.0)
+        .unwrap_or(&result.document_id)
         .trim_end_matches(".md")
         .to_string()
 }
@@ -750,11 +749,11 @@ pub(super) fn extract_note_info(
     results
         .iter()
         .filter_map(|r| {
-            let path = std::path::Path::new(&r.document_id.0);
+            let path = std::path::Path::new(&r.document_id);
             let filename = path
                 .file_name()
                 .and_then(|f| f.to_str())
-                .unwrap_or(&r.document_id.0);
+                .unwrap_or(&r.document_id);
             let title = filename.trim_end_matches(".md").to_string();
             // The registry name, not the directory basename. This value is
             // PERSISTED — it rides `PrecognitionComplete` into `session.jsonl`

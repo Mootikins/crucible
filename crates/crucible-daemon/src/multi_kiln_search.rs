@@ -4,7 +4,7 @@ use anyhow::Result;
 use crucible_core::config::{DataClassification, TrustLevel};
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::KnowledgeRepository;
-use crucible_core::{DocumentId, SearchResult};
+use crucible_core::SearchResult;
 use crucible_lua::Firing;
 use crucible_lua::StageId;
 use std::cmp::Ordering;
@@ -168,13 +168,13 @@ pub async fn search_across_kilns_with_stage(
             // in a malformed config — but nothing that leaves this function
             // carries one.
             result.kiln = source.kiln_name.clone();
-            let doc_id: DocumentId = result.document_id.clone();
+            let doc_id: String = result.document_id.clone();
             // Several blocks of one note are several hits, so the span joins
             // the key. Without it the merge would keep one block per note and
             // throw the granularity away at the last step.
             let key = (
                 source.kiln_path.clone(),
-                doc_id.0.clone(),
+                doc_id.clone(),
                 result.block.as_ref().map(|b| b.span_start),
             );
 
@@ -195,7 +195,7 @@ pub async fn search_across_kilns_with_stage(
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(Ordering::Equal)
-            .then_with(|| a.document_id.0.cmp(&b.document_id.0))
+            .then_with(|| a.document_id.cmp(&b.document_id))
             .then_with(|| {
                 let start = |r: &SearchResult| r.block.as_ref().map(|b| b.span_start);
                 start(a).cmp(&start(b))
@@ -260,7 +260,7 @@ fn rerank_event(
         if let Some(name) = hit.kiln.as_ref() {
             entry.insert("kiln".into(), serde_json::json!(name.as_str()));
         }
-        entry.insert("path".into(), serde_json::json!(hit.document_id.0));
+        entry.insert("path".into(), serde_json::json!(hit.document_id));
         entry.insert("score".into(), serde_json::json!(hit.score));
         if let Some(snippet) = hit.snippet.as_ref() {
             entry.insert("snippet".into(), serde_json::json!(snippet));
@@ -336,7 +336,7 @@ fn apply_rerank(merged: &[SearchResult], value: &serde_json::Value) -> Option<Ve
                 let block = hit.block.as_ref()?;
                 Some((
                     hit.kiln.as_ref(),
-                    hit.document_id.0.as_str(),
+                    hit.document_id.as_str(),
                     block.span_start,
                 ))
             })
@@ -466,7 +466,7 @@ async fn resolve_reranked(
             continue;
         };
         hits.push(SearchResult {
-            document_id: DocumentId(path),
+            document_id: path,
             score,
             highlights: None,
             snippet: Some(row.text),
@@ -491,7 +491,7 @@ mod tests {
 
     fn mock_result(document_id: &str, score: f64) -> SearchResult {
         SearchResult {
-            document_id: DocumentId(document_id.to_string()),
+            document_id: document_id.to_string(),
             score,
             highlights: None,
             snippet: None,
@@ -620,10 +620,10 @@ mod tests {
                 .unwrap();
 
         assert_eq!(results.len(), 4);
-        assert_eq!(results[0].document_id.0, "a-2");
-        assert_eq!(results[1].document_id.0, "b-1");
-        assert_eq!(results[2].document_id.0, "b-2");
-        assert_eq!(results[3].document_id.0, "a-1");
+        assert_eq!(results[0].document_id, "a-2");
+        assert_eq!(results[1].document_id, "b-1");
+        assert_eq!(results[2].document_id, "b-2");
+        assert_eq!(results[3].document_id, "a-1");
     }
 
     #[tokio::test]
@@ -644,7 +644,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].document_id.0, "doc1");
+        assert_eq!(results[0].document_id, "doc1");
         assert_eq!(results[0].score, 0.95);
     }
 
@@ -667,7 +667,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].document_id.0, "good-doc");
+        assert_eq!(results[0].document_id, "good-doc");
         assert_eq!(results[0].kiln, name_of(&good));
         assert_eq!(failures.len(), 1, "{failures:?}");
         assert!(failures[0].starts_with("bad: "), "{failures:?}");
@@ -728,10 +728,10 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results
             .iter()
-            .any(|r| { r.document_id.0 == "doc-a" && r.kiln == name_of(&kiln_a) }));
+            .any(|r| { r.document_id == "doc-a" && r.kiln == name_of(&kiln_a) }));
         assert!(results
             .iter()
-            .any(|r| { r.document_id.0 == "doc-b" && r.kiln == name_of(&kiln_b) }));
+            .any(|r| { r.document_id == "doc-b" && r.kiln == name_of(&kiln_b) }));
     }
 
     #[tokio::test]
@@ -775,7 +775,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].document_id.0, "primary-doc");
+        assert_eq!(results[0].document_id, "primary-doc");
         assert_eq!(results[0].kiln, name_of(&primary));
     }
 
@@ -805,7 +805,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].document_id.0, "public-doc");
+        assert_eq!(results[0].document_id, "public-doc");
         assert_eq!(results[0].kiln, name_of(&public_kiln));
     }
 
@@ -841,10 +841,8 @@ mod tests {
                 .unwrap();
 
         assert_eq!(results.len(), 2);
-        assert!(results.iter().any(|r| r.document_id.0 == "primary-doc"));
-        assert!(results
-            .iter()
-            .any(|r| r.document_id.0 == "confidential-doc"));
+        assert!(results.iter().any(|r| r.document_id == "primary-doc"));
+        assert!(results.iter().any(|r| r.document_id == "confidential-doc"));
     }
 
     #[tokio::test]
@@ -878,14 +876,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(results.len(), 2);
-        assert!(results
-            .iter()
-            .any(|r| r.document_id.0 == "unclassified-doc"));
+        assert!(results.iter().any(|r| r.document_id == "unclassified-doc"));
     }
 
     fn block_result(document_id: &str, score: f64, span_start: usize) -> SearchResult {
         SearchResult {
-            document_id: DocumentId(document_id.to_string()),
+            document_id: document_id.to_string(),
             score,
             highlights: None,
             snippet: Some(format!("passage at {span_start}")),
@@ -982,7 +978,7 @@ mod rerank_tests {
 
     fn block_hit(document_id: &str, score: f64, span_start: usize) -> SearchResult {
         SearchResult {
-            document_id: DocumentId(document_id.to_string()),
+            document_id: document_id.to_string(),
             score,
             highlights: None,
             snippet: None,
@@ -1055,12 +1051,7 @@ mod rerank_tests {
 
         let order: Vec<(String, usize)> = results
             .iter()
-            .map(|r| {
-                (
-                    r.document_id.0.clone(),
-                    r.block.as_ref().unwrap().span_start,
-                )
-            })
+            .map(|r| (r.document_id.clone(), r.block.as_ref().unwrap().span_start))
             .collect();
         assert_eq!(
             order,
@@ -1101,7 +1092,7 @@ mod rerank_tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(
-            results[0].document_id.0, "b.md",
+            results[0].document_id, "b.md",
             "the handler's first hit survives the cut"
         );
     }
@@ -1126,7 +1117,7 @@ mod rerank_tests {
 
         let results = search(&sources, 10, &stage).await;
 
-        let order: Vec<&str> = results.iter().map(|r| r.document_id.0.as_str()).collect();
+        let order: Vec<&str> = results.iter().map(|r| r.document_id.as_str()).collect();
         assert_eq!(order, vec!["a.md", "b.md"]);
     }
 
@@ -1205,7 +1196,7 @@ mod rerank_tests {
 
         assert_eq!(results.len(), 2, "the cut counts the introduced hit");
         let first = &results[0];
-        assert_eq!(first.document_id.0, "c.md");
+        assert_eq!(first.document_id, "c.md");
         assert_eq!(first.score, 0.95);
         assert_eq!(
             first.kiln,
@@ -1218,7 +1209,7 @@ mod rerank_tests {
         let block = first.block.as_ref().unwrap();
         assert_eq!((block.span_start, block.span_end), (40, 50));
         assert_eq!(block.cited, vec![(0, 5)]);
-        assert_eq!(results[1].document_id.0, "a.md");
+        assert_eq!(results[1].document_id, "a.md");
     }
 
     /// An introduced entry that names another kiln, a row the store lacks,
@@ -1254,7 +1245,7 @@ mod rerank_tests {
 
         let order: Vec<(&str, f64)> = results
             .iter()
-            .map(|r| (r.document_id.0.as_str(), r.score))
+            .map(|r| (r.document_id.as_str(), r.score))
             .collect();
         assert_eq!(order, vec![("c.md", 0.8), ("a.md", 0.9)]);
     }

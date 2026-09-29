@@ -80,7 +80,7 @@ impl KnowledgeRepository for OneHitRepository {
         _limit: usize,
     ) -> anyhow::Result<Vec<crucible_core::SearchResult>> {
         Ok(vec![crucible_core::SearchResult {
-            document_id: crucible_core::DocumentId("notes/Rust.md".to_string()),
+            document_id: "notes/Rust.md".to_string(),
             score: 0.9,
             highlights: None,
             snippet: Some("body".to_string()),

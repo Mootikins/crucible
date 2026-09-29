@@ -876,7 +876,7 @@ mod blocks_tests {
                     let v = b.embedding.as_ref()?;
                     let score: f32 = v.iter().zip(&vector).map(|(a, b)| a * b).sum();
                     Some(crucible_core::types::SearchResult {
-                        document_id: crucible_core::types::DocumentId(b.note_path.clone()),
+                        document_id: b.note_path.clone(),
                         score: score as f64,
                         highlights: None,
                         snippet: Some(b.text.clone()),

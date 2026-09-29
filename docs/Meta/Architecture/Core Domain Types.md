@@ -251,7 +251,7 @@ behavior on top of them.
 | `crates/crucible-core/src/types/acp.rs` | 100 | `FileDiff` and re-exports of the raw ACP schema types under `types::acp::schema`. |
 | `crates/crucible-core/src/types/command.rs` | 248 | `BuiltinCommand` (the commands every client provides), `CommandKind` (`Builtin`/`Mode`/`Plugin`/`Skill`/`Agent`), `SessionCommand` (one catalog entry), `SendOutcome` (`Turn { message_id }` or `Command { command, result }`, `session.send_message`'s reply), and `split_slash_command`. |
 | `crates/crucible-core/src/types/command_effect.rs` | 150 | `CommandEffect` (`Read`/`Write`) — what a plugin command declares about itself in the `plugin.commands` reply. Owned here, not in `crucible-lua` (which has no `openapi` feature), and re-exported from there. |
-| `crates/crucible-core/src/types/database.rs` | 71 | `DocumentId`/`SearchResult`/`BlockRef`. |
+| `crates/crucible-core/src/types/database.rs` | 71 | `SearchResult`/`BlockRef`. `SearchResult::document_id` is a plain `String`: the old `DocumentId` newtype held no invariant. |
 | `crates/crucible-core/src/types/knob.rs` | 346 | `SessionKnob`/`AcpKnob`/`AgentConfigOption` — which per-session settings exist and how ACP handles them; `SessionKnob::PluginTurnLimit` is a daemon-only knob. |
 | `crates/crucible-core/src/types/mcp_status.rs` | 20 | `McpServerInfo` (display-only) for the `mcp_servers_ready` setup event. |
 | `crates/crucible-core/src/types/mode.rs` | 447 | `WriteMode`/`BuiltinMode`/`ModeDescriptor`/`SessionModes` — mode presentation and whether a mode's note writes apply to disk or are recorded as proposals. `SessionModes::next_mode`/the free function `next_mode` give the mode after the current one, wrapping, for `/mode` and its `Shift+Tab` equivalent. |
@@ -557,7 +557,7 @@ session-scopable, with a session scope taking priority over workspace/kiln
 scoping), `StatusDisplayItem`/`StatusItemKind`/`StatusProgress`
 (`types/status_item.rs`, the one wire shape for the `session.status` reply
 and the `status_items_changed` event) with `StatusColorGroup`/`plugin_hue`
-(`status_color.rs`) naming its color, `DocumentId`/`SearchResult`
+(`status_color.rs`) naming its color, `SearchResult`
 (`types/database.rs`), and `FileDiff` (`types/acp.rs`) round out the
 cross-crate wire vocabulary.
 

@@ -6,16 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Document identifier
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct DocumentId(pub String);
-
-impl std::fmt::Display for DocumentId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// Search result
 ///
 /// # Why the kiln is a name and not a path
@@ -35,7 +25,9 @@ impl std::fmt::Display for DocumentId {
 /// the field rather than substitute a placeholder.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
-    pub document_id: DocumentId,
+    /// The document that the hit names. Not a `DocumentId` newtype: the
+    /// string carries no invariant beyond "identifies a document".
+    pub document_id: String,
     pub score: f64,
     pub highlights: Option<Vec<String>>,
     pub snippet: Option<String>,

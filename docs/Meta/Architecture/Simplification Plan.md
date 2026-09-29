@@ -666,6 +666,23 @@ audit record:
 - The golden wire tests, captured before the change, still pass.
 
 
+**Part A progress (core and cross-crate items).** Tracked item by item, each
+with its evidence in the commit that did it:
+1. `TokenUsage` merge: skipped. `traits::llm::TokenUsage` has three required
+   `u32` fields plus two optional cache fields; `transcript::TokenUsage` has
+   four fields that are all `Option<u32>`, because
+   `TurnPayload::MessageComplete` can carry a partial usage report. A merge
+   would put `Option` on the required fields of the first type, which the
+   plan's design rules forbid.
+4. `SearchResult` merge: skipped. `types/database.rs::SearchResult` carries
+   `document_id`/`score`/`highlights`/`snippet`/`kiln`/`block`.
+   `storage/note_store.rs::SearchResult` carries a whole `NoteRecord` and a
+   score. Fitting one inside the other needs an optional `NoteRecord` or an
+   optional `document_id`, which the plan's design rules forbid.
+5. `DocumentId` done: replaced with `String` in
+   `crates/crucible-core/src/types/database.rs`. `rg -n "DocumentId" -t rust`
+   found 9 files; all call sites now use the inner `String` directly.
+
 ## Step 15. Luau types from the schema
 
 **Change.** Add `LuaType::from_json_schema` in

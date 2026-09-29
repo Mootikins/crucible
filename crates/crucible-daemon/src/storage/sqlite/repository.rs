@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use crucible_core::parser::{Frontmatter, FrontmatterFormat, ParsedNote, Wikilink};
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, NoteLinks};
-use crucible_core::types::{DocumentId, SearchResult};
+use crucible_core::types::SearchResult;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -189,7 +189,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         Ok(hits
             .into_iter()
             .map(|hit| SearchResult {
-                document_id: DocumentId(hit.block.note_path),
+                document_id: hit.block.note_path,
                 score: hit.score as f64,
                 highlights: None,
                 // The block's own text is the snippet. Nothing re-reads the
@@ -273,7 +273,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
                     format!("{}\nTags: {}", r.note.title, r.note.tags.join(", "))
                 });
                 SearchResult {
-                    document_id: DocumentId(r.note.path),
+                    document_id: r.note.path,
                     score: r.score as f64,
                     highlights: None,
                     snippet: Some(snippet),
@@ -463,7 +463,7 @@ mod tests {
         assert!(!results.is_empty());
 
         // First result should be rust.md (exact match)
-        assert_eq!(results[0].document_id.0, "notes/rust.md");
+        assert_eq!(results[0].document_id, "notes/rust.md");
     }
 
     /// Regression: the repository used to hardcode k=10 into the store call,
@@ -539,7 +539,7 @@ mod tests {
             !results.is_empty(),
             "the SQLite embedding column answers production semantic search"
         );
-        assert_eq!(results[0].document_id.0, "notes/rust.md");
+        assert_eq!(results[0].document_id, "notes/rust.md");
     }
 
     /// Memory-scoping regression test: a `KnowledgeRepository` bound to a
@@ -623,7 +623,7 @@ mod tests {
         let results = repo.search_vectors(vec![0.5, 0.5, 0.0], 10).await.unwrap();
         for result in &results {
             assert_ne!(
-                result.document_id.0, "notes/sibling_private.md",
+                result.document_id, "notes/sibling_private.md",
                 "sibling-workspace 'sibling_private.md' leaked into vector search"
             );
         }
