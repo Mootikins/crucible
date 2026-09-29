@@ -397,6 +397,30 @@
     }
   }
 
+  /* The close control on a rail icon: hidden at rest, shown when the pointer
+     is over the icon or the keyboard focus is in it. */
+  .wm-ribbon-tab-close {
+    opacity: 0;
+    border-radius: 9999px;
+    color: var(--color-muted-dark);
+    background-color: var(--color-shell-bg);
+    transition: opacity 100ms ease-out;
+  }
+
+  .wm-ribbon-tab-slot:hover .wm-ribbon-tab-close,
+  .wm-ribbon-tab-slot:focus-within .wm-ribbon-tab-close {
+    opacity: 1;
+  }
+
+  .wm-ribbon-tab-close:hover {
+    color: var(--color-shell-ink);
+  }
+
+  .wm-ribbon-tab-close:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 1px;
+  }
+
   /* The icon of the tab. A hover changes it into the grip. */
   .wm-tab-icon {
     color: var(--color-muted-dark);
@@ -553,6 +577,12 @@
   }
 
   .wm-floating-actions {
+    gap: 0.125rem;
+  }
+
+  /* The controls of a floating window outside its title bar: in its tab bar,
+     or in the bar of a tabless content. */
+  .wm-window-controls {
     gap: 0.125rem;
   }
 

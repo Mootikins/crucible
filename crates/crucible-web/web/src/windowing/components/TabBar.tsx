@@ -14,6 +14,7 @@ import { menuContent, menuItem } from '@/components/ui/menu-style';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard, tabsToClose, type TabMenuAction } from '@/windowing/context-menu';
+import { WindowControls, useFloatingWindow } from './WindowControls';
 
 // ── Tab titles ─────────────────────────────────────────────────────────
 
@@ -125,6 +126,9 @@ const TabItem: Component<TabItemProps> = (props) => {
     <div
       use:draggable
       data-tab-id={props.tab.id}
+      // The app's content type, for a theme: for example, a theme can hide
+      // the icon on a kind of tab that the title names well enough.
+      data-content-type={props.tab.contentType}
       {...(props.testId ? { 'data-testid': props.testId } : {})}
       // The state rides on data attributes; the theme draws it. The default
       // theme follows Obsidian: the active tab is a raised chip, and the
@@ -140,7 +144,7 @@ const TabItem: Component<TabItemProps> = (props) => {
       class="wm-tab relative flex items-center pr-5 cursor-pointer"
       onClick={() => props.onClick()}
     >
-      <div class="relative w-3.5 h-3.5 flex-shrink-0 cursor-grab active:cursor-grabbing">
+      <div class="wm-tab-lead relative w-3.5 h-3.5 flex-shrink-0 cursor-grab active:cursor-grabbing">
         <Show when={Icon} fallback={
           <IconGripVertical class="wm-tab-grip w-3.5 h-3.5" />
         }>
@@ -413,7 +417,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
  * The menu also moves the tab between the layout and a floating window, as
  * the panel menu of an Adobe app does. A tab in a docked pane shows "Pop out".
  * A tab in a floating window shows "Dock". Both call the store paths that the
- * pop-out button and the dock button of the title bar call.
+ * pop-out button and the dock control of the window call.
  *
  * The ribbon uses this menu too, because a theme can hide the tab bars of a
  * rail. Then the ribbon icon is the only handle of the tab.
@@ -428,6 +432,10 @@ export const TabContextMenu: Component<{
   const floating = () =>
     windowStore.floatingWindows.find((w) => w.tabGroupId === props.groupId());
   const paneId = () => (floating() ? undefined : props.paneId?.() || undefined);
+  const closesAny = (mode: 'close-others' | 'close-right') => {
+    const group = windowStore.tabGroups[props.groupId()];
+    return !!group && tabsToClose(group.tabs, props.tab.id, mode).some((t) => windowActions.canCloseTab(group.id, t.id));
+  };
   const onSelect = (action: TabMenuAction) => {
     switch (action) {
       case 'pop-out': {
@@ -474,18 +482,24 @@ export const TabContextMenu: Component<{
               Close
             </Menu.Item>
           </Show>
-          <Menu.Item
-            value="close-others"
-            class={menuItem}
-          >
-            Close Others
-          </Menu.Item>
-          <Menu.Item
-            value="close-right"
-            class={menuItem}
-          >
-            Close to the Right
-          </Menu.Item>
+          {/* A bulk close shows only when it closes at least one tab. On a
+              group of one kept tab, the rows would do nothing. */}
+          <Show when={closesAny('close-others')}>
+            <Menu.Item
+              value="close-others"
+              class={menuItem}
+            >
+              Close Others
+            </Menu.Item>
+          </Show>
+          <Show when={closesAny('close-right')}>
+            <Menu.Item
+              value="close-right"
+              class={menuItem}
+            >
+              Close to the Right
+            </Menu.Item>
+          </Show>
           {/* No Pop out on a tab that the policy keeps, or that the policy
               calls unavailable. The store refuses both, so the row would do
               nothing. */}
@@ -543,12 +557,19 @@ const CenterTabBar: Component<{
     tabsContainerRef: () => tabsContainerRef,
   });
 
+  // With `merged` chrome, the bar of a floating window holds the window's
+  // controls, and its empty part moves the window (FloatingWindow reads the
+  // drag handle attribute).
+  const floatingWindow = useFloatingWindow();
+  const merged = () => floatingWindow?.chrome() === 'merged';
+
   return (
     <div
       use:droppable
       ref={attachNativeMenuGuard}
       {...(edgePos() ? { 'data-testid': `edge-tabbar-${edgePos()}` } : {})}
       data-drop-active={droppable.isActiveDroppable ? '' : undefined}
+      data-wm-drag-handle={merged() ? '' : undefined}
       // Re-asserts the shell's select-none: the strip is drag chrome, and a
       // pane body re-enabled selection beneath this bar. `h-9` is a layout
       // contract: COLLAPSED_PANE_PX and the ribbon's MARKER_PX are 36px.
@@ -592,6 +613,9 @@ const CenterTabBar: Component<{
             <IconLayout class="w-4 h-4" />
           </button>
         )}
+        <Show when={floatingWindow && merged()}>
+          <WindowControls windowId={floatingWindow!.id} />
+        </Show>
       </div>
       {droppable.isActiveDroppable && (
         <div class="wm-tabbar-drop-line absolute inset-x-0 bottom-0" />

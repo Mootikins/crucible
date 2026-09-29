@@ -117,6 +117,22 @@ export type RibbonPlacement = 'edge' | 'panel';
 /** Every `RibbonPlacement`, with the same two checks as `EDGE_MODES`. */
 export const RIBBON_PLACEMENTS = ['edge', 'panel'] as const satisfies readonly RibbonPlacement[];
 
+/**
+ * Where a floating window puts its controls (pin, tab bar, dock, roll up,
+ * maximize, close).
+ *
+ * `titlebar`: the window draws a title bar that holds the controls, and the
+ * title bar is the drag handle. `merged`: the window draws no title bar. The
+ * controls act on the whole window, so they sit in the actions area of the
+ * window's own tab bar, and the empty part of that tab bar is the drag handle.
+ * A window without a tab bar gives the controls to its content through
+ * `useFloatingWindow()`. A look, not a layout: the serializer does not store it.
+ */
+export type FloatingChrome = 'titlebar' | 'merged';
+
+/** Every `FloatingChrome`, with the same two checks as `EDGE_MODES`. */
+export const FLOATING_CHROMES = ['titlebar', 'merged'] as const satisfies readonly FloatingChrome[];
+
 type FocusedRegion = EdgePanelPosition | 'center';
 
 export interface EdgePanel {
@@ -148,8 +164,8 @@ export interface FloatingWindow {
    * layout persistence. Pinning (or dragging/resizing — Hover Editor's
    * auto-pin) clears it, promoting the popover to a normal window. */
   transient?: boolean;
-  /** false hides the tab bar (compact hover-editor look); the titlebar
-   * toggle brings it back for native tab drag-and-drop. */
+  /** false hides the tab bar (compact hover-editor look); the tab bar
+   * control of the window brings it back for native tab drag-and-drop. */
   showTabBar?: boolean;
   /** Bounds to restore when un-maximizing. */
   restoreBounds?: { x: number; y: number; width: number; height: number };
@@ -219,6 +235,8 @@ export interface WindowState<C extends string = string> {
   expandExit: ExpandExit;
   /** Where the rail ribbons sit. See `RibbonPlacement`. */
   ribbonPlacement: RibbonPlacement;
+  /** Where a floating window puts its controls. See `FloatingChrome`. */
+  floatingChrome: FloatingChrome;
 }
 
 export type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';

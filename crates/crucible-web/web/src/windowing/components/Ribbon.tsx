@@ -11,7 +11,9 @@ import { RibbonPaneStrip } from './RibbonPaneStrip';
 import { RibbonCommand, ribbonBtn } from './RibbonButton';
 import { TabContextMenu } from './TabBar';
 import { paneTopIn, railBodyEl, watchRailGeometry } from './rail-geometry';
+import { confirmTabClose } from '@/windowing/model/tab-guards';
 import {
+  IconClose,
   IconPanelLeft,
   IconPanelLeftClose,
   IconPanelRight,
@@ -72,13 +74,18 @@ const RibbonTabButton: Component<{
 
   // The state rides on data attributes. The theme decides how each one looks.
   // The tab menu of the tab bar wraps the icon: a theme can hide the tab bars
-  // of a rail, and then this icon is the only handle of the tab.
+  // of a rail, and then this icon is the only handle of the tab. For the same
+  // reason the icon carries its own close control; the theme shows it on
+  // hover and on focus. A tab that the policy keeps gets none.
+  const closable = () => windowActions.canCloseTab(props.groupId, props.tab.id);
   return (
     <TabContextMenu groupId={() => props.groupId} paneId={() => props.paneId} tab={props.tab}>
+    <div class="wm-ribbon-tab-slot relative flex-none">
     <button
       use:draggable
       type="button"
       data-testid={`collapsed-tab-button-${props.position}`}
+      data-content-type={props.tab.contentType}
       data-orientation={props.isVertical ? 'vertical' : 'horizontal'}
       data-highlighted={highlighted() ? '' : undefined}
       data-unavailable={unavailable() ? '' : undefined}
@@ -98,6 +105,21 @@ const RibbonTabButton: Component<{
         <span class="wm-icon-letter truncate max-w-[2rem]">{props.tab.title[0]}</span>
       )}
     </button>
+    <Show when={closable()}>
+      <button
+        type="button"
+        aria-label={`Close ${props.tab.title}`}
+        data-testid={`ribbon-tab-close-${props.position}`}
+        class="wm-ribbon-tab-close absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (confirmTabClose(props.tab)) windowActions.removeTab(props.groupId, props.tab.id);
+        }}
+      >
+        <IconClose class="w-2.5 h-2.5" />
+      </button>
+    </Show>
+    </div>
     </TabContextMenu>
   );
 };

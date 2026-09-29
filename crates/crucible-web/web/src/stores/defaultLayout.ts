@@ -147,5 +147,6 @@ export function defaultLayout(): WindowState {
     expandedEdge: null,
     expandExit: 'toggle',
     ribbonPlacement: 'edge',
+    floatingChrome: 'titlebar',
   };
 }

@@ -182,6 +182,9 @@ describe('the window manager renders no look of its own', () => {
       'wm-ribbon-btn',
       'wm-ribbon-toggle',
       'wm-ribbon-tab',
+      'wm-ribbon-tab-slot',
+      'wm-ribbon-tab-close',
+      'wm-tab-lead',
       'wm-ribbon-leading',
       'wm-ribbon-trailing',
       'wm-ribbon-cmd',
@@ -208,6 +211,33 @@ describe('the window manager renders no look of its own', () => {
       'wm-floating-body',
       'wm-minimized-bar',
       'wm-minimized-btn',
+    ]) {
+      expect(container.querySelector(`.${part}`), part).not.toBeNull();
+    }
+
+    expect(lookOffenders(container)).toEqual([]);
+  });
+
+  it('puts the look of the merged window controls in the theme', () => {
+    // With `merged` chrome, a floating window draws its controls in its tab
+    // bar, and a tabless window draws its fallback title bar.
+    windowActions.setFloatingChrome('merged');
+    const floatGroup = windowActions.createTabGroup();
+    windowActions.addTab(floatGroup, { id: 'tab-float', title: 'Float', contentType: 'alpha' });
+    windowActions.createFloatingWindow(floatGroup, 100, 100, 400, 300, { transient: true });
+    const bareGroup = windowActions.createTabGroup();
+    windowActions.addTab(bareGroup, { id: 'tab-bare', title: 'Bare', contentType: 'alpha' });
+    windowActions.createFloatingWindow(bareGroup, 200, 200, 300, 200, { showTabBar: false });
+
+    const { container } = render(() => <WindowManager renderContent={neutralRenderer} slots={{}} />);
+
+    for (const part of [
+      'wm-floating',
+      'wm-tabbar-actions',
+      'wm-window-controls',
+      'wm-floating-btn',
+      'wm-floating-titlebar',
+      'wm-floating-body',
     ]) {
       expect(container.querySelector(`.${part}`), part).not.toBeNull();
     }

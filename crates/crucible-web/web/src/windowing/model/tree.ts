@@ -55,6 +55,7 @@ export function emptyState<C extends string = string>(): WindowState<C> {
     expandedEdge: null,
     expandExit: 'toggle',
     ribbonPlacement: 'edge',
+    floatingChrome: 'titlebar',
   };
 }
 

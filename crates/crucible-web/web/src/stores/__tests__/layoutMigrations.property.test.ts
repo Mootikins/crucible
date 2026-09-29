@@ -189,6 +189,7 @@ describe('layout round-trip property tests', () => {
             expandedEdge: null,
             expandExit: 'toggle',
             ribbonPlacement: 'edge',
+            floatingChrome: 'titlebar',
           };
 
           // Should not throw

@@ -3,14 +3,11 @@ import { windowStore, windowActions } from '@/windowing/store';
 import type { FloatingWindow as FloatingWindowType } from '@/windowing/model/types';
 import { TabBar } from './TabBar';
 import {
-  IconClose,
-  IconLayout,
-  IconMinimize,
-  IconMaximize,
-  IconPin,
-  IconTabBar,
-} from './icons';
-import { confirmTabClose } from '@/windowing/model/tab-guards';
+  FloatingWindowProvider,
+  WindowActionButtons,
+  WindowPinButton,
+  startsWindowDrag,
+} from './WindowControls';
 import { useWindowing } from '@/windowing/components/context';
 
 type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se';
@@ -35,7 +32,6 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
   const windowing = useWindowing();
   const w = () => props.window;
   const group = () => windowStore.tabGroups[w().tabGroupId];
-  const tabs = () => group()?.tabs ?? [];
   const activeTab = () => {
     const g = group();
     if (!g) return null;
@@ -130,17 +126,15 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
     };
   };
 
-  // Closing the window closes its tabs — same unsaved-changes contract as
-  // every other tab-close path (confirmTabClose per modified tab).
-  const handleClose = () => {
-    const modified = tabs().filter((t) => t.isModified);
-    for (const tab of modified) {
-      if (!confirmTabClose(tab)) return;
-    }
-    windowActions.closeFloatingWindow(w().id);
-  };
-
-  const handleTitleMouseDown = (e: MouseEvent) => {
+  /**
+   * A press in a drag handle of this window moves the window. The title bar
+   * is a handle. With `floatingChrome: 'merged'`, the empty part of the tab
+   * bar is a handle. Content marks its own handles with DRAG_HANDLE_ATTR. A
+   * press on a button, a field, a link or a tab keeps its own behaviour.
+   */
+  const handleMouseDown = (e: MouseEvent) => {
+    windowActions.bringToFront(w().id);
+    if (!rootRef || !startsWindowDrag(e.target, rootRef)) return;
     if (w().isMaximized) return;
     autoPin();
     e.preventDefault();
@@ -151,8 +145,21 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
       windowX: w().x,
       windowY: w().y,
     });
-    windowActions.bringToFront(w().id);
   };
+
+  // A tabless window with `merged` chrome gives its controls to its content.
+  // A content that does not mount them would leave the window with no way to
+  // close it, so the window then draws its title bar.
+  const [claims, setClaims] = createSignal(0);
+  const claimControls = () => {
+    setClaims((n) => n + 1);
+    return () => setClaims((n) => n - 1);
+  };
+  const hasTabBar = () => w().showTabBar !== false;
+  const showTitleBar = () =>
+    windowStore.floatingChrome === 'titlebar' || (!hasTabBar() && claims() === 0);
+
+  let rootRef: HTMLDivElement | undefined;
 
   createEffect(() => {
     if (!isDragging()) return;
@@ -172,142 +179,88 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
     });
   });
 
-  const titleBtn = 'wm-floating-btn';
-
   return (
-    <div
-      data-window-id={w().id}
-      class="wm-floating absolute flex flex-col"
-      style={
-        w().isMaximized
-          ? {
-              // Hover Editor maximize: cover the workspace, keeping the
-              // far-left ribbon, header, and status bar visible.
-              left: '44px',
-              top: '44px',
-              width: 'calc(100vw - 48px)',
-              height: 'calc(100vh - 72px)',
-              'z-index': `${w().zIndex}`,
-            }
-          : {
-              left: `${w().x}px`,
-              top: `${w().y}px`,
-              width: `${w().width}px`,
-              height: `${w().height}px`,
-              'z-index': `${w().zIndex}`,
-            }
-      }
-      onMouseDown={() => windowActions.bringToFront(w().id)}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <For each={HANDLE_DEFS}>
-        {(h) => (
-          <div
-            style={{
-              position: 'absolute',
-              ...h.style,
-              cursor: h.cursor,
-              opacity: isHovered() && !w().isMaximized ? '1' : '0',
-            }}
-            onPointerDown={(e) => handleResizePointerDown(h.edge, e)}
-          />
-        )}
-      </For>
-      {/* Hover Editor titlebar: pin | title (drag) | tab-bar toggle, dock,
-          roll up, maximize/restore, close. */}
+    <FloatingWindowProvider windowId={w().id} onClaim={claimControls}>
       <div
-        class="wm-floating-titlebar flex items-center cursor-grab active:cursor-grabbing select-none"
-        onMouseDown={handleTitleMouseDown}
+        ref={rootRef}
+        data-window-id={w().id}
+        class="wm-floating absolute flex flex-col"
+        style={
+          w().isMaximized
+            ? {
+                // Hover Editor maximize: cover the workspace, keeping the
+                // far-left ribbon, header, and status bar visible.
+                left: '44px',
+                top: '44px',
+                width: 'calc(100vw - 48px)',
+                height: 'calc(100vh - 72px)',
+                'z-index': `${w().zIndex}`,
+              }
+            : {
+                left: `${w().x}px`,
+                top: `${w().y}px`,
+                width: `${w().width}px`,
+                height: `${w().height}px`,
+                'z-index': `${w().zIndex}`,
+              }
+        }
+        onMouseDown={handleMouseDown}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        <Show when={w().transient}>
-          <button
-            type="button"
-            class={titleBtn}
-            data-testid="float-pin"
-            onClick={(e) => {
-              e.stopPropagation();
-              windowActions.pinFloatingWindow(w().id);
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            title="Pin (keep open when the cursor leaves)"
+        <For each={HANDLE_DEFS}>
+          {(h) => (
+            <div
+              style={{
+                position: 'absolute',
+                ...h.style,
+                cursor: h.cursor,
+                opacity: isHovered() && !w().isMaximized ? '1' : '0',
+              }}
+              onPointerDown={(e) => handleResizePointerDown(h.edge, e)}
+            />
+          )}
+        </For>
+        {/* Hover Editor titlebar: pin | title (drag) | tab-bar toggle, dock,
+            roll up, maximize/restore, close. With `merged` chrome the tab bar
+            holds the controls instead. */}
+        <Show when={showTitleBar()}>
+          <div
+            class="wm-floating-titlebar flex items-center cursor-grab active:cursor-grabbing select-none"
+            data-wm-drag-handle=""
           >
-            <IconPin class="w-3 h-3" />
-          </button>
+            <WindowPinButton windowId={w().id} />
+            <span class="wm-floating-title min-w-0 flex-1 truncate">
+              {w().title ?? 'Window'}
+            </span>
+            <div class="wm-floating-actions flex items-center">
+              <WindowActionButtons windowId={w().id} />
+            </div>
+          </div>
         </Show>
-        <span class="wm-floating-title min-w-0 flex-1 truncate">
-          {w().title ?? 'Window'}
-        </span>
-        <div class="wm-floating-actions flex items-center" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            class={titleBtn}
-            data-testid="float-tabbar-toggle"
-            onClick={() =>
-              windowActions.updateFloatingWindow(w().id, {
-                showTabBar: w().showTabBar === false,
-              })
-            }
-            title={w().showTabBar === false ? 'Show tab bar' : 'Hide tab bar'}
-          >
-            <IconTabBar class="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            class={titleBtn}
-            onClick={() => windowActions.dockFloatingWindow(w().id)}
-            title="Dock back into the layout"
-          >
-            <IconLayout class="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            class={titleBtn}
-            onClick={() => windowActions.minimizeFloatingWindow(w().id)}
-            title="Roll up into the window bar"
-          >
-            <IconMinimize class="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            class={titleBtn}
-            data-testid="float-maximize"
-            onClick={() =>
-              w().isMaximized
-                ? windowActions.restoreFloatingWindow(w().id)
-                : windowActions.maximizeFloatingWindow(w().id)
-            }
-            title={w().isMaximized ? 'Restore previous size' : 'Maximize'}
-          >
-            <IconMaximize class="w-3 h-3" />
-          </button>
-          <button type="button" class={titleBtn} onClick={handleClose} title="Close (closes its tabs)">
-            <IconClose class="w-3 h-3" />
-          </button>
+        <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <Show when={hasTabBar()}>
+            <TabBar groupId={w().tabGroupId} paneId="" />
+          </Show>
+          <div class="wm-floating-body flex-1 overflow-auto select-text" data-testid={`panel-content-${activeContentType() ?? 'unknown'}`}>
+            {(() => {
+              const id = activeTabId();
+              const contentType = activeContentType();
+              if (!id || !contentType) {
+                return (
+                  <div class="wm-floating-body flex-1 overflow-auto">
+                    <span>No tabs</span>
+                  </div>
+                );
+              }
+              // The live copy of THIS tab, rendered untracked, as in Pane.
+              const snapshot = untrack(activeTab)!;
+              const live = () => group()?.tabs.find((t) => t.id === id) ?? snapshot;
+              return untrack(() => windowing.renderContent(live));
+            })()}
+          </div>
         </div>
       </div>
-      <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <Show when={w().showTabBar !== false}>
-          <TabBar groupId={w().tabGroupId} paneId="" />
-        </Show>
-        <div class="wm-floating-body flex-1 overflow-auto select-text" data-testid={`panel-content-${activeContentType() ?? 'unknown'}`}>
-          {(() => {
-            const id = activeTabId();
-            const contentType = activeContentType();
-            if (!id || !contentType) {
-              return (
-                <div class="wm-floating-body flex-1 overflow-auto">
-                  <span>No tabs</span>
-                </div>
-              );
-            }
-            // The live copy of THIS tab, rendered untracked, as in Pane.
-            const snapshot = untrack(activeTab)!;
-            const live = () => group()?.tabs.find((t) => t.id === id) ?? snapshot;
-            return untrack(() => windowing.renderContent(live));
-          })()}
-        </div>
-      </div>
-    </div>
+    </FloatingWindowProvider>
   );
 };

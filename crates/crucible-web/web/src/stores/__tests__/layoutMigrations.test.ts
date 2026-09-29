@@ -85,6 +85,7 @@ function createTestState(): WindowState {
     expandedEdge: null,
     expandExit: 'toggle',
     ribbonPlacement: 'edge',
+    floatingChrome: 'titlebar',
   };
 }
 
@@ -295,6 +296,7 @@ describe('layout history and restore', () => {
       expandedEdge: null,
       expandExit: 'toggle',
       ribbonPlacement: 'edge',
+      floatingChrome: 'titlebar',
     };
 
     // Serialize and deserialize

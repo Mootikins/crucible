@@ -22,7 +22,7 @@ frontend. That backend also stores the saved layout.
 |---|---|
 | `model/` | `WindowState` and the node types (`types.ts`), the tree helpers (`tree.ts`), the pane and collision helpers (`pane-content.ts`, `pane-collapse.ts`, `pane-boundaries.ts`, `collision-detector.ts`, `layout-restore.ts`, `tab-guards.ts`), and the v10 layout serializer (`serializer.ts`) |
 | `store/` | The Solid store, the `WindowPolicy` type (`policy.ts`), and the tab, layout and floating-window actions |
-| `components/` | `WindowManager`, `EdgeHost`, `Ribbon`, `DockedBody`, `Pane`, `SplitPane`, `CenterTiling`, `TabBar`, `FloatingWindow`, `EmptyPane`, `MinimizedBar`, `RibbonPaneStrip`, plus `split-drag.ts` and `tab-placement.ts`. `context.tsx` holds the `WindowingSlots` type, the provider and `DROP_OVER_ATTR`. `icons.tsx` names the icons that the chrome draws. `RibbonButton.tsx` holds `ribbonBtn` and `RibbonCommand` |
+| `components/` | `WindowManager`, `EdgeHost`, `Ribbon`, `DockedBody`, `Pane`, `SplitPane`, `CenterTiling`, `TabBar`, `FloatingWindow`, `WindowControls`, `EmptyPane`, `MinimizedBar`, `RibbonPaneStrip`, plus `split-drag.ts` and `tab-placement.ts`. `context.tsx` holds the `WindowingSlots` type, the provider and `DROP_OVER_ATTR`. `icons.tsx` names the icons that the chrome draws. `RibbonButton.tsx` holds `ribbonBtn` and `RibbonCommand` |
 | `reveal/` | `RevealController` and `flyoutRect`, the two pure/reactive rules a hover reveal needs |
 | `context-menu.ts` | The native-fallthrough rule for a custom right-click menu (Shift+right-click, images, links) |
 | `shortcuts.ts` | `ShortcutAction`, `matchShortcut`, `LAYOUT_SHORTCUTS` — the chords the layout owns |
@@ -57,6 +57,10 @@ App code imports the core from `@/windowing`, which is
 it has an app caller. It exports the store and its actions, `WindowManager`,
 the slot type, `DROP_OVER_ATTR`, the model types and tree queries that the app
 uses, the stored layout types, the chords and the context menu rule.
+
+`WindowControls`, `useFloatingWindow` and the `FloatingWindowHandle` type
+are public, because a tabless content can hold the controls of its window.
+See "Floating chrome" below.
 
 `ribbonBtn` and `RibbonCommand` are public on purpose. The app draws its own
 rail buttons in `components/shell/RailChrome.tsx`, and those buttons must
@@ -215,6 +219,36 @@ chord, and a policy can bind another one.
 - **Not stored.** It is the user's setting: a reset and a restore keep it, and
   the serializer does not write it.
 
+## Floating chrome
+
+`WindowState.floatingChrome` sets where a floating window puts its controls:
+the pin of a transient window, the tab bar toggle, dock, roll up, maximize or
+restore, and close. The action is `setFloatingChrome`. `WindowControls.tsx`
+holds the controls, so each control has one implementation in every place.
+
+- **`titlebar`** (the default): the window draws a title bar. The title bar
+  holds the controls, and it is the drag handle.
+- **`merged`**: the window draws no title bar. The controls act on the whole
+  window, so they sit in `wm-tabbar-actions` of the window's own tab bar.
+  The empty part of that tab bar is the drag handle.
+- **A window without a tab bar.** A peek or a hover editor that shows one
+  document sets `showTabBar: false`. Such a window has no tab bar to hold the
+  controls, so the core gives them to the content. The content calls
+  `useFloatingWindow()`, which returns null for docked content. Inside a
+  floating window it returns `{ id, controls, chrome, hasTabBar }`. The
+  content renders `<fw.controls />` in its own nav bar when `fw.chrome()` is
+  `merged` and `fw.hasTabBar()` is false.
+- **The fallback.** A tabless `merged` window whose content does not mount
+  `controls` draws its title bar. Without it, the window has no close control.
+- **Drag handles.** A press in an element that carries `data-wm-drag-handle`
+  moves its floating window. The title bar carries it. With `merged`, the
+  window's tab bar carries it. A content marks its own nav bar with it. A
+  press on a button, a field, a link, a `[role=button]` element or a tab does
+  not start a drag. A drag does not move a maximized window, and it pins a
+  transient window.
+- **Not stored.** It is the user's setting: a reset and a restore keep it, and
+  the serializer does not write it.
+
 ## Pop out and dock
 
 The right-click menu of a tab moves the tab between the layout and a floating
@@ -227,8 +261,8 @@ window, as the panel menu of an Adobe app does. `TabContextMenu` in
   a new floating window, and the pane keeps its other tabs. When the tab is
   the only tab of the pane, the whole group moves, as without a tab id.
 - **Dock.** A tab in a floating window shows this row. The row calls
-  `dockFloatingWindow(windowId, tabId)`, the same action as the dock button
-  of the title bar. With a tab id, the action moves that tab only into the
+  `dockFloatingWindow(windowId, tabId)`, the same action as the dock control
+  of the window. With a tab id, the action moves that tab only into the
   centre tiling, and the window keeps its other tabs. The last tab takes the
   window with it. A centre whose root is a split takes the tab beside its
   first pane.
@@ -244,6 +278,10 @@ window, as the panel menu of an Adobe app does. `TabContextMenu` in
   key and `Shift+F10` open it on a focused ribbon icon. The arrow keys move
   through the rows, and `Enter` chooses a row.
 
+
+The tab menu shows "Close Others" and "Close to the Right" only when the
+row closes at least one tab. On a group of one kept tab, the menu shows no
+close row.
 ## Layout queries the app uses
 
 `model/tree.ts` holds the pure queries over a layout. Two of them moved here
@@ -330,6 +368,7 @@ Each element that the theme styles carries one `wm-<part>` class.
 | `wm-ribbon-toggle` | The button that opens and closes the rail |
 | `wm-ribbon-cmd` | A command button (`RibbonCommand`) |
 | `wm-ribbon-tab` | The icon of one rail tab |
+| `wm-ribbon-tab-slot`, `wm-ribbon-tab-close` | The box of a rail icon, and its close control. The default theme shows the control on hover and on focus. A tab that the policy keeps has no control |
 | `wm-ribbon-leading` | The tab icons of the leading branch of the rail, under the toggle. The default theme gives it no look |
 | `wm-ribbon-trailing` | The tab icons of the trailing branch (the `second` half of the root split), at the far end of the ribbon. The default theme gives it no look |
 | `wm-ribbon-tail` | The pinned cluster at the far end of the ribbon |
@@ -347,12 +386,14 @@ Each element that the theme styles carries one `wm-<part>` class.
 | `wm-tabbar-drop-line` | The line under a tab bar during a tab drag |
 | `wm-tab-insert` | The mark that shows where a moved tab goes |
 | `wm-tab` | A tab |
-| `wm-tab-icon`, `wm-tab-grip` | The icon of a tab, and the grip that replaces it on hover |
+| `wm-tab-lead` | The box at the start of a tab that holds the icon and the grip |
+| `wm-tab-icon`, `wm-tab-grip` | The icon of a tab, and the grip that replaces it on hover. The whole tab is the drag handle, so a theme can hide the grip |
 | `wm-tab-title` | The title of a tab |
 | `wm-tab-dot` | The mark of unsaved work |
 | `wm-tab-close` | The close button of a tab |
 | `wm-tab-menu`, `wm-tab-menu-item`, `wm-tab-menu-dot` | The list of every tab |
-| `wm-floating`, `wm-floating-titlebar`, `wm-floating-title`, `wm-floating-actions`, `wm-floating-btn`, `wm-floating-body` | A floating window |
+| `wm-floating`, `wm-floating-titlebar`, `wm-floating-title`, `wm-floating-actions`, `wm-floating-btn`, `wm-floating-body` | A floating window. `wm-floating-btn` is each control of the window, in every place |
+| `wm-window-controls` | The controls of a floating window outside its title bar: in its tab bar, or in the nav bar of a tabless content (`floatingChrome: 'merged'`) |
 | `wm-minimized-bar`, `wm-minimized-btn` | The bar of rolled-up floating windows |
 
 The right-click menu of a tab uses the shared `menuContent` and `menuItem`
@@ -373,6 +414,7 @@ writes the raw state. The theme decides which state wins.
 | `data-overflows` | `wm-tab-title` | The box cuts the title |
 | `data-highlighted` | `wm-ribbon-tab` | The tab shows in an open pane |
 | `data-unavailable` | `wm-ribbon-tab` | The policy gives a reason that the tab cannot open |
+| `data-content-type` | `wm-tab`, `wm-ribbon-tab` | The app's content type of the tab, for a theme that styles one kind of tab |
 | `data-orientation` | `wm-ribbon-tab` | `vertical` or `horizontal` |
 | `data-collapsed` | `wm-pane-marker` | `true` or `false`: the pane shows its tab bar only |
 | `data-locked` | `wm-splitter`, `wm-pane-boundary` | A collapsed or empty side holds the split |
@@ -441,7 +483,8 @@ flow, the pane markers stop at the tail and not at the cluster.
 
 `components/__tests__/theme-gate.test.tsx` renders the window manager with
 open rails, a split centre, tabs, a modified tab, a floating window and a
-rolled-up window. It walks every element in the DOM. It fails when an element
+rolled-up window. A second case renders the `merged` window controls. It
+walks every element in the DOM. It fails when an element
 carries a class that sets a look: a colour, a border colour, a radius, a
 shadow, a ring, an outline, a font size or weight, an opacity, a transition,
 or a variant of one of these. It also fails when the walk does not find one
