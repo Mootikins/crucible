@@ -5,7 +5,6 @@
 //! Path containment is not here: the daemon's `fs.read` and `fs.write` own it.
 
 use crate::WebError;
-use crucible_core::protocol::requests::NoteListRow;
 
 /// Response for model listings — the session-scoped `list_models` and the
 /// session-less `list_all_models` return the same `{ models: [...] }` shape.
@@ -52,41 +51,6 @@ pub(crate) fn versioned<S>(
         )],
         stream,
     )
-}
-
-// =========================================================================
-// Note mapping
-// =========================================================================
-
-/// Tuple returned by [`crate::services::daemon::DaemonService::list_notes`].
-pub(crate) type NoteListItem = NoteListRow;
-
-/// Map a note list item to full metadata JSON.
-///
-/// Produces: `{ name, path, title, tags, updated_at }`.
-pub(crate) fn note_to_metadata_json(row: NoteListItem) -> serde_json::Value {
-    serde_json::json!({
-        "name": row.name,
-        "path": row.path,
-        "title": row.title,
-        "tags": row.tags,
-        "updated_at": row.updated_at,
-        // The note's own frontmatter: what a client needs to filter, sort or
-        // group notes without asking a plugin to do it. Filtered at the
-        // boundary (`NoteInfo::from`), so no daemon stamp is in here.
-        "properties": row.properties,
-    })
-}
-
-/// Map a note list item to a file-entry JSON.
-///
-/// Produces: `{ name, path, is_dir: false }`.
-pub(crate) fn note_to_file_json(row: NoteListItem) -> serde_json::Value {
-    serde_json::json!({
-        "name": row.name,
-        "path": row.path,
-        "is_dir": false,
-    })
 }
 
 // =========================================================================

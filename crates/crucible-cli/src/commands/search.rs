@@ -188,11 +188,9 @@ async fn collect_search_kilns(
 
     if let Ok(registered) = client.kiln_list().await {
         for kiln_info in registered {
-            if let Some(path_str) = kiln_info.get("path").and_then(|v| v.as_str()) {
-                let path = PathBuf::from(path_str);
-                if path != primary_kiln {
-                    kilns.push(path);
-                }
+            let path = PathBuf::from(kiln_info.path);
+            if path != primary_kiln {
+                kilns.push(path);
             }
         }
     }

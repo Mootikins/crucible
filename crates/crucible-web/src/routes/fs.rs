@@ -4,7 +4,6 @@
 //! (live filesystem-change SSE).
 
 use crate::fs_events::FsEvent;
-use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -92,7 +91,7 @@ async fn list_dir(
         .await
         .daemon_err()?;
 
-    Ok(Json(daemon_shape(listing, "fs.list_dir")?))
+    Ok(Json(listing))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -133,7 +132,7 @@ async fn move_path(
         .fs_move(&body.root, &body.kind, &body.from_rel, &body.to_rel)
         .await
         .daemon_err()?;
-    Ok(Json(daemon_shape(outcome, "fs.move")?))
+    Ok(Json(outcome))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -205,7 +204,7 @@ async fn trash_path(
         .fs_trash(&body.root, &body.kind, &body.rel_path)
         .await
         .daemon_err()?;
-    Ok(Json(daemon_shape(outcome, "fs.trash")?))
+    Ok(Json(outcome))
 }
 
 /// Live filesystem-change stream for the file-tree explorer.

@@ -319,9 +319,7 @@ async fn test_complete_user_flow() {
     // whether the directory is a kiln.
     let kilns = client.kiln_list().await.expect("kiln.list after close");
     assert!(
-        kilns
-            .iter()
-            .all(|row| !row["open"].as_bool().unwrap_or(false)),
+        kilns.iter().all(|row| !row.open),
         "no kiln should be open after close: {kilns:?}"
     );
 

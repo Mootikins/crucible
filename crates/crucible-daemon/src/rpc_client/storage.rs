@@ -163,7 +163,10 @@ impl KnowledgeRepository for DaemonStorageClient {
         let result = self.client.get_note_by_name(&self.kiln, name, None).await?;
 
         match result {
-            Some(data) => Ok(parse_note_from_record(&data)),
+            Some(data) => {
+                let value = serde_json::to_value(data)?;
+                Ok(parse_note_from_record(&value))
+            }
             None => Ok(None),
         }
     }
@@ -349,8 +352,15 @@ impl NoteStore for DaemonNoteStore {
             .kiln_graph(self.client.kiln_path(), None)
             .await
             .storage_backend()?;
-        let links = graph.get("links").cloned().unwrap_or(Value::Array(vec![]));
-        serde_json::from_value(links).map_err(|e| StorageError::Deserialization(e.to_string()))
+        Ok(graph
+            .links
+            .into_iter()
+            .map(|l| GraphLink {
+                source: l.source,
+                target: l.target,
+                resolved: l.resolved,
+            })
+            .collect())
     }
 
     fn needs_link_reindex(&self) -> bool {

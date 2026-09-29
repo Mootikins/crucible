@@ -418,7 +418,7 @@ async fn test_client_kiln_list_names_the_registered_kiln() {
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
     for _ in 0..100 {
         let list = client.kiln_list().await.unwrap();
-        if list.iter().any(|row| row["name"] == "kiln") {
+        if list.iter().any(|row| row.name == "kiln") {
             return;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;

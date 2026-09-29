@@ -276,16 +276,9 @@ async fn show_status(json: bool) -> Result<()> {
                     .kiln_list()
                     .await?
                     .into_iter()
-                    .filter_map(|k| {
-                        let path = k.get("path")?.as_str()?.to_string();
-                        let last_access_secs_ago = k
-                            .get("last_access_secs_ago")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        Some(KilnStatus {
-                            path,
-                            last_access_secs_ago,
-                        })
+                    .map(|k| KilnStatus {
+                        path: k.path,
+                        last_access_secs_ago: k.last_access_secs_ago.unwrap_or(0),
                     })
                     .collect();
                 DaemonStatus {

@@ -217,11 +217,10 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
     let listed = client.kiln_list().await.expect("kiln.list failed");
     let row = listed
         .iter()
-        .find(|row| row["name"] == serde_json::json!("classified"))
+        .find(|row| row.name == "classified")
         .unwrap_or_else(|| panic!("the registered kiln is listed: {listed:?}"));
-    assert_eq!(
-        row["open"],
-        serde_json::json!(false),
+    assert!(
+        !row.open,
         "a trust-refused attach must not open the kiln: {listed:?}"
     );
 

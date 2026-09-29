@@ -1,4 +1,3 @@
-use super::helpers::note_to_file_json;
 use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -12,6 +11,7 @@ use base64::Engine as _;
 use crucible_core::file_write::{FileContent, FileEncoding, FileReadReply, FileReadRequest};
 use crucible_core::note_edit::{AnchoredEdit, EditRefusal};
 use crucible_core::note_merge::Region;
+use crucible_core::protocol::requests::KilnGraphReply;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use utoipa::{IntoParams, ToSchema};
@@ -140,11 +140,16 @@ async fn list_kiln_notes(
 async fn kiln_file_listing(state: &AppState, kiln: &Path) -> Result<KilnFilesResponse, WebError> {
     let notes = state.daemon.list_notes(kiln, None).await.daemon_err()?;
 
-    let files: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
+    let files: Vec<FileEntryRow> = notes
+        .into_iter()
+        .map(|n| FileEntryRow {
+            name: n.name,
+            path: n.path,
+            is_dir: false,
+        })
+        .collect();
 
-    Ok(KilnFilesResponse {
-        files: daemon_shape(serde_json::Value::Array(files), "note.list")?,
-    })
+    Ok(KilnFilesResponse { files })
 }
 
 /// `GET /api/kiln/graph?kiln=<path>` — the full note-link graph of a kiln.
@@ -156,45 +161,16 @@ async fn kiln_file_listing(state: &AppState, kiln: &Path) -> Result<KilnFilesRes
     path = "/api/kiln/graph",
     params(KilnPathQuery),
     responses(
-        (status = 200, body = KilnGraphResponse),
+        (status = 200, body = KilnGraphReply),
         (status = 502, description = "The daemon could not build the graph, or answered a shape this route cannot read"),
     )
 )]
 async fn kiln_graph(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
-) -> Result<Json<KilnGraphResponse>, WebError> {
+) -> Result<Json<KilnGraphReply>, WebError> {
     let graph = state.daemon.kiln_graph(&query.kiln).await.daemon_err()?;
-    Ok(Json(daemon_shape(graph, "kiln.graph")?))
-}
-
-/// One node of the note-link graph.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct GraphNoteRow {
-    /// Kiln-relative, and the value a resolved link's `target` joins against.
-    path: String,
-    /// Never empty: the daemon falls back to the file stem.
-    title: String,
-    tags: Vec<String>,
-}
-
-/// One edge of the note-link graph.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct GraphLinkRow {
-    /// The linking note's path. Always a `path` in `notes`.
-    source: String,
-    /// The linked note's path when `resolved`; otherwise the target as it was
-    /// written, which names no note.
-    target: String,
-    /// Whether `target` resolves to a note the caller can see.
-    resolved: bool,
-}
-
-/// What `GET /api/kiln/graph` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct KilnGraphResponse {
-    notes: Vec<GraphNoteRow>,
-    links: Vec<GraphLinkRow>,
+    Ok(Json(graph))
 }
 
 /// `GET /api/kiln/file?path=<path>` — read a file's content.
@@ -651,10 +627,9 @@ fn write_response(answer: serde_json::Value) -> Result<Response, WebError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{request_json_in_kilns, shape, shape_in_kilns, survives};
+    use crate::test_support::{request_json_in_kilns, shape, shape_in_kilns};
     use crucible_core::config::ProjectFileAccess;
     use crucible_core::note_edit::disk_hash;
-    use crucible_core::protocol::requests::NoteListRow;
     use tempfile::TempDir;
 
     // =====================================================================
@@ -702,8 +677,7 @@ mod tests {
 
     #[tokio::test]
     async fn kiln_graph_answers_the_declared_shape() {
-        let graph: KilnGraphResponse =
-            shape("GET", "/api/kiln/graph?kiln=/daemon/kiln", None).await;
+        let graph: KilnGraphReply = shape("GET", "/api/kiln/graph?kiln=/daemon/kiln", None).await;
 
         assert_eq!(graph.notes.len(), 2);
         assert_eq!(graph.notes[0].path, "Alpha.md");
@@ -1059,26 +1033,6 @@ mod tests {
                 "the {arm} arm was read as a different arm"
             );
         }
-    }
-
-    // =====================================================================
-    // The rows write back what the daemon sent
-    // =====================================================================
-
-    /// A file entry survives [`FileEntryRow`], built from the daemon's own
-    /// [`NoteListRow`] through the projection the route uses.
-    #[test]
-    fn a_file_entry_writes_back_what_note_list_sent() {
-        let row = NoteListRow {
-            name: "Kilns".to_string(),
-            path: "notes/kilns.md".to_string(),
-            title: Some("Kilns".to_string()),
-            tags: vec!["knowledge".to_string()],
-            updated_at: Some("2026-01-01T00:00:00Z".to_string()),
-            properties: Default::default(),
-        };
-
-        survives::<FileEntryRow>(&note_to_file_json(row));
     }
 
     #[test]

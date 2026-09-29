@@ -327,10 +327,7 @@ async fn test_get_note_by_name_found() {
     assert!(result.is_some(), "Should find note containing 'rust'");
     let note = result.unwrap();
     assert!(
-        note.get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .contains("rust-project"),
+        note.path.contains("rust-project"),
         "Found note should be the rust project"
     );
 

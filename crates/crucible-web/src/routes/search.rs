@@ -1,10 +1,11 @@
-use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
-use crucible_core::protocol::requests::VectorHit;
+use super::helpers::{validate_note_name, MAX_CONTENT_SIZE};
+use crucible_core::protocol::requests::{
+    BacklinkEntry, KilnRow, NoteByNameReply, NoteListRow, VectorHit,
+};
 // The daemon owns the grep request shape. The copy that used to live in
 // this file had the same six fields and its own `default_grep_limit`
 // hardcoded at 100, while the daemon's reads `GREP_DEFAULT_LIMIT` — so a
 // change to that constant moved the RPC default and left the HTTP one behind.
-use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -16,7 +17,6 @@ use crucible_core::protocol::requests::GrepSearchRequest;
 use crucible_core::types::database::BlockRef;
 use crucible_daemon::GrepSearchResponse;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -33,34 +33,8 @@ pub fn search_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(search_grep))
 }
 
-/// One kiln, as the daemon's `kiln.list` reports it.
-///
-/// Every key is written on every row, including the two an older reader
-/// treated as optional, so this reply carries no absent-versus-false ambiguity.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct KilnRow {
-    /// Where the kiln lives. This is the one listing whose job is to say so.
-    path: String,
-    /// The REGISTRY key — the name every other API call answers to. An open
-    /// directory that no entry names carries the empty string, never `null`.
-    name: String,
-    /// Whether the registry answers for this directory, and therefore whether
-    /// `name` is a name an attach accepts. A row with `false` must not be
-    /// offered in a picker.
-    registered: bool,
-    /// Whether the daemon holds the kiln open right now. A closed row is not a
-    /// dead one: the first request that addresses a kiln opens it.
-    open: bool,
-    /// Seconds since the daemon last touched the kiln, or `null` when it holds
-    /// it closed. Always written, so `required` rather than optional.
-    #[schema(required = true)]
-    last_access_secs_ago: Option<u64>,
-    /// Whether the kiln path is the top level of a git working tree. A folder
-    /// below the top level says `false`, because `diff.get` refuses it.
-    git: bool,
-}
-
-/// What `GET /api/kilns` answers.
+/// What `GET /api/kilns` answers. A thin wrapper, not a copy: the row is
+/// core's own [`KilnRow`], the same type `kiln.list` answers.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct KilnListResponse {
     kilns: Vec<KilnRow>,
@@ -72,15 +46,13 @@ struct KilnListResponse {
     path = "/api/kilns",
     responses(
         (status = 200, body = KilnListResponse),
-        (status = 502, description = "The daemon could not list the kilns, or answered a shape this route cannot read"),
+        (status = 502, description = "The daemon could not list the kilns"),
     )
 )]
 async fn list_kilns(State(state): State<AppState>) -> Result<Json<KilnListResponse>, WebError> {
     let kilns = state.daemon.kiln_list().await.daemon_err()?;
 
-    Ok(Json(KilnListResponse {
-        kilns: daemon_shape(serde_json::Value::Array(kilns), "kiln.list")?,
-    }))
+    Ok(Json(KilnListResponse { kilns }))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -93,32 +65,11 @@ struct ListNotesQuery {
     path_filter: Option<String>,
 }
 
-/// One note, with the metadata a client filters and sorts on.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct NoteMetadataRow {
-    /// The file stem, or the whole path when the stem is not UTF-8.
-    name: String,
-    /// RELATIVE to the kiln root. A path-taking endpoint needs it joined onto
-    /// the root first.
-    path: String,
-    /// The note's own title, or `null` when it declares none. Always written.
-    #[schema(required = true)]
-    title: Option<String>,
-    tags: Vec<String>,
-    /// ISO-8601, or `null` for a note the index has no timestamp for. Always
-    /// written.
-    #[schema(required = true)]
-    updated_at: Option<String>,
-    /// The note's own frontmatter, filtered daemon-side to what the author
-    /// wrote. Open by design: a note may carry any key, and validating the
-    /// values here would refuse frontmatter this layer has no business judging.
-    properties: BTreeMap<String, serde_json::Value>,
-}
-
-/// What `GET /api/notes` answers.
+/// What `GET /api/notes` answers. A thin wrapper, not a copy: the row is
+/// core's own [`NoteListRow`], the same type `note.list` answers.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct NoteListResponse {
-    notes: Vec<NoteMetadataRow>,
+    notes: Vec<NoteListRow>,
 }
 
 /// `GET /api/notes?kiln=<path>` — the notes of one kiln, with metadata.
@@ -128,7 +79,7 @@ struct NoteListResponse {
     params(ListNotesQuery),
     responses(
         (status = 200, body = NoteListResponse),
-        (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
+        (status = 502, description = "The daemon could not list the notes"),
     )
 )]
 async fn list_notes(
@@ -141,11 +92,7 @@ async fn list_notes(
         .await
         .daemon_err()?;
 
-    let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_metadata_json).collect();
-
-    Ok(Json(NoteListResponse {
-        notes: daemon_shape(serde_json::Value::Array(notes_json), "note.list")?,
-    }))
+    Ok(Json(NoteListResponse { notes }))
 }
 
 /// `GET /api/notes/resolve?kiln=<path>&name=<target>` — resolve a wikilink
@@ -334,36 +281,9 @@ struct ResolveQuery {
     name: String,
 }
 
-/// One note, as `get_note_by_name` reports it.
-///
-/// The daemon sends `links_to` and `wikilinks` for the same links: the web
-/// reader pins `links_to`, and the RPC client's own DTO reads `wikilinks`.
-/// Both stay on the wire, so both are named here.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct NoteResponse {
-    /// Relative to the kiln root.
-    path: String,
-    /// The note's title. The daemon writes the empty string when it has none;
-    /// this is never `null`.
-    title: String,
-    tags: Vec<String>,
-    /// Every wikilink target in the note, as written.
-    links_to: Vec<String>,
-    /// The same targets, one object each.
-    wikilinks: Vec<WikilinkRow>,
-    /// BLAKE3 of the note's content as the INDEX holds it. The file watcher
-    /// writes it asynchronously, so it lags a save; `GET /api/kiln/file`
-    /// answers the hash of the bytes on disk.
-    content_hash: String,
-}
-
-/// One wikilink target.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct WikilinkRow {
-    target: String,
-}
-
-/// `GET /api/notes/{name}?kiln=<path>` — one note by name or path.
+/// `GET /api/notes/{name}?kiln=<path>` — one note by name or path. The reply
+/// is core's own [`NoteByNameReply`], the same type `get_note_by_name`
+/// answers.
 #[utoipa::path(
     get,
     path = "/api/notes/{name}",
@@ -372,17 +292,17 @@ struct WikilinkRow {
         KilnQuery,
     ),
     responses(
-        (status = 200, body = NoteResponse),
+        (status = 200, body = NoteByNameReply),
         (status = 400, description = "The name carries a traversal sequence"),
         (status = 404, description = "The kiln holds no note of that name"),
-        (status = 502, description = "The daemon could not read the note, or answered a shape this route cannot read"),
+        (status = 502, description = "The daemon could not read the note"),
     )
 )]
 async fn get_note(
     State(state): State<AppState>,
     Path(name): Path<String>,
     axum::extract::Query(query): axum::extract::Query<KilnQuery>,
-) -> Result<Json<NoteResponse>, WebError> {
+) -> Result<Json<NoteByNameReply>, WebError> {
     // Security: Validate note name doesn't contain path traversal
     validate_note_name(&name)?;
 
@@ -393,7 +313,7 @@ async fn get_note(
         .daemon_err()?;
 
     match note {
-        Some(n) => Ok(Json(daemon_shape(n, "note.get")?)),
+        Some(n) => Ok(Json(n)),
         None => Err(WebError::NotFound(format!("Note '{name}' not found"))),
     }
 }
@@ -456,36 +376,15 @@ async fn get_backlinks(
         .daemon_err()?
         .ok_or_else(|| WebError::NotFound(format!("Note '{}' not found", query.note)))?;
 
-    let note_path = resolved
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-    let note_title = resolved
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let note_path = resolved.path;
+    let note_title = resolved.title;
 
-    let linked: Vec<serde_json::Value> = resolved
-        .get("backlinks")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default()
+    let linked: Vec<BacklinkRow> = resolved
+        .backlinks
         .into_iter()
-        .map(|mut b| {
-            if let Some(obj) = b.as_object_mut() {
-                let rel = obj
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                obj.insert(
-                    "abs_path".to_string(),
-                    serde_json::Value::String(absolute_note_path(&query.kiln, &rel)),
-                );
-            }
-            b
+        .map(|entry| {
+            let abs_path = absolute_note_path(&query.kiln, &entry.path);
+            BacklinkRow { entry, abs_path }
         })
         .collect();
 
@@ -510,12 +409,7 @@ async fn get_backlinks(
                 .await
                 .daemon_err()?
                 .into_iter()
-                .filter(|s| {
-                    s.get("target")
-                        .and_then(|t| t.as_str())
-                        .map(|t| !self_names.contains(&t.to_lowercase()))
-                        .unwrap_or(false)
-                })
+                .filter(|s| !self_names.contains(&s.target.to_lowercase()))
                 .collect::<Vec<_>>()
         }
         None => Vec::new(),
@@ -527,8 +421,8 @@ async fn get_backlinks(
             abs_path,
             title: note_title,
         },
-        linked: daemon_shape(serde_json::Value::Array(linked), "get_backlinks")?,
-        unlinked: daemon_shape(serde_json::Value::Array(unlinked), "suggest_links")?,
+        linked,
+        unlinked,
     }))
 }
 
@@ -562,43 +456,26 @@ struct FocusedNoteRow {
 }
 
 /// A note whose wikilinks point at the focused note.
+///
+/// Flattens core's own [`BacklinkEntry`] — the daemon's `get_backlinks`
+/// reply — and adds `abs_path`, which this route computes and the daemon
+/// never sees.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct BacklinkRow {
-    name: String,
-    /// Kiln-relative, as the index holds it.
-    path: String,
-    /// `null` when the source note declares no title. Always written.
-    #[schema(required = true)]
-    title: Option<String>,
-    /// The same source joined onto the kiln root. Added by this route, not by
+    #[serde(flatten)]
+    entry: BacklinkEntry,
+    /// The source joined onto the kiln root. Added by this route, not by
     /// the daemon.
     abs_path: String,
-    /// Byte offset of the first link occurrence in the source. Absent — not
-    /// `null` — for a span-less legacy index row.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    span_start: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    span_end: Option<i64>,
 }
 
-/// A plain-text mention of another note inside the focused note — a candidate
-/// for one-click link insertion, mirroring the daemon's `LinkSuggestion`.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct UnlinkedMentionRow {
-    /// The text as it appears, original casing kept.
-    mention: String,
-    /// The note name it would link to.
-    target: String,
-    /// Byte offset of the mention in the note's content.
-    offset: usize,
-}
-
-/// What `GET /api/backlinks` answers.
+/// What `GET /api/backlinks` answers. `unlinked` is the daemon's own
+/// [`crucible_daemon::tools::autolink::LinkSuggestion`], unchanged.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct BacklinksResponse {
     note: FocusedNoteRow,
     linked: Vec<BacklinkRow>,
-    unlinked: Vec<UnlinkedMentionRow>,
+    unlinked: Vec<crucible_daemon::tools::autolink::LinkSuggestion>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -937,9 +814,6 @@ mod tests {
         arb_safe_path, arb_traversal_path, request_json, shape, shape_in_kilns, survives,
         MOCK_DAEMON_KILN_PATH,
     };
-    use crucible_core::protocol::requests::NoteListRow;
-    use crucible_core::protocol::requests::VectorHit;
-    use crucible_daemon::tools::autolink::LinkSuggestion;
     use proptest::prelude::*;
     use tempfile::TempDir;
 
@@ -1004,7 +878,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_note_answers_the_declared_shape() {
-        let note: NoteResponse = shape("GET", "/api/notes/Kilns?kiln=/daemon/kiln", None).await;
+        let note: NoteByNameReply = shape("GET", "/api/notes/Kilns?kiln=/daemon/kiln", None).await;
 
         assert_eq!(note.path, "notes/kilns.md");
         assert_eq!(note.title, "Kilns");
@@ -1063,15 +937,16 @@ mod tests {
         );
 
         let linker = &answer.linked[0];
-        assert_eq!(linker.name, "linker");
-        assert_eq!(linker.title.as_deref(), Some("Linker Note"));
+        assert_eq!(linker.entry.name, "linker");
+        assert_eq!(linker.entry.title.as_deref(), Some("Linker Note"));
         assert_eq!(
             linker.abs_path,
             kiln.path().join("notes/linker.md").to_string_lossy()
         );
         let span = linker
+            .entry
             .span_start
-            .zip(linker.span_end)
+            .zip(linker.entry.span_end)
             .expect("an indexed link has a span");
         assert_eq!(
             &LINKER[span.0 as usize..span.1 as usize],
@@ -1207,30 +1082,10 @@ mod tests {
     // The rows write back what the daemon sent
     // =====================================================================
 
-    /// Every field of a listed note survives [`NoteMetadataRow`].
-    ///
-    /// Built from the daemon's own [`NoteListRow`] through the same projection
-    /// the route uses, so a field added there and written to the wire fails
-    /// here rather than disappearing on the way to the browser.
-    #[test]
-    fn a_note_row_writes_back_what_note_list_sent() {
-        let row = NoteListRow {
-            name: "Kilns".to_string(),
-            path: "notes/kilns.md".to_string(),
-            title: Some("Kilns".to_string()),
-            tags: vec!["knowledge".to_string()],
-            updated_at: Some("2026-01-01T00:00:00Z".to_string()),
-            properties: [("status".to_string(), serde_json::json!("draft"))]
-                .into_iter()
-                .collect(),
-        };
-
-        survives::<NoteMetadataRow>(&note_to_metadata_json(row));
-    }
-
-    /// The same, for a note that declares nothing. `title` and `updated_at`
-    /// are `null` here and set above, and both spellings are written: an
-    /// absent key would be a different answer.
+    /// `title` and `updated_at` are always written, even when the index
+    /// holds none: the value is `null`, and the key is never absent. An
+    /// absent key would be a different answer, so this is checked on the
+    /// wire, not just on the struct.
     #[test]
     fn a_bare_note_row_writes_back_its_nulls() {
         let row = NoteListRow {
@@ -1242,10 +1097,10 @@ mod tests {
             properties: Default::default(),
         };
 
-        let wire = note_to_metadata_json(row);
+        let wire = serde_json::to_value(&row).expect("NoteListRow serializes");
         assert_eq!(wire["title"], serde_json::Value::Null);
         assert_eq!(wire["updated_at"], serde_json::Value::Null);
-        survives::<NoteMetadataRow>(&wire);
+        survives::<NoteListRow>(&wire);
     }
 
     /// A hit's block survives [`VectorSearchRow`].
@@ -1273,19 +1128,6 @@ mod tests {
             "score": hit.score,
             "block": hit.block,
         }));
-    }
-
-    /// An unlinked mention survives [`UnlinkedMentionRow`], built from the
-    /// daemon's own [`LinkSuggestion`].
-    #[test]
-    fn an_unlinked_mention_writes_back_what_suggest_links_sent() {
-        let suggestion = LinkSuggestion {
-            mention: "Other Note".to_string(),
-            target: "Other Note".to_string(),
-            offset: 12,
-        };
-
-        survives::<UnlinkedMentionRow>(&suggestion);
     }
 
     /// A legacy index row has no span. The row leaves both keys out and does

@@ -379,19 +379,18 @@ async fn attached_kilns(client: &DaemonClient) -> Vec<crate::tui::oil::KilnSumma
     };
 
     rows.iter()
-        .filter_map(|row| {
-            let path = row["path"].as_str()?;
-            let name = match row["name"].as_str().unwrap_or_default() {
-                "" => std::path::Path::new(path)
+        .map(|row| {
+            let name = match row.name.as_str() {
+                "" => std::path::Path::new(&row.path)
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.to_string()),
+                    .unwrap_or_else(|| row.path.clone()),
                 name => name.to_string(),
             };
-            Some(crate::tui::oil::KilnSummary {
+            crate::tui::oil::KilnSummary {
                 name,
-                path: path.to_string(),
-            })
+                path: row.path.clone(),
+            }
         })
         .collect()
 }

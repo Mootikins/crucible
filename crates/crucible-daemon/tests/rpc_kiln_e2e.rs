@@ -74,8 +74,8 @@ async fn open_kiln_paths(client: &DaemonClient, expected: usize) -> Vec<String> 
         // what `kiln.open` and `kiln.close` do to the open set.
         let open: Vec<String> = list
             .iter()
-            .filter(|row| row["open"].as_bool().unwrap_or(true))
-            .filter_map(|row| row["path"].as_str().map(str::to_string))
+            .filter(|row| row.open)
+            .map(|row| row.path.clone())
             .collect();
         if open.len() >= expected {
             return open;
@@ -191,8 +191,8 @@ async fn test_kiln_close_removes_from_list() {
     let list = client.kiln_list().await.expect("kiln_list failed");
     let paths: Vec<&str> = list
         .iter()
-        .filter(|row| row["open"].as_bool().unwrap_or(true))
-        .filter_map(|row| row["path"].as_str())
+        .filter(|row| row.open)
+        .map(|row| row.path.as_str())
         .collect();
     assert!(
         !paths
@@ -271,10 +271,7 @@ async fn test_get_note_by_name_returns_matching_note() {
     assert!(result.is_some(), "Should find note matching 'daily'");
     let note = result.unwrap();
     assert!(
-        note.get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .contains("daily"),
+        note.path.contains("daily"),
         "Found note path should contain 'daily'"
     );
 
@@ -325,7 +322,7 @@ async fn test_kiln_lifecycle_open_query_close() {
         .expect("get_note_by_name failed")
         .expect("Should find rust project note");
     assert!(
-        note["path"].as_str().unwrap_or("").contains("rust-project"),
+        note.path.contains("rust-project"),
         "Note path should contain rust-project"
     );
 
@@ -344,8 +341,8 @@ async fn test_kiln_lifecycle_open_query_close() {
     let list = client.kiln_list().await.expect("kiln_list failed");
     let paths: Vec<&str> = list
         .iter()
-        .filter(|row| row["open"].as_bool().unwrap_or(true))
-        .filter_map(|row| row["path"].as_str())
+        .filter(|row| row.open)
+        .map(|row| row.path.as_str())
         .collect();
     assert!(
         !paths

@@ -100,10 +100,10 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. |
 | `crates/crucible-web/src/routes/diff.rs` | 609 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
 | `crates/crucible-web/src/routes/events.rs` | 180 | `GET /api/events/system` — `publication_changed` and `proposal_changed` pushed on the daemon's system session; also the shared `system_stream` helper `fs.rs` and `surface.rs` reuse. |
-| `crates/crucible-web/src/routes/fs.rs` | 487 | File-tree explorer routes: list, move, mkdir, trash, and a live SSE stream built on the shared `system_stream` helper. |
+| `crates/crucible-web/src/routes/fs.rs` | 486 | File-tree explorer routes: list, move, mkdir, trash, and a live SSE stream built on the shared `system_stream` helper. `fs_list_dir`/`fs_move`/`fs_trash` return the daemon's typed `FsListing`/`FsMoveReply`/`FsTrashReply` directly, with no `daemon_shape` decode. |
 | `crates/crucible-web/src/routes/health.rs` | 49 | `/health` liveness and `/ready` readiness probes. |
 | `crates/crucible-web/src/routes/helpers.rs` | 115 | Shared stream-versioning, note-projection, and note-name-validation helpers. |
-| `crates/crucible-web/src/routes/kiln.rs` | 1346 | Kiln/project file listing, the note-link graph, and text/raw file read-write, all through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers. |
+| `crates/crucible-web/src/routes/kiln.rs` | 1300 | Kiln/project file listing, the note-link graph, and text/raw file read-write, all through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers. `kiln_graph` returns core's own `KilnGraphReply` unchanged. |
 | `crates/crucible-web/src/routes/layout.rs` | 470 | Web UI layout persistence and the recently-opened-files list. |
 | `crates/crucible-web/src/routes/mcp.rs` | 97 | `GET /api/mcp/status`. |
 | `crates/crucible-web/src/routes/plugin.rs` | 1228 | The nine plugin HTTP endpoints: list, install, remove, reload, options, commands, publications. It has no SSE stream of its own; see the "SSE subscribe-before-forward" flow below. |
@@ -111,7 +111,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/project.rs` | 625 | `/api/project/*` routes and the untrusted-caller root-safety policy. |
 | `crates/crucible-web/src/routes/proposals.rs` | 318 | `/api/proposals*` — accept/reject/dismiss/resolve a note-tool proposal, a thin proxy with no session in its path. |
 | `crates/crucible-web/src/routes/scm.rs` | 93 | `POST /api/scm/clone` — thin proxy for a git clone. |
-| `crates/crucible-web/src/routes/search.rs` | 1633 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. |
+| `crates/crucible-web/src/routes/search.rs` | 1506 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. `list_kilns`, `list_notes`, `get_note` and `get_backlinks` return core's own reply types (`KilnRow`, `NoteListRow`, `NoteByNameReply`, `GetBacklinksReply`) unchanged, rather than a local row type decoded through `daemon_shape`. |
 | `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
 | `crates/crucible-web/src/routes/skills.rs` | 171 | `/api/skills*` — proxies to daemon skill discovery. |

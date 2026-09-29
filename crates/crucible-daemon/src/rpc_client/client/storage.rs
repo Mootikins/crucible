@@ -6,7 +6,6 @@ use anyhow::Result;
 use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 use std::path::{Path, PathBuf};
-use tracing::warn;
 
 use super::DaemonClient;
 use crucible_core::protocol::requests::{EmptyParams, KilnPathRequest, NameRequest, PathRequest};
@@ -153,10 +152,8 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
-        let result: serde_json::Value =
-            self.typed_call(RpcMethod::KilnList, EmptyParams {}).await?;
-        Ok(result.as_array().cloned().unwrap_or_default())
+    pub async fn kiln_list(&self) -> Result<Vec<KilnRow>> {
+        self.typed_call(RpcMethod::KilnList, EmptyParams {}).await
     }
 
     // =========================================================================
@@ -274,71 +271,15 @@ impl DaemonClient {
         path_filter: Option<&str>,
         scope: Option<crucible_core::storage::Scope>,
     ) -> Result<Vec<NoteListRow>> {
-        let result: serde_json::Value = self
-            .typed_call(
-                RpcMethod::ListNotes,
-                ListNotesRequest {
-                    kiln: kiln_path.to_string_lossy().to_string(),
-                    path_filter: path_filter.map(|f| f.to_string()),
-                    scope,
-                },
-            )
-            .await?;
-
-        let notes: Vec<_> = result
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, item)| {
-                let name = item.get("name").and_then(|v| v.as_str());
-                let path = item.get("path").and_then(|v| v.as_str());
-
-                if name.is_none() || path.is_none() {
-                    warn!(
-                        idx,
-                        has_name = name.is_some(),
-                        has_path = path.is_some(),
-                        "Skipping malformed note record in list_notes response"
-                    );
-                    return None;
-                }
-
-                let name = name.unwrap().to_string();
-                let path = path.unwrap().to_string();
-                let title = item.get("title").and_then(|v| v.as_str()).map(String::from);
-                let tags: Vec<String> = item
-                    .get("tags")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|t| t.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let updated_at = item
-                    .get("updated_at")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                // Already filtered daemon-side: the wire carries what the note's
-                // author wrote and nothing the daemon stamped.
-                let properties = item
-                    .get("properties")
-                    .and_then(|v| v.as_object())
-                    .map(|map| map.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-                    .unwrap_or_default();
-                Some(NoteListRow {
-                    name,
-                    path,
-                    title,
-                    tags,
-                    updated_at,
-                    properties,
-                })
-            })
-            .collect();
-
-        Ok(notes)
+        self.typed_call(
+            RpcMethod::ListNotes,
+            ListNotesRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                path_filter: path_filter.map(|f| f.to_string()),
+                scope,
+            },
+        )
+        .await
     }
 
     /// Case-insensitive fuzzy lookup by path or title. `scope = None`
@@ -348,7 +289,7 @@ impl DaemonClient {
         kiln_path: &Path,
         name: &str,
         scope: Option<crucible_core::storage::Scope>,
-    ) -> Result<Option<serde_json::Value>> {
+    ) -> Result<Option<NoteByNameReply>> {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::GetNoteByName,
@@ -363,20 +304,19 @@ impl DaemonClient {
         if result.is_null() {
             Ok(None)
         } else {
-            Ok(Some(result))
+            Ok(Some(serde_json::from_value(result)?))
         }
     }
 
     /// Resolve a note by name and return the notes that wikilink to it.
     ///
-    /// Returns `None` when the name resolves to no note. On success the
-    /// value is `{ path, title, backlinks: [{ name, path, title }] }`.
+    /// Returns `None` when the name resolves to no note.
     pub async fn get_backlinks(
         &self,
         kiln_path: &Path,
         name: &str,
         scope: Option<crucible_core::storage::Scope>,
-    ) -> Result<Option<serde_json::Value>> {
+    ) -> Result<Option<GetBacklinksReply>> {
         let result: serde_json::Value = self
             .typed_call(
                 RpcMethod::GetBacklinks,
@@ -391,7 +331,7 @@ impl DaemonClient {
         if result.is_null() {
             Ok(None)
         } else {
-            Ok(Some(result))
+            Ok(Some(serde_json::from_value(result)?))
         }
     }
 
@@ -402,7 +342,7 @@ impl DaemonClient {
         &self,
         kiln_path: &Path,
         scope: Option<crucible_core::storage::Scope>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<KilnGraphReply> {
         self.typed_call(
             RpcMethod::KilnGraph,
             KilnGraphRequest {
@@ -421,8 +361,8 @@ impl DaemonClient {
         kiln_path: &Path,
         text: &str,
         scope: Option<crucible_core::storage::Scope>,
-    ) -> Result<Vec<serde_json::Value>> {
-        let result: serde_json::Value = self
+    ) -> Result<Vec<crate::tools::autolink::LinkSuggestion>> {
+        let reply: crate::tools::autolink::SuggestLinksReply = self
             .typed_call(
                 RpcMethod::SuggestLinks,
                 SuggestLinksRequest {
@@ -433,11 +373,7 @@ impl DaemonClient {
             )
             .await?;
 
-        Ok(result
-            .get("suggestions")
-            .and_then(|s| s.as_array())
-            .cloned()
-            .unwrap_or_default())
+        Ok(reply.suggestions)
     }
 
     // =========================================================================
@@ -752,19 +688,17 @@ impl DaemonClient {
         rel_path: &str,
         show_ignored: bool,
         show_hidden: bool,
-    ) -> Result<serde_json::Value> {
-        let v: serde_json::Value = self
-            .typed_call(
-                RpcMethod::FsListDir,
-                FsListDirRequest {
-                    root: root.to_string(),
-                    rel_path: rel_path.to_string(),
-                    show_ignored,
-                    show_hidden,
-                },
-            )
-            .await?;
-        Ok(v)
+    ) -> Result<crate::FsListing> {
+        self.typed_call(
+            RpcMethod::FsListDir,
+            FsListDirRequest {
+                root: root.to_string(),
+                rel_path: rel_path.to_string(),
+                show_ignored,
+                show_hidden,
+            },
+        )
+        .await
     }
 
     /// `diff.get`: the files of one diffset, with counts and no text.
@@ -880,7 +814,7 @@ impl DaemonClient {
         kind: &str,
         from_rel: &str,
         to_rel: &str,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crate::FsMoveReply> {
         self.typed_call(
             RpcMethod::FsMove,
             FsMoveRequest {
@@ -916,7 +850,7 @@ impl DaemonClient {
         root: &str,
         kind: &str,
         rel_path: &str,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crate::FsTrashReply> {
         self.typed_call(
             RpcMethod::FsTrash,
             FsPathRequest {

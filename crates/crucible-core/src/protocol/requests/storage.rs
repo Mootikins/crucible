@@ -469,13 +469,24 @@ pub struct ListNotesRequest {
 ///
 /// A struct rather than a tuple: it grew a sixth field, and a six-tuple at
 /// three call sites is a puzzle rather than a type.
-#[derive(Debug, Clone, Default)]
+///
+/// `title` and `updated_at` are always written, even when the index holds
+/// none: the value is `null`, and the key is never absent. That is why they
+/// carry `required = true` under the `openapi` schema.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NoteListRow {
+    /// The file stem, or the whole path when the stem is not UTF-8.
     pub name: String,
+    /// Kiln-relative, as the index holds it.
     pub path: String,
+    #[cfg_attr(feature = "openapi", schema(required = true))]
     pub title: Option<String>,
     pub tags: Vec<String>,
+    #[cfg_attr(feature = "openapi", schema(required = true))]
     pub updated_at: Option<String>,
+    /// The note's own frontmatter, filtered daemon-side to what the author
+    /// wrote.
     pub properties: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
@@ -484,6 +495,127 @@ impl NoteListRow {
     pub fn into_parts(self) -> (String, String, Option<String>, Vec<String>, Option<String>) {
         (self.name, self.path, self.title, self.tags, self.updated_at)
     }
+}
+
+/// One kiln, as `kiln.list` reports it.
+///
+/// Every key is written on every row, including the two an older reader
+/// treated as optional, so this reply carries no absent-versus-false
+/// ambiguity.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KilnRow {
+    /// Where the kiln lives. This is the one listing whose job is to say so.
+    pub path: String,
+    /// The registry key — the name every other API call answers to. An open
+    /// directory that no entry names carries the empty string, never `null`.
+    pub name: String,
+    /// Whether the registry answers for this directory, and therefore
+    /// whether `name` is a name an attach accepts. A row with `false` must
+    /// not be offered in a picker.
+    pub registered: bool,
+    /// Whether the daemon holds the kiln open right now. A closed row is not
+    /// a dead one: the first request that addresses a kiln opens it.
+    pub open: bool,
+    /// Seconds since the daemon last touched the kiln, or `null` when it
+    /// holds it closed. Always written, so `required` rather than optional.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub last_access_secs_ago: Option<u64>,
+    /// Whether the kiln path is the top level of a git working tree. A
+    /// folder below the top level answers `false`, because `diff.get`
+    /// refuses it.
+    pub git: bool,
+}
+
+/// One wikilink target, as [`NoteByNameReply::wikilinks`] reports it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WikilinkTarget {
+    pub target: String,
+}
+
+/// What `get_note_by_name` answers: the note's own facts, without the heavy
+/// fields of the stored [`crate::storage::NoteRecord`] (no embedding
+/// vector).
+///
+/// `links_to` and `wikilinks` carry the same targets under two names: the
+/// web reader pins `links_to`, and the RPC client's own DTO reads
+/// `wikilinks`. Both stay on the wire, so both are named here.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct NoteByNameReply {
+    /// Relative to the kiln root.
+    pub path: String,
+    /// The note's title. The daemon writes the empty string when it has
+    /// none; this is never `null`.
+    pub title: String,
+    pub tags: Vec<String>,
+    /// Every wikilink target in the note, as written.
+    pub links_to: Vec<String>,
+    /// The same targets, one object each.
+    pub wikilinks: Vec<WikilinkTarget>,
+    /// BLAKE3 of the note's content as the index holds it.
+    pub content_hash: String,
+}
+
+/// One note whose wikilinks point at the note `get_backlinks` resolved.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BacklinkEntry {
+    pub name: String,
+    /// Kiln-relative, as the index holds it.
+    pub path: String,
+    /// `null` when the source note declares no title. Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub title: Option<String>,
+    /// Byte offset of the first link occurrence in the source. Absent — not
+    /// `null` — for a span-less legacy index row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_start: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_end: Option<i64>,
+}
+
+/// What `get_backlinks` answers: the resolved note, and the notes that
+/// wikilink to it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GetBacklinksReply {
+    pub path: String,
+    pub title: String,
+    pub backlinks: Vec<BacklinkEntry>,
+}
+
+/// One node of the `kiln.graph` note-link graph.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KilnGraphNote {
+    /// Kiln-relative, and the value a resolved link's `target` joins against.
+    pub path: String,
+    /// Never empty: the daemon falls back to the file stem.
+    pub title: String,
+    pub tags: Vec<String>,
+}
+
+/// One edge of the `kiln.graph` note-link graph.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KilnGraphLink {
+    /// The linking note's path. Always a `path` in [`KilnGraphReply::notes`].
+    pub source: String,
+    /// The linked note's path when `resolved`; otherwise the target as it
+    /// was written, which names no note.
+    pub target: String,
+    /// Whether `target` resolves to a note the caller can see.
+    pub resolved: bool,
+}
+
+/// What `kiln.graph` answers: the full note-link graph of a kiln.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KilnGraphReply {
+    pub notes: Vec<KilnGraphNote>,
+    pub links: Vec<KilnGraphLink>,
 }
 
 /// What `diff.comments` answers: each comment, oldest first, with its range

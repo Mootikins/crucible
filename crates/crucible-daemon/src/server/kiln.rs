@@ -9,10 +9,12 @@ use super::*;
 use crate::kiln_manager::request_scope;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
-    EmbedQueryRequest, GetBacklinksRequest, GetNoteByNameRequest, KilnGraphRequest,
-    KilnOpenRequest, KilnRegisterRequest, ListNotesRequest, NameRequest, NoteListRequest,
-    NotePathRequest, NoteUpsertRequest, PathRequest, ProcessBatchRequest, ProcessFileRequest,
-    SearchTextRequest, SearchVectorsRequest, SuggestLinksRequest, VectorHit,
+    BacklinkEntry, EmbedQueryRequest, GetBacklinksReply, GetBacklinksRequest, GetNoteByNameRequest,
+    KilnGraphLink, KilnGraphNote, KilnGraphReply, KilnGraphRequest, KilnOpenRequest,
+    KilnRegisterRequest, KilnRow, ListNotesRequest, NameRequest, NoteByNameReply, NoteListRequest,
+    NoteListRow, NotePathRequest, NoteUpsertRequest, PathRequest, ProcessBatchRequest,
+    ProcessFileRequest, SearchTextRequest, SearchVectorsRequest, SuggestLinksRequest, VectorHit,
+    WikilinkTarget,
 };
 use crucible_core::storage::Scope;
 
@@ -168,7 +170,7 @@ pub(crate) async fn handle_kiln_list(
         }
     }
 
-    let mut rows = Vec::new();
+    let mut rows: Vec<KilnRow> = Vec::new();
 
     for kiln in registry.entries() {
         let opened = open_by_name.get(kiln.name());
@@ -178,14 +180,14 @@ pub(crate) async fn handle_kiln_list(
         if opened.is_none() && !kiln.path().is_dir() {
             continue;
         }
-        rows.push(serde_json::json!({
-            "path": kiln.path().to_string_lossy(),
-            "name": kiln.name().as_str(),
-            "registered": true,
-            "open": opened.is_some(),
-            "last_access_secs_ago": opened.map(|at| at.elapsed().as_secs()),
-            "git": crate::project_manager::is_git_top_level(kiln.path()),
-        }));
+        rows.push(KilnRow {
+            path: kiln.path().to_string_lossy().into_owned(),
+            name: kiln.name().as_str().to_string(),
+            registered: true,
+            open: opened.is_some(),
+            last_access_secs_ago: opened.map(|at| at.elapsed().as_secs()),
+            git: crate::project_manager::is_git_top_level(kiln.path()),
+        });
     }
 
     for (path, last_access) in open_unnamed {
@@ -195,17 +197,20 @@ pub(crate) async fn handle_kiln_list(
         if path == data_home {
             continue;
         }
-        rows.push(serde_json::json!({
-            "path": path.to_string_lossy(),
-            "name": "",
-            "registered": false,
-            "open": true,
-            "last_access_secs_ago": last_access.elapsed().as_secs(),
-            "git": crate::project_manager::is_git_top_level(&path),
-        }));
+        rows.push(KilnRow {
+            path: path.to_string_lossy().into_owned(),
+            name: String::new(),
+            registered: false,
+            open: true,
+            last_access_secs_ago: Some(last_access.elapsed().as_secs()),
+            git: crate::project_manager::is_git_top_level(&path),
+        });
     }
 
-    Response::success(req.id, rows)
+    match serde_json::to_value(rows) {
+        Ok(v) => Response::success(req.id, v),
+        Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+    }
 }
 
 /// `kiln.register`: give a directory a name, and write it down.
@@ -694,22 +699,23 @@ pub(crate) async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Re
 
     match handle.list_notes(path_filter, &scope).await {
         Ok(notes) => {
-            let json_notes: Vec<_> = notes
+            // Already filtered: `NoteInfo::from` drops the daemon's own
+            // stamps, so `properties` is the author's frontmatter.
+            let rows: Vec<NoteListRow> = notes
                 .into_iter()
-                .map(|n| {
-                    serde_json::json!({
-                        "name": n.name,
-                        "path": n.path,
-                        "title": n.title,
-                        "tags": n.tags,
-                        "updated_at": n.updated_at.map(|t| t.to_rfc3339()),
-                        // Already filtered: NoteInfo::from drops the daemon's
-                        // own stamps, so this is the author's frontmatter.
-                        "properties": n.properties
-                    })
+                .map(|n| NoteListRow {
+                    name: n.name,
+                    path: n.path,
+                    title: n.title,
+                    tags: n.tags,
+                    updated_at: n.updated_at.map(|t| t.to_rfc3339()),
+                    properties: n.properties,
                 })
                 .collect();
-            Response::success(req.id, json_notes)
+            match serde_json::to_value(rows) {
+                Ok(v) => Response::success(req.id, v),
+                Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+            }
         }
         Err(e) => internal_error(req.id, e),
     }
@@ -731,21 +737,28 @@ pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
     };
 
     match handle.get_note_by_name(name, &scope).await {
-        Ok(Some(note)) => Response::success(
-            req.id,
-            serde_json::json!({
-                "path": note.path,
-                "title": note.title,
-                "tags": note.tags,
-                "links_to": note.links_to,
-                // The client DTO (`rpc_client/storage.rs`) reads `wikilinks`,
-                // not `links_to`. Both stay: the web reader pins `links_to`.
-                "wikilinks": note.links_to.iter()
-                    .map(|t| serde_json::json!({ "target": t }))
-                    .collect::<Vec<_>>(),
-                "content_hash": note.content_hash.to_string()
-            }),
-        ),
+        Ok(Some(note)) => {
+            // The client DTO (`rpc_client/client/storage.rs`) reads
+            // `wikilinks`, not `links_to`. Both stay: the web reader pins
+            // `links_to`.
+            let wikilinks = note
+                .links_to
+                .iter()
+                .map(|t| WikilinkTarget { target: t.clone() })
+                .collect();
+            let reply = NoteByNameReply {
+                path: note.path,
+                title: note.title,
+                tags: note.tags,
+                links_to: note.links_to,
+                wikilinks,
+                content_hash: note.content_hash.to_string(),
+            };
+            match serde_json::to_value(reply) {
+                Ok(v) => Response::success(req.id, v),
+                Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+            }
+        }
         Ok(None) => Response::success(req.id, serde_json::Value::Null),
         Err(e) => internal_error(req.id, e),
     }
@@ -767,31 +780,37 @@ pub(crate) async fn handle_get_backlinks(req: Request, km: &Arc<KilnManager>) ->
     };
 
     match handle.get_backlinks(name, &scope).await {
-        Ok(Some((note, backlinks, spans))) => Response::success(
-            req.id,
-            serde_json::json!({
-                "path": note.path,
-                "title": note.title,
-                "backlinks": backlinks
-                    .into_iter()
-                    .map(|b| {
-                        let mut v = serde_json::json!({
-                            "name": b.name,
-                            "path": b.path,
-                            "title": b.title,
-                        });
-                        // Byte span of the first link occurrence in the
-                        // source — lets clients jump to the referencing
-                        // block without re-scanning the file.
-                        if let Some((start, end)) = spans.get(&b.path) {
-                            v["span_start"] = serde_json::json!(start);
-                            v["span_end"] = serde_json::json!(end);
-                        }
-                        v
-                    })
-                    .collect::<Vec<_>>()
-            }),
-        ),
+        Ok(Some((note, backlinks, spans))) => {
+            let backlinks = backlinks
+                .into_iter()
+                .map(|b| {
+                    // Byte span of the first link occurrence in the source —
+                    // lets clients jump to the referencing block without
+                    // re-scanning the file. Absent for a span-less legacy
+                    // index row.
+                    let (span_start, span_end) = match spans.get(&b.path) {
+                        Some((start, end)) => (Some(*start), Some(*end)),
+                        None => (None, None),
+                    };
+                    BacklinkEntry {
+                        name: b.name,
+                        path: b.path,
+                        title: b.title,
+                        span_start,
+                        span_end,
+                    }
+                })
+                .collect();
+            let reply = GetBacklinksReply {
+                path: note.path,
+                title: note.title,
+                backlinks,
+            };
+            match serde_json::to_value(reply) {
+                Ok(v) => Response::success(req.id, v),
+                Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+            }
+        }
         Ok(None) => Response::success(req.id, serde_json::Value::Null),
         Err(e) => internal_error(req.id, e),
     }
@@ -827,7 +846,7 @@ pub(crate) async fn handle_kiln_graph(req: Request, km: &Arc<KilnManager>) -> Re
     // target_key — they name no note by definition.
     let visible: std::collections::HashSet<&str> = notes.iter().map(|n| n.path.as_str()).collect();
 
-    let notes_json: Vec<_> = notes
+    let graph_notes: Vec<KilnGraphNote> = notes
         .iter()
         .map(|n| {
             let title = n
@@ -842,34 +861,33 @@ pub(crate) async fn handle_kiln_graph(req: Request, km: &Arc<KilnManager>) -> Re
                         .unwrap_or(&n.path)
                         .to_string()
                 });
-            serde_json::json!({
-                "path": n.path,
-                "title": title,
-                "tags": n.tags,
-            })
+            KilnGraphNote {
+                path: n.path.clone(),
+                title,
+                tags: n.tags.clone(),
+            }
         })
         .collect();
 
-    let links_json: Vec<_> = edges
+    let graph_links: Vec<KilnGraphLink> = edges
         .into_iter()
         .filter(|e| visible.contains(e.source.as_str()))
         .filter(|e| !e.resolved || visible.contains(e.target.as_str()))
-        .map(|e| {
-            serde_json::json!({
-                "source": e.source,
-                "target": e.target,
-                "resolved": e.resolved,
-            })
+        .map(|e| KilnGraphLink {
+            source: e.source,
+            target: e.target,
+            resolved: e.resolved,
         })
         .collect();
 
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "notes": notes_json,
-            "links": links_json,
-        }),
-    )
+    let reply = KilnGraphReply {
+        notes: graph_notes,
+        links: graph_links,
+    };
+    match serde_json::to_value(reply) {
+        Ok(v) => Response::success(req.id, v),
+        Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+    }
 }
 
 // =============================================================================
@@ -1139,8 +1157,12 @@ pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) ->
 
     let note_names: Vec<String> = notes.into_iter().map(|n| n.name).collect();
     let suggestions = crate::tools::autolink::suggest_links(text, &note_names);
+    let reply = crate::tools::autolink::SuggestLinksReply { suggestions };
 
-    Response::success(req.id, serde_json::json!({ "suggestions": suggestions }))
+    match serde_json::to_value(reply) {
+        Ok(v) => Response::success(req.id, v),
+        Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+    }
 }
 
 #[cfg(test)]

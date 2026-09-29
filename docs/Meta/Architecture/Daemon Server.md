@@ -119,7 +119,7 @@ Directory `crates/crucible-daemon/src/server/` (connection lifecycle and top-lev
 | `crates/crucible-daemon/src/server/file_event_hooks.rs` | 444 | Dispatches broadcast events into Lua `cru.on(...)` handlers; `run_handlers` is shared with `SessionLifecycle::stop`'s scoped end-observer pass. |
 | `crates/crucible-daemon/src/server/grep.rs` | 447 | `search_grep`/`fs.grep`: contained ripgrep-based content search. |
 | `crates/crucible-daemon/src/server/idle.rs` | 293 | `IdleTimer`/`IdleSnapshot`: the idle-shutdown policy for an auto-spawned daemon. |
-| `crates/crucible-daemon/src/server/kiln.rs` | 2140 | Every `kiln.*`, vector/text search, and `note.*`/`process_*` RPC handler; `kiln.list` rows carry a `git` field, and `note.upsert`/`note.delete` route through `KilnManager`'s index owner. |
+| `crates/crucible-daemon/src/server/kiln.rs` | 2162 | Every `kiln.*`, vector/text search, and `note.*`/`process_*` RPC handler; `kiln.list` rows carry a `git` field, and `note.upsert`/`note.delete` route through `KilnManager`'s index owner. Each reply is a core type (`KilnRow`, `NoteListRow`, `NoteByNameReply`, `GetBacklinksReply`, `KilnGraphReply`) built with `serde_json::to_value`, not `json!`. |
 | `crates/crucible-daemon/src/server/llm.rs` | 428 | `llm.register_provider`, `embeddings.models`. |
 | `crates/crucible-daemon/src/server/lua.rs` | 539 | `lua.init_session`/`shutdown_session`/`discover_plugins`/`plugin_health`/`generate_stubs`/`register_commands`; `fire_session_end_hooks_once` is the shared, deadlock-safe end-hook helper. |
 | `crates/crucible-daemon/src/server/lua_plugin_suite.rs` | 1172 | `lua.run_plugin_tests`; CI gates that run/typecheck every shipped plugin's suite. |

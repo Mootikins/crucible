@@ -145,10 +145,10 @@ export type FileEntry = Schemas['FileEntryRow'];
  * endpoint gets a 404 — `GET /api/kiln/file` answers "File not within any open
  * kiln" for a bare `Seed.md`.
  */
-export type NoteEntry = Schemas['NoteMetadataRow'];
+export type NoteEntry = Schemas['NoteListRow'];
 
 /** A plain-text mention of another note inside the focused note. */
-export type UnlinkedMention = Schemas['UnlinkedMentionRow'];
+export type UnlinkedMention = Schemas['LinkSuggestion'];
 
 /** Response of `GET /api/backlinks` — linked + unlinked mentions for a note. */
 export type BacklinksResponse = Schemas['BacklinksResponse'];

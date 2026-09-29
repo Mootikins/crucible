@@ -3,8 +3,8 @@ use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
 use crucible_core::protocol::requests::{
     DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffDeleteCommentReply,
-    DiffFileRequest, DiffResolveCommentReply, NoteListRow, SessionAgentSpec, SessionCreateParams,
-    VectorHit,
+    DiffFileRequest, DiffResolveCommentReply, GetBacklinksReply, KilnGraphReply, KilnRow,
+    NoteByNameReply, NoteListRow, SessionAgentSpec, SessionCreateParams, VectorHit,
 };
 use crucible_core::protocol::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
@@ -258,7 +258,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe KilnList =>
         kiln_list()
-        -> Vec<serde_json::Value> = kiln_list();
+        -> Vec<KilnRow> = kiln_list();
     }
 
     forward_rpc! {
@@ -270,25 +270,25 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe GetNoteByName =>
         get_note_by_name(kiln_path: &Path, name: &str)
-        -> Option<serde_json::Value> = get_note_by_name(&kiln_path, &name, None);
+        -> Option<NoteByNameReply> = get_note_by_name(&kiln_path, &name, None);
     }
 
     forward_rpc! {
         Safe GetBacklinks =>
         get_backlinks(kiln_path: &Path, name: &str)
-        -> Option<serde_json::Value> = get_backlinks(&kiln_path, &name, None);
+        -> Option<GetBacklinksReply> = get_backlinks(&kiln_path, &name, None);
     }
 
     forward_rpc! {
         Safe KilnGraph =>
         kiln_graph(kiln_path: &Path)
-        -> serde_json::Value = kiln_graph(&kiln_path, None);
+        -> KilnGraphReply = kiln_graph(&kiln_path, None);
     }
 
     forward_rpc! {
         Safe SuggestLinks =>
         suggest_links(kiln_path: &Path, text: &str)
-        -> Vec<serde_json::Value> = suggest_links(&kiln_path, &text, None);
+        -> Vec<crucible_daemon::tools::autolink::LinkSuggestion> = suggest_links(&kiln_path, &text, None);
     }
 
     forward_rpc! {
@@ -707,7 +707,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe FsListDir =>
         fs_list_dir(root: &str, rel_path: &str, show_ignored: bool, show_hidden: bool)
-        -> serde_json::Value = fs_list_dir(&root, &rel_path, show_ignored, show_hidden);
+        -> crucible_daemon::FsListing = fs_list_dir(&root, &rel_path, show_ignored, show_hidden);
     }
 
     forward_rpc! {
@@ -763,7 +763,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Once FsMove =>
         fs_move(root: &str, kind: &str, from_rel: &str, to_rel: &str)
-        -> serde_json::Value = fs_move(&root, &kind, &from_rel, &to_rel);
+        -> crucible_daemon::FsMoveReply = fs_move(&root, &kind, &from_rel, &to_rel);
     }
 
     forward_rpc! {
@@ -775,7 +775,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Once FsTrash =>
         fs_trash(root: &str, kind: &str, rel_path: &str)
-        -> serde_json::Value = fs_trash(&root, &kind, &rel_path);
+        -> crucible_daemon::FsTrashReply = fs_trash(&root, &kind, &rel_path);
     }
 
     forward_rpc! {
