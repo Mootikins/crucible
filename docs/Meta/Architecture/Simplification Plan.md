@@ -53,7 +53,8 @@ at the same time. Each step leaves the tree working.
 | 16. The last TS copies | about 16 | S | step 11 |
 | 17. One daemon test fixture (done) | 3 test types | S | none |
 | 18. Enums on the wire | about 0, string fields become enums | S | step 12 |
-| 19. Owner decisions | 9 to about 150, see the step | L | steps 11 to 13 |
+| 19. One RPC route for the web | about 90 types, about 70 TS functions, about 100 routes | L | steps 12 and 13 |
+| 20. Owner decisions | about 9, see the step | S each | none |
 
 Size: S is days, M is one to two weeks, L is three to six weeks.
 
@@ -70,8 +71,9 @@ The audit of step 18 of the old plan read every crate. Most types that look
 alike are separate contracts: a raw read and a resolved record, a create
 input and a query filter, a render node and a stateful component. Merging
 them would make required fields optional. Steps 11 to 18 therefore give
-about 140 types, about 6 percent. Only step 19, which changes the web
-layer or removes features, can reach 15 percent.
+about 140 types, about 6 percent. Step 19 adds about 90, and step 20
+about 9. Together that is about 9 percent. More needs research after step
+19, when the count shows what remains.
 
 The count:
 
@@ -569,14 +571,57 @@ unions.
 
 **Proof.** The serde round-trip tests and `openapi_contract` pass.
 
-## Step 19. Owner decisions
+## Step 19. One RPC route for the web
 
-Each item changes behavior, a plugin API or a rule of this plan. None starts
-without the owner's decision.
+**Now.** The web server has 119 routes and 156 Rust types. About 75 routes
+only forward one daemon RPC, and about 87 functions in `services/daemon.rs`
+do the forwarding. The frontend has 104 functions in `lib/api.ts` and 128
+types in `lib/api.ts` and `lib/query/`. Each new daemon method needs a
+route, route types, a forwarding function, a TS function and TS types.
+
+**Prior art.** Systems with a process or language boundary use one RPC
+channel with many typed methods, not a route per operation: T3 Code (one
+authenticated channel, one `RpcGroup` of typed methods from a shared
+contract), LSP (one JSON-RPC channel, one meta-model generated into many
+languages), Zed (one protobuf RPC). Joplin wraps its REST API in four
+generic calls for its plugins. The type defines the operation, not the
+route.
+
+**Change.**
+1. One authenticated route, `POST /api/rpc/{method}`, behind the existing
+   auth middleware, the origin checks and the plugin-caller rules. It
+   forwards the body to the daemon method and returns the reply.
+2. An allow list of the methods that a browser may call. Local-admin
+   methods stay off it: `shutdown`, `lua.eval`, the Lua lifecycle and test
+   methods, `plugin.install`/`remove`, the `config.*` writes, `storage.*`,
+   `mcp.*`, `kiln.register`/`forget`, `project.register`/`unregister`,
+   `llm.register_provider`, `webhook.receive`. The allow list is the
+   security boundary; the opaque route is not.
+3. A generated typed client: `rpc<M>(method, params)`, from the typed
+   `rpc_methods!` rows of step 12 (`Request -> Reply` per method), with a
+   generated method map in TS. The frontend's per-route functions and
+   types go.
+4. Move the rules that only a web route enforces today into the daemon,
+   where AGENTS.md says a decision belongs: the untrusted-root rule of
+   `project.register`, the reference containment of a canvas write, the
+   name and size checks of a note write, and the resume fallback.
+5. Map daemon error codes to one error shape in the browser, in one place.
+6. Keep the routes that are not a forward: login and logout, health and
+   ready, the SSE streams, the terminal WebSocket, static files, the saved
+   layout and recents, and raw file serving.
+
+**Proof.** A method that is not on the allow list answers 403, tested for
+each local-admin method. The generated method map covers each allowed
+method, and `tsc --noEmit` passes. The web end-to-end tests pass through the
+one route.
+
+## Step 20. Owner decisions
+
+Each item changes behavior or a plugin API. None starts without the owner's
+decision.
 
 | Item | Deletes | Cost |
 |---|---|---|
-| The web talks RPC through one generic proxy route (`POST /api/rpc/{method}` with the session cookie and a method allow list), with generated TS for each core type | most of the 156 web Rust types, 119 routes, 87 forwarding functions, most of the 104 functions and 128 types in `lib/api.ts` and `lib/query`: about 150 types | Reverses "The web REST layer as a whole" in the list below. Needs a security review of the allow list. L |
 | The fullscreen multi-pane prototype (`FullscreenShell`, `ChatPane`, `PluginBuffer`) | 3, with their tests, bench and example | No production path reaches it |
 | Popup requests become single-select panels | `PopupRequest`, `PopupResponse` | Changes `cru.ui.popup` and both client renderers |
 | An ask becomes a batch of one | `AskRequest`, `AskResponse` | Changes `cru.ui.ask` and both client renderers |
@@ -596,8 +641,10 @@ These look like duplicates but are separate contracts. Keep them apart.
   the daemon holds the behavior.
 - `ShellPolicy` and `PatternStore`, which have different bypass models.
 - The TUI and web renderers of one `InteractionRequest`.
-- The web REST layer as a whole. It is the browser boundary. Step 6 makes
-  each route cheaper; it does not remove the layer.
+- The web server's own transports: authentication, the SSE streams, the
+  terminal WebSocket and static files. Step 19 removes the routes that only
+  forward one RPC; it keeps the browser boundary, which is now one
+  authenticated RPC route with an allow list.
 - A missing embedding provider and a failed one. They have different
   failure policies.
 
