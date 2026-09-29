@@ -931,3 +931,57 @@ fn a_daemon_that_ignores_the_request_is_still_killed() {
         "the reaper must not wait far beyond the grace period; took {elapsed:?}"
     );
 }
+
+/// The JSON of `session.create`, as the Rust client builds it. The fixture
+/// holds the JSON that the client wrote before the builder changed.
+#[test]
+fn the_session_create_request_matches_its_golden_fixture() {
+    let cases = [
+        build_create_request(
+            SessionCreateParams {
+                session_type: "chat".to_string(),
+                kilns: vec![],
+                workspace: None,
+                recording_mode: None,
+                recording_path: None,
+                agent_type: None,
+                isolation: None,
+            },
+            None,
+        ),
+        build_create_request(
+            SessionCreateParams {
+                session_type: "agent".to_string(),
+                kilns: vec![
+                    crate::test_support::kiln_name("docs"),
+                    crate::test_support::kiln_name("notes"),
+                ],
+                workspace: Some(std::path::PathBuf::from("/work")),
+                recording_mode: Some("granular".to_string()),
+                recording_path: Some(std::path::PathBuf::from("/tmp/rec.jsonl")),
+                agent_type: Some("internal".to_string()),
+                isolation: Some(serde_json::json!(false)),
+            },
+            Some(SessionAgentSpec {
+                agent_name: None,
+                agent_card: Some("researcher".to_string()),
+                provider: Some("ollama".to_string()),
+                provider_key: Some("local".to_string()),
+                model: Some("llama3".to_string()),
+                endpoint: Some("http://localhost:11434".to_string()),
+                env_overrides: std::collections::HashMap::from([(
+                    "KEY".to_string(),
+                    "value".to_string(),
+                )]),
+                system_prompt: Some("Be brief.".to_string()),
+                mcp_servers: Some(vec![]),
+            }),
+        ),
+    ];
+    let actual = serde_json::to_value(cases).unwrap();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/golden/requests/session.create.json");
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let expected: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    assert_eq!(actual, expected, "the session.create JSON changed");
+}

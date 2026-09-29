@@ -538,3 +538,13 @@ fn daemon_local_param_methods() {
         }],
     );
 }
+
+/// `ping`, `shutdown`, `kiln.list` and the other methods that take no params.
+/// A client sends an empty object.
+#[test]
+fn no_params_methods() {
+    let actual = serde_json::to_value([EmptyParams {}]).expect("params write JSON");
+    let text = std::fs::read_to_string(fixture_path("no_params")).expect("the fixture reads");
+    let expected: Value = serde_json::from_str(&text).expect("the fixture is JSON");
+    assert_eq!(actual, expected, "no_params: the wire changed");
+}

@@ -1,0 +1,28 @@
+[
+  {
+    "type": "chat"
+  },
+  {
+    "type": "agent",
+    "kilns": [
+      "docs",
+      "notes"
+    ],
+    "workspace": "/work",
+    "recording_mode": "granular",
+    "recording_path": "/tmp/rec.jsonl",
+    "agent_type": "internal",
+    "isolation": false,
+    "configure_agent": true,
+    "agent_card": "researcher",
+    "provider": "ollama",
+    "provider_key": "local",
+    "model": "llama3",
+    "endpoint": "http://localhost:11434",
+    "env_overrides": {
+      "KEY": "value"
+    },
+    "system_prompt": "Be brief.",
+    "mcp_servers": []
+  }
+]
