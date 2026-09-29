@@ -56,9 +56,6 @@ mod old_payloads {
             parse(json!({"session_id": "s", "content": "c", "comments": null}));
         assert!(send.body.comments.is_empty());
 
-        let precognition: SessionSetPrecognitionRequest = parse(json!({"session_id": "s"}));
-        assert!(precognition.precognition_enabled);
-
         let cleanup: SessionCleanupRequest = parse(json!({"older_than_days": 3}));
         assert!(!cleanup.dry_run && !cleanup.all_kilns && cleanup.kilns.is_empty());
 

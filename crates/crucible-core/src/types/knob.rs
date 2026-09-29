@@ -33,16 +33,14 @@ use serde::{Deserialize, Serialize};
 
 /// A per-session setting a client can read and write.
 ///
-/// One variant per RPC read/write pair. The name is the wire id, so
-/// `Precognition` is `precognition` in `session.list_knobs`.
-///
-/// The id is NOT always the method suffix: [`Self::Model`] is written by
-/// `session.switch_model`, which carries no `set_` prefix. The daemon's
-/// `rpc::rpc_set_method` declares the method for each knob, and the front-end
-/// parity gates read it rather than guess at a prefix.
+/// One variant per setting. The name is the wire id, so `Precognition` is
+/// `precognition` in `session.list_knobs`. Every knob shares the one write
+/// method, `session.knob.set`, and the one read method, `session.knob.get`;
+/// see [`KnobValue`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(strum::EnumIter))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum SessionKnob {
     /// How context is assembled when it does not fit.
     ContextStrategy,
@@ -54,6 +52,53 @@ pub enum SessionKnob {
     Mode,
     /// Maximum consecutive plugin turns before approval becomes Ask.
     PluginTurnLimit,
+}
+
+/// One knob and the value to read or write.
+///
+/// `session.knob.set` carries this as its whole body: the tag names the
+/// knob, so a client that sends `{"knob": "mode", "value": "plan"}` cannot
+/// name a knob and then send the wrong value's shape. `session.knob.get`
+/// answers the same type, so a client reads a value the same way it wrote
+/// it.
+///
+/// One variant per [`SessionKnob`] entry, and the compiler proves the two
+/// enums stay matched: [`Self::knob`] has no wildcard arm, so a
+/// [`SessionKnob`] variant added without a matching [`KnobValue`] variant
+/// fails to compile here, not at run time.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "knob", content = "value", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum KnobValue {
+    /// The model id, as `session.switch_model` used to carry it.
+    Model(String),
+    /// The mode id. `None` is the agent's default mode: no mode was ever
+    /// set.
+    Mode(Option<String>),
+    /// The strategy's string spelling, parsed and validated by the daemon.
+    ContextStrategy(String),
+    /// Whether the kiln is searched before the first message.
+    Precognition(bool),
+    /// Maximum consecutive plugin turns before approval becomes Ask.
+    PluginTurnLimit(u32),
+}
+
+impl KnobValue {
+    /// Which knob this value belongs to.
+    ///
+    /// Exhaustive by construction: see the type's docs.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    #[deny(clippy::match_wildcard_for_single_variants)]
+    #[must_use]
+    pub fn knob(&self) -> SessionKnob {
+        match self {
+            Self::Model(_) => SessionKnob::Model,
+            Self::Mode(_) => SessionKnob::Mode,
+            Self::ContextStrategy(_) => SessionKnob::ContextStrategy,
+            Self::Precognition(_) => SessionKnob::Precognition,
+            Self::PluginTurnLimit(_) => SessionKnob::PluginTurnLimit,
+        }
+    }
 }
 
 /// What an ACP session can do with a knob.

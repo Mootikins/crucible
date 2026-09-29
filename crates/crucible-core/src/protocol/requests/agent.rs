@@ -11,18 +11,14 @@ pub struct AgentConfig {
     pub agent: serde_json::Value,
 }
 
-/// Request for `session.switch_model`.
+/// The body of `session.knob.get`, inside `Scoped`.
+///
+/// `session.knob.set` needs no sibling of this: its body IS
+/// [`crate::types::KnobValue`], which already names its own knob.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionSwitchModelRequest {
-    pub session_id: String,
-    pub model_id: String,
-}
-
-/// Request for `session.set_mode`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionSetModeRequest {
-    pub session_id: String,
-    pub mode_id: String,
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KnobRef {
+    pub knob: crate::types::SessionKnob,
 }
 
 /// The body of `session.set_plugin_approval`, inside `Scoped`.
@@ -38,23 +34,6 @@ pub struct PluginRef {
     pub plugin: String,
 }
 
-/// Request for `session.set_plugin_turn_limit`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionPluginTurnLimitRequest {
-    pub session_id: String,
-    pub limit: u32,
-}
-
-/// Request for `session.set_precognition`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionSetPrecognitionRequest {
-    pub session_id: String,
-    /// An absent value turns precognition on. The handler did the same
-    /// before it read this type.
-    #[serde(default = "super::common::default_true")]
-    pub precognition_enabled: bool,
-}
-
 /// The body of `session.undo`, inside `Scoped`.
 ///
 /// An absent `count` undoes one turn.
@@ -62,13 +41,6 @@ pub struct SessionSetPrecognitionRequest {
 pub struct UndoCount {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<usize>,
-}
-
-/// Request for `session.set_context_strategy`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SessionSetContextStrategyRequest {
-    pub session_id: String,
-    pub context_strategy: String,
 }
 
 /// Request for `subagent.collect`: wait for background jobs to finish.

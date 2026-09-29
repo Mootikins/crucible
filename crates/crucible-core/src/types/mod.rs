@@ -48,8 +48,8 @@ pub use crate::types::acp::schema::{
 
 // Re-export mode descriptor types
 pub use crate::types::knob::{
-    AcpKnob, AgentConfigOption, AgentOptionChoice, AgentOptionKind, KnobDescriptor, SessionKnob,
-    SessionKnobSupport,
+    AcpKnob, AgentConfigOption, AgentOptionChoice, AgentOptionKind, KnobDescriptor, KnobValue,
+    SessionKnob, SessionKnobSupport,
 };
 pub use crate::types::mode::{
     canonical_mode_id, default_internal_modes, ModeDescriptor, WriteMode,

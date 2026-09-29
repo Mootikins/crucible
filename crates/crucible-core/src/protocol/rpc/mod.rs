@@ -1,6 +1,6 @@
 mod method;
 
-pub use method::{rpc_set_method, RpcMethod, METHODS};
+pub use method::{RpcMethod, METHODS};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
