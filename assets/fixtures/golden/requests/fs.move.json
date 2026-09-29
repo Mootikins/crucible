@@ -1,0 +1,8 @@
+[
+  {
+    "root": "/repo",
+    "kind": "project",
+    "from_rel": "a.md",
+    "to_rel": "b.md"
+  }
+]

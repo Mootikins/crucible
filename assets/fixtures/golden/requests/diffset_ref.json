@@ -1,0 +1,10 @@
+[
+  {
+    "source": {
+      "kind": "branch",
+      "root": "/repo",
+      "base": "main",
+      "head": "topic"
+    }
+  }
+]

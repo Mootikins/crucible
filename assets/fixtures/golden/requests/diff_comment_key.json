@@ -1,0 +1,11 @@
+[
+  {
+    "source": {
+      "kind": "branch",
+      "root": "/repo",
+      "base": "main",
+      "head": "topic"
+    },
+    "comment_id": "c1"
+  }
+]

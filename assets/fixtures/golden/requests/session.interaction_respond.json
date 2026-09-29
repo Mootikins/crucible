@@ -1,0 +1,12 @@
+[
+  {
+    "session_id": "s1",
+    "request_id": "r1",
+    "response": {
+      "kind": "ask",
+      "selected": [
+        "yes"
+      ]
+    }
+  }
+]

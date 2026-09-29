@@ -1,0 +1,10 @@
+[
+  {
+    "session_id": "s1",
+    "notification": {
+      "id": "n1",
+      "kind": "toast",
+      "message": "hi"
+    }
+  }
+]

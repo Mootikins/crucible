@@ -1,0 +1,12 @@
+[
+  {
+    "kiln": "/kiln",
+    "scope": {
+      "kind": "workspace",
+      "path": "/work/space"
+    }
+  },
+  {
+    "kiln": "/kiln"
+  }
+]

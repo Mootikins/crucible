@@ -1,0 +1,12 @@
+[
+  {
+    "session_id": "s1",
+    "include_timestamps": true,
+    "include_tokens": false,
+    "include_tools": true,
+    "max_content_length": 80
+  },
+  {
+    "session_id": "s1"
+  }
+]

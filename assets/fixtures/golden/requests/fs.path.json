@@ -1,0 +1,7 @@
+[
+  {
+    "root": "/repo",
+    "kind": "kiln",
+    "rel_path": "dir"
+  }
+]

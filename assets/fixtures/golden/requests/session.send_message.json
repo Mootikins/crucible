@@ -1,0 +1,24 @@
+[
+  {
+    "session_id": "s1",
+    "content": "hello",
+    "is_interactive": false,
+    "permission_mode": "plan",
+    "comments": [
+      {
+        "id": "c1",
+        "source": {
+          "kind": "branch",
+          "root": "/repo",
+          "base": "main",
+          "head": "topic"
+        }
+      }
+    ]
+  },
+  {
+    "session_id": "s1",
+    "content": "hello",
+    "is_interactive": true
+  }
+]

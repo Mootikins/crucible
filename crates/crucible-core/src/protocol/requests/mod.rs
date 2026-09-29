@@ -15,6 +15,9 @@ mod storage;
 mod subscription;
 mod workflow;
 
+#[cfg(test)]
+mod golden_tests;
+
 pub use agent::*;
 pub use common::*;
 pub use lua::*;

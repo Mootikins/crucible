@@ -1,0 +1,10 @@
+[
+  {
+    "session_id": "s1",
+    "commands": [
+      {
+        "name": "hello"
+      }
+    ]
+  }
+]

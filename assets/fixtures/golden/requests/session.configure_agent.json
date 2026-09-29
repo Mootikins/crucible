@@ -1,0 +1,9 @@
+[
+  {
+    "session_id": "s1",
+    "agent": {
+      "agent_type": "internal",
+      "model": "m"
+    }
+  }
+]

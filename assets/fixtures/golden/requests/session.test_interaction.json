@@ -1,0 +1,11 @@
+[
+  {
+    "session_id": "s1",
+    "type": "permission",
+    "question": "Why?",
+    "action": "rm -rf"
+  },
+  {
+    "session_id": "s1"
+  }
+]

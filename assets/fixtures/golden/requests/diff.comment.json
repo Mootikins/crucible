@@ -1,0 +1,30 @@
+[
+  {
+    "source": {
+      "kind": "branch",
+      "root": "/repo",
+      "base": "main",
+      "head": "topic"
+    },
+    "root": "/repo",
+    "path": "a.md",
+    "from": "old.md",
+    "side": "current",
+    "line_start": 3,
+    "line_end": 5,
+    "body": "Fix this.",
+    "author": "agent"
+  },
+  {
+    "source": {
+      "kind": "branch",
+      "root": "/repo",
+      "base": "main",
+      "head": "topic"
+    },
+    "path": "a.md",
+    "side": "base",
+    "line_start": 1,
+    "body": "Why?"
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "session_id": "s1",
+    "output_path": "/tmp/out.md",
+    "include_timestamps": true
+  },
+  {
+    "session_id": "s1"
+  }
+]
