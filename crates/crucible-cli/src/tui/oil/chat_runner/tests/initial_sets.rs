@@ -18,8 +18,12 @@ use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 async fn startup_set_overrides_reach_the_daemon_rpc() {
     let mut runner =
         OilChatRunner::with_terminal(Terminal::with_size(80, 24)).with_initial_sets(vec![
-            SetEffect::DaemonRpc(SetRpcAction::SetContextStrategy("truncate".into())),
-            SetEffect::DaemonRpc(SetRpcAction::SwitchModel("gpt-4o".into())),
+            SetEffect::DaemonRpc(SetRpcAction::Knob(
+                crucible_core::types::KnobValue::ContextStrategy("truncate".into()),
+            )),
+            SetEffect::DaemonRpc(SetRpcAction::Knob(crucible_core::types::KnobValue::Model(
+                "gpt-4o".into(),
+            ))),
         ]);
 
     let daemon = FakeDaemon::answering_null("chat-1").await;
@@ -39,7 +43,7 @@ async fn startup_set_overrides_reach_the_daemon_rpc() {
 
     assert_eq!(
         daemon.methods(),
-        ["session.set_context_strategy", "session.switch_model"],
+        ["session.knob.set", "session.knob.set"],
         "--set context_strategy and --set model must each reach the daemon RPC once, \
          not only the reducer"
     );

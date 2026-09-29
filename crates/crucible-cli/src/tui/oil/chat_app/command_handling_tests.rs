@@ -94,7 +94,7 @@ fn set_model_maps_to_switch_model() {
     let mut app = app();
     assert!(matches!(
         run_set(&mut app, "model=gpt-4o"),
-        Action::Send(ChatAppMsg::SwitchModel(m)) if m == "gpt-4o"
+        Action::Send(ChatAppMsg::SetKnob(crucible_core::types::KnobValue::Model(m))) if m == "gpt-4o"
     ));
 }
 
@@ -104,7 +104,7 @@ fn set_contextstrategy_summarize_accepted() {
     let mut app = app();
     assert!(matches!(
         run_set(&mut app, "contextstrategy=summarize"),
-        Action::Send(ChatAppMsg::SetContextStrategy(s)) if s == "summarize"
+        Action::Send(ChatAppMsg::SetKnob(crucible_core::types::KnobValue::ContextStrategy(s))) if s == "summarize"
     ));
 }
 
@@ -113,7 +113,7 @@ fn set_contextstrategy_normalizes_value() {
     let mut app = app();
     assert!(matches!(
         run_set(&mut app, "contextstrategy=SUMMARIZE"),
-        Action::Send(ChatAppMsg::SetContextStrategy(s)) if s == "summarize"
+        Action::Send(ChatAppMsg::SetKnob(crucible_core::types::KnobValue::ContextStrategy(s))) if s == "summarize"
     ));
 }
 
@@ -792,13 +792,23 @@ fn value_less_precognition_spellings_carry_the_value_to_the_daemon() {
 
     let off = app.handle_set_command("set noprecognition");
     assert!(
-        matches!(off, Action::Send(ChatAppMsg::SetPrecognition(false))),
+        matches!(
+            off,
+            Action::Send(ChatAppMsg::SetKnob(
+                crucible_core::types::KnobValue::Precognition(false)
+            ))
+        ),
         "`:set noprecognition` must sync precognition=false, got {off:?}"
     );
 
     let on = app.handle_set_command("set precognition");
     assert!(
-        matches!(on, Action::Send(ChatAppMsg::SetPrecognition(true))),
+        matches!(
+            on,
+            Action::Send(ChatAppMsg::SetKnob(
+                crucible_core::types::KnobValue::Precognition(true)
+            ))
+        ),
         "`:set precognition` must sync precognition=true, got {on:?}"
     );
 
@@ -806,7 +816,12 @@ fn value_less_precognition_spellings_carry_the_value_to_the_daemon() {
     // pins that the enable path stored a real bool rather than a string.
     let toggled = app.handle_set_command("set precognition!");
     assert!(
-        matches!(toggled, Action::Send(ChatAppMsg::SetPrecognition(false))),
+        matches!(
+            toggled,
+            Action::Send(ChatAppMsg::SetKnob(
+                crucible_core::types::KnobValue::Precognition(false)
+            ))
+        ),
         "`:set precognition!` must sync the flipped value, got {toggled:?}"
     );
 }

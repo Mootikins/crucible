@@ -251,7 +251,7 @@ fn one_shot_context_flags_become_daemon_session_state() {
     assert_eq!(
         off_agent["precognition_enabled"].as_bool(),
         Some(false),
-        "--no-context must reach the daemon as session.set_precognition(false). \
+        "--no-context must reach the daemon as session.knob.set(precognition, false). \
          cru stderr:\n{}",
         stderr(&off)
     );

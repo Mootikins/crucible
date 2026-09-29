@@ -578,7 +578,7 @@ impl OilChatApp {
         action: SetRpcAction,
     ) -> Action<ChatAppMsg> {
         match &action {
-            SetRpcAction::SwitchModel(model) => {
+            SetRpcAction::Knob(crucible_core::types::KnobValue::Model(model)) => {
                 self.model = model.clone();
                 self.runtime_config.set_dynamic(
                     key,
@@ -588,12 +588,12 @@ impl OilChatApp {
                 );
                 self.send_setting_ack("model", model);
             }
-            SetRpcAction::SetContextStrategy(normalized) => {
+            SetRpcAction::Knob(crucible_core::types::KnobValue::ContextStrategy(normalized)) => {
                 self.runtime_config
                     .set_str(key, normalized, ModSource::Command);
                 self.send_setting_ack("context_strategy", normalized);
             }
-            SetRpcAction::SetPrecognition(enabled) => {
+            SetRpcAction::Knob(crucible_core::types::KnobValue::Precognition(enabled)) => {
                 // Keep the local copy in step: it is what `:set` and the
                 // replay banner read back. The daemon owns the setting; this
                 // is the display of it, not the setting itself.
@@ -605,11 +605,15 @@ impl OilChatApp {
                     .set(key, ConfigValue::Bool(*enabled), ModSource::Command);
                 self.send_setting_ack("precognition", enabled);
             }
-            SetRpcAction::SetPluginTurnLimit(limit) => {
+            SetRpcAction::Knob(crucible_core::types::KnobValue::PluginTurnLimit(limit)) => {
                 self.runtime_config
                     .set_str(key, &limit.to_string(), ModSource::Command);
                 self.send_setting_ack("plugin_turn_limit", limit);
             }
+            // Mode has its own message (`ChatAppMsg::ModeChanged`), not this
+            // one: `:mode` and Shift+Tab both go through it, and `classify_set_value`
+            // never produces `KnobValue::Mode`.
+            SetRpcAction::Knob(crucible_core::types::KnobValue::Mode(_)) => {}
             // No local copy: the runner shows the value that the daemon holds.
             SetRpcAction::SetPluginApproval(..) => {}
         }
@@ -626,7 +630,9 @@ impl OilChatApp {
     /// reported a new value while the daemon kept injecting.
     fn daemon_sync_for_bool(key: &str, enabled: bool) -> Action<ChatAppMsg> {
         match key {
-            "precognition" => Action::Send(ChatAppMsg::SetPrecognition(enabled)),
+            "precognition" => Action::Send(ChatAppMsg::SetKnob(
+                crucible_core::types::KnobValue::Precognition(enabled),
+            )),
             _ => Action::Continue,
         }
     }

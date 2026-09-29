@@ -91,8 +91,12 @@ pub enum ChatAppMsg {
     ContextUsage { used: usize, total: usize },
     /// **Command** (TUI → daemon): Clear chat history.
     ClearHistory,
-    /// **Command** (TUI → daemon): Switch to a different LLM model.
-    SwitchModel(String),
+    /// **Command** (TUI → daemon): write one session knob. One RPC method
+    /// serves every [`crucible_core::types::KnobValue`] variant, so this one
+    /// message replaces the per-knob messages a knob used to need
+    /// (`SwitchModel`, `SetContextStrategy`, `SetPrecognition`,
+    /// `SetPluginTurnLimit`).
+    SetKnob(crucible_core::types::KnobValue),
     /// **Command** (TUI → daemon): Fetch available models from providers.
     FetchModels,
     /// **Event** (daemon → TUI): Models list loaded successfully.
@@ -126,15 +130,6 @@ pub enum ChatAppMsg {
     /// **Command** (TUI → daemon): Set execution timeout in seconds per turn.
     /// **Command** (TUI → daemon): Set context token budget.
     SetContextBudget(Option<usize>),
-    /// **Command** (TUI → daemon): Set context truncation strategy.
-    SetContextStrategy(String),
-    /// **Command** (TUI → daemon): Set sliding window size (message pairs).
-    /// **Command** (TUI → daemon): Set output validation mode.
-    /// **Command** (TUI → daemon): Set validation retry count.
-    /// **Command** (TUI → daemon): Turn precognition (auto-RAG) on or off.
-    SetPrecognition(bool),
-    /// **Command** (TUI → daemon): Limit consecutive plugin turns.
-    SetPluginTurnLimit(u32),
     /// **Command** (TUI → daemon): Set the approval of one plugin's turns
     /// when `set` has a value, then show the value that the handle reads.
     PluginApproval {
@@ -374,7 +369,7 @@ impl ChatAppMsg {
             | Self::Transcript { .. }
             | Self::TranscriptLoaded(_) => MsgCategory::Stream,
 
-            Self::SwitchModel(_)
+            Self::SetKnob(_)
             | Self::FetchModels
             | Self::ModelsLoaded(_)
             | Self::ModelsFetchFailed(_)
@@ -383,9 +378,6 @@ impl ChatAppMsg {
             | Self::FetchCommands
             | Self::CommandsLoaded(_)
             | Self::SetContextBudget(_)
-            | Self::SetContextStrategy(_)
-            | Self::SetPrecognition(_)
-            | Self::SetPluginTurnLimit(_)
             | Self::PluginApproval { .. }
             | Self::PluginStatusLoaded(_)
             | Self::StatusItemsLoaded(_) => MsgCategory::Config,

@@ -72,7 +72,9 @@ use crate::tui::oil::commands::{SetEffect, SetRpcAction};
 fn no_context_flag_disables_precognition() {
     assert_eq!(
         precognition_flag_actions(true),
-        vec![SetRpcAction::SetPrecognition(false)]
+        vec![SetRpcAction::Knob(
+            crucible_core::types::KnobValue::Precognition(false)
+        )]
     );
 }
 
@@ -90,8 +92,12 @@ fn interactive_initial_sets_append_the_context_flags_after_set_overrides() {
     assert_eq!(
         sets,
         vec![
-            SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(true)),
-            SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(false)),
+            SetEffect::DaemonRpc(SetRpcAction::Knob(
+                crucible_core::types::KnobValue::Precognition(true)
+            )),
+            SetEffect::DaemonRpc(SetRpcAction::Knob(
+                crucible_core::types::KnobValue::Precognition(false)
+            )),
         ],
         "flags must be applied last so `--no-context` wins, as in oneshot"
     );

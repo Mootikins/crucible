@@ -56,9 +56,13 @@ impl OilChatApp {
     /// Handle config messages (SwitchModel, Set*, ModelsLoaded, etc.)
     pub(super) fn handle_config_msg(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         match msg {
-            ChatAppMsg::SwitchModel(model) => {
+            ChatAppMsg::SetKnob(crucible_core::types::KnobValue::Model(model)) => {
                 self.model = model;
             }
+            // The other knobs have no local mirror in `OilChatApp`: their
+            // readout is `:set <key>?`, answered from the daemon, not from
+            // client-side state.
+            ChatAppMsg::SetKnob(_) => {}
             ChatAppMsg::FetchModels => {
                 tracing::debug!(
                     target: "crucible_cli::tui::oil::model_flow",
@@ -116,10 +120,7 @@ impl OilChatApp {
             }
             ChatAppMsg::StatusItemsLoaded(items) => self.status_items = items,
             // Command-only: side effects handled by chat_runner::process_action
-            ChatAppMsg::SetContextBudget(_)
-            | ChatAppMsg::SetContextStrategy(_)
-            | ChatAppMsg::SetPrecognition(_) => {}
-            ChatAppMsg::SetPluginTurnLimit(_) | ChatAppMsg::PluginApproval { .. } => {}
+            ChatAppMsg::SetContextBudget(_) | ChatAppMsg::PluginApproval { .. } => {}
             _ => {
                 tracing::warn!("unhandled config msg: {:?}", msg.category());
             }

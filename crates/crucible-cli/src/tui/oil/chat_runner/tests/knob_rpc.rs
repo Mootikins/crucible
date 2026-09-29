@@ -45,7 +45,9 @@ async fn knob_daemon(
         }
         "session.list_plugin_approvals" => Ok(json!({ "approvals": *approvals.lock().unwrap() })),
         "session.list_modes" => Ok(json!({ "current_mode_id": "ask", "modes": modes })),
-        "session.set_mode" if refuse_modes => Err(format!("unknown mode '{}'", params["mode_id"])),
+        "session.knob.set" if refuse_modes && params["knob"] == "mode" => {
+            Err(format!("unknown mode '{}'", params["value"]))
+        }
         _ => Ok(Value::Null),
     })
     .await
@@ -84,13 +86,23 @@ async fn run(app: &mut OilChatApp, daemon: &FakeDaemon, action: Action<ChatAppMs
         .expect("process_action should not fail");
 }
 
-#[test_case("model=gpt-4o", "session.switch_model" ; "model")]
-#[test_case("contextstrategy=summarize", "session.set_context_strategy" ; "context strategy")]
-#[test_case("precognition=off", "session.set_precognition" ; "precognition")]
-#[test_case("plugin_turn_limit=7", "session.set_plugin_turn_limit" ; "plugin turn limit")]
-#[test_case("plugin_approval.goal=ask", "session.set_plugin_approval" ; "plugin approval")]
+// Every daemon-scoped knob now rides `session.knob.set`, so the method name
+// alone no longer proves the miswiring class this file exists to catch
+// (`:set plugin_turn_limit=7` reaching the daemon under the `model` knob
+// would still pass a method-only check). `expected_knob` names the
+// `KnobValue` tag the request must carry; `None` for `plugin_approval`,
+// which is not a `SessionKnob` and keeps its own method.
+#[test_case("model=gpt-4o", "session.knob.set", Some("model") ; "model")]
+#[test_case("contextstrategy=summarize", "session.knob.set", Some("context_strategy") ; "context strategy")]
+#[test_case("precognition=off", "session.knob.set", Some("precognition") ; "precognition")]
+#[test_case("plugin_turn_limit=7", "session.knob.set", Some("plugin_turn_limit") ; "plugin turn limit")]
+#[test_case("plugin_approval.goal=ask", "session.set_plugin_approval", None ; "plugin approval")]
 #[tokio::test]
-async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {
+async fn interactive_set_knob_reaches_matching_rpc(
+    body: &str,
+    expected_rpc: &str,
+    expected_knob: Option<&str>,
+) {
     let mut app = OilChatApp::default();
     let action = type_and_submit(&mut app, &format!(":set {body}"));
     assert!(
@@ -104,6 +116,17 @@ async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &st
         vec![expected_rpc.to_string()],
         ":set {body} must invoke exactly the {expected_rpc} RPC once"
     );
+    if let Some(knob) = expected_knob {
+        let calls = daemon.calls();
+        let (_, params) = calls
+            .iter()
+            .find(|(method, _)| method == expected_rpc)
+            .expect("the expected RPC was called");
+        assert_eq!(
+            params["knob"], knob,
+            ":set {body} must carry the '{knob}' knob, not write under a different one"
+        );
+    }
 }
 
 /// `:set plugin_approval.<plugin>` writes to the daemon and reads the value
@@ -267,6 +290,33 @@ async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
         app.has_notifications(),
         "and the user must be told why, not just the log"
     );
+}
+
+/// Mode is a knob like the rest now: `ModeChanged` (Shift+Tab, `:mode`) must
+/// carry `KnobValue::Mode` through `session.knob.set`, the same method every
+/// other knob uses. Mode is exempt from the `:set key=value` matrix above
+/// (`ModeChanged` is its own message), but not from riding the one RPC.
+#[tokio::test]
+async fn a_mode_change_reaches_session_knob_set_with_the_mode_knob() {
+    let mut app = OilChatApp::default();
+    let daemon = knob_daemon(BTreeMap::new(), &["ask", "plan"], false).await;
+
+    app.on_message(ChatAppMsg::ModeChanged("plan".into()));
+    run(
+        &mut app,
+        &daemon,
+        Action::Send(ChatAppMsg::ModeChanged("plan".into())),
+    )
+    .await;
+
+    assert_eq!(setters(&daemon), vec!["session.knob.set".to_string()]);
+    let calls = daemon.calls();
+    let (_, params) = calls
+        .iter()
+        .find(|(method, _)| method == "session.knob.set")
+        .expect("session.knob.set was called");
+    assert_eq!(params["knob"], "mode");
+    assert_eq!(params["value"], "plan");
 }
 
 /// The startup chain, end to end: `FetchModes` → `session.list_modes` →

@@ -119,29 +119,12 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
 
     for (setting_str, action) in &rpc_actions {
         match action {
-            SetRpcAction::SwitchModel(model) => {
+            SetRpcAction::Knob(value) => {
+                let knob = value.knob();
                 client
-                    .session_switch_model(&session_id, model)
+                    .session_knob_set(&session_id, value.clone())
                     .await
-                    .map_err(|e| anyhow::anyhow!("Failed to switch model: {}", e))?;
-            }
-            SetRpcAction::SetContextStrategy(strategy) => {
-                client
-                    .session_set_context_strategy(&session_id, strategy)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set context strategy: {}", e))?;
-            }
-            SetRpcAction::SetPrecognition(enabled) => {
-                client
-                    .session_set_precognition(&session_id, *enabled)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set precognition: {}", e))?;
-            }
-            SetRpcAction::SetPluginTurnLimit(limit) => {
-                client
-                    .session_set_plugin_turn_limit(&session_id, *limit)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to set plugin turn limit: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Failed to set {}: {}", knob.id(), e))?;
             }
             SetRpcAction::SetPluginApproval(plugin, approval) => {
                 client
@@ -168,7 +151,8 @@ mod tests {
         let effect = validate_set_for_cli("model=llama3").unwrap();
         assert!(matches!(
             effect,
-            SetEffect::DaemonRpc(SetRpcAction::SwitchModel(m)) if m == "llama3"
+            SetEffect::DaemonRpc(SetRpcAction::Knob(crucible_core::types::KnobValue::Model(m)))
+                if m == "llama3"
         ));
     }
 

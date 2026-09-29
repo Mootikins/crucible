@@ -512,26 +512,54 @@ impl OilChatRunner {
                             tracing::info!("Cancelled active turn via session.cancel RPC");
                         }
                     }
-                    ChatAppMsg::SwitchModel(model_id) => {
-                        tracing::info!(model = %model_id, "Model switch requested");
-                        let switched = match params.session {
+                    // Every session knob write rides this one RPC. Precognition
+                    // keeps its own optimistic local mirror and revert (the
+                    // `:set precognition?` readout reads it), because
+                    // `OilChatApp` caches that one flag; every other knob's
+                    // readout comes from the daemon, so there is nothing here
+                    // to revert.
+                    ChatAppMsg::SetKnob(value) => {
+                        let knob = value.knob();
+                        tracing::info!(knob = knob.id(), "Knob set requested");
+                        let set = match params.session {
                             Some(session) => {
                                 session
                                     .client
-                                    .session_switch_model(&session.id, model_id)
+                                    .session_knob_set(&session.id, value.clone())
                                     .await
                             }
                             None => Err(anyhow::anyhow!("no live session")),
                         };
-                        match switched {
-                            Ok(()) => {
-                                tracing::info!(model = %model_id, "Model switched successfully");
+                        match (value, set) {
+                            (crucible_core::types::KnobValue::Precognition(enabled), Ok(())) => {
+                                tracing::info!(
+                                    precognition = enabled,
+                                    "Precognition set successfully"
+                                );
+                                params.app.set_precognition(*enabled);
                             }
-                            Err(e) => {
-                                tracing::warn!(model = %model_id, error = %e, "Model switch failed");
+                            (crucible_core::types::KnobValue::Precognition(enabled), Err(e)) => {
+                                // Revert the optimistic local flag: the `:set`
+                                // readout must not claim a state the daemon
+                                // refused.
+                                tracing::warn!(precognition = enabled, error = %e, "set_precognition failed");
+                                params.app.set_precognition(!*enabled);
                                 params.app.add_notification(
                                     crucible_core::types::Notification::warning(format!(
-                                        "Model switch failed: {}",
+                                        "Set precognition failed: {}",
+                                        e
+                                    )),
+                                );
+                            }
+                            (_, Ok(())) => {
+                                tracing::info!(knob = knob.id(), "Knob set successfully");
+                            }
+                            (_, Err(e)) => {
+                                tracing::warn!(knob = knob.id(), error = %e, "knob set failed");
+                                params.app.add_notification(
+                                    crucible_core::types::Notification::warning(format!(
+                                        "Set {} failed: {}",
+                                        knob.id(),
                                         e
                                     )),
                                 );
@@ -580,97 +608,6 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
-                    }
-                    ChatAppMsg::SetContextStrategy(strategy_str) => {
-                        tracing::info!(context_strategy = %strategy_str, "Setting context_strategy");
-                        match strategy_str.parse::<crucible_core::session::ContextStrategy>() {
-                            Ok(strategy) => {
-                                let set = match params.session {
-                                    Some(session) => session
-                                        .client
-                                        .session_set_context_strategy(
-                                            &session.id,
-                                            &strategy.to_string(),
-                                        )
-                                        .await
-                                        .map(|_| ()),
-                                    None => Err(anyhow::anyhow!("no live session")),
-                                };
-                                match set {
-                                    Ok(()) => {
-                                        tracing::info!(context_strategy = %strategy_str, "Context strategy set successfully");
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(context_strategy = %strategy_str, error = %e, "set_context_strategy failed");
-                                        params.app.add_notification(
-                                            crucible_core::types::Notification::warning(format!(
-                                                "Set context_strategy failed: {}",
-                                                e
-                                            )),
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(error = %e, "Invalid context strategy");
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Invalid context_strategy: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetPrecognition(enabled) => {
-                        tracing::info!(precognition = enabled, "Setting precognition");
-                        let set = match params.session {
-                            Some(session) => session
-                                .client
-                                .session_set_precognition(&session.id, *enabled)
-                                .await
-                                .map(|_| ()),
-                            None => Err(anyhow::anyhow!("no live session")),
-                        };
-                        match set {
-                            Ok(()) => {
-                                tracing::info!(
-                                    precognition = enabled,
-                                    "Precognition set successfully"
-                                );
-                                params.app.set_precognition(*enabled);
-                            }
-                            Err(e) => {
-                                // Revert the optimistic local flag: the `:set`
-                                // readout must not claim a state the daemon
-                                // refused.
-                                tracing::warn!(precognition = enabled, error = %e, "set_precognition failed");
-                                params.app.set_precognition(!*enabled);
-                                params.app.add_notification(
-                                    crucible_core::types::Notification::warning(format!(
-                                        "Set precognition failed: {}",
-                                        e
-                                    )),
-                                );
-                            }
-                        }
-                    }
-                    ChatAppMsg::SetPluginTurnLimit(limit) => {
-                        let set = match params.session {
-                            Some(session) => session
-                                .client
-                                .session_set_plugin_turn_limit(&session.id, *limit)
-                                .await
-                                .map(|_| ()),
-                            None => Err(anyhow::anyhow!("no live session")),
-                        };
-                        if let Err(error) = set {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(format!(
-                                    "Set plugin turn limit failed: {error}"
-                                )),
-                            );
-                        }
                     }
                     // The line shows the value that the daemon holds after the
                     // change, read back from the daemon. The client keeps no
@@ -727,11 +664,17 @@ impl OilChatRunner {
                         // the agent does another" state this whole area is
                         // about. Revert to what the daemon reports and say so.
                         let set = match params.session {
-                            Some(session) => session
-                                .client
-                                .session_set_mode(&session.id, mode_id)
-                                .await
-                                .map(|_| ()),
+                            Some(session) => {
+                                session
+                                    .client
+                                    .session_knob_set(
+                                        &session.id,
+                                        crucible_core::types::KnobValue::Mode(Some(
+                                            mode_id.clone(),
+                                        )),
+                                    )
+                                    .await
+                            }
                             None => Err(anyhow::anyhow!("no live session")),
                         };
                         if let Err(e) = set {

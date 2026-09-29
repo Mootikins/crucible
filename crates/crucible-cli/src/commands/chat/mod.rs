@@ -318,7 +318,9 @@ fn precognition_flag_actions(no_context: bool) -> Vec<crate::tui::oil::commands:
     use crate::tui::oil::commands::SetRpcAction;
 
     if no_context {
-        vec![SetRpcAction::SetPrecognition(false)]
+        vec![SetRpcAction::Knob(
+            crucible_core::types::KnobValue::Precognition(false),
+        )]
     } else {
         Vec::new()
     }
@@ -793,7 +795,10 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
         if let Some(mode_id) = oneshot_mode_override(read_only) {
             session
                 .client
-                .session_set_mode(&session.id, mode_id)
+                .session_knob_set(
+                    &session.id,
+                    crucible_core::types::KnobValue::Mode(Some(mode_id.to_string())),
+                )
                 .await
                 .map_err(|e| anyhow::anyhow!("failed to apply --plan: {e}"))?;
         }
@@ -927,21 +932,7 @@ async fn apply_rpc_action(
 
     let (client, id) = (&session.client, session.id.as_str());
     let set = match action {
-        SetRpcAction::SwitchModel(model) => client.session_switch_model(id, &model).await,
-        SetRpcAction::SetContextStrategy(ref strategy_str) => {
-            let strategy = strategy_str.parse::<crucible_core::session::ContextStrategy>()?;
-            client
-                .session_set_context_strategy(id, &strategy.to_string())
-                .await
-        }
-        SetRpcAction::SetPrecognition(enabled) => client
-            .session_set_precognition(id, enabled)
-            .await
-            .map(|_| ()),
-        SetRpcAction::SetPluginTurnLimit(limit) => client
-            .session_set_plugin_turn_limit(id, limit)
-            .await
-            .map(|_| ()),
+        SetRpcAction::Knob(value) => client.session_knob_set(id, value).await,
         SetRpcAction::SetPluginApproval(plugin, approval) => client
             .session_set_plugin_approval(id, &plugin, approval)
             .await

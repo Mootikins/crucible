@@ -104,11 +104,13 @@ pub enum SetCommand {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetRpcAction {
-    SwitchModel(String),
-    SetContextStrategy(String),
-    SetPrecognition(bool),
-    SetPluginTurnLimit(u32),
-    /// The approval of one plugin's turns in this session.
+    /// A session knob write. One RPC method serves every
+    /// [`crucible_core::types::KnobValue`] variant, so a knob added later
+    /// needs no sibling variant here.
+    Knob(crucible_core::types::KnobValue),
+    /// The approval of one plugin's turns in this session. Not a
+    /// [`crucible_core::types::SessionKnob`]: it takes a second key (the
+    /// plugin name), which `KnobValue` cannot express.
     SetPluginApproval(String, crucible_core::session::PluginApproval),
 }
 
@@ -163,13 +165,17 @@ pub fn validate_set_for_cli(input: &str) -> Result<SetEffect, SetError> {
 /// so a key can't be accepted by one surface and silently dropped by the
 /// other (the routing-seam bug class).
 pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetError> {
+    use crucible_core::types::KnobValue;
+
     match key.as_str() {
-        "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(value))),
+        "model" => Ok(SetEffect::DaemonRpc(SetRpcAction::Knob(KnobValue::Model(
+            value,
+        )))),
         "contextstrategy" | "context_strategy" => {
             // Validate the strategy value
             match value.to_lowercase().as_str() {
                 strategy @ ("truncate" | "summarize") => Ok(SetEffect::DaemonRpc(
-                    SetRpcAction::SetContextStrategy(strategy.to_string()),
+                    SetRpcAction::Knob(KnobValue::ContextStrategy(strategy.to_string())),
                 )),
                 _ => Err(SetError::InvalidValue {
                     key,
@@ -210,7 +216,9 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                 key: key.clone(),
                 message,
             })?;
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(enabled)))
+            Ok(SetEffect::DaemonRpc(SetRpcAction::Knob(
+                KnobValue::Precognition(enabled),
+            )))
         }
         "plugin_turn_limit" | "pluginturnlimit" => {
             let limit = value
@@ -221,8 +229,8 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
                     key,
                     message: "expected a positive whole number".into(),
                 })?;
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SetPluginTurnLimit(
-                limit,
+            Ok(SetEffect::DaemonRpc(SetRpcAction::Knob(
+                KnobValue::PluginTurnLimit(limit),
             )))
         }
         // Syntax-highlight theme (syntect). Was spelled `theme`, which collided
@@ -287,10 +295,7 @@ impl SetRpcAction {
     pub fn into_chat_msg(self) -> Option<crate::tui::oil::chat_app::ChatAppMsg> {
         use crate::tui::oil::chat_app::ChatAppMsg;
         match self {
-            SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
-            SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
-            SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
-            SetRpcAction::SetPluginTurnLimit(limit) => Some(ChatAppMsg::SetPluginTurnLimit(limit)),
+            SetRpcAction::Knob(value) => Some(ChatAppMsg::SetKnob(value)),
             SetRpcAction::SetPluginApproval(plugin, approval) => Some(ChatAppMsg::PluginApproval {
                 plugin,
                 set: Some(approval),
@@ -346,8 +351,12 @@ pub fn classify_key_without_value(key: String, effect: CliValue) -> Result<SetEf
         // state — so the TUI resolves it against its own copy and the
         // value-less CLI form asks for an explicit one.
         match effect {
-            CliValue::Enable => Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(true))),
-            CliValue::Disable => Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(false))),
+            CliValue::Enable => Ok(SetEffect::DaemonRpc(SetRpcAction::Knob(
+                crucible_core::types::KnobValue::Precognition(true),
+            ))),
+            CliValue::Disable => Ok(SetEffect::DaemonRpc(SetRpcAction::Knob(
+                crucible_core::types::KnobValue::Precognition(false),
+            ))),
             CliValue::Toggle | CliValue::Set(_) => Err(SetError::InvalidValue {
                 key,
                 message: "toggling needs the current value; use precognition=on|off".to_string(),
@@ -846,8 +855,8 @@ mod tests {
     fn validate_set_for_cli_model_ok() {
         assert_eq!(
             validate_set_for_cli("model=llama3"),
-            Ok(SetEffect::DaemonRpc(SetRpcAction::SwitchModel(
-                "llama3".to_string()
+            Ok(SetEffect::DaemonRpc(SetRpcAction::Knob(
+                crucible_core::types::KnobValue::Model("llama3".to_string())
             )))
         );
     }
