@@ -258,9 +258,16 @@ impl SessionStorage for FileSessionStorage {
 
         // Save session metadata as JSON. The kiln set goes out path-shaped —
         // see `persist_view` and `PersistedKilns`.
+        // `write_private` renames a finished sibling file into place, so a
+        // concurrent load never reads half a record, and only the owner can
+        // read it: the record can hold environment overrides.
         let meta_path = dir.join("meta.json");
         let json = serde_json::to_string_pretty(&self.persist_view(session))?;
-        fs::write(&meta_path, json).await?;
+        tokio::task::spawn_blocking(move || {
+            crucible_core::fs::write_private(&meta_path, json.as_bytes())
+        })
+        .await
+        .map_err(|e| SessionError::IoError(format!("meta.json write task failed: {e}")))??;
 
         Ok(())
     }
@@ -578,6 +585,52 @@ mod tests {
     fn session_in(tmp: &TempDir, session_type: SessionType) -> Session {
         let _ = tmp;
         Session::new(session_type, vec![crate::test_support::kiln_name("kiln")])
+    }
+
+    /// A reader never sees a half-written `meta.json`. A save writes a
+    /// sibling file and renames it into place; a plain write truncates the
+    /// file first, and a load in that moment fails to parse.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_load_during_a_save_sees_a_whole_record() {
+        let tmp = TempDir::new().unwrap();
+        let storage = std::sync::Arc::new(storage_in(&tmp));
+        let mut session = session_in(&tmp, SessionType::Chat);
+        // A long title makes each write large enough to be caught midway.
+        session.title = Some("t".repeat(64 * 1024));
+        storage.save(&session).await.unwrap();
+
+        let writer = {
+            let storage = storage.clone();
+            let session = session.clone();
+            tokio::spawn(async move {
+                for _ in 0..300 {
+                    storage.save(&session).await.unwrap();
+                }
+            })
+        };
+        let mut torn = 0;
+        while !writer.is_finished() {
+            if storage.load(&session.id).await.is_err() {
+                torn += 1;
+            }
+        }
+        writer.await.unwrap();
+        assert_eq!(torn, 0, "a load read a half-written meta.json {torn} times");
+    }
+
+    /// `meta.json` can hold a session's environment overrides, so only the
+    /// owner may read it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_session_record_is_private_to_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let storage = storage_in(&tmp);
+        let session = session_in(&tmp, SessionType::Chat);
+        storage.save(&session).await.unwrap();
+        let meta = storage.session_dir(&session.id).join("meta.json");
+        let mode = std::fs::metadata(meta).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[tokio::test]

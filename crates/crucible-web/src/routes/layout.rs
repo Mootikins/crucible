@@ -125,13 +125,15 @@ async fn reset_layout(
 
 const MAX_RECENTS: usize = 20;
 
-/// Temp-file + rename: `tokio::fs::write` truncates in place, so a crash
-/// mid-write (or a concurrent read) sees a corrupt blob — get_layout 500s
-/// and read_recents silently resets. Rename within the same dir is atomic.
+/// Write through `crucible_core::fs::write_private`: a sibling file renamed
+/// into place, so a crash mid-write or a concurrent read never sees a
+/// truncated blob.
 async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    tokio::fs::write(&tmp, bytes).await?;
-    tokio::fs::rename(&tmp, path).await
+    let path = path.to_path_buf();
+    let bytes = bytes.to_vec();
+    tokio::task::spawn_blocking(move || crucible_core::fs::write_private(&path, &bytes))
+        .await
+        .map_err(std::io::Error::other)?
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

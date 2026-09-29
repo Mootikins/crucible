@@ -586,11 +586,7 @@ impl Inner {
     /// every later read of that snapshot would show truncated content as the
     /// agent's work.
     fn write_atomically(&self, path: &Path, bytes: &[u8]) -> ReviewResult<()> {
-        let dir = path.parent().unwrap_or(&self.root);
-        std::fs::create_dir_all(dir)?;
-        let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
-        std::io::Write::write_all(&mut tmp, bytes)?;
-        tmp.persist(path).map_err(|e| ReviewError::Io(e.error))?;
+        crucible_core::fs::write_private(path, bytes)?;
         Ok(())
     }
 }
