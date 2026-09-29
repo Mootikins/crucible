@@ -664,6 +664,21 @@ losing or duplicating the decision.
 - **Write replay safety is declared, not inferred.** Every daemon forwarder
   in `services/daemon*.rs` states `ReplayPolicy::Safe` or `Once` explicitly;
   only reads and idempotent listings may replay after a reconnect.
+- **A route reads the core request body.** A route that forwards to the
+  daemon takes `Json<T>` or `Query<T>` of the core request type from
+  `crucible_core::protocol::requests`, and takes an id from the URL path
+  with `Path(id)`. The core type has `ToSchema` or `IntoParams` behind the
+  `openapi` feature, so the document names it directly. For a
+  session-scoped method, `T` is the body inside `Scoped<T>`: `Title`,
+  `NamedKiln`, `WorkspaceChoice`, `Page`. The web declares no copy of a
+  request. Three kinds of body stay web-owned: a body of a route that no
+  RPC answers (login, terminal, layout, recents, the SSE query, raw file
+  serving); a body that differs from the RPC request in more than an id,
+  such as `CreateSessionRequest`; and the proposal decision bodies
+  (`AcceptProposalBody`, `RejectProposalBody`, `ResolveProposalBody`),
+  whose RPC requests hold the proposal id, not a session id, so
+  `Scoped<T>` cannot remove it. `InteractionResponseRequest` also stays: it
+  carries `session_id` in its body, and `Scoped<T>` has no schema.
 - **Diffset and proposal disposition stay daemon-owned.**
   `routes/diff.rs` forwards a `DiffsetSource` and a `comment_id` to the
   daemon unvalidated; `routes/proposals.rs` forwards a `paths`/`files`
@@ -682,7 +697,8 @@ losing or duplicating the decision.
   TypeScript and to `crates/crucible-web/tests/openapi_contract.rs`'s
   route/document consistency gate) and, if it forwards to the daemon, a
   `forward_rpc!` entry in the matching `services/daemon*.rs` file with an
-  explicit `ReplayPolicy`.
+  explicit `ReplayPolicy`. Its body or query is the core request type; do
+  not declare a web copy.
 - **A new SSE event vocabulary member** is added to `ChatEvent`
   (`crates/crucible-web/src/events.rs`), `FsEvent`
   (`crates/crucible-web/src/fs_events.rs`), or a dedicated side-channel type

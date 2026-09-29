@@ -46,7 +46,7 @@ at the same time. Each step leaves the tree working.
 | 9. Dead code (done) | unused modules and features | S | none |
 | 10. Typed core replies (done, except the knob replies of step 13) | 36 web row types; 6 were net deletions, the rest became core types | M | step 6 |
 | 11. One event vocabulary to the browser | `ChatEvent` and 2 more web types, 29 TS copies: about 32 | M | step 10 |
-| 12. One request body per shape | about 35: 19 web request copies, 6 core shape copies, 10 local `Params` | M | step 10 |
+| 12. One request body per shape (in part: 33 types went; 4 web bodies and the typed `call` remain) | about 35: 19 web request copies, 6 core shape copies, 10 local `Params` | M | step 10 |
 | 13. One generic knob | about 11 types, 10 RPC methods, about 90 per-knob functions | M | step 12 |
 | 14. Simpler core APIs and the audit list | about 40 | S each | step 12 |
 | 15. Luau types from the schema | about 8 | M | step 12 |
@@ -505,6 +505,54 @@ the tool-call types. The SSE route sends `SessionEventMessage`. Delete
 
 
 ## Step 12. One request body per shape
+
+**Status: in part.** Items 1 to 4 below are done. Item 5 is not done. The
+count of Rust types in `crates/crucible-{core,daemon,web,cli}/src` went
+from 1616 to 1583: core 654 to 652, daemon 557 to 545, web 156 to 137, CLI
+249 to 249. The golden fixtures in `assets/fixtures/golden/requests/` hold
+the JSON of the code before the change, and
+`crates/crucible-core/src/protocol/requests/golden_tests.rs` proves that no
+request JSON changed.
+
+What went:
+- Core, merged by shape: `NoteRef`, `KilnRef`, `DiffsetRef` and
+  `DiffCommentKey` replace eight method types. `Scoped<()>` replaces
+  `SessionIdRequest` and `LuaShutdownSessionRequest`. `Scoped<Page>`
+  replaces `SessionHistoryRequest` and `SessionResumeFromStorageRequest`.
+- Core, client copies: `SessionCreateParams`, `SessionAgentSpec` and
+  `EmptyParams`. A caller builds `SessionCreateRequest`.
+- Each other session-scoped request, except the five knob requests of step
+  13, is now a body inside `Scoped<T>`. This deletes no type, but the web
+  can read the body.
+- Web: `FsListQuery`, `FsMoveBody`, `FsPathBody`, `CommentBody`,
+  `ResolveCommentBody`, `DeleteCommentBody`, `InstallRequest`,
+  `PublicationsQuery`, `CommandRequest`, `CloneRequest`, the proposals
+  `ListQuery`, `CanvasPathQuery`, `FilePathQuery`, `KilnPathQuery`,
+  `HistoryQuery`, `KilnRequest`, `SetTitleRequest` and
+  `SetWorkspaceRequest`. `FsRootKind` moved to core.
+- Daemon: the nine local `Params` in `rpc/dispatch.rs`, with
+  `ConfigValuesParams`, and the three in `rpc/workflow_handlers.rs`.
+  `config.get` and `config.origin` share `ConfigLookupRequest`.
+
+What remains:
+- The web keeps `AcceptProposalBody`, `RejectProposalBody` and
+  `ResolveProposalBody`. Their RPC requests hold the proposal id, not a
+  session id, and the plan allows no envelope other than `Scoped<T>`. A
+  shared `ProposalFiles` body would add one core type for each web type
+  that goes.
+- The web keeps `InteractionResponseRequest`. Its route takes `session_id`
+  in the body, not the path, and `Scoped<T>` has no schema. Step 11 owns
+  the interaction route.
+- Item 5 is open. After the merge, one body type serves more than one
+  method (`NoteRef`, `Scoped<()>`), so a body cannot name one method and one
+  reply. A typed `call` needs a row for each method in `rpc_methods!` that
+  names its request and its reply, and many replies are still `Value`.
+
+A new session-scoped method now needs: a body type in
+`crates/crucible-core/src/protocol/requests/`, or an existing one with the
+same shape; an `rpc_methods!` row; a dispatch arm; a handler that reads
+`Scoped<Body>`; a client method; a `WIRE_REQUEST_TYPES` row; and a golden
+fixture. A web route reads the same body, so it needs no web type.
 
 **Now.** Core has one request type per RPC method: 96 `*Request` types. 31
 of them carry `session_id`. Methods with one shape still have separate

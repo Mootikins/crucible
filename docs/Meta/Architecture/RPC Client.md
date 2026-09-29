@@ -61,7 +61,7 @@ must not construct a second agent configuration or write pipeline."
 | `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1168 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/surface/notification-adjacent RPC methods that have no dedicated submodule. It declares every `client` submodule and imports each request type through `crucible_core::protocol::requests::*`. |
 | `crates/crucible-daemon/src/rpc_client/client/types.rs` | 28 | What is left after the request and reply types moved to core: the `SessionEvent` alias and the `extract_string_array` helper, shared by two or more submodules. `DaemonCapabilities` and `VersionCheck` now live in `crucible_core::protocol::requests::common`. |
 | `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 547 | `DaemonClient` methods for `session.*` agent/model/mode RPCs, `models.list`, `providers.list`, `embeddings.models`, `skills.*`, `agents.*`, and the plugin-approval/plugin-turn-limit `session.*` RPCs. The request and reply types live in `crucible_core::protocol::requests::agent`. |
-| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 564 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `build_create_request` and `decode_status_items`. The request and reply types live in `crucible_core::protocol::requests::session`. |
+| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 564 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `decode_status_items`. The request and reply types live in `crucible_core::protocol::requests::session`. |
 | `crates/crucible-daemon/src/rpc_client/client/storage.rs` | 971 | `DaemonClient` methods for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, webhook ingress, project and filesystem RPCs (including `fs.read`), and `diff.*` RPCs (get/file/comment/resolve_comment/delete_comment/comments) over branch, session-record and proposal diffset sources. The request and reply types, `first_per_note`, and the `Diff*` DTOs live in `crucible_core::protocol::requests::storage`. |
 | `crates/crucible-daemon/src/rpc_client/client/proposals.rs` | 132 | `DaemonClient` methods for `proposal.*` RPCs: list, get, accept, reject, dismiss, resolve — the decision surface for propose-mode writes. The request types live in `crucible_core::protocol::requests::proposals`. |
 | `crates/crucible-daemon/src/rpc_client/client/subscription.rs` | 31 | `DaemonClient` methods for `session.subscribe`/`session.unsubscribe`. The request type lives in `crucible_core::protocol::requests::subscription`. |
@@ -104,14 +104,14 @@ must not construct a second agent configuration or write pipeline."
   (and, for `DaemonNoteStore`, an `Arc<DaemonStorageClient>`) and translate
   every trait method into an RPC call. Created by
   `crucible-cli/src/factories/storage.rs`.
-- **`SessionCreateRequest` / `SessionCreateParams` / `SessionAgentSpec`**
-  (`crates/crucible-core/src/protocol/requests/session.rs`, built by
-  `build_create_request` in `crates/crucible-daemon/src/rpc_client/client/session.rs`).
-  The session-creation wire shape and its two logical halves: `SessionCreateParams`
-  (session_type, kilns, workspace, recording, isolation) and the optional
-  `SessionAgentSpec` (agent identity, provider, model, prompt).
-  `build_create_request` merges them and derives `configure_agent` from
-  whether an agent spec was given.
+- **`SessionCreateRequest`**
+  (`crates/crucible-core/src/protocol/requests/session.rs`). The one
+  session-creation type. Each caller builds it, and
+  `DaemonClient::session_create` sends it. A caller that wants the daemon to
+  configure the agent in the same call sets `configure_agent` and the agent
+  fields (identity, provider, model, prompt).
+  `SessionCreateRequest::kiln_set` turns a set of `KilnName` into the wire
+  form: an empty set is absent, so the daemon resolves its default set.
 - **`ProposalListRequest` / `ProposalIdRequest` / `ProposalAcceptRequest` /
   `ProposalRejectRequest` / `ProposalResolveRequest`**
   (`crates/crucible-core/src/protocol/requests/proposals.rs`, called from
@@ -130,11 +130,31 @@ must not construct a second agent configuration or write pipeline."
   code's own comments. This is the module's version of AGENTS.md's "closed
   sets need one exhaustive table," applied to wire contracts: one struct,
   not independently typed ends, and now one crate, so no client needs the
-  daemon crate to name a request type. The ten `Diff*` request/reply types
-  (`DiffGetRequest`, `DiffFileRequest`, `DiffCommentRequest`/`Reply`,
-  `DiffResolveCommentRequest`/`Reply`, `DiffDeleteCommentRequest`/`Reply`,
-  `DiffCommentsRequest`/`Reply`) in `requests/storage.rs` are the newest
-  instance of this pattern, shared with the daemon's `diff.*` handlers.
+  daemon crate to name a request type. The `diff.*` requests
+  (`DiffsetRef`, `DiffFileRequest`, `DiffCommentRequest`, `DiffCommentKey`)
+  and their replies in `requests/storage.rs` follow this pattern, shared
+  with the daemon's `diff.*` handlers.
+- **One body for each shape.** Methods with one shape share one type, named
+  for the shape, not for the method: `NoteRef` (`get_note_by_name`,
+  `get_backlinks`), `KilnRef` (`kiln.graph`, `note.list`), `DiffsetRef`
+  (`diff.get`, `diff.comments`), `DiffCommentKey` (`diff.resolve_comment`,
+  `diff.delete_comment`), `ConfigLookupRequest` (`config.get`,
+  `config.origin`), `ConfigKeyRequest` (`config.reset`, `config.pop`,
+  `config.unset`) and `ConfigValuesRequest` (`config.set`, `config.save`).
+- **`Scoped<T>`** (`requests/common.rs`). The params of each method that
+  acts on one session: `session_id`, and the body `T` flattened beside it.
+  The JSON keeps `session_id` at the top level, so the wire is the same as a
+  flat struct. A method that names only the session takes `Scoped<()>`;
+  `session.history` and `session.resume_from_storage` take `Scoped<Page>`.
+  The body type holds only the other fields (`MessageInput`, `Title`,
+  `NamedKiln`, `WorkflowSource`, and so on). A web route takes the session
+  id from its URL path and reads only the body, so `Scoped<T>` has no
+  `ToSchema`. The knob requests (`session.switch_model`, `session.set_mode`,
+  `session.set_context_strategy`, `session.set_precognition`,
+  `session.set_plugin_turn_limit`) keep their flat types until step 13 of
+  the simplification plan replaces them.
+- **Methods without params.** The client sends `NO_PARAMS`, an empty map,
+  so the JSON is `{}`, as it was before.
   `requests/storage.rs` also carries `ListedComment` (moved from
   `crates/crucible-daemon/src/diff/comments.rs`) and `GREP_DEFAULT_LIMIT`
   (moved from `crates/crucible-daemon/src/server/grep.rs`), for the same
@@ -207,13 +227,13 @@ reply into a typed struct.
 There is no client-side agent handle or turn loop in this module. A front
 end that wants to drive a session opens one with
 `crucible_cli::session::open_session` (`crates/crucible-cli/src/session.rs`,
-covered in [[CLI Commands]]), which subscribes and calls `session.create`/
-`session.create_with_agent`, then sends every later action — a message, a
+covered in [[CLI Commands]]), which subscribes and calls `session.create`,
+then sends every later action — a message, a
 mode switch, an undo, a prompt answer — as its own `DaemonClient` call:
 
 1. `open_session` subscribes to `"*"` before it creates or resumes the
-   session (`session_subscribe`, then `session_create_with_agent` or
-   `session_resume`), so a setup-task event cannot fire before the
+   session (`session_subscribe`, then `session_create` with
+   `configure_agent`, or `session_resume`), so a setup-task event cannot fire before the
    subscription exists. It then subscribes to the session's own id and
    best-effort reads any pending prompts via `session_pending_interactions`.
 2. Each later action is one `DaemonClient` method — `session_send_message`,
@@ -305,7 +325,7 @@ non-idempotent-write reason as `proposal.*` below.
   follow the same pattern without stating the rationale inline.
   `proposal_list`/`proposal_get` and `diff_get`/`diff_file`/`diff_comments`
   use `typed_call_with_retry` because they mutate nothing.
-- **Names, not paths.** `SessionKilnRequest.kiln` is `KilnName`, never a raw
+- **Names, not paths.** `NamedKiln.kiln` is `KilnName`, never a raw
   path string, matching AGENTS.md's kiln-registry rule;
   `AgentsListCardsRequest` is the documented exception (agent cards resolve
   by directory, not by kiln name).
@@ -348,8 +368,9 @@ never implements them.
 - `crates/crucible-daemon/src/rpc_client/client/tests.rs` (920 lines): unit
   tests for backoff timing and failure-message composition
   (`the_connect_backoff_gives_up_in_seconds_not_minutes`), socket-path
-  validation, `SessionCreateRequest`/`LuaInitSessionRequest` wire-format
-  round trips (gate A6), live in-process-server integration tests over a
+  validation, `SessionCreateRequest`/`Scoped<LuaSessionInit>` wire-format
+  round trips (gate A6), the golden fixtures of `session.create` and of the
+  methods without params, live in-process-server integration tests over a
   `TempDir` socket (ping, capabilities, version check, kiln listing, session
   create/list/lifecycle, subscribe/unsubscribe, retry-vs-no-retry), a
   `simple_mode_correlation` submodule proving `read_response_simple`
@@ -365,6 +386,11 @@ never implements them.
   hits (`first_per_note` end-to-end).
 - `crates/crucible-core/src/protocol/requests/storage.rs` has a
   `first_per_note_tests` module: a pure function test with no server.
+- `crates/crucible-core/src/protocol/requests/golden_tests.rs` compares the
+  JSON of each request type with a fixture in
+  `assets/fixtures/golden/requests/`. The fixtures hold the JSON of the code
+  before step 12 of the simplification plan, so they prove that the merged
+  bodies and `Scoped<T>` did not change the wire. No test writes a fixture.
 - `crates/crucible-daemon/src/rpc_client/lifecycle.rs` has an inline
   `#[cfg(test)]` module covering socket-path detection and log rotation
   with `TempDir`.
@@ -382,7 +408,8 @@ either; they are exercised, if at all, outside this page's file set.
 ## Findings
 
 - `crates/crucible-core/src/protocol/requests/lua.rs` defines
-  `LuaRegisterCommandsRequest`, but no `impl DaemonClient` method in
+  `LuaCommands`, the body of `lua.register_commands`, but no
+  `impl DaemonClient` method in
   `crates/crucible-daemon/src/rpc_client/client/lua.rs` builds or sends it —
   the type is unused from this client's own methods (it may be built ad hoc
   by a caller elsewhere; not confirmed in this file set).

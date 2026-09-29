@@ -44,8 +44,13 @@ params, call one of those owners, and shape the reply. Each handler
 deserializes the request type that `DaemonClient` serializes, from
 `crucible_core::protocol::requests`. It calls `typed_params::<T>(&req)`, or
 `parse_params::<T>(req)` on the `RpcResult` path. No handler reads a request
-field by hand, so the client and the server cannot use two names for one
-field. There is no longer a
+field by hand, and no handler declares a params struct of its own, so the
+client and the server cannot use two names for one field. A session-scoped
+handler reads `Scoped<Body>`: `params.session_id` names the session, and
+`params.body` holds the other fields. The handlers in `rpc/dispatch.rs` and
+`rpc/workflow_handlers.rs` read core types too, for example
+`SessionSubscribeRequest`, `ConfigLookupRequest` and
+`Scoped<WorkflowSource>`. There is no longer a
 deliberate RPC-layer-only invariant of the kind this page once named: the
 former isolation-vs-agent-switch check in
 `handle_session_configure_agent` in `crates/crucible-daemon/src/rpc/dispatch.rs`
@@ -696,12 +701,16 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
   and `#[deny(clippy::match_wildcard_for_single_variants)]` fail the build if
   the arm is missing. See [[Consolidation Plan#Extension seams]] for the
   request/response/error/session-lifecycle behavior a new method must prove.
-  Put its request type in `crates/crucible-core/src/protocol/requests/`. The
-  client builds that type, and the handler deserializes it with
-  `typed_params::<T>(&req)`. Add a `WIRE_REQUEST_TYPES` row in
-  `crates/crucible-daemon/tests/architecture_tests/wire_types.rs`. To keep an
-  old caller valid, give a field a serde default. Do not read the field by
-  hand.
+  Put its request type in `crates/crucible-core/src/protocol/requests/`.
+  First look for a type with the same shape, and use it: a type is named for
+  its shape, not for its method. For a session-scoped method, declare only
+  the body, and take `Scoped<Body>`. The client builds that type, and the
+  handler deserializes it with `typed_params::<T>(&req)`. Add a
+  `WIRE_REQUEST_TYPES` row in
+  `crates/crucible-daemon/tests/architecture_tests/wire_types.rs`, and a
+  golden fixture in `assets/fixtures/golden/requests/` with its test in
+  `requests/golden_tests.rs`. To keep an old caller valid, give a field a
+  serde default. Do not read the field by hand.
 - **A new session knob** needs an arm in
   `rpc_set_method` in `crates/crucible-core/src/protocol/rpc/method.rs`, whose own
   `#[deny]`s make a missing arm a compile error.
