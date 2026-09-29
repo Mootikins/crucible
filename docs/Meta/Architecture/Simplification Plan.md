@@ -54,7 +54,8 @@ at the same time. Each step leaves the tree working.
 | 17. One daemon test fixture (done) | 3 test types | S | none |
 | 18. Enums on the wire | about 0, string fields become enums | S | step 12 |
 | 19. One RPC route for the web | about 90 types, about 70 TS functions, about 100 routes | L | steps 12 and 13 |
-| 20. Owner decisions | about 9, see the step | S each | none |
+| 20. Plugin data schemas | 0 core types; plugin data gets checked shapes | M | step 19 |
+| 21. Owner decisions | about 9, see the step | S each | none |
 
 Size: S is days, M is one to two weeks, L is three to six weeks.
 
@@ -71,7 +72,7 @@ The audit of step 18 of the old plan read every crate. Most types that look
 alike are separate contracts: a raw read and a resolved record, a create
 input and a query filter, a render node and a stateful component. Merging
 them would make required fields optional. Steps 11 to 18 therefore give
-about 140 types, about 6 percent. Step 19 adds about 90, and step 20
+about 140 types, about 6 percent. Step 19 adds about 90, and step 21
 about 9. Together that is about 9 percent. More needs research after step
 19, when the count shows what remains.
 
@@ -88,6 +89,47 @@ Rust core types are the one source of each boundary type. The derive is
 `utoipa::ToSchema`, which already writes `openapi.json` and, through
 `openapi-typescript`, `api-schema.d.ts`. Steps 11 and 14 extend it to every
 wire type and to Luau. No second derive and no separate IDL language.
+
+## How a step is accepted
+
+A step is done when the code base is better in a way a person can see, not
+when a check passes. Each "Done when" below names outcomes of three kinds:
+
+1. **Gone.** Named types, functions or routes no longer exist, and the type
+   count falls by at least the stated amount. A move or a rename does not
+   count.
+2. **Cheaper to change.** The change cost below falls: the number of places
+   a person must edit to add a method, a setting, an event or a plugin data
+   shape. It is measured by doing the change once on a scratch branch after
+   the step, and counting the files and declarations touched.
+3. **Same behavior on every path.** The behavior is tested through the real
+   path of each client that has it (the TUI, the web client, Lua, `cru acp`),
+   not through a helper that only one client calls.
+
+These do not count as acceptance, because they pass without an improvement
+or can be made to pass: a test that only checks that a type or a file
+exists; a grep or source-text gate; a golden file written by the new code;
+a count ratchet. A wire fixture proves compatibility only when it was
+captured from the code before the change and is not regenerated in the same
+change. A rule that the compiler enforces (an exhaustive match, a missing
+type, a required trait method) counts, because it stops the old path from
+coming back.
+
+### Change cost, measured at `226da3efb`
+
+| Change | Places to edit today |
+|---|---|
+| A daemon method that the browser calls | about 9: the core request and reply, the `rpc_methods!` row, the dispatch arm, the handler, the client method, the web route and its types, the forwarding function in `services/daemon.rs`, the TS function and its TS types |
+| A session setting (knob) | about 15: see the cross-layer checklist in `AGENTS.md` |
+| A session event that the browser shows | about 5: the payload variant, the `ChatEvent` variant and `from_daemon_event`, the TS type, the reducer |
+| A plugin data shape that the web reads | a hand TS type in the plugin's block, with no check against what the plugin sends |
+
+After steps 11 to 21, the targets are: a browser method in 3 places (the
+body and reply type, the `rpc_methods!` row, the handler; the allow list
+entry if the browser may call it); a knob in 3 (the `SessionKnob` variant and
+its value type, the daemon's apply arm, a client control if one is wanted);
+an event in 2 (the payload variant, the reducer arm that `tsc` demands); a
+plugin data shape in 1 (the Luau declaration in the plugin's spec).
 
 ## Step 1. Remove the client-side agent proxy
 
@@ -450,8 +492,17 @@ the tool-call types. The SSE route sends `SessionEventMessage`. Delete
 `ChatEvent`, `PrecognitionNote`, `SessionHistoryEvent`,
 `normalize_interaction` and the TS copies; alias the generated types.
 
-**Proof.** The transcript parity test and the reducer tests pass against the
-generated union.
+**Done when.**
+- `ChatEvent`, `from_daemon_event`, `normalize_interaction`,
+  `PrecognitionNote`, `SessionHistoryEvent` and the 29 hand TS copies are
+  gone: about 32 types fewer.
+- A new `SessionEventPayload` variant reaches the browser's TS union with no
+  hand edit, and the reducer's exhaustive switch fails `tsc` until it
+  handles the variant. The change cost of an event falls from about 5 places
+  to 2.
+- The transcript parity test passes on the live SSE path of the web client,
+  and on the TUI and `cru acp` paths.
+
 
 ## Step 12. One request body per shape
 
@@ -485,10 +536,18 @@ daemon declares 12 local `Params` in `rpc/dispatch.rs` and
 A client and a daemon of different builds never talk: the client restarts
 a daemon whose `build_sha` differs. So no method needs an old alias.
 
-**Proof.** A route that names a deleted type does not compile. New golden
-request fixtures prove that the JSON of each changed method stays the same.
-`wire_request_types_are_deserialized_not_hand_plucked`, the route contract
-tests and `openapi_contract` pass.
+**Done when.**
+- The same-shape core requests, the 19 web copies, the daemon's local
+  `Params`, `SessionCreateParams`, `SessionAgentSpec` and `EmptyParams` are
+  gone: about 35 types fewer.
+- For each changed method, the JSON that the new types send equals a golden
+  fixture captured from the code before the change. The fixtures are
+  committed first, in their own commit, and the change does not rewrite
+  them.
+- Each `rpc_methods!` row names its body and reply type, and a row without
+  them does not compile. A new session-scoped method needs one body type,
+  not three.
+
 
 ## Step 13. One generic knob
 
@@ -508,9 +567,18 @@ the value. Delete the per-knob methods, types, routes, client methods,
 messages and hooks. Replace the cross-layer checklist with the few steps
 that a new knob still needs.
 
-**Proof.** The knob RPC matrix (`chat_runner/tests/knob_rpc.rs`) covers each
-knob through the one pair: set, get and resume. The architecture tests find
-each knob in the TUI and the web client.
+**Done when.**
+- The ten per-knob RPC methods, their request types, client methods, web
+  routes, web types, TUI messages and TS hooks are gone: about 11 types and
+  about 90 functions fewer.
+- The change cost of a knob falls from about 15 places to 3, measured by
+  adding a scratch knob on a scratch branch.
+- Set, get and resume work for every knob through the TUI's `:set`, the web
+  client and Lua, tested on each real path. An ACP session refuses the
+  knobs that `on_acp` marks absent, on every path.
+- The AGENTS.md cross-layer checklist is replaced by the three steps a new
+  knob still needs.
+
 
 ## Step 14. Simpler core APIs and the audit list
 
@@ -533,7 +601,12 @@ audit record:
   the duplicate test `Daemon` in `server/diff.rs`, the web path and kiln
   query copies, the TS `PaneDropPosition` and `Rect` copies.
 
-**Proof.** `cargo check --workspace` and the golden wire tests pass.
+**Done when.**
+- Each listed item is gone, or the step records why it stays, with the code
+  reason. The type count falls by about 40.
+- Each error enum that stays has a named caller that matches its variants.
+- The golden wire tests, captured before the change, still pass.
+
 
 ## Step 15. Luau types from the schema
 
@@ -545,8 +618,14 @@ contract types (`PERMISSION_REQUEST`, the `ToolResult` copies,
 `Interception`, `OilStyle` and the six style fields that `OilProps` repeats)
 and the Lua `PermissionRequest` view.
 
-**Proof.** `stubs::verify` runs in `just lint types`, and `luau-lsp` checks
-`runtime/` against the generated file.
+**Done when.**
+- `cru.d.luau` holds a generated `export type` for each core type that Lua
+  reaches, and the listed hand Luau types and the Lua `PermissionRequest`
+  view are gone.
+- A change to a field of a core type changes the Luau declaration with no
+  hand edit, and `luau-lsp` reports a plugin in `runtime/` that reads a
+  removed field. This is shown once by a deliberate break.
+
 
 ## Step 16. The last TS copies
 
@@ -554,7 +633,10 @@ and the Lua `PermissionRequest` view.
 `SemanticHit`, the Bases and file request types, four `api.ts` types) with
 aliases of the generated schema. Keep one `rel_path` mapper, or none.
 
-**Proof.** `tsc --noEmit` and the web unit tests pass.
+**Done when.** The listed TS types are gone, and each is an alias of the
+generated schema. A field that the daemon renames makes `tsc` fail at each
+reader.
+
 
 ## Step 17. One daemon test fixture
 
@@ -569,7 +651,10 @@ The other local fixtures build different things, so they stay.
 `FsMoveRequest.kind`. The generated TS and Luau types then hold literal
 unions.
 
-**Proof.** The serde round-trip tests and `openapi_contract` pass.
+**Done when.** The generated TS and Luau types hold literal unions for these
+fields, so a misspelled value fails `tsc` or `luau-lsp`. Old stored values
+still load, shown by a fixture captured before the change.
+
 
 ## Step 19. One RPC route for the web
 
@@ -587,35 +672,90 @@ languages), Zed (one protobuf RPC). Joplin wraps its REST API in four
 generic calls for its plugins. The type defines the operation, not the
 route.
 
+**What the web itself needs.**
+
+| Need | Decision | Reason |
+|---|---|---|
+| Login and logout (the cookie session), static files, health and ready | keep | Browser transport; the daemon has no part in it |
+| The terminal WebSocket | keep | Raw PTY bytes, with its own stricter access rule |
+| Raw file serving | keep | The MIME, CSP and `Content-Disposition` rules stop a served file from running script on the app origin |
+| Four SSE streams (chat, system, fs, surfaces) | one stream | The client subscribes to topics; the daemon already has topic subscription |
+| The catalog cache (`services/catalog.rs`, `SwrCache`) | move to the daemon | The daemon knows when a catalog changes |
+| Layout and recents on the web server's disk | one generic client-state get/set in the daemon | They need no routes of their own |
+| The untrusted-root rule of `project.register`, the reference containment of a canvas write, the name and size checks of a note write, the resume fallback | move to the daemon | A TUI or Lua caller skips them today; AGENTS.md puts a decision in the daemon |
+
 **Change.**
 1. One authenticated route, `POST /api/rpc/{method}`, behind the existing
-   auth middleware, the origin checks and the plugin-caller rules. It
-   forwards the body to the daemon method and returns the reply.
-2. An allow list of the methods that a browser may call. Local-admin
-   methods stay off it: `shutdown`, `lua.eval`, the Lua lifecycle and test
-   methods, `plugin.install`/`remove`, the `config.*` writes, `storage.*`,
-   `mcp.*`, `kiln.register`/`forget`, `project.register`/`unregister`,
+   auth middleware and the origin checks. It forwards the body to the daemon
+   method and returns the reply.
+2. An allow list of the methods a browser may call. Local-admin methods stay
+   off it: `shutdown`, `lua.eval`, the Lua lifecycle and test methods,
+   `plugin.install`/`remove`, the `config.*` writes, `storage.*`, `mcp.*`,
+   `kiln.register`/`forget`, `project.register`/`unregister`,
    `llm.register_provider`, `webhook.receive`. The allow list is the
    security boundary; the opaque route is not.
-3. A generated typed client: `rpc<M>(method, params)`, from the typed
-   `rpc_methods!` rows of step 12 (`Request -> Reply` per method), with a
-   generated method map in TS. The frontend's per-route functions and
-   types go.
-4. Move the rules that only a web route enforces today into the daemon,
-   where AGENTS.md says a decision belongs: the untrusted-root rule of
-   `project.register`, the reference containment of a canvas write, the
-   name and size checks of a note write, and the resume fallback.
-5. Map daemon error codes to one error shape in the browser, in one place.
-6. Keep the routes that are not a forward: login and logout, health and
-   ready, the SSE streams, the terminal WebSocket, static files, the saved
-   layout and recents, and raw file serving.
+3. A second allow list per caller. A plugin block is same-origin script
+   today, and its `x-crucible-plugin` identity is asserted, not proved
+   (`routes/plugin_caller.rs`). So a block can call what the app can call,
+   as it can reach every route today. The proxy does not make this worse.
+   When blocks run in a sandboxed origin behind a bridge that stamps their
+   identity (`docs/Meta/Analysis/Plugin API Plan.md`), the per-caller list
+   lets a block call only its own plugin's methods.
+4. A generated typed client: `rpc<M>(method, params)`, from the typed
+   `rpc_methods!` rows of step 12, with a generated method map in TS. The
+   per-route TS functions and types go.
+5. Do the decisions in the table above: one event stream, the catalog cache
+   and client state in the daemon, the four rules in the daemon.
+6. Map daemon error codes to one error shape in the browser, in one place.
 
-**Proof.** A method that is not on the allow list answers 403, tested for
-each local-admin method. The generated method map covers each allowed
-method, and `tsc --noEmit` passes. The web end-to-end tests pass through the
-one route.
+**Done when.**
+- The web server has the routes in the "keep" rows, one event stream and the
+  RPC route, and no route that only forwards one RPC. About 90 types and
+  about 70 TS functions are gone.
+- The change cost of a browser method falls from about 9 places to 3 (plus
+  one allow-list line), measured by adding a scratch method.
+- Each local-admin method answers 403 through the real HTTP route.
+- The four moved rules refuse a bad call from the TUI and from Lua too,
+  tested through the daemon RPC, not only through the web.
+- The web end-to-end tests pass through the one route and the one stream.
 
-## Step 20. Owner decisions
+
+## Step 20. Plugin data schemas
+
+**Now.** Plugin data reaches the clients in two ways. Presentation uses
+fixed core vocabularies that both clients draw: surfaces (the core `Shape`
+enum), interactions (ask, popup, panel) and status items. Plugin data is
+untyped: command arguments and results, publications and options are
+`Value`. Only tool parameters are declared, as Luau types that `LuaType`
+(`crates/crucible-lua/src/signature.rs`) already turns into JSON Schema.
+
+**Prior art.** VS Code declares a JSON Schema for each contributed setting;
+Joplin registers a typed `SettingItem` for each key.
+
+**Change.**
+1. Presentation: a plugin composes the core shapes. It never adds a wire
+   type that a client must know, so the core type count does not grow with
+   the plugins.
+2. Data: a plugin declares the shape of its commands, publications and
+   options as Luau types in its spec. The daemon turns each into JSON Schema
+   with `LuaType`, checks each value at the boundary, and publishes the
+   schemas through one method, `plugin.schemas`.
+3. The generic clients validate against the schema or render from it. A
+   plugin's own web block can generate its TS types from the schema in the
+   plugin's build, not in core.
+4. Plugin data flows through the generic methods (`plugin.run_command
+   { plugin, name, args }`, publications, options). A plugin adds no RPC
+   method.
+
+**Done when.**
+- A plugin in `runtime/` declares a command's argument and result shapes in
+  Luau, and the daemon refuses a wrong argument with an error that names the
+  field, through the RPC path that the TUI and the web both use.
+- The web client reads a plugin's schema from `plugin.schemas` and uses it,
+  and no core type was added for that plugin.
+- The change cost of a plugin data shape is one Luau declaration.
+
+## Step 21. Owner decisions
 
 Each item changes behavior or a plugin API. None starts without the owner's
 decision.
