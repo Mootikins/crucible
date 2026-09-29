@@ -6,8 +6,10 @@
 //! test then reads the fixture back and writes it again, so the daemon side
 //! reads the same fields.
 //!
-//! A difference is a wire change. To write the fixtures again after an
-//! intended change, run the tests with `CRUCIBLE_WRITE_GOLDEN=1`.
+//! A difference is a wire change. The fixtures hold the JSON of the code
+//! before a change, so no test writes them. A fixture that the new code
+//! writes proves nothing. To change the wire on purpose, edit the fixture by
+//! hand in the same commit, and say why in the message.
 
 use super::*;
 use serde::{de::DeserializeOwned, Serialize};
@@ -32,12 +34,6 @@ fn golden<T: Serialize + DeserializeOwned>(name: &str, cases: &[T]) {
             .collect(),
     );
     let path = fixture_path(name);
-    if std::env::var_os("CRUCIBLE_WRITE_GOLDEN").is_some() {
-        std::fs::create_dir_all(path.parent().expect("a fixture has a directory"))
-            .expect("the fixture directory is writable");
-        let text = serde_json::to_string_pretty(&actual).expect("JSON writes") + "\n";
-        std::fs::write(&path, text).expect("the fixture is writable");
-    }
     let text =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let expected: Value = serde_json::from_str(&text).expect("the fixture is JSON");
@@ -56,6 +52,17 @@ fn golden<T: Serialize + DeserializeOwned>(name: &str, cases: &[T]) {
             "{name}: the fixture does not survive a read and a write"
         );
     }
+}
+
+/// Compare only the JSON that a client writes, for a request type that has
+/// no `Deserialize`.
+fn written<T: Serialize>(name: &str, cases: &[T]) {
+    let actual = serde_json::to_value(cases).expect("a request writes JSON");
+    let path = fixture_path(name);
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let expected: Value = serde_json::from_str(&text).expect("the fixture is JSON");
+    assert_eq!(actual, expected, "{name}: the wire changed");
 }
 
 fn scope() -> crate::storage::Scope {
@@ -419,20 +426,6 @@ fn session_scoped_methods() {
 /// only what the client writes.
 #[test]
 fn workflow_methods() {
-    fn written<T: Serialize>(name: &str, cases: &[T]) {
-        let actual = serde_json::to_value(cases).expect("a request writes JSON");
-        let path = fixture_path(name);
-        if std::env::var_os("CRUCIBLE_WRITE_GOLDEN").is_some() {
-            std::fs::create_dir_all(path.parent().expect("a fixture has a directory"))
-                .expect("the fixture directory is writable");
-            let text = serde_json::to_string_pretty(&actual).expect("JSON writes") + "\n";
-            std::fs::write(&path, text).expect("the fixture is writable");
-        }
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        let expected: Value = serde_json::from_str(&text).expect("the fixture is JSON");
-        assert_eq!(actual, expected, "{name}: the wire changed");
-    }
     written(
         "workflow.start",
         &[
@@ -489,6 +482,17 @@ fn fs_methods() {
             root: "/repo".into(),
             kind: "kiln".into(),
             rel_path: "dir".into(),
+        }],
+    );
+}
+
+/// `session.subscribe` and `session.unsubscribe`.
+#[test]
+fn session_subscribe_methods() {
+    written(
+        "session.subscribe",
+        &[SessionSubscribeRequest {
+            session_ids: vec!["s1".into(), "*".into()],
         }],
     );
 }

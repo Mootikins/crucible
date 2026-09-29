@@ -1,0 +1,9 @@
+[
+  {
+    "name": "github",
+    "headers": {
+      "x-hub-signature-256": "sha256=abc"
+    },
+    "body": "{}"
+  }
+]
