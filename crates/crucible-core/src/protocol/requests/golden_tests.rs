@@ -54,17 +54,6 @@ fn golden<T: Serialize + DeserializeOwned>(name: &str, cases: &[T]) {
     }
 }
 
-/// Compare only the JSON that a client writes, for a request type that has
-/// no `Deserialize`.
-fn written<T: Serialize>(name: &str, cases: &[T]) {
-    let actual = serde_json::to_value(cases).expect("a request writes JSON");
-    let path = fixture_path(name);
-    let text =
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let expected: Value = serde_json::from_str(&text).expect("the fixture is JSON");
-    assert_eq!(actual, expected, "{name}: the wire changed");
-}
-
 fn scope() -> crate::storage::Scope {
     crate::storage::Scope::Workspace {
         path: PathBuf::from("/work/space"),
@@ -422,11 +411,9 @@ fn session_scoped_methods() {
     );
 }
 
-/// The workflow requests have no `Deserialize` yet, so this test compares
-/// only what the client writes.
 #[test]
 fn workflow_methods() {
-    written(
+    golden(
         "workflow.start",
         &[
             Scoped::new(
@@ -445,7 +432,7 @@ fn workflow_methods() {
             ),
         ],
     );
-    written(
+    golden(
         "workflow.approve_gate",
         &[Scoped::new(
             "s1",
@@ -489,10 +476,65 @@ fn fs_methods() {
 /// `session.subscribe` and `session.unsubscribe`.
 #[test]
 fn session_subscribe_methods() {
-    written(
+    golden(
         "session.subscribe",
         &[SessionSubscribeRequest {
             session_ids: vec!["s1".into(), "*".into()],
+        }],
+    );
+}
+
+/// The params that the daemon read with structs local to each handler. The
+/// fixtures copy the JSON that the clients sent before the structs moved to
+/// core.
+#[test]
+fn daemon_local_param_methods() {
+    // `config.get` and `config.origin`.
+    golden(
+        "config_key_query",
+        &[
+            ConfigLookupRequest {
+                key: Some("chat.model".into()),
+            },
+            ConfigLookupRequest::default(),
+        ],
+    );
+    // `config.reset`, `config.pop` and `config.unset`.
+    golden(
+        "config_key",
+        &[ConfigKeyRequest {
+            key: "chat.model".into(),
+        }],
+    );
+    // `config.set` and `config.save`.
+    golden(
+        "config_values",
+        &[ConfigValuesRequest {
+            values: serde_json::Map::from_iter([("chat".to_string(), json!({ "model": "m" }))]),
+        }],
+    );
+    golden(
+        "lua.eval",
+        &[LuaEvalRequest {
+            code: "return 1".into(),
+        }],
+    );
+    golden(
+        "subagent.collect",
+        &[SubagentCollectRequest {
+            job_ids: vec!["j1".into(), "j2".into()],
+            timeout_secs: 5.0,
+        }],
+    );
+    golden(
+        "webhook.receive",
+        &[WebhookReceiveRequest {
+            name: "github".into(),
+            headers: serde_json::Map::from_iter([(
+                "x-hub-signature-256".to_string(),
+                json!("sha256=abc"),
+            )]),
+            body: "{}".into(),
         }],
     );
 }

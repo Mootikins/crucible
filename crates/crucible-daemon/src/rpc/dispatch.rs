@@ -21,7 +21,11 @@ use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
 use crucible_core::config::ConfigSource;
-use crucible_core::protocol::requests::{Scoped, SessionCreateRequest, Title};
+use crucible_core::protocol::requests::{
+    ConfigKeyRequest, ConfigLookupRequest, ConfigValuesRequest, LuaEvalRequest, Scoped,
+    SessionCreateRequest, SessionSubscribeRequest, SubagentCollectRequest, Title,
+    WebhookReceiveRequest,
+};
 use crucible_core::protocol::{RpcMethod, METHODS};
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
@@ -1172,14 +1176,7 @@ impl RpcDispatcher {
     }
 
     fn handle_subscribe(&self, client_id: ClientId, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            session_ids: Vec<String>,
-        }
-        let p: Params = parse_params(req)?;
+        let p = crate::rpc::params::parse_params::<SessionSubscribeRequest>(req)?;
 
         for session_id in &p.session_ids {
             if session_id == "*" {
@@ -1200,14 +1197,7 @@ impl RpcDispatcher {
         client_id: ClientId,
         req: &Request,
     ) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            session_ids: Vec<String>,
-        }
-        let p: Params = parse_params(req)?;
+        let p = crate::rpc::params::parse_params::<SessionSubscribeRequest>(req)?;
 
         for session_id in &p.session_ids {
             self.ctx.subscriptions.unsubscribe(client_id, session_id);
@@ -1535,15 +1525,7 @@ impl RpcDispatcher {
     // (same-user access only). If the daemon is ever exposed over TCP, this
     // endpoint MUST require authentication.
     async fn handle_lua_eval(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            code: String,
-        }
-
-        let params: Params = parse_params(req)?;
+        let params = crate::rpc::params::parse_params::<LuaEvalRequest>(req)?;
         let loader_guard = self.ctx.plugin_loader.lock().await;
         match loader_guard.as_ref() {
             Some(loader) => {
@@ -1571,16 +1553,7 @@ impl RpcDispatcher {
     /// `cru.config.set` / `config.set`). With `key`: the value at that
     /// dot-joined path (null if absent); without: the whole object.
     fn handle_config_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            #[serde(default)]
-            key: Option<String>,
-        }
-
-        let params: Params = parse_params(req)?;
+        let params = crate::rpc::params::parse_params::<ConfigLookupRequest>(req)?;
         let config = crucible_lua::get_app_config();
         Ok(match params.key {
             Some(key) => {
@@ -1736,7 +1709,7 @@ impl RpcDispatcher {
         client_id: ClientId,
         req: &Request,
     ) -> RpcResult<serde_json::Value> {
-        let params: ConfigValuesParams = crate::rpc::params::parse_params(req)?;
+        let params = crate::rpc::params::parse_params::<ConfigValuesRequest>(req)?;
         // One door-keeping implementation: the store's Withhold policy strips
         // the location keys and reports them; this handler only relays.
         let rejected = crucible_lua::merge_app_config_tagged(
@@ -1775,7 +1748,7 @@ impl RpcDispatcher {
     ///
     /// [`ConfigStore::save`]: crucible_core::config::ConfigStore::save
     fn handle_config_save(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let params: ConfigValuesParams = crate::rpc::params::parse_params(req)?;
+        let params = crate::rpc::params::parse_params::<ConfigValuesRequest>(req)?;
         // The state overlay's pins, which the store cannot see: its leaves
         // are not in the store, and a save let through would put a
         // half-described provider in `settings.json` — where the next boot
@@ -1867,15 +1840,7 @@ impl RpcDispatcher {
     /// cannot serve that — it answers with the whole map at once and does not
     /// pair a value with its source.
     fn handle_config_origin(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            #[serde(default)]
-            key: Option<String>,
-        }
-
-        let params: Params = crate::rpc::params::parse_params(req)?;
+        let params = crate::rpc::params::parse_params::<ConfigLookupRequest>(req)?;
         // The same view `config.effective` answers with. Reading the store
         // alone reported a registered provider as `default` and as null, so
         // the two doors disagreed about one leaf.
@@ -1951,14 +1916,7 @@ impl RpcDispatcher {
         req: &Request,
         drop: fn(&str) -> crucible_core::config::LayerDrop,
     ) -> RpcResult<serde_json::Value> {
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            key: String,
-        }
-
-        let params: Params = crate::rpc::params::parse_params(req)?;
+        let params = crate::rpc::params::parse_params::<ConfigKeyRequest>(req)?;
         let outcome = drop(&params.key);
         // The row is read AFTER the drop: the point of both verbs is the
         // value that shows once the layer is gone.
@@ -2083,21 +2041,7 @@ impl RpcDispatcher {
     // ── Subagent RPC handlers ─────────────────────────────────────────────
 
     async fn handle_subagent_collect(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            job_ids: Vec<String>,
-            #[serde(default = "default_collect_timeout")]
-            timeout_secs: f64,
-        }
-
-        fn default_collect_timeout() -> f64 {
-            120.0
-        }
-
-        let p: Params = parse_params(req)?;
+        let p = crate::rpc::params::parse_params::<SubagentCollectRequest>(req)?;
         let timeout = std::time::Duration::from_secs_f64(p.timeout_secs);
         let results = self.ctx.agents.collect_jobs(&p.job_ids, timeout).await;
 
@@ -2118,17 +2062,7 @@ impl RpcDispatcher {
     /// anyone who can call it can already do strictly more than inject an
     /// event, so there is nothing left for a signature to protect.
     fn handle_webhook_receive(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            name: String,
-            headers: serde_json::Map<String, serde_json::Value>,
-            body: String,
-        }
-
-        let p: Params = parse_params(req)?;
+        let p = crate::rpc::params::parse_params::<WebhookReceiveRequest>(req)?;
 
         // Named by `event_map`, not spelled here: `server/file_event_hooks.rs`
         // resolves a Lua handler from that one table, so a name minted
@@ -2179,13 +2113,6 @@ pub struct ConfigSaveReply {
 pub struct WebhookReceiveReply {
     /// Always `ok`.
     pub status: String,
-}
-
-/// The values a config write carries. `config.set` and `config.save` take the
-/// same request shape and differ only in what they do with it.
-#[derive(serde::Deserialize)]
-struct ConfigValuesParams {
-    values: serde_json::Map<String, serde_json::Value>,
 }
 
 /// `config.controls` — the app config's declared control tree, and the leaves

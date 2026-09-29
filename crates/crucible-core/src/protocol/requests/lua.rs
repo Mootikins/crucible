@@ -1,6 +1,13 @@
 //! Wire types of the `lua` RPC methods. The client serializes each type,
 //! and the daemon handler deserializes the same type.
 
+/// Request for `lua.eval`: Luau source that the daemon runs in its plugin
+/// VM.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LuaEvalRequest {
+    pub code: String,
+}
+
 /// The body of `lua.init_session`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LuaSessionInit {

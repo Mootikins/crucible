@@ -2,7 +2,7 @@
 //! and the daemon handler deserializes the same type.
 
 /// Shared request for `session.subscribe` and `session.unsubscribe`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSubscribeRequest {
     pub session_ids: Vec<String>,
 }

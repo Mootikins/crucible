@@ -6,6 +6,7 @@
 
 mod agent;
 mod common;
+mod config;
 mod lua;
 mod notifications;
 mod plugin;
@@ -20,6 +21,7 @@ mod golden_tests;
 
 pub use agent::*;
 pub use common::*;
+pub use config::*;
 pub use lua::*;
 pub use notifications::*;
 pub use plugin::*;

@@ -616,7 +616,14 @@ impl DaemonClient {
     ) -> Result<crate::WebhookReceiveReply> {
         self.typed_call(
             RpcMethod::WebhookReceive,
-            serde_json::json!({ "name": name, "headers": headers, "body": body }),
+            WebhookReceiveRequest {
+                name,
+                headers: headers
+                    .into_iter()
+                    .map(|(key, value)| (key, serde_json::Value::String(value)))
+                    .collect(),
+                body,
+            },
         )
         .await
     }

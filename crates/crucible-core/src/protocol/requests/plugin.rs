@@ -111,6 +111,19 @@ pub struct PluginSpecRow {
     pub declared: bool,
 }
 
+/// Request for `webhook.receive`: one webhook delivery that the HTTP edge
+/// already checked.
+///
+/// `body` is the text that the sender wrote. The signature covers those
+/// bytes, so the daemon does not parse or change them.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebhookReceiveRequest {
+    /// The name of the webhook, from its route.
+    pub name: String,
+    pub headers: serde_json::Map<String, serde_json::Value>,
+    pub body: String,
+}
+
 /// Request for `plugin.remove`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PluginRemoveRequest {

@@ -47,7 +47,16 @@ impl ReconnectingDaemon {
     pub async fn config_origins(&self) -> anyhow::Result<serde_json::Value> {
         let mut answer = self
             .forward_rpc(ReplayPolicy::Safe, RpcMethod::ConfigOrigin, |daemon| {
-                Box::pin(daemon.call(RpcMethod::ConfigOrigin, serde_json::json!({})))
+                Box::pin(async move {
+                    daemon
+                        .call(
+                            RpcMethod::ConfigOrigin,
+                            serde_json::to_value(
+                                crucible_core::protocol::requests::ConfigLookupRequest::default(),
+                            )?,
+                        )
+                        .await
+                })
             })
             .await?;
         redact_credentials(&mut answer);
@@ -80,7 +89,9 @@ impl ReconnectingDaemon {
                     daemon
                         .call(
                             RpcMethod::ConfigSave,
-                            serde_json::json!({ "values": values }),
+                            serde_json::to_value(
+                                crucible_core::protocol::requests::ConfigValuesRequest { values },
+                            )?,
                         )
                         .await
                 })

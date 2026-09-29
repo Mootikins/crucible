@@ -334,6 +334,48 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "Scoped<WorkspaceChoice>",
         "crates/crucible-daemon/src/server/session/scope.rs",
     ),
+    // Step 12 of the simplification plan: the handlers that read their params
+    // with a struct local to the handler now deserialize these core types.
+    (
+        "SessionSubscribeRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "LuaEvalRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "ConfigLookupRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "ConfigKeyRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "ConfigValuesRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "SubagentCollectRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "WebhookReceiveRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "Scoped<WorkflowSource>",
+        "crates/crucible-daemon/src/rpc/workflow_handlers.rs",
+    ),
+    (
+        "Scoped<GateRef>",
+        "crates/crucible-daemon/src/rpc/workflow_handlers.rs",
+    ),
+    (
+        "Scoped<()>",
+        "crates/crucible-daemon/src/rpc/workflow_handlers.rs",
+    ),
     // `resolve_workspace_target` reads `workspace_target` before the create
     // handler runs, with `parse_params::<T>` on the `RpcResult` path.
     (

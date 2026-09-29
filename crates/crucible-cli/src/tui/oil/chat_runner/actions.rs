@@ -10,6 +10,19 @@ use tokio::task::JoinHandle;
 
 use super::{DrainMessagesOutcome, EventLoopParams, OilChatRunner, ProcessActionParams};
 
+/// The params of one typed request, in the untyped form that
+/// `DaemonClient::call` takes.
+fn to_params<T: serde::Serialize>(request: T) -> Result<serde_json::Value, String> {
+    serde_json::to_value(request).map_err(|e| e.to_string())
+}
+
+/// The params of `config.get` and `config.origin` for one key.
+fn lookup(key: &str) -> Result<serde_json::Value, String> {
+    to_params(crucible_core::protocol::requests::ConfigLookupRequest {
+        key: Some(key.to_string()),
+    })
+}
+
 /// Write one app-config key through the daemon, and report what the store
 /// holds afterwards.
 ///
@@ -28,7 +41,9 @@ async fn write_app_config_key(
     let written = client
         .call(
             RpcMethod::ConfigSet,
-            serde_json::json!({ "values": { key: value } }),
+            to_params(crucible_core::protocol::requests::ConfigValuesRequest {
+                values: serde_json::Map::from_iter([(key.to_string(), value)]),
+            })?,
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -43,7 +58,7 @@ async fn write_app_config_key(
     }
 
     let read_back = client
-        .call(RpcMethod::ConfigGet, serde_json::json!({ "key": key }))
+        .call(RpcMethod::ConfigGet, lookup(key)?)
         .await
         .map_err(|e| e.to_string())?;
     match read_back.get("value") {
@@ -71,7 +86,7 @@ async fn read_app_config_key(
     // Same lookup as the write's read-back, so `:set k=v` and `:set k?`
     // cannot disagree about which key they named.
     let read = client
-        .call(RpcMethod::ConfigGet, serde_json::json!({ "key": key }))
+        .call(RpcMethod::ConfigGet, lookup(key)?)
         .await
         .map_err(|e| e.to_string())?;
     let value = read
@@ -83,7 +98,7 @@ async fn read_app_config_key(
         return Ok((value, None));
     }
     let origin = client
-        .call(RpcMethod::ConfigOrigin, serde_json::json!({ "key": key }))
+        .call(RpcMethod::ConfigOrigin, lookup(key)?)
         .await
         .map_err(|e| e.to_string())?;
     Ok((value, Some(origin)))
@@ -107,7 +122,12 @@ async fn drop_app_config_key(
 
     let method = kind.method();
     let row = client
-        .call(method, serde_json::json!({ "key": key }))
+        .call(
+            method,
+            to_params(crucible_core::protocol::requests::ConfigKeyRequest {
+                key: key.to_string(),
+            })?,
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -834,19 +854,25 @@ impl OilChatRunner {
                         let code = code.clone();
                         let tx = params.msg_tx.clone();
                         params.background_tasks.push(tokio::spawn(async move {
-                            let evaled = match crucible_daemon::DaemonClient::connect().await {
-                                Ok(client) => client
-                                    .call(RpcMethod::LuaEval, serde_json::json!({ "code": code }))
-                                    .await
-                                    .map(|resp| {
-                                        resp.get("result")
-                                            .and_then(|r| r.as_str())
-                                            .unwrap_or("nil")
-                                            .to_string()
-                                    })
-                                    .map_err(|e| crucible_daemon::rpc_error_message(&e)),
-                                Err(e) => Err(format!("daemon connect failed: {}", e)),
-                            };
+                            let request =
+                                to_params(crucible_core::protocol::requests::LuaEvalRequest {
+                                    code,
+                                });
+                            let evaled =
+                                match (crucible_daemon::DaemonClient::connect().await, request) {
+                                    (_, Err(e)) => Err(e),
+                                    (Ok(client), Ok(request)) => client
+                                        .call(RpcMethod::LuaEval, request)
+                                        .await
+                                        .map(|resp| {
+                                            resp.get("result")
+                                                .and_then(|r| r.as_str())
+                                                .unwrap_or("nil")
+                                                .to_string()
+                                        })
+                                        .map_err(|e| crucible_daemon::rpc_error_message(&e)),
+                                    (Err(e), Ok(_)) => Err(format!("daemon connect failed: {}", e)),
+                                };
                             let msg = match evaled {
                                 Ok(output) => ChatAppMsg::LuaEvaled {
                                     output,

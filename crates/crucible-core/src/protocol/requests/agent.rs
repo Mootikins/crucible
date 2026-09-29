@@ -71,6 +71,19 @@ pub struct SessionSetContextStrategyRequest {
     pub context_strategy: String,
 }
 
+/// Request for `subagent.collect`: wait for background jobs to finish.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SubagentCollectRequest {
+    pub job_ids: Vec<String>,
+    /// How long to wait, in seconds. An absent value waits two minutes.
+    #[serde(default = "default_collect_timeout")]
+    pub timeout_secs: f64,
+}
+
+fn default_collect_timeout() -> f64 {
+    120.0
+}
+
 /// Request for `models.list` (no active session required).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ListAllModelsRequest {

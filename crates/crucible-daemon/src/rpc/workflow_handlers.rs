@@ -38,13 +38,13 @@ use crate::workflow_handlers::DaemonInlineHandler;
 use crate::workflow_registry::{ExecutionHandle, WorkflowStatusSnapshot};
 use crucible_core::config::components::permissions::PermissionEngine;
 use crucible_core::parser::types::{extract_yaml_frontmatter, ParsedNote, WorkflowDoc};
-use crucible_core::protocol::requests::Scoped;
+use crucible_core::protocol::requests::{GateRef, Scoped, WorkflowSource};
 use crucible_core::protocol::Request;
 use crucible_core::workflow::{
     DefaultHandler, DispatchTable, GateHandler, WorkflowEvent, WorkflowExecution, WorkflowSnapshot,
     WorkflowStatus,
 };
-use serde::Deserialize;
+
 use std::path::{Path, PathBuf};
 
 const DRY_RUN_ENV: &str = "CRUCIBLE_WORKFLOW_DRY_RUN";
@@ -54,15 +54,7 @@ pub async fn handle_workflow_start(
     ctx: &RpcContext,
     req: &Request,
 ) -> RpcResult<serde_json::Value> {
-    #[derive(Deserialize)]
-    struct Params {
-        session_id: String,
-        /// Full markdown source for the workflow note.
-        source: String,
-        /// Optional path for title fallback and error messages.
-        path: Option<String>,
-    }
-    let p: Params = parse_params(req)?;
+    let p = parse_params::<Scoped<WorkflowSource>>(req)?;
 
     // Reject both live executions and persisted snapshots from prior
     // runs that haven't reached a terminal state — otherwise we'd
@@ -80,15 +72,16 @@ pub async fn handle_workflow_start(
     }
 
     let path = p
+        .body
         .path
         .as_deref()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("workflow.md"));
-    let fm = extract_yaml_frontmatter(&p.source);
+    let fm = extract_yaml_frontmatter(&p.body.source);
     let mut note = ParsedNote::new(path);
     note.frontmatter = fm;
 
-    let doc = WorkflowDoc::from_parsed(&note, &p.source).ok_or_else(|| RpcError {
+    let doc = WorkflowDoc::from_parsed(&note, &p.body.source).ok_or_else(|| RpcError {
         code: INVALID_PARAMS,
         message: "Note does not declare `type: workflow` in its frontmatter.".into(),
         data: None,
@@ -123,12 +116,7 @@ pub async fn handle_workflow_approve_gate(
     ctx: &RpcContext,
     req: &Request,
 ) -> RpcResult<serde_json::Value> {
-    #[derive(Deserialize)]
-    struct Params {
-        session_id: String,
-        gate_id: String,
-    }
-    let p: Params = parse_params(req)?;
+    let p = parse_params::<Scoped<GateRef>>(req)?;
 
     let handle = resolve_or_rehydrate(ctx, &p.session_id)
         .await
@@ -140,7 +128,7 @@ pub async fn handle_workflow_approve_gate(
 
     {
         let mut guard = handle.lock().await;
-        guard.approve_gate(&p.gate_id).map_err(|e| RpcError {
+        guard.approve_gate(&p.body.gate_id).map_err(|e| RpcError {
             code: INVALID_PARAMS,
             message: e.to_string(),
             data: None,
@@ -162,7 +150,7 @@ pub async fn handle_workflow_status(
     ctx: &RpcContext,
     req: &Request,
 ) -> RpcResult<serde_json::Value> {
-    let p: Scoped<()> = parse_params(req)?;
+    let p = parse_params::<Scoped<()>>(req)?;
 
     let handle = resolve_or_rehydrate(ctx, &p.session_id)
         .await
@@ -194,11 +182,7 @@ pub async fn handle_workflow_cancel(
     ctx: &RpcContext,
     req: &Request,
 ) -> RpcResult<serde_json::Value> {
-    #[derive(Deserialize)]
-    struct Params {
-        session_id: String,
-    }
-    let p: Params = parse_params(req)?;
+    let p = parse_params::<Scoped<()>>(req)?;
 
     let handle = match resolve_or_rehydrate(ctx, &p.session_id).await {
         Some(h) => h,
