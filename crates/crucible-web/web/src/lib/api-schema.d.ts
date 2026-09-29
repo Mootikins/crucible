@@ -546,9 +546,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Aggregate pending interactions across all sessions, with each request
-         *     normalized to the same flat shape the SSE path delivers — the Inbox
-         *     renders both sources through one component.
+         * Aggregate pending interactions across all sessions — the Inbox renders
+         *     both sources through one component.
          */
         get: operations["pending_interactions"];
         put?: never;
@@ -2217,6 +2216,103 @@ export interface components {
             archived: boolean;
         };
         /**
+         * @description Format hint for artifact content.
+         * @enum {string}
+         */
+        ArtifactFormat: "markdown" | "code" | "json" | "plain";
+        /**
+         * @description A batch of questions to ask the user.
+         *
+         *     Supports 1-4 questions shown together. Each question has choices,
+         *     and an "Other" free-text option is always implicitly available.
+         */
+        AskBatch: {
+            /**
+             * @description Correlation id.
+             *
+             *     Defaulted because a plugin cannot supply one: `cru.ui.ask_batch` passes
+             *     the caller's options table through, `crucible-lua` exposes no UUID
+             *     helper, and the daemon mints the id it actually routes on
+             *     (`ix-<uuid>`, in `agent_manager/interaction.rs`) separately. Required,
+             *     this field made the function uncallable — "missing field `id`" before
+             *     any client saw the request.
+             */
+            id?: string;
+            /** @description Questions to ask (1-4). */
+            questions: components["schemas"]["AskQuestion"][];
+        };
+        /** @description Response to an [`AskBatch`]. */
+        AskBatchResponse: {
+            /** @description One answer per question, in order. */
+            answers: components["schemas"]["QuestionAnswer"][];
+            /** @description True if user cancelled the whole interaction. */
+            cancelled?: boolean;
+            /**
+             * @description The request id this answers, as the client received it.
+             *
+             *     A `String`, not a `Uuid`: the id a client is given is the daemon's
+             *     correlation token (`ix-<uuid>`), which is not a bare UUID, so a
+             *     `Uuid` here rejected every reply the browser could send. Nothing
+             *     routes on it — `deliver_client_reply` uses the envelope's
+             *     `request_id` — so it is carried for the caller's benefit only.
+             */
+            id?: string;
+        };
+        /** @description A single question in an [`AskBatch`]. */
+        AskQuestion: {
+            /** @description Allow free-text "other" input. */
+            allow_other?: boolean;
+            /** @description Available choices. */
+            choices: string[];
+            /** @description Short label (max 12 chars) displayed as header. */
+            header: string;
+            /** @description Allow multiple selections. */
+            multi_select?: boolean;
+            /** @description Full question text. */
+            question: string;
+        };
+        /**
+         * @description A question to ask the user.
+         *
+         *     Supports single-select, multi-select, and free-text input modes.
+         */
+        AskRequest: {
+            /** @description Allow free-text input in addition to choices. */
+            allow_other?: boolean;
+            /** @description Optional list of choices. If None, expects free-text input. */
+            choices?: string[] | null;
+            /** @description Allow selecting multiple choices. */
+            multi_select?: boolean;
+            /** @description The question text to display. */
+            question: string;
+        };
+        /** @description Response to an [`AskRequest`]. */
+        AskResponse: {
+            /** @description Free-text input if "other" was chosen. */
+            other?: string | null;
+            /** @description Indices of selected choices (empty if using "other"). */
+            selected?: number[];
+        };
+        /**
+         * @description Captured result of running a single validation command. The daemon
+         *     executes each runnable entry in `WorkflowDoc.validations` after a
+         *     workflow completes and ships the outcomes over the session event
+         *     stream as a `workflow.assessed` message. Kept in core so that
+         *     factory/consumer share one shape.
+         */
+        AssessmentOutcome: {
+            command: string;
+            description: string;
+            /** Format: int64 */
+            duration_ms: number;
+            /** Format: int32 */
+            exit_code: number;
+            /** @description Truncated stderr (daemon-side cap). */
+            stderr: string;
+            /** @description Truncated stdout (daemon-side cap). */
+            stdout: string;
+        };
+        /**
          * @description Unified backend type for all providers.
          *
          *     Backends are the underlying services that provide AI capabilities.
@@ -2382,6 +2478,34 @@ export interface components {
         CancelledResponse: {
             cancelled: boolean;
         };
+        /** @description One tool call, classified. */
+        CanonicalToolCall: {
+            /** @description The ACP agent that made the call. `None` for Crucible's own tools. */
+            agent?: string | null;
+            /** @description The shell command line, for a `command` call. */
+            command?: string | null;
+            /**
+             * @description The file changes of the call. An ACP call has the diff content of its
+             *     frames. A Crucible tool call has the diff that `diff_synth` makes.
+             */
+            diffs?: components["schemas"]["FileDiff"][];
+            /**
+             * @description The open kind name. The default matcher and [`Self::crucible_tool`]
+             *     give a [`BuiltinKind`].
+             */
+            kind: string;
+            /** @description The filesystem targets of the call. */
+            paths?: string[];
+            query?: string | null;
+            raw?: null | components["schemas"]["RawToolCall"];
+            render?: null | components["schemas"]["ToolRender"];
+            /**
+             * @description The canonical tool name. A display object from before this field has
+             *     no name, so the default keeps an old transcript readable.
+             */
+            tool?: string;
+            url?: string | null;
+        };
         /**
          * @description A parsed `.canvas` document.
          *
@@ -2475,172 +2599,16 @@ export interface components {
          */
         CanvasSide: "top" | "right" | "bottom" | "left";
         /**
-         * @description The browser's view of a session event, streamed by `GET
-         *     /api/chat/events/{session_id}`.
+         * @description One SSE `data:` payload of `GET /api/chat/events/{session_id}`.
          *
-         *     `ToSchema` publishes the tag values to the OpenAPI document, so the
-         *     browser reads the union from the enum instead of repeating it.
+         *     Documentation only — `to_sse` builds each frame from its own producer and
+         *     never constructs this enum. It exists so `openapi.json` can name one
+         *     schema for the route: either a typed session event, in the same
+         *     `{event, data}` shape [`SessionEventPayload`] itself serializes to, or a
+         *     [`TranscriptFrame`], the second frame a live event sends when it changed
+         *     the transcript.
          */
-        ChatEvent: {
-            content: string;
-            /** @enum {string} */
-            type: "token";
-        } | {
-            arguments?: unknown;
-            /** @description Which layer granted permission without asking, if any. */
-            auto_approved?: string | null;
-            /**
-             * @description The daemon's canonical tool call, shared with the TUI. Its
-             *     `diffs` are the proposed file edits of the call. `Value` because
-             *     `CanonicalToolCall` lives in `crucible-core`, which takes no
-             *     utoipa dependency (same deal as `stop_reason` below).
-             */
-            display?: unknown;
-            id: string;
-            title: string;
-            /** @enum {string} */
-            type: "tool_call";
-        } | {
-            id: string;
-            /**
-             * @description The render of the finished call, a
-             *     `crucible_core::types::ToolRender`. It replaces the render of
-             *     the card.
-             */
-            render?: unknown;
-            result?: string | null;
-            /**
-             * @description True if this tool requested an agent-turn early-stop
-             *     (daemon's conjunctive batch-terminate check fired). UI renders
-             *     a "Terminated" badge on the tool card.
-             */
-            terminate?: boolean;
-            /** @enum {string} */
-            type: "tool_result";
-        } | {
-            delta: string;
-            id: string;
-            /** @enum {string} */
-            type: "tool_result_delta";
-        } | {
-            id: string;
-            /** @enum {string} */
-            type: "tool_result_complete";
-        } | {
-            error: string;
-            id: string;
-            /** @description The render of the failed call. See [`Self::ToolResult`]. */
-            render?: unknown;
-            /** @enum {string} */
-            type: "tool_result_error";
-        } | {
-            content: string;
-            /** @enum {string} */
-            type: "thinking";
-        } | {
-            content: string;
-            /** Format: int64 */
-            index: number;
-            message_id: string;
-            /** @enum {string} */
-            type: "segment_complete";
-        } | {
-            /** Format: int64 */
-            cache_creation_tokens?: number | null;
-            /** Format: int64 */
-            cache_read_tokens?: number | null;
-            /** Format: int64 */
-            completion_tokens?: number | null;
-            content: string;
-            id: string;
-            /** Format: int64 */
-            prompt_tokens?: number | null;
-            /**
-             * @description The note the browser draws under a reply the provider cut off, or
-             *     absent when the reason needs none — which is every normal turn.
-             *
-             *     **The daemon words it, not the page.** `StopReason::user_notice`
-             *     is the only wording; the browser held a second one in TypeScript
-             *     and the two drifted. One `Option<String>` once per turn is cheaper
-             *     than a wording nothing compares, and `AGENTS.md` puts the decision
-             *     in the daemon for exactly this reason: a web front end must not
-             *     duplicate it.
-             */
-            stop_notice?: string | null;
-            /**
-             * @description Why the turn ended (`end_turn`, `max_tokens`, `refusal`, …). The
-             *     browser reads it to style the turn. Absent when the daemon
-             *     reported none.
-             *
-             *     It is a `String` in the document because `StopReason` lives in
-             *     `crucible-core`, which takes no utoipa dependency. The values are
-             *     `StopReason::ALL`, serialised snake_case.
-             */
-            stop_reason?: string | null;
-            /** Format: int64 */
-            total_tokens?: number | null;
-            /** @enum {string} */
-            type: "message_complete";
-        } | {
-            error?: string | null;
-            status: string;
-            stop_reason?: string | null;
-            /** @enum {string} */
-            type: "turn_finished";
-        } | {
-            code: string;
-            message: string;
-            /** @enum {string} */
-            type: "error";
-        } | (unknown & {
-            id: string;
-        } & {
-            /** @enum {string} */
-            type: "interaction_requested";
-        }) | {
-            id: string;
-            prompt: string;
-            target_agent?: string | null;
-            /** @enum {string} */
-            type: "delegation_spawned";
-        } | {
-            id: string;
-            summary: string;
-            /** @enum {string} */
-            type: "delegation_completed";
-        } | {
-            error: string;
-            id: string;
-            /** @enum {string} */
-            type: "delegation_failed";
-        } | {
-            notes?: components["schemas"]["PrecognitionNote"][];
-            notes_count: number;
-            /** @enum {string} */
-            type: "precognition_result";
-        } | {
-            mode: string;
-            /** @enum {string} */
-            type: "mode_changed";
-        } | {
-            title: string;
-            /** @enum {string} */
-            type: "title_changed";
-        } | {
-            /** @enum {string} */
-            type: "commands_changed";
-        } | {
-            data: unknown;
-            event: string;
-            /** @enum {string} */
-            type: "session_event";
-        } | {
-            ops: components["schemas"]["TranscriptOp"][];
-            /** Format: int64 */
-            seq?: number | null;
-            /** @enum {string} */
-            type: "transcript";
-        };
+        ChatSseFrame: components["schemas"]["SessionEventPayload"] | components["schemas"]["TranscriptFrame"];
         Column: {
             display_name: string;
             property: string;
@@ -2851,6 +2819,12 @@ export interface components {
              */
             rejected: string[];
         };
+        ContextLimitResolvedPayload: {
+            limit: number;
+            source: components["schemas"]["ContextLimitSource"];
+        };
+        /** @enum {string} */
+        ContextLimitSource: "provider_api" | "config" | "default" | "agent" | "unknown";
         /**
          * @description Strategy for managing conversation context when it exceeds the token budget.
          * @enum {string}
@@ -3122,6 +3096,20 @@ export interface components {
             /** @enum {string} */
             reason: "empty_expect";
         };
+        /** @description Request to edit an artifact. */
+        EditRequest: {
+            /** @description The content to edit. */
+            content: string;
+            /** @description Format hint for the editor. */
+            format?: components["schemas"]["ArtifactFormat"];
+            /** @description Optional hint for what to focus on. */
+            hint?: string | null;
+        };
+        /** @description Response from editing. */
+        EditResponse: {
+            /** @description The modified content. */
+            modified: string;
+        };
         ExecuteCommandRequest: {
             /** @description The command line, with or without its leading slash. */
             command: string;
@@ -3150,6 +3138,27 @@ export interface components {
             text: string;
         };
         /**
+         * @description Kind of file change detected by the watch system.
+         *
+         *     This enum represents the type of file system change that triggered an event.
+         *     It is used by `FileChanged` events to distinguish between new files and
+         *     modifications to existing files.
+         *
+         *     # Example
+         *
+         *     ```ignore
+         *     use crucible_core::events::{SessionEvent, FileChangeKind};
+         *     use std::path::PathBuf;
+         *
+         *     let event = SessionEvent::FileChanged {
+         *         path: PathBuf::from("/notes/test.md"),
+         *         kind: FileChangeKind::Modified,
+         *     };
+         *     ```
+         * @enum {string}
+         */
+        FileChangeKind: "created" | "modified";
+        /**
          * @description A merge conflict in one file of a proposal.
          *
          *     The regions point into `merged_text`, so a client shows them with no
@@ -3164,6 +3173,21 @@ export interface components {
             /** @description Each cluster that the two sides changed differently. */
             regions: components["schemas"]["MergeRegion"][];
             root: string;
+        };
+        /**
+         * @description File diff representing changes to a file
+         *
+         *     Protocol-agnostic representation of file modifications. Can be populated
+         *     from ACP's `ToolCallContent::Diff`, generated from tool arguments, or
+         *     computed by comparing file states.
+         */
+        FileDiff: {
+            /** @description New content after modification */
+            new_content: string;
+            /** @description Original content (None for new files) */
+            old_content?: string | null;
+            /** @description Path to the modified file */
+            path: string;
         };
         /** @description One entry of a kiln's file listing. */
         FileEntryRow: {
@@ -3493,10 +3517,61 @@ export interface components {
          * @enum {string}
          */
         IndeterminateProgress: "indeterminate";
+        /**
+         * @description Unified interaction request type.
+         *
+         *     This enum wraps all interaction primitives for use in event systems
+         *     and channels.
+         */
+        InteractionRequest: (components["schemas"]["AskRequest"] & {
+            /** @enum {string} */
+            kind: "ask";
+        }) | (components["schemas"]["AskBatch"] & {
+            /** @enum {string} */
+            kind: "ask_batch";
+        }) | (components["schemas"]["EditRequest"] & {
+            /** @enum {string} */
+            kind: "edit";
+        }) | (components["schemas"]["ShowRequest"] & {
+            /** @enum {string} */
+            kind: "show";
+        }) | (components["schemas"]["PermRequest"] & {
+            /** @enum {string} */
+            kind: "permission";
+        }) | (components["schemas"]["PopupRequest"] & {
+            /** @enum {string} */
+            kind: "popup";
+        }) | (components["schemas"]["InteractivePanel"] & {
+            /** @enum {string} */
+            kind: "panel";
+        });
         /** @description The answer this route gives when the daemon took the response. */
         InteractionRespondResponse: {
             /** @description Always `true`. A refusal is an error status, not a `false`. */
             ok: boolean;
+        };
+        /** @description Unified interaction response type. */
+        InteractionResponse: (components["schemas"]["AskResponse"] & {
+            /** @enum {string} */
+            kind: "ask";
+        }) | (components["schemas"]["AskBatchResponse"] & {
+            /** @enum {string} */
+            kind: "ask_batch";
+        }) | (components["schemas"]["EditResponse"] & {
+            /** @enum {string} */
+            kind: "edit";
+        }) | (components["schemas"]["PermResponse"] & {
+            /** @enum {string} */
+            kind: "permission";
+        }) | (components["schemas"]["PopupResponse"] & {
+            /** @enum {string} */
+            kind: "popup";
+        }) | (components["schemas"]["PanelResult"] & {
+            /** @enum {string} */
+            kind: "panel";
+        }) | {
+            /** @enum {string} */
+            kind: "cancelled";
         };
         InteractionResponseRequest: {
             request_id: string;
@@ -3510,9 +3585,38 @@ export interface components {
             response: unknown;
             session_id: string;
         };
+        /**
+         * @description An interactive panel request.
+         *
+         *     This is the core primitive for scripted UI flows. Scripts provide items
+         *     and hints; the TUI renders an interactive list with filtering, selection,
+         *     and optional key handler callbacks.
+         *
+         *     Higher-level patterns (question sequences, fuzzy search, wizards) are
+         *     built on top of this primitive in script-land.
+         *
+         *     # Example
+         *
+         *     ```
+         *     use crucible_core::interaction::{InteractivePanel, PanelItem, PanelHints};
+         *
+         *     let panel = InteractivePanel::new("Select database")
+         *         .item(PanelItem::new("PostgreSQL").with_description("Full-featured RDBMS"))
+         *         .item(PanelItem::new("SQLite").with_description("Embedded, single-file"))
+         *         .hints(PanelHints::new().filterable());
+         *     ```
+         */
+        InteractivePanel: {
+            /** @description Header/prompt text displayed above the panel. */
+            header: string;
+            /** @description Render/behavior hints. */
+            hints?: components["schemas"]["PanelHints"];
+            /** @description Items to display. */
+            items?: components["schemas"]["PopupEntry"][];
+        };
         ItemBody: {
             content: string;
-            origin?: Record<string, never> | null;
+            origin?: null | components["schemas"]["TurnOrigin"];
             precognition?: null | components["schemas"]["Precognition"];
             /** @enum {string} */
             type: "user_turn";
@@ -3531,10 +3635,10 @@ export interface components {
             type: "assistant_segment";
             usage?: null | components["schemas"]["TokenUsage"];
         } | {
-            args: Record<string, never>;
+            args: unknown;
             auto_approved?: string | null;
             call_id: string;
-            display?: Record<string, never> | null;
+            display?: null | components["schemas"]["CanonicalToolCall"];
             error?: string | null;
             name: string;
             /** @description The output, as text. */
@@ -3566,6 +3670,80 @@ export interface components {
             notice: components["schemas"]["Notice"];
             /** @enum {string} */
             type: "notice";
+        };
+        /**
+         * @description Delegation and background-job lifecycle.
+         *
+         *     The `delegation_*` names predate the current delegation system and are
+         *     preserved for subscriber compatibility.
+         */
+        JobPayload: {
+            /**
+             * @description `delegation_id` and `child_session_id` always hold the same value —
+             *     `DelegationSpawned` documents `delegation_id == child_session_id`. Both
+             *     are on the wire because a subscriber may read either, and dropping one
+             *     would silently break it.
+             */
+            data: {
+                child_session_id?: string;
+                delegation_id?: string;
+                parent_session_id?: string;
+                prompt?: string;
+                target_agent?: string | null;
+            };
+            /** @enum {string} */
+            event: "delegation_spawned";
+        } | {
+            data: {
+                child_session_id?: string;
+                delegation_id?: string;
+                parent_session_id?: string;
+                result_summary?: string;
+            };
+            /** @enum {string} */
+            event: "delegation_completed";
+        } | {
+            data: {
+                child_session_id?: string;
+                delegation_id?: string;
+                error?: string;
+                parent_session_id?: string;
+            };
+            /** @enum {string} */
+            event: "delegation_failed";
+        } | {
+            data: {
+                command?: string;
+                job_id?: string;
+            };
+            /** @enum {string} */
+            event: "bash_job_spawned";
+        } | {
+            data: {
+                /** Format: int32 */
+                exit_code?: number | null;
+                job_id?: string;
+                output?: string;
+            };
+            /** @enum {string} */
+            event: "bash_job_completed";
+        } | {
+            data: {
+                error?: string;
+                /** Format: int32 */
+                exit_code?: number | null;
+                job_id?: string;
+            };
+            /** @enum {string} */
+            event: "bash_job_failed";
+        } | {
+            data: {
+                job_id?: string;
+                kind?: string;
+                summary?: string;
+            };
+            /** @enum {string} */
+            event: "background_job_completed";
         };
         /** @description What `GET /api/kiln/file` answers. */
         KilnFileResponse: {
@@ -3616,6 +3794,9 @@ export interface components {
          */
         KilnListResponse: {
             kilns: components["schemas"]["KilnRow"][];
+        };
+        KilnNotesIndexedPayload: {
+            notes: string[];
         };
         /**
          * @description One kiln, as `kiln.list` reports it.
@@ -3768,6 +3949,15 @@ export interface components {
             /** @description Transport type: `sse` or `stdio`. */
             transport: string;
         };
+        McpServerInfo: {
+            connected: boolean;
+            name: string;
+            prefix: string;
+            tools: string[];
+        };
+        McpServersReadyPayload: {
+            servers: components["schemas"]["McpServerInfo"][];
+        };
         /**
          * @description What `mcp.status` answers: the server is up, or it is not.
          *
@@ -3877,6 +4067,11 @@ export interface components {
             wikilinks: components["schemas"]["WikilinkTarget"][];
         };
         /**
+         * @description Type of note modification.
+         * @enum {string}
+         */
+        NoteChangeType: "content" | "frontmatter" | "links" | "tags";
+        /**
          * @description What `GET /api/notes` answers. A thin wrapper, not a copy: the row is
          *     core's own [`NoteListRow`], the same type `note.list` answers.
          */
@@ -3940,6 +4135,73 @@ export interface components {
             kind: "turn_failed";
             status: string;
         };
+        /**
+         * @description A notification message with metadata.
+         *
+         *     Notifications are identified by a unique ID and carry a kind that determines
+         *     their display behavior and lifecycle.
+         *     [`ToSchema`](utoipa::ToSchema) mirrors the struct's declared fields, not
+         *     the hand-written `Serialize` impl below: it always shows `scope` and
+         *     `created_at`, where the wire omits a global scope and an absent time. A
+         *     reader that expects the leaner wire form still decodes it, because both
+         *     fields already default when absent.
+         */
+        Notification: {
+            /**
+             * Format: date-time
+             * @description When the daemon stored it. `None` for a notification a client made
+             *     for itself.
+             */
+            created_at?: string | null;
+            id: string;
+            kind: components["schemas"]["NotificationKind"];
+            message: string;
+            /** @description Who may see it. The default is global: everyone. */
+            scope: components["schemas"]["NotificationScope"];
+        };
+        /** @description The kind of notification, determining display and lifecycle behavior. */
+        NotificationKind: "toast" | {
+            /** @description Progress indicator with current/total counts */
+            progress: {
+                current: number;
+                total: number;
+            };
+        } | "warning";
+        /**
+         * @description Session notification list changes. `NotificationAdded` carries the body,
+         *     so a client can show it without a round trip. `NotificationDismissed`
+         *     carries only the id: the list itself is fetched, so the event says
+         *     "re-read" rather than shipping a projection that can go stale.
+         */
+        NotificationPayload: {
+            data: {
+                notification?: null | components["schemas"]["Notification"];
+                notification_id?: string;
+            };
+            /** @enum {string} */
+            event: "notification_added";
+        } | {
+            data: {
+                notification_id?: string;
+            };
+            /** @enum {string} */
+            event: "notification_dismissed";
+        };
+        /**
+         * @description Who may see a notification. Empty means everyone. A session scope
+         *     wins over the other two: only that session sees the notification.
+         */
+        NotificationScope: {
+            /** @description The kilns it belongs to, when any. */
+            kilns?: string[];
+            /**
+             * @description The one session it belongs to, when the engine reported it for that
+             *     session.
+             */
+            session?: string | null;
+            /** @description The canonical workspace path, when the notification belongs to one. */
+            workspace?: string | null;
+        };
         /** @description Standard acknowledgment response for successful mutations. */
         OkResponse: {
             ok: boolean;
@@ -3959,6 +4221,28 @@ export interface components {
             /** @description The new value, for a `set`. Ignored otherwise. */
             value?: unknown;
         };
+        /** @description Render/behavior hints for an interactive panel. */
+        PanelHints: {
+            /** @description Show "Other..." option for free-text input. */
+            allow_other?: boolean;
+            /** @description Show filter/search input for fuzzy matching. */
+            filterable?: boolean;
+            /** @description Initial filter text. */
+            initial_filter?: string | null;
+            /** @description Pre-select these indices when panel opens. */
+            initial_selection?: number[];
+            /** @description Allow selecting multiple items (toggle with space/tab). */
+            multi_select?: boolean;
+        };
+        /** @description Result when an interactive panel closes. */
+        PanelResult: {
+            /** @description Whether the user cancelled (Escape). */
+            cancelled?: boolean;
+            /** @description Free-text "other" input if used. */
+            other?: string | null;
+            /** @description Selected item indices (in original items list). */
+            selected?: number[];
+        };
         /** @description `PATCH /api/kiln/file` — change a few lines, not the whole file. */
         PatchFileRequest: {
             /**
@@ -3971,19 +4255,17 @@ export interface components {
             edits: components["schemas"]["AnchoredEdit"][];
             path: string;
         };
-        /** @description One interaction a session is waiting on an answer to. */
+        /**
+         * @description One interaction a session is waiting on an answer to.
+         *
+         *     `request` is the same typed, kind-tagged shape the SSE
+         *     `interaction_requested` frame carries — see
+         *     [`crucible_core::interaction::InteractionRequest`]. A permission
+         *     request's `pattern` is filled in here too, the one place this route
+         *     decides it, so the browser never re-derives it.
+         */
         PendingInteraction: {
-            /**
-             * @description The request, in the flat shape the SSE path delivers.
-             *
-             *     Deliberately open: `normalize_interaction` writes one object per
-             *     interaction kind — a permission request carries `tokens` and maybe
-             *     `diffs`, an ask carries the question's own fields — and the kinds are
-             *     the daemon's to add to. `kind` tells the browser which one it has.
-             */
-            request: {
-                [key: string]: unknown;
-            };
+            request: components["schemas"]["InteractionRequest"];
             /** @description The identifier an answer must carry back. */
             request_id: string;
             /** @description The session that asked. */
@@ -3992,6 +4274,82 @@ export interface components {
         /** @description The interactions every session is waiting on, in one list. */
         PendingInteractionsResponse: {
             pending: components["schemas"]["PendingInteraction"][];
+        };
+        /** @description Types of permission requests. */
+        PermAction: {
+            /** @description Command tokens (e.g., ["npm", "install", "lodash"]). */
+            tokens: string[];
+            /** @enum {string} */
+            type: "bash";
+        } | {
+            /** @description Path segments (e.g., ["home", "user", "project"]). */
+            segments: string[];
+            /** @enum {string} */
+            type: "read";
+        } | {
+            /** @description Path segments. */
+            segments: string[];
+            /** @enum {string} */
+            type: "write";
+        } | {
+            /** @description Tool arguments. */
+            args: unknown;
+            /** @description Tool name. */
+            name: string;
+            /** @enum {string} */
+            type: "tool";
+        };
+        /**
+         * @description Scope for permission grants.
+         *
+         *     Determines how long a permission grant remains valid.
+         * @enum {string}
+         */
+        PermissionScope: "once" | "session" | "project" | "user";
+        /**
+         * @description Request permission for an action.
+         *
+         *     Supports token-based pattern building for vim-style permission UIs
+         *     where users can expand/contract the permission scope.
+         */
+        PermRequest: {
+            /** @description The action requiring permission. */
+            action: components["schemas"]["PermAction"];
+            call?: null | components["schemas"]["CanonicalToolCall"];
+            /**
+             * @description File diffs for this permission. Empty for non-file actions or when
+             *     the diff couldn't be synthesized at the daemon (e.g. file too large
+             *     or `old_string` not found in disk content).
+             *
+             *     `#[serde(default)]` keeps older clients/servers wire-compatible:
+             *     requests without this field deserialize as `vec![]`.
+             */
+            diffs?: components["schemas"]["FileDiff"][];
+            /**
+             * @description The permission layer that asked the user, for example
+             *     `permissions config` or `ask mode`.
+             */
+            layer?: string | null;
+            origin?: null | components["schemas"]["TurnOrigin"];
+            /**
+             * @description The grant that "always allow" saves, from [`Self::suggested_pattern`].
+             *
+             *     `None` on a freshly built request: the callers below build the
+             *     action first, and the pattern depends on it. `#[allow(dead_code)]`
+             *     callers do not read `None`; the one place that broadcasts a
+             *     permission request to a client (`SessionEventMessage::interaction_requested`)
+             *     fills it in before the request goes on the wire, so a client — the
+             *     web page cannot call Rust — reads a value the daemon has already
+             *     decided once, instead of re-deriving it.
+             */
+            pattern?: string | null;
+        };
+        /** @description Response to a permission request. */
+        PermResponse: {
+            allowed: boolean;
+            pattern?: string | null;
+            reason?: string | null;
+            scope?: components["schemas"]["PermissionScope"];
         };
         /**
          * @description A repository top level, as `git rev-parse --show-toplevel` printed it.
@@ -4296,20 +4654,110 @@ export interface components {
              */
             session_id?: string | null;
         };
+        PluginsDiscoveredPayload: {
+            plugins: components["schemas"]["PluginStatusEntry"][];
+        };
+        PluginStatusEntry: {
+            error?: string | null;
+            name: string;
+            state: string;
+            /**
+             * @description The version the plugin declares, or `None` while nothing has read it.
+             *
+             *     Enumeration does not run a plugin's Lua, and the version lives in the
+             *     spec table that only a load reads — so a discovered plugin has no
+             *     version to report. This field carried a synthesized `"0.0.0"` there,
+             *     which every front end drew as if it were a release.
+             */
+            version?: string | null;
+        };
         PluginTurnLimitResponse: {
             /** Format: int32 */
             limit: number;
         };
+        /**
+         * @description A simple popup entry for cross-platform use
+         *
+         *     This type is designed to be:
+         *     - Serializable (for web UI / IPC)
+         *     - Simple enough for scripting (Lua)
+         *     - Convertible from domain-specific PopupItem enum
+         *
+         *     [`crate::interaction::PanelItem`] is an alias of this type.
+         */
+        PopupEntry: {
+            /** @description Arbitrary data returned to caller on selection (optional) */
+            data?: unknown;
+            /** @description Secondary descriptive text (optional) */
+            description?: string | null;
+            /** @description Primary display text (required) */
+            label: string;
+        };
+        /**
+         * @description A request to show a popup with selectable entries.
+         *
+         *     Unlike [`AskRequest`] which uses simple string choices, `PopupRequest` uses
+         *     [`PopupEntry`] items that can include labels, descriptions, and arbitrary data.
+         *     This makes it suitable for rich scripted popups from Lua plugins.
+         *
+         *     # Example
+         *
+         *     ```
+         *     use crucible_core::interaction::PopupRequest;
+         *     use crucible_core::types::PopupEntry;
+         *
+         *     let popup = PopupRequest::new("Select a note")
+         *         .entries([
+         *             PopupEntry::new("Daily Note").with_description("Today's journal"),
+         *             PopupEntry::new("Todo List").with_description("Tasks for the week"),
+         *         ]);
+         *     ```
+         */
+        PopupRequest: {
+            /** @description Allow free-text input if no entry is selected. */
+            allow_other?: boolean;
+            /** @description Entries to display in the popup. */
+            entries?: components["schemas"]["PopupEntry"][];
+            /** @description Title/prompt to display above the popup. */
+            title: string;
+        };
+        /** @description Response to a [`PopupRequest`]. */
+        PopupResponse: {
+            /** @description Free-text input if "other" was chosen. */
+            other?: string | null;
+            selected_entry?: null | components["schemas"]["PopupEntry"];
+            /** @description Index of the selected entry (if any). */
+            selected_index?: number | null;
+        };
         Precognition: {
-            notes?: Record<string, never>[];
+            notes?: components["schemas"]["PrecognitionNoteInfo"][];
             notes_count: number;
             /** @description The query that the search ran with. */
             query_summary?: string;
         };
-        PrecognitionNote: {
-            name: string;
-            /** Format: double */
-            relevance?: number;
+        /**
+         * @description Metadata about a note found during Precognition enrichment.
+         *     Carried through RPC so TUI/web can display which notes informed the response.
+         */
+        PrecognitionNoteInfo: {
+            /**
+             * @description Which kiln the note came from, by registry name.
+             *
+             *     Was `kiln_label: Option<String>`, filled from the kiln directory's
+             *     basename. This payload is persisted into `session.jsonl` and broadcast
+             *     to the web and TUI, so that basename outlived the turn and reached two
+             *     UIs. The key is renamed as well as retyped: a transcript recorded before
+             *     this change holds a basename under the old key, and it must be dropped
+             *     on read rather than parsed as if it were a name.
+             */
+            kiln?: string | null;
+            /**
+             * Format: double
+             * @description Search relevance score from the vector index. Defaults for payloads
+             *     recorded before the field existed.
+             */
+            score?: number;
+            title: string;
         };
         /** @description Response for precognition config. */
         PrecognitionResponse: {
@@ -4467,6 +4915,16 @@ export interface components {
             /** @description The kiln root. */
             root: string;
         };
+        ProviderInfo: {
+            available: boolean;
+            default_model?: string | null;
+            endpoint?: string | null;
+            is_local: boolean;
+            models: string[];
+            name: string;
+            provider_type: string;
+            reason?: string | null;
+        };
         /**
          * @description One LLM provider the daemon found.
          *
@@ -4487,6 +4945,9 @@ export interface components {
             provider_type: string;
             /** @description Why the provider is unavailable, when it is. */
             reason?: string | null;
+        };
+        ProvidersListedPayload: {
+            providers: components["schemas"]["ProviderInfo"][];
         };
         /** @description What `GET /api/providers` answers. */
         ProvidersResponse: {
@@ -4562,6 +5023,46 @@ export interface components {
             view_type: string;
             views: components["schemas"]["ViewSummary"][];
         };
+        /** @description Answer to a single question in an [`AskBatch`]. */
+        QuestionAnswer: {
+            /** @description Free-text input if "Other" was chosen. */
+            other?: string | null;
+            /** @description Selected choice indices (empty if "Other" was chosen). */
+            selected?: number[];
+        };
+        /**
+         * @description The fields of an ACP tool call that a matcher or a display can read.
+         *
+         *     This is provenance. No policy reads it. It has no status and no
+         *     `rawOutput`, because those describe the result, not the call.
+         */
+        RawToolCall: {
+            /** @description The ACP `_meta` object, as opaque JSON. */
+            _meta?: unknown;
+            /**
+             * @description The call's content frames. Opaque on the wire, for the same reason
+             *     as `locations`.
+             */
+            content?: unknown[];
+            /**
+             * @description The ACP tool kind. Opaque on the wire: `ToolKind` is an ACP protocol
+             *     type this crate does not derive `ToSchema` for.
+             */
+            kind?: string | null;
+            /**
+             * @description The touched locations. Opaque on the wire: `ToolCallLocation` is an
+             *     ACP protocol type this crate does not derive `ToSchema` for.
+             */
+            locations?: unknown[];
+            name?: string | null;
+            rawInput?: unknown;
+            title?: string | null;
+            /**
+             * @description The ACP `toolCallId`. Some agents put the tool name in it, for
+             *     example gemini (`read_file__read_file_1758580000002_2`).
+             */
+            toolCallId?: string | null;
+        };
         RecentFile: {
             /** @description Absolute path of the file that was opened. */
             abs_path: string;
@@ -4629,6 +5130,14 @@ export interface components {
             paths?: string[];
             /** @description Why the user rejects the proposal. The proposal keeps it. */
             reason?: string | null;
+        };
+        /**
+         * @description One fact of a [`ToolRender`]. The value is JSON, so a client can draw a
+         *     structured value, for example `rawInput`, in its own way.
+         */
+        RenderField: {
+            label: string;
+            value: unknown;
         };
         /** @description `base.reorder_groups`: save a view's group order. `null` removes it. */
         ReorderGroupsParams: {
@@ -4699,6 +5208,37 @@ export interface components {
          *     daemon added would turn an extension into a 502 on three healthy routes.
          */
         ResumeSessionResponse: components["schemas"]["SessionHistoryResponse"] | components["schemas"]["SessionLifecycleResponse"];
+        /** @description Review and undo events. */
+        ReviewPayload: {
+            /**
+             * @description The session's composed diff moved: a hunk was accepted, rejected,
+             *     reverted, commented on, or a comment was resolved.
+             *
+             *     Deliberately carries only `reason` and no hunk identity. A hunk id is
+             *     derived from its content *and* its range in `session_base`, so a change
+             *     that re-aligns an ambiguous region moves the ids of hunks the user never
+             *     touched — a client that patched a single row in place from this event
+             *     would be showing a decision attached to different lines. The event says
+             *     "re-list"; the listing is the truth.
+             *
+             *     `reason` is advisory (`"accepted"`, `"rejected"`, `"commented"`,
+             *     `"comment_resolved"`, `"external"`) and stays a `String`, not an enum:
+             *     clients must not switch on it for correctness, and an enum would invite
+             *     exactly that.
+             */
+            data: {
+                reason?: string;
+            };
+            /** @enum {string} */
+            event: "review_changed";
+        } | {
+            data: {
+                messages_removed?: number;
+                turns_undone?: number;
+            };
+            /** @enum {string} */
+            event: "session_undo";
+        };
         Row: {
             ancestor_hash: string;
             /** @description Whether this row can move between the groups of this view. */
@@ -4890,29 +5430,54 @@ export interface components {
             plugin_turn_limit: number;
             recording_mode?: null | components["schemas"]["RecordingMode"];
         };
-        /**
-         * @description One persisted session event, as `session.resume_from_storage` replays it.
-         *
-         *     The same envelope the SSE stream carries, but this route replays whatever
-         *     the transcript holds — including an event name a newer daemon minted — so
-         *     `data` stays untyped here rather than narrowing to [`crate::events::ChatEvent`].
-         */
-        SessionHistoryEvent: {
-            /** @description The event payload. Its shape follows `event`. */
+        SessionEventMessage: {
+            /**
+             * @description The event payload. Its shape follows `event` — see
+             *     [`crate::protocol::session_events::SessionEventPayload`] for the
+             *     typed union. Untyped here on purpose: a stored transcript replays an
+             *     event name a newer daemon minted, which this build cannot type.
+             */
             data: unknown;
             /** @description The event name, such as `user_message` or `text_delta`. */
             event: string;
             /** Format: int64 */
             seq?: number | null;
             session_id: string;
+            /** Format: date-time */
             timestamp?: string | null;
-            /** @description The envelope kind. Always `event`. */
+            /**
+             * @description What the event changed in the folded transcript of the session. The
+             *     daemon sets it on the live copy only: the stored log holds the events,
+             *     and a reader folds them again. A client that renders the transcript
+             *     applies these ops; it does not fold the event itself.
+             */
+            transcript?: components["schemas"]["TranscriptOp"][];
             type: string;
         };
-        /** @description What `GET /api/session/{id}/history` answers. */
+        /**
+         * @description A decoded session-event payload: one of eight groups.
+         *
+         *     Construct with [`SessionEventMessage::typed`](crate::protocol::SessionEventMessage::typed);
+         *     read with [`SessionEventMessage::payload`](crate::protocol::SessionEventMessage::payload).
+         *     `ToSchema` reads the bare `#[serde(untagged)]` below even though this
+         *     enum derives no `Serialize`: [`SessionEventPayload::to_wire`] is what
+         *     actually serializes it, and it always yields one of the eight groups'
+         *     own `{event, data}` shape, never a wrapper around one — which is what
+         *     `untagged` documents to a reader of `openapi.json`.
+         */
+        SessionEventPayload: components["schemas"]["TurnPayload"] | components["schemas"]["SetupPayload"] | components["schemas"]["SettingsPayload"] | components["schemas"]["JobPayload"] | components["schemas"]["ReviewPayload"] | components["schemas"]["NotificationPayload"] | components["schemas"]["WorkflowPayload"] | components["schemas"]["SystemPayload"];
+        /**
+         * @description What `GET /api/session/{id}/history` answers.
+         *
+         *     `history` is the core [`crucible_core::protocol::SessionEventMessage`] —
+         *     the same envelope the SSE stream carries — replayed whatever the
+         *     transcript holds, including an event name a newer daemon minted. Its
+         *     `data` stays untyped for exactly that reason: this build cannot type an
+         *     event it does not know.
+         */
         SessionHistoryResponse: {
             /** @description The page of events the query asked for. */
-            history: components["schemas"]["SessionHistoryEvent"][];
+            history: components["schemas"]["SessionEventMessage"][];
             kilns: string[];
             session_id: string;
             state: string;
@@ -4934,6 +5499,29 @@ export interface components {
          *     from `[A-Za-z0-9._-]`. See the module docs for why that matters.
          */
         SessionId: string;
+        SessionInitializedPayload: {
+            agent_name?: string | null;
+            /**
+             * @description The session's kilns, by registry name.
+             *
+             *     Was `kiln_path: PathBuf` — the resolved directory of whichever kiln
+             *     happened to sort first, produced by `kiln_paths(..).next().unwrap_or_default()`.
+             *     It was broadcast to every subscriber and persisted into `session.jsonl`
+             *     whenever the session already had an agent config at create time.
+             *
+             *     A set, not one member: kilns are flat, so there is no "the" kiln to
+             *     report. Empty means the session reaches no kiln — never "unconstrained",
+             *     and never the empty path, which every path helper reads as the daemon's
+             *     own data directory.
+             *
+             *     `workspace_path` beside it stays a path: the agent runs commands there,
+             *     so the directory is the fact being reported.
+             */
+            kilns?: string[];
+            mode: string;
+            model: string;
+            workspace_path: string;
+        };
         /** @description What `GET /api/session/{id}/knobs` answers. */
         SessionKnobsResponse: {
             /**
@@ -5124,6 +5712,150 @@ export interface components {
             value?: unknown;
         };
         /**
+         * @description Session-settings events, adjacently tagged so the enum's serialization *is*
+         *     the `{event, data}` pair the envelope carries.
+         */
+        SettingsPayload: {
+            data: {
+                model_id?: string;
+                provider?: string;
+            };
+            /** @enum {string} */
+            event: "model_switched";
+        } | {
+            /**
+             * @description `data.mode` is the field the web SSE mapper and the TUI reducers read —
+             *     keep the name stable.
+             */
+            data: {
+                mode?: string;
+            };
+            /** @enum {string} */
+            event: "mode_changed";
+        } | {
+            /**
+             * @description The session's scope after a change: its kilns by registry name, and
+             *     its workspace (`null` for a session with no workspace).
+             */
+            data: {
+                /** @description Always serialized, as `[]` when empty. */
+                kilns?: string[];
+                workspace?: string | null;
+            };
+            /** @enum {string} */
+            event: "scope_changed";
+        } | {
+            data: {
+                title?: string;
+            };
+            /** @enum {string} */
+            event: "title_changed";
+        } | {
+            data: {
+                system_prompt?: string;
+            };
+            /** @enum {string} */
+            event: "system_prompt_changed";
+        } | {
+            data: {
+                enabled?: boolean;
+            };
+            /** @enum {string} */
+            event: "precognition_toggled";
+        } | {
+            data: {
+                context_strategy?: string;
+            };
+            /** @enum {string} */
+            event: "context_strategy_changed";
+        } | {
+            /**
+             * @description A plugin's approval knob changed. `approval` is the knob's own
+             *     spelling (`inherit`, `ask`, `stop`).
+             */
+            data: {
+                approval?: string;
+                plugin?: string;
+            };
+            /** @enum {string} */
+            event: "plugin_approval_changed";
+        } | {
+            data: {
+                /** Format: int32 */
+                limit?: number;
+            };
+            /** @enum {string} */
+            event: "plugin_turn_limit_changed";
+        } | {
+            /**
+             * @description The session's ACP agent advertised a new command list. A client
+             *     reads the catalog again with `session.commands`. A plugin reload
+             *     sends no such event yet, so a client also reads the catalog again
+             *     after a reload that it asked for.
+             */
+            data: Record<string, never>;
+            /** @enum {string} */
+            event: "commands_changed";
+        };
+        /**
+         * @description Setup-phase events, adjacently tagged so the enum's serialization *is* the
+         *     `{event, data}` pair the envelope carries.
+         *
+         *     `context_limit_resolved` is the one that is not exclusively a setup event.
+         *     A delegated agent has no endpoint or model for the daemon to query, so its
+         *     window arrives mid-turn instead (ACP `usage_update` →
+         *     [`TurnEvent::ContextWindow`](crate::turn::TurnEvent::ContextWindow)) and the
+         *     daemon re-emits the same event from the turn stream. Consumers treat it as a
+         *     plain assignment, so a late one needs no special case.
+         */
+        SetupPayload: {
+            data: components["schemas"]["SessionInitializedPayload"];
+            /** @enum {string} */
+            event: "session_initialized";
+        } | {
+            data: components["schemas"]["ProvidersListedPayload"];
+            /** @enum {string} */
+            event: "providers_listed";
+        } | {
+            data: components["schemas"]["ContextLimitResolvedPayload"];
+            /** @enum {string} */
+            event: "context_limit_resolved";
+        } | {
+            data: components["schemas"]["WorkspaceIndexedPayload"];
+            /** @enum {string} */
+            event: "workspace_indexed";
+        } | {
+            data: components["schemas"]["KilnNotesIndexedPayload"];
+            /** @enum {string} */
+            event: "kiln_notes_indexed";
+        } | {
+            data: components["schemas"]["PluginsDiscoveredPayload"];
+            /** @enum {string} */
+            event: "plugins_discovered";
+        } | {
+            data: components["schemas"]["McpServersReadyPayload"];
+            /** @enum {string} */
+            event: "mcp_servers_ready";
+        } | {
+            /**
+             * @description The ACP agent refused `session/resume`, so the daemon opened a new
+             *     agent session, and the agent does not have the earlier history.
+             *
+             *     Live only: the EventBus gives it a seq and journals it, and
+             *     `is_persisted` keeps it out of `session.jsonl` as for the other
+             *     setup notices. The connection fact belongs to this daemon run, and
+             *     the next connection reports its own disposition.
+             */
+            data: {
+                agent?: string;
+                new_session_id?: string;
+                reason?: string;
+                requested_session_id?: string | null;
+            };
+            /** @enum {string} */
+            event: "acp_resume_fallback";
+        };
+        /**
          * @description What a client draws.
          *
          *     One variant, because one renderer exists. `Tree`, `Table` and `KeyValue`
@@ -5132,6 +5864,15 @@ export interface components {
          * @enum {string}
          */
         Shape: "list";
+        /** @description Request to show content to the user (display only, no response). */
+        ShowRequest: {
+            /** @description The content to display. */
+            content: string;
+            /** @description Format hint for rendering. */
+            format?: components["schemas"]["ArtifactFormat"];
+            /** @description Optional title for the display. */
+            title?: string | null;
+        };
         /** @description What `skills.get` answers: one skill, with the body a summary omits. */
         SkillDetail: {
             /** @description The agent the skill declares, when it declares one. Always written. */
@@ -5267,6 +6008,22 @@ export interface components {
          *     wire it is a number or the string `"indeterminate"`.
          */
         StatusProgress: number | components["schemas"]["IndeterminateProgress"];
+        /**
+         * @description Reason a turn ended, carried on `TurnEvent::Done`.
+         *
+         *     It reaches a plugin on the `turn:complete` payload and a front end on
+         *     `message_complete`, so a handler can tell a model that finished from a
+         *     model the provider cut off. The host itself reads none of it: what to do
+         *     about a premature stop is the plugin's decision.
+         *
+         *     Two variants this deliberately does NOT have. A stop-sequence variant,
+         *     because Crucible sets no stop sequence anywhere, so no provider can report
+         *     one. A tool-use variant, because the turn loop emits `Done` only when no
+         *     tool call is pending — a provider that says "tool_use" has already had its
+         *     calls dispatched, and the turn after them ends for some other reason.
+         * @enum {string}
+         */
+        StopReason: "end_turn" | "cancelled" | "empty" | "max_tokens" | "refusal";
         String: string;
         /**
          * @description One declared surface, as `surface.list` and `surface.get` report it.
@@ -5346,6 +6103,297 @@ export interface components {
          *     shapes apart.
          */
         SystemEvent: components["schemas"]["PublicationChangedEvent"] | components["schemas"]["ProposalChangedEvent"];
+        /**
+         * @description Daemon-wide events that are not scoped to one turn: file-watch, kiln
+         *     processing, UI config, webhooks, replay.
+         */
+        SystemPayload: {
+            /**
+             * @description `kind` is a typed [`FileChangeKind`] rather than a string built with
+             *     `format!("{kind}")` and matched with two string arms — the old consumer
+             *     mapped everything that was not `created` to `Modified`, silently.
+             *     `path` is required, not defaulted: a file event without a path is
+             *     meaningless, and the consumer this replaces dropped such an event rather
+             *     than firing a handler on an empty path. `kind` defaults to `Modified`,
+             *     matching the two-arm string match it replaces.
+             */
+            data: {
+                kind?: components["schemas"]["FileChangeKind"];
+                path: string;
+            };
+            /** @enum {string} */
+            event: "file_changed";
+        } | {
+            data: {
+                path: string;
+            };
+            /** @enum {string} */
+            event: "file_deleted";
+        } | {
+            /**
+             * @description Carries `from`/`to` and **no** `path`. The consumer that rebuilt the
+             *     typed event read `data["path"]` before matching the name, so this event
+             *     was broadcast and could never reach a Lua handler.
+             */
+            data: {
+                from: string;
+                to: string;
+            };
+            /** @enum {string} */
+            event: "file_moved";
+        } | {
+            data: {
+                /**
+                 * @description The kiln's registry name, absent when no entry claims it. Never a
+                 *     path — see the internal `SessionEvent` variant for why. Absent
+                 *     from the wire, not `null`, when no entry claims the kiln.
+                 */
+                kiln?: string | null;
+            };
+            /** @enum {string} */
+            event: "classification_required";
+        } | {
+            /**
+             * @description One producer: `handle_kiln_open` (`crucible-daemon/src/server/kiln.rs`),
+             *     once a `kiln.open { process: true }` has finished indexing a kiln. The
+             *     second producer this name used to have — the `process_batch` RPC, which
+             *     sent `type`/`batch_id` and no `kiln` — is gone, along with the
+             *     `process_start`/`process_progress` events beside it; they reported per-file
+             *     work on a batch of one and nothing ever read them.
+             *
+             *     Every field keeps `#[serde(default)]` even though the surviving producer
+             *     writes all five: a daemon older than that deletion still sends the batch
+             *     shape, and it must decode as zeroes rather than as `MalformedPayload`.
+             */
+            data: {
+                discovered?: number;
+                errors?: number;
+                kiln?: string;
+                processed?: number;
+                skipped?: number;
+            };
+            /** @enum {string} */
+            event: "process_complete";
+        } | {
+            /**
+             * @description The payload is the `ui.config` RPC result, produced by
+             *     `rpc::ui::style_payload` (theme, geometry, bars) or
+             *     `rpc::ui::expr_payload` (one session's statusline values). The two
+             *     genuinely differ in shape, so this stays a `Value`: a client applies it
+             *     with the same code path it uses at attach, and narrowing the type here
+             *     would only move the drift to `rpc::ui`.
+             *
+             *     One rule the shapes share: an `exprs` member is the session's WHOLE
+             *     expression set, and a client applies it as a replacement, because a key
+             *     missing from it is a key the daemon released. A payload that is not
+             *     addressed to one session therefore omits the member rather than carrying
+             *     an empty set.
+             */
+            data: unknown;
+            /** @enum {string} */
+            event: "ui_style_changed";
+        } | {
+            /**
+             * @description Replacement status list for one session. Clients can paint the payload
+             *     immediately; attach uses `session.status` for the initial snapshot.
+             */
+            data: {
+                status: components["schemas"]["StatusDisplayItem"][];
+            };
+            /** @enum {string} */
+            event: "status_items_changed";
+        } | {
+            /**
+             * @description A subscriber fell far enough behind the broadcast ring that events were
+             *     overwritten before it read them, and `dropped` of them are gone for good.
+             *
+             *     This is a *transport* fact rather than something that happened in the
+             *     session, and it is the one event the daemon emits about its own delivery.
+             *     It is in this vocabulary anyway, deliberately: it reaches clients over the
+             *     same channel as everything else and both surfaces render it, so leaving it
+             *     outside would mean exactly the untyped `{event, data}` pair this enum
+             *     exists to retire — and a marker announcing lost data is a poor thing to
+             *     leave unvalidated. Consumers should treat it as "your transcript has a hole
+             *     here", not as session content.
+             */
+            data: {
+                /**
+                 * Format: int64
+                 * @description Zero means the lost span is unknown, as after a connection restart.
+                 */
+                dropped?: number;
+            };
+            /** @enum {string} */
+            event: "stream_gap";
+        } | {
+            /**
+             * @description A note reached the index for the first time.
+             *
+             *     The note events are the *knowledge* half of the file events above: a
+             *     file event says a path changed on disk, this says the note pipeline
+             *     parsed it and wrote it to the store. `path` is kiln-relative, which is
+             *     the spelling every other note API uses and the one a handler's
+             *     `opts.pattern` glob is written against.
+             *
+             *     Colon-namespaced rather than `note_created`, matching `webhook:received`
+             *     below: these names are also the names Lua handlers register with
+             *     (`crucible-daemon/src/event_map.rs`), and the colon marks the ones that
+             *     are a designed hook surface rather than a Rust variant name.
+             */
+            data: {
+                path: string;
+                title?: string | null;
+            };
+            /** @enum {string} */
+            event: "note:created";
+        } | {
+            /** @description An already-indexed note was written again. */
+            data: {
+                change_type?: components["schemas"]["NoteChangeType"];
+                path: string;
+            };
+            /** @enum {string} */
+            event: "note:modified";
+        } | {
+            /**
+             * @description A note left the index.
+             *
+             *     `existed` is false when the delete found nothing to remove — the
+             *     reconciliation sweep asks for paths it is not sure about.
+             */
+            data: {
+                existed?: boolean;
+                path: string;
+            };
+            /** @enum {string} */
+            event: "note:deleted";
+        } | {
+            /**
+             * @description A note moved, with its inbound links repointed.
+             *
+             *     Emitted by the `note.rename` refactor only, which is the one place that
+             *     knows the two paths are the same note. The reindex underneath it is a
+             *     delete followed by an insert, so `note:deleted` and `note:created` fire
+             *     for the same operation; this is the event that says they were a move.
+             */
+            data: {
+                from: string;
+                to: string;
+            };
+            /** @enum {string} */
+            event: "note:renamed";
+        } | {
+            /** @description A Bases mutation has reached disk. Proposed writes do not emit this. */
+            data: {
+                change: unknown;
+                path: string;
+            };
+            /** @enum {string} */
+            event: "base:changed";
+        } | {
+            data: {
+                body?: string;
+                headers?: {
+                    [key: string]: unknown;
+                };
+                name?: string;
+            };
+            /** @enum {string} */
+            event: "webhook:received";
+        } | {
+            data: {
+                status?: string;
+                total_events?: number;
+            };
+            /** @enum {string} */
+            event: "replay_complete";
+        } | {
+            /**
+             * @description A session was created, reported daemon-wide.
+             *
+             *     Addressed to the system session, not to the new one, because the
+             *     audience is a client or plugin watching *every* session — a session
+             *     list, for instance — which is by definition not attached to the session
+             *     that just started.
+             */
+            data: {
+                session_id?: string;
+            };
+            /** @enum {string} */
+            event: "session:created";
+        } | {
+            /**
+             * @description A plugin's surface changed, so every client refetches it.
+             *
+             *     Carries the identity and the new version, never the rows. A surface is
+             *     unbounded where an event is not, and two clients want it at different
+             *     times, so the event says *what* moved and the client asks for the
+             *     content. This is what makes the version on the surface worth having.
+             */
+            data: {
+                name?: string;
+                plugin?: string;
+                session?: string | null;
+                /** Format: int64 */
+                version?: number;
+                /**
+                 * @description The surface is gone: stop drawing it, and do not refetch.
+                 *
+                 *     The one field that makes this event actionable on its own. Every
+                 *     other change withholds the rows so the client asks; a withdrawal has
+                 *     nothing left to ask for, and a client that had to re-derive it from
+                 *     an empty refetch could not tell it apart from a lost race.
+                 *
+                 *     Omitted from the wire when false, so an ordinary change serialises
+                 *     exactly as it did before this field existed.
+                 */
+                withdrawn?: boolean;
+            };
+            /** @enum {string} */
+            event: "surface_changed";
+        } | {
+            /**
+             * @description A plugin's published data changed, so a client re-reads it.
+             *
+             *     Carries who published and under which key, never the value: a
+             *     publication is opaque JSON of the plugin's own choosing, and a client
+             *     that already holds the key refetches through
+             *     `GET /api/plugins/publications`.
+             *
+             *     Not an `EventName`, so no Lua handler subscribes to it: those are the
+             *     daemon events a plugin listens for, and this travels the other way —
+             *     plugin to client. A hook here would offer a plugin a handler on its own
+             *     writes, which is a loop waiting to happen.
+             */
+            data: {
+                key?: string;
+                plugin?: string;
+            };
+            /** @enum {string} */
+            event: "publication_changed";
+        } | {
+            /**
+             * @description A proposal changed: a proposal is new, it has a new write, or its
+             *     state changed.
+             *
+             *     The event carries only the id. A client reads the proposal again
+             *     through `proposal.get`. A proposal belongs to no user session, so the
+             *     daemon sends this event on the system session.
+             */
+            data: {
+                id: components["schemas"]["ProposalId"];
+            };
+            /** @enum {string} */
+            event: "proposal_changed";
+        } | {
+            /** @description A session ended, reported daemon-wide. See [`Self::SessionCreated`]. */
+            data: {
+                reason?: string;
+                session_id?: string;
+            };
+            /** @enum {string} */
+            event: "session:ended";
+        };
         /** @enum {string} */
         TextField: "text" | "thinking";
         /** @description The body of `session.set_title`, inside `Scoped`. */
@@ -5369,6 +6417,57 @@ export interface components {
             /** Format: int32 */
             total_tokens?: number | null;
         };
+        /**
+         * @description Display data for one tool call. A render function makes it: a Lua
+         *     function for a kind, or [`ToolRender::fallback`].
+         *
+         *     It holds meaning, not terminal text and not HTML. Each client draws the
+         *     line and the fields in its own way.
+         */
+        ToolRender: {
+            /** @description The other facts of the call, in order. */
+            fields?: components["schemas"]["RenderField"][];
+            /**
+             * @description The one line that says what the call does, for example a command
+             *     line, a path, a URL or a query.
+             */
+            line?: string | null;
+            /**
+             * @description The one line that says what the result is, for example `42 lines`.
+             *     Only the render of a finished call sets it.
+             */
+            summary?: string | null;
+        };
+        /**
+         * @description The body of a `tool_result` event's `data.result`.
+         *
+         *     Untagged because the wire form has no discriminator: success is
+         *     `{"result": …}` and failure is `{"error": …}`, decided by which key is
+         *     present (`agent_manager/messaging/tool_call.rs`). The variants are disjoint
+         *     on their required key, so untagged is unambiguous — but they must stay
+         *     disjoint. A key added to both breaks the decode silently.
+         *
+         *     [`Systems`](../../../../../docs/Meta/Analysis/Systems.md) documented this as
+         *     "the `{"result"|"error": …}` envelope": a two-key description of a four-key
+         *     reality. `spill_path` and `render` are the other two.
+         */
+        ToolResultBody: {
+            render?: null | components["schemas"]["ToolRender"];
+            /**
+             * @description Arbitrary JSON: a string for most tools, an object for structured
+             *     ones. Never assume `as_str()`.
+             */
+            result: unknown;
+            /**
+             * @description Set when the output was spilled to disk (≥10KB, spillable tool).
+             *     The referenced file lives under the session dir and outlives the
+             *     event, so this is the recovery path for the full output.
+             */
+            spill_path?: string | null;
+        } | {
+            error: string;
+            render?: null | components["schemas"]["ToolRender"];
+        };
         /** @enum {string} */
         ToolStatus: "running" | "complete" | "failed" | "incomplete";
         /** @description The folded transcript of one session. */
@@ -5380,6 +6479,24 @@ export interface components {
              */
             as_of_seq: number;
             items: components["schemas"]["TranscriptItem"][];
+        };
+        /**
+         * @description The second SSE frame for a live event that changed the transcript, with
+         *     the same `id:` as the event's own frame. The browser applies `ops` to the
+         *     snapshot the history route gave, and drops an op when `seq` is not above
+         *     the `as_of_seq` of that snapshot.
+         *
+         *     One variant, internally tagged on `type`, rather than a plain struct with
+         *     a hand-set `&'static str` field: a bare `&str` gives the schema `type:
+         *     string`, not the literal `"transcript"` a browser needs to discriminate
+         *     on. The tag is the whole reason for the enum.
+         */
+        TranscriptFrame: {
+            ops: components["schemas"]["TranscriptOp"][];
+            /** Format: int64 */
+            seq?: number | null;
+            /** @enum {string} */
+            type: "transcript";
         };
         /** @description One thing that a client draws. */
         TranscriptItem: components["schemas"]["ItemBody"] & {
@@ -5417,6 +6534,287 @@ export interface components {
             op: "append";
             text: string;
         };
+        /**
+         * @description Who asked for a turn.
+         *
+         *     A turn ENDS, and a `turn:complete` handler that wants more work asks for a
+         *     NEW turn. That turn is a normal turn: it takes admission, Precognition,
+         *     persistence and undo like any other. Only this field says who asked.
+         *
+         *     The serde form is the `origin` of the `user_message` event and of the
+         *     render payload: `{"kind": "plugin", "name": "goal"}` or `{"kind": "user"}`.
+         */
+        TurnOrigin: {
+            /** @enum {string} */
+            kind: "user";
+        } | {
+            /** @enum {string} */
+            kind: "plugin";
+            /** @description The plugin with this name asked for the turn. */
+            name: string;
+        } | {
+            /** @enum {string} */
+            kind: "relay";
+            /**
+             * @description A person wrote the message in the channel of the plugin with this
+             *     name (a relay, such as Discord). The turn is a user turn.
+             */
+            name: string;
+        };
+        /**
+         * @description Turn-stream events, adjacently tagged so the enum's serialization *is* the
+         *     `{event, data}` pair the envelope carries.
+         */
+        TurnPayload: {
+            /**
+             * @description Context before this marker remains in the transcript but is excluded
+             *     from future model turns.
+             */
+            data: {
+                plugin?: string | null;
+            };
+            /** @enum {string} */
+            event: "context_cleared";
+        } | {
+            data: {
+                content?: string;
+                message_id?: string;
+                origin?: null | components["schemas"]["TurnOrigin"];
+            };
+            /** @enum {string} */
+            event: "user_message";
+        } | {
+            data: {
+                content?: string;
+            };
+            /** @enum {string} */
+            event: "text_delta";
+        } | {
+            data: {
+                content?: string;
+            };
+            /** @enum {string} */
+            event: "thinking";
+        } | {
+            /**
+             * @description A text segment that streamed before a tool call, emitted at the
+             *     text→tool boundary. `message_id` is the turn id (shared with
+             *     `user_message` and `message_complete`); `index` is the 0-based segment
+             *     position within the turn; `content` is the segment's text (the delta
+             *     accumulated since the previous boundary). Lets viewers converge on
+             *     canonical per-segment bubbles across live streaming and history reload.
+             *     `message_complete` still carries the WHOLE turn's accumulated text —
+             *     segments are additive, not a replacement.
+             */
+            data: {
+                content?: string;
+                index?: number;
+                message_id?: string;
+            };
+            /** @enum {string} */
+            event: "segment_complete";
+        } | {
+            /**
+             * @description The five token fields are absent when the provider reported no usage,
+             *     and the two cache fields are absent when the provider reported no
+             *     caching. `skip_serializing_if` is what keeps that distinction on the
+             *     wire — a client tells "no data" from "zero" by presence, and the TUI
+             *     status bar's sentinel depends on it.
+             */
+            data: {
+                /** Format: int32 */
+                cache_creation_tokens?: number | null;
+                /** Format: int32 */
+                cache_read_tokens?: number | null;
+                /** Format: int32 */
+                completion_tokens?: number | null;
+                full_response?: string;
+                message_id?: string;
+                /** Format: int32 */
+                prompt_tokens?: number | null;
+                /**
+                 * @description The note a client draws under a reply the provider cut off, in
+                 *     the words of [`crate::turn::StopReason::user_notice`] — the
+                 *     daemon words it once, here, so that a client with no access to
+                 *     the wording, such as the web page, need not repeat it. Absent
+                 *     when the reason needs no note, which is every normal turn.
+                 */
+                stop_notice?: string | null;
+                stop_reason?: null | components["schemas"]["StopReason"];
+                /** Format: int32 */
+                total_tokens?: number | null;
+            };
+            /** @enum {string} */
+            event: "message_complete";
+        } | {
+            /**
+             * @description Field order is load-bearing: `serde_json` is built with
+             *     `preserve_order`, so the declaration order here is the key order on the
+             *     wire and in `session.jsonl`. It reproduces the insertion order of the
+             *     `json!` block this variant replaced — `display` after `source`, not
+             *     next to `args`.
+             */
+            data: {
+                args?: unknown;
+                /**
+                 * @description Which layer granted permission without asking, if any. Rides on this
+                 *     event rather than a follow-up: the gate decides BEFORE the card is
+                 *     emitted, so a separate event would only make the marker pop in late.
+                 */
+                auto_approved?: string | null;
+                call_id?: string;
+                description?: string | null;
+                display?: null | components["schemas"]["CanonicalToolCall"];
+                source?: string | null;
+                tool?: string;
+            };
+            /** @enum {string} */
+            event: "tool_call";
+        } | {
+            /**
+             * @description A new canonical form of a tool call that a prior `tool_call` already
+             *     announced. An ACP agent can send the arguments or the diff of a call
+             *     in a later frame. Subscribers replace `args` and `display` of the
+             *     entry with `call_id`. A `display` with no render carries only the
+             *     diffs of an old transcript (see [`super::migrate`]), so the card keeps
+             *     its line.
+             */
+            data: {
+                args?: unknown;
+                /**
+                 * @description Which layer granted the call without asking. An ACP agent asks
+                 *     after it announced the call, so the marker comes in an update.
+                 */
+                auto_approved?: string | null;
+                call_id?: string;
+                display?: null | components["schemas"]["CanonicalToolCall"];
+            };
+            /** @enum {string} */
+            event: "tool_call_update";
+        } | {
+            /**
+             * @description `terminate` is serialized even when `false` — an existing subscriber
+             *     reads `data.terminate` unconditionally. Do NOT add
+             *     `skip_serializing_if`.
+             *
+             *     `result` is the nested [`ToolResultBody`] envelope, kept as a `Value`
+             *     here because a recorded `tool_result` may carry any shape and the event
+             *     must still decode. Use [`ToolResultBody::of`] to read it.
+             */
+            data: {
+                call_id?: string;
+                /**
+                 * @description The success/failure envelope. Typed for the schema as
+                 *     [`ToolResultBody`]; still decoded as `Value` at runtime so a
+                 *     shape neither variant covers still reaches a client — see
+                 *     [`ToolResultBody::of`].
+                 */
+                result?: components["schemas"]["ToolResultBody"];
+                terminate?: boolean;
+                tool?: string;
+            };
+            /** @enum {string} */
+            event: "tool_result";
+        } | {
+            /**
+             * @description The whole turn is over. The daemon sends it exactly once for each
+             *     turn, as the last event of the turn, after the request slot is free.
+             *     A client ends a turn on this event, not on `message_complete`.
+             *
+             *     `status` has no default: an event that does not say how the turn
+             *     ended tells a client nothing.
+             */
+            data: {
+                /**
+                 * @description The error text for `failed` and `timed_out`, and the reason for
+                 *     `handler_cancelled`.
+                 */
+                error?: string | null;
+                status: components["schemas"]["TurnStatus"];
+                stop_reason?: null | components["schemas"]["StopReason"];
+            };
+            /** @enum {string} */
+            event: "turn_finished";
+        } | {
+            data: {
+                request: components["schemas"]["InteractionRequest"];
+                request_id?: string;
+            };
+            /** @enum {string} */
+            event: "interaction_requested";
+        } | {
+            data: {
+                request_id?: string;
+                response: components["schemas"]["InteractionResponse"];
+            };
+            /** @enum {string} */
+            event: "interaction_completed";
+        } | {
+            /**
+             * @description Context that the session accepted for its next turn. It is not a
+             *     user turn.
+             *
+             *     The daemon stores it in `session.jsonl` on its own ordered path, as
+             *     the turn accepts it; the broadcast writer does not store it again.
+             */
+            data: {
+                /**
+                 * @description The message id of the turn whose input was already assembled
+                 *     when the context arrived. A reader places the context before
+                 *     the next turn after it. Absent: before the next turn after the
+                 *     line itself.
+                 */
+                after_turn?: string | null;
+                content?: string;
+                /**
+                 * @description The kind of the injection, for example `context` or `plugin`.
+                 *     Absent for plain context.
+                 */
+                kind?: string | null;
+                /** @description `system`, `user` or `assistant`. */
+                role?: string;
+                /** @description Who injected it: a plugin name, `rpc`, or a diffset source. */
+                source?: string | null;
+                /** @description The tags that a `transform_context` handler finds the block by. */
+                tags?: string[];
+            };
+            /** @enum {string} */
+            event: "context_injected";
+        } | {
+            data: {
+                /**
+                 * @description Absent when the search found no notes. Older recordings carry
+                 *     `[]` for that case, and the decode reads both.
+                 */
+                notes?: components["schemas"]["PrecognitionNoteInfo"][];
+                notes_count?: number;
+                query_summary?: string;
+            };
+            /** @enum {string} */
+            event: "precognition_complete";
+        } | {
+            /**
+             * @description The same payload goes to the subscribers and to the Lua
+             *     `post_llm_call` handlers (`messaging/stream.rs`).
+             */
+            data: {
+                /** Format: int64 */
+                duration_ms?: number;
+                model?: string;
+                response_summary?: string;
+            };
+            /** @enum {string} */
+            event: "post_llm_call";
+        };
+        /**
+         * @description How a whole turn ended.
+         *
+         *     The daemon sends it in the `turn_finished` event and gives it to the
+         *     in-process caller of `send_message_notified`. [`StopReason`] tells why ONE
+         *     provider call stopped. This tells what happened to the turn.
+         * @enum {string}
+         */
+        TurnStatus: "completed" | "cancelled" | "handler_cancelled" | "timed_out" | "failed";
         /**
          * @description A root that a diffset leaves out, and the reason.
          *
@@ -5494,6 +6892,69 @@ export interface components {
             target: string;
         };
         /**
+         * @description Workflow-engine progress.
+         *
+         *     Every name needs an explicit `rename`: the wire uses a `workflow.` prefix
+         *     that `rename_all = "snake_case"` cannot produce.
+         *
+         *     `WorkflowCompleted` and `WorkflowCancelled` are **empty struct variants, not
+         *     unit variants**. Under adjacent tagging a unit variant omits `data`
+         *     entirely, which `to_wire` then reports as `null`; today's producers emit
+         *     `{}`. `{}` and `null` are different JSON.
+         */
+        WorkflowPayload: {
+            data: {
+                step_id?: string;
+                title?: string;
+            };
+            /** @enum {string} */
+            event: "workflow.step_started";
+        } | {
+            data: {
+                output_name?: string | null;
+                step_id?: string;
+            };
+            /** @enum {string} */
+            event: "workflow.step_completed";
+        } | {
+            data: {
+                gate_id?: string;
+                owner?: string;
+                title?: string | null;
+            };
+            /** @enum {string} */
+            event: "workflow.gate_reached";
+        } | {
+            data: {
+                gate_id?: string;
+            };
+            /** @enum {string} */
+            event: "workflow.gate_approved";
+        } | {
+            data: Record<string, never>;
+            /** @enum {string} */
+            event: "workflow.completed";
+        } | {
+            data: {
+                manual_entries?: string[];
+                runnable_failed?: components["schemas"]["AssessmentOutcome"][];
+                runnable_passed?: components["schemas"]["AssessmentOutcome"][];
+            };
+            /** @enum {string} */
+            event: "workflow.assessed";
+        } | {
+            data: {
+                at_step?: string | null;
+                reason?: string;
+            };
+            /** @enum {string} */
+            event: "workflow.failed";
+        } | {
+            data: Record<string, never>;
+            /** @enum {string} */
+            event: "workflow.cancelled";
+        };
+        /**
          * @description The body of `session.set_workspace`, inside `Scoped`.
          *
          *     `workspace: None` detaches.
@@ -5504,6 +6965,9 @@ export interface components {
              *     then has no workspace.
              */
             workspace?: string | null;
+        };
+        WorkspaceIndexedPayload: {
+            files: string[];
         };
         /** @description The error envelope a bare stale-base refusal carries. */
         WriteErrorRow: {
@@ -5566,6 +7030,13 @@ export type SchemaAgentOptionsResponse = components['schemas']['AgentOptionsResp
 export type SchemaAgentProfileEntry = components['schemas']['AgentProfileEntry'];
 export type SchemaAnchoredEdit = components['schemas']['AnchoredEdit'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
+export type SchemaArtifactFormat = components['schemas']['ArtifactFormat'];
+export type SchemaAskBatch = components['schemas']['AskBatch'];
+export type SchemaAskBatchResponse = components['schemas']['AskBatchResponse'];
+export type SchemaAskQuestion = components['schemas']['AskQuestion'];
+export type SchemaAskRequest = components['schemas']['AskRequest'];
+export type SchemaAskResponse = components['schemas']['AskResponse'];
+export type SchemaAssessmentOutcome = components['schemas']['AssessmentOutcome'];
 export type SchemaBackendType = components['schemas']['BackendType'];
 export type SchemaBacklinkEntry = components['schemas']['BacklinkEntry'];
 export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
@@ -5574,6 +7045,7 @@ export type SchemaBaseValue = components['schemas']['BaseValue'];
 export type SchemaBlockRef = components['schemas']['BlockRef'];
 export type SchemaBuiltinCommand = components['schemas']['BuiltinCommand'];
 export type SchemaCancelledResponse = components['schemas']['CancelledResponse'];
+export type SchemaCanonicalToolCall = components['schemas']['CanonicalToolCall'];
 export type SchemaCanvas = components['schemas']['Canvas'];
 export type SchemaCanvasColor = components['schemas']['CanvasColor'];
 export type SchemaCanvasEdge = components['schemas']['CanvasEdge'];
@@ -5582,7 +7054,7 @@ export type SchemaCanvasNode = components['schemas']['CanvasNode'];
 export type SchemaCanvasResponse = components['schemas']['CanvasResponse'];
 export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedResponse'];
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
-export type SchemaChatEvent = components['schemas']['ChatEvent'];
+export type SchemaChatSseFrame = components['schemas']['ChatSseFrame'];
 export type SchemaColumn = components['schemas']['Column'];
 export type SchemaCommandEffect = components['schemas']['CommandEffect'];
 export type SchemaCommandKind = components['schemas']['CommandKind'];
@@ -5596,6 +7068,8 @@ export type SchemaCommentSide = components['schemas']['CommentSide'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
+export type SchemaContextLimitResolvedPayload = components['schemas']['ContextLimitResolvedPayload'];
+export type SchemaContextLimitSource = components['schemas']['ContextLimitSource'];
 export type SchemaContextStrategy = components['schemas']['ContextStrategy'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateEntryParams = components['schemas']['CreateEntryParams'];
@@ -5616,9 +7090,13 @@ export type SchemaDiffsetId = components['schemas']['DiffsetId'];
 export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
 export type SchemaDismissSessionNotificationResponse = components['schemas']['DismissSessionNotificationResponse'];
 export type SchemaEditRefusal = components['schemas']['EditRefusal'];
+export type SchemaEditRequest = components['schemas']['EditRequest'];
+export type SchemaEditResponse = components['schemas']['EditResponse'];
 export type SchemaExecuteCommandRequest = components['schemas']['ExecuteCommandRequest'];
 export type SchemaExpectedBase = components['schemas']['ExpectedBase'];
+export type SchemaFileChangeKind = components['schemas']['FileChangeKind'];
 export type SchemaFileConflict = components['schemas']['FileConflict'];
+export type SchemaFileDiff = components['schemas']['FileDiff'];
 export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
 export type SchemaFileStatus = components['schemas']['FileStatus'];
 export type SchemaFileWriteConflict = components['schemas']['FileWriteConflict'];
@@ -5640,15 +7118,20 @@ export type SchemaGroup = components['schemas']['Group'];
 export type SchemaHashMap = components['schemas']['HashMap'];
 export type SchemaImageFit = components['schemas']['ImageFit'];
 export type SchemaIndeterminateProgress = components['schemas']['IndeterminateProgress'];
+export type SchemaInteractionRequest = components['schemas']['InteractionRequest'];
 export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
+export type SchemaInteractionResponse = components['schemas']['InteractionResponse'];
 export type SchemaInteractionResponseRequest = components['schemas']['InteractionResponseRequest'];
+export type SchemaInteractivePanel = components['schemas']['InteractivePanel'];
 export type SchemaItemBody = components['schemas']['ItemBody'];
+export type SchemaJobPayload = components['schemas']['JobPayload'];
 export type SchemaKilnFileResponse = components['schemas']['KilnFileResponse'];
 export type SchemaKilnFilesResponse = components['schemas']['KilnFilesResponse'];
 export type SchemaKilnGraphLink = components['schemas']['KilnGraphLink'];
 export type SchemaKilnGraphNote = components['schemas']['KilnGraphNote'];
 export type SchemaKilnGraphReply = components['schemas']['KilnGraphReply'];
 export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
+export type SchemaKilnNotesIndexedPayload = components['schemas']['KilnNotesIndexedPayload'];
 export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
@@ -5659,6 +7142,8 @@ export type SchemaListedComment = components['schemas']['ListedComment'];
 export type SchemaMark = components['schemas']['Mark'];
 export type SchemaMarkers = components['schemas']['Markers'];
 export type SchemaMcpRunning = components['schemas']['McpRunning'];
+export type SchemaMcpServerInfo = components['schemas']['McpServerInfo'];
+export type SchemaMcpServersReadyPayload = components['schemas']['McpServersReadyPayload'];
 export type SchemaMcpStatus = components['schemas']['McpStatus'];
 export type SchemaMcpStopped = components['schemas']['McpStopped'];
 export type SchemaMergeRegion = components['schemas']['MergeRegion'];
@@ -5667,15 +7152,26 @@ export type SchemaModeResponse = components['schemas']['ModeResponse'];
 export type SchemaModeRow = components['schemas']['ModeRow'];
 export type SchemaNamedKiln = components['schemas']['NamedKiln'];
 export type SchemaNoteByNameReply = components['schemas']['NoteByNameReply'];
+export type SchemaNoteChangeType = components['schemas']['NoteChangeType'];
 export type SchemaNoteListResponse = components['schemas']['NoteListResponse'];
 export type SchemaNoteListRow = components['schemas']['NoteListRow'];
 export type SchemaNoteSavedResponse = components['schemas']['NoteSavedResponse'];
 export type SchemaNotice = components['schemas']['Notice'];
+export type SchemaNotification = components['schemas']['Notification'];
+export type SchemaNotificationKind = components['schemas']['NotificationKind'];
+export type SchemaNotificationPayload = components['schemas']['NotificationPayload'];
+export type SchemaNotificationScope = components['schemas']['NotificationScope'];
 export type SchemaOkResponse = components['schemas']['OkResponse'];
 export type SchemaOptionRequest = components['schemas']['OptionRequest'];
+export type SchemaPanelHints = components['schemas']['PanelHints'];
+export type SchemaPanelResult = components['schemas']['PanelResult'];
 export type SchemaPatchFileRequest = components['schemas']['PatchFileRequest'];
 export type SchemaPendingInteraction = components['schemas']['PendingInteraction'];
 export type SchemaPendingInteractionsResponse = components['schemas']['PendingInteractionsResponse'];
+export type SchemaPermAction = components['schemas']['PermAction'];
+export type SchemaPermissionScope = components['schemas']['PermissionScope'];
+export type SchemaPermRequest = components['schemas']['PermRequest'];
+export type SchemaPermResponse = components['schemas']['PermResponse'];
 export type SchemaPhysicalRoot = components['schemas']['PhysicalRoot'];
 export type SchemaPinnedLeaf = components['schemas']['PinnedLeaf'];
 export type SchemaPluginAck = components['schemas']['PluginAck'];
@@ -5697,9 +7193,14 @@ export type SchemaPluginReloadReply = components['schemas']['PluginReloadReply']
 export type SchemaPluginRemoveReply = components['schemas']['PluginRemoveReply'];
 export type SchemaPluginRunCommandReply = components['schemas']['PluginRunCommandReply'];
 export type SchemaPluginRunCommandRequest = components['schemas']['PluginRunCommandRequest'];
+export type SchemaPluginsDiscoveredPayload = components['schemas']['PluginsDiscoveredPayload'];
+export type SchemaPluginStatusEntry = components['schemas']['PluginStatusEntry'];
 export type SchemaPluginTurnLimitResponse = components['schemas']['PluginTurnLimitResponse'];
+export type SchemaPopupEntry = components['schemas']['PopupEntry'];
+export type SchemaPopupRequest = components['schemas']['PopupRequest'];
+export type SchemaPopupResponse = components['schemas']['PopupResponse'];
 export type SchemaPrecognition = components['schemas']['Precognition'];
-export type SchemaPrecognitionNote = components['schemas']['PrecognitionNote'];
+export type SchemaPrecognitionNoteInfo = components['schemas']['PrecognitionNoteInfo'];
 export type SchemaPrecognitionResponse = components['schemas']['PrecognitionResponse'];
 export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectKiln = components['schemas']['ProjectKiln'];
@@ -5712,24 +7213,30 @@ export type SchemaProposalFile = components['schemas']['ProposalFile'];
 export type SchemaProposalId = components['schemas']['ProposalId'];
 export type SchemaProposalState = components['schemas']['ProposalState'];
 export type SchemaProposedWrite = components['schemas']['ProposedWrite'];
+export type SchemaProviderInfo = components['schemas']['ProviderInfo'];
 export type SchemaProviderRow = components['schemas']['ProviderRow'];
+export type SchemaProvidersListedPayload = components['schemas']['ProvidersListedPayload'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
 export type SchemaPutCanvasRequest = components['schemas']['PutCanvasRequest'];
 export type SchemaPutFileRequest = components['schemas']['PutFileRequest'];
 export type SchemaPutNoteRequest = components['schemas']['PutNoteRequest'];
 export type SchemaQueryResult = components['schemas']['QueryResult'];
+export type SchemaQuestionAnswer = components['schemas']['QuestionAnswer'];
+export type SchemaRawToolCall = components['schemas']['RawToolCall'];
 export type SchemaRecentFile = components['schemas']['RecentFile'];
 export type SchemaRecentsResponse = components['schemas']['RecentsResponse'];
 export type SchemaRecordingMode = components['schemas']['RecordingMode'];
 export type SchemaRecordRecentRequest = components['schemas']['RecordRecentRequest'];
 export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
 export type SchemaRejectProposalBody = components['schemas']['RejectProposalBody'];
+export type SchemaRenderField = components['schemas']['RenderField'];
 export type SchemaReorderGroupsParams = components['schemas']['ReorderGroupsParams'];
 export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
+export type SchemaReviewPayload = components['schemas']['ReviewPayload'];
 export type SchemaRow = components['schemas']['Row'];
 export type SchemaRowHeight = components['schemas']['RowHeight'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
@@ -5743,9 +7250,11 @@ export type SchemaSendOutcome = components['schemas']['SendOutcome'];
 export type SchemaSessionAgent = components['schemas']['SessionAgent'];
 export type SchemaSessionCommand = components['schemas']['SessionCommand'];
 export type SchemaSessionDetail = components['schemas']['SessionDetail'];
-export type SchemaSessionHistoryEvent = components['schemas']['SessionHistoryEvent'];
+export type SchemaSessionEventMessage = components['schemas']['SessionEventMessage'];
+export type SchemaSessionEventPayload = components['schemas']['SessionEventPayload'];
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
 export type SchemaSessionId = components['schemas']['SessionId'];
+export type SchemaSessionInitializedPayload = components['schemas']['SessionInitializedPayload'];
 export type SchemaSessionKnobsResponse = components['schemas']['SessionKnobsResponse'];
 export type SchemaSessionLifecycleResponse = components['schemas']['SessionLifecycleResponse'];
 export type SchemaSessionListReply = components['schemas']['SessionListReply'];
@@ -5765,7 +7274,10 @@ export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApp
 export type SchemaSetPluginTurnLimitRequest = components['schemas']['SetPluginTurnLimitRequest'];
 export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitionRequest'];
 export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
+export type SchemaSettingsPayload = components['schemas']['SettingsPayload'];
+export type SchemaSetupPayload = components['schemas']['SetupPayload'];
 export type SchemaShape = components['schemas']['Shape'];
+export type SchemaShowRequest = components['schemas']['ShowRequest'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillsReply = components['schemas']['SkillsReply'];
 export type SchemaSkillSummary = components['schemas']['SkillSummary'];
@@ -5777,6 +7289,7 @@ export type SchemaStatusColorGroup = components['schemas']['StatusColorGroup'];
 export type SchemaStatusDisplayItem = components['schemas']['StatusDisplayItem'];
 export type SchemaStatusItemKind = components['schemas']['StatusItemKind'];
 export type SchemaStatusProgress = components['schemas']['StatusProgress'];
+export type SchemaStopReason = components['schemas']['StopReason'];
 export type SchemaString = components['schemas']['String'];
 export type SchemaSurface = components['schemas']['Surface'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
@@ -5784,14 +7297,21 @@ export type SchemaSurfaceListReply = components['schemas']['SurfaceListReply'];
 export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
 export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
+export type SchemaSystemPayload = components['schemas']['SystemPayload'];
 export type SchemaTextField = components['schemas']['TextField'];
 export type SchemaTitle = components['schemas']['Title'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
+export type SchemaToolRender = components['schemas']['ToolRender'];
+export type SchemaToolResultBody = components['schemas']['ToolResultBody'];
 export type SchemaToolStatus = components['schemas']['ToolStatus'];
 export type SchemaTranscript = components['schemas']['Transcript'];
+export type SchemaTranscriptFrame = components['schemas']['TranscriptFrame'];
 export type SchemaTranscriptItem = components['schemas']['TranscriptItem'];
 export type SchemaTranscriptOp = components['schemas']['TranscriptOp'];
+export type SchemaTurnOrigin = components['schemas']['TurnOrigin'];
+export type SchemaTurnPayload = components['schemas']['TurnPayload'];
+export type SchemaTurnStatus = components['schemas']['TurnStatus'];
 export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
 export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
@@ -5800,7 +7320,9 @@ export type SchemaViewOptions = components['schemas']['ViewOptions'];
 export type SchemaViewSummary = components['schemas']['ViewSummary'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
 export type SchemaWikilinkTarget = components['schemas']['WikilinkTarget'];
+export type SchemaWorkflowPayload = components['schemas']['WorkflowPayload'];
 export type SchemaWorkspaceChoice = components['schemas']['WorkspaceChoice'];
+export type SchemaWorkspaceIndexedPayload = components['schemas']['WorkspaceIndexedPayload'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
 export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
 export type SchemaWriteOutcome = components['schemas']['WriteOutcome'];
@@ -6286,7 +7808,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["ChatEvent"];
+                    "text/event-stream": components["schemas"]["ChatSseFrame"];
                 };
             };
         };

@@ -471,7 +471,7 @@
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChatEvent"
+                  "$ref": "#/components/schemas/ChatSseFrame"
                 }
               }
             }
@@ -1204,7 +1204,7 @@
     },
     "/api/interactions/pending": {
       "get": {
-        "summary": "Aggregate pending interactions across all sessions, with each request\nnormalized to the same flat shape the SSE path delivers — the Inbox\nrenders both sources through one component.",
+        "summary": "Aggregate pending interactions across all sessions — the Inbox renders\nboth sources through one component.",
         "operationId": "pending_interactions",
         "responses": {
           "200": {
@@ -4747,6 +4747,183 @@
           }
         }
       },
+      "ArtifactFormat": {
+        "type": "string",
+        "description": "Format hint for artifact content.",
+        "enum": [
+          "markdown",
+          "code",
+          "json",
+          "plain"
+        ]
+      },
+      "AskBatch": {
+        "type": "object",
+        "description": "A batch of questions to ask the user.\n\nSupports 1-4 questions shown together. Each question has choices,\nand an \"Other\" free-text option is always implicitly available.",
+        "required": [
+          "questions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Correlation id.\n\nDefaulted because a plugin cannot supply one: `cru.ui.ask_batch` passes\nthe caller's options table through, `crucible-lua` exposes no UUID\nhelper, and the daemon mints the id it actually routes on\n(`ix-<uuid>`, in `agent_manager/interaction.rs`) separately. Required,\nthis field made the function uncallable — \"missing field `id`\" before\nany client saw the request."
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AskQuestion"
+            },
+            "description": "Questions to ask (1-4)."
+          }
+        }
+      },
+      "AskBatchResponse": {
+        "type": "object",
+        "description": "Response to an [`AskBatch`].",
+        "required": [
+          "answers"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The request id this answers, as the client received it.\n\nA `String`, not a `Uuid`: the id a client is given is the daemon's\ncorrelation token (`ix-<uuid>`), which is not a bare UUID, so a\n`Uuid` here rejected every reply the browser could send. Nothing\nroutes on it — `deliver_client_reply` uses the envelope's\n`request_id` — so it is carried for the caller's benefit only."
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionAnswer"
+            },
+            "description": "One answer per question, in order."
+          },
+          "cancelled": {
+            "type": "boolean",
+            "description": "True if user cancelled the whole interaction."
+          }
+        }
+      },
+      "AskQuestion": {
+        "type": "object",
+        "description": "A single question in an [`AskBatch`].",
+        "required": [
+          "header",
+          "question",
+          "choices"
+        ],
+        "properties": {
+          "header": {
+            "type": "string",
+            "description": "Short label (max 12 chars) displayed as header."
+          },
+          "question": {
+            "type": "string",
+            "description": "Full question text."
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Available choices."
+          },
+          "multi_select": {
+            "type": "boolean",
+            "description": "Allow multiple selections."
+          },
+          "allow_other": {
+            "type": "boolean",
+            "description": "Allow free-text \"other\" input."
+          }
+        }
+      },
+      "AskRequest": {
+        "type": "object",
+        "description": "A question to ask the user.\n\nSupports single-select, multi-select, and free-text input modes.",
+        "required": [
+          "question"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question text to display."
+          },
+          "choices": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional list of choices. If None, expects free-text input."
+          },
+          "multi_select": {
+            "type": "boolean",
+            "description": "Allow selecting multiple choices."
+          },
+          "allow_other": {
+            "type": "boolean",
+            "description": "Allow free-text input in addition to choices."
+          }
+        }
+      },
+      "AskResponse": {
+        "type": "object",
+        "description": "Response to an [`AskRequest`].",
+        "properties": {
+          "selected": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Indices of selected choices (empty if using \"other\")."
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text input if \"other\" was chosen."
+          }
+        }
+      },
+      "AssessmentOutcome": {
+        "type": "object",
+        "description": "Captured result of running a single validation command. The daemon\nexecutes each runnable entry in `WorkflowDoc.validations` after a\nworkflow completes and ships the outcomes over the session event\nstream as a `workflow.assessed` message. Kept in core so that\nfactory/consumer share one shape.",
+        "required": [
+          "description",
+          "command",
+          "exit_code",
+          "stdout",
+          "stderr",
+          "duration_ms"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stdout": {
+            "type": "string",
+            "description": "Truncated stdout (daemon-side cap)."
+          },
+          "stderr": {
+            "type": "string",
+            "description": "Truncated stderr (daemon-side cap)."
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "BackendType": {
         "type": "string",
         "description": "Unified backend type for all providers.\n\nBackends are the underlying services that provide AI capabilities.\nSome backends support only embeddings, some only chat, and some support both.",
@@ -5297,6 +5474,85 @@
           }
         }
       },
+      "CanonicalToolCall": {
+        "type": "object",
+        "description": "One tool call, classified.",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "The open kind name. The default matcher and [`Self::crucible_tool`]\ngive a [`BuiltinKind`]."
+          },
+          "tool": {
+            "type": "string",
+            "description": "The canonical tool name. A display object from before this field has\nno name, so the default keeps an old transcript readable."
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The shell command line, for a `command` call."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The filesystem targets of the call."
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "diffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileDiff"
+            },
+            "description": "The file changes of the call. An ACP call has the diff content of its\nframes. A Crucible tool call has the diff that `diff_synth` makes."
+          },
+          "agent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The ACP agent that made the call. `None` for Crucible's own tools."
+          },
+          "raw": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RawToolCall",
+                "description": "The fields of an ACP call, for matchers and display. No policy\nreads it. `None` for Crucible's own tools."
+              }
+            ]
+          },
+          "render": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ToolRender",
+                "description": "What the render function of the kind says about the call. The daemon\nsets it before the call goes on the wire. `None` in a transcript from\nbefore the field."
+              }
+            ]
+          }
+        }
+      },
       "Canvas": {
         "type": "object",
         "description": "A parsed `.canvas` document.\n\nBoth arrays are optional in the spec; a canvas with neither is legal and\nmeans \"empty\". Node order carries meaning — it *is* the z-order, first\nlowest — so this is a `Vec`, never a set or map.",
@@ -5510,561 +5766,16 @@
           "left"
         ]
       },
-      "ChatEvent": {
+      "ChatSseFrame": {
         "oneOf": [
           {
-            "type": "object",
-            "required": [
-              "content",
-              "type"
-            ],
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "token"
-                ]
-              }
-            }
+            "$ref": "#/components/schemas/SessionEventPayload"
           },
           {
-            "type": "object",
-            "required": [
-              "id",
-              "title",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "arguments": {},
-              "display": {
-                "description": "The daemon's canonical tool call, shared with the TUI. Its\n`diffs` are the proposed file edits of the call. `Value` because\n`CanonicalToolCall` lives in `crucible-core`, which takes no\nutoipa dependency (same deal as `stop_reason` below)."
-              },
-              "auto_approved": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Which layer granted permission without asking, if any."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "tool_call"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "result": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "terminate": {
-                "type": "boolean",
-                "description": "True if this tool requested an agent-turn early-stop\n(daemon's conjunctive batch-terminate check fired). UI renders\na \"Terminated\" badge on the tool card."
-              },
-              "render": {
-                "description": "The render of the finished call, a\n`crucible_core::types::ToolRender`. It replaces the render of\nthe card."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "tool_result"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "delta",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "delta": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "tool_result_delta"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "tool_result_complete"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "error",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "error": {
-                "type": "string"
-              },
-              "render": {
-                "description": "The render of the failed call. See [`Self::ToolResult`]."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "tool_result_error"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "content",
-              "type"
-            ],
-            "properties": {
-              "content": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "thinking"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A text segment that streamed before a tool call, carrying the turn's\n`message_id`, its 0-based `index`, and the segment text. Lets the\nfrontend materialize a canonical per-segment bubble that matches\nhistory reconstruction.",
-            "required": [
-              "message_id",
-              "index",
-              "content",
-              "type"
-            ],
-            "properties": {
-              "message_id": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer",
-                "format": "int64",
-                "minimum": 0
-              },
-              "content": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "segment_complete"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "content",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "content": {
-                "type": "string"
-              },
-              "prompt_tokens": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int64",
-                "minimum": 0
-              },
-              "completion_tokens": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int64",
-                "minimum": 0
-              },
-              "total_tokens": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int64",
-                "minimum": 0
-              },
-              "cache_read_tokens": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int64",
-                "minimum": 0
-              },
-              "cache_creation_tokens": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int64",
-                "minimum": 0
-              },
-              "stop_reason": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Why the turn ended (`end_turn`, `max_tokens`, `refusal`, …). The\nbrowser reads it to style the turn. Absent when the daemon\nreported none.\n\nIt is a `String` in the document because `StopReason` lives in\n`crucible-core`, which takes no utoipa dependency. The values are\n`StopReason::ALL`, serialised snake_case."
-              },
-              "stop_notice": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "The note the browser draws under a reply the provider cut off, or\nabsent when the reason needs none — which is every normal turn.\n\n**The daemon words it, not the page.** `StopReason::user_notice`\nis the only wording; the browser held a second one in TypeScript\nand the two drifted. One `Option<String>` once per turn is cheaper\nthan a wording nothing compares, and `AGENTS.md` puts the decision\nin the daemon for exactly this reason: a web front end must not\nduplicate it."
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "message_complete"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The whole turn is over. The browser ends the turn on this event, not\non `message_complete`. A failed turn carries its reason in `error`.\n\n`status` and `stop_reason` are strings in the document for the same\nreason as `stop_reason` above. The values are `TurnStatus` and\n`StopReason`, serialised snake_case.",
-            "required": [
-              "status",
-              "type"
-            ],
-            "properties": {
-              "status": {
-                "type": "string"
-              },
-              "stop_reason": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "error": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "turn_finished"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "code",
-              "message",
-              "type"
-            ],
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "error"
-                ]
-              }
-            }
-          },
-          {
-            "allOf": [
-              {},
-              {
-                "type": "object",
-                "required": [
-                  "id"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  }
-                }
-              },
-              {
-                "type": "object",
-                "required": [
-                  "type"
-                ],
-                "properties": {
-                  "type": {
-                    "type": "string",
-                    "enum": [
-                      "interaction_requested"
-                    ]
-                  }
-                }
-              }
-            ]
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "prompt",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "prompt": {
-                "type": "string"
-              },
-              "target_agent": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "delegation_spawned"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "summary",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "summary": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "delegation_completed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "error",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "error": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "delegation_failed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "notes_count",
-              "type"
-            ],
-            "properties": {
-              "notes_count": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "notes": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/PrecognitionNote"
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "precognition_result"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "mode",
-              "type"
-            ],
-            "properties": {
-              "mode": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "mode_changed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "title",
-              "type"
-            ],
-            "properties": {
-              "title": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "title_changed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The session's command catalog changed; the composer reads it again.",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "commands_changed"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "event",
-              "data",
-              "type"
-            ],
-            "properties": {
-              "event": {
-                "type": "string"
-              },
-              "data": {},
-              "type": {
-                "type": "string",
-                "enum": [
-                  "session_event"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "What one daemon event changed in the folded transcript of the\nsession. The server sends it as a second frame after the frame of the\nevent, with the same `id:`. The browser applies `ops` to the snapshot\nthat the history route gave, and drops an op when `seq` is not above\nthe `as_of_seq` of that snapshot.",
-            "required": [
-              "ops",
-              "type"
-            ],
-            "properties": {
-              "seq": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int64",
-                "minimum": 0
-              },
-              "ops": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/TranscriptOp"
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "transcript"
-                ]
-              }
-            }
+            "$ref": "#/components/schemas/TranscriptFrame"
           }
         ],
-        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
+        "description": "One SSE `data:` payload of `GET /api/chat/events/{session_id}`.\n\nDocumentation only — `to_sse` builds each frame from its own producer and\nnever constructs this enum. It exists so `openapi.json` can name one\nschema for the route: either a typed session event, in the same\n`{event, data}` shape [`SessionEventPayload`] itself serializes to, or a\n[`TranscriptFrame`], the second frame a live event sends when it changed\nthe transcript."
       },
       "Column": {
         "type": "object",
@@ -6485,6 +6196,32 @@
             "description": "The top-level keys that name where the daemon acts, which no save may\nwrite. They are dropped rather than refused, so they are reported apart\nfrom `refused`."
           }
         }
+      },
+      "ContextLimitResolvedPayload": {
+        "type": "object",
+        "required": [
+          "limit",
+          "source"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source": {
+            "$ref": "#/components/schemas/ContextLimitSource"
+          }
+        }
+      },
+      "ContextLimitSource": {
+        "type": "string",
+        "enum": [
+          "provider_api",
+          "config",
+          "default",
+          "agent",
+          "unknown"
+        ]
       },
       "ContextStrategy": {
         "type": "string",
@@ -7141,6 +6878,43 @@
         ],
         "description": "Why one edit could not be applied. The index is the caller's edit index."
       },
+      "EditRequest": {
+        "type": "object",
+        "description": "Request to edit an artifact.",
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The content to edit."
+          },
+          "format": {
+            "$ref": "#/components/schemas/ArtifactFormat",
+            "description": "Format hint for the editor."
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional hint for what to focus on."
+          }
+        }
+      },
+      "EditResponse": {
+        "type": "object",
+        "description": "Response from editing.",
+        "required": [
+          "modified"
+        ],
+        "properties": {
+          "modified": {
+            "type": "string",
+            "description": "The modified content."
+          }
+        }
+      },
       "ExecuteCommandRequest": {
         "type": "object",
         "required": [
@@ -7230,6 +7004,14 @@
         ],
         "description": "The disk state that a write expects to find before it writes.\n\nThe wire fields `base_hash` and `base_text` map to this type. The type\nkeeps an absent file and an empty file different: `Absent` expects no\nfile, and `Text` with an empty text expects an empty file."
       },
+      "FileChangeKind": {
+        "type": "string",
+        "description": "Kind of file change detected by the watch system.\n\nThis enum represents the type of file system change that triggered an event.\nIt is used by `FileChanged` events to distinguish between new files and\nmodifications to existing files.\n\n# Example\n\n```ignore\nuse crucible_core::events::{SessionEvent, FileChangeKind};\nuse std::path::PathBuf;\n\nlet event = SessionEvent::FileChanged {\n    path: PathBuf::from(\"/notes/test.md\"),\n    kind: FileChangeKind::Modified,\n};\n```",
+        "enum": [
+          "created",
+          "modified"
+        ]
+      },
       "FileConflict": {
         "type": "object",
         "description": "A merge conflict in one file of a proposal.\n\nThe regions point into `merged_text`, so a client shows them with no\nsecond merge.",
@@ -7261,6 +7043,31 @@
               "$ref": "#/components/schemas/MergeRegion"
             },
             "description": "Each cluster that the two sides changed differently."
+          }
+        }
+      },
+      "FileDiff": {
+        "type": "object",
+        "description": "File diff representing changes to a file\n\nProtocol-agnostic representation of file modifications. Can be populated\nfrom ACP's `ToolCallContent::Diff`, generated from tool arguments, or\ncomputed by comparing file states.",
+        "required": [
+          "path",
+          "new_content"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the modified file"
+          },
+          "old_content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Original content (None for new files)"
+          },
+          "new_content": {
+            "type": "string",
+            "description": "New content after modification"
           }
         }
       },
@@ -7905,6 +7712,172 @@
           "indeterminate"
         ]
       },
+      "InteractionRequest": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AskRequest",
+                "description": "Question with optional choices."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "ask"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Question with optional choices."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AskBatch",
+                "description": "Batched questions with \"Other\" text input option."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "ask_batch"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Batched questions with \"Other\" text input option."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EditRequest",
+                "description": "Artifact editing."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "edit"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Artifact editing."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ShowRequest",
+                "description": "Display content (no response)."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "show"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Display content (no response)."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermRequest",
+                "description": "Permission request."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "permission"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Permission request."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PopupRequest",
+                "description": "Popup with rich entries (for scripted popups)."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "popup"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Popup with rich entries (for scripted popups)."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InteractivePanel",
+                "description": "Interactive panel (core primitive for scripted UI flows)."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "panel"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Interactive panel (core primitive for scripted UI flows)."
+          }
+        ],
+        "description": "Unified interaction request type.\n\nThis enum wraps all interaction primitives for use in event systems\nand channels."
+      },
       "InteractionRespondResponse": {
         "type": "object",
         "description": "The answer this route gives when the daemon took the response.",
@@ -7917,6 +7890,164 @@
             "description": "Always `true`. A refusal is an error status, not a `false`."
           }
         }
+      },
+      "InteractionResponse": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AskResponse",
+                "description": "Response to an ask request."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "ask"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Response to an ask request."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AskBatchResponse",
+                "description": "Response to a batched ask request."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "ask_batch"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Response to a batched ask request."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EditResponse",
+                "description": "Response to an edit request."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "edit"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Response to an edit request."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermResponse",
+                "description": "Response to a permission request."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "permission"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Response to a permission request."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PopupResponse",
+                "description": "Response to a popup request."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "popup"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Response to a popup request."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PanelResult",
+                "description": "Response to an interactive panel."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "panel"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Response to an interactive panel."
+          },
+          {
+            "type": "object",
+            "description": "Request was cancelled by the user.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cancelled"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Unified interaction response type."
       },
       "InteractionResponseRequest": {
         "type": "object",
@@ -7937,6 +8068,30 @@
           }
         }
       },
+      "InteractivePanel": {
+        "type": "object",
+        "description": "An interactive panel request.\n\nThis is the core primitive for scripted UI flows. Scripts provide items\nand hints; the TUI renders an interactive list with filtering, selection,\nand optional key handler callbacks.\n\nHigher-level patterns (question sequences, fuzzy search, wizards) are\nbuilt on top of this primitive in script-land.\n\n# Example\n\n```\nuse crucible_core::interaction::{InteractivePanel, PanelItem, PanelHints};\n\nlet panel = InteractivePanel::new(\"Select database\")\n    .item(PanelItem::new(\"PostgreSQL\").with_description(\"Full-featured RDBMS\"))\n    .item(PanelItem::new(\"SQLite\").with_description(\"Embedded, single-file\"))\n    .hints(PanelHints::new().filterable());\n```",
+        "required": [
+          "header"
+        ],
+        "properties": {
+          "header": {
+            "type": "string",
+            "description": "Header/prompt text displayed above the panel."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PopupEntry"
+            },
+            "description": "Items to display."
+          },
+          "hints": {
+            "$ref": "#/components/schemas/PanelHints",
+            "description": "Render/behavior hints."
+          }
+        }
+      },
       "ItemBody": {
         "oneOf": [
           {
@@ -7951,9 +8106,13 @@
                 "type": "string"
               },
               "origin": {
-                "type": [
-                  "object",
-                  "null"
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TurnOrigin"
+                  }
                 ]
               },
               "precognition": {
@@ -8041,9 +8200,7 @@
               "name": {
                 "type": "string"
               },
-              "args": {
-                "type": "object"
-              },
+              "args": {},
               "source": {
                 "type": [
                   "string",
@@ -8057,9 +8214,13 @@
                 ]
               },
               "display": {
-                "type": [
-                  "object",
-                  "null"
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CanonicalToolCall"
+                  }
                 ]
               },
               "status": {
@@ -8190,6 +8351,236 @@
           }
         ]
       },
+      "JobPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "`delegation_id` and `child_session_id` always hold the same value —\n`DelegationSpawned` documents `delegation_id == child_session_id`. Both\nare on the wire because a subscriber may read either, and dropping one\nwould silently break it.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "`delegation_id` and `child_session_id` always hold the same value —\n`DelegationSpawned` documents `delegation_id == child_session_id`. Both\nare on the wire because a subscriber may read either, and dropping one\nwould silently break it.",
+                "properties": {
+                  "delegation_id": {
+                    "type": "string"
+                  },
+                  "child_session_id": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "target_agent": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "parent_session_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "delegation_spawned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "delegation_id": {
+                    "type": "string"
+                  },
+                  "child_session_id": {
+                    "type": "string"
+                  },
+                  "result_summary": {
+                    "type": "string"
+                  },
+                  "parent_session_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "delegation_completed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "delegation_id": {
+                    "type": "string"
+                  },
+                  "child_session_id": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "type": "string"
+                  },
+                  "parent_session_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "delegation_failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "bash_job_spawned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "output": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "bash_job_completed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "bash_job_failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "background_job_completed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Delegation and background-job lifecycle.\n\nThe `delegation_*` names predate the current delegation system and are\npreserved for subscriber compatibility."
+      },
       "KilnFileResponse": {
         "type": "object",
         "description": "What `GET /api/kiln/file` answers.",
@@ -8303,6 +8694,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/KilnRow"
+            }
+          }
+        }
+      },
+      "KilnNotesIndexedPayload": {
+        "type": "object",
+        "required": [
+          "notes"
+        ],
+        "properties": {
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         }
@@ -8523,6 +8928,46 @@
           }
         }
       },
+      "McpServerInfo": {
+        "type": "object",
+        "required": [
+          "name",
+          "prefix",
+          "tools",
+          "connected"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "connected": {
+            "type": "boolean"
+          }
+        }
+      },
+      "McpServersReadyPayload": {
+        "type": "object",
+        "required": [
+          "servers"
+        ],
+        "properties": {
+          "servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpServerInfo"
+            }
+          }
+        }
+      },
       "McpStatus": {
         "oneOf": [
           {
@@ -8708,6 +9153,16 @@
           }
         }
       },
+      "NoteChangeType": {
+        "type": "string",
+        "description": "Type of note modification.",
+        "enum": [
+          "content",
+          "frontmatter",
+          "links",
+          "tags"
+        ]
+      },
       "NoteListResponse": {
         "type": "object",
         "description": "What `GET /api/notes` answers. A thin wrapper, not a copy: the row is\ncore's own [`NoteListRow`], the same type `note.list` answers.",
@@ -8872,6 +9327,174 @@
           }
         ]
       },
+      "Notification": {
+        "type": "object",
+        "description": "A notification message with metadata.\n\nNotifications are identified by a unique ID and carry a kind that determines\ntheir display behavior and lifecycle.\n[`ToSchema`](utoipa::ToSchema) mirrors the struct's declared fields, not\nthe hand-written `Serialize` impl below: it always shows `scope` and\n`created_at`, where the wire omits a global scope and an absent time. A\nreader that expects the leaner wire form still decodes it, because both\nfields already default when absent.",
+        "required": [
+          "id",
+          "kind",
+          "message",
+          "scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NotificationKind"
+          },
+          "message": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/NotificationScope",
+            "description": "Who may see it. The default is global: everyone."
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the daemon stored it. `None` for a notification a client made\nfor itself."
+          }
+        }
+      },
+      "NotificationKind": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Auto-dismissing informational message",
+            "enum": [
+              "toast"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "Progress indicator with current/total counts",
+            "required": [
+              "progress"
+            ],
+            "properties": {
+              "progress": {
+                "type": "object",
+                "description": "Progress indicator with current/total counts",
+                "required": [
+                  "current",
+                  "total"
+                ],
+                "properties": {
+                  "current": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "string",
+            "description": "Persistent warning that requires user acknowledgment",
+            "enum": [
+              "warning"
+            ]
+          }
+        ],
+        "description": "The kind of notification, determining display and lifecycle behavior."
+      },
+      "NotificationPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "notification_id": {
+                    "type": "string"
+                  },
+                  "notification": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/Notification",
+                        "description": "The body. Absent on frames older than this field."
+                      }
+                    ]
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "notification_added"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "notification_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "notification_dismissed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Session notification list changes. `NotificationAdded` carries the body,\nso a client can show it without a round trip. `NotificationDismissed`\ncarries only the id: the list itself is fetched, so the event says\n\"re-read\" rather than shipping a projection that can go stale."
+      },
+      "NotificationScope": {
+        "type": "object",
+        "description": "Who may see a notification. Empty means everyone. A session scope\nwins over the other two: only that session sees the notification.",
+        "properties": {
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The canonical workspace path, when the notification belongs to one."
+          },
+          "kilns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The kilns it belongs to, when any."
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The one session it belongs to, when the engine reported it for that\nsession."
+          }
+        }
+      },
       "OkResponse": {
         "type": "object",
         "description": "Standard acknowledgment response for successful mutations.",
@@ -8912,6 +9535,64 @@
           }
         }
       },
+      "PanelHints": {
+        "type": "object",
+        "description": "Render/behavior hints for an interactive panel.",
+        "properties": {
+          "filterable": {
+            "type": "boolean",
+            "description": "Show filter/search input for fuzzy matching."
+          },
+          "multi_select": {
+            "type": "boolean",
+            "description": "Allow selecting multiple items (toggle with space/tab)."
+          },
+          "allow_other": {
+            "type": "boolean",
+            "description": "Show \"Other...\" option for free-text input."
+          },
+          "initial_selection": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Pre-select these indices when panel opens."
+          },
+          "initial_filter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Initial filter text."
+          }
+        }
+      },
+      "PanelResult": {
+        "type": "object",
+        "description": "Result when an interactive panel closes.",
+        "properties": {
+          "cancelled": {
+            "type": "boolean",
+            "description": "Whether the user cancelled (Escape)."
+          },
+          "selected": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Selected item indices (in original items list)."
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text \"other\" input if used."
+          }
+        }
+      },
       "PatchFileRequest": {
         "type": "object",
         "description": "`PATCH /api/kiln/file` — change a few lines, not the whole file.",
@@ -8940,7 +9621,7 @@
       },
       "PendingInteraction": {
         "type": "object",
-        "description": "One interaction a session is waiting on an answer to.",
+        "description": "One interaction a session is waiting on an answer to.\n\n`request` is the same typed, kind-tagged shape the SSE\n`interaction_requested` frame carries — see\n[`crucible_core::interaction::InteractionRequest`]. A permission\nrequest's `pattern` is filled in here too, the one place this route\ndecides it, so the browser never re-derives it.",
         "required": [
           "session_id",
           "request_id",
@@ -8956,12 +9637,7 @@
             "description": "The identifier an answer must carry back."
           },
           "request": {
-            "type": "object",
-            "description": "The request, in the flat shape the SSE path delivers.\n\nDeliberately open: `normalize_interaction` writes one object per\ninteraction kind — a permission request carries `tokens` and maybe\n`diffs`, an ask carries the question's own fields — and the kinds are\nthe daemon's to add to. `kind` tells the browser which one it has.",
-            "additionalProperties": {},
-            "propertyNames": {
-              "type": "string"
-            }
+            "$ref": "#/components/schemas/InteractionRequest"
           }
         }
       },
@@ -8979,6 +9655,197 @@
             }
           }
         }
+      },
+      "PermAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Permission to execute a bash command.",
+            "required": [
+              "tokens",
+              "type"
+            ],
+            "properties": {
+              "tokens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Command tokens (e.g., [\"npm\", \"install\", \"lodash\"])."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bash"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Permission to read a file/directory.",
+            "required": [
+              "segments",
+              "type"
+            ],
+            "properties": {
+              "segments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Path segments (e.g., [\"home\", \"user\", \"project\"])."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "read"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Permission to write a file/directory.",
+            "required": [
+              "segments",
+              "type"
+            ],
+            "properties": {
+              "segments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Path segments."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "write"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Permission to call a tool.",
+            "required": [
+              "name",
+              "args",
+              "type"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Tool name."
+              },
+              "args": {
+                "description": "Tool arguments."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Types of permission requests."
+      },
+      "PermRequest": {
+        "type": "object",
+        "description": "Request permission for an action.\n\nSupports token-based pattern building for vim-style permission UIs\nwhere users can expand/contract the permission scope.",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/PermAction",
+            "description": "The action requiring permission."
+          },
+          "diffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileDiff"
+            },
+            "description": "File diffs for this permission. Empty for non-file actions or when\nthe diff couldn't be synthesized at the daemon (e.g. file too large\nor `old_string` not found in disk content).\n\n`#[serde(default)]` keeps older clients/servers wire-compatible:\nrequests without this field deserialize as `vec![]`."
+          },
+          "call": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CanonicalToolCall",
+                "description": "The canonical call, with its render, its agent and its raw tool\nname, so the prompt shows everything that is known. Its `diffs` are\nempty: the request holds them once, in `diffs`. `None` for a request\nthat is not about a tool call."
+              }
+            ]
+          },
+          "layer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The permission layer that asked the user, for example\n`permissions config` or `ask mode`."
+          },
+          "origin": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TurnOrigin",
+                "description": "The origin of the turn that asks, as the `user_message` names it."
+              }
+            ]
+          },
+          "pattern": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The grant that \"always allow\" saves, from [`Self::suggested_pattern`].\n\n`None` on a freshly built request: the callers below build the\naction first, and the pattern depends on it. `#[allow(dead_code)]`\ncallers do not read `None`; the one place that broadcasts a\npermission request to a client (`SessionEventMessage::interaction_requested`)\nfills it in before the request goes on the wire, so a client — the\nweb page cannot call Rust — reads a value the daemon has already\ndecided once, instead of re-deriving it."
+          }
+        }
+      },
+      "PermResponse": {
+        "type": "object",
+        "description": "Response to a permission request.",
+        "required": [
+          "allowed"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "pattern": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PermissionScope"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PermissionScope": {
+        "type": "string",
+        "description": "Scope for permission grants.\n\nDetermines how long a permission grant remains valid.",
+        "enum": [
+          "once",
+          "session",
+          "project",
+          "user"
+        ]
       },
       "PhysicalRoot": {
         "type": "string",
@@ -9513,6 +10380,34 @@
           }
         }
       },
+      "PluginStatusEntry": {
+        "type": "object",
+        "required": [
+          "name",
+          "state"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The version the plugin declares, or `None` while nothing has read it.\n\nEnumeration does not run a plugin's Lua, and the version lives in the\nspec table that only a load reads — so a discovered plugin has no\nversion to report. This field carried a synthesized `\"0.0.0\"` there,\nwhich every front end drew as if it were a release."
+          },
+          "state": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "PluginTurnLimitResponse": {
         "type": "object",
         "required": [
@@ -9523,6 +10418,99 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "PluginsDiscoveredPayload": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginStatusEntry"
+            }
+          }
+        }
+      },
+      "PopupEntry": {
+        "type": "object",
+        "description": "A simple popup entry for cross-platform use\n\nThis type is designed to be:\n- Serializable (for web UI / IPC)\n- Simple enough for scripting (Lua)\n- Convertible from domain-specific PopupItem enum\n\n[`crate::interaction::PanelItem`] is an alias of this type.",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Primary display text (required)"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Secondary descriptive text (optional)"
+          },
+          "data": {
+            "description": "Arbitrary data returned to caller on selection (optional)"
+          }
+        }
+      },
+      "PopupRequest": {
+        "type": "object",
+        "description": "A request to show a popup with selectable entries.\n\nUnlike [`AskRequest`] which uses simple string choices, `PopupRequest` uses\n[`PopupEntry`] items that can include labels, descriptions, and arbitrary data.\nThis makes it suitable for rich scripted popups from Lua plugins.\n\n# Example\n\n```\nuse crucible_core::interaction::PopupRequest;\nuse crucible_core::types::PopupEntry;\n\nlet popup = PopupRequest::new(\"Select a note\")\n    .entries([\n        PopupEntry::new(\"Daily Note\").with_description(\"Today's journal\"),\n        PopupEntry::new(\"Todo List\").with_description(\"Tasks for the week\"),\n    ]);\n```",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title/prompt to display above the popup."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PopupEntry"
+            },
+            "description": "Entries to display in the popup."
+          },
+          "allow_other": {
+            "type": "boolean",
+            "description": "Allow free-text input if no entry is selected."
+          }
+        }
+      },
+      "PopupResponse": {
+        "type": "object",
+        "description": "Response to a [`PopupRequest`].",
+        "properties": {
+          "selected_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Index of the selected entry (if any).",
+            "minimum": 0
+          },
+          "selected_entry": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PopupEntry",
+                "description": "The selected entry (if any)."
+              }
+            ]
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text input if \"other\" was chosen."
           }
         }
       },
@@ -9543,23 +10531,32 @@
           "notes": {
             "type": "array",
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/PrecognitionNoteInfo"
             }
           }
         }
       },
-      "PrecognitionNote": {
+      "PrecognitionNoteInfo": {
         "type": "object",
+        "description": "Metadata about a note found during Precognition enrichment.\nCarried through RPC so TUI/web can display which notes informed the response.",
         "required": [
-          "name"
+          "title"
         ],
         "properties": {
-          "name": {
+          "title": {
             "type": "string"
           },
-          "relevance": {
+          "kiln": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Which kiln the note came from, by registry name.\n\nWas `kiln_label: Option<String>`, filled from the kiln directory's\nbasename. This payload is persisted into `session.jsonl` and broadcast\nto the web and TUI, so that basename outlived the turn and reached two\nUIs. The key is renamed as well as retyped: a transcript recorded before\nthis change holds a basename under the old key, and it must be dropped\non read rather than parsed as if it were a name."
+          },
+          "score": {
             "type": "number",
-            "format": "double"
+            "format": "double",
+            "description": "Search relevance score from the vector index. Defaults for payloads\nrecorded before the field existed."
           }
         }
       },
@@ -9949,6 +10946,54 @@
           }
         }
       },
+      "ProviderInfo": {
+        "type": "object",
+        "required": [
+          "name",
+          "provider_type",
+          "available",
+          "models",
+          "is_local"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_local": {
+            "type": "boolean"
+          }
+        }
+      },
       "ProviderRow": {
         "type": "object",
         "description": "One LLM provider the daemon found.\n\nMirrors `crucible_core::types::ProviderInfo` field for field. It is\ndeclared here rather than re-exported because `crucible-core` takes no\nutoipa dependency, and a schema is what puts the fields in the document.",
@@ -9999,6 +11044,20 @@
           "is_local": {
             "type": "boolean",
             "description": "Whether the provider runs on this machine."
+          }
+        }
+      },
+      "ProvidersListedPayload": {
+        "type": "object",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderInfo"
+            }
           }
         }
       },
@@ -10186,6 +11245,73 @@
           }
         }
       },
+      "QuestionAnswer": {
+        "type": "object",
+        "description": "Answer to a single question in an [`AskBatch`].",
+        "properties": {
+          "selected": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Selected choice indices (empty if \"Other\" was chosen)."
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text input if \"Other\" was chosen."
+          }
+        }
+      },
+      "RawToolCall": {
+        "type": "object",
+        "description": "The fields of an ACP tool call that a matcher or a display can read.\n\nThis is provenance. No policy reads it. It has no status and no\n`rawOutput`, because those describe the result, not the call.",
+        "properties": {
+          "toolCallId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The ACP `toolCallId`. Some agents put the tool name in it, for\nexample gemini (`read_file__read_file_1758580000002_2`)."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The ACP tool kind. Opaque on the wire: `ToolKind` is an ACP protocol\ntype this crate does not derive `ToSchema` for."
+          },
+          "rawInput": {},
+          "locations": {
+            "type": "array",
+            "items": {},
+            "description": "The touched locations. Opaque on the wire: `ToolCallLocation` is an\nACP protocol type this crate does not derive `ToSchema` for."
+          },
+          "content": {
+            "type": "array",
+            "items": {},
+            "description": "The call's content frames. Opaque on the wire, for the same reason\nas `locations`."
+          },
+          "_meta": {
+            "description": "The ACP `_meta` object, as opaque JSON."
+          }
+        }
+      },
       "RecentFile": {
         "type": "object",
         "required": [
@@ -10293,6 +11419,20 @@
             "type": "string",
             "description": "Why it was refused, as a sentence to show the reader.\n\nA rendered [`RefError`], not a token. The browser prints it; nothing\nbranches on it, and `the_refusal_reasons_stay_whole_sentences` pins\nevery variant's wording so a reworded error is a visible change rather\nthan a silent one."
           }
+        }
+      },
+      "RenderField": {
+        "type": "object",
+        "description": "One fact of a [`ToolRender`]. The value is JSON, so a client can draw a\nstructured value, for example `rawInput`, in its own way.",
+        "required": [
+          "label",
+          "value"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {}
         }
       },
       "ReorderGroupsParams": {
@@ -10432,6 +11572,64 @@
           }
         ],
         "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session.\n\nThe warm path answers the state change. The cold path reloads the session\nfrom the store and answers its history, because that call is also what\n`GET /api/session/{id}/history` serves.\n\n**`Restored` must stay first.** The daemon sends no tag, so the variants\nare told apart by their fields, and `Live`'s required fields\n(`session_id`, `state`) are a subset of `Restored`'s. An untagged enum\ntakes the first variant that fits, so with the order reversed every\nrestored history would read back as a bare state change and every event\nwould be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`\nholds the order.\n\n`deny_unknown_fields` would be the other way to separate them, and it is\nnot used here: these are daemon replies, and refusing a field a newer\ndaemon added would turn an extension into a 502 on three healthy routes."
+      },
+      "ReviewPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The session's composed diff moved: a hunk was accepted, rejected,\nreverted, commented on, or a comment was resolved.\n\nDeliberately carries only `reason` and no hunk identity. A hunk id is\nderived from its content *and* its range in `session_base`, so a change\nthat re-aligns an ambiguous region moves the ids of hunks the user never\ntouched — a client that patched a single row in place from this event\nwould be showing a decision attached to different lines. The event says\n\"re-list\"; the listing is the truth.\n\n`reason` is advisory (`\"accepted\"`, `\"rejected\"`, `\"commented\"`,\n`\"comment_resolved\"`, `\"external\"`) and stays a `String`, not an enum:\nclients must not switch on it for correctness, and an enum would invite\nexactly that.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "The session's composed diff moved: a hunk was accepted, rejected,\nreverted, commented on, or a comment was resolved.\n\nDeliberately carries only `reason` and no hunk identity. A hunk id is\nderived from its content *and* its range in `session_base`, so a change\nthat re-aligns an ambiguous region moves the ids of hunks the user never\ntouched — a client that patched a single row in place from this event\nwould be showing a decision attached to different lines. The event says\n\"re-list\"; the listing is the truth.\n\n`reason` is advisory (`\"accepted\"`, `\"rejected\"`, `\"commented\"`,\n`\"comment_resolved\"`, `\"external\"`) and stays a `String`, not an enum:\nclients must not switch on it for correctness, and an enum would invite\nexactly that.",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "review_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "turns_undone": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "messages_removed": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "session_undo"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Review and undo events."
       },
       "Row": {
         "type": "object",
@@ -10912,9 +12110,8 @@
         ],
         "description": "The full session record, as `session.get` answers it: every\n[`SessionSummary`] field, flattened onto the wire, plus the fields a\ncaller needs to start a session like this one."
       },
-      "SessionHistoryEvent": {
+      "SessionEventMessage": {
         "type": "object",
-        "description": "One persisted session event, as `session.resume_from_storage` replays it.\n\nThe same envelope the SSE stream carries, but this route replays whatever\nthe transcript holds — including an event name a newer daemon minted — so\n`data` stays untyped here rather than narrowing to [`crate::events::ChatEvent`].",
         "required": [
           "type",
           "session_id",
@@ -10923,8 +12120,7 @@
         ],
         "properties": {
           "type": {
-            "type": "string",
-            "description": "The envelope kind. Always `event`."
+            "type": "string"
           },
           "session_id": {
             "type": "string"
@@ -10934,13 +12130,14 @@
             "description": "The event name, such as `user_message` or `text_delta`."
           },
           "data": {
-            "description": "The event payload. Its shape follows `event`."
+            "description": "The event payload. Its shape follows `event` — see\n[`crate::protocol::session_events::SessionEventPayload`] for the\ntyped union. Untyped here on purpose: a stored transcript replays an\nevent name a newer daemon minted, which this build cannot type."
           },
           "timestamp": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "seq": {
             "type": [
@@ -10949,12 +12146,48 @@
             ],
             "format": "int64",
             "minimum": 0
+          },
+          "transcript": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TranscriptOp"
+            },
+            "description": "What the event changed in the folded transcript of the session. The\ndaemon sets it on the live copy only: the stored log holds the events,\nand a reader folds them again. A client that renders the transcript\napplies these ops; it does not fold the event itself."
           }
         }
       },
+      "SessionEventPayload": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TurnPayload"
+          },
+          {
+            "$ref": "#/components/schemas/SetupPayload"
+          },
+          {
+            "$ref": "#/components/schemas/SettingsPayload"
+          },
+          {
+            "$ref": "#/components/schemas/JobPayload"
+          },
+          {
+            "$ref": "#/components/schemas/ReviewPayload"
+          },
+          {
+            "$ref": "#/components/schemas/NotificationPayload"
+          },
+          {
+            "$ref": "#/components/schemas/WorkflowPayload"
+          },
+          {
+            "$ref": "#/components/schemas/SystemPayload"
+          }
+        ],
+        "description": "A decoded session-event payload: one of eight groups.\n\nConstruct with [`SessionEventMessage::typed`](crate::protocol::SessionEventMessage::typed);\nread with [`SessionEventMessage::payload`](crate::protocol::SessionEventMessage::payload).\n`ToSchema` reads the bare `#[serde(untagged)]` below even though this\nenum derives no `Serialize`: [`SessionEventPayload::to_wire`] is what\nactually serializes it, and it always yields one of the eight groups'\nown `{event, data}` shape, never a wrapper around one — which is what\n`untagged` documents to a reader of `openapi.json`."
+      },
       "SessionHistoryResponse": {
         "type": "object",
-        "description": "What `GET /api/session/{id}/history` answers.",
+        "description": "What `GET /api/session/{id}/history` answers.\n\n`history` is the core [`crucible_core::protocol::SessionEventMessage`] —\nthe same envelope the SSE stream carries — replayed whatever the\ntranscript holds, including an event name a newer daemon minted. Its\n`data` stays untyped for exactly that reason: this build cannot type an\nevent it does not know.",
         "required": [
           "session_id",
           "type",
@@ -10983,7 +12216,7 @@
           "history": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SessionHistoryEvent"
+              "$ref": "#/components/schemas/SessionEventMessage"
             },
             "description": "The page of events the query asked for."
           },
@@ -11001,6 +12234,38 @@
       "SessionId": {
         "type": "string",
         "description": "A session identifier that is safe to join onto a directory.\n\nGuaranteed by construction to be a single, ordinary path component:\nnon-empty, no separators, no `.`/`..`, no NUL, no leading dot, and drawn\nfrom `[A-Za-z0-9._-]`. See the module docs for why that matters."
+      },
+      "SessionInitializedPayload": {
+        "type": "object",
+        "required": [
+          "model",
+          "mode",
+          "workspace_path"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "agent_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kilns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The session's kilns, by registry name.\n\nWas `kiln_path: PathBuf` — the resolved directory of whichever kiln\nhappened to sort first, produced by `kiln_paths(..).next().unwrap_or_default()`.\nIt was broadcast to every subscriber and persisted into `session.jsonl`\nwhenever the session already had an agent config at create time.\n\nA set, not one member: kilns are flat, so there is no \"the\" kiln to\nreport. Empty means the session reaches no kiln — never \"unconstrained\",\nand never the empty path, which every path helper reads as the daemon's\nown data directory.\n\n`workspace_path` beside it stays a path: the agent runs commands there,\nso the directory is the fact being reported."
+          },
+          "workspace_path": {
+            "type": "string"
+          }
+        }
       },
       "SessionKnobsResponse": {
         "type": "object",
@@ -11410,12 +12675,460 @@
           }
         }
       },
+      "SettingsPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "model_id": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "model_switched"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`data.mode` is the field the web SSE mapper and the TUI reducers read —\nkeep the name stable.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "`data.mode` is the field the web SSE mapper and the TUI reducers read —\nkeep the name stable.",
+                "properties": {
+                  "mode": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "mode_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The session's scope after a change: its kilns by registry name, and\nits workspace (`null` for a session with no workspace).",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "The session's scope after a change: its kilns by registry name, and\nits workspace (`null` for a session with no workspace).",
+                "properties": {
+                  "workspace": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "kilns": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Always serialized, as `[]` when empty."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "scope_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "title_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "system_prompt": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "system_prompt_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "precognition_toggled"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "context_strategy": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "context_strategy_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A plugin's approval knob changed. `approval` is the knob's own\nspelling (`inherit`, `ask`, `stop`).",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A plugin's approval knob changed. `approval` is the knob's own\nspelling (`inherit`, `ask`, `stop`).",
+                "properties": {
+                  "plugin": {
+                    "type": "string"
+                  },
+                  "approval": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "plugin_approval_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "plugin_turn_limit_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The session's ACP agent advertised a new command list. A client\nreads the catalog again with `session.commands`. A plugin reload\nsends no such event yet, so a client also reads the catalog again\nafter a reload that it asked for.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "The session's ACP agent advertised a new command list. A client\nreads the catalog again with `session.commands`. A plugin reload\nsends no such event yet, so a client also reads the catalog again\nafter a reload that it asked for."
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "commands_changed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Session-settings events, adjacently tagged so the enum's serialization *is*\nthe `{event, data}` pair the envelope carries."
+      },
+      "SetupPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SessionInitializedPayload"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "session_initialized"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ProvidersListedPayload"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "providers_listed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ContextLimitResolvedPayload"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "context_limit_resolved"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/WorkspaceIndexedPayload"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workspace_indexed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/KilnNotesIndexedPayload"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "kiln_notes_indexed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/PluginsDiscoveredPayload"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "plugins_discovered"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/McpServersReadyPayload"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "mcp_servers_ready"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The ACP agent refused `session/resume`, so the daemon opened a new\nagent session, and the agent does not have the earlier history.\n\nLive only: the EventBus gives it a seq and journals it, and\n`is_persisted` keeps it out of `session.jsonl` as for the other\nsetup notices. The connection fact belongs to this daemon run, and\nthe next connection reports its own disposition.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "The ACP agent refused `session/resume`, so the daemon opened a new\nagent session, and the agent does not have the earlier history.\n\nLive only: the EventBus gives it a seq and journals it, and\n`is_persisted` keeps it out of `session.jsonl` as for the other\nsetup notices. The connection fact belongs to this daemon run, and\nthe next connection reports its own disposition.",
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  },
+                  "requested_session_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "new_session_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "acp_resume_fallback"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Setup-phase events, adjacently tagged so the enum's serialization *is* the\n`{event, data}` pair the envelope carries.\n\n`context_limit_resolved` is the one that is not exclusively a setup event.\nA delegated agent has no endpoint or model for the daemon to query, so its\nwindow arrives mid-turn instead (ACP `usage_update` →\n[`TurnEvent::ContextWindow`](crate::turn::TurnEvent::ContextWindow)) and the\ndaemon re-emits the same event from the turn stream. Consumers treat it as a\nplain assignment, so a late one needs no special case."
+      },
       "Shape": {
         "type": "string",
         "description": "What a client draws.\n\nOne variant, because one renderer exists. `Tree`, `Table` and `KeyValue`\narrive **with** their renderers, not ahead of them: the exhaustive match\non this enum is what forces that.",
         "enum": [
           "list"
         ]
+      },
+      "ShowRequest": {
+        "type": "object",
+        "description": "Request to show content to the user (display only, no response).",
+        "required": [
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The content to display."
+          },
+          "format": {
+            "$ref": "#/components/schemas/ArtifactFormat",
+            "description": "Format hint for rendering."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional title for the display."
+          }
+        }
       },
       "SkillDetail": {
         "type": "object",
@@ -11694,6 +13407,17 @@
         ],
         "description": "How far along a status item's work is, when it is work rather than a\nstate.\n\nModelled on LSP `$/progress`: the producer reports and the client decides\nhow to draw it. An image pull knows its fraction; an image build does\nnot, and a fake fraction for the second is worse than saying so. On the\nwire it is a number or the string `\"indeterminate\"`."
       },
+      "StopReason": {
+        "type": "string",
+        "description": "Reason a turn ended, carried on `TurnEvent::Done`.\n\nIt reaches a plugin on the `turn:complete` payload and a front end on\n`message_complete`, so a handler can tell a model that finished from a\nmodel the provider cut off. The host itself reads none of it: what to do\nabout a premature stop is the plugin's decision.\n\nTwo variants this deliberately does NOT have. A stop-sequence variant,\nbecause Crucible sets no stop sequence anywhere, so no provider can report\none. A tool-use variant, because the turn loop emits `Done` only when no\ntool call is pending — a provider that says \"tool_use\" has already had its\ncalls dispatched, and the turn after them ends for some other reason.",
+        "enum": [
+          "end_turn",
+          "cancelled",
+          "empty",
+          "max_tokens",
+          "refusal"
+        ]
+      },
       "String": {
         "type": "string"
       },
@@ -11852,6 +13576,616 @@
         ],
         "description": "One frame of the system stream. The SSE `event:` name tells the two\nshapes apart."
       },
+      "SystemPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "`kind` is a typed [`FileChangeKind`] rather than a string built with\n`format!(\"{kind}\")` and matched with two string arms — the old consumer\nmapped everything that was not `created` to `Modified`, silently.\n`path` is required, not defaulted: a file event without a path is\nmeaningless, and the consumer this replaces dropped such an event rather\nthan firing a handler on an empty path. `kind` defaults to `Modified`,\nmatching the two-arm string match it replaces.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "`kind` is a typed [`FileChangeKind`] rather than a string built with\n`format!(\"{kind}\")` and matched with two string arms — the old consumer\nmapped everything that was not `created` to `Modified`, silently.\n`path` is required, not defaulted: a file event without a path is\nmeaningless, and the consumer this replaces dropped such an event rather\nthan firing a handler on an empty path. `kind` defaults to `Modified`,\nmatching the two-arm string match it replaces.",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "$ref": "#/components/schemas/FileChangeKind"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "file_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "file_deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Carries `from`/`to` and **no** `path`. The consumer that rebuilt the\ntyped event read `data[\"path\"]` before matching the name, so this event\nwas broadcast and could never reach a Lua handler.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "Carries `from`/`to` and **no** `path`. The consumer that rebuilt the\ntyped event read `data[\"path\"]` before matching the name, so this event\nwas broadcast and could never reach a Lua handler.",
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "file_moved"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "kiln": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The kiln's registry name, absent when no entry claims it. Never a\npath — see the internal `SessionEvent` variant for why. Absent\nfrom the wire, not `null`, when no entry claims the kiln."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "classification_required"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One producer: `handle_kiln_open` (`crucible-daemon/src/server/kiln.rs`),\nonce a `kiln.open { process: true }` has finished indexing a kiln. The\nsecond producer this name used to have — the `process_batch` RPC, which\nsent `type`/`batch_id` and no `kiln` — is gone, along with the\n`process_start`/`process_progress` events beside it; they reported per-file\nwork on a batch of one and nothing ever read them.\n\nEvery field keeps `#[serde(default)]` even though the surviving producer\nwrites all five: a daemon older than that deletion still sends the batch\nshape, and it must decode as zeroes rather than as `MalformedPayload`.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "One producer: `handle_kiln_open` (`crucible-daemon/src/server/kiln.rs`),\nonce a `kiln.open { process: true }` has finished indexing a kiln. The\nsecond producer this name used to have — the `process_batch` RPC, which\nsent `type`/`batch_id` and no `kiln` — is gone, along with the\n`process_start`/`process_progress` events beside it; they reported per-file\nwork on a batch of one and nothing ever read them.\n\nEvery field keeps `#[serde(default)]` even though the surviving producer\nwrites all five: a daemon older than that deletion still sends the batch\nshape, and it must decode as zeroes rather than as `MalformedPayload`.",
+                "properties": {
+                  "kiln": {
+                    "type": "string"
+                  },
+                  "discovered": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "processed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skipped": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "errors": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "process_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The payload is the `ui.config` RPC result, produced by\n`rpc::ui::style_payload` (theme, geometry, bars) or\n`rpc::ui::expr_payload` (one session's statusline values). The two\ngenuinely differ in shape, so this stays a `Value`: a client applies it\nwith the same code path it uses at attach, and narrowing the type here\nwould only move the drift to `rpc::ui`.\n\nOne rule the shapes share: an `exprs` member is the session's WHOLE\nexpression set, and a client applies it as a replacement, because a key\nmissing from it is a key the daemon released. A payload that is not\naddressed to one session therefore omits the member rather than carrying\nan empty set.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "description": "The payload is the `ui.config` RPC result, produced by\n`rpc::ui::style_payload` (theme, geometry, bars) or\n`rpc::ui::expr_payload` (one session's statusline values). The two\ngenuinely differ in shape, so this stays a `Value`: a client applies it\nwith the same code path it uses at attach, and narrowing the type here\nwould only move the drift to `rpc::ui`.\n\nOne rule the shapes share: an `exprs` member is the session's WHOLE\nexpression set, and a client applies it as a replacement, because a key\nmissing from it is a key the daemon released. A payload that is not\naddressed to one session therefore omits the member rather than carrying\nan empty set."
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "ui_style_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Replacement status list for one session. Clients can paint the payload\nimmediately; attach uses `session.status` for the initial snapshot.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "Replacement status list for one session. Clients can paint the payload\nimmediately; attach uses `session.status` for the initial snapshot.",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/StatusDisplayItem"
+                    }
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "status_items_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A subscriber fell far enough behind the broadcast ring that events were\noverwritten before it read them, and `dropped` of them are gone for good.\n\nThis is a *transport* fact rather than something that happened in the\nsession, and it is the one event the daemon emits about its own delivery.\nIt is in this vocabulary anyway, deliberately: it reaches clients over the\nsame channel as everything else and both surfaces render it, so leaving it\noutside would mean exactly the untyped `{event, data}` pair this enum\nexists to retire — and a marker announcing lost data is a poor thing to\nleave unvalidated. Consumers should treat it as \"your transcript has a hole\nhere\", not as session content.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A subscriber fell far enough behind the broadcast ring that events were\noverwritten before it read them, and `dropped` of them are gone for good.\n\nThis is a *transport* fact rather than something that happened in the\nsession, and it is the one event the daemon emits about its own delivery.\nIt is in this vocabulary anyway, deliberately: it reaches clients over the\nsame channel as everything else and both surfaces render it, so leaving it\noutside would mean exactly the untyped `{event, data}` pair this enum\nexists to retire — and a marker announcing lost data is a poor thing to\nleave unvalidated. Consumers should treat it as \"your transcript has a hole\nhere\", not as session content.",
+                "properties": {
+                  "dropped": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "Zero means the lost span is unknown, as after a connection restart.",
+                    "minimum": 0
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "stream_gap"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A note reached the index for the first time.\n\nThe note events are the *knowledge* half of the file events above: a\nfile event says a path changed on disk, this says the note pipeline\nparsed it and wrote it to the store. `path` is kiln-relative, which is\nthe spelling every other note API uses and the one a handler's\n`opts.pattern` glob is written against.\n\nColon-namespaced rather than `note_created`, matching `webhook:received`\nbelow: these names are also the names Lua handlers register with\n(`crucible-daemon/src/event_map.rs`), and the colon marks the ones that\nare a designed hook surface rather than a Rust variant name.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A note reached the index for the first time.\n\nThe note events are the *knowledge* half of the file events above: a\nfile event says a path changed on disk, this says the note pipeline\nparsed it and wrote it to the store. `path` is kiln-relative, which is\nthe spelling every other note API uses and the one a handler's\n`opts.pattern` glob is written against.\n\nColon-namespaced rather than `note_created`, matching `webhook:received`\nbelow: these names are also the names Lua handlers register with\n(`crucible-daemon/src/event_map.rs`), and the colon marks the ones that\nare a designed hook surface rather than a Rust variant name.",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "note:created"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An already-indexed note was written again.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "An already-indexed note was written again.",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "change_type": {
+                    "$ref": "#/components/schemas/NoteChangeType"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "note:modified"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A note left the index.\n\n`existed` is false when the delete found nothing to remove — the\nreconciliation sweep asks for paths it is not sure about.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A note left the index.\n\n`existed` is false when the delete found nothing to remove — the\nreconciliation sweep asks for paths it is not sure about.",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "existed": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "note:deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A note moved, with its inbound links repointed.\n\nEmitted by the `note.rename` refactor only, which is the one place that\nknows the two paths are the same note. The reindex underneath it is a\ndelete followed by an insert, so `note:deleted` and `note:created` fire\nfor the same operation; this is the event that says they were a move.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A note moved, with its inbound links repointed.\n\nEmitted by the `note.rename` refactor only, which is the one place that\nknows the two paths are the same note. The reindex underneath it is a\ndelete followed by an insert, so `note:deleted` and `note:created` fire\nfor the same operation; this is the event that says they were a move.",
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "note:renamed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A Bases mutation has reached disk. Proposed writes do not emit this.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A Bases mutation has reached disk. Proposed writes do not emit this.",
+                "required": [
+                  "path",
+                  "change"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "change": {}
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "base:changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "type": "string"
+                    }
+                  },
+                  "body": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "webhook:received"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "total_events": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "replay_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A session was created, reported daemon-wide.\n\nAddressed to the system session, not to the new one, because the\naudience is a client or plugin watching *every* session — a session\nlist, for instance — which is by definition not attached to the session\nthat just started.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A session was created, reported daemon-wide.\n\nAddressed to the system session, not to the new one, because the\naudience is a client or plugin watching *every* session — a session\nlist, for instance — which is by definition not attached to the session\nthat just started.",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "session:created"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A plugin's surface changed, so every client refetches it.\n\nCarries the identity and the new version, never the rows. A surface is\nunbounded where an event is not, and two clients want it at different\ntimes, so the event says *what* moved and the client asks for the\ncontent. This is what makes the version on the surface worth having.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A plugin's surface changed, so every client refetches it.\n\nCarries the identity and the new version, never the rows. A surface is\nunbounded where an event is not, and two clients want it at different\ntimes, so the event says *what* moved and the client asks for the\ncontent. This is what makes the version on the surface worth having.",
+                "properties": {
+                  "plugin": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "session": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "withdrawn": {
+                    "type": "boolean",
+                    "description": "The surface is gone: stop drawing it, and do not refetch.\n\nThe one field that makes this event actionable on its own. Every\nother change withholds the rows so the client asks; a withdrawal has\nnothing left to ask for, and a client that had to re-derive it from\nan empty refetch could not tell it apart from a lost race.\n\nOmitted from the wire when false, so an ordinary change serialises\nexactly as it did before this field existed."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "surface_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A plugin's published data changed, so a client re-reads it.\n\nCarries who published and under which key, never the value: a\npublication is opaque JSON of the plugin's own choosing, and a client\nthat already holds the key refetches through\n`GET /api/plugins/publications`.\n\nNot an `EventName`, so no Lua handler subscribes to it: those are the\ndaemon events a plugin listens for, and this travels the other way —\nplugin to client. A hook here would offer a plugin a handler on its own\nwrites, which is a loop waiting to happen.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A plugin's published data changed, so a client re-reads it.\n\nCarries who published and under which key, never the value: a\npublication is opaque JSON of the plugin's own choosing, and a client\nthat already holds the key refetches through\n`GET /api/plugins/publications`.\n\nNot an `EventName`, so no Lua handler subscribes to it: those are the\ndaemon events a plugin listens for, and this travels the other way —\nplugin to client. A hook here would offer a plugin a handler on its own\nwrites, which is a loop waiting to happen.",
+                "properties": {
+                  "plugin": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "publication_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A proposal changed: a proposal is new, it has a new write, or its\nstate changed.\n\nThe event carries only the id. A client reads the proposal again\nthrough `proposal.get`. A proposal belongs to no user session, so the\ndaemon sends this event on the system session.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A proposal changed: a proposal is new, it has a new write, or its\nstate changed.\n\nThe event carries only the id. A client reads the proposal again\nthrough `proposal.get`. A proposal belongs to no user session, so the\ndaemon sends this event on the system session.",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "$ref": "#/components/schemas/ProposalId"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "proposal_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A session ended, reported daemon-wide. See [`Self::SessionCreated`].",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A session ended, reported daemon-wide. See [`Self::SessionCreated`].",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "session:ended"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Daemon-wide events that are not scoped to one turn: file-watch, kiln\nprocessing, UI config, webhooks, replay."
+      },
       "TextField": {
         "type": "string",
         "enum": [
@@ -11921,6 +14255,88 @@
           }
         }
       },
+      "ToolRender": {
+        "type": "object",
+        "description": "Display data for one tool call. A render function makes it: a Lua\nfunction for a kind, or [`ToolRender::fallback`].\n\nIt holds meaning, not terminal text and not HTML. Each client draws the\nline and the fields in its own way.",
+        "properties": {
+          "line": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The one line that says what the call does, for example a command\nline, a path, a URL or a query."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RenderField"
+            },
+            "description": "The other facts of the call, in order."
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The one line that says what the result is, for example `42 lines`.\nOnly the render of a finished call sets it."
+          }
+        }
+      },
+      "ToolResultBody": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "description": "Arbitrary JSON: a string for most tools, an object for structured\nones. Never assume `as_str()`."
+              },
+              "spill_path": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Set when the output was spilled to disk (≥10KB, spillable tool).\nThe referenced file lives under the session dir and outlives the\nevent, so this is the recovery path for the full output."
+              },
+              "render": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ToolRender",
+                    "description": "The render of the finished call. It replaces the render of\nthe call, and its `summary` says what the result is."
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "render": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ToolRender"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The body of a `tool_result` event's `data.result`.\n\nUntagged because the wire form has no discriminator: success is\n`{\"result\": …}` and failure is `{\"error\": …}`, decided by which key is\npresent (`agent_manager/messaging/tool_call.rs`). The variants are disjoint\non their required key, so untagged is unambiguous — but they must stay\ndisjoint. A key added to both breaks the decode silently.\n\n[`Systems`](../../../../../docs/Meta/Analysis/Systems.md) documented this as\n\"the `{\"result\"|\"error\": …}` envelope\": a two-key description of a four-key\nreality. `spill_path` and `render` are the other two."
+      },
       "ToolStatus": {
         "type": "string",
         "enum": [
@@ -11951,6 +14367,40 @@
             }
           }
         }
+      },
+      "TranscriptFrame": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "ops",
+              "type"
+            ],
+            "properties": {
+              "seq": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "ops": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TranscriptOp"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "transcript"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The second SSE frame for a live event that changed the transcript, with\nthe same `id:` as the event's own frame. The browser applies `ops` to the\nsnapshot the history route gave, and drops an op when `seq` is not above\nthe `as_of_seq` of that snapshot.\n\nOne variant, internally tagged on `type`, rather than a plain struct with\na hand-set `&'static str` field: a bare `&str` gives the schema `type:\nstring`, not the literal `\"transcript\"` a browser needs to discriminate\non. The tag is the whole reason for the enum."
       },
       "TranscriptItem": {
         "allOf": [
@@ -12049,6 +14499,676 @@
           }
         ],
         "description": "One change to a transcript."
+      },
+      "TurnOrigin": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A person sent the message through a client.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The plugin with this name asked for the turn.",
+            "required": [
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The plugin with this name asked for the turn."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plugin"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A person wrote the message in the channel of the plugin with this\nname (a relay, such as Discord). The turn is a user turn.",
+            "required": [
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "A person wrote the message in the channel of the plugin with this\nname (a relay, such as Discord). The turn is a user turn."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "relay"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Who asked for a turn.\n\nA turn ENDS, and a `turn:complete` handler that wants more work asks for a\nNEW turn. That turn is a normal turn: it takes admission, Precognition,\npersistence and undo like any other. Only this field says who asked.\n\nThe serde form is the `origin` of the `user_message` event and of the\nrender payload: `{\"kind\": \"plugin\", \"name\": \"goal\"}` or `{\"kind\": \"user\"}`."
+      },
+      "TurnPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Context before this marker remains in the transcript but is excluded\nfrom future model turns.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "Context before this marker remains in the transcript but is excluded\nfrom future model turns.",
+                "properties": {
+                  "plugin": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "context_cleared"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "message_id": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "origin": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/TurnOrigin",
+                        "description": "Who asked for this turn. `None` and `User` both mean a person;\n`None` keeps the wire of a person's message as it always was."
+                      }
+                    ]
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "user_message"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "text_delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "thinking"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A text segment that streamed before a tool call, emitted at the\ntext→tool boundary. `message_id` is the turn id (shared with\n`user_message` and `message_complete`); `index` is the 0-based segment\nposition within the turn; `content` is the segment's text (the delta\naccumulated since the previous boundary). Lets viewers converge on\ncanonical per-segment bubbles across live streaming and history reload.\n`message_complete` still carries the WHOLE turn's accumulated text —\nsegments are additive, not a replacement.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A text segment that streamed before a tool call, emitted at the\ntext→tool boundary. `message_id` is the turn id (shared with\n`user_message` and `message_complete`); `index` is the 0-based segment\nposition within the turn; `content` is the segment's text (the delta\naccumulated since the previous boundary). Lets viewers converge on\ncanonical per-segment bubbles across live streaming and history reload.\n`message_complete` still carries the WHOLE turn's accumulated text —\nsegments are additive, not a replacement.",
+                "properties": {
+                  "message_id": {
+                    "type": "string"
+                  },
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "segment_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The five token fields are absent when the provider reported no usage,\nand the two cache fields are absent when the provider reported no\ncaching. `skip_serializing_if` is what keeps that distinction on the\nwire — a client tells \"no data\" from \"zero\" by presence, and the TUI\nstatus bar's sentinel depends on it.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "The five token fields are absent when the provider reported no usage,\nand the two cache fields are absent when the provider reported no\ncaching. `skip_serializing_if` is what keeps that distinction on the\nwire — a client tells \"no data\" from \"zero\" by presence, and the TUI\nstatus bar's sentinel depends on it.",
+                "properties": {
+                  "message_id": {
+                    "type": "string"
+                  },
+                  "full_response": {
+                    "type": "string"
+                  },
+                  "prompt_tokens": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "completion_tokens": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "total_tokens": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "cache_read_tokens": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "cache_creation_tokens": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "stop_reason": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/StopReason",
+                        "description": "Why the turn ended. Absent for the same reason the token fields\nare: no data rather than a default. A turn whose stream closed\nwithout a terminal `Done` has no reason to report, and every\n`session.jsonl` line an older daemon wrote predates the field."
+                      }
+                    ]
+                  },
+                  "stop_notice": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The note a client draws under a reply the provider cut off, in\nthe words of [`crate::turn::StopReason::user_notice`] — the\ndaemon words it once, here, so that a client with no access to\nthe wording, such as the web page, need not repeat it. Absent\nwhen the reason needs no note, which is every normal turn."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "message_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Field order is load-bearing: `serde_json` is built with\n`preserve_order`, so the declaration order here is the key order on the\nwire and in `session.jsonl`. It reproduces the insertion order of the\n`json!` block this variant replaced — `display` after `source`, not\nnext to `args`.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "Field order is load-bearing: `serde_json` is built with\n`preserve_order`, so the declaration order here is the key order on the\nwire and in `session.jsonl`. It reproduces the insertion order of the\n`json!` block this variant replaced — `display` after `source`, not\nnext to `args`.",
+                "properties": {
+                  "call_id": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "args": {},
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "source": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "display": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CanonicalToolCall",
+                        "description": "The canonical tool call with its render, so the TUI and the web\ndraw the same table instead of each rebuilding the call.\n\nEvery producer in this workspace sets it. `None` means the event came\nfrom something else — a recording made before the field existed (only\n7 of 97 recorded `tool_call` lines carry it), or a foreign emitter —\nand the consumer falls back to its own heuristic."
+                      }
+                    ]
+                  },
+                  "auto_approved": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Which layer granted permission without asking, if any. Rides on this\nevent rather than a follow-up: the gate decides BEFORE the card is\nemitted, so a separate event would only make the marker pop in late."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "tool_call"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A new canonical form of a tool call that a prior `tool_call` already\nannounced. An ACP agent can send the arguments or the diff of a call\nin a later frame. Subscribers replace `args` and `display` of the\nentry with `call_id`. A `display` with no render carries only the\ndiffs of an old transcript (see [`super::migrate`]), so the card keeps\nits line.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "A new canonical form of a tool call that a prior `tool_call` already\nannounced. An ACP agent can send the arguments or the diff of a call\nin a later frame. Subscribers replace `args` and `display` of the\nentry with `call_id`. A `display` with no render carries only the\ndiffs of an old transcript (see [`super::migrate`]), so the card keeps\nits line.",
+                "properties": {
+                  "call_id": {
+                    "type": "string"
+                  },
+                  "args": {},
+                  "display": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CanonicalToolCall"
+                      }
+                    ]
+                  },
+                  "auto_approved": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Which layer granted the call without asking. An ACP agent asks\nafter it announced the call, so the marker comes in an update."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "tool_call_update"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`terminate` is serialized even when `false` — an existing subscriber\nreads `data.terminate` unconditionally. Do NOT add\n`skip_serializing_if`.\n\n`result` is the nested [`ToolResultBody`] envelope, kept as a `Value`\nhere because a recorded `tool_result` may carry any shape and the event\nmust still decode. Use [`ToolResultBody::of`] to read it.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "`terminate` is serialized even when `false` — an existing subscriber\nreads `data.terminate` unconditionally. Do NOT add\n`skip_serializing_if`.\n\n`result` is the nested [`ToolResultBody`] envelope, kept as a `Value`\nhere because a recorded `tool_result` may carry any shape and the event\nmust still decode. Use [`ToolResultBody::of`] to read it.",
+                "properties": {
+                  "call_id": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/ToolResultBody",
+                    "description": "The success/failure envelope. Typed for the schema as\n[`ToolResultBody`]; still decoded as `Value` at runtime so a\nshape neither variant covers still reaches a client — see\n[`ToolResultBody::of`]."
+                  },
+                  "terminate": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "tool_result"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The whole turn is over. The daemon sends it exactly once for each\nturn, as the last event of the turn, after the request slot is free.\nA client ends a turn on this event, not on `message_complete`.\n\n`status` has no default: an event that does not say how the turn\nended tells a client nothing.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "The whole turn is over. The daemon sends it exactly once for each\nturn, as the last event of the turn, after the request slot is free.\nA client ends a turn on this event, not on `message_complete`.\n\n`status` has no default: an event that does not say how the turn\nended tells a client nothing.",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/TurnStatus"
+                  },
+                  "stop_reason": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "$ref": "#/components/schemas/StopReason",
+                        "description": "The stop reason of the last provider call, when it sent one."
+                      }
+                    ]
+                  },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The error text for `failed` and `timed_out`, and the reason for\n`handler_cancelled`."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "turn_finished"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "request"
+                ],
+                "properties": {
+                  "request_id": {
+                    "type": "string"
+                  },
+                  "request": {
+                    "$ref": "#/components/schemas/InteractionRequest"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "interaction_requested"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "response"
+                ],
+                "properties": {
+                  "request_id": {
+                    "type": "string"
+                  },
+                  "response": {
+                    "$ref": "#/components/schemas/InteractionResponse"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "interaction_completed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Context that the session accepted for its next turn. It is not a\nuser turn.\n\nThe daemon stores it in `session.jsonl` on its own ordered path, as\nthe turn accepts it; the broadcast writer does not store it again.",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "Context that the session accepted for its next turn. It is not a\nuser turn.\n\nThe daemon stores it in `session.jsonl` on its own ordered path, as\nthe turn accepts it; the broadcast writer does not store it again.",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "description": "`system`, `user` or `assistant`."
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "The tags that a `transform_context` handler finds the block by."
+                  },
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The kind of the injection, for example `context` or `plugin`.\nAbsent for plain context."
+                  },
+                  "source": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Who injected it: a plugin name, `rpc`, or a diffset source."
+                  },
+                  "after_turn": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The message id of the turn whose input was already assembled\nwhen the context arrived. A reader places the context before\nthe next turn after it. Absent: before the next turn after the\nline itself."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "context_injected"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "notes_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "query_summary": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/PrecognitionNoteInfo"
+                    },
+                    "description": "Absent when the search found no notes. Older recordings carry\n`[]` for that case, and the decode reads both."
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "precognition_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The same payload goes to the subscribers and to the Lua\n`post_llm_call` handlers (`messaging/stream.rs`).",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "The same payload goes to the subscribers and to the Lua\n`post_llm_call` handlers (`messaging/stream.rs`).",
+                "properties": {
+                  "response_summary": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "duration_ms": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "post_llm_call"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Turn-stream events, adjacently tagged so the enum's serialization *is* the\n`{event, data}` pair the envelope carries."
+      },
+      "TurnStatus": {
+        "type": "string",
+        "description": "How a whole turn ended.\n\nThe daemon sends it in the `turn_finished` event and gives it to the\nin-process caller of `send_message_notified`. [`StopReason`] tells why ONE\nprovider call stopped. This tells what happened to the turn.",
+        "enum": [
+          "completed",
+          "cancelled",
+          "handler_cancelled",
+          "timed_out",
+          "failed"
+        ]
       },
       "UnreadableRoot": {
         "type": "object",
@@ -12242,6 +15362,224 @@
           }
         }
       },
+      "WorkflowPayload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "step_id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.step_started"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "step_id": {
+                    "type": "string"
+                  },
+                  "output_name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.step_completed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "gate_id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "owner": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.gate_reached"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "gate_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.gate_approved"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.completed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "runnable_passed": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AssessmentOutcome"
+                    }
+                  },
+                  "runnable_failed": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AssessmentOutcome"
+                    }
+                  },
+                  "manual_entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.assessed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "at_step": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "event"
+            ],
+            "properties": {
+              "data": {
+                "type": "object"
+              },
+              "event": {
+                "type": "string",
+                "enum": [
+                  "workflow.cancelled"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Workflow-engine progress.\n\nEvery name needs an explicit `rename`: the wire uses a `workflow.` prefix\nthat `rename_all = \"snake_case\"` cannot produce.\n\n`WorkflowCompleted` and `WorkflowCancelled` are **empty struct variants, not\nunit variants**. Under adjacent tagging a unit variant omits `data`\nentirely, which `to_wire` then reports as `null`; today's producers emit\n`{}`. `{}` and `null` are different JSON."
+      },
       "WorkspaceChoice": {
         "type": "object",
         "description": "The body of `session.set_workspace`, inside `Scoped`.\n\n`workspace: None` detaches.",
@@ -12252,6 +15590,20 @@
               "null"
             ],
             "description": "The workspace path. An absent or `null` value detaches: the session\nthen has no workspace."
+          }
+        }
+      },
+      "WorkspaceIndexedPayload": {
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
