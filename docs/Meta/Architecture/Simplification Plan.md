@@ -44,9 +44,41 @@ at the same time. Each step leaves the tree working.
 | 7. One test server (done) | 18 test-server copies, a hand mock | M | step 6 helps |
 | 8. Local duplicates (done) | about ten small copies | S each | none |
 | 9. Dead code (done) | unused modules and features | S | none |
-| 10. Group the daemon modules | 87 flat entries | M | steps 1 to 6 |
+| 10. Typed core replies | about 100 web wire types, about 300 `json!` replies | M | step 6 |
+| 11. One event vocabulary to the browser | `ChatEvent`, 29 TS copies | M | step 10 |
+| 12. Typed RPC rows | the `Value` client methods, 15 request halves | M | step 10 |
+| 13. Simpler core APIs | 11 core types, 32 constructors | S | step 12 |
+| 14. Luau types from the schema | 7 Luau contract copies, 1 Lua view | M | step 12 |
+| 15. The last TS copies | about 16 TS types | S | step 11 |
+| 16. One daemon test fixture | about 11 test types | S | none |
+| 17. Enums on the wire | 1 type, string fields | S | step 12 |
+| 18. Research: internal types | proposes the rest of the budget | S | step 12 |
 
 Size: S is days, M is one to two weeks, L is three to six weeks.
+
+## The type budget
+
+Steps 10 to 18 are measured by the count of types that they delete. A step
+that only moves or renames code does not count.
+
+At `514c4cc3b`, the tree has 2595 types: 1867 Rust types in `crates/*/src`,
+701 hand-written TypeScript types and 27 Luau types. The target is 15 percent
+fewer: 2206 or less. Steps 10 to 17 delete about 220. Step 18 must find the
+rest in the types that stay inside one crate.
+
+The count:
+
+```sh
+rg -c -t rust '^\s*(pub(\([a-z:]+\))? )?(struct|enum) [A-Z]' crates/*/src
+rg -c '^\s*(export )?(interface|type) [A-Z]' crates/crucible-web/web/src \
+  -g '*.ts' -g '*.tsx' -g '!api-schema.d.ts' -g '!**/__tests__/**'
+rg -c '^\s*(export )?type [A-Z]' runtime -g '*.luau'
+```
+
+Rust core types are the one source of each boundary type. The derive is
+`utoipa::ToSchema`, which already writes `openapi.json` and, through
+`openapi-typescript`, `api-schema.d.ts`. Steps 11 and 14 extend it to every
+wire type and to Luau. No second derive and no separate IDL language.
 
 ## Step 1. Remove the client-side agent proxy
 
@@ -102,9 +134,10 @@ daemon in `crates/crucible-daemon/src/observe/markdown.rs`, the TUI in
 history uses a separate type, `LogEvent` in
 `crates/crucible-daemon/src/observe/events.rs`.
 
-**Status: done.** Sub-step 3 finished with the parity test: the daemon
-folds each session once, and the TUI, the web client and `cru acp` draw
-its transcript. The notes below describe sub-step 1 as it ended.
+**Status: done for the transcript.** Sub-step 3 finished with the parity
+test: the daemon folds each session once, and the TUI, the web client and
+`cru acp` draw its transcript. The web backend still re-encodes each event
+as `ChatEvent` for the browser; step 11 removes that. The notes below describe sub-step 1 as it ended.
 
 **Sub-step 1.** `cru acp`, `cru session`, the TUI stream and
 the web file events decode `SessionEventPayload` and match its typed
@@ -383,22 +416,107 @@ Kept, with the reason:
 - `lua.register_commands`: no client sends it, but see step 3 for why it
   stays.
 
-## Step 10. Group the daemon modules
+## Step 10. Typed core replies
 
-**Now.** `crates/crucible-daemon/src/` has 87 flat entries. The MCP, kiln and
-session families are spread across the root and `tools/`. Some names
-collide, for example `rpc/workflow_handlers.rs` and `workflow_handlers/`.
+**Now.** 130 daemon handlers build their reply with `json!`: 583 sites in
+`crates/crucible-daemon/src/server` and `src/rpc`. The daemon builds three
+session shapes by hand (`server/session/list.rs`, `session_bridge.rs`).
+The web crate has no typed reply to publish, so it declares 146 `ToSchema`
+row types and decodes the daemon `Value` with `daemon_shape` (43 calls).
 
-**Change.** Move the modules into about ten domain folders, for example
-transport, session, agent, tools, knowledge, review, plugins and client.
-Change no behavior. Do this step last, because steps 1 to 6 delete many of
-these modules first. A move during heavy change causes merge conflicts.
+**Change.** Give each session, provider, mode, knob, agent-option, plugin,
+surface, skill, fs, kiln, comment and search reply one core type with
+`ToSchema`. The daemon returns it, and the web route returns it unchanged.
+Delete the web row types that copy a core type. Keep web-local types
+(login, terminal, layout, recents).
 
-**Why it helps.** Step 1 of the repository agent guide is to find the owner.
-A folder for each domain makes the owner easy to find.
+**Proof.** A deleted row that a route still names does not compile. The
+route contract tests and `openapi_contract` pass. The web crate has about
+90 types.
 
-**Proof.** `cargo check --workspace --all-targets` passes, and the diff
-shows only renames.
+## Step 11. One event vocabulary to the browser
+
+**Now.** `ChatEvent` in `crates/crucible-web/src/events.rs` re-encodes each
+`SessionEventPayload` into 21 variants of its own. `normalize_interaction`
+flattens a permission request. The browser reducer reads this second
+vocabulary, and `lib/types.ts` copies 29 wire types by hand.
+
+**Change.** Give `ToSchema` to the event payloads, the interaction types and
+the tool-call types. The SSE route sends `SessionEventMessage`. Delete
+`ChatEvent`, `normalize_interaction` and the TS copies; alias the
+generated types.
+
+**Proof.** The transcript parity test and the reducer tests pass against the
+generated union.
+
+## Step 12. Typed RPC rows
+
+**Now.** `rpc_methods!` names each method, not its types. The client has
+methods that return `Value`, and the daemon has 11 local `Params` structs.
+
+**Change.** Each request type names its method and its reply, in the same
+macro row: `impl RpcRequest for SessionCreateRequest { type Reply; const
+METHOD }`. `DaemonClient::call<Req>` replaces the `Value` methods. Each
+handler returns `Result<Reply, RpcError>`. Delete the local `Params`,
+`SessionCreateParams`, `SessionAgentSpec`, `EmptyParams` and
+`LuaShutdownSessionRequest`. No marker type per method.
+
+**Proof.** A row with no reply type does not compile. The knob RPC matrix
+and the RPC integration tests pass.
+
+## Step 13. Simpler core APIs
+
+**Change.** Merge the two `TokenUsage` types. Replace `LlmToolDefinition`
+and `FunctionDefinition` with `ToolDefinition`. Put `ToolResultBody` in
+place of `ChatToolResult`'s strings. Merge the two `SearchResult` types.
+Replace `DocumentId` with a plain id. Delete `LlmProviderConfigBuilder`.
+Replace the 32 named constructors of `SessionEventMessage` with one
+`typed(payload)`. Type the four `Value` fields whose shape is known.
+
+**Proof.** `cargo check --workspace` and the golden wire tests pass.
+
+## Step 14. Luau types from the schema
+
+**Change.** Add `LuaType::from_json_schema` in
+`crates/crucible-lua/src/signature.rs` and a `Json<T>` binding wrapper, so
+a binding's declaration comes from the core schema. `cru.d.luau` gets one
+`export type` for each core type that Lua reaches. Delete the hand Luau
+contract types (`PERMISSION_REQUEST`, `AgentKeys`, `TranscriptRow`, the
+`ToolResult` copies, `Interception`) and the Lua `PermissionRequest` view.
+
+**Proof.** `stubs::verify` runs in `just lint types`, and `luau-lsp`
+checks `runtime/` against the generated file.
+
+## Step 15. The last TS copies
+
+**Change.** Replace the remaining hand TS wire types (`GrepHit`,
+`SemanticHit`, the Bases and file request types, four `api.ts` types) with
+aliases of the generated schema.
+
+**Proof.** `tsc --noEmit` and the web unit tests pass.
+
+## Step 16. One daemon test fixture
+
+**Change.** Replace the local `Fixture`, `Rig` and `Daemon` test types in
+the daemon with one fixture in `crates/crucible-daemon/src/test_support.rs`.
+
+**Proof.** The daemon tests pass.
+
+## Step 17. Enums on the wire
+
+**Change.** Use the existing enums, not strings, for `session_type`,
+`agent_type`, `recording_mode`, `state` and `FsPathRequest.kind`. The
+generated TS and Luau types then hold literal unions.
+
+**Proof.** The serde round-trip tests and `openapi_contract` pass.
+
+## Step 18. Research: internal types
+
+About three quarters of the types stay inside one crate, for example
+`agent_manager` (80), `tools` (64) and the TUI (148). Steps 10 to 17 do not
+touch them. After step 12, count again, then find internal types that
+merge or go, crate by crate. The result is a plan for the rest of the
+budget in the section above.
 
 ## What not to merge
 
