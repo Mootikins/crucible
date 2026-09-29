@@ -13,9 +13,7 @@
 //! without editing both. One table now answers both.
 
 use async_trait::async_trait;
-use crucible_core::events::{
-    EmitOutcome, EmitResult, EventEmitter, InternalSessionEvent, SessionEvent,
-};
+use crucible_core::events::{EmitOutcome, EventEmitter, InternalSessionEvent, SessionEvent};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::debug;
@@ -99,12 +97,12 @@ impl DaemonEventBridge {
 impl EventEmitter for DaemonEventBridge {
     type Event = SessionEvent;
 
-    async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>> {
+    async fn emit(&self, event: Self::Event) -> EmitOutcome<Self::Event> {
         match &event {
             SessionEvent::Internal(inner) => {
                 if !self.index(inner).await {
                     debug!("Dropped the watcher's echo of a daemon change");
-                    return Ok(EmitOutcome::new(event));
+                    return EmitOutcome::new(event);
                 }
                 // A moved folder is for the index only. The bus has carried
                 // file events, and a handler of `FileMoved` expects a file.
@@ -129,14 +127,7 @@ impl EventEmitter for DaemonEventBridge {
             }
             _ => {}
         }
-        Ok(EmitOutcome::new(event))
-    }
-
-    async fn emit_recursive(
-        &self,
-        event: Self::Event,
-    ) -> EmitResult<Vec<EmitOutcome<Self::Event>>> {
-        self.emit(event).await.map(|outcome| vec![outcome])
+        EmitOutcome::new(event)
     }
 
     fn is_available(&self) -> bool {
@@ -170,8 +161,7 @@ mod tests {
             kind: FileChangeKind::Modified,
         });
 
-        let result = bridge.emit(event).await;
-        assert!(result.is_ok());
+        bridge.emit(event).await;
 
         let msg = rx.try_recv().unwrap();
         assert_eq!(msg.session_id, "system");
@@ -187,8 +177,7 @@ mod tests {
             path: PathBuf::from("/tmp/gone.md"),
         });
 
-        let result = bridge.emit(event).await;
-        assert!(result.is_ok());
+        bridge.emit(event).await;
 
         let msg = rx.try_recv().unwrap();
         assert_eq!(msg.event, "file_deleted");
@@ -204,8 +193,7 @@ mod tests {
             to: PathBuf::from("/tmp/new.md"),
         });
 
-        let result = bridge.emit(event).await;
-        assert!(result.is_ok());
+        bridge.emit(event).await;
 
         let msg = rx.try_recv().unwrap();
         assert_eq!(msg.event, "file_moved");
@@ -221,8 +209,7 @@ mod tests {
             payload: serde_json::Value::Null,
         };
 
-        let result = bridge.emit(event).await;
-        assert!(result.is_ok());
+        bridge.emit(event).await;
 
         assert!(rx.try_recv().is_err());
     }

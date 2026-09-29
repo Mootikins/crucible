@@ -11,7 +11,6 @@ pub mod knowledge;
 pub mod llm;
 pub mod mcp;
 pub mod parser;
-pub mod provider;
 pub mod tools;
 
 // Re-export key traits

@@ -113,9 +113,8 @@ behavior on top of them.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-core/src/events/emitter.rs` | 477 | `EventEmitter` trait, `EmitOutcome`/`EventError`, `NoOpEmitter` — the fail-open legacy file-watch event bus. |
+| `crates/crucible-core/src/events/emitter.rs` | 477 | `EventEmitter` trait, `EmitOutcome`, `NoOpEmitter` — the fail-open legacy file-watch event bus. `emit` returns `EmitOutcome<E>` directly: no real implementation ever failed, so there is no `EventError` and no `Result` to unwrap. |
 | `crates/crucible-core/src/events/mod.rs` | 58 | Module root; documents the removed `Reactor`/`Handler`/`subscriber` system this bus replaced. |
-| `crates/crucible-core/src/events/ring.rs` | 461 | `EventRing<E>` — a bounded, thread-safe, power-of-two ring buffer for event history/replay. |
 | `crates/crucible-core/src/events/session_event/internal.rs` | 130 | `InternalSessionEvent` — daemon-only pipeline signals wrapped as `SessionEvent::Internal`; six live variants. |
 | `crates/crucible-core/src/events/session_event/mod.rs` | 276 | `SessionEvent`/`ScriptingEvent` — the closed, Lua-facing scripting vocabulary; nine scripting names, two with a live `SessionEvent` variant. |
 | `crates/crucible-core/src/events/session_event/types.rs` | 69 | `NoteChangeType`/`FileChangeKind` supporting enums. |
@@ -232,7 +231,6 @@ behavior on top of them.
 | `crates/crucible-core/src/traits/mcp.rs` | 260 | `ContentBlock`/`ToolCallResult`/`McpToolInfo`/`McpServerInfo`/`McpTransportConfig`/`McpError`. |
 | `crates/crucible-core/src/traits/mod.rs` | 32 | Trait-layer re-export root — every crate implementing these traits imports through here. |
 | `crates/crucible-core/src/traits/parser.rs` | 5 | Re-export of canonical parser types under the `traits::` namespace. |
-| `crates/crucible-core/src/traits/provider.rs` | 191 | `ModelCapability`/`UnifiedModelInfo` — provider capability description. |
 | `crates/crucible-core/src/traits/tools.rs` | 465 | `ToolExecutor` trait, `ToolSurface`, `ExecutionContext`/`ToolDefinition`/`ToolExample`. |
 
 ### `crates/crucible-core/src/turn/`
@@ -413,8 +411,8 @@ saw. `crucible-lua`'s `cru.ui.*` API, `crucible-daemon`'s
 consume this vocabulary.
 
 **The event system.** Two disjoint vocabularies exist by design.
-`EventEmitter`/`EventRing` (`events/emitter.rs`, `events/ring.rs`) back the
-legacy but still-live file-watch bus. `SessionEvent`/`InternalSessionEvent`/
+`EventEmitter` (`events/emitter.rs`) backs the legacy but still-live
+file-watch bus. `SessionEvent`/`InternalSessionEvent`/
 `ScriptingEvent` (`events/session_event/*`) is the Lua-facing scripting
 vocabulary; it is not the wire type. `SessionEventPayload`/`Group`
 (`protocol/session_events/mod.rs`) is the wire-facing transport vocabulary,
@@ -694,11 +692,6 @@ Almost nothing in this page owns a lock, a channel, or a background task —
 `crucible-core` defines shapes; `crucible-daemon` owns the runtime state
 built from them. The exceptions:
 
-- `EventRing<E>` (`events/ring.rs`) holds a `Box<[RwLock<Option<Arc<E>>>]>`
-  slot array and an `AtomicU64` write sequence, with a manual
-  `unsafe impl Send + Sync` justified by its field types already being
-  `Send + Sync`. Old events may be overwritten under concurrent access — a
-  documented, tested property, not a bug.
 - `MockEventEmitter<E>` (`test_support/mocks/event_emitter.rs`) holds its
   state behind `Arc<Mutex<_>>` so tests can share one mock emitter across
   concurrent tasks.

@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 
-use crate::events::{EmitOutcome, EmitResult, EventEmitter, EventError, HandlerErrorInfo};
+use crate::events::{EmitOutcome, EventEmitter, HandlerErrorInfo};
 
 /// Statistics for mock event emitter operations
 ///
@@ -12,19 +12,13 @@ use crate::events::{EmitOutcome, EmitResult, EventEmitter, EventError, HandlerEr
 pub struct MockEventEmitterStats {
     /// Total number of emit calls
     pub emit_count: usize,
-    /// Total number of emit_recursive calls
-    pub emit_recursive_count: usize,
     /// Number of events that were cancelled
     pub cancelled_count: usize,
-    /// Number of emit calls that resulted in errors
-    pub error_count: usize,
 }
 
 /// Behavior configuration for the mock emitter
 #[derive(Debug, Clone, Default)]
 pub struct MockEmitterBehavior {
-    /// If set, emit() will return this error
-    pub error: Option<EventError>,
     /// If true, events will be marked as cancelled
     pub cancel_events: bool,
     /// Handler errors to include in outcomes
@@ -60,7 +54,6 @@ impl<E> Default for MockEventEmitterState<E> {
 /// for test verification. It supports:
 ///
 /// - **Event Recording**: All events are stored for later inspection
-/// - **Error Injection**: Simulate emission failures
 /// - **Cancellation Simulation**: Test event cancellation handling
 /// - **Handler Errors**: Simulate handler failures with fail-open semantics
 /// - **Thread-Safe**: Uses Arc<Mutex<>> for concurrent access
@@ -73,11 +66,11 @@ impl<E> Default for MockEventEmitterState<E> {
 /// use crucible_core::test_support::mocks::MockEventEmitter;
 /// use crucible_core::events::EventEmitter;
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # async fn example() {
 /// let emitter: MockEventEmitter<String> = MockEventEmitter::new();
 ///
 /// // Emit an event
-/// let outcome = emitter.emit("test event".to_string()).await?;
+/// let outcome = emitter.emit("test event".to_string()).await;
 /// assert!(!outcome.cancelled);
 ///
 /// // Verify the event was recorded
@@ -88,25 +81,6 @@ impl<E> Default for MockEventEmitterState<E> {
 /// // Check statistics
 /// let stats = emitter.stats();
 /// assert_eq!(stats.emit_count, 1);
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## Error Injection
-///
-/// ```rust
-/// use crucible_core::test_support::mocks::MockEventEmitter;
-/// use crucible_core::events::{EventEmitter, EventError};
-///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let emitter: MockEventEmitter<String> = MockEventEmitter::new();
-///
-/// // Configure to return an error
-/// emitter.set_error(Some(EventError::unavailable("test failure")));
-///
-/// let result = emitter.emit("test".to_string()).await;
-/// assert!(result.is_err());
-/// # Ok(())
 /// # }
 /// ```
 ///
@@ -116,15 +90,14 @@ impl<E> Default for MockEventEmitterState<E> {
 /// use crucible_core::test_support::mocks::MockEventEmitter;
 /// use crucible_core::events::EventEmitter;
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # async fn example() {
 /// let emitter: MockEventEmitter<String> = MockEventEmitter::new();
 ///
 /// // Configure to cancel events
 /// emitter.set_cancel_events(true);
 ///
-/// let outcome = emitter.emit("test".to_string()).await?;
+/// let outcome = emitter.emit("test".to_string()).await;
 /// assert!(outcome.cancelled);
-/// # Ok(())
 /// # }
 /// ```
 ///
@@ -134,16 +107,15 @@ impl<E> Default for MockEventEmitterState<E> {
 /// use crucible_core::test_support::mocks::MockEventEmitter;
 /// use crucible_core::events::{EventEmitter, HandlerErrorInfo};
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # async fn example() {
 /// let emitter: MockEventEmitter<String> = MockEventEmitter::new();
 ///
 /// // Configure handler errors (fail-open semantics)
 /// emitter.add_handler_error(HandlerErrorInfo::new("test_handler", "handler failed"));
 ///
-/// let outcome = emitter.emit("test".to_string()).await?;
+/// let outcome = emitter.emit("test".to_string()).await;
 /// assert!(outcome.has_errors());
 /// assert_eq!(outcome.error_count(), 1);
-/// # Ok(())
 /// # }
 /// ```
 #[derive(Debug, Clone)]
@@ -193,11 +165,6 @@ impl<E> MockEventEmitter<E> {
         state.behavior = MockEmitterBehavior::default();
     }
 
-    /// Configure an error to return on emit
-    pub fn set_error(&self, error: Option<EventError>) {
-        self.state.lock().unwrap().behavior.error = error;
-    }
-
     /// Configure whether to cancel events
     pub fn set_cancel_events(&self, cancel: bool) {
         self.state.lock().unwrap().behavior.cancel_events = cancel;
@@ -239,16 +206,10 @@ impl<E> Default for MockEventEmitter<E> {
 impl<E: Send + Sync + Clone + 'static> EventEmitter for MockEventEmitter<E> {
     type Event = E;
 
-    async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>> {
+    async fn emit(&self, event: Self::Event) -> EmitOutcome<Self::Event> {
         let mut state = self.state.lock().unwrap();
 
         state.stats.emit_count += 1;
-
-        // Check for configured error - clone first to avoid borrow conflict
-        if let Some(error) = state.behavior.error.clone() {
-            state.stats.error_count += 1;
-            return Err(error);
-        }
 
         // Record the event
         state.emitted_events.push(event.clone());
@@ -264,26 +225,12 @@ impl<E: Send + Sync + Clone + 'static> EventEmitter for MockEventEmitter<E> {
         if cancelled {
             let mut outcome = EmitOutcome::cancelled(event);
             outcome.errors = handler_errors;
-            Ok(outcome)
+            outcome
         } else if !handler_errors.is_empty() {
-            Ok(EmitOutcome::with_errors(event, handler_errors))
+            EmitOutcome::with_errors(event, handler_errors)
         } else {
-            Ok(EmitOutcome::new(event))
+            EmitOutcome::new(event)
         }
-    }
-
-    async fn emit_recursive(
-        &self,
-        event: Self::Event,
-    ) -> EmitResult<Vec<EmitOutcome<Self::Event>>> {
-        {
-            let mut state = self.state.lock().unwrap();
-            state.stats.emit_recursive_count += 1;
-        }
-
-        // For mock, just delegate to single emit
-        let outcome = self.emit(event).await?;
-        Ok(vec![outcome])
     }
 
     fn is_available(&self) -> bool {
@@ -300,7 +247,7 @@ mod tests {
         let emitter: MockEventEmitter<String> = MockEventEmitter::new();
 
         // Emit an event
-        let outcome = emitter.emit("test event".to_string()).await.unwrap();
+        let outcome = emitter.emit("test event".to_string()).await;
         assert!(!outcome.cancelled);
         assert!(!outcome.has_errors());
         assert_eq!(outcome.event, "test event");
@@ -309,7 +256,6 @@ mod tests {
         let stats = emitter.stats();
         assert_eq!(stats.emit_count, 1);
         assert_eq!(stats.cancelled_count, 0);
-        assert_eq!(stats.error_count, 0);
 
         // Check recorded events
         assert_eq!(emitter.event_count(), 1);
@@ -321,9 +267,9 @@ mod tests {
     async fn test_mock_event_emitter_multiple_events() {
         let emitter: MockEventEmitter<String> = MockEventEmitter::new();
 
-        emitter.emit("event1".to_string()).await.unwrap();
-        emitter.emit("event2".to_string()).await.unwrap();
-        emitter.emit("event3".to_string()).await.unwrap();
+        emitter.emit("event1".to_string()).await;
+        emitter.emit("event2".to_string()).await;
+        emitter.emit("event3".to_string()).await;
 
         assert_eq!(emitter.event_count(), 3);
         assert_eq!(emitter.last_event(), Some("event3".to_string()));
@@ -333,37 +279,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mock_event_emitter_error_injection() {
-        let emitter: MockEventEmitter<String> = MockEventEmitter::new();
-
-        // Configure error
-        emitter.set_error(Some(EventError::unavailable("test failure")));
-
-        let result = emitter.emit("test".to_string()).await;
-        assert!(result.is_err());
-
-        // Stats should reflect the error
-        let stats = emitter.stats();
-        assert_eq!(stats.emit_count, 1);
-        assert_eq!(stats.error_count, 1);
-
-        // Event should NOT be recorded when error occurs
-        assert_eq!(emitter.event_count(), 0);
-
-        // Clear error and emit again
-        emitter.set_error(None);
-        let outcome = emitter.emit("success".to_string()).await.unwrap();
-        assert!(!outcome.cancelled);
-        assert_eq!(emitter.event_count(), 1);
-    }
-
-    #[tokio::test]
     async fn test_mock_event_emitter_cancellation() {
         let emitter: MockEventEmitter<String> = MockEventEmitter::new();
 
         emitter.set_cancel_events(true);
 
-        let outcome = emitter.emit("test".to_string()).await.unwrap();
+        let outcome = emitter.emit("test".to_string()).await;
         assert!(outcome.cancelled);
 
         let stats = emitter.stats();
@@ -371,7 +292,7 @@ mod tests {
 
         // Disable cancellation
         emitter.set_cancel_events(false);
-        let outcome = emitter.emit("not cancelled".to_string()).await.unwrap();
+        let outcome = emitter.emit("not cancelled".to_string()).await;
         assert!(!outcome.cancelled);
     }
 
@@ -383,7 +304,7 @@ mod tests {
         emitter.add_handler_error(HandlerErrorInfo::new("handler1", "failed"));
         emitter.add_handler_error(HandlerErrorInfo::new("handler2", "also failed"));
 
-        let outcome = emitter.emit("test".to_string()).await.unwrap();
+        let outcome = emitter.emit("test".to_string()).await;
         assert!(outcome.has_errors());
         assert_eq!(outcome.error_count(), 2);
 
@@ -393,7 +314,7 @@ mod tests {
 
         // Clear errors
         emitter.clear_handler_errors();
-        let outcome = emitter.emit("test2".to_string()).await.unwrap();
+        let outcome = emitter.emit("test2".to_string()).await;
         assert!(!outcome.has_errors());
     }
 
@@ -414,8 +335,8 @@ mod tests {
     async fn test_mock_event_emitter_reset() {
         let emitter: MockEventEmitter<String> = MockEventEmitter::new();
 
-        emitter.emit("event1".to_string()).await.unwrap();
-        emitter.emit("event2".to_string()).await.unwrap();
+        emitter.emit("event1".to_string()).await;
+        emitter.emit("event2".to_string()).await;
         emitter.set_cancel_events(true);
         emitter.add_handler_error(HandlerErrorInfo::new("handler", "error"));
 
@@ -433,19 +354,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mock_event_emitter_emit_recursive() {
-        let emitter: MockEventEmitter<String> = MockEventEmitter::new();
-
-        let outcomes = emitter.emit_recursive("test".to_string()).await.unwrap();
-        assert_eq!(outcomes.len(), 1);
-        assert_eq!(outcomes[0].event, "test");
-
-        let stats = emitter.stats();
-        assert_eq!(stats.emit_count, 1);
-        assert_eq!(stats.emit_recursive_count, 1);
-    }
-
-    #[tokio::test]
     async fn test_mock_event_emitter_thread_safe() {
         use std::sync::Arc;
 
@@ -456,7 +364,7 @@ mod tests {
         for i in 0..10 {
             let emitter_clone = Arc::clone(&emitter);
             handles.push(tokio::spawn(async move {
-                emitter_clone.emit(i).await.unwrap();
+                emitter_clone.emit(i).await;
             }));
         }
 
@@ -486,7 +394,7 @@ mod tests {
             name: "test".to_string(),
         };
 
-        let outcome = emitter.emit(event.clone()).await.unwrap();
+        let outcome = emitter.emit(event.clone()).await;
         assert_eq!(outcome.event, event);
 
         let events = emitter.emitted_events();

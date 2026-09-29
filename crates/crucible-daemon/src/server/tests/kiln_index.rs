@@ -236,8 +236,7 @@ async fn a_bus_lag_does_not_leave_the_index_stale() {
                 kind: crucible_core::events::FileChangeKind::Modified,
             },
         ))
-        .await
-        .expect("emit");
+        .await;
     for i in 0..EVENT_CHANNEL_CAPACITY + 64 {
         server.event_tx.emit(SessionEventMessage::model_switched(
             "lag-flood",
@@ -467,8 +466,7 @@ async fn a_watcher_rescan_reindexes_the_kiln() {
             name: crate::watch::WATCH_RESCAN_EVENT.to_string(),
             payload: serde_json::Value::Null,
         })
-        .await
-        .expect("emit");
+        .await;
 
     let km = server.kiln_manager.clone();
     km.settle_index().await;

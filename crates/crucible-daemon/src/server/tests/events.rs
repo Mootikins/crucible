@@ -52,8 +52,7 @@ async fn test_file_deleted_event_removes_note_from_store() {
             .emit(SessionEvent::internal(InternalSessionEvent::FileDeleted {
                 path: kiln_path.join(rel),
             }))
-            .await
-            .expect("emit");
+            .await;
     }
     km.settle_index().await;
 

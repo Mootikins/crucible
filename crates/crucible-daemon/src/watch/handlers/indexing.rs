@@ -98,18 +98,13 @@ impl IndexingHandler {
             }
         };
 
-        match self.emitter.emit(session_event).await {
-            Ok(outcome) if outcome.has_errors() => warn!(
+        let outcome = self.emitter.emit(session_event).await;
+        if outcome.has_errors() {
+            warn!(
                 "File event had {} handler errors for: {}",
                 outcome.error_count(),
                 event.path.display()
-            ),
-            Ok(_) => {}
-            Err(e) => warn!(
-                "Failed to emit the file event for {}: {}",
-                event.path.display(),
-                e
-            ),
+            );
         }
     }
 }
@@ -140,7 +135,7 @@ impl EventHandler for IndexingHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::events::{EmitOutcome, EmitResult};
+    use crucible_core::events::EmitOutcome;
     use std::path::PathBuf;
     use std::sync::Mutex;
 
@@ -152,16 +147,9 @@ mod tests {
     impl EventEmitter for Kept {
         type Event = SessionEvent;
 
-        async fn emit(&self, event: SessionEvent) -> EmitResult<EmitOutcome<SessionEvent>> {
+        async fn emit(&self, event: SessionEvent) -> EmitOutcome<SessionEvent> {
             self.0.lock().unwrap().push(event.clone());
-            Ok(EmitOutcome::new(event))
-        }
-
-        async fn emit_recursive(
-            &self,
-            event: SessionEvent,
-        ) -> EmitResult<Vec<EmitOutcome<SessionEvent>>> {
-            self.emit(event).await.map(|outcome| vec![outcome])
+            EmitOutcome::new(event)
         }
 
         fn is_available(&self) -> bool {

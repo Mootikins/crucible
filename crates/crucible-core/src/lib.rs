@@ -124,10 +124,8 @@ pub use background::{generate_job_id, JobError, JobId, JobInfo, JobKind, JobResu
 pub use events::{
     // Emitter types
     EmitOutcome,
-    EmitResult,
     // Session event types
     EventEmitter,
-    EventError,
     FileChangeKind,
     HandlerErrorInfo,
     NoOpEmitter,

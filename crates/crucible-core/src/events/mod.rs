@@ -9,7 +9,6 @@
 //!   (`crucible-daemon/src/watch/`, `file_watch_bridge.rs`). Documented for
 //!   years as "legacy, new code should use `Reactor` directly"; the Reactor is
 //!   now gone and this is the one that has production callers.
-//! - [`ring`] — the bounded event ring.
 //!
 //! # What used to be here
 //!
@@ -30,7 +29,6 @@
 //! `EventSubscriber` trait that the file did not define.
 
 pub mod emitter;
-pub mod ring;
 pub mod session_event;
 
 // Re-exports for convenient access
@@ -44,15 +42,9 @@ pub mod session_event;
 // Built-in handlers
 
 // Legacy emitter exports
-pub use emitter::{
-    EmitOutcome, EmitResult, EventEmitter, EventError, HandlerErrorInfo, NoOpEmitter,
-    SharedEventBus,
-};
+pub use emitter::{EmitOutcome, EventEmitter, HandlerErrorInfo, NoOpEmitter, SharedEventBus};
 
 // Session event types
 pub use session_event::{
     FileChangeKind, InternalSessionEvent, NoteChangeType, ScriptingEvent, SessionEvent,
 };
-
-// Ring buffer for event storage
-pub use ring::EventRing;

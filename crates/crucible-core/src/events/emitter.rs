@@ -10,9 +10,9 @@
 //! # Example
 //!
 //! ```ignore
-//! use crucible_core::events::{EventEmitter, EmitResult, SessionEvent, NoteChangeType};
+//! use crucible_core::events::{EventEmitter, EmitOutcome, SessionEvent, NoteChangeType};
 //!
-//! async fn notify_file_change<E: EventEmitter>(emitter: &E, path: &str) -> EmitResult<()> {
+//! async fn notify_file_change<E: EventEmitter>(emitter: &E, path: &str) -> EmitOutcome<SessionEvent> {
 //!     emitter.emit(SessionEvent::NoteModified {
 //!         path: path.into(),
 //!         change_type: NoteChangeType::Content,
@@ -23,125 +23,6 @@
 use async_trait::async_trait;
 use std::fmt;
 use std::sync::Arc;
-
-/// Result type for event emission operations.
-pub type EmitResult<T> = Result<T, EventError>;
-
-/// Errors that can occur during event emission.
-#[derive(Debug, Clone)]
-pub enum EventError {
-    /// One or more handlers failed during event processing.
-    ///
-    /// Contains the list of handler names and their error messages.
-    /// Events still complete with fail-open semantics.
-    HandlersFailed {
-        /// Handler names that failed
-        handlers: Vec<String>,
-        /// Error messages from each handler
-        messages: Vec<String>,
-    },
-
-    /// Event was cancelled by a handler.
-    ///
-    /// This is not necessarily an error - some events (like `tool:before`)
-    /// can be cancelled to prevent execution.
-    Cancelled {
-        /// Handler that cancelled the event
-        cancelled_by: String,
-    },
-
-    /// Event bus is not available.
-    ///
-    /// The event bus may be disconnected or not yet initialized.
-    Unavailable {
-        /// Reason for unavailability
-        reason: String,
-    },
-
-    /// Serialization error when converting event payload.
-    SerializationError {
-        /// Error message
-        message: String,
-    },
-
-    /// Generic emission error.
-    Other {
-        /// Error message
-        message: String,
-    },
-}
-
-impl EventError {
-    /// Create a handlers failed error.
-    pub fn handlers_failed(handlers: Vec<String>, messages: Vec<String>) -> Self {
-        Self::HandlersFailed { handlers, messages }
-    }
-
-    /// Create a cancelled error.
-    pub fn cancelled(by: impl Into<String>) -> Self {
-        Self::Cancelled {
-            cancelled_by: by.into(),
-        }
-    }
-
-    /// Create an unavailable error.
-    pub fn unavailable(reason: impl Into<String>) -> Self {
-        Self::Unavailable {
-            reason: reason.into(),
-        }
-    }
-
-    /// Create a serialization error.
-    pub fn serialization(message: impl Into<String>) -> Self {
-        Self::SerializationError {
-            message: message.into(),
-        }
-    }
-
-    /// Create a generic error.
-    pub fn other(message: impl Into<String>) -> Self {
-        Self::Other {
-            message: message.into(),
-        }
-    }
-
-    /// Check if this error represents a cancellation (not a failure).
-    pub fn is_cancelled(&self) -> bool {
-        matches!(self, Self::Cancelled { .. })
-    }
-
-    /// Check if this error is fatal (should stop processing).
-    pub fn is_fatal(&self) -> bool {
-        matches!(self, Self::Unavailable { .. })
-    }
-}
-
-impl fmt::Display for EventError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::HandlersFailed { handlers, messages } => {
-                write!(f, "Event handlers failed: ")?;
-                for (h, m) in handlers.iter().zip(messages.iter()) {
-                    write!(f, "[{}: {}] ", h, m)?;
-                }
-                Ok(())
-            }
-            Self::Cancelled { cancelled_by } => {
-                write!(f, "Event cancelled by handler '{}'", cancelled_by)
-            }
-            Self::Unavailable { reason } => {
-                write!(f, "Event bus unavailable: {}", reason)
-            }
-            Self::SerializationError { message } => {
-                write!(f, "Event serialization error: {}", message)
-            }
-            Self::Other { message } => {
-                write!(f, "Event error: {}", message)
-            }
-        }
-    }
-}
-impl std::error::Error for EventError {}
 
 /// Outcome of emitting an event.
 ///
@@ -274,18 +155,16 @@ impl fmt::Display for HandlerErrorInfo {
 /// }
 ///
 /// impl<E: EventEmitter> MyComponent<E> {
-///     async fn do_work(&self) -> Result<(), Box<dyn std::error::Error>> {
+///     async fn do_work(&self) {
 ///         // Emit an event
 ///         let outcome = self.emitter.emit(SessionEvent::Custom {
 ///             name: "work_started".into(),
 ///             payload: json!({}),
-///         }).await?;
+///         }).await;
 ///
 ///         if outcome.cancelled {
 ///             println!("Work was cancelled by handler");
 ///         }
-///
-///         Ok(())
 ///     }
 /// }
 /// ```
@@ -314,24 +193,9 @@ pub trait EventEmitter: Send + Sync {
     /// - Any non-fatal handler errors
     /// - Whether the event was cancelled
     ///
-    /// Returns an `EventError` if emission fails catastrophically.
-    async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>>;
-
-    /// Emit an event and recursively process any events emitted by handlers.
-    ///
-    /// Some handlers may emit new events during processing. This method
-    /// continues processing until no new events are generated.
-    ///
-    /// # Arguments
-    ///
-    /// * `event` - The initial event to emit
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of outcomes, one for each event processed (including
-    /// the original and any events emitted by handlers).
-    async fn emit_recursive(&self, event: Self::Event)
-        -> EmitResult<Vec<EmitOutcome<Self::Event>>>;
+    /// Fail-open: a handler failure never stops emission, so this returns
+    /// the outcome directly rather than a `Result`.
+    async fn emit(&self, event: Self::Event) -> EmitOutcome<Self::Event>;
 
     /// Check if the event bus is available and ready.
     ///
@@ -372,16 +236,8 @@ impl<E> NoOpEmitter<E> {
 impl<E: Send + Sync + Clone + 'static> EventEmitter for NoOpEmitter<E> {
     type Event = E;
 
-    async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>> {
-        Ok(EmitOutcome::new(event))
-    }
-
-    async fn emit_recursive(
-        &self,
-        event: Self::Event,
-    ) -> EmitResult<Vec<EmitOutcome<Self::Event>>> {
-        // No handler runs, so no handler emits a second event.
-        Ok(vec![EmitOutcome::new(event)])
+    async fn emit(&self, event: Self::Event) -> EmitOutcome<Self::Event> {
+        EmitOutcome::new(event)
     }
 
     fn is_available(&self) -> bool {
@@ -392,39 +248,6 @@ impl<E: Send + Sync + Clone + 'static> EventEmitter for NoOpEmitter<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_event_error_display() {
-        let err = EventError::handlers_failed(
-            vec!["handler1".into(), "handler2".into()],
-            vec!["failed".into(), "timeout".into()],
-        );
-        let s = format!("{}", err);
-        assert!(s.contains("handler1"));
-        assert!(s.contains("handler2"));
-
-        let err = EventError::cancelled("my_handler");
-        assert!(format!("{}", err).contains("my_handler"));
-
-        let err = EventError::unavailable("disconnected");
-        assert!(format!("{}", err).contains("disconnected"));
-
-        let err = EventError::serialization("invalid json");
-        assert!(format!("{}", err).contains("invalid json"));
-
-        let err = EventError::other("unknown");
-        assert!(format!("{}", err).contains("unknown"));
-    }
-
-    #[test]
-    fn test_event_error_predicates() {
-        assert!(EventError::cancelled("test").is_cancelled());
-        assert!(!EventError::other("test").is_cancelled());
-
-        assert!(EventError::unavailable("test").is_fatal());
-        assert!(!EventError::cancelled("test").is_fatal());
-        assert!(!EventError::other("test").is_fatal());
-    }
 
     #[test]
     fn test_emit_outcome() {
@@ -460,18 +283,9 @@ mod tests {
 
         assert!(emitter.is_available());
 
-        let outcome = emitter.emit("test event".into()).await.unwrap();
+        let outcome = emitter.emit("test event".into()).await;
         assert_eq!(outcome.event, "test event");
         assert!(!outcome.cancelled);
         assert!(!outcome.has_errors());
-    }
-
-    #[tokio::test]
-    async fn test_emit_recursive_default() {
-        let emitter: NoOpEmitter<String> = NoOpEmitter::new();
-
-        let outcomes = emitter.emit_recursive("test".into()).await.unwrap();
-        assert_eq!(outcomes.len(), 1);
-        assert_eq!(outcomes[0].event, "test");
     }
 }

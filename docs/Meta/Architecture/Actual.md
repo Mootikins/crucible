@@ -560,7 +560,6 @@ Rust; `KilnFileKind::of` is the single file-kind predicate guarded by A2f in
 | `InternalSessionEvent` | `crucible-core/src/events/session_event/internal.rs` | 7 variants boxed in `SessionEvent::Internal` (38 before plan T3-B7) |
 | `ScriptingEvent` | `crucible-core/src/events/session_event/mod.rs:75` | The nine names both vocabularies share |
 | `EventEmitter`, `NoOpEmitter`, `EmitOutcome` | `crucible-core/src/events/emitter.rs:293,366,151` | Emitter trait for the watch pipeline |
-| `EventRing` | `crucible-core/src/events/ring.rs:74` | Bounded ring; write-only in production |
 | `InteractionRequest`, `InteractionResponse`, `InteractionEvent` | `crucible-core/src/interaction/types.rs:380,479,540` | Seven request kinds a UI answers |
 | `PermRequest`, `PermResponse`, `AskBatch`, `EditRequest`, `PopupRequest`, `InteractivePanel` | `interaction/{permission.rs:65,192; ask.rs:110; edit.rs:28; types.rs:37,237}` | |
 | `DaemonEventBridge` | `crucible-daemon/src/file_watch_bridge.rs:27` | `EventEmitter` over the daemon broadcast bus |
@@ -581,8 +580,9 @@ Rust; `KilnFileKind::of` is the single file-kind predicate guarded by A2f in
 | `FsEvent` | `crucible-web/src/fs_events.rs:24` | `changed/deleted/moved` SSE payload |
 | `WebhookSecrets`, `Signature` | `crucible-daemon/src/webhook/mod.rs:151,127` | HMAC verification for `POST /api/webhook/{name}` |
 
-**Traits.** `EventEmitter` (1 required plus associated type, 2 defaulted, 1
-production impl, `dyn` in six daemon signatures). `BackgroundSpawner`
+**Traits.** `EventEmitter` (2 required methods plus associated type, 1
+production impl, `dyn` in six daemon signatures; `emit_recursive` deleted —
+only its own tests called it). `BackgroundSpawner`
 (`crucible-core/src/background/mod.rs:22`, 4 required, 1 production impl).
 `StepHandler` (`crucible-core/src/workflow/handler.rs:53`, 1 required, 3
 production impls).
@@ -621,12 +621,14 @@ synchronous except `EventEmitter::emit`.
   `crucible-core/src/serde_md/serializer.rs` in full; the core copy has zero
   callers and the daemon copy has no production caller. Plan T3-B17 deleted
   both copies.
-- `EventRing` is write-only: one push at
-  `crucible-cli/src/tui/oil/chat_runner/actions.rs:562`, no read. Its
-  `unsafe impl Send/Sync` at `ring.rs:408-409` is redundant.
-- `EventEmitter` has one production impl and two defaulted methods nobody
-  calls. `EventError` (five variants) is never constructed;
-  `EmitOutcome.cancelled/.errors` are never set.
+- `EventRing` had lost its one write-side caller and gained no reader; the
+  simplification plan deleted it and its `unsafe impl Send/Sync`.
+- `EventEmitter` has one production impl and a defaulted method
+  (`emit_recursive`) nobody called outside its own tests; the plan deleted
+  it. `EventError` (five variants) was never constructed; the plan deleted
+  it too, and `emit` now returns `EmitOutcome<E>` directly.
+  `EmitOutcome.cancelled/.errors` are set only by `MockEventEmitter`, for
+  its own tests.
 - Parallel enums across the two vocabularies, before plan T3-B7:
   `InternalSessionEvent::PostLlmCall` equalled `TurnPayload::PostLlmCall`
   field for field; `SessionEvent::SessionEnded` equalled `TurnPayload::Ended`;
@@ -1125,7 +1127,7 @@ never yields `TurnEvent::ToolResult` while `AcpAgentHandle` does
 | `crucible-daemon` | `crucible-lua` | `LuaExecutor`, `PluginManager`, `PluginSpec`, every `register_*` function, all registries, `DaemonSessionApi`, `DaemonToolsApi`, `SessionConfigRpc`, `StageId`, `EventName`, `ModeRegistry`, `ToolSelector`, `IsolationRegistry`, `SandboxExec`, `BUILTIN_INIT_LUA`, `StubGenerator`, theme and statusline modules for `ui.config` |
 | `crucible-web` | `crucible-core` | `CliAppConfig`, `WebConfig`, `KilnName`, `read_project_config`, `ProjectFileAccess`, `SessionEventPayload` and groups, `InteractionResponse`, `SessionAgent`, `NoteRecord`, `SessionModes`, `Project`, `Canvas` and containment, `is_note_file`, `EXCLUDED_DIRS`, `PrecognitionNoteInfo`, `ChatError`, `TokenUsage` |
 | `crucible-web` | `crucible-daemon` | `DaemonClient`, `SessionEvent`, `DaemonCapabilities`, `Lua*Request/Response`, `GrepSearchResponse`, `ScmCloneResponse`, `SessionCreateParams`, `SessionAgentSpec`, `GrepSearchRequest`, `agent_manager::providers::ProviderInfo`, `subscription::WILDCARD_SESSION`, `server::plugins::OptionAction`, `webhook::*`, `project_manager::{forbidden_root_reason, resolve_registration_root}` (the latter gone after plan T3-C2) |
-| `crucible-cli` | `crucible-core` | config loaders and writers, credentials, parser types (`TaskFile`, `TaskGraph`, `WorkflowDoc`, `extract_frontmatter`), `AgentCardRegistry`, `AgentCardLoader`, `EventRing`, `SessionEvent`, `AgentHandle`, `Agent`, `StorageClient`, `NoteStore`, `KnowledgeRepository`, interaction types, `types::*` (72 import lines), `recording::*`, `FuzzyMatcher`, `bundled_docs`, `runtime_roots` |
+| `crucible-cli` | `crucible-core` | config loaders and writers, credentials, parser types (`TaskFile`, `TaskGraph`, `WorkflowDoc`, `extract_frontmatter`), `AgentCardRegistry`, `AgentCardLoader`, `SessionEvent`, `AgentHandle`, `Agent`, `StorageClient`, `NoteStore`, `KnowledgeRepository`, interaction types, `types::*` (72 import lines), `recording::*`, `FuzzyMatcher`, `bundled_docs`, `runtime_roots` |
 | `crucible-cli` | `crucible-daemon` | `DaemonClient` (25+ files), `SessionEvent` (31), `SessionCreateParams` (38), `DaemonAgentHandle`, `DaemonStorageClient`, `DaemonNoteStore`, `Server`, `BindWithPluginConfigParams`, `split_plugins_config`, `plugin_ops::{install, remove}`, `BootstrapOutcome`, `KilnRegistry`, `KilnRegistryContext`, `forbidden_root_reason`, `resolve_registration_root` (gone after plan T3-C2), `FileSessionStorage::root_for`, `parse_session_log`, `load_events`, `render_to_markdown`, `LogEvent`, `copilot::{CopilotAuth, CopilotError}`, `webhook::{default_secrets_path, mint_secret}`, `subscription::WILDCARD_SESSION`, `acp::streaming::humanize_tool_title`, `lifecycle::*` |
 | `crucible-cli` | `crucible-lua` | `theme::ThemeConfig`, `hl`, `hl_lua`, `ui_geometry`, `statusline_items`, `theme_wire`, `SessionCommand` (gone after plan T3-A5), `statusline_items::Region` |
 | `crucible-cli` | `crucible-oil` | node builders, `style`, `ansi`, `render`, `focus`, `terminal`, `planning`, `runtime`, `components`, `viewport`, `layout`, `truncate_to_chars`, `truncate_to_width`, `composite_overlays`, spinner frames |
@@ -1335,8 +1337,11 @@ canonical, sent by the daemon) vs `DetectedProvider`
 (`agent_manager/providers.rs:93`) vs `detect_providers_inner`
 (`provider_detect.rs:92`). Reason: `cru init` runs before the daemon.
 
-**`EmbeddingResponse` x2.** `crucible-daemon/src/llm/embeddings/provider.rs:400`
-(canonical) and `crucible-core/src/traits/provider.rs:16` (unused).
+**`EmbeddingResponse` x2 (resolved).** `crucible-daemon/src/llm/embeddings/provider.rs:400`
+was the canonical type; `crucible-core/src/traits/provider.rs` had no
+`EmbeddingResponse` left to duplicate it by the time the simplification plan
+found the file — the whole file (`ModelCapability`/`UnifiedModelInfo`, read
+only by its own tests) was dead, and the plan deleted it.
 
 **Ollama `/api/tags` shapes x2.** `provider/model_listing.rs:85-92` and
 `llm/embeddings/ollama.rs:43-51`, field-identical.
