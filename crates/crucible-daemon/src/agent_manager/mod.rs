@@ -1225,7 +1225,10 @@ impl AgentManager {
     /// live one, so a mid-turn redefinition cannot reshape a turn already in
     /// progress — routing it through here would defeat that.
     #[cfg(test)]
-    pub(crate) fn mode_stance(&self, mode_id: &str) -> Option<crucible_lua::ModeStance> {
+    pub(crate) fn mode_stance(
+        &self,
+        mode_id: &str,
+    ) -> Option<crucible_core::config::components::permissions::PermissionMode> {
         self.modes.get(mode_id).map(|m| m.permissions.default)
     }
 

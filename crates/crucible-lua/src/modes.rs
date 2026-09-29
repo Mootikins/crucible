@@ -34,15 +34,6 @@ use crucible_core::types::WriteMode;
 use mlua::{Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethods, Value};
 use std::sync::{Arc, RwLock};
 
-/// What a mode does when a tool needs permission.
-///
-/// Same three variants, same strings and same default as core's
-/// [`PermissionMode`]; a mode's stance used to be a second `ModeStance` enum
-/// here that a daemon-side `match` converted to and from `PermissionMode`
-/// variant by variant. A mode's default stance and the `[permissions]`
-/// config's mode are the same concept, so this is now a direct alias.
-pub type ModeStance = PermissionMode;
-
 /// Which tools a mode exposes.
 ///
 /// Patterns use the shared glob syntax from `crucible_core::utils::glob_match`
@@ -105,7 +96,7 @@ impl ToolSelector {
 /// `permissions = "allow"` is shorthand for `{ default = "allow" }`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ModePermissions {
-    pub default: ModeStance,
+    pub default: PermissionMode,
     pub allow: Vec<String>,
     pub deny: Vec<String>,
     pub ask: Vec<String>,
@@ -243,8 +234,8 @@ impl ModeRegistry {
     }
 }
 
-fn parse_stance(mode: &str, s: &str) -> LuaResult<ModeStance> {
-    s.parse::<ModeStance>().map_err(|_| {
+fn parse_stance(mode: &str, s: &str) -> LuaResult<PermissionMode> {
+    s.parse::<PermissionMode>().map_err(|_| {
         mlua::Error::runtime(format!(
             "cru.modes.{mode}.permissions must be \"ask\", \"allow\" or \"deny\", got {s:?}"
         ))
@@ -301,7 +292,7 @@ fn definition_from_lua(name: &str, table: &Table) -> LuaResult<ModeDefinition> {
         Ok(Value::Table(t)) => {
             let default = match t.get::<Option<String>>("default")? {
                 Some(s) => parse_stance(name, &s)?,
-                None => ModeStance::Ask,
+                None => PermissionMode::Ask,
             };
             ModePermissions {
                 default,
@@ -476,7 +467,7 @@ mod tests {
 
         let mode = registry.get("auto").expect("auto must be registered");
         assert_eq!(mode.tools, ToolSelector::All);
-        assert_eq!(mode.permissions.default, ModeStance::Allow);
+        assert_eq!(mode.permissions.default, PermissionMode::Allow);
     }
 
     /// One name style across every source of modes. A Lua declaration may
@@ -553,7 +544,7 @@ mod tests {
         assert_eq!(mode.tools, ToolSelector::All);
         assert_eq!(
             mode.permissions.default,
-            ModeStance::Ask,
+            PermissionMode::Ask,
             "an unspecified stance must prompt, never silently allow"
         );
     }
@@ -586,7 +577,7 @@ mod tests {
         assert_eq!(names, vec!["a", "b"], "a redefinition must not reorder");
         assert_eq!(
             registry.get("a").unwrap().permissions.default,
-            ModeStance::Allow
+            PermissionMode::Allow
         );
     }
 
@@ -659,7 +650,7 @@ mod tests {
 
         let mode = registry.get("review").unwrap();
         assert!(mode.tools.matches("bash"), "bash must be visible");
-        assert_eq!(mode.permissions.default, ModeStance::Deny);
+        assert_eq!(mode.permissions.default, PermissionMode::Deny);
         assert_eq!(mode.permissions.allow, vec!["bash:rg *", "bash:grep *"]);
         assert!(mode.permissions.has_rules());
     }
@@ -674,7 +665,7 @@ mod tests {
             .unwrap();
 
         let mode = registry.get("auto").unwrap();
-        assert_eq!(mode.permissions.default, ModeStance::Allow);
+        assert_eq!(mode.permissions.default, PermissionMode::Allow);
         assert!(
             !mode.permissions.has_rules(),
             "no rules means callers can skip building an engine"

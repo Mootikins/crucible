@@ -677,7 +677,7 @@ impl AgentManager {
     ) -> PermissionDecision {
         use crucible_core::config::components::permissions::PermissionConfig;
         let config = PermissionConfig {
-            // `ModeStance` is `PermissionMode` (`crucible-lua/src/modes.rs`),
+            // `PermissionMode` is `PermissionMode` (`crucible-lua/src/modes.rs`),
             // so a mode's default stance needs no per-variant conversion.
             default: permissions.default,
             allow: permissions.allow.clone(),

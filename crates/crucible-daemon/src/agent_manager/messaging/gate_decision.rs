@@ -27,7 +27,7 @@ use crucible_core::config::PatternStore;
 use crucible_core::interaction::{PermRequest, PermissionScope};
 use crucible_core::session::PluginApproval;
 use crucible_core::types::CanonicalToolCall;
-use crucible_lua::{ModeRegistry, ModeStance, PermissionHookResult};
+use crucible_lua::{ModeRegistry, PermissionHookResult};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -381,19 +381,19 @@ fn mode_stance(
     let permissions = ctx.modes.get(ctx.mode)?.permissions;
     let stance = match permissions.has_rules() {
         true => match AgentManager::evaluate_mode_rules(&permissions, call, args) {
-            PermissionDecision::Allow => ModeStance::Allow,
-            PermissionDecision::Deny { .. } => ModeStance::Deny,
-            PermissionDecision::Ask { .. } => ModeStance::Ask,
+            PermissionDecision::Allow => PermissionMode::Allow,
+            PermissionDecision::Deny { .. } => PermissionMode::Deny,
+            PermissionDecision::Ask { .. } => PermissionMode::Ask,
         },
         false => permissions.default,
     };
     match stance {
-        ModeStance::Allow => Some(Unprompted::Allow(Some(format!("{} mode", ctx.mode)))),
-        ModeStance::Deny => Some(Unprompted::Deny(format!(
+        PermissionMode::Allow => Some(Unprompted::Allow(Some(format!("{} mode", ctx.mode)))),
+        PermissionMode::Deny => Some(Unprompted::Deny(format!(
             "Tool '{}' is not permitted in {} mode",
             call.tool, ctx.mode
         ))),
-        ModeStance::Ask => None,
+        PermissionMode::Ask => None,
     }
 }
 

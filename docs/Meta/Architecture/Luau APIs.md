@@ -190,7 +190,7 @@ than declaring a fourth notifier type, so a session-change callback the
 daemon installs on one registry has the same shape as one it installs on
 this page's two.
 
-**`ModeRegistry`/`ModeDefinition`/`ModeStance`/`ToolSelector`**
+**`ModeRegistry`/`ModeDefinition`/`ToolSelector`** (a mode's default stance is core `PermissionMode`)
 (`crates/crucible-lua/src/modes.rs`) back `cru.modes`. The daemon owns one
 `ModeRegistry` instance and reads it for tool-visibility and default
 permission stance; the module doc states plainly that modes are "Not a

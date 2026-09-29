@@ -249,8 +249,7 @@ pub use luau_compat::register_stdlib_compat;
 pub use manifest::{LoadedPlugin, PluginManifest, PluginSource, PluginState};
 pub use mcp::register_mcp_module_stub;
 pub use modes::{
-    humanize_mode_id, register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance,
-    ToolSelector,
+    humanize_mode_id, register_modes, ModeDefinition, ModePermissions, ModeRegistry, ToolSelector,
 };
 pub use modules::{ModuleLoadHook, ModuleRegistry, ModuleRequest, PrivateRootGuard, RootKind};
 pub use session_start_scope::{SessionStartScope, SessionStartScopeRpc, SessionStartValues};

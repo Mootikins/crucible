@@ -758,11 +758,8 @@ with its evidence in the commit that did it:
     done. Same three variants, same strings (`rg` confirms
     `crucible_core::config::PermissionMode`'s `FromStr`/`Display` use
     `"allow"`/`"deny"`/`"ask"`, matching `ModeStance::parse`/`as_str`
-    exactly), same default (`Ask`). `ModeStance` is now
-    `pub type ModeStance = PermissionMode`, so every existing call site in
-    `crucible-lua` and `crucible-daemon/src/agent_manager/messaging/{gate_decision,permission}.rs`
-    still compiles unchanged, and the daemon's variant-by-variant `match`
-    that converted one to the other is gone.
+    exactly), same default (`Ask`). `ModeStance` is gone, with no
+    alias: `crucible-lua` and the daemon name `PermissionMode`.
 12. The private `Unprompted` enum (`gate_decision.rs`) into
     `PermissionDecision`: skipped. `Unprompted::Ask(layer: String)` carries
     which layer is asking, read as `PermRequest.layer` and shown to the

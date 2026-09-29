@@ -678,17 +678,17 @@ async fn the_auto_mode_stance_is_allow_and_plan_is_deny() {
 
     assert_eq!(
         agent_manager.mode_stance("auto"),
-        Some(crucible_lua::ModeStance::Allow)
+        Some(crucible_core::config::components::permissions::PermissionMode::Allow)
     );
     assert_eq!(
         agent_manager.mode_stance("plan"),
-        Some(crucible_lua::ModeStance::Ask),
+        Some(crucible_core::config::components::permissions::PermissionMode::Ask),
         "plan's real rule is conditional on is_safe, so it lives in a hook; a \
          blunt deny stance would refuse reads an agent card pushed through"
     );
     assert_eq!(
         agent_manager.mode_stance("ask"),
-        Some(crucible_lua::ModeStance::Ask)
+        Some(crucible_core::config::components::permissions::PermissionMode::Ask)
     );
 }
 
@@ -709,7 +709,7 @@ async fn the_auto_mode_stance_is_allow_and_plan_is_deny() {
 )]
 fn a_mode_can_permit_bash_for_specific_commands_only(command: &str, expected: PermissionDecision) {
     let permissions = crucible_lua::ModePermissions {
-        default: crucible_lua::ModeStance::Deny,
+        default: crucible_core::config::components::permissions::PermissionMode::Deny,
         allow: vec!["bash:rg *".to_string(), "bash:grep *".to_string()],
         deny: Vec::new(),
         ask: Vec::new(),

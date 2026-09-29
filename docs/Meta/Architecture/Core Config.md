@@ -157,28 +157,7 @@ is a field of `CliAppConfig`.
 
 **`PermissionConfig`/`PermissionMode`/`PermissionDecision`**
 (`components/permissions/types.rs`) are the permission domain's leaf types.
-`crucible-lua`'s `ModeStance` (`modes.rs`) — what a mode does by default when
-a tool needs permission — is `pub type ModeStance = PermissionMode`: same
-three variants, same wire strings, same default (`Ask`), so a mode's default
-stance and the `[permissions]` config's mode need no conversion between them.
-`CompiledPermissions`/`PermissionMatcher` (`matcher.rs`) compile a
-`PermissionConfig`'s rule strings into `globset` matchers, created by
-`PermissionEngine::new`. `PermissionEngine` (`engine.rs`) holds one
-`CompiledPermissions` and is created once per session/tool-call context by
-`crucible-daemon` (`tools_bridge.rs`, `agent_manager/session_permissions.rs`,
-`agent_manager/messaging/permission.rs`, `rpc/workflow_handlers.rs`); it is
-consumed, never mutated, for the lifetime of one call.
-`PermissionEngine::evaluate_call` is the canonical-call entry point that the
-daemon's unified `decide_permission` chain
-(`agent_manager/messaging/gate_decision.rs`) and ACP permission handling
-(`agent_manager/messaging/permission.rs`) both call; it routes on
-`CanonicalToolCall.kind` (a [[Core Domain Types]] type from
-`crates/crucible-core/src/types/tool_call.rs`) rather than a raw tool name,
-so one `bash`/`read`/`edit` rule governs both Crucible's own tools and every
-ACP agent's equivalent call. `PermissionEngine::evaluate(tool, input,
-is_interactive)` still exists as a single-tool-name entry point, but no
-production caller in `crucible-daemon` uses it any more; only the crate's
-own tests call it directly.
+A mode's default stance in `crucible-lua` (`modes.rs`, `ModePermissions.default`) is this `PermissionMode`: one type for what a mode, an override and the engine do with a tool call.
 
 **`ChatConfig`** (`components/chat.rs`) holds the model, agent preference and
 context-budget knobs, `DEFAULT_SYSTEM_PROMPT`, and
