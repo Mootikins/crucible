@@ -1,12 +1,11 @@
 //! Bridge between Crucible tool definitions and genai's Tool type.
 
-use crucible_core::traits::llm::LlmToolDefinition;
+use crucible_core::traits::tools::ToolDefinition;
 use genai::chat::Tool;
 
-pub fn llm_tool_to_genai(tool: &LlmToolDefinition) -> Tool {
-    let mut converted =
-        Tool::new(tool.function.name.clone()).with_description(tool.function.description.clone());
-    if let Some(mut schema) = tool.function.parameters.clone() {
+pub fn llm_tool_to_genai(tool: &ToolDefinition) -> Tool {
+    let mut converted = Tool::new(tool.name.clone()).with_description(tool.description.clone());
+    if let Some(mut schema) = tool.parameters.clone() {
         sanitize_tool_schema(&mut schema);
         converted = converted.with_schema(schema);
     }
@@ -57,6 +56,27 @@ pub(crate) fn sanitize_tool_schema(schema: &mut serde_json::Value) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn llm_tool_to_genai_carries_name_description_and_schema() {
+        let tool =
+            ToolDefinition::new("read_file", "Read contents of a file").with_parameters(json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path to read"}
+                },
+                "required": ["path"]
+            }));
+
+        let converted = llm_tool_to_genai(&tool);
+
+        assert_eq!(converted.name, "read_file".into());
+        assert_eq!(
+            converted.description.as_deref(),
+            Some("Read contents of a file")
+        );
+        assert!(converted.schema.is_some());
+    }
 
     #[test]
     fn test_sanitize_empty_object_schema() {

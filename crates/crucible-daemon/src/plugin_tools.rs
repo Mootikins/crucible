@@ -203,11 +203,7 @@ impl PluginRegistry {
                     definition: ToolDefinition {
                         name: tool.name.clone(),
                         description: tool.description.clone(),
-                        category: Some("plugin".to_string()),
                         parameters: Some(discovered_params_to_json_schema(&tool.params)),
-                        returns: None,
-                        examples: vec![],
-                        required_permissions: vec![],
                     },
                     input_hint: None,
                     effect: None,
@@ -242,11 +238,7 @@ impl PluginRegistry {
                     definition: ToolDefinition {
                         name: command.name.clone(),
                         description: command.description.clone(),
-                        category: Some("plugin".to_string()),
                         parameters: Some(discovered_params_to_json_schema(&command.params)),
-                        returns: None,
-                        examples: vec![],
-                        required_permissions: vec![],
                     },
                     input_hint: command.input_hint.clone(),
                     effect: Some(command.effect),

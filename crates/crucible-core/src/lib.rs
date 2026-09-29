@@ -83,7 +83,6 @@ pub use types::{
     SessionModeId,
     SessionModeState,
     ToolDefinition,
-    ToolExample,
 };
 
 pub use parser::{

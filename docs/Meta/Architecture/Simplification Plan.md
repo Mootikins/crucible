@@ -708,6 +708,31 @@ with its evidence in the commit that did it:
    `EmitOutcome<E>` directly. `emit_recursive` done: deleted from the trait
    and every impl; `rg -n "\.emit_recursive\("` found only its own two
    tests as callers.
+2. `LlmToolDefinition`/`FunctionDefinition` done: deleted from
+   `traits/llm.rs`. No caller read `r#type` (always `"function"`) or
+   serialized the wrapper to the wire; every caller converted it straight to
+   `genai::chat::Tool`. `crucible-daemon/src/provider/tool_bridge.rs`'s
+   `llm_tool_to_genai` now takes a `traits::tools::ToolDefinition` directly,
+   and `agent_factory.rs`/`provider/genai_handle.rs` build/hold
+   `ToolDefinition` throughout. Also deleted `ToolDefinition`'s unread
+   `category`, `returns`, `examples`, `required_permissions` fields, the
+   `ToolExample` type, and `with_category`/`with_permission`: `rg` found no
+   reader for any of them outside their own tests.
+3. `ChatToolResult`'s `result`/`error` strings: skipped.
+   `crucible-daemon/src/provider/genai_handle.rs::tool_response_payload`
+   keeps both when a tool exits non-zero with output already produced
+   ("Content AND an error: a non-zero exit with output on the way is still
+   output. Keep both rather than choosing."). `ToolResultBody` is untagged
+   `Ok { result } | Err { error }`, decided by which key is present — it
+   cannot carry both without inventing a shape neither variant is, which
+   the plan's design rules forbid.
+13. The TS `PermissionScope` alias: skipped this session. The Rust
+    `PermissionScope` (`crucible-core/src/interaction/permission.rs`) lives
+    beside `PermRequest`/`PermResponse`, the interaction types step 11 (web
+    events, interaction types, reducer) owns and another agent was changing
+    at the same time. Touching it here risked a collision in exactly the
+    file that step is working through; it is left for that step or a
+    follow-up pass.
 8. `ConfigValidationError` into `ConfigError` done. Its `MissingField`
    became `ConfigError::MissingValue` (same shape); its
    `InvalidValue { reason }` became `ConfigError::InvalidValue { value }`

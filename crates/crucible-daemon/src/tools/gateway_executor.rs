@@ -71,9 +71,7 @@ impl ToolExecutor for GatewayToolExecutor {
             .all_tools()
             .into_iter()
             .filter(|t| self.allowed_servers.contains(&t.upstream))
-            .map(|t| {
-                crate::tools::tool_definition(t.prefixed_name, t.description, t.input_schema, "mcp")
-            })
+            .map(|t| crate::tools::tool_definition(t.prefixed_name, t.description, t.input_schema))
             .collect())
     }
 

@@ -237,7 +237,7 @@ mod tests {
     fn bridge_names() -> Vec<String> {
         crate::provider::genai_handle::bridge_tool_defs()
             .into_iter()
-            .map(|d| d.function.name)
+            .map(|d| d.name)
             .collect()
     }
 

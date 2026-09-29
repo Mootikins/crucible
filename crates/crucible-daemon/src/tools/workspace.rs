@@ -662,7 +662,7 @@ impl ToolExecutor for WorkspaceTools {
         let mcp_tools = Self::tool_definitions();
         let tools = mcp_tools
             .into_iter()
-            .map(|t| crate::tools::tool_definition_from_rmcp(t, "workspace"))
+            .map(crate::tools::tool_definition_from_rmcp)
             .collect();
         Ok(tools)
     }

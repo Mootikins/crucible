@@ -2,7 +2,7 @@ use crate::agent_manager::{AgentHandle, SessionKnobs};
 use async_trait::async_trait;
 use crucible_core::session::ContextStrategy;
 use crucible_core::traits::chat::{ChatError, ChatResult, ChatToolCall, ChatToolResult};
-use crucible_core::traits::llm::LlmToolDefinition;
+use crucible_core::traits::tools::ToolDefinition;
 use crucible_core::traits::TokenUsage;
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
 use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
@@ -423,7 +423,7 @@ pub struct GenaiAgentHandle {
     /// so the stable half can be cached across sessions; see
     /// `apply_prompt_caching`.
     session_context: String,
-    tools: Vec<LlmToolDefinition>,
+    tools: Vec<ToolDefinition>,
     mode_state: SessionModeState,
     current_mode_id: String,
     /// Lua-declared modes, for the per-request tool filter. `None` (tests,
@@ -451,25 +451,22 @@ pub struct GenaiAgentHandle {
 /// The tool set attached to a single request, plus how many tools were
 /// deferred behind the discovery bridge (zero when no deferral occurred).
 struct VisibleToolSet {
-    tools: Vec<LlmToolDefinition>,
+    tools: Vec<ToolDefinition>,
     deferred_count: usize,
 }
 
 /// Rough token cost of attaching `defs` as function schemas: the serialized
 /// name, description, and parameter schema, via the shared chars/4 heuristic.
-fn tool_schema_tokens(defs: &[LlmToolDefinition]) -> usize {
+fn tool_schema_tokens(defs: &[ToolDefinition]) -> usize {
     use crucible_core::traits::context_ops::estimate_tokens;
     defs.iter()
         .map(|d| {
             let schema_tokens = d
-                .function
                 .parameters
                 .as_ref()
                 .map(|p| p.to_string().len().div_ceil(4))
                 .unwrap_or(0);
-            estimate_tokens(&d.function.name)
-                + estimate_tokens(&d.function.description)
-                + schema_tokens
+            estimate_tokens(&d.name) + estimate_tokens(&d.description) + schema_tokens
         })
         .sum()
 }
@@ -479,17 +476,18 @@ fn tool_schema_tokens(defs: &[LlmToolDefinition]) -> usize {
 /// `tool_dispatch::discovery_tool_definitions`, the same definition MCP
 /// `tools/list` serves; `invoke_tool` is a generic proxy the daemon unwraps to
 /// the real tool *before* hooks and permissions run.
-pub(crate) fn bridge_tool_defs() -> Vec<LlmToolDefinition> {
+pub(crate) fn bridge_tool_defs() -> Vec<ToolDefinition> {
     use serde_json::json;
     crate::tool_dispatch::discovery_tool_definitions()
         .into_iter()
-        .map(LlmToolDefinition::from)
-        .chain(std::iter::once(LlmToolDefinition::new(
-            "invoke_tool",
-            "Call a deferred tool by name. Routes through the normal permission and hook \
+        .chain(std::iter::once(
+            ToolDefinition::new(
+                "invoke_tool",
+                "Call a deferred tool by name. Routes through the normal permission and hook \
              pipeline exactly as a direct call would. Use discover_tools and get_tool_schema \
              first to find the tool and its parameters.",
-            json!({
+            )
+            .with_parameters(json!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -502,8 +500,8 @@ pub(crate) fn bridge_tool_defs() -> Vec<LlmToolDefinition> {
                     }
                 },
                 "required": ["name"]
-            }),
-        )))
+            })),
+        ))
         .collect()
 }
 
@@ -824,7 +822,7 @@ impl GenaiAgentHandle {
         client: genai::Client,
         model: ModelIden,
         system_prompt: &str,
-        tools: Vec<LlmToolDefinition>,
+        tools: Vec<ToolDefinition>,
     ) -> Self {
         let mode_state = default_internal_modes();
         let current_mode_id = mode_state.current_mode_id.0.to_string();
@@ -958,20 +956,20 @@ impl GenaiAgentHandle {
         // absent from the advertised set, so the model never saw it and the
         // grant did nothing — a half-landed permission is worse than none,
         // because the config says it worked.
-        let selected: Vec<LlmToolDefinition> = match &mode_selector {
+        let selected: Vec<ToolDefinition> = match &mode_selector {
             Some(selector) => self
                 .tools
                 .iter()
-                .filter(|t| selector.matches(&t.function.name))
+                .filter(|t| selector.matches(&t.name))
                 .cloned()
                 .collect(),
             None => self.tools.clone(),
         };
-        let write_filtered: Vec<LlmToolDefinition> = if in_plan || mode_unknown {
+        let write_filtered: Vec<ToolDefinition> = if in_plan || mode_unknown {
             selected
                 .iter()
                 .filter(|t| {
-                    let is_plugin = self.plugin_tool_names.contains(&t.function.name);
+                    let is_plugin = self.plugin_tool_names.contains(&t.name);
                     // An UNKNOWN mode has no declaration, so nothing can have
                     // granted anything and every plugin tool is stripped —
                     // `plugin_tool_barred` alone would not do it, because it
@@ -984,12 +982,12 @@ impl GenaiAgentHandle {
                     } else {
                         crate::tools::tool_modes::plugin_tool_barred(
                             &self.current_mode_id,
-                            &t.function.name,
+                            &t.name,
                             &self.plugin_tool_names,
                             self.modes.as_ref(),
                         )
                     };
-                    !is_write_tool_name(&t.function.name) && !barred
+                    !is_write_tool_name(&t.name) && !barred
                 })
                 .cloned()
                 .collect()
@@ -1007,10 +1005,10 @@ impl GenaiAgentHandle {
         // does not remove capability, it changes how the tools are presented.
         // The full rule, and why an active set does not override the budget,
         // is in [`crate::tools::active_tools`].
-        let write_filtered: Vec<LlmToolDefinition> = match self.active_selector() {
+        let write_filtered: Vec<ToolDefinition> = match self.active_selector() {
             Some(selector) => write_filtered
                 .into_iter()
-                .filter(|t| selector.matches(&t.function.name))
+                .filter(|t| selector.matches(&t.name))
                 .collect(),
             None => write_filtered,
         };
@@ -1043,9 +1041,9 @@ impl GenaiAgentHandle {
         }
 
         let before = write_filtered.len();
-        let mut kept: Vec<LlmToolDefinition> = write_filtered
+        let mut kept: Vec<ToolDefinition> = write_filtered
             .into_iter()
-            .filter(|t| !self.deferrable_tool_names.contains(&t.function.name))
+            .filter(|t| !self.deferrable_tool_names.contains(&t.name))
             .collect();
         let dropped = before - kept.len();
         if dropped == 0 {
@@ -1077,11 +1075,7 @@ impl GenaiAgentHandle {
     pub(crate) fn visible_tool_names_for_test(&self) -> (Vec<String>, usize) {
         let visible = self.visible_tools();
         (
-            visible
-                .tools
-                .iter()
-                .map(|t| t.function.name.clone())
-                .collect(),
+            visible.tools.iter().map(|t| t.name.clone()).collect(),
             visible.deferred_count,
         )
     }
@@ -2316,7 +2310,7 @@ mod tests {
 
     // ─── Progressive tool disclosure: visible_tools() deferral ──────────
 
-    fn test_handle_with_tools(tools: Vec<LlmToolDefinition>) -> GenaiAgentHandle {
+    fn test_handle_with_tools(tools: Vec<ToolDefinition>) -> GenaiAgentHandle {
         let config = LlmProviderConfig {
             provider_type: BackendType::OpenAI,
             default_model: Some(("gpt-4o-mini").into()),
@@ -2412,7 +2406,7 @@ mod tests {
             .visible_tools()
             .tools
             .iter()
-            .map(|t| t.function.name.clone())
+            .map(|t| t.name.clone())
             .collect();
         assert_eq!(names, vec!["read_file"], "review must not advertise writes");
     }
@@ -2441,7 +2435,7 @@ mod tests {
             .visible_tools()
             .tools
             .iter()
-            .map(|t| t.function.name.clone())
+            .map(|t| t.name.clone())
             .collect();
         assert!(
             names.contains(&"read_file".to_string())
@@ -2494,7 +2488,7 @@ mod tests {
             .visible_tools()
             .tools
             .iter()
-            .map(|t| t.function.name.clone())
+            .map(|t| t.name.clone())
             .collect();
         assert!(
             !names.contains(&"gh_create_pr".to_string()),
@@ -2507,21 +2501,21 @@ mod tests {
         );
     }
 
-    fn tool_def(name: &str) -> LlmToolDefinition {
-        LlmToolDefinition::new(
+    fn tool_def(name: &str) -> ToolDefinition {
+        ToolDefinition::new(
             name,
             "a tool description that contributes some tokens to the schema estimate",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "a query parameter"}
-                }
-            }),
         )
+        .with_parameters(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "a query parameter"}
+            }
+        }))
     }
 
     fn visible_names(set: &VisibleToolSet) -> Vec<String> {
-        set.tools.iter().map(|t| t.function.name.clone()).collect()
+        set.tools.iter().map(|t| t.name.clone()).collect()
     }
 
     /// M9 regression: mode is captured at agent creation, so plan-mode
@@ -2575,7 +2569,7 @@ mod tests {
     fn tool_deferral_reads_only_a_token_budget() {
         let gateway: Vec<_> = (0..6).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
         let deferrable: std::collections::HashSet<String> =
-            gateway.iter().map(|t| t.function.name.clone()).collect();
+            gateway.iter().map(|t| t.name.clone()).collect();
 
         // The shipped fallback budget applies, and six small gateway schemas
         // are far under 15% of it.
@@ -2604,7 +2598,7 @@ mod tests {
         let mut tools = vec![tool_def("read_file")];
         tools.extend(gateway.iter().cloned());
         let deferrable: std::collections::HashSet<String> =
-            gateway.iter().map(|t| t.function.name.clone()).collect();
+            gateway.iter().map(|t| t.name.clone()).collect();
         // Default effective budget (128k) → threshold ~19200 tokens; a handful
         // of small schemas is far under, so nothing defers.
         let handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
@@ -2623,7 +2617,7 @@ mod tests {
         let mut tools = vec![tool_def("read_file"), tool_def("semantic_search")];
         tools.extend(gateway.iter().cloned());
         let deferrable: std::collections::HashSet<String> =
-            gateway.iter().map(|t| t.function.name.clone()).collect();
+            gateway.iter().map(|t| t.name.clone()).collect();
         let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
         // Small budget → threshold ~150 tokens, which the tool schemas exceed.
         handle.context_budget = 1_000;
@@ -2660,7 +2654,7 @@ mod tests {
         let mut tools = vec![tool_def("read_file"), tool_def("edit_file")];
         tools.extend(gateway.iter().cloned());
         let deferrable: std::collections::HashSet<String> =
-            gateway.iter().map(|t| t.function.name.clone()).collect();
+            gateway.iter().map(|t| t.name.clone()).collect();
         let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
         handle.current_mode_id = "plan".to_string();
         handle.context_budget = 1_000;
@@ -2685,7 +2679,7 @@ mod tests {
         let mut tools = vec![tool_def("read_file"), tool_def("semantic_search")];
         tools.extend(gateway.iter().cloned());
         let deferrable: std::collections::HashSet<String> =
-            gateway.iter().map(|t| t.function.name.clone()).collect();
+            gateway.iter().map(|t| t.name.clone()).collect();
         let mut handle = test_handle_with_tools(tools).with_deferrable_tools(deferrable);
         handle.current_mode_id = "plan".to_string();
         // Default 128k budget → far under; no budget-driven deferral.
@@ -2793,7 +2787,7 @@ mod tests {
         let mut tools = vec![tool_def("read_file")];
         tools.extend(gateway.iter().cloned());
         let deferrable: std::collections::HashSet<String> =
-            gateway.iter().map(|t| t.function.name.clone()).collect();
+            gateway.iter().map(|t| t.name.clone()).collect();
         let sets = crate::tools::active_tools::ActiveToolSets::new();
         let mut handle = test_handle_with_tools(tools)
             .with_deferrable_tools(deferrable)
@@ -2824,7 +2818,7 @@ mod tests {
         let mut tools = vec![tool_def("read_file")];
         tools.extend(gateway.iter().cloned());
         let deferrable: std::collections::HashSet<String> =
-            gateway.iter().map(|t| t.function.name.clone()).collect();
+            gateway.iter().map(|t| t.name.clone()).collect();
         let mut handle = test_handle_with_tools(tools)
             .with_deferrable_tools(deferrable)
             .with_active_tools("s1", active_sets("s1", &["gh_tool_*"]));

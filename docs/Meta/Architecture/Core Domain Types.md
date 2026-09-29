@@ -227,11 +227,11 @@ behavior on top of them.
 | `crates/crucible-core/src/traits/context_ops/context_ops_tests.rs` | 170 | Tests for `ContextMessage` construction, `Range`'s tagged-JSON serde, and the injection envelope's tag-forging resistance. |
 | `crates/crucible-core/src/traits/context_ops/mod.rs` | 257 | `ContextMessage`/`MessageMetadata`, `Position`, `Range` — Lua's context-manipulation primitives; `ContextMessage::injection`/`escape` tag a daemon-injected system message with its `kind`/`source`. |
 | `crates/crucible-core/src/traits/knowledge.rs` | 167 | `KnowledgeRepository` trait, `NoteInfo`/`NoteLinks`. |
-| `crates/crucible-core/src/traits/llm.rs` | 145 | `MessageRole`/`LlmToolDefinition`/`FunctionDefinition`/`TokenUsage`. |
+| `crates/crucible-core/src/traits/llm.rs` | 60 | `MessageRole`/`TokenUsage`. A tool an LLM provider calls is a `traits::tools::ToolDefinition`; the `LlmToolDefinition`/`FunctionDefinition` wrapper that used to duplicate it is gone. |
 | `crates/crucible-core/src/traits/mcp.rs` | 260 | `ContentBlock`/`ToolCallResult`/`McpToolInfo`/`McpServerInfo`/`McpTransportConfig`/`McpError`. |
 | `crates/crucible-core/src/traits/mod.rs` | 32 | Trait-layer re-export root — every crate implementing these traits imports through here. |
 | `crates/crucible-core/src/traits/parser.rs` | 5 | Re-export of canonical parser types under the `traits::` namespace. |
-| `crates/crucible-core/src/traits/tools.rs` | 465 | `ToolExecutor` trait, `ToolSurface`, `ExecutionContext`/`ToolDefinition`/`ToolExample`. |
+| `crates/crucible-core/src/traits/tools.rs` | 465 | `ToolExecutor` trait, `ToolSurface`, `ExecutionContext`/`ToolDefinition` (`name`/`description`/`parameters`; the unread `category`/`returns`/`examples`/`required_permissions` fields and `ToolExample` are gone). |
 
 ### `crates/crucible-core/src/turn/`
 

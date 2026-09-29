@@ -780,9 +780,9 @@ async fn test_tool_definitions_include_get_kiln_info() {
 
     let get_kiln_info_tool = tools
         .iter()
-        .find(|t| t.function.name == "get_kiln_info")
+        .find(|t| t.name == "get_kiln_info")
         .expect("get_kiln_info tool should exist in in-process tools");
-    assert!(!get_kiln_info_tool.function.description.is_empty());
+    assert!(!get_kiln_info_tool.description.is_empty());
 }
 
 /// A registry holding one plugin tool named `plugin_echo`.
@@ -840,11 +840,10 @@ async fn plugin_tools_are_advertised_to_the_model() {
 
     let echo = tools
         .iter()
-        .find(|t| t.function.name == "plugin_echo")
+        .find(|t| t.name == "plugin_echo")
         .expect("plugin tool should be advertised to the model");
-    assert_eq!(echo.function.description, "Echo the input");
+    assert_eq!(echo.description, "Echo the input");
     let schema = echo
-        .function
         .parameters
         .as_ref()
         .expect("plugin tool should carry a parameter schema");
@@ -888,7 +887,7 @@ async fn plugin_tools_are_attached_in_plan_mode_and_reported_for_filtering() {
         .await;
 
     assert!(
-        tools.iter().any(|t| t.function.name == "plugin_echo"),
+        tools.iter().any(|t| t.name == "plugin_echo"),
         "plugin defs attach in every mode; visible_tools() filters per request"
     );
     assert!(
@@ -923,7 +922,7 @@ async fn workspace_tools_in_agent_tool_defs() {
         })
         .await;
 
-    let tool_names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
+    let tool_names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
 
     // These assertions FAIL because workspace tools are not yet included
     assert!(

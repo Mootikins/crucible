@@ -212,20 +212,8 @@ pub struct ToolDefinition {
     /// Human-readable description
     pub description: String,
 
-    /// Tool category (e.g., "query", "transform", "export")
-    pub category: Option<String>,
-
     /// Parameter schema (JSON Schema format)
     pub parameters: Option<serde_json::Value>,
-
-    /// Return type schema (JSON Schema format)
-    pub returns: Option<serde_json::Value>,
-
-    /// Example usage
-    pub examples: Vec<ToolExample>,
-
-    /// Required permissions
-    pub required_permissions: Vec<String>,
 }
 
 impl ToolDefinition {
@@ -234,59 +222,13 @@ impl ToolDefinition {
         Self {
             name: name.into(),
             description: description.into(),
-            category: None,
             parameters: None,
-            returns: None,
-            examples: Vec::new(),
-            required_permissions: Vec::new(),
         }
-    }
-
-    /// Set the category
-    pub fn with_category(mut self, category: impl Into<String>) -> Self {
-        self.category = Some(category.into());
-        self
     }
 
     /// Set the parameters schema
     pub fn with_parameters(mut self, schema: serde_json::Value) -> Self {
         self.parameters = Some(schema);
-        self
-    }
-
-    /// Add a required permission
-    pub fn with_permission(mut self, permission: impl Into<String>) -> Self {
-        self.required_permissions.push(permission.into());
-        self
-    }
-}
-
-/// Tool usage example
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolExample {
-    /// Example description
-    pub description: String,
-
-    /// Example parameters
-    pub parameters: serde_json::Value,
-
-    /// Expected result (optional)
-    pub result: Option<serde_json::Value>,
-}
-
-impl ToolExample {
-    /// Create a new tool example
-    pub fn new(description: impl Into<String>, parameters: serde_json::Value) -> Self {
-        Self {
-            description: description.into(),
-            parameters,
-            result: None,
-        }
-    }
-
-    /// Set the expected result
-    pub fn with_result(mut self, result: serde_json::Value) -> Self {
-        self.result = Some(result);
         self
     }
 }
@@ -311,31 +253,18 @@ mod tests {
 
     #[test]
     fn test_tool_definition_builder() {
-        let def = ToolDefinition::new("query_notes", "Query notes by criteria")
-            .with_category("query")
-            .with_parameters(serde_json::json!({
+        let def = ToolDefinition::new("query_notes", "Query notes by criteria").with_parameters(
+            serde_json::json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string" }
                 }
-            }))
-            .with_permission("read:notes");
+            }),
+        );
 
         assert_eq!(def.name, "query_notes");
-        assert_eq!(def.category, Some("query".to_string()));
-        assert_eq!(def.required_permissions, vec!["read:notes"]);
-    }
-
-    #[test]
-    fn test_tool_example() {
-        let example = ToolExample::new(
-            "Query AI notes",
-            serde_json::json!({"query": "SELECT * FROM notes WHERE tags CONTAINS 'ai'"}),
-        )
-        .with_result(serde_json::json!([{"id": "note:1", "title": "AI Note"}]));
-
-        assert_eq!(example.description, "Query AI notes");
-        assert!(example.result.is_some());
+        assert_eq!(def.description, "Query notes by criteria");
+        assert!(def.parameters.is_some());
     }
 
     // Mock executor for testing

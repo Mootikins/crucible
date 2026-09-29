@@ -56,7 +56,7 @@ pub use crate::types::mode::{
 };
 
 // Re-export trait types (these are associated with traits but used as data)
-pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
+pub use crate::traits::tools::{ExecutionContext, ToolDefinition};
 
 // Re-export tool reference types
 pub use crate::types::command::{

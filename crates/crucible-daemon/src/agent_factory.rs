@@ -17,8 +17,8 @@ use crucible_core::config::{BackendType, LlmProviderConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::auth::AuthHeaders;
-use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::mcp::McpToolInfo;
+use crucible_core::traits::tools::ToolDefinition;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_lua::auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 use mlua::Lua;
@@ -153,7 +153,7 @@ pub(crate) fn build_internal_delegation_context(
 async fn create_internal_mcp_tool_defs(
     params: CreateInternalMcpToolDefsParams<'_>,
 ) -> (
-    Vec<LlmToolDefinition>,
+    Vec<ToolDefinition>,
     std::collections::HashSet<String>,
     std::collections::HashSet<String>,
 ) {
@@ -199,11 +199,13 @@ async fn create_internal_mcp_tool_defs(
             if denied(&tool_name) {
                 continue;
             }
-            tool_defs.push(LlmToolDefinition::new(
-                tool_name,
-                tool.description.map(|d| d.to_string()).unwrap_or_default(),
-                serde_json::Value::Object((*tool.input_schema).clone()),
-            ));
+            tool_defs.push(
+                ToolDefinition::new(
+                    tool_name,
+                    tool.description.map(|d| d.to_string()).unwrap_or_default(),
+                )
+                .with_parameters(serde_json::Value::Object((*tool.input_schema).clone())),
+            );
         }
 
         info!(
@@ -228,11 +230,13 @@ async fn create_internal_mcp_tool_defs(
         if denied(&tool_name) {
             continue;
         }
-        tool_defs.push(LlmToolDefinition::new(
-            tool_name,
-            tool.description.map(|d| d.to_string()).unwrap_or_default(),
-            serde_json::Value::Object((*tool.input_schema).clone()),
-        ));
+        tool_defs.push(
+            ToolDefinition::new(
+                tool_name,
+                tool.description.map(|d| d.to_string()).unwrap_or_default(),
+            )
+            .with_parameters(serde_json::Value::Object((*tool.input_schema).clone())),
+        );
     }
 
     // Plugin-declared tools. Never deferrable: there are few of them and the
@@ -252,15 +256,14 @@ async fn create_internal_mcp_tool_defs(
                 continue;
             }
             plugin_tool_names.insert(def.name.clone());
-            tool_defs.push(LlmToolDefinition::new(
-                def.name,
-                def.description,
-                def.parameters.unwrap_or_else(|| serde_json::json!({})),
-            ));
+            tool_defs.push(
+                ToolDefinition::new(def.name, def.description)
+                    .with_parameters(def.parameters.unwrap_or_else(|| serde_json::json!({}))),
+            );
         }
     }
 
-    let user_mcp_tools: Vec<LlmToolDefinition> = if let Some(ref gw) = mcp_gateway {
+    let user_mcp_tools: Vec<ToolDefinition> = if let Some(ref gw) = mcp_gateway {
         let gw_read = gw.read().await;
         debug!(
             tool_count = gw_read.tool_count(),
@@ -283,11 +286,11 @@ async fn create_internal_mcp_tool_defs(
                 .filter(|tool| server_names.contains(&tool.upstream))
                 .filter(|tool| !denied(&tool.prefixed_name))
                 .map(|tool| {
-                    LlmToolDefinition::new(
+                    ToolDefinition::new(
                         tool.prefixed_name.clone(),
                         tool.description.clone().unwrap_or_default(),
-                        tool.input_schema.clone(),
                     )
+                    .with_parameters(tool.input_schema.clone())
                 })
                 .collect::<Vec<_>>();
             info!(count = tools.len(), servers = ?server_names, "Resolved MCP proxy tools");
@@ -299,10 +302,8 @@ async fn create_internal_mcp_tool_defs(
         vec![]
     };
 
-    let deferrable_names: std::collections::HashSet<String> = user_mcp_tools
-        .iter()
-        .map(|t| t.function.name.clone())
-        .collect();
+    let deferrable_names: std::collections::HashSet<String> =
+        user_mcp_tools.iter().map(|t| t.name.clone()).collect();
     tool_defs.extend(user_mcp_tools);
     (tool_defs, deferrable_names, plugin_tool_names)
 }
@@ -380,7 +381,7 @@ async fn create_internal_mcp_tool_names_for_tests(
             plugin_tools: None,
         })
         .await;
-    tools.into_iter().map(|t| t.function.name).collect()
+    tools.into_iter().map(|t| t.name).collect()
 }
 
 #[derive(Error, Debug)]

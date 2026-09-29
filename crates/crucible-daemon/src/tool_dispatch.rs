@@ -80,7 +80,6 @@ pub(crate) fn discovery_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 }
             }),
-            "discovery",
         ),
         crate::tools::tool_definition(
             "get_tool_schema".to_string(),
@@ -95,7 +94,6 @@ pub(crate) fn discovery_tool_definitions() -> Vec<ToolDefinition> {
                 },
                 "required": ["name"]
             }),
-            "discovery",
         ),
     ]
 }
@@ -657,7 +655,7 @@ impl ToolExecutor for McpToolExecutor {
     async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
         let tools = CrucibleMcpServer::list_tools(self.server.as_ref())
             .into_iter()
-            .map(|tool| crate::tools::tool_definition_from_rmcp(tool, "mcp"))
+            .map(crate::tools::tool_definition_from_rmcp)
             .collect();
 
         Ok(tools)

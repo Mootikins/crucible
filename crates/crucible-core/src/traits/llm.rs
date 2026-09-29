@@ -3,6 +3,16 @@
 //! Canonical data types for LLM tool-calling and token accounting shared across
 //! crates. Provider-specific request/response shapes live in the provider
 //! adapters (crucible-daemon `llm/`), not here.
+//!
+//! A tool that an LLM provider calls is a [`super::tools::ToolDefinition`],
+//! the same type `ToolExecutor::list_tools` returns. A second
+//! `LlmToolDefinition`/`FunctionDefinition` pair used to wrap it in an
+//! OpenAI-shaped `{type: "function", function: {...}}` envelope, but no
+//! caller ever read `r#type` (it was always `"function"`) or serialized the
+//! wrapper to the wire — every caller converted it straight to
+//! `genai::chat::Tool` (`crucible-daemon/src/provider/tool_bridge.rs`). The
+//! wrapper is gone; `tool_bridge::llm_tool_to_genai` takes a
+//! `ToolDefinition` directly.
 
 use serde::{Deserialize, Serialize};
 
@@ -33,57 +43,6 @@ pub enum MessageRole {
     Tool,
 }
 
-/// Tool definition for LLM tool calling
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmToolDefinition {
-    /// Tool type (typically "function")
-    pub r#type: String,
-    /// Function definition
-    pub function: FunctionDefinition,
-}
-
-impl LlmToolDefinition {
-    /// Create a new tool definition
-    pub fn new(
-        name: impl Into<String>,
-        description: impl Into<String>,
-        parameters: serde_json::Value,
-    ) -> Self {
-        Self {
-            r#type: "function".to_string(),
-            function: FunctionDefinition {
-                name: name.into(),
-                description: description.into(),
-                parameters: Some(parameters),
-            },
-        }
-    }
-}
-
-impl From<super::tools::ToolDefinition> for LlmToolDefinition {
-    fn from(tool: super::tools::ToolDefinition) -> Self {
-        Self {
-            r#type: "function".to_string(),
-            function: FunctionDefinition {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters,
-            },
-        }
-    }
-}
-
-/// Function definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionDefinition {
-    /// Function name
-    pub name: String,
-    /// Function description
-    pub description: String,
-    /// Function parameters schema (JSON Schema)
-    pub parameters: Option<serde_json::Value>,
-}
-
 /// Token usage information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TokenUsage {
@@ -99,47 +58,4 @@ pub struct TokenUsage {
     /// Tokens written to prompt cache (Anthropic: 1.25x cost on first write)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_creation_tokens: Option<u32>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tool_definition() {
-        let tool = LlmToolDefinition::new(
-            "search",
-            "Search for information",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                }
-            }),
-        );
-        assert_eq!(tool.function.name, "search");
-        assert_eq!(tool.r#type, "function");
-    }
-
-    #[test]
-    fn test_llm_tool_definition_from_tool_definition() {
-        use crate::traits::tools::ToolDefinition;
-
-        let tool_def = ToolDefinition::new("read_file", "Read contents of a file").with_parameters(
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path to read"}
-                },
-                "required": ["path"]
-            }),
-        );
-
-        let llm_tool: LlmToolDefinition = tool_def.into();
-
-        assert_eq!(llm_tool.r#type, "function");
-        assert_eq!(llm_tool.function.name, "read_file");
-        assert_eq!(llm_tool.function.description, "Read contents of a file");
-        assert!(llm_tool.function.parameters.is_some());
-    }
 }
