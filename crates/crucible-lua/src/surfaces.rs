@@ -33,6 +33,11 @@
 //! is the same reason the statusline sanitises on the way in.
 
 use crate::host_hook::HostHook;
+// The four wire types (`Surface`, `Shape`, `Mark`, `SurfaceRow`) are
+// canonical in core: the daemon, the web route and this registry all name
+// them from there, so a field that reaches a client cannot drift from the
+// field this module writes.
+pub use crucible_core::types::{Mark, Shape, Surface, SurfaceRow};
 use mlua::{Lua, Table};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -90,113 +95,9 @@ pub const MAX_TEXT_CHARS: usize = 200;
 /// losing the list.
 pub const MAX_ROWS: usize = 500;
 
-/// What a client draws.
-///
-/// One variant, because one renderer exists. `Tree`, `Table` and `KeyValue` are
-/// named in the design and arrive **with** their renderers — the exhaustive
-/// match on this enum is what forces that, and a variant added ahead of its
-/// renderer would be a shape a plugin can declare and no client can draw.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Shape {
-    /// Rows in order, one line each.
-    List,
-}
-
-impl Shape {
-    /// The name a plugin writes, and the name on the wire.
-    ///
-    /// **No wildcard arm, ever.** A new shape must fail to compile until
-    /// someone names it here and in both renderers.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::List => "list",
-        }
-    }
-
-    /// The shape for a declared name, or `None` when nothing draws it.
-    #[must_use]
-    pub fn parse(name: &str) -> Option<Self> {
-        match name {
-            "list" => Some(Self::List),
-            _ => None,
-        }
-    }
-}
-
-/// A row's status, stated semantically so each client picks its own glyph.
-///
-/// The plugin says what is true; the TUI may draw `●` and the web a coloured
-/// dot. A plugin that shipped its own glyph would bind one client's medium into
-/// a contract both must honour, which is the mistake this enum exists to
-/// prevent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mark {
-    /// Work is underway.
-    Busy,
-    /// Waiting on a person.
-    Blocked,
-    /// Finished, nothing wrong.
-    Ok,
-    /// Finished, something is wrong.
-    Failed,
-}
-
-impl Mark {
-    /// **No wildcard arm, ever** — same reason as [`Shape::as_str`].
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Busy => "busy",
-            Self::Blocked => "blocked",
-            Self::Ok => "ok",
-            Self::Failed => "failed",
-        }
-    }
-
-    #[must_use]
-    pub fn parse(name: &str) -> Option<Self> {
-        match name {
-            "busy" => Some(Self::Busy),
-            "blocked" => Some(Self::Blocked),
-            "ok" => Some(Self::Ok),
-            "failed" => Some(Self::Failed),
-            _ => None,
-        }
-    }
-}
-
-/// One row of a surface.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SurfaceRow {
-    /// Stable identity, chosen by the plugin. What an action names later, and
-    /// what a client keys a selection on across a re-push.
-    pub id: String,
-    /// The row's own text.
-    pub text: String,
-    /// Secondary text, when the row has any.
-    pub detail: Option<String>,
-    /// Status, when the row has one. `None` is "no status", never "unknown".
-    pub mark: Option<Mark>,
-}
-
-/// One declared surface.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Surface {
-    /// The plugin that declared it, so a stale surface can be attributed.
-    pub plugin: String,
-    /// The plugin's own name for it. Stable across a reload — see
-    /// [`SurfaceRegistry`].
-    pub name: String,
-    pub title: String,
-    pub shape: Shape,
-    /// The session this surface is about, or `None` when it is about the plugin.
-    pub session: Option<String>,
-    pub rows: Vec<SurfaceRow>,
-    /// Bumped on every row change, so a client redraws on a change it sees
-    /// rather than on a timer.
-    pub version: u64,
-}
+// `Shape`, `Mark`, `SurfaceRow` and `Surface` are `crucible_core::types`
+// types, re-exported above. This registry holds and announces them; it
+// does not declare them.
 
 /// Declared surfaces, keyed by `(plugin, name)`.
 ///

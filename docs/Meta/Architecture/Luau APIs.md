@@ -73,7 +73,7 @@ this page's files.
 | `crates/crucible-lua/src/statusline_items.rs` | 617 | Pure `Layout`/`StatusItem`/`Region` data model and its wire codec. |
 | `crates/crucible-lua/src/statusline_lua.rs` | 533 | `cru.statusline` Lua constructors (`sl.mode`, `sl.model{}`, `sl.proposals`, `sl.items`, `sl.plugin_turns`, `sl.setup`) that build a `Layout`. `crates/crucible-lua/src/plugin_status.rs` (see [[Luau Host]]) opens the same `statusline` module table through `crate::lua_util::get_or_create_module` to add `cru.statusline.item`/`publish`; the two files share one Lua table, not one owner. |
 | `crates/crucible-lua/src/storage_api.rs` | 444 | `cru.storage.*` — the per-plugin EAV property-store API over `crucible_core::storage::PropertyStore`. |
-| `crates/crucible-lua/src/surfaces.rs` | 1067 | `cru.surface.declare`/`set_rows` — the cross-client panel registry (`SurfaceRegistry`, `Shape`, `Mark`). |
+| `crates/crucible-lua/src/surfaces.rs` | 968 | `cru.surface.declare`/`set_rows` — the cross-client panel registry (`SurfaceRegistry`). `Surface`, `Shape`, `Mark` and `SurfaceRow` are `crucible_core::types` types, re-exported here. |
 | `crates/crucible-lua/src/theme.rs` | 1325 | Canonical `ThemeConfig` domain type and its Lua-table parser/loader; the built-in dark theme. |
 | `crates/crucible-lua/src/theme_wire.rs` | 479 | JSON wire codec for `ThemeConfig`, for the `ui.config` RPC handshake; keeps colors unresolved on the wire. |
 | `crates/crucible-lua/src/timer.rs` | 582 | `cru.timer.clock`/`sleep`/`timeout`/`spawn` with per-plugin task-abort bookkeeping. |
@@ -327,8 +327,10 @@ sequenceDiagram
    stamps a sequence number onto the change and pushes it onto its
    broadcast bus.
 4. `crucible-cli`'s TUI and `crucible-web`'s frontend both render the same
-   `Surface`/`SurfaceRow` shape from that bus, since the contract is
-   semantic (rows and marks), not a rendered node tree.
+   `Surface`/`SurfaceRow` shape from that bus — the one core type with
+   `ToSchema`, named directly by the daemon, the web route and this
+   registry — since the contract is semantic (rows and marks), not a
+   rendered node tree.
 
 ## State, concurrency and lifecycle
 

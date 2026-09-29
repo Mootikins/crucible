@@ -21,6 +21,21 @@ pub struct SurfaceRequest {
     pub name: Option<String>,
 }
 
+/// What `surface.list` answers: every declared surface, rows included.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SurfaceListReply {
+    pub surfaces: Vec<crate::types::Surface>,
+}
+
+/// What `surface.get` answers: one surface, or `null` when nothing declares
+/// it. Always written, so `null` means "not found", never "unknown".
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SurfaceGetReply {
+    #[serde(default)]
+    pub surface: Option<crate::types::Surface>,
+}
+
 /// Request for `plugin.options`.
 ///
 /// `ui` is the frontend asking ("tui" or "web"); it drives the per-frontend

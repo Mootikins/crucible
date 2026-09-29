@@ -25,6 +25,7 @@ pub mod popup;
 pub mod provider_info;
 pub mod skill;
 pub mod status_item;
+pub mod surface;
 pub mod tool_call;
 pub mod tool_match;
 pub mod tool_ref;
@@ -81,6 +82,10 @@ pub use crate::types::status_item::{
     IndeterminateProgress, StatusDisplayItem, StatusItemKind, StatusProgress,
     PLUGIN_APPROVAL_ACTION, PLUGIN_TURNS_ID_PREFIX,
 };
+
+// Re-export the plugin surface types (declared in `crucible-lua`, served by
+// the daemon's `surface.*` RPCs, drawn by the TUI and the web client).
+pub use crate::types::surface::{Mark, Shape, Surface, SurfaceRow};
 
 // Re-export skill discovery types (`skills.*` RPCs).
 pub use crate::types::skill::{SkillDetail, SkillSummary, SkillsReply};

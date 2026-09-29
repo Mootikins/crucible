@@ -35,7 +35,7 @@ impl ReconnectingDaemon {
         /// panel with no change here.
         Safe SurfaceList =>
         surfaces()
-        -> serde_json::Value = surface_list();
+        -> Vec<crucible_core::types::Surface> = surface_list();
     }
 
     forward_rpc! {

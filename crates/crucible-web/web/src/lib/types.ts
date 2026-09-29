@@ -844,11 +844,11 @@ export type SessionHistoryResponse = Schemas['SessionHistoryResponse'];
 
 /** One row of a plugin surface. The mark is declared; the client picks the
  * glyph. An unknown mark renders blank. */
-export type SurfaceRow = Schemas['SurfaceLineRow'];
+export type SurfaceRow = Schemas['SurfaceRow'];
 
 /** A panel a plugin declared, as the daemon reports it. `shape` is `list`
  * today — a shape arrives with its renderer, never before it. */
-export type Surface = Schemas['SurfaceRow'];
+export type Surface = Schemas['Surface'];
 
 /** One skill of a kiln, as `GET /api/skills` lists it. */
 export type SkillSummary = Schemas['SkillSummary'];

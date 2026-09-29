@@ -1,10 +1,11 @@
+use super::platform::reply;
 use super::*;
 use crate::daemon_plugins::PluginServiceFn;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
     NameRequest, PathRequest, PluginOptionCallRequest, PluginOptionsRequest,
     PluginPublicationsRequest, PluginRunCommandRequest, PluginSpecRow, ScmCloneRequest,
-    SessionIdRequest, SurfaceRequest,
+    SessionIdRequest, SurfaceGetReply, SurfaceListReply, SurfaceRequest,
 };
 
 /// Drain extracted service functions, spawn each, and record the handle
@@ -156,38 +157,6 @@ pub(crate) async fn handle_session_status(
 /// which isolation profiles a box offered by matching on the shape of raw
 /// `[plugins.*]` TOML, which put one plugin's config schema in the rendering
 /// layer and made a second plugin answering the same question invisible.
-/// Project one surface as JSON for a client.
-///
-/// The shape and the mark are their declared strings, never a glyph: each client
-/// picks its own, which is the whole reason `Mark` is a stated vocabulary rather
-/// than a character the plugin chose.
-///
-/// `pub` so the web crate can prove its own `SurfaceRow` writes back exactly
-/// what this wrote (`crucible-web/src/routes/surface.rs`). That route named its
-/// reply instead of forwarding this object verbatim, and a named struct can
-/// drop a key this one adds; calling the real projection is what keeps the two
-/// from separating.
-pub fn surface_json(surface: &crucible_lua::Surface) -> serde_json::Value {
-    serde_json::json!({
-        "plugin": surface.plugin,
-        "name": surface.name,
-        "title": surface.title,
-        "shape": surface.shape.as_str(),
-        "session": surface.session,
-        "version": surface.version,
-        "rows": surface
-            .rows
-            .iter()
-            .map(|row| serde_json::json!({
-                "id": row.id,
-                "text": row.text,
-                "detail": row.detail,
-                "mark": row.mark.map(crucible_lua::Mark::as_str),
-            }))
-            .collect::<Vec<_>>(),
-    })
-}
-
 /// `surface.list` — every declared surface, rows included.
 ///
 /// Rows come with the list because a surface is a panel, not a feed, and a
@@ -203,16 +172,15 @@ pub(crate) async fn handle_surface_list(
     };
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
-        return Response::success(req.id, serde_json::json!({ "surfaces": [] }));
+        return reply(req.id, SurfaceListReply::default());
     };
-    let surfaces: Vec<serde_json::Value> = loader
+    let surfaces = loader
         .surfaces()
         .list()
-        .iter()
+        .into_iter()
         .filter(|s| params.plugin.as_ref().is_none_or(|p| *p == s.plugin))
-        .map(surface_json)
         .collect();
-    Response::success(req.id, serde_json::json!({ "surfaces": surfaces }))
+    reply(req.id, SurfaceListReply { surfaces })
 }
 
 /// `surface.get` — one surface by name.
@@ -238,20 +206,17 @@ pub(crate) async fn handle_surface_get(
     };
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
-        return Response::success(req.id, serde_json::json!({ "surface": null }));
+        return reply(req.id, SurfaceGetReply::default());
     };
     let registry = loader.surfaces();
-    let found = match params.plugin {
+    let surface = match params.plugin {
         Some(plugin) => registry.get(&plugin, &name),
         // No plugin named: the first by the registry's stable order, so two
         // plugins declaring one name give a deterministic answer rather than a
         // different one per call.
         None => registry.list().into_iter().find(|s| s.name == name),
     };
-    Response::success(
-        req.id,
-        serde_json::json!({ "surface": found.as_ref().map(surface_json) }),
-    )
+    reply(req.id, SurfaceGetReply { surface })
 }
 
 pub(crate) async fn handle_plugin_publications(
