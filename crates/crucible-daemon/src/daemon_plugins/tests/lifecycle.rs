@@ -48,16 +48,16 @@ async fn a_second_load_plugins_call_keeps_previously_loaded_specs() {
     let counts = |name: &str| {
         let entry = info
             .iter()
-            .find(|p| p["name"] == name)
+            .find(|p| p.name == name)
             .unwrap_or_else(|| panic!("'{name}' missing from plugin info: {info:#?}"));
-        (entry["state"].clone(), entry["tools"].clone())
+        (entry.state.clone(), entry.tools)
     };
     assert_eq!(
         counts("alpha"),
-        ("Active".into(), 1.into()),
+        ("Active".to_string(), 1),
         "alpha's spec was dropped by the second activation pass"
     );
-    assert_eq!(counts("beta"), ("Active".into(), 1.into()));
+    assert_eq!(counts("beta"), ("Active".to_string(), 1));
 }
 
 /// A remembered spec upserts by plugin name: the second load of one plugin
@@ -112,11 +112,8 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
         .expect("activation is fail-open per plugin");
 
     let info = loader.loaded_plugin_info();
-    let entry = info
-        .iter()
-        .find(|p| p["name"] == "halfdead")
-        .expect("listed");
-    assert_eq!(entry["state"], "Error", "got: {entry}");
+    let entry = info.iter().find(|p| p.name == "halfdead").expect("listed");
+    assert_eq!(entry.state, "Error", "got: {entry:?}");
     // Error must MEAN inert:
     assert_eq!(loader.plugin_handlers().plugin_handler_count("halfdead"), 0);
     assert!(!loader.plugin_registry().tool_names().contains("probe"));
@@ -138,7 +135,7 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
     );
     // …but the plugin still shows what it DECLARES:
     assert_eq!(
-        entry["tools"], 1,
+        entry.tools, 1,
         "a broken plugin's declared counts stay visible"
     );
     // And an explicit reload of a broken plugin must say so:
@@ -302,8 +299,9 @@ async fn a_second_load_plugins_call_picks_up_a_new_plugin_without_disturbing_act
     let info = loader.loaded_plugin_info();
     let state = |name: &str| {
         info.iter()
-            .find(|p| p["name"] == name)
-            .unwrap_or_else(|| panic!("'{name}' missing from plugin info: {info:#?}"))["state"]
+            .find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("'{name}' missing from plugin info: {info:#?}"))
+            .state
             .clone()
     };
     assert_eq!(state("alpha"), "Active");
@@ -376,7 +374,7 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
         !loader
             .loaded_plugin_info()
             .iter()
-            .any(|p| p["name"] == "comeback"),
+            .any(|p| p.name == "comeback"),
         "a removed plugin must leave plugin.list"
     );
 
@@ -389,9 +387,9 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
     let info = loader.loaded_plugin_info();
     let entry = info
         .iter()
-        .find(|p| p["name"] == "comeback")
+        .find(|p| p.name == "comeback")
         .expect("reinstalled plugin listed");
-    assert_eq!(entry["state"], "Active", "got: {entry}");
+    assert_eq!(entry.state, "Active", "got: {entry:?}");
     assert!(
         loader
             .plugin_registry()
@@ -489,12 +487,12 @@ async fn a_reload_that_fails_in_the_manager_leaves_the_plugin_inert_and_errored(
     let info = loader.loaded_plugin_info();
     let entry = info
         .iter()
-        .find(|p| p["name"] == "brittle")
+        .find(|p| p.name == "brittle")
         .expect("still listed for diagnosis");
-    assert_eq!(entry["state"], "Error", "got: {entry}");
+    assert_eq!(entry.state, "Error", "got: {entry:?}");
     assert!(
-        entry["last_error"].as_str().is_some_and(|e| !e.is_empty()),
-        "the failure must be visible in plugin.list: {entry}"
+        entry.last_error.as_deref().is_some_and(|e| !e.is_empty()),
+        "the failure must be visible in plugin.list: {entry:?}"
     );
     assert_eq!(
         loader.plugin_handlers().plugin_handler_count("brittle"),

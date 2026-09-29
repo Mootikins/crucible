@@ -1021,15 +1021,13 @@ impl DaemonPluginLoader {
     ///
     /// These have no entry in `plugin.list`'s `plugin_info` — they never became
     /// plugins — so they are reported alongside it.
-    pub fn discovery_errors(&self) -> Vec<serde_json::Value> {
+    pub fn discovery_errors(&self) -> Vec<crucible_core::types::PluginDiscoveryError> {
         self.plugin_manager
             .discovery_errors()
             .iter()
-            .map(|e| {
-                serde_json::json!({
-                    "path": e.path.to_string_lossy(),
-                    "error": e.error,
-                })
+            .map(|e| crucible_core::types::PluginDiscoveryError {
+                path: e.path.to_string_lossy().to_string(),
+                error: e.error.clone(),
             })
             .collect()
     }
@@ -1240,25 +1238,23 @@ impl DaemonPluginLoader {
     /// This deliberately does not filter on `Active`: a plugin that failed to
     /// load was previously dropped from the response entirely, making "broken"
     /// indistinguishable from "not installed" for every client.
-    pub fn loaded_plugin_info(&self) -> Vec<serde_json::Value> {
+    pub fn loaded_plugin_info(&self) -> Vec<crucible_core::types::PluginInfo> {
         self.plugin_manager
             .list()
             .map(|p| {
                 let spec = self.loaded_specs.get(&p.manifest.name);
-                serde_json::json!({
-                    "name": p.manifest.name,
-                    "version": p.manifest.version,
-                    "source": p.source.to_string(),
-                    "state": p.state.to_string(),
-                    "last_error": p.last_error,
-                    "dir": p.dir.to_string_lossy(),
-                    "tools": spec.map(|s| s.tools.len()).unwrap_or(0),
-                    "commands": spec.map(|s| s.commands.len()).unwrap_or(0),
-                    "handlers": self
-                        .handler_registry
-                        .plugin_handler_count(&p.manifest.name),
-                    "services": spec.map(|s| s.services.len()).unwrap_or(0),
-                })
+                crucible_core::types::PluginInfo {
+                    name: p.manifest.name.clone(),
+                    version: p.manifest.version.clone(),
+                    source: p.source.to_string(),
+                    state: p.state.to_string(),
+                    last_error: p.last_error.clone(),
+                    dir: p.dir.to_string_lossy().to_string(),
+                    tools: spec.map(|s| s.tools.len() as u64).unwrap_or(0),
+                    commands: spec.map(|s| s.commands.len() as u64).unwrap_or(0),
+                    handlers: self.handler_registry.plugin_handler_count(&p.manifest.name) as u64,
+                    services: spec.map(|s| s.services.len() as u64).unwrap_or(0),
+                }
             })
             .collect()
     }

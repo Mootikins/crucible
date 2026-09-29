@@ -37,14 +37,26 @@
 //! [`CommandEffect::Write`], and the type carries no `Default` impl — the
 //! choice is made once, where the absence is observed, with this reason beside
 //! it.
+//!
+//! ## Where this type lives
+//!
+//! Owned here, in `crucible-core`, rather than in `crucible-lua` where the
+//! declaration is read. The daemon's `plugin.commands` reply and the web's
+//! `GET /api/plugins/commands` route both send this value on the wire, and
+//! `crucible-lua` has no `openapi` feature to describe it with. `crucible-lua`
+//! re-exports this type rather than declaring a second one.
 
 #![deny(clippy::wildcard_enum_match_arm)]
 #![deny(clippy::match_wildcard_for_single_variants)]
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// What a command does to state a user could lose. See the module docs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum CommandEffect {
     /// Changes nothing a user could lose. May compute, cache and publish.
@@ -126,5 +138,13 @@ mod tests {
         assert_eq!(CommandEffect::parse("reed"), None);
         assert_eq!(CommandEffect::parse(""), None);
         assert_eq!(CommandEffect::parse("READ"), None);
+    }
+
+    #[test]
+    fn serializes_as_its_declared_spelling() {
+        for effect in CommandEffect::iter() {
+            let value = serde_json::to_value(effect).unwrap();
+            assert_eq!(value, serde_json::json!(effect.as_str()));
+        }
     }
 }

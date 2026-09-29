@@ -1426,7 +1426,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KilnGraphResponse"
+                  "$ref": "#/components/schemas/KilnGraphReply"
                 }
               }
             }
@@ -1485,7 +1485,7 @@
             }
           },
           "502": {
-            "description": "The daemon could not list the kilns, or answered a shape this route cannot read"
+            "description": "The daemon could not list the kilns"
           }
         }
       }
@@ -1639,7 +1639,7 @@
             }
           },
           "502": {
-            "description": "The daemon could not list the notes, or answered a shape this route cannot read"
+            "description": "The daemon could not list the notes"
           }
         }
       }
@@ -1700,7 +1700,7 @@
     },
     "/api/notes/{name}": {
       "get": {
-        "summary": "`GET /api/notes/{name}?kiln=<path>` — one note by name or path.",
+        "summary": "`GET /api/notes/{name}?kiln=<path>` — one note by name or path. The reply\nis core's own [`NoteByNameReply`], the same type `get_note_by_name`\nanswers.",
         "operationId": "get_note",
         "parameters": [
           {
@@ -1728,7 +1728,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NoteResponse"
+                  "$ref": "#/components/schemas/NoteByNameReply"
                 }
               }
             }
@@ -1740,7 +1740,7 @@
             "description": "The kiln holds no note of that name"
           },
           "502": {
-            "description": "The daemon could not read the note, or answered a shape this route cannot read"
+            "description": "The daemon could not read the note"
           }
         }
       },
@@ -1824,6 +1824,8 @@
         }
       },
       "post": {
+        "summary": "`POST /api/plugins` — clone a plugin from a git URL and record it in\nthe installed manifest (`plugins.installed.json`), the same record\n`cru plugin add` writes. The operator's own spec entries live in\n`init.lua`, which nothing here edits. Synchronous; can take 10+ seconds.",
+        "description": "The reply is `crucible_core::types::PluginInstallReply`, forwarded\nunchanged. Its `outcome` field is `crucible_core::types::\nPluginInstallOutcome`, the wire projection of\n`crucible_daemon::BootstrapOutcome` (`BootstrapOutcome::to_wire`) — the\ntype `server/plugin_install.rs` matches on to decide it.",
         "operationId": "install_plugin",
         "parameters": [
           {
@@ -1852,7 +1854,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginInstallResponse"
+                  "$ref": "#/components/schemas/PluginInstallReply"
                 }
               }
             }
@@ -1872,7 +1874,7 @@
     "/api/plugins/command": {
       "post": {
         "summary": "`POST /api/plugins/command` — invoke a plugin command by name.",
-        "description": "Not under `/{name}` because the name sent here resolves through the daemon's\ncommand registry. The result is passed\nthrough verbatim, like publications and options: what a command returns is\nthe plugin's vocabulary, and a shape this layer validated would be a shape\nonly today's plugins could send.",
+        "description": "Not under `/{name}` because the name sent here resolves through the daemon's\ncommand registry. The result is passed\nthrough verbatim, like publications and options: what a command returns is\nthe plugin's vocabulary, and a shape this layer validated would be a shape\nonly today's plugins could send.\n\nThe reply is `crucible_core::types::PluginRunCommandReply`, forwarded\nunchanged.",
         "operationId": "run_command",
         "parameters": [
           {
@@ -1901,7 +1903,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginRunCommandResponse"
+                  "$ref": "#/components/schemas/PluginRunCommandReply"
                 }
               }
             }
@@ -1921,7 +1923,7 @@
     "/api/plugins/commands": {
       "get": {
         "summary": "`GET /api/plugins/commands` — the executable primitives plugins declared.",
-        "description": "Each entry carries `plugin`, `name`, `description`, `hint`, `parameters`\nand `effect`. The names are read, so the browser is told what a row holds;\n`parameters` is passed through verbatim, so a caller offering a command as\na button — with a dialog built from the declared parameters — needs no\nchange on this side when a plugin ships a new one.\n\n`parameters` crosses as opaque JSON today. It comes from the same\n`ToolDefinition` a tool uses, so shaping it like `signature.rs`'s JSON\nSchema output is what would let a dialog be generated rather than\nhand-read — see `docs/Meta/Analysis/The Plugin Contract.md`.",
+        "description": "Each entry carries `plugin`, `name`, `description`, `hint`, `parameters`\nand `effect`. The names are read, so the browser is told what a row holds;\n`parameters` is passed through verbatim, so a caller offering a command as\na button — with a dialog built from the declared parameters — needs no\nchange on this side when a plugin ships a new one.\n\n`parameters` crosses as opaque JSON today. It comes from the same\n`ToolDefinition` a tool uses, so shaping it like `signature.rs`'s JSON\nSchema output is what would let a dialog be generated rather than\nhand-read — see `docs/Meta/Analysis/The Plugin Contract.md`.\n\nThe row type is `crucible_core::types::PluginCommand`, forwarded\nunchanged: its `effect` field is `crucible_core::types::CommandEffect`,\nthe same closed vocabulary `crucible-lua` re-exports rather than mirrors.",
         "operationId": "list_plugin_commands",
         "responses": {
           "200": {
@@ -1929,7 +1931,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginCommandsResponse"
+                  "$ref": "#/components/schemas/PluginCommandsReply"
                 }
               }
             }
@@ -1951,7 +1953,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginOptionsResponse"
+                  "$ref": "#/components/schemas/PluginOptionsReply"
                 }
               }
             }
@@ -1993,7 +1995,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginPublicationsResponse"
+                  "$ref": "#/components/schemas/PluginPublicationsReply"
                 }
               }
             }
@@ -2010,6 +2012,7 @@
     "/api/plugins/{name}": {
       "delete": {
         "summary": "`DELETE /api/plugins/:name?purge=true` — remove a plugin declaration.",
+        "description": "The reply is `crucible_core::types::PluginRemoveReply`, forwarded\nunchanged.",
         "operationId": "remove_plugin",
         "parameters": [
           {
@@ -2046,7 +2049,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginRemoveResponse"
+                  "$ref": "#/components/schemas/PluginRemoveReply"
                 }
               }
             }
@@ -2066,6 +2069,7 @@
     "/api/plugins/{name}/option": {
       "post": {
         "summary": "`POST /api/plugins/:name/option` — read, write, or press one option.",
+        "description": "The reply is `crucible_core::types::PluginOptionCallReply`: a value for a\n`get`, an acknowledgement for a `set` or an `execute`. See that type's\ndocs for why its variant order is load-bearing.",
         "operationId": "option_call",
         "parameters": [
           {
@@ -2103,7 +2107,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginOptionCallResponse"
+                  "$ref": "#/components/schemas/PluginOptionCallReply"
                 }
               }
             }
@@ -2122,7 +2126,8 @@
     },
     "/api/plugins/{name}/reload": {
       "post": {
-        "summary": "`POST /api/plugins/:name/reload` — reload a plugin by name.\nReturns the daemon's reload response (counts of tools, commands, etc.).",
+        "summary": "`POST /api/plugins/:name/reload` — reload a plugin by name.",
+        "description": "The reply is `crucible_core::types::PluginReloadReply` (counts of tools,\ncommands, etc.), forwarded unchanged.",
         "operationId": "reload_plugin",
         "parameters": [
           {
@@ -2150,7 +2155,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginReloadResponse"
+                  "$ref": "#/components/schemas/PluginReloadReply"
                 }
               }
             }
@@ -4760,14 +4765,13 @@
           "mock"
         ]
       },
-      "BacklinkRow": {
+      "BacklinkEntry": {
         "type": "object",
-        "description": "A note whose wikilinks point at the focused note.",
+        "description": "One note whose wikilinks point at the note `get_backlinks` resolved.",
         "required": [
           "name",
           "path",
-          "title",
-          "abs_path"
+          "title"
         ],
         "properties": {
           "name": {
@@ -4783,10 +4787,6 @@
               "null"
             ],
             "description": "`null` when the source note declares no title. Always written."
-          },
-          "abs_path": {
-            "type": "string",
-            "description": "The same source joined onto the kiln root. Added by this route, not by\nthe daemon."
           },
           "span_start": {
             "type": [
@@ -4805,9 +4805,29 @@
           }
         }
       },
+      "BacklinkRow": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BacklinkEntry"
+          },
+          {
+            "type": "object",
+            "required": [
+              "abs_path"
+            ],
+            "properties": {
+              "abs_path": {
+                "type": "string",
+                "description": "The source joined onto the kiln root. Added by this route, not by\nthe daemon."
+              }
+            }
+          }
+        ],
+        "description": "A note whose wikilinks point at the focused note.\n\nFlattens core's own [`BacklinkEntry`] — the daemon's `get_backlinks`\nreply — and adds `abs_path`, which this route computes and the daemon\nnever sees."
+      },
       "BacklinksResponse": {
         "type": "object",
-        "description": "What `GET /api/backlinks` answers.",
+        "description": "What `GET /api/backlinks` answers. `unlinked` is the daemon's own\n[`crucible_daemon::tools::autolink::LinkSuggestion`], unchanged.",
         "required": [
           "note",
           "linked",
@@ -4826,7 +4846,7 @@
           "unlinked": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/UnlinkedMentionRow"
+              "$ref": "#/components/schemas/LinkSuggestion"
             }
           }
         }
@@ -6087,9 +6107,9 @@
           }
         }
       },
-      "CommandEffectRow": {
+      "CommandEffect": {
         "type": "string",
-        "description": "Whether running a command changes state a user could lose, mirroring\n[`crucible_lua::CommandEffect`].\n\n**Declared by the plugin and verified by nothing.** A consumer must present\nit as a claim, and a permission layer must treat it as a hint about what to\nask — never as permission to skip asking.\n\nA closed set, not the open string a passthrough would give, because the\ndaemon writes `CommandEffect::as_str()` and nothing else: a command that\ndeclares no effect arrives as `write`, never as an unknown word.\n`the_mirrored_vocabularies_stay_closed` holds the two lists together.",
+        "description": "What a command does to state a user could lose. See the module docs.",
         "enum": [
           "read",
           "write"
@@ -7760,54 +7780,6 @@
           }
         }
       },
-      "GraphLinkRow": {
-        "type": "object",
-        "description": "One edge of the note-link graph.",
-        "required": [
-          "source",
-          "target",
-          "resolved"
-        ],
-        "properties": {
-          "source": {
-            "type": "string",
-            "description": "The linking note's path. Always a `path` in `notes`."
-          },
-          "target": {
-            "type": "string",
-            "description": "The linked note's path when `resolved`; otherwise the target as it was\nwritten, which names no note."
-          },
-          "resolved": {
-            "type": "boolean",
-            "description": "Whether `target` resolves to a note the caller can see."
-          }
-        }
-      },
-      "GraphNoteRow": {
-        "type": "object",
-        "description": "One node of the note-link graph.",
-        "required": [
-          "path",
-          "title",
-          "tags"
-        ],
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Kiln-relative, and the value a resolved link's `target` joins against."
-          },
-          "title": {
-            "type": "string",
-            "description": "Never empty: the daemon falls back to the file stem."
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "GrepHit": {
         "type": "object",
         "description": "A single content-search hit.\n\n`match_start`/`match_end` are **character** offsets into `text` (post-trim),\nsuitable for `<mark>` highlighting in the web UI. Only the first match on a\nline is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/\n`match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.",
@@ -8307,9 +8279,57 @@
           }
         }
       },
-      "KilnGraphResponse": {
+      "KilnGraphLink": {
         "type": "object",
-        "description": "What `GET /api/kiln/graph` answers.",
+        "description": "One edge of the `kiln.graph` note-link graph.",
+        "required": [
+          "source",
+          "target",
+          "resolved"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "The linking note's path. Always a `path` in [`KilnGraphReply::notes`]."
+          },
+          "target": {
+            "type": "string",
+            "description": "The linked note's path when `resolved`; otherwise the target as it\nwas written, which names no note."
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "Whether `target` resolves to a note the caller can see."
+          }
+        }
+      },
+      "KilnGraphNote": {
+        "type": "object",
+        "description": "One node of the `kiln.graph` note-link graph.",
+        "required": [
+          "path",
+          "title",
+          "tags"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Kiln-relative, and the value a resolved link's `target` joins against."
+          },
+          "title": {
+            "type": "string",
+            "description": "Never empty: the daemon falls back to the file stem."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "KilnGraphReply": {
+        "type": "object",
+        "description": "What `kiln.graph` answers: the full note-link graph of a kiln.",
         "required": [
           "notes",
           "links"
@@ -8318,20 +8338,20 @@
           "notes": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/GraphNoteRow"
+              "$ref": "#/components/schemas/KilnGraphNote"
             }
           },
           "links": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/GraphLinkRow"
+              "$ref": "#/components/schemas/KilnGraphLink"
             }
           }
         }
       },
       "KilnListResponse": {
         "type": "object",
-        "description": "What `GET /api/kilns` answers.",
+        "description": "What `GET /api/kilns` answers. A thin wrapper, not a copy: the row is\ncore's own [`KilnRow`], the same type `kiln.list` answers.",
         "required": [
           "kilns"
         ],
@@ -8359,7 +8379,7 @@
       },
       "KilnRow": {
         "type": "object",
-        "description": "One kiln, as the daemon's `kiln.list` reports it.\n\nEvery key is written on every row, including the two an older reader\ntreated as optional, so this reply carries no absent-versus-false ambiguity.",
+        "description": "One kiln, as `kiln.list` reports it.\n\nEvery key is written on every row, including the two an older reader\ntreated as optional, so this reply carries no absent-versus-false\nambiguity.",
         "required": [
           "path",
           "name",
@@ -8375,15 +8395,15 @@
           },
           "name": {
             "type": "string",
-            "description": "The REGISTRY key — the name every other API call answers to. An open\ndirectory that no entry names carries the empty string, never `null`."
+            "description": "The registry key — the name every other API call answers to. An open\ndirectory that no entry names carries the empty string, never `null`."
           },
           "registered": {
             "type": "boolean",
-            "description": "Whether the registry answers for this directory, and therefore whether\n`name` is a name an attach accepts. A row with `false` must not be\noffered in a picker."
+            "description": "Whether the registry answers for this directory, and therefore\nwhether `name` is a name an attach accepts. A row with `false` must\nnot be offered in a picker."
           },
           "open": {
             "type": "boolean",
-            "description": "Whether the daemon holds the kiln open right now. A closed row is not a\ndead one: the first request that addresses a kiln opens it."
+            "description": "Whether the daemon holds the kiln open right now. A closed row is not\na dead one: the first request that addresses a kiln opens it."
           },
           "last_access_secs_ago": {
             "type": [
@@ -8391,12 +8411,12 @@
               "null"
             ],
             "format": "int64",
-            "description": "Seconds since the daemon last touched the kiln, or `null` when it holds\nit closed. Always written, so `required` rather than optional.",
+            "description": "Seconds since the daemon last touched the kiln, or `null` when it\nholds it closed. Always written, so `required` rather than optional.",
             "minimum": 0
           },
           "git": {
             "type": "boolean",
-            "description": "Whether the kiln path is the top level of a git working tree. A folder\nbelow the top level says `false`, because `diff.get` refuses it."
+            "description": "Whether the kiln path is the top level of a git working tree. A\nfolder below the top level answers `false`, because `diff.get`\nrefuses it."
           }
         }
       },
@@ -8470,6 +8490,30 @@
             "type": "integer",
             "format": "int32",
             "description": "One past the last line, 1-based, exclusive.",
+            "minimum": 0
+          }
+        }
+      },
+      "LinkSuggestion": {
+        "type": "object",
+        "description": "A single suggestion to convert a plain-text mention into a wikilink.",
+        "required": [
+          "mention",
+          "target",
+          "offset"
+        ],
+        "properties": {
+          "mention": {
+            "type": "string",
+            "description": "The text that was found as a mention (preserves original casing)"
+          },
+          "target": {
+            "type": "string",
+            "description": "The note name to link to"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Byte offset in the text where the mention starts",
             "minimum": 0
           }
         }
@@ -8682,74 +8726,9 @@
           }
         }
       },
-      "NoteListResponse": {
+      "NoteByNameReply": {
         "type": "object",
-        "description": "What `GET /api/notes` answers.",
-        "required": [
-          "notes"
-        ],
-        "properties": {
-          "notes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NoteMetadataRow"
-            }
-          }
-        }
-      },
-      "NoteMetadataRow": {
-        "type": "object",
-        "description": "One note, with the metadata a client filters and sorts on.",
-        "required": [
-          "name",
-          "path",
-          "title",
-          "tags",
-          "updated_at",
-          "properties"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The file stem, or the whole path when the stem is not UTF-8."
-          },
-          "path": {
-            "type": "string",
-            "description": "RELATIVE to the kiln root. A path-taking endpoint needs it joined onto\nthe root first."
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The note's own title, or `null` when it declares none. Always written."
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "updated_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "ISO-8601, or `null` for a note the index has no timestamp for. Always\nwritten."
-          },
-          "properties": {
-            "type": "object",
-            "description": "The note's own frontmatter, filtered daemon-side to what the author\nwrote. Open by design: a note may carry any key, and validating the\nvalues here would refuse frontmatter this layer has no business judging.",
-            "additionalProperties": {},
-            "propertyNames": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "NoteResponse": {
-        "type": "object",
-        "description": "One note, as `get_note_by_name` reports it.\n\nThe daemon sends `links_to` and `wikilinks` for the same links: the web\nreader pins `links_to`, and the RPC client's own DTO reads `wikilinks`.\nBoth stay on the wire, so both are named here.",
+        "description": "What `get_note_by_name` answers: the note's own facts, without the heavy\nfields of the stored [`crate::storage::NoteRecord`] (no embedding\nvector).\n\n`links_to` and `wikilinks` carry the same targets under two names: the\nweb reader pins `links_to`, and the RPC client's own DTO reads\n`wikilinks`. Both stay on the wire, so both are named here.",
         "required": [
           "path",
           "title",
@@ -8765,7 +8744,7 @@
           },
           "title": {
             "type": "string",
-            "description": "The note's title. The daemon writes the empty string when it has none;\nthis is never `null`."
+            "description": "The note's title. The daemon writes the empty string when it has\nnone; this is never `null`."
           },
           "tags": {
             "type": "array",
@@ -8783,13 +8762,76 @@
           "wikilinks": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/WikilinkRow"
+              "$ref": "#/components/schemas/WikilinkTarget"
             },
             "description": "The same targets, one object each."
           },
           "content_hash": {
             "type": "string",
-            "description": "BLAKE3 of the note's content as the INDEX holds it. The file watcher\nwrites it asynchronously, so it lags a save; `GET /api/kiln/file`\nanswers the hash of the bytes on disk."
+            "description": "BLAKE3 of the note's content as the index holds it."
+          }
+        }
+      },
+      "NoteListResponse": {
+        "type": "object",
+        "description": "What `GET /api/notes` answers. A thin wrapper, not a copy: the row is\ncore's own [`NoteListRow`], the same type `note.list` answers.",
+        "required": [
+          "notes"
+        ],
+        "properties": {
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteListRow"
+            }
+          }
+        }
+      },
+      "NoteListRow": {
+        "type": "object",
+        "description": "One row of `list_notes`, as it crosses the RPC wire.\n\nA struct rather than a tuple: it grew a sixth field, and a six-tuple at\nthree call sites is a puzzle rather than a type.\n\n`title` and `updated_at` are always written, even when the index holds\nnone: the value is `null`, and the key is never absent. That is why they\ncarry `required = true` under the `openapi` schema.",
+        "required": [
+          "name",
+          "path",
+          "title",
+          "tags",
+          "updated_at",
+          "properties"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The file stem, or the whole path when the stem is not UTF-8."
+          },
+          "path": {
+            "type": "string",
+            "description": "Kiln-relative, as the index holds it."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "description": "The note's own frontmatter, filtered daemon-side to what the author\nwrote.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },
@@ -9027,6 +9069,18 @@
         ],
         "description": "One leaf `config.save` refuses, and what pins it."
       },
+      "PluginAck": {
+        "type": "object",
+        "description": "A bare acknowledgement: `plugin.option_set` and `plugin.option_execute`\nanswer nothing else.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
       "PluginApproval": {
         "type": "string",
         "description": "A permission floor a plugin can add to its turns.\n\n`EnumIter` gives the menus of both clients every value, so a new value\nreaches them without a second list.",
@@ -9068,9 +9122,9 @@
           }
         }
       },
-      "PluginCommandRow": {
+      "PluginCommand": {
         "type": "object",
-        "description": "One executable primitive a plugin declared, and the arguments it takes.\n\n**A deliberate reshape, so it keeps its own struct.** The daemon builds a\nrow from `crucible_core::traits::tools::ToolDefinition`, but it sends three\nof that type's seven fields — `name`, `description` and `parameters` — and\nadds three the command registry owns: the declaring `plugin`, the\n`hint`, and the declared `effect`. `category`, `returns`, `examples` and\n`required_permissions` never reach a client. Re-exporting `ToolDefinition`\nwould therefore promise four keys the wire does not carry, which is why\nthis is not one of the types to derive `ToSchema` on in `crucible-core`.",
+        "description": "One executable primitive a plugin declared, and the arguments it takes.\n\nThe daemon builds this from `crucible_core::traits::tools::ToolDefinition`,\nbut sends three of that type's seven fields — `name`, `description` and\n`parameters` — and adds three the command registry owns: the declaring\n`plugin`, the `hint`, and the declared `effect`. `category`, `returns`,\n`examples` and `required_permissions` never reach a client.",
         "required": [
           "plugin",
           "name",
@@ -9096,19 +9150,20 @@
               "string",
               "null"
             ],
-            "description": "The one-line argument hint, or `null`. Always written, so `required`."
+            "description": "The one-line argument hint, or `None`. Always written, so `required`."
           },
           "parameters": {
-            "description": "The declared parameters, as the JSON Schema `signature.rs` emits, or\n`null` for a command that takes none.\n\nOpaque on purpose, like a publication: the reader turns it into the\ncontrols a dialog draws, and a shape validated here would be one only\ntoday's plugins could send."
+            "description": "The declared parameters, as the JSON Schema `signature.rs` emits, or\n`null` for a command that takes none."
           },
           "effect": {
-            "$ref": "#/components/schemas/CommandEffectRow"
+            "$ref": "#/components/schemas/CommandEffect",
+            "description": "Declared by the plugin and verified by nothing. A consumer must\npresent it as a claim, and a permission layer must treat it as a hint\nabout what to ask — never as permission to skip asking."
           }
         }
       },
-      "PluginCommandsResponse": {
+      "PluginCommandsReply": {
         "type": "object",
-        "description": "What `GET /api/plugins/commands` answers.",
+        "description": "What `plugin.commands` answers.",
         "required": [
           "commands"
         ],
@@ -9116,12 +9171,79 @@
           "commands": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PluginCommandRow"
+              "$ref": "#/components/schemas/PluginCommand"
             }
           }
         }
       },
-      "PluginInstallOutcomeRow": {
+      "PluginInfo": {
+        "type": "object",
+        "description": "One discovered plugin, as `plugin.list`'s `plugin_info` rows describe it.\n\nEvery discovered plugin, not only the healthy ones: a plugin that failed to\nload carries its reason in `last_error`, and dropping it would make\n\"broken\" read as \"not installed\".",
+        "required": [
+          "name",
+          "version",
+          "source",
+          "state",
+          "last_error",
+          "dir",
+          "tools",
+          "commands",
+          "handlers",
+          "services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`None` when the plugin has no fragment, or its fragment names no\nversion. The daemon always writes the key, so `required` rather than\noptional."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the plugin came from: `User`, `Runtime`, `EnvPath` or `Builtin`.\nA plain string, because this writes `Display` output rather than a\nserde spelling."
+          },
+          "state": {
+            "type": "string",
+            "description": "The lifecycle state: `Active`, `Error` or `Disabled`. A plain string\nfor the same reason as `source`."
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the plugin is not `Active`, or `None` for a healthy one. Always\nwritten, so `required`."
+          },
+          "dir": {
+            "type": "string",
+            "description": "The absolute directory the plugin was discovered in."
+          },
+          "tools": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "commands": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "handlers": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "services": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "PluginInstallOutcome": {
         "oneOf": [
           {
             "type": "object",
@@ -9174,11 +9296,11 @@
             }
           }
         ],
-        "description": "`POST /api/plugins` — clone a plugin from a git URL and record it in\nthe installed manifest (`plugins.installed.json`), the same record\n`cru plugin add` writes. The operator's own spec entries live in\n`init.lua`, which nothing here edits. Synchronous; can take 10+ seconds.\nWhat the clone did, tagged by `kind`.\n\nMirrors `crucible_daemon::BootstrapOutcome`, which is what\n`server/plugin_install.rs` matches on to write these three objects.\n`the_mirrored_vocabularies_stay_closed` fails to compile if a fourth\noutcome appears there."
+        "description": "What one plugin install did, tagged by `kind`.\n\nThe wire projection of `crucible_daemon::daemon_plugins::bootstrap::\nBootstrapOutcome` — that type stays a plain Rust enum with a `PathBuf`,\nand this is the one place it is turned into JSON, via\n`BootstrapOutcome::to_wire`."
       },
-      "PluginInstallResponse": {
+      "PluginInstallReply": {
         "type": "object",
-        "description": "What `POST /api/plugins` answers.",
+        "description": "What `plugin.install` answers.",
         "required": [
           "name",
           "installed",
@@ -9202,7 +9324,7 @@
           },
           "loaded": {
             "type": "boolean",
-            "description": "The plugin also activated on the running daemon.\n\n`installed: true` with `loaded: false` is a plugin that reached the disk\nand broke on load; `error` says why, and the next boot tries again. A\nclient must not read `installed` alone as success."
+            "description": "The plugin also activated on the running daemon.\n\n`installed: true` with `loaded: false` is a plugin that reached the\ndisk and broke on load; `error` says why, and the next boot tries\nagain. A client must not read `installed` alone as success."
           },
           "tools": {
             "type": "integer",
@@ -9224,24 +9346,24 @@
               "string",
               "null"
             ],
-            "description": "Why the plugin did not load, or `null`. Always written, so `required`."
+            "description": "Why the plugin did not load, or `None`. Always written, so\n`required`."
           },
           "watch": {
             "type": "string",
-            "description": "A sentence about hot reload. The watcher's list is a boot-time\nsnapshot, so a plugin installed at runtime works but is not rewatched."
+            "description": "A sentence about hot reload. The watcher's list is a boot-time\nsnapshot, so a plugin installed at runtime works but is not\nrewatched."
           },
           "outcome": {
-            "$ref": "#/components/schemas/PluginInstallOutcomeRow"
+            "$ref": "#/components/schemas/PluginInstallOutcome"
           },
           "manifest": {
             "type": "string",
-            "description": "The installed manifest the entry was written to\n(`plugins.installed.json`).\n\nThe browser's hand-written type calls this key `plugins_toml`, which the\ndaemon has not sent since the record moved out of TOML — so today that\nfield reads `undefined` at run time and nothing said so. A12 renames it."
+            "description": "The installed manifest the entry was written to\n(`plugins.installed.json`)."
           }
         }
       },
       "PluginListResponse": {
         "type": "object",
-        "description": "What `GET /api/plugins` answers.",
+        "description": "What `GET /api/plugins` answers.\n\nThe daemon's own `plugin.list` reply carries this same data under\n`plugin_info` (see `crucible_core::types::PluginListReply`); this route\nrenames it to `plugins`, which is the key the plugins panel has always\nread. The row type is not renamed: [`PluginInfo`] is the core type,\nforwarded unchanged.",
         "required": [
           "plugins"
         ],
@@ -9249,27 +9371,27 @@
           "plugins": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PluginRow"
+              "$ref": "#/components/schemas/PluginInfo"
             }
           }
         }
       },
-      "PluginOptionCallResponse": {
+      "PluginOptionCallReply": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/PluginOptionValueResponse",
+            "$ref": "#/components/schemas/PluginOptionValue",
             "description": "The answer to `action: \"get\"`."
           },
           {
-            "$ref": "#/components/schemas/OkResponse",
+            "$ref": "#/components/schemas/PluginAck",
             "description": "The answer to `action: \"set\"` and `action: \"execute\"`."
           }
         ],
-        "description": "What `POST /api/plugins/{name}/option` answers.\n\nUntagged, because one endpoint serves three actions: a `get` answers a\nvalue where a `set` and an `execute` answer an acknowledgement.\n\n**The variant order is load-bearing** — the hazard `ResumeSessionResponse`\nwas fixed for. Serde takes the first variant that fits, so a union whose\nfirst variant also fits the second's bodies reads every one of them as the\nwrong thing. These two are disjoint today because neither field has a\ndefault: `{\"ok\": true}` has no `value` and `{\"value\": …}` has no `ok`.\n`an_option_reply_reads_back_as_the_action_that_sent_it` asserts both\ndirections, so a `#[serde(default)]` added to either field fails there\nrather than on a browser."
+        "description": "What one option call answers: a value for a `get`, an acknowledgement for\na `set` or an `execute`.\n\nUntagged, because one web endpoint (`POST /api/plugins/{name}/option`)\nserves three RPC methods with three different reply shapes.\n\n**The variant order is load-bearing.** Serde takes the first variant that\nfits, so a union whose first variant also fits the second's bodies reads\nevery one of them as the wrong thing. These two are disjoint: neither\nfield has a default, so `{\"ok\": true}` has no `value` and `{\"value\": …}`\nhas no `ok`."
       },
-      "PluginOptionValueResponse": {
+      "PluginOptionValue": {
         "type": "object",
-        "description": "One option's current value.",
+        "description": "What `plugin.option_get` answers: one option's current value.",
         "required": [
           "value"
         ],
@@ -9279,9 +9401,9 @@
           }
         }
       },
-      "PluginOptionsResponse": {
+      "PluginOptionsReply": {
         "type": "object",
-        "description": "What `GET /api/plugins/options` answers: one settings tree per plugin.\n\n**A deliberate narrowing to the envelope.** The tree itself stays opaque,\nand that is not laziness about a shape nobody wrote down — the nodes are\nfully described in `crucible-lua`'s `describe_node`. It is about numbers:\n`order`, `min`, `max`, `step` and every entry under `values` reach here as\nwhatever `lua_to_json` made of the plugin's Lua, so reading one into an\n`f64` and writing it back would send `100.0` where the daemon sent `100`.\nThe browser renders a node generically anyway, so naming the map's keys is\nthe whole gain a mirrored node type would offer.",
+        "description": "What `plugin.options` answers: one settings tree per plugin.\n\n**A deliberate narrowing to the envelope.** The tree itself stays opaque,\nand that is not laziness about a shape nobody wrote down — the nodes are\nfully described in `crucible-lua`'s `describe_node`. It is about numbers:\n`order`, `min`, `max`, `step` and every entry under `values` reach here as\nwhatever `lua_to_json` made of the plugin's Lua, so reading one into an\n`f64` and writing it back would send `100.0` where the daemon sent `100`.",
         "required": [
           "options"
         ],
@@ -9292,9 +9414,9 @@
           }
         }
       },
-      "PluginPublicationsResponse": {
+      "PluginPublicationsReply": {
         "type": "object",
-        "description": "What `GET /api/plugins/publications` answers.",
+        "description": "What `plugin.publications` answers.",
         "required": [
           "publications"
         ],
@@ -9308,9 +9430,9 @@
           }
         }
       },
-      "PluginReloadResponse": {
+      "PluginReloadReply": {
         "type": "object",
-        "description": "What `POST /api/plugins/{name}/reload` answers: the capabilities the\nreloaded spec declares.",
+        "description": "What `plugin.reload` answers.",
         "required": [
           "name",
           "reloaded",
@@ -9349,9 +9471,9 @@
           }
         }
       },
-      "PluginRemoveResponse": {
+      "PluginRemoveReply": {
         "type": "object",
-        "description": "What `DELETE /api/plugins/{name}` answers.",
+        "description": "What `plugin.remove` answers.",
         "required": [
           "name",
           "manifest",
@@ -9366,14 +9488,14 @@
           },
           "manifest": {
             "type": "string",
-            "description": "The installed manifest the entry left. See\n[`PluginInstallResponse::manifest`] for the name the browser still uses."
+            "description": "The installed manifest the entry left."
           },
           "purged_dir": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The directory that was deleted, or `null` without `?purge=true`."
+            "description": "The directory that was deleted, or `None` without `?purge=true`."
           },
           "purge_error": {
             "type": [
@@ -9387,80 +9509,13 @@
               "string",
               "null"
             ],
-            "description": "Removed without a purge, and the directory is still there.\n\nIt sits in a permanent search path, so the next daemon start discovers\nand loads it again. `null` when nothing is left behind, which is the\nonly case where \"removed\" means gone."
+            "description": "Removed without a purge, and the directory is still there. It sits in\na permanent search path, so the next daemon start discovers and loads\nit again. `None` when nothing is left behind, which is the only case\nwhere \"removed\" means gone."
           }
         }
       },
-      "PluginRow": {
+      "PluginRunCommandReply": {
         "type": "object",
-        "description": "One discovered plugin, as `plugin.list`'s `plugin_info` rows describe it.\n\nEvery discovered plugin, not only the healthy ones: a plugin that failed to\nload carries its reason in `last_error`, and dropping it would make \"broken\"\nread as \"not installed\".",
-        "required": [
-          "name",
-          "version",
-          "source",
-          "state",
-          "last_error",
-          "dir",
-          "tools",
-          "commands",
-          "handlers",
-          "services"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "version": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`null` when the plugin has no fragment, or its fragment names no\nversion. The daemon always writes the key, so `required` rather than\noptional."
-          },
-          "source": {
-            "type": "string",
-            "description": "Where the plugin came from: `User`, `Runtime`, `EnvPath` or `Builtin`.\nA plain string, because the daemon writes `Display` output rather than\na serde spelling."
-          },
-          "state": {
-            "type": "string",
-            "description": "The lifecycle state: `Active`, `Error` or `Disabled`. A plain string\nfor the same reason as `source`."
-          },
-          "last_error": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Why the plugin is not `Active`, or `null` for a healthy one. Always\nwritten, so `required`."
-          },
-          "dir": {
-            "type": "string",
-            "description": "The absolute directory the plugin was discovered in."
-          },
-          "tools": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "commands": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "handlers": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "services": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        }
-      },
-      "PluginRunCommandResponse": {
-        "type": "object",
-        "description": "What `POST /api/plugins/command` answers.\n\nThe browser's hand-written caller types this as a bare `unknown`, so a\nreader had to know to look under `result` without anything saying so. The\nenvelope is the daemon's (`server/plugins.rs`'s `handle_plugin_run_command`),\nand naming it costs the plugin nothing: `result` stays opaque.",
+        "description": "What `plugin.run_command` answers.",
         "required": [
           "name",
           "result"
@@ -12014,30 +12069,6 @@
         ],
         "description": "One change to a transcript."
       },
-      "UnlinkedMentionRow": {
-        "type": "object",
-        "description": "A plain-text mention of another note inside the focused note — a candidate\nfor one-click link insertion, mirroring the daemon's `LinkSuggestion`.",
-        "required": [
-          "mention",
-          "target",
-          "offset"
-        ],
-        "properties": {
-          "mention": {
-            "type": "string",
-            "description": "The text as it appears, original casing kept."
-          },
-          "target": {
-            "type": "string",
-            "description": "The note name it would link to."
-          },
-          "offset": {
-            "type": "integer",
-            "description": "Byte offset of the mention in the note's content.",
-            "minimum": 0
-          }
-        }
-      },
       "UnreadableRoot": {
         "type": "object",
         "description": "A root that a diffset leaves out, and the reason.\n\nThe session record compares each root with its session base. When the\nroot or its base snapshot is gone, the record cannot list the files of\nthat root. The client shows the root, so that the user does not read the\nrecord as complete.",
@@ -12218,9 +12249,9 @@
           }
         }
       },
-      "WikilinkRow": {
+      "WikilinkTarget": {
         "type": "object",
-        "description": "One wikilink target.",
+        "description": "One wikilink target, as [`NoteByNameReply::wikilinks`] reports it.",
         "required": [
           "target"
         ],

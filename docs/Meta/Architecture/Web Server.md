@@ -106,7 +106,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/kiln.rs` | 1300 | Kiln/project file listing, the note-link graph, and text/raw file read-write, all through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers. `kiln_graph` returns core's own `KilnGraphReply` unchanged. |
 | `crates/crucible-web/src/routes/layout.rs` | 470 | Web UI layout persistence and the recently-opened-files list. |
 | `crates/crucible-web/src/routes/mcp.rs` | 97 | `GET /api/mcp/status`. |
-| `crates/crucible-web/src/routes/plugin.rs` | 1228 | The nine plugin HTTP endpoints: list, install, remove, reload, options, commands, publications. It has no SSE stream of its own; see the "SSE subscribe-before-forward" flow below. |
+| `crates/crucible-web/src/routes/plugin.rs` | 981 | The nine plugin HTTP endpoints: list, install, remove, reload, options, commands, publications. Each reply is a `crucible_core::types::Plugin*` type, forwarded unchanged. It has no SSE stream of its own; see the "SSE subscribe-before-forward" flow below. |
 | `crates/crucible-web/src/routes/plugin_caller.rs` | 144 | `PluginCaller` — the caller-identity extractor gating six plugin routes. |
 | `crates/crucible-web/src/routes/project.rs` | 625 | `/api/project/*` routes and the untrusted-caller root-safety policy. |
 | `crates/crucible-web/src/routes/proposals.rs` | 318 | `/api/proposals*` — accept/reject/dismiss/resolve a note-tool proposal, a thin proxy with no session in its path. |
@@ -805,10 +805,10 @@ page's file set and are not summarized above.
   no test beneath any of them. Either the knob lives outside this page's
   file set or the documentation is stale; as written, the motivating example
   for the module's own design rationale does not exist in it.
-- **A known, named frontend/backend drift.** `routes/plugin.rs`'s
-  `PluginInstallResponse.manifest` doc notes the hand-written TypeScript
-  type still reads a stale `plugins_toml` key; the file's own comment flags
-  this for a tracked follow-up ("A12"), not as an unnoticed bug.
+- **A known, named frontend/backend drift.** `crucible-web/web/src/lib/api.ts`'s
+  `InstallPluginResult` (`crucible_core::types::PluginInstallReply.manifest`)
+  doc notes the file used to call the same field `plugins_toml`; the comment
+  flags this as historical context, not as an unnoticed bug.
 - **`test_support.rs::request_json_as` omits a `#[cfg(...)]` gate** that
   every other test/test-utils helper in the file repeats above itself. It
   still compiles correctly today because the items it calls remain visible

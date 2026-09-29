@@ -38,17 +38,13 @@ pub async fn execute(args: RemoveArgs) -> Result<()> {
 
 /// Terminal output for the daemon's `plugin.remove` response. Failure cases
 /// never reach here — the RPC call errors instead.
-fn render_remove_response(resp: &serde_json::Value, purge: bool) -> String {
-    let name = resp["name"].as_str().unwrap_or("?");
-    let manifest = resp["manifest"]
-        .as_str()
-        .unwrap_or("plugins.installed.json");
+fn render_remove_response(resp: &crucible_core::types::PluginRemoveReply, purge: bool) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "Removed plugin '{name}' from {manifest}");
+    let _ = writeln!(out, "Removed plugin '{}' from {}", resp.name, resp.manifest);
     // Distinguishes this path from the offline fallback, whose output is
     // otherwise identical — the user should know the running daemon changed.
     let _ = writeln!(out, "Unloaded from the running daemon.");
-    if let Some(err) = resp["purge_error"].as_str() {
+    if let Some(err) = &resp.purge_error {
         // The removal itself succeeded; only the directory deletion failed.
         let _ = writeln!(out, "Warning: {err}");
         let _ = writeln!(
@@ -57,7 +53,7 @@ fn render_remove_response(resp: &serde_json::Value, purge: bool) -> String {
         );
         return out;
     }
-    match resp["purged_dir"].as_str() {
+    match &resp.purged_dir {
         Some(dir) => {
             let _ = writeln!(out, "Deleted {dir}");
         }
@@ -69,7 +65,7 @@ fn render_remove_response(resp: &serde_json::Value, purge: bool) -> String {
             // clone in the search path comes back on the next daemon restart
             // or plugin install's load pass. Don't let "removed" read as
             // gone-for-good.
-            if let Some(dir) = resp["kept_dir"].as_str() {
+            if let Some(dir) = &resp.kept_dir {
                 let _ = writeln!(
                     out,
                     "Directory kept at {dir}; it will load again on the next daemon \
@@ -101,15 +97,25 @@ fn remove_offline(args: RemoveArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::render_remove_response;
-    use serde_json::json;
+    use crucible_core::types::PluginRemoveReply;
+
+    fn reply(
+        purged_dir: Option<&str>,
+        purge_error: Option<&str>,
+        kept_dir: Option<&str>,
+    ) -> PluginRemoveReply {
+        PluginRemoveReply {
+            name: "greeter".to_string(),
+            manifest: "/data/plugins.installed.json".to_string(),
+            purged_dir: purged_dir.map(str::to_string),
+            purge_error: purge_error.map(str::to_string),
+            kept_dir: kept_dir.map(str::to_string),
+        }
+    }
 
     #[test]
     fn a_daemon_remove_reports_the_manifest_and_purged_dir() {
-        let resp = json!({
-            "name": "greeter",
-            "manifest": "/data/plugins.installed.json",
-            "purged_dir": "/plugins/greeter",
-        });
+        let resp = reply(Some("/plugins/greeter"), None, None);
         let out = render_remove_response(&resp, true);
         assert!(
             out.contains("Removed plugin 'greeter' from /data/plugins.installed.json"),
@@ -120,23 +126,14 @@ mod tests {
 
     #[test]
     fn a_purge_with_no_directory_says_so() {
-        let resp = json!({
-            "name": "greeter",
-            "manifest": "/data/plugins.installed.json",
-            "purged_dir": null,
-        });
+        let resp = reply(None, None, None);
         let out = render_remove_response(&resp, true);
         assert!(out.contains("No plugin directory found"), "got: {out}");
     }
 
     #[test]
     fn a_plain_remove_warns_that_the_kept_directory_loads_again() {
-        let resp = json!({
-            "name": "greeter",
-            "manifest": "/data/plugins.installed.json",
-            "purged_dir": null,
-            "kept_dir": "/plugins/greeter",
-        });
+        let resp = reply(None, None, Some("/plugins/greeter"));
         let out = render_remove_response(&resp, false);
         assert!(
             out.contains("Directory kept at /plugins/greeter"),
@@ -147,12 +144,11 @@ mod tests {
 
     #[test]
     fn a_purge_failure_is_a_warning_that_does_not_claim_the_manifest_survived() {
-        let resp = json!({
-            "name": "greeter",
-            "manifest": "/data/plugins.installed.json",
-            "purged_dir": null,
-            "purge_error": "failed to remove plugin dir /plugins/greeter: EACCES",
-        });
+        let resp = reply(
+            None,
+            Some("failed to remove plugin dir /plugins/greeter: EACCES"),
+            None,
+        );
         let out = render_remove_response(&resp, true);
         assert!(out.contains("Warning:"), "got: {out}");
         assert!(out.contains("EACCES"), "got: {out}");

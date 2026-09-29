@@ -13,7 +13,7 @@
 //! with `cru.on`. A plugin is the single import mechanism; these are the
 //! shapes its declarations land in.
 
-use crate::command_effect::CommandEffect;
+use crucible_core::types::CommandEffect;
 
 /// Discovered tool from Luau source
 #[derive(Debug, Clone)]

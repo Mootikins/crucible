@@ -65,9 +65,9 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_manifest() {
     let info = loader.loaded_plugin_info();
     let entry = info
         .iter()
-        .find(|p| p["name"] == "fresh")
+        .find(|p| p.name == "fresh")
         .expect("installed plugin listed");
-    assert_eq!(entry["state"], "Active", "got: {entry}");
+    assert_eq!(entry.state, "Active", "got: {entry:?}");
 
     // The remove flow, in handler order: installed-precondition, deactivate +
     // forget, then the manifest commit (purge only after success).
@@ -94,7 +94,7 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_manifest() {
         !loader
             .loaded_plugin_info()
             .iter()
-            .any(|p| p["name"] == "fresh"),
+            .any(|p| p.name == "fresh"),
         "a removed plugin must leave plugin.list"
     );
     assert!(

@@ -24,7 +24,7 @@ pub struct ListArgs {
 /// surprise.
 async fn runtime_plugins(
     client: Option<&crucible_daemon::DaemonClient>,
-) -> Option<Vec<serde_json::Value>> {
+) -> Option<Vec<crucible_core::types::PluginInfo>> {
     client?.plugin_list_info().await.ok()
 }
 
@@ -101,20 +101,13 @@ pub async fn execute(args: ListArgs) -> Result<()> {
                 "NAME", "VERSION", "STATE"
             );
             for p in &plugins {
-                let name = p["name"].as_str().unwrap_or("?");
-                let version = p["version"].as_str().unwrap_or("?");
-                let state = p["state"].as_str().unwrap_or("?");
+                let version = p.version.as_deref().unwrap_or("?");
                 println!(
                     "{:<24} {:<10} {:<12} {}/{}/{}",
-                    name,
-                    version,
-                    state,
-                    p["tools"].as_u64().unwrap_or(0),
-                    p["commands"].as_u64().unwrap_or(0),
-                    p["handlers"].as_u64().unwrap_or(0),
+                    p.name, version, p.state, p.tools, p.commands, p.handlers,
                 );
                 // The reason a plugin broke, where the user is looking.
-                if let Some(err) = p["last_error"].as_str().filter(|e| !e.is_empty()) {
+                if let Some(err) = p.last_error.as_deref().filter(|e| !e.is_empty()) {
                     println!("    error: {err}");
                 }
             }

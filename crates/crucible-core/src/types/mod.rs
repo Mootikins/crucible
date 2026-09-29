@@ -15,11 +15,13 @@
 
 pub mod acp;
 pub mod command;
+pub mod command_effect;
 pub mod database;
 pub mod knob;
 pub mod mcp_status;
 pub mod mode;
 pub mod notification;
+pub mod plugin_reply;
 pub mod plugin_status;
 pub mod popup;
 pub mod provider_info;
@@ -78,6 +80,19 @@ pub use crate::types::provider_info::ProviderInfo;
 
 // Re-export plugin status entry (used by session-setup events)
 pub use crate::types::plugin_status::PluginStatusEntry;
+
+// Re-export the command effect (declared by a plugin command, read by the
+// daemon's `plugin.commands` reply and the web's plugin panel).
+pub use crate::types::command_effect::CommandEffect;
+
+// Re-export the `plugin.*` RPC reply types (see `types::plugin_reply` for
+// why they live here rather than as web row types or daemon-local structs).
+pub use crate::types::plugin_reply::{
+    PluginAck, PluginCommand, PluginCommandsReply, PluginDiscoveryError, PluginInfo,
+    PluginInstallOutcome, PluginInstallReply, PluginListReply, PluginOptionCallReply,
+    PluginOptionValue, PluginOptionsReply, PluginPublications, PluginPublicationsReply,
+    PluginReloadReply, PluginRemoveReply, PluginRunCommandReply,
+};
 pub use crate::types::status_item::{
     IndeterminateProgress, StatusDisplayItem, StatusItemKind, StatusProgress,
     PLUGIN_APPROVAL_ACTION, PLUGIN_TURNS_ID_PREFIX,

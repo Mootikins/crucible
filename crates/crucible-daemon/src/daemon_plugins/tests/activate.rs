@@ -26,8 +26,8 @@ fn last_error(loader: &DaemonPluginLoader, name: &str) -> String {
     loader
         .loaded_plugin_info()
         .into_iter()
-        .find(|p| p["name"] == name)
-        .and_then(|p| p["last_error"].as_str().map(str::to_string))
+        .find(|p| p.name == name)
+        .and_then(|p| p.last_error)
         .unwrap_or_default()
 }
 

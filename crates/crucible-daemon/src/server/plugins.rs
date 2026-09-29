@@ -53,16 +53,16 @@ pub(crate) async fn handle_plugin_reload(
         Ok(spec) => {
             spawn_plugin_services(loader);
 
-            Response::success(
+            typed_success(
                 req.id,
-                serde_json::json!({
-                    "name": name,
-                    "reloaded": true,
-                    "tools": spec.tools.len(),
-                    "commands": spec.commands.len(),
-                    "handlers": spec.handlers.len(),
-                    "services": spec.services.len(),
-                }),
+                crucible_core::types::PluginReloadReply {
+                    name: name.to_string(),
+                    reloaded: true,
+                    tools: spec.tools.len() as u64,
+                    commands: spec.commands.len() as u64,
+                    handlers: spec.handlers.len() as u64,
+                    services: spec.services.len() as u64,
+                },
             )
         }
         Err(e) => internal_error(req.id, e),
@@ -75,33 +75,29 @@ pub(crate) async fn handle_plugin_list(
 ) -> Response {
     let loader_guard = plugin_loader.lock().await;
     match loader_guard.as_ref() {
-        Some(l) => {
-            let plugins = l.loaded_plugin_info();
-            let names: Vec<String> = l.loaded_plugin_names();
-            Response::success(
-                req.id,
-                serde_json::json!({
-                    "plugins": names,
-                    "plugin_info": plugins,
-                    // Directories that never became plugins at all — a manifest
-                    // that doesn't parse has no `plugin_info` entry to carry its
-                    // error, so it would otherwise reach no client.
-                    "errors": l.discovery_errors(),
-                    // The merged spec. `cru plugin list` reads the git rows
-                    // from here: the spec lives on the plugin VM, so no
-                    // client can evaluate it on its own.
-                    "spec": spec_rows(l),
-                }),
-            )
-        }
-        None => Response::success(
+        Some(l) => typed_success(
             req.id,
-            serde_json::json!({
-                "plugins": [],
-                "plugin_info": [],
-                "errors": [],
-                "spec": [],
-            }),
+            crucible_core::types::PluginListReply {
+                plugins: l.loaded_plugin_names(),
+                plugin_info: l.loaded_plugin_info(),
+                // Directories that never became plugins at all — a manifest
+                // that doesn't parse has no `plugin_info` entry to carry its
+                // error, so it would otherwise reach no client.
+                errors: l.discovery_errors(),
+                // The merged spec. `cru plugin list` reads the git rows
+                // from here: the spec lives on the plugin VM, so no
+                // client can evaluate it on its own.
+                spec: spec_rows(l),
+            },
+        ),
+        None => typed_success(
+            req.id,
+            crucible_core::types::PluginListReply {
+                plugins: Vec::new(),
+                plugin_info: Vec::new(),
+                errors: Vec::new(),
+                spec: Vec::new(),
+            },
         ),
     }
 }
@@ -230,19 +226,31 @@ pub(crate) async fn handle_plugin_publications(
     let key = params.key.as_deref();
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
-        return Response::success(req.id, serde_json::json!({ "publications": {} }));
+        return typed_success(
+            req.id,
+            crucible_core::types::PluginPublicationsReply {
+                publications: std::collections::BTreeMap::new(),
+            },
+        );
     };
     let registry = loader.publications();
 
-    let publications = match key {
+    let publications: crucible_core::types::PluginPublications = match key {
         Some(key) => {
-            let by_plugin: serde_json::Map<String, serde_json::Value> =
+            let by_plugin: std::collections::BTreeMap<String, serde_json::Value> =
                 registry.get(key).into_iter().collect();
-            serde_json::json!({ key: by_plugin })
+            std::collections::BTreeMap::from([(key.to_string(), by_plugin)])
         }
-        None => serde_json::to_value(registry.all()).unwrap_or_else(|_| serde_json::json!({})),
+        None => registry
+            .all()
+            .into_iter()
+            .map(|(key, by_plugin)| (key, by_plugin.into_iter().collect()))
+            .collect(),
     };
-    Response::success(req.id, serde_json::json!({ "publications": publications }))
+    typed_success(
+        req.id,
+        crucible_core::types::PluginPublicationsReply { publications },
+    )
 }
 
 /// `plugin.options` — the settings tree a plugin declared, rendered for `ui`.
@@ -261,26 +269,31 @@ pub(crate) async fn handle_plugin_options(
     let ui = params.ui.as_deref().unwrap_or("web");
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
-        return Response::success(req.id, serde_json::json!({ "options": {} }));
+        return typed_success(
+            req.id,
+            crucible_core::types::PluginOptionsReply {
+                options: std::collections::BTreeMap::new(),
+            },
+        );
     };
     let registry = loader.options();
 
-    let mut out = serde_json::Map::new();
+    let mut options = std::collections::BTreeMap::new();
     match params.plugin.as_deref() {
         Some(name) => {
             if let Some(tree) = registry.describe(name, ui) {
-                out.insert(name.to_string(), tree);
+                options.insert(name.to_string(), tree);
             }
         }
         None => {
             for name in registry.plugins() {
                 if let Some(tree) = registry.describe(&name, ui) {
-                    out.insert(name, tree);
+                    options.insert(name, tree);
                 }
             }
         }
     }
-    Response::success(req.id, serde_json::json!({ "options": out }))
+    typed_success(req.id, crucible_core::types::PluginOptionsReply { options })
 }
 
 /// Which callback an option RPC reaches.
@@ -327,9 +340,11 @@ pub(crate) async fn handle_plugin_option_call(
     let registry = loader.options();
 
     let outcome = match action {
-        OptionAction::Get => registry
-            .get(&plugin, &path, ui)
-            .map(|v| serde_json::json!({ "value": v })),
+        OptionAction::Get => registry.get(&plugin, &path, ui).map(|v| {
+            crucible_core::types::PluginOptionCallReply::Value(
+                crucible_core::types::PluginOptionValue { value: v },
+            )
+        }),
         OptionAction::Set => {
             let value = params.value;
             registry.set(&plugin, &path, value.clone(), ui).map(|()| {
@@ -355,16 +370,18 @@ pub(crate) async fn handle_plugin_option_call(
                         "could not persist a plugin option; it applies until the daemon restarts"
                     );
                 }
-                serde_json::json!({ "ok": true })
+                crucible_core::types::PluginOptionCallReply::Done(
+                    crucible_core::types::PluginAck::ok(),
+                )
             })
         }
-        OptionAction::Execute => registry
-            .execute(&plugin, &path, ui)
-            .map(|()| serde_json::json!({ "ok": true })),
+        OptionAction::Execute => registry.execute(&plugin, &path, ui).map(|()| {
+            crucible_core::types::PluginOptionCallReply::Done(crucible_core::types::PluginAck::ok())
+        }),
     };
 
     match outcome {
-        Ok(value) => Response::success(req.id, value),
+        Ok(reply) => typed_success(req.id, reply),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e),
     }
 }
@@ -378,7 +395,10 @@ pub(crate) async fn handle_plugin_commands(
         .as_ref()
         .map(|l| l.plugin_registry().commands_json())
         .unwrap_or_default();
-    Response::success(req.id, serde_json::json!({ "commands": commands }))
+    typed_success(
+        req.id,
+        crucible_core::types::PluginCommandsReply { commands },
+    )
 }
 
 /// Invoke a plugin command by name.
@@ -409,9 +429,9 @@ pub(crate) async fn handle_plugin_run_command(
         .run_command_in(&name, args, session.as_deref())
         .await
     {
-        Ok(Some(result)) => Response::success(
+        Ok(Some(result)) => typed_success(
             req.id,
-            serde_json::json!({ "name": name, "result": result }),
+            crucible_core::types::PluginRunCommandReply { name, result },
         ),
         Ok(None) => internal_error(req.id, format!("Unknown plugin command: {name}")),
         // A plugin that raises is not a fault of the daemon: the message

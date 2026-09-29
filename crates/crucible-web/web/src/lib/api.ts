@@ -1414,10 +1414,10 @@ export function subscribeToSurfaceEvents(
  * in its fragment. `last_error` says why a plugin is not Active, and is null
  * for a healthy one.
  */
-export type PluginInfo = Schemas['PluginRow'];
+export type PluginInfo = Schemas['PluginInfo'];
 
 /** Plugin reload response (counts of reloaded capabilities). */
-export type PluginReloadResult = Schemas['PluginReloadResponse'];
+export type PluginReloadResult = Schemas['PluginReloadReply'];
 
 /** List discovered plugins with rich metadata. */
 export async function getPlugins(): Promise<PluginInfo[]> {
@@ -1444,7 +1444,7 @@ export type InstallPluginParams = Schemas['InstallRequest'];
  * whether the plugin actually activated on the running daemon: "installed"
  * must not read as success while the plugin sits broken.
  */
-export type InstallPluginResult = Schemas['PluginInstallResponse'];
+export type InstallPluginResult = Schemas['PluginInstallReply'];
 
 /**
  * Install a plugin by URL. Synchronous — can take 10+ seconds for a
@@ -1468,7 +1468,7 @@ export async function installPlugin(params: InstallPluginParams): Promise<Instal
  * purge: the directory remains and loads again on the next daemon restart or
  * plugin install.
  */
-export type RemovePluginResult = Schemas['PluginRemoveResponse'];
+export type RemovePluginResult = Schemas['PluginRemoveReply'];
 
 /** Remove a plugin by name. If `purge`, the cloned directory is also deleted. */
 export async function removePlugin(name: string, purge = false): Promise<RemovePluginResult> {

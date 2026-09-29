@@ -1067,17 +1067,9 @@ impl OilChatRunner {
                                     } else {
                                         match client.plugin_reload(&name).await {
                                             Ok(result) => {
-                                                let tools = result
-                                                    .get("tools")
-                                                    .and_then(|v| v.as_u64())
-                                                    .unwrap_or(0);
-                                                let services = result
-                                                    .get("services")
-                                                    .and_then(|v| v.as_u64())
-                                                    .unwrap_or(0);
                                                 let _ = tx.send(ChatAppMsg::Status(format!(
                                                     "✓ Reloaded '{}' ({} tools, {} services)",
-                                                    name, tools, services
+                                                    name, result.tools, result.services
                                                 )));
                                             }
                                             Err(e) => {

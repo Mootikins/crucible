@@ -82,9 +82,9 @@ impl Peer {
                             active.remove(id.as_str().unwrap());
                         }
                     }
-                    let result = if request["method"] == "plugin.commands"
-                        || request["method"] == "session.events_after"
-                    {
+                    let result = if request["method"] == "plugin.commands" {
+                        json!({ "commands": [] })
+                    } else if request["method"] == "session.events_after" {
                         json!([])
                     } else {
                         json!({})

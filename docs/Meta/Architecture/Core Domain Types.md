@@ -248,12 +248,14 @@ behavior on top of them.
 |---|---|---|
 | `crates/crucible-core/src/types/acp.rs` | 100 | `FileDiff` and re-exports of the raw ACP schema types under `types::acp::schema`. |
 | `crates/crucible-core/src/types/command.rs` | 248 | `BuiltinCommand` (the commands every client provides), `CommandKind` (`Builtin`/`Mode`/`Plugin`/`Skill`/`Agent`), `SessionCommand` (one catalog entry), `SendOutcome` (`Turn { message_id }` or `Command { command, result }`, `session.send_message`'s reply), and `split_slash_command`. |
+| `crates/crucible-core/src/types/command_effect.rs` | 150 | `CommandEffect` (`Read`/`Write`) — what a plugin command declares about itself in the `plugin.commands` reply. Owned here, not in `crucible-lua` (which has no `openapi` feature), and re-exported from there. |
 | `crates/crucible-core/src/types/database.rs` | 71 | `DocumentId`/`SearchResult`/`BlockRef`. |
 | `crates/crucible-core/src/types/knob.rs` | 346 | `SessionKnob`/`AcpKnob`/`AgentConfigOption` — which per-session settings exist and how ACP handles them; `SessionKnob::PluginTurnLimit` is a daemon-only knob. |
 | `crates/crucible-core/src/types/mcp_status.rs` | 20 | `McpServerInfo` (display-only) for the `mcp_servers_ready` setup event. |
 | `crates/crucible-core/src/types/mode.rs` | 447 | `WriteMode`/`BuiltinMode`/`ModeDescriptor`/`SessionModes` — mode presentation and whether a mode's note writes apply to disk or are recorded as proposals. `SessionModes::next_mode`/the free function `next_mode` give the mode after the current one, wrapping, for `/mode` and its `Shift+Tab` equivalent. |
 | `crates/crucible-core/src/types/mod.rs` | 95 | Re-export root for `types/*`; documents where each canonical type actually lives. |
 | `crates/crucible-core/src/types/notification.rs` | 309 | `Notification`/`NotificationScope`/`NotificationKind`; a session scope wins over workspace/kiln scoping. |
+| `crates/crucible-core/src/types/plugin_reply.rs` | 325 | The `plugin.*` RPC reply types (`PluginInfo`, `PluginCommand`, `PluginOptionsReply`, `PluginOptionCallReply`, `PluginInstallReply`/`PluginInstallOutcome`, `PluginRemoveReply`, `PluginReloadReply`, `PluginRunCommandReply`, `PluginPublicationsReply`). The daemon builds each with a struct literal; the web plugin routes forward them unchanged. `PluginListReply` (the `plugin.list` envelope) stays here too, but carries no `ToSchema`: it is never sent whole to a browser. |
 | `crates/crucible-core/src/types/plugin_status.rs` | 24 | `PluginStatusEntry` for the `plugins_discovered` setup event. |
 | `crates/crucible-core/src/types/popup.rs` | 92 | `PopupEntry` — the cross-platform simple popup-list-item type. |
 | `crates/crucible-core/src/types/provider_info.rs` | 20 | `ProviderInfo` for the `providers_listed` setup event and `list_providers` RPC. |

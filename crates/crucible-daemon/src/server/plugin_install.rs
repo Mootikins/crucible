@@ -53,22 +53,22 @@ pub(crate) fn install_load_report(
     let dir_str = clone_dir.to_string_lossy();
     match info
         .iter()
-        .find(|p| p["dir"] == dir_str.as_ref())
-        .or_else(|| info.iter().find(|p| p["name"] == name))
+        .find(|p| p.dir == dir_str.as_ref())
+        .or_else(|| info.iter().find(|p| p.name == name))
     {
-        Some(entry) if entry["state"] == "Active" => InstallLoadReport {
+        Some(entry) if entry.state == "Active" => InstallLoadReport {
             loaded: true,
-            tools: entry["tools"].as_u64().unwrap_or(0),
-            commands: entry["commands"].as_u64().unwrap_or(0),
-            services: entry["services"].as_u64().unwrap_or(0),
+            tools: entry.tools,
+            commands: entry.commands,
+            services: entry.services,
             error: None,
         },
         // Per-plugin fail-open: the pass succeeded but this plugin's own
         // execution failed — its entry carries the reason.
         Some(entry) => InstallLoadReport::not_loaded(
-            entry["last_error"]
-                .as_str()
-                .map(String::from)
+            entry
+                .last_error
+                .clone()
                 .unwrap_or_else(|| "plugin did not load; see plugin.list".to_string()),
         ),
         None => InstallLoadReport::not_loaded("plugin did not load; see plugin.list".to_string()),
@@ -194,33 +194,22 @@ pub(crate) async fn handle_plugin_install(
         error: load_error,
     } = report;
 
-    Response::success(
+    typed_success(
         req.id,
-        serde_json::json!({
-            "name": result.name,
-            "installed": true,
-            "loaded": loaded,
-            "tools": tools,
-            "commands": commands,
-            "services": services,
-            "error": load_error,
+        crucible_core::types::PluginInstallReply {
+            name: result.name,
+            installed: true,
+            loaded,
+            tools,
+            commands,
+            services,
+            error: load_error,
             // The watcher's watch list is a boot-time snapshot; a plugin
             // installed at runtime works but is not hot-reloaded on edit.
-            "watch": "not hot-watched until restart",
-            "outcome": match result.outcome {
-                crate::BootstrapOutcome::Cloned { ref dest } => serde_json::json!({
-                    "kind": "cloned",
-                    "dest": dest.to_string_lossy(),
-                }),
-                crate::BootstrapOutcome::AlreadyPresent => serde_json::json!({
-                    "kind": "already_present",
-                }),
-                crate::BootstrapOutcome::Disabled => serde_json::json!({
-                    "kind": "disabled",
-                }),
-            },
-            "manifest": result.manifest.to_string_lossy(),
-        }),
+            watch: "not hot-watched until restart".to_string(),
+            outcome: result.outcome.to_wire(),
+            manifest: result.manifest.to_string_lossy().to_string(),
+        },
     )
 }
 
@@ -321,15 +310,15 @@ pub(crate) async fn handle_plugin_remove(
             } else {
                 None
             };
-            Response::success(
+            typed_success(
                 req.id,
-                serde_json::json!({
-                    "name": outcome.name,
-                    "manifest": outcome.manifest.to_string_lossy(),
-                    "purged_dir": outcome.purged_dir.map(|p| p.to_string_lossy().to_string()),
-                    "purge_error": outcome.purge_error,
-                    "kept_dir": kept_dir,
-                }),
+                crucible_core::types::PluginRemoveReply {
+                    name: outcome.name,
+                    manifest: outcome.manifest.to_string_lossy().to_string(),
+                    purged_dir: outcome.purged_dir.map(|p| p.to_string_lossy().to_string()),
+                    purge_error: outcome.purge_error,
+                    kept_dir,
+                },
             )
         }
         // A concurrent manifest write since the precondition check can

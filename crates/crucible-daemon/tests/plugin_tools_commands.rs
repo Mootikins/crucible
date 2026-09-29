@@ -208,16 +208,16 @@ async fn plugin_declared_command_is_listed_and_invocable() {
 
     let commands = registry.commands_json();
     assert_eq!(commands.len(), 2, "expected two commands, got {commands:?}");
-    assert_eq!(commands[0]["name"], "greet");
-    assert_eq!(commands[0]["plugin"], "megaphone");
-    assert_eq!(commands[0]["hint"], "[name]");
-    assert_eq!(commands[0]["description"], "Greet someone");
+    assert_eq!(commands[0].name, "greet");
+    assert_eq!(commands[0].plugin, "megaphone");
+    assert_eq!(commands[0].hint.as_deref(), Some("[name]"));
+    assert_eq!(commands[0].description, "Greet someone");
 
     // The two halves a caller needs before it can offer a command as a button:
     // the JSON Schema a dialog is generated from, and the marker that says
     // whether pressing the button is safe to do speculatively.
     assert_eq!(
-        commands[0]["parameters"],
+        commands[0].parameters,
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -228,15 +228,17 @@ async fn plugin_declared_command_is_listed_and_invocable() {
         "a declared parameter must cross as JSON Schema, not as opaque text"
     );
     assert_eq!(
-        commands[0]["effect"], "read",
+        commands[0].effect,
+        crucible_core::types::CommandEffect::Read,
         "a declared read must reach a client as a read"
     );
 
     // `rename` declares no effect, and an undeclared command is unknown.
     // Unknown must cost a question, not a file.
-    assert_eq!(commands[1]["name"], "rename");
+    assert_eq!(commands[1].name, "rename");
     assert_eq!(
-        commands[1]["effect"], "write",
+        commands[1].effect,
+        crucible_core::types::CommandEffect::Write,
         "an undeclared command must reach a client as a write"
     );
 

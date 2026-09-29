@@ -921,9 +921,9 @@ mod shipped_plugin_tests {
             let info = loader
                 .loaded_plugin_info()
                 .into_iter()
-                .find(|p| p["name"].as_str() == Some(name.as_str()))
+                .find(|p| p.name == name)
                 .unwrap_or_else(|| panic!("{name}: missing from plugin info"));
-            let declared_tools = info["tools"].as_u64().expect("tool count") as usize;
+            let declared_tools = info.tools as usize;
             let registered = loader.plugin_registry().tool_names();
             assert_eq!(
                 registered.len(),

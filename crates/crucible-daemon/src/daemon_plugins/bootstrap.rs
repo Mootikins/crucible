@@ -160,6 +160,25 @@ pub enum BootstrapOutcome {
     Cloned { dest: PathBuf },
 }
 
+impl BootstrapOutcome {
+    /// Project this onto the wire shape `plugin.install` sends under
+    /// `outcome`.
+    ///
+    /// Kept as a conversion, not a derive on this type itself: `dest` is a
+    /// `PathBuf` here and a `String` on the wire, and a `PathBuf` that failed
+    /// UTF-8 must not become a JSON error rather than a lossy path.
+    pub fn to_wire(&self) -> crucible_core::types::PluginInstallOutcome {
+        use crucible_core::types::PluginInstallOutcome;
+        match self {
+            BootstrapOutcome::Cloned { dest } => PluginInstallOutcome::Cloned {
+                dest: dest.to_string_lossy().to_string(),
+            },
+            BootstrapOutcome::AlreadyPresent => PluginInstallOutcome::AlreadyPresent,
+            BootstrapOutcome::Disabled => PluginInstallOutcome::Disabled,
+        }
+    }
+}
+
 /// Bootstrap one spec entry with a `Git` source: clone into `plugins_dir`
 /// if missing, check out the pin if set. Returns a structured outcome so
 /// callers (CLI vs daemon startup) can decide how loudly to react to

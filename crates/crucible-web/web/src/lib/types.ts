@@ -715,7 +715,7 @@ export interface ProviderTarget {
 /**
  * One node of a plugin's settings tree.
  *
- * Hand-written: `PluginOptionsResponse.options` is an open map on the wire,
+ * Hand-written: `PluginOptionsReply.options` is an open map on the wire,
  * because the tree is a projection of a plugin's Lua declaration and the
  * daemon does not model it.
  *
@@ -782,7 +782,7 @@ export type ConfigOrigin = Schemas['ConfigOriginRow'];
  * kind added later needs no change in this file — a plugin states what it
  * offers and clients render it.
  */
-export type PluginPublications = Schemas['PluginPublicationsResponse']['publications'];
+export type PluginPublications = Schemas['PluginPublicationsReply']['publications'];
 
 /**
  * One executable primitive a plugin declared, and the arguments it takes.
@@ -796,9 +796,9 @@ export type PluginPublications = Schemas['PluginPublicationsResponse']['publicat
  * as a guarantee teaches a user to trust a promise nothing keeps. A command
  * that declares nothing arrives as `write`, because an undeclared command is
  * unknown and unknown must cost a question rather than a file. See
- * `crates/crucible-lua/src/command_effect.rs`.
+ * `crates/crucible-core/src/types/command_effect.rs`.
  */
-export type PluginCommand = Schemas['PluginCommandRow'];
+export type PluginCommand = Schemas['PluginCommand'];
 
 /**
  * One matched line, in the panel's own camelCase.

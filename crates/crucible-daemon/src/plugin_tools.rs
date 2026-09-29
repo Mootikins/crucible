@@ -278,7 +278,7 @@ impl PluginRegistry {
     /// `parameters` is the JSON Schema a caller generates an argument dialog
     /// from; `effect` is what tells that caller whether pressing the button is
     /// safe to do without asking first.
-    pub fn commands_json(&self) -> Vec<serde_json::Value> {
+    pub fn commands_json(&self) -> Vec<crucible_core::types::PluginCommand> {
         let commands = self.commands.read().expect("plugin commands lock poisoned");
         let (sources, entries) = match command_sources(&commands) {
             Ok(built) => built,
@@ -287,30 +287,35 @@ impl PluginRegistry {
                 return Vec::new();
             }
         };
-        let mut out: Vec<serde_json::Value> = sources::listing(&sources, &entries)
-            .into_iter()
-            .map(|(name, index)| {
-                let entry = entries[index].value;
-                serde_json::json!({
-                    "plugin": entry.plugin,
-                    "name": name,
-                    "description": entry.definition.description,
-                    "hint": entry.input_hint,
-                    "parameters": entry.definition.parameters,
-                    // Declared by the plugin, verified by nothing. A consumer
-                    // must present it as a claim and a permission layer must
-                    // treat it as a hint about what to ask — never as
-                    // permission to skip asking. See `CommandEffect`.
-                    //
-                    // A string, never null: only commands are in this map, so
-                    // the `None` here is unreachable, and answering `write`
-                    // rather than null keeps a client from having to invent
-                    // its own answer for a value the wire says nothing about.
-                    "effect": entry.effect.unwrap_or(CommandEffect::Write).as_str(),
+        let mut out: Vec<crucible_core::types::PluginCommand> =
+            sources::listing(&sources, &entries)
+                .into_iter()
+                .map(|(name, index)| {
+                    let entry = entries[index].value;
+                    crucible_core::types::PluginCommand {
+                        plugin: entry.plugin.clone(),
+                        name,
+                        description: entry.definition.description.clone(),
+                        hint: entry.input_hint.clone(),
+                        parameters: entry
+                            .definition
+                            .parameters
+                            .clone()
+                            .unwrap_or(serde_json::Value::Null),
+                        // Declared by the plugin, verified by nothing. A consumer
+                        // must present it as a claim and a permission layer must
+                        // treat it as a hint about what to ask — never as
+                        // permission to skip asking. See `CommandEffect`.
+                        //
+                        // Never absent: only commands are in this map, so the
+                        // `None` here is unreachable, and answering `Write`
+                        // rather than absent keeps a client from having to invent
+                        // its own answer for a value the wire says nothing about.
+                        effect: entry.effect.unwrap_or(CommandEffect::Write),
+                    }
                 })
-            })
-            .collect();
-        out.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
         out
     }
 
@@ -721,9 +726,9 @@ mod tests {
 
         let commands = registry.commands_json();
         assert_eq!(commands.len(), 1);
-        assert_eq!(commands[0]["name"], "greet");
-        assert_eq!(commands[0]["plugin"], "p");
-        assert_eq!(commands[0]["hint"], "[args]");
+        assert_eq!(commands[0].name, "greet");
+        assert_eq!(commands[0].plugin, "p");
+        assert_eq!(commands[0].hint.as_deref(), Some("[args]"));
         assert_eq!(registry.command_func("p:greet").unwrap().unwrap().0, "p");
     }
 
@@ -815,7 +820,7 @@ mod tests {
         let names: Vec<_> = registry
             .commands_json()
             .into_iter()
-            .map(|v| v["name"].as_str().unwrap().to_owned())
+            .map(|v| v.name)
             .collect();
         assert_eq!(names, ["first:greet", "second:greet"]);
         assert_eq!(

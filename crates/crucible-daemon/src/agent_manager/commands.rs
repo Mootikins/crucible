@@ -76,15 +76,13 @@ impl AgentManager {
             Some(registry) => registry
                 .commands_json()
                 .into_iter()
-                .filter_map(|command| {
-                    Some(SessionCommand {
-                        name: command["name"].as_str()?.to_string(),
-                        description: command["description"].as_str().unwrap_or("").to_string(),
-                        input_hint: command["hint"].as_str().map(str::to_string),
-                        kind: CommandKind::Plugin {
-                            plugin: command["plugin"].as_str().unwrap_or("").to_string(),
-                        },
-                    })
+                .map(|command| SessionCommand {
+                    name: command.name,
+                    description: command.description,
+                    input_hint: command.hint,
+                    kind: CommandKind::Plugin {
+                        plugin: command.plugin,
+                    },
                 })
                 .collect(),
             None => Vec::new(),

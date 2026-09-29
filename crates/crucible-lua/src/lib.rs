@@ -72,7 +72,6 @@ compile_error!(
 pub mod auth_plugin;
 pub mod authorship;
 pub mod check;
-pub mod command_effect;
 mod context;
 mod context_attach;
 pub mod discovered;
@@ -144,7 +143,9 @@ pub mod ui_geometry;
 
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use authorship::AuthorRoots;
-pub use command_effect::CommandEffect;
+// `CommandEffect` is owned by `crucible-core` (see its module docs for why):
+// it crosses the wire in the daemon's `plugin.commands` reply, and this crate
+// has no `openapi` feature to describe it with. Re-exported, not copied.
 pub use config::{
     add_plugin_author_root, app_config_origin, app_config_origins, begin_boot_store,
     end_boot_phase, evaluate_config_source, get_app_config, get_app_config_provenance, get_layout,
@@ -159,6 +160,7 @@ pub use context::{register_context_module, register_context_module_stub};
 pub use context_attach::{
     register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,
 };
+pub use crucible_core::types::CommandEffect;
 pub use discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
 };

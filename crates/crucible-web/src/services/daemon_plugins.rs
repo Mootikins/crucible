@@ -11,7 +11,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe PluginList =>
         plugin_list_info()
-        -> Vec<serde_json::Value> = plugin_list_info();
+        -> Vec<crucible_core::types::PluginInfo> = plugin_list_info();
     }
 
     forward_rpc! {
@@ -23,7 +23,7 @@ impl ReconnectingDaemon {
         /// it reached the daemon's own clients and no browser.
         Safe PluginCommands =>
         plugin_commands()
-        -> Vec<serde_json::Value> = plugin_commands();
+        -> Vec<crucible_core::types::PluginCommand> = plugin_commands();
     }
 
     forward_rpc! {
@@ -41,7 +41,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe PluginPublications =>
         plugin_publications(key: Option<String>)
-        -> serde_json::Value = plugin_publications(key.as_deref());
+        -> crucible_core::types::PluginPublications = plugin_publications(key.as_deref());
     }
 
     forward_rpc! {
@@ -49,7 +49,7 @@ impl ReconnectingDaemon {
         /// it is what makes `webHidden` mean something.
         Safe PluginOptions =>
         plugin_options()
-        -> serde_json::Value = plugin_options("web");
+        -> std::collections::BTreeMap<String, serde_json::Value> = plugin_options("web");
     }
 
     forward_rpc! {
@@ -78,24 +78,24 @@ impl ReconnectingDaemon {
         /// in the repo since, so it cannot be published once and cached.
         Once PluginRunCommand =>
         plugin_run_command(name: &str, args: serde_json::Value)
-        -> serde_json::Value = plugin_run_command(&name, args);
+        -> crucible_core::types::PluginRunCommandReply = plugin_run_command(&name, args);
     }
 
     forward_rpc! {
         Once PluginReload =>
         plugin_reload(name: &str)
-        -> serde_json::Value = plugin_reload(&name);
+        -> crucible_core::types::PluginReloadReply = plugin_reload(&name);
     }
 
     forward_rpc! {
         Once PluginInstall =>
         plugin_install(url: &str, branch: Option<&str> => branch.map(str::to_owned), pin: Option<&str> => pin.map(str::to_owned))
-        -> serde_json::Value = plugin_install(&url, branch.as_deref(), pin.as_deref());
+        -> crucible_core::types::PluginInstallReply = plugin_install(&url, branch.as_deref(), pin.as_deref());
     }
 
     forward_rpc! {
         Once PluginRemove =>
         plugin_remove(name: &str, purge: bool)
-        -> serde_json::Value = plugin_remove(&name, purge);
+        -> crucible_core::types::PluginRemoveReply = plugin_remove(&name, purge);
     }
 }

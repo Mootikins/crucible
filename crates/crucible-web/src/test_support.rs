@@ -1368,6 +1368,8 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
                 "handlers": 2,
                 "services": 0,
             }],
+            "errors": [],
+            "spec": [],
         }),
         // Shaped like a real tree so the contract test exercises pass-through
         // rather than a hand-built stub: a group, a leaf, and a button.

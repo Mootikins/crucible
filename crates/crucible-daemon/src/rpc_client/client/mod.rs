@@ -164,7 +164,6 @@ pub use session::decode_status_items;
 pub use types::SessionEvent;
 
 use crucible_core::protocol::requests::EmptyParams;
-use types::extract_string_array;
 
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
 
@@ -901,7 +900,10 @@ impl DaemonClient {
     // Plugin Management RPC Methods
     // =========================================================================
 
-    pub async fn plugin_reload(&self, name: &str) -> Result<serde_json::Value> {
+    pub async fn plugin_reload(
+        &self,
+        name: &str,
+    ) -> Result<crucible_core::types::PluginReloadReply> {
         self.typed_call(
             RpcMethod::PluginReload,
             NameRequest {
@@ -912,22 +914,19 @@ impl DaemonClient {
     }
 
     pub async fn plugin_list(&self) -> Result<Vec<String>> {
-        let result: serde_json::Value = self
+        let result: crucible_core::types::PluginListReply = self
             .typed_call(RpcMethod::PluginList, EmptyParams {})
             .await?;
-        Ok(extract_string_array(&result, "plugins"))
+        Ok(result.plugins)
     }
 
     /// Like [`plugin_list`] but returns the richer `plugin_info` array
     /// (name, version, source, state, dir, capability counts).
-    pub async fn plugin_list_info(&self) -> Result<Vec<serde_json::Value>> {
-        let result: serde_json::Value = self
+    pub async fn plugin_list_info(&self) -> Result<Vec<crucible_core::types::PluginInfo>> {
+        let result: crucible_core::types::PluginListReply = self
             .typed_call(RpcMethod::PluginList, EmptyParams {})
             .await?;
-        Ok(result
-            .get("plugin_info")
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default())
+        Ok(result.plugin_info)
     }
 
     /// The merged spec, one row per entry: the `spec` array of `plugin.list`.
@@ -951,8 +950,11 @@ impl DaemonClient {
     /// `key` narrows daemon-side. Without it a caller receives every plugin's
     /// data, which is both more than a single block needs and more than it
     /// should see.
-    pub async fn plugin_publications(&self, key: Option<&str>) -> Result<serde_json::Value> {
-        let result: serde_json::Value = self
+    pub async fn plugin_publications(
+        &self,
+        key: Option<&str>,
+    ) -> Result<crucible_core::types::PluginPublications> {
+        let result: crucible_core::types::PluginPublicationsReply = self
             .typed_call(
                 RpcMethod::PluginPublications,
                 PluginPublicationsRequest {
@@ -960,10 +962,7 @@ impl DaemonClient {
                 },
             )
             .await?;
-        Ok(result
-            .get("publications")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({})))
+        Ok(result.publications)
     }
 
     /// Every surface a plugin declared, rows included.
@@ -998,8 +997,11 @@ impl DaemonClient {
     /// hide flags and reaches Lua callbacks as `info.uiType`. Every
     /// function-valued field is evaluated per call, so this is a snapshot of
     /// what is true of this box now — not something to cache across a change.
-    pub async fn plugin_options(&self, ui: &str) -> Result<serde_json::Value> {
-        let result: serde_json::Value = self
+    pub async fn plugin_options(
+        &self,
+        ui: &str,
+    ) -> Result<std::collections::BTreeMap<String, serde_json::Value>> {
+        let result: crucible_core::types::PluginOptionsReply = self
             .typed_call(
                 RpcMethod::PluginOptions,
                 PluginOptionsRequest {
@@ -1008,10 +1010,7 @@ impl DaemonClient {
                 },
             )
             .await?;
-        Ok(result
-            .get("options")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({})))
+        Ok(result.options)
     }
 
     /// Read one option, by its path through the settings tree.
@@ -1021,7 +1020,7 @@ impl DaemonClient {
         path: &[String],
         ui: &str,
     ) -> Result<serde_json::Value> {
-        let result: serde_json::Value = self
+        let result: crucible_core::types::PluginOptionValue = self
             .typed_call(
                 RpcMethod::PluginOptionGet,
                 PluginOptionCallRequest {
@@ -1032,10 +1031,7 @@ impl DaemonClient {
                 },
             )
             .await?;
-        Ok(result
-            .get("value")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null))
+        Ok(result.value)
     }
 
     /// Write one option. The plugin's own setter decides what that means.
@@ -1046,7 +1042,7 @@ impl DaemonClient {
         value: serde_json::Value,
         ui: &str,
     ) -> Result<()> {
-        let _: serde_json::Value = self
+        let _: crucible_core::types::PluginAck = self
             .typed_call(
                 RpcMethod::PluginOptionSet,
                 PluginOptionCallRequest {
@@ -1067,7 +1063,7 @@ impl DaemonClient {
         path: &[String],
         ui: &str,
     ) -> Result<()> {
-        let _: serde_json::Value = self
+        let _: crucible_core::types::PluginAck = self
             .typed_call(
                 RpcMethod::PluginOptionExecute,
                 PluginOptionCallRequest {
@@ -1084,14 +1080,11 @@ impl DaemonClient {
     /// Commands declared by loaded plugins: `plugin`, `name`, `description`,
     /// `hint`, `parameters`. Served from the daemon so TUI and web show the
     /// same slash-command set.
-    pub async fn plugin_commands(&self) -> Result<Vec<serde_json::Value>> {
-        let result: serde_json::Value = self
+    pub async fn plugin_commands(&self) -> Result<Vec<crucible_core::types::PluginCommand>> {
+        let result: crucible_core::types::PluginCommandsReply = self
             .typed_call(RpcMethod::PluginCommands, EmptyParams {})
             .await?;
-        Ok(result
-            .get("commands")
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default())
+        Ok(result.commands)
     }
 
     /// Invoke a plugin command. `args` is passed to the command's Lua `fn` as
@@ -1100,7 +1093,7 @@ impl DaemonClient {
         &self,
         name: &str,
         args: serde_json::Value,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crucible_core::types::PluginRunCommandReply> {
         self.plugin_run_command_in(name, args, None).await
     }
 
@@ -1111,7 +1104,7 @@ impl DaemonClient {
         name: &str,
         args: serde_json::Value,
         session: Option<&str>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crucible_core::types::PluginRunCommandReply> {
         self.typed_call(
             RpcMethod::PluginRunCommand,
             PluginRunCommandRequest {
@@ -1130,7 +1123,7 @@ impl DaemonClient {
         url: &str,
         branch: Option<&str>,
         pin: Option<&str>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crucible_core::types::PluginInstallReply> {
         self.typed_call(
             RpcMethod::PluginInstall,
             PluginInstallRequest {
@@ -1144,7 +1137,11 @@ impl DaemonClient {
 
     /// Remove a plugin by name. With `purge = true`, also deletes the
     /// cloned plugin directory.
-    pub async fn plugin_remove(&self, name: &str, purge: bool) -> Result<serde_json::Value> {
+    pub async fn plugin_remove(
+        &self,
+        name: &str,
+        purge: bool,
+    ) -> Result<crucible_core::types::PluginRemoveReply> {
         self.typed_call(
             RpcMethod::PluginRemove,
             PluginRemoveRequest {

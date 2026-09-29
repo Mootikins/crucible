@@ -1,7 +1,7 @@
-use crate::command_effect::CommandEffect;
 use crate::lifecycle::{
     spec_from_table, LifecycleError, LifecycleResult, PluginManager, PluginSpec, FRAGMENT_FILE,
 };
+use crucible_core::types::CommandEffect;
 use mlua::{Lua, Table};
 use std::path::Path;
 use tempfile::TempDir;

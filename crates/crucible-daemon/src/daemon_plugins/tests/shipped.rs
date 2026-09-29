@@ -45,15 +45,15 @@ async fn every_shipped_plugin_executes() {
     for name in shipped_plugin_names() {
         let entry = info
             .iter()
-            .find(|p| p["name"].as_str() == Some(name.as_str()))
+            .find(|p| p.name == name)
             .unwrap_or_else(|| panic!("shipped plugin '{name}' missing from plugin info"));
 
         assert_eq!(
-            entry["state"].as_str(),
-            Some("Active"),
-            "shipped plugin '{name}' did not reach Active: {entry:#}"
+            entry.state.as_str(),
+            "Active",
+            "shipped plugin '{name}' did not reach Active: {entry:?}"
         );
-        let last_error = entry["last_error"].as_str().unwrap_or("");
+        let last_error = entry.last_error.as_deref().unwrap_or("");
         assert!(
             last_error.is_empty(),
             "shipped plugin '{name}' recorded an error: {last_error}"
@@ -398,14 +398,14 @@ async fn a_fresh_boot_activates_every_shipped_plugin() {
     for name in shipped_plugin_names() {
         let entry = info
             .iter()
-            .find(|p| p["name"].as_str() == Some(name.as_str()))
+            .find(|p| p.name == name)
             .unwrap_or_else(|| panic!("shipped plugin '{name}' missing from plugin info"));
         assert_eq!(
-            entry["state"].as_str(),
-            Some("Active"),
-            "shipped plugin '{name}' did not reach Active: {entry:#}"
+            entry.state.as_str(),
+            "Active",
+            "shipped plugin '{name}' did not reach Active: {entry:?}"
         );
-        let last_error = entry["last_error"].as_str().unwrap_or("");
+        let last_error = entry.last_error.as_deref().unwrap_or("");
         assert!(
             last_error.is_empty(),
             "shipped plugin '{name}' recorded an error: {last_error}"

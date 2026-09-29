@@ -753,7 +753,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** `GET /api/notes/{name}?kiln=<path>` — one note by name or path. */
+        /**
+         * `GET /api/notes/{name}?kiln=<path>` — one note by name or path. The reply
+         *     is core's own [`NoteByNameReply`], the same type `get_note_by_name`
+         *     answers.
+         */
         get: operations["get_note"];
         /** `PUT /api/notes/{name}` — write a note into an open kiln. */
         put: operations["put_note"];
@@ -819,6 +823,17 @@ export interface paths {
          */
         get: operations["list_plugins"];
         put?: never;
+        /**
+         * `POST /api/plugins` — clone a plugin from a git URL and record it in
+         *     the installed manifest (`plugins.installed.json`), the same record
+         *     `cru plugin add` writes. The operator's own spec entries live in
+         *     `init.lua`, which nothing here edits. Synchronous; can take 10+ seconds.
+         * @description The reply is `crucible_core::types::PluginInstallReply`, forwarded
+         *     unchanged. Its `outcome` field is `crucible_core::types::
+         *     PluginInstallOutcome`, the wire projection of
+         *     `crucible_daemon::BootstrapOutcome` (`BootstrapOutcome::to_wire`) — the
+         *     type `server/plugin_install.rs` matches on to decide it.
+         */
         post: operations["install_plugin"];
         delete?: never;
         options?: never;
@@ -836,7 +851,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** `DELETE /api/plugins/:name?purge=true` — remove a plugin declaration. */
+        /**
+         * `DELETE /api/plugins/:name?purge=true` — remove a plugin declaration.
+         * @description The reply is `crucible_core::types::PluginRemoveReply`, forwarded
+         *     unchanged.
+         */
         delete: operations["remove_plugin"];
         options?: never;
         head?: never;
@@ -852,7 +871,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** `POST /api/plugins/:name/option` — read, write, or press one option. */
+        /**
+         * `POST /api/plugins/:name/option` — read, write, or press one option.
+         * @description The reply is `crucible_core::types::PluginOptionCallReply`: a value for a
+         *     `get`, an acknowledgement for a `set` or an `execute`. See that type's
+         *     docs for why its variant order is load-bearing.
+         */
         post: operations["option_call"];
         delete?: never;
         options?: never;
@@ -871,7 +895,8 @@ export interface paths {
         put?: never;
         /**
          * `POST /api/plugins/:name/reload` — reload a plugin by name.
-         *     Returns the daemon's reload response (counts of tools, commands, etc.).
+         * @description The reply is `crucible_core::types::PluginReloadReply` (counts of tools,
+         *     commands, etc.), forwarded unchanged.
          */
         post: operations["reload_plugin"];
         delete?: never;
@@ -896,6 +921,9 @@ export interface paths {
          *     through verbatim, like publications and options: what a command returns is
          *     the plugin's vocabulary, and a shape this layer validated would be a shape
          *     only today's plugins could send.
+         *
+         *     The reply is `crucible_core::types::PluginRunCommandReply`, forwarded
+         *     unchanged.
          */
         post: operations["run_command"];
         delete?: never;
@@ -923,6 +951,10 @@ export interface paths {
          *     `ToolDefinition` a tool uses, so shaping it like `signature.rs`'s JSON
          *     Schema output is what would let a dialog be generated rather than
          *     hand-read — see `docs/Meta/Analysis/The Plugin Contract.md`.
+         *
+         *     The row type is `crucible_core::types::PluginCommand`, forwarded
+         *     unchanged: its `effect` field is `crucible_core::types::CommandEffect`,
+         *     the same closed vocabulary `crucible-lua` re-exports rather than mirrors.
          */
         get: operations["list_plugin_commands"];
         put?: never;
@@ -2192,13 +2224,8 @@ export interface components {
          * @enum {string}
          */
         BackendType: "ollama" | "openai" | "anthropic" | "cohere" | "vertexai" | "fastembed" | "burn" | "githubcopilot" | "openrouter" | "zai" | "custom" | "mock";
-        /** @description A note whose wikilinks point at the focused note. */
-        BacklinkRow: {
-            /**
-             * @description The same source joined onto the kiln root. Added by this route, not by
-             *     the daemon.
-             */
-            abs_path: string;
+        /** @description One note whose wikilinks point at the note `get_backlinks` resolved. */
+        BacklinkEntry: {
             name: string;
             /** @description Kiln-relative, as the index holds it. */
             path: string;
@@ -2213,11 +2240,28 @@ export interface components {
             /** @description `null` when the source note declares no title. Always written. */
             title: string | null;
         };
-        /** @description What `GET /api/backlinks` answers. */
+        /**
+         * @description A note whose wikilinks point at the focused note.
+         *
+         *     Flattens core's own [`BacklinkEntry`] — the daemon's `get_backlinks`
+         *     reply — and adds `abs_path`, which this route computes and the daemon
+         *     never sees.
+         */
+        BacklinkRow: components["schemas"]["BacklinkEntry"] & {
+            /**
+             * @description The source joined onto the kiln root. Added by this route, not by
+             *     the daemon.
+             */
+            abs_path: string;
+        };
+        /**
+         * @description What `GET /api/backlinks` answers. `unlinked` is the daemon's own
+         *     [`crucible_daemon::tools::autolink::LinkSuggestion`], unchanged.
+         */
         BacklinksResponse: {
             linked: components["schemas"]["BacklinkRow"][];
             note: components["schemas"]["FocusedNoteRow"];
-            unlinked: components["schemas"]["UnlinkedMentionRow"][];
+            unlinked: components["schemas"]["LinkSuggestion"][];
         };
         /**
          * @description A Bases value. Query cells use [`BaseValue::Error`] for a cell whose
@@ -2613,20 +2657,10 @@ export interface components {
             property: string;
         };
         /**
-         * @description Whether running a command changes state a user could lose, mirroring
-         *     [`crucible_lua::CommandEffect`].
-         *
-         *     **Declared by the plugin and verified by nothing.** A consumer must present
-         *     it as a claim, and a permission layer must treat it as a hint about what to
-         *     ask — never as permission to skip asking.
-         *
-         *     A closed set, not the open string a passthrough would give, because the
-         *     daemon writes `CommandEffect::as_str()` and nothing else: a command that
-         *     declares no effect arrives as `write`, never as an unknown word.
-         *     `the_mirrored_vocabularies_stay_closed` holds the two lists together.
+         * @description What a command does to state a user could lose. See the module docs.
          * @enum {string}
          */
-        CommandEffectRow: "read" | "write";
+        CommandEffect: "read" | "write";
         /** @description Where a command comes from, and so who runs it. */
         CommandKind: {
             command: components["schemas"]["BuiltinCommand"];
@@ -3378,26 +3412,6 @@ export interface components {
             /** @description Always true. A refusal is an error, not a `false`. */
             trashed: boolean;
         };
-        /** @description One edge of the note-link graph. */
-        GraphLinkRow: {
-            /** @description Whether `target` resolves to a note the caller can see. */
-            resolved: boolean;
-            /** @description The linking note's path. Always a `path` in `notes`. */
-            source: string;
-            /**
-             * @description The linked note's path when `resolved`; otherwise the target as it was
-             *     written, which names no note.
-             */
-            target: string;
-        };
-        /** @description One node of the note-link graph. */
-        GraphNoteRow: {
-            /** @description Kiln-relative, and the value a resolved link's `target` joins against. */
-            path: string;
-            tags: string[];
-            /** @description Never empty: the daemon falls back to the file stem. */
-            title: string;
-        };
         /**
          * @description A single content-search hit.
          *
@@ -3578,12 +3592,35 @@ export interface components {
         KilnFilesResponse: {
             files: components["schemas"]["FileEntryRow"][];
         };
-        /** @description What `GET /api/kiln/graph` answers. */
-        KilnGraphResponse: {
-            links: components["schemas"]["GraphLinkRow"][];
-            notes: components["schemas"]["GraphNoteRow"][];
+        /** @description One edge of the `kiln.graph` note-link graph. */
+        KilnGraphLink: {
+            /** @description Whether `target` resolves to a note the caller can see. */
+            resolved: boolean;
+            /** @description The linking note's path. Always a `path` in [`KilnGraphReply::notes`]. */
+            source: string;
+            /**
+             * @description The linked note's path when `resolved`; otherwise the target as it
+             *     was written, which names no note.
+             */
+            target: string;
         };
-        /** @description What `GET /api/kilns` answers. */
+        /** @description One node of the `kiln.graph` note-link graph. */
+        KilnGraphNote: {
+            /** @description Kiln-relative, and the value a resolved link's `target` joins against. */
+            path: string;
+            tags: string[];
+            /** @description Never empty: the daemon falls back to the file stem. */
+            title: string;
+        };
+        /** @description What `kiln.graph` answers: the full note-link graph of a kiln. */
+        KilnGraphReply: {
+            links: components["schemas"]["KilnGraphLink"][];
+            notes: components["schemas"]["KilnGraphNote"][];
+        };
+        /**
+         * @description What `GET /api/kilns` answers. A thin wrapper, not a copy: the row is
+         *     core's own [`KilnRow`], the same type `kiln.list` answers.
+         */
         KilnListResponse: {
             kilns: components["schemas"]["KilnRow"][];
         };
@@ -3604,39 +3641,41 @@ export interface components {
             kiln: string;
         };
         /**
-         * @description One kiln, as the daemon's `kiln.list` reports it.
+         * @description One kiln, as `kiln.list` reports it.
          *
          *     Every key is written on every row, including the two an older reader
-         *     treated as optional, so this reply carries no absent-versus-false ambiguity.
+         *     treated as optional, so this reply carries no absent-versus-false
+         *     ambiguity.
          */
         KilnRow: {
             /**
-             * @description Whether the kiln path is the top level of a git working tree. A folder
-             *     below the top level says `false`, because `diff.get` refuses it.
+             * @description Whether the kiln path is the top level of a git working tree. A
+             *     folder below the top level answers `false`, because `diff.get`
+             *     refuses it.
              */
             git: boolean;
             /**
              * Format: int64
-             * @description Seconds since the daemon last touched the kiln, or `null` when it holds
-             *     it closed. Always written, so `required` rather than optional.
+             * @description Seconds since the daemon last touched the kiln, or `null` when it
+             *     holds it closed. Always written, so `required` rather than optional.
              */
             last_access_secs_ago: number | null;
             /**
-             * @description The REGISTRY key — the name every other API call answers to. An open
+             * @description The registry key — the name every other API call answers to. An open
              *     directory that no entry names carries the empty string, never `null`.
              */
             name: string;
             /**
-             * @description Whether the daemon holds the kiln open right now. A closed row is not a
-             *     dead one: the first request that addresses a kiln opens it.
+             * @description Whether the daemon holds the kiln open right now. A closed row is not
+             *     a dead one: the first request that addresses a kiln opens it.
              */
             open: boolean;
             /** @description Where the kiln lives. This is the one listing whose job is to say so. */
             path: string;
             /**
-             * @description Whether the registry answers for this directory, and therefore whether
-             *     `name` is a name an attach accepts. A row with `false` must not be
-             *     offered in a picker.
+             * @description Whether the registry answers for this directory, and therefore
+             *     whether `name` is a name an attach accepts. A row with `false` must
+             *     not be offered in a picker.
              */
             registered: boolean;
         };
@@ -3698,6 +3737,15 @@ export interface components {
              * @description First line, 1-based, inclusive.
              */
             start: number;
+        };
+        /** @description A single suggestion to convert a plain-text mention into a wikilink. */
+        LinkSuggestion: {
+            /** @description The text that was found as a mention (preserves original casing) */
+            mention: string;
+            /** @description Byte offset in the text where the mention starts */
+            offset: number;
+            /** @description The note name to link to */
+            target: string;
         };
         /** @description A comment as the daemon lists it: its range follows its text. */
         ListedComment: {
@@ -3816,49 +3864,17 @@ export interface components {
              */
             writes: components["schemas"]["WriteModeRow"];
         };
-        /** @description What `GET /api/notes` answers. */
-        NoteListResponse: {
-            notes: components["schemas"]["NoteMetadataRow"][];
-        };
-        /** @description One note, with the metadata a client filters and sorts on. */
-        NoteMetadataRow: {
-            /** @description The file stem, or the whole path when the stem is not UTF-8. */
-            name: string;
-            /**
-             * @description RELATIVE to the kiln root. A path-taking endpoint needs it joined onto
-             *     the root first.
-             */
-            path: string;
-            /**
-             * @description The note's own frontmatter, filtered daemon-side to what the author
-             *     wrote. Open by design: a note may carry any key, and validating the
-             *     values here would refuse frontmatter this layer has no business judging.
-             */
-            properties: {
-                [key: string]: unknown;
-            };
-            tags: string[];
-            /** @description The note's own title, or `null` when it declares none. Always written. */
-            title: string | null;
-            /**
-             * @description ISO-8601, or `null` for a note the index has no timestamp for. Always
-             *     written.
-             */
-            updated_at: string | null;
-        };
         /**
-         * @description One note, as `get_note_by_name` reports it.
+         * @description What `get_note_by_name` answers: the note's own facts, without the heavy
+         *     fields of the stored [`crate::storage::NoteRecord`] (no embedding
+         *     vector).
          *
-         *     The daemon sends `links_to` and `wikilinks` for the same links: the web
-         *     reader pins `links_to`, and the RPC client's own DTO reads `wikilinks`.
-         *     Both stay on the wire, so both are named here.
+         *     `links_to` and `wikilinks` carry the same targets under two names: the
+         *     web reader pins `links_to`, and the RPC client's own DTO reads
+         *     `wikilinks`. Both stay on the wire, so both are named here.
          */
-        NoteResponse: {
-            /**
-             * @description BLAKE3 of the note's content as the INDEX holds it. The file watcher
-             *     writes it asynchronously, so it lags a save; `GET /api/kiln/file`
-             *     answers the hash of the bytes on disk.
-             */
+        NoteByNameReply: {
+            /** @description BLAKE3 of the note's content as the index holds it. */
             content_hash: string;
             /** @description Every wikilink target in the note, as written. */
             links_to: string[];
@@ -3866,12 +3882,45 @@ export interface components {
             path: string;
             tags: string[];
             /**
-             * @description The note's title. The daemon writes the empty string when it has none;
-             *     this is never `null`.
+             * @description The note's title. The daemon writes the empty string when it has
+             *     none; this is never `null`.
              */
             title: string;
             /** @description The same targets, one object each. */
-            wikilinks: components["schemas"]["WikilinkRow"][];
+            wikilinks: components["schemas"]["WikilinkTarget"][];
+        };
+        /**
+         * @description What `GET /api/notes` answers. A thin wrapper, not a copy: the row is
+         *     core's own [`NoteListRow`], the same type `note.list` answers.
+         */
+        NoteListResponse: {
+            notes: components["schemas"]["NoteListRow"][];
+        };
+        /**
+         * @description One row of `list_notes`, as it crosses the RPC wire.
+         *
+         *     A struct rather than a tuple: it grew a sixth field, and a six-tuple at
+         *     three call sites is a puzzle rather than a type.
+         *
+         *     `title` and `updated_at` are always written, even when the index holds
+         *     none: the value is `null`, and the key is never absent. That is why they
+         *     carry `required = true` under the `openapi` schema.
+         */
+        NoteListRow: {
+            /** @description The file stem, or the whole path when the stem is not UTF-8. */
+            name: string;
+            /** @description Kiln-relative, as the index holds it. */
+            path: string;
+            /**
+             * @description The note's own frontmatter, filtered daemon-side to what the author
+             *     wrote.
+             */
+            properties: {
+                [key: string]: unknown;
+            };
+            tags: string[];
+            title: string | null;
+            updated_at: string | null;
         };
         /** @description What `PUT /api/notes/{name}` answers. */
         NoteSavedResponse: {
@@ -3978,6 +4027,13 @@ export interface components {
             key: string;
         };
         /**
+         * @description A bare acknowledgement: `plugin.option_set` and `plugin.option_execute`
+         *     answer nothing else.
+         */
+        PluginAck: {
+            ok: boolean;
+        };
+        /**
          * @description A permission floor a plugin can add to its turns.
          *
          *     `EnumIter` gives the menus of both clients every value, so a new value
@@ -3997,51 +4053,87 @@ export interface components {
         /**
          * @description One executable primitive a plugin declared, and the arguments it takes.
          *
-         *     **A deliberate reshape, so it keeps its own struct.** The daemon builds a
-         *     row from `crucible_core::traits::tools::ToolDefinition`, but it sends three
-         *     of that type's seven fields — `name`, `description` and `parameters` — and
-         *     adds three the command registry owns: the declaring `plugin`, the
-         *     `hint`, and the declared `effect`. `category`, `returns`, `examples` and
-         *     `required_permissions` never reach a client. Re-exporting `ToolDefinition`
-         *     would therefore promise four keys the wire does not carry, which is why
-         *     this is not one of the types to derive `ToSchema` on in `crucible-core`.
+         *     The daemon builds this from `crucible_core::traits::tools::ToolDefinition`,
+         *     but sends three of that type's seven fields — `name`, `description` and
+         *     `parameters` — and adds three the command registry owns: the declaring
+         *     `plugin`, the `hint`, and the declared `effect`. `category`, `returns`,
+         *     `examples` and `required_permissions` never reach a client.
          */
-        PluginCommandRow: {
+        PluginCommand: {
             description: string;
-            effect: components["schemas"]["CommandEffectRow"];
-            /** @description The one-line argument hint, or `null`. Always written, so `required`. */
+            /**
+             * @description Declared by the plugin and verified by nothing. A consumer must
+             *     present it as a claim, and a permission layer must treat it as a hint
+             *     about what to ask — never as permission to skip asking.
+             */
+            effect: components["schemas"]["CommandEffect"];
+            /** @description The one-line argument hint, or `None`. Always written, so `required`. */
             hint: string | null;
             /** @description Bare when unique; source-qualified when plugins share a name. */
             name: string;
             /**
              * @description The declared parameters, as the JSON Schema `signature.rs` emits, or
              *     `null` for a command that takes none.
-             *
-             *     Opaque on purpose, like a publication: the reader turns it into the
-             *     controls a dialog draws, and a shape validated here would be one only
-             *     today's plugins could send.
              */
             parameters: unknown;
             /** @description The plugin that declared it. */
             plugin: string;
         };
-        /** @description What `GET /api/plugins/commands` answers. */
-        PluginCommandsResponse: {
-            commands: components["schemas"]["PluginCommandRow"][];
+        /** @description What `plugin.commands` answers. */
+        PluginCommandsReply: {
+            commands: components["schemas"]["PluginCommand"][];
         };
         /**
-         * @description `POST /api/plugins` — clone a plugin from a git URL and record it in
-         *     the installed manifest (`plugins.installed.json`), the same record
-         *     `cru plugin add` writes. The operator's own spec entries live in
-         *     `init.lua`, which nothing here edits. Synchronous; can take 10+ seconds.
-         *     What the clone did, tagged by `kind`.
+         * @description One discovered plugin, as `plugin.list`'s `plugin_info` rows describe it.
          *
-         *     Mirrors `crucible_daemon::BootstrapOutcome`, which is what
-         *     `server/plugin_install.rs` matches on to write these three objects.
-         *     `the_mirrored_vocabularies_stay_closed` fails to compile if a fourth
-         *     outcome appears there.
+         *     Every discovered plugin, not only the healthy ones: a plugin that failed to
+         *     load carries its reason in `last_error`, and dropping it would make
+         *     "broken" read as "not installed".
          */
-        PluginInstallOutcomeRow: {
+        PluginInfo: {
+            /** Format: int64 */
+            commands: number;
+            /** @description The absolute directory the plugin was discovered in. */
+            dir: string;
+            /** Format: int64 */
+            handlers: number;
+            /**
+             * @description Why the plugin is not `Active`, or `None` for a healthy one. Always
+             *     written, so `required`.
+             */
+            last_error: string | null;
+            name: string;
+            /** Format: int64 */
+            services: number;
+            /**
+             * @description Where the plugin came from: `User`, `Runtime`, `EnvPath` or `Builtin`.
+             *     A plain string, because this writes `Display` output rather than a
+             *     serde spelling.
+             */
+            source: string;
+            /**
+             * @description The lifecycle state: `Active`, `Error` or `Disabled`. A plain string
+             *     for the same reason as `source`.
+             */
+            state: string;
+            /** Format: int64 */
+            tools: number;
+            /**
+             * @description `None` when the plugin has no fragment, or its fragment names no
+             *     version. The daemon always writes the key, so `required` rather than
+             *     optional.
+             */
+            version: string | null;
+        };
+        /**
+         * @description What one plugin install did, tagged by `kind`.
+         *
+         *     The wire projection of `crucible_daemon::daemon_plugins::bootstrap::
+         *     BootstrapOutcome` — that type stays a plain Rust enum with a `PathBuf`,
+         *     and this is the one place it is turned into JSON, via
+         *     `BootstrapOutcome::to_wire`.
+         */
+        PluginInstallOutcome: {
             /** @description Where the clone landed. */
             dest: string;
             /** @enum {string} */
@@ -4053,66 +4145,72 @@ export interface components {
             /** @enum {string} */
             kind: "disabled";
         };
-        /** @description What `POST /api/plugins` answers. */
-        PluginInstallResponse: {
+        /** @description What `plugin.install` answers. */
+        PluginInstallReply: {
             /** Format: int64 */
             commands: number;
-            /** @description Why the plugin did not load, or `null`. Always written, so `required`. */
+            /**
+             * @description Why the plugin did not load, or `None`. Always written, so
+             *     `required`.
+             */
             error: string | null;
             /** @description The clone and the manifest record happened. */
             installed: boolean;
             /**
              * @description The plugin also activated on the running daemon.
              *
-             *     `installed: true` with `loaded: false` is a plugin that reached the disk
-             *     and broke on load; `error` says why, and the next boot tries again. A
-             *     client must not read `installed` alone as success.
+             *     `installed: true` with `loaded: false` is a plugin that reached the
+             *     disk and broke on load; `error` says why, and the next boot tries
+             *     again. A client must not read `installed` alone as success.
              */
             loaded: boolean;
             /**
              * @description The installed manifest the entry was written to
              *     (`plugins.installed.json`).
-             *
-             *     The browser's hand-written type calls this key `plugins_toml`, which the
-             *     daemon has not sent since the record moved out of TOML — so today that
-             *     field reads `undefined` at run time and nothing said so. A12 renames it.
              */
             manifest: string;
             /** @description The installed plugin's name, as the URL resolved it. */
             name: string;
-            outcome: components["schemas"]["PluginInstallOutcomeRow"];
+            outcome: components["schemas"]["PluginInstallOutcome"];
             /** Format: int64 */
             services: number;
             /** Format: int64 */
             tools: number;
             /**
              * @description A sentence about hot reload. The watcher's list is a boot-time
-             *     snapshot, so a plugin installed at runtime works but is not rewatched.
+             *     snapshot, so a plugin installed at runtime works but is not
+             *     rewatched.
              */
             watch: string;
         };
-        /** @description What `GET /api/plugins` answers. */
+        /**
+         * @description What `GET /api/plugins` answers.
+         *
+         *     The daemon's own `plugin.list` reply carries this same data under
+         *     `plugin_info` (see `crucible_core::types::PluginListReply`); this route
+         *     renames it to `plugins`, which is the key the plugins panel has always
+         *     read. The row type is not renamed: [`PluginInfo`] is the core type,
+         *     forwarded unchanged.
+         */
         PluginListResponse: {
-            plugins: components["schemas"]["PluginRow"][];
+            plugins: components["schemas"]["PluginInfo"][];
         };
         /**
-         * @description What `POST /api/plugins/{name}/option` answers.
+         * @description What one option call answers: a value for a `get`, an acknowledgement for
+         *     a `set` or an `execute`.
          *
-         *     Untagged, because one endpoint serves three actions: a `get` answers a
-         *     value where a `set` and an `execute` answer an acknowledgement.
+         *     Untagged, because one web endpoint (`POST /api/plugins/{name}/option`)
+         *     serves three RPC methods with three different reply shapes.
          *
-         *     **The variant order is load-bearing** — the hazard `ResumeSessionResponse`
-         *     was fixed for. Serde takes the first variant that fits, so a union whose
-         *     first variant also fits the second's bodies reads every one of them as the
-         *     wrong thing. These two are disjoint today because neither field has a
-         *     default: `{"ok": true}` has no `value` and `{"value": …}` has no `ok`.
-         *     `an_option_reply_reads_back_as_the_action_that_sent_it` asserts both
-         *     directions, so a `#[serde(default)]` added to either field fails there
-         *     rather than on a browser.
+         *     **The variant order is load-bearing.** Serde takes the first variant that
+         *     fits, so a union whose first variant also fits the second's bodies reads
+         *     every one of them as the wrong thing. These two are disjoint: neither
+         *     field has a default, so `{"ok": true}` has no `value` and `{"value": …}`
+         *     has no `ok`.
          */
-        PluginOptionCallResponse: components["schemas"]["PluginOptionValueResponse"] | components["schemas"]["OkResponse"];
+        PluginOptionCallReply: components["schemas"]["PluginOptionValue"] | components["schemas"]["PluginAck"];
         /**
-         * @description What `GET /api/plugins/options` answers: one settings tree per plugin.
+         * @description What `plugin.options` answers: one settings tree per plugin.
          *
          *     **A deliberate narrowing to the envelope.** The tree itself stays opaque,
          *     and that is not laziness about a shape nobody wrote down — the nodes are
@@ -4120,16 +4218,14 @@ export interface components {
          *     `order`, `min`, `max`, `step` and every entry under `values` reach here as
          *     whatever `lua_to_json` made of the plugin's Lua, so reading one into an
          *     `f64` and writing it back would send `100.0` where the daemon sent `100`.
-         *     The browser renders a node generically anyway, so naming the map's keys is
-         *     the whole gain a mirrored node type would offer.
          */
-        PluginOptionsResponse: {
+        PluginOptionsReply: {
             options: {
                 [key: string]: unknown;
             };
         };
-        /** @description One option's current value. */
-        PluginOptionValueResponse: {
+        /** @description What `plugin.option_get` answers: one option's current value. */
+        PluginOptionValue: {
             /**
              * @description Whatever the plugin's getter returned, and `null` is an answer.
              *
@@ -4138,19 +4234,16 @@ export interface components {
              */
             value: unknown;
         };
-        /** @description What `GET /api/plugins/publications` answers. */
-        PluginPublicationsResponse: {
+        /** @description What `plugin.publications` answers. */
+        PluginPublicationsReply: {
             publications: {
                 [key: string]: {
                     [key: string]: unknown;
                 };
             };
         };
-        /**
-         * @description What `POST /api/plugins/{name}/reload` answers: the capabilities the
-         *     reloaded spec declares.
-         */
-        PluginReloadResponse: {
+        /** @description What `plugin.reload` answers. */
+        PluginReloadReply: {
             /** Format: int64 */
             commands: number;
             /** Format: int64 */
@@ -4163,79 +4256,26 @@ export interface components {
             /** Format: int64 */
             tools: number;
         };
-        /** @description What `DELETE /api/plugins/{name}` answers. */
-        PluginRemoveResponse: {
+        /** @description What `plugin.remove` answers. */
+        PluginRemoveReply: {
             /**
-             * @description Removed without a purge, and the directory is still there.
-             *
-             *     It sits in a permanent search path, so the next daemon start discovers
-             *     and loads it again. `null` when nothing is left behind, which is the
-             *     only case where "removed" means gone.
+             * @description Removed without a purge, and the directory is still there. It sits in
+             *     a permanent search path, so the next daemon start discovers and loads
+             *     it again. `None` when nothing is left behind, which is the only case
+             *     where "removed" means gone.
              */
             kept_dir: string | null;
-            /**
-             * @description The installed manifest the entry left. See
-             *     [`PluginInstallResponse::manifest`] for the name the browser still uses.
-             */
+            /** @description The installed manifest the entry left. */
             manifest: string;
             /** @description The plugin that was removed, as the manifest named it. */
             name: string;
             /** @description The manifest entry went but deleting the directory failed. */
             purge_error: string | null;
-            /** @description The directory that was deleted, or `null` without `?purge=true`. */
+            /** @description The directory that was deleted, or `None` without `?purge=true`. */
             purged_dir: string | null;
         };
-        /**
-         * @description One discovered plugin, as `plugin.list`'s `plugin_info` rows describe it.
-         *
-         *     Every discovered plugin, not only the healthy ones: a plugin that failed to
-         *     load carries its reason in `last_error`, and dropping it would make "broken"
-         *     read as "not installed".
-         */
-        PluginRow: {
-            /** Format: int64 */
-            commands: number;
-            /** @description The absolute directory the plugin was discovered in. */
-            dir: string;
-            /** Format: int64 */
-            handlers: number;
-            /**
-             * @description Why the plugin is not `Active`, or `null` for a healthy one. Always
-             *     written, so `required`.
-             */
-            last_error: string | null;
-            name: string;
-            /** Format: int64 */
-            services: number;
-            /**
-             * @description Where the plugin came from: `User`, `Runtime`, `EnvPath` or `Builtin`.
-             *     A plain string, because the daemon writes `Display` output rather than
-             *     a serde spelling.
-             */
-            source: string;
-            /**
-             * @description The lifecycle state: `Active`, `Error` or `Disabled`. A plain string
-             *     for the same reason as `source`.
-             */
-            state: string;
-            /** Format: int64 */
-            tools: number;
-            /**
-             * @description `null` when the plugin has no fragment, or its fragment names no
-             *     version. The daemon always writes the key, so `required` rather than
-             *     optional.
-             */
-            version: string | null;
-        };
-        /**
-         * @description What `POST /api/plugins/command` answers.
-         *
-         *     The browser's hand-written caller types this as a bare `unknown`, so a
-         *     reader had to know to look under `result` without anything saying so. The
-         *     envelope is the daemon's (`server/plugins.rs`'s `handle_plugin_run_command`),
-         *     and naming it costs the plugin nothing: `result` stays opaque.
-         */
-        PluginRunCommandResponse: {
+        /** @description What `plugin.run_command` answers. */
+        PluginRunCommandReply: {
             /** @description The command that ran, echoed. */
             name: string;
             /**
@@ -5366,18 +5406,6 @@ export interface components {
             text: string;
         };
         /**
-         * @description A plain-text mention of another note inside the focused note — a candidate
-         *     for one-click link insertion, mirroring the daemon's `LinkSuggestion`.
-         */
-        UnlinkedMentionRow: {
-            /** @description The text as it appears, original casing kept. */
-            mention: string;
-            /** @description Byte offset of the mention in the note's content. */
-            offset: number;
-            /** @description The note name it would link to. */
-            target: string;
-        };
-        /**
          * @description A root that a diffset leaves out, and the reason.
          *
          *     The session record compares each root with its session base. When the
@@ -5449,8 +5477,8 @@ export interface components {
             /** @description Always `ok`. */
             status: string;
         };
-        /** @description One wikilink target. */
-        WikilinkRow: {
+        /** @description One wikilink target, as [`NoteByNameReply::wikilinks`] reports it. */
+        WikilinkTarget: {
             target: string;
         };
         /** @description The error envelope a bare stale-base refusal carries. */
@@ -5515,6 +5543,7 @@ export type SchemaAgentProfileEntry = components['schemas']['AgentProfileEntry']
 export type SchemaAnchoredEdit = components['schemas']['AnchoredEdit'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
 export type SchemaBackendType = components['schemas']['BackendType'];
+export type SchemaBacklinkEntry = components['schemas']['BacklinkEntry'];
 export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
 export type SchemaBacklinksResponse = components['schemas']['BacklinksResponse'];
 export type SchemaBaseValue = components['schemas']['BaseValue'];
@@ -5532,7 +5561,7 @@ export type SchemaCanvasSide = components['schemas']['CanvasSide'];
 export type SchemaChatEvent = components['schemas']['ChatEvent'];
 export type SchemaCloneRequest = components['schemas']['CloneRequest'];
 export type SchemaColumn = components['schemas']['Column'];
-export type SchemaCommandEffectRow = components['schemas']['CommandEffectRow'];
+export type SchemaCommandEffect = components['schemas']['CommandEffect'];
 export type SchemaCommandKind = components['schemas']['CommandKind'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
 export type SchemaCommandResponse = components['schemas']['CommandResponse'];
@@ -5582,8 +5611,6 @@ export type SchemaFsMoveReply = components['schemas']['FsMoveReply'];
 export type SchemaFsPathBody = components['schemas']['FsPathBody'];
 export type SchemaFsRootKind = components['schemas']['FsRootKind'];
 export type SchemaFsTrashReply = components['schemas']['FsTrashReply'];
-export type SchemaGraphLinkRow = components['schemas']['GraphLinkRow'];
-export type SchemaGraphNoteRow = components['schemas']['GraphNoteRow'];
 export type SchemaGrepHit = components['schemas']['GrepHit'];
 export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
 export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
@@ -5597,7 +5624,9 @@ export type SchemaInteractionResponseRequest = components['schemas']['Interactio
 export type SchemaItemBody = components['schemas']['ItemBody'];
 export type SchemaKilnFileResponse = components['schemas']['KilnFileResponse'];
 export type SchemaKilnFilesResponse = components['schemas']['KilnFilesResponse'];
-export type SchemaKilnGraphResponse = components['schemas']['KilnGraphResponse'];
+export type SchemaKilnGraphLink = components['schemas']['KilnGraphLink'];
+export type SchemaKilnGraphNote = components['schemas']['KilnGraphNote'];
+export type SchemaKilnGraphReply = components['schemas']['KilnGraphReply'];
 export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
 export type SchemaKilnRequest = components['schemas']['KilnRequest'];
 export type SchemaKilnRow = components['schemas']['KilnRow'];
@@ -5605,6 +5634,7 @@ export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
 export type SchemaLineRange = components['schemas']['LineRange'];
+export type SchemaLinkSuggestion = components['schemas']['LinkSuggestion'];
 export type SchemaListedComment = components['schemas']['ListedComment'];
 export type SchemaMark = components['schemas']['Mark'];
 export type SchemaMarkers = components['schemas']['Markers'];
@@ -5615,9 +5645,9 @@ export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
 export type SchemaModeResponse = components['schemas']['ModeResponse'];
 export type SchemaModeRow = components['schemas']['ModeRow'];
+export type SchemaNoteByNameReply = components['schemas']['NoteByNameReply'];
 export type SchemaNoteListResponse = components['schemas']['NoteListResponse'];
-export type SchemaNoteMetadataRow = components['schemas']['NoteMetadataRow'];
-export type SchemaNoteResponse = components['schemas']['NoteResponse'];
+export type SchemaNoteListRow = components['schemas']['NoteListRow'];
 export type SchemaNoteSavedResponse = components['schemas']['NoteSavedResponse'];
 export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaOkResponse = components['schemas']['OkResponse'];
@@ -5627,22 +5657,23 @@ export type SchemaPendingInteraction = components['schemas']['PendingInteraction
 export type SchemaPendingInteractionsResponse = components['schemas']['PendingInteractionsResponse'];
 export type SchemaPhysicalRoot = components['schemas']['PhysicalRoot'];
 export type SchemaPinnedLeaf = components['schemas']['PinnedLeaf'];
+export type SchemaPluginAck = components['schemas']['PluginAck'];
 export type SchemaPluginApproval = components['schemas']['PluginApproval'];
 export type SchemaPluginApprovalResponse = components['schemas']['PluginApprovalResponse'];
 export type SchemaPluginApprovalsResponse = components['schemas']['PluginApprovalsResponse'];
-export type SchemaPluginCommandRow = components['schemas']['PluginCommandRow'];
-export type SchemaPluginCommandsResponse = components['schemas']['PluginCommandsResponse'];
-export type SchemaPluginInstallOutcomeRow = components['schemas']['PluginInstallOutcomeRow'];
-export type SchemaPluginInstallResponse = components['schemas']['PluginInstallResponse'];
+export type SchemaPluginCommand = components['schemas']['PluginCommand'];
+export type SchemaPluginCommandsReply = components['schemas']['PluginCommandsReply'];
+export type SchemaPluginInfo = components['schemas']['PluginInfo'];
+export type SchemaPluginInstallOutcome = components['schemas']['PluginInstallOutcome'];
+export type SchemaPluginInstallReply = components['schemas']['PluginInstallReply'];
 export type SchemaPluginListResponse = components['schemas']['PluginListResponse'];
-export type SchemaPluginOptionCallResponse = components['schemas']['PluginOptionCallResponse'];
-export type SchemaPluginOptionsResponse = components['schemas']['PluginOptionsResponse'];
-export type SchemaPluginOptionValueResponse = components['schemas']['PluginOptionValueResponse'];
-export type SchemaPluginPublicationsResponse = components['schemas']['PluginPublicationsResponse'];
-export type SchemaPluginReloadResponse = components['schemas']['PluginReloadResponse'];
-export type SchemaPluginRemoveResponse = components['schemas']['PluginRemoveResponse'];
-export type SchemaPluginRow = components['schemas']['PluginRow'];
-export type SchemaPluginRunCommandResponse = components['schemas']['PluginRunCommandResponse'];
+export type SchemaPluginOptionCallReply = components['schemas']['PluginOptionCallReply'];
+export type SchemaPluginOptionsReply = components['schemas']['PluginOptionsReply'];
+export type SchemaPluginOptionValue = components['schemas']['PluginOptionValue'];
+export type SchemaPluginPublicationsReply = components['schemas']['PluginPublicationsReply'];
+export type SchemaPluginReloadReply = components['schemas']['PluginReloadReply'];
+export type SchemaPluginRemoveReply = components['schemas']['PluginRemoveReply'];
+export type SchemaPluginRunCommandReply = components['schemas']['PluginRunCommandReply'];
 export type SchemaPluginTurnLimitResponse = components['schemas']['PluginTurnLimitResponse'];
 export type SchemaPrecognition = components['schemas']['Precognition'];
 export type SchemaPrecognitionNote = components['schemas']['PrecognitionNote'];
@@ -5739,7 +5770,6 @@ export type SchemaToolStatus = components['schemas']['ToolStatus'];
 export type SchemaTranscript = components['schemas']['Transcript'];
 export type SchemaTranscriptItem = components['schemas']['TranscriptItem'];
 export type SchemaTranscriptOp = components['schemas']['TranscriptOp'];
-export type SchemaUnlinkedMentionRow = components['schemas']['UnlinkedMentionRow'];
 export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
 export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
@@ -5747,7 +5777,7 @@ export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
 export type SchemaViewOptions = components['schemas']['ViewOptions'];
 export type SchemaViewSummary = components['schemas']['ViewSummary'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
-export type SchemaWikilinkRow = components['schemas']['WikilinkRow'];
+export type SchemaWikilinkTarget = components['schemas']['WikilinkTarget'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
 export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
 export type SchemaWriteOutcome = components['schemas']['WriteOutcome'];
@@ -7155,7 +7185,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KilnGraphResponse"];
+                    "application/json": components["schemas"]["KilnGraphReply"];
                 };
             };
             /** @description The daemon could not build the graph, or answered a shape this route cannot read */
@@ -7213,7 +7243,7 @@ export interface operations {
                     "application/json": components["schemas"]["KilnListResponse"];
                 };
             };
-            /** @description The daemon could not list the kilns, or answered a shape this route cannot read */
+            /** @description The daemon could not list the kilns */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -7380,7 +7410,7 @@ export interface operations {
                     "application/json": components["schemas"]["NoteListResponse"];
                 };
             };
-            /** @description The daemon could not list the notes, or answered a shape this route cannot read */
+            /** @description The daemon could not list the notes */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -7409,7 +7439,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteResponse"];
+                    "application/json": components["schemas"]["NoteByNameReply"];
                 };
             };
             /** @description The name carries a traversal sequence */
@@ -7426,7 +7456,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The daemon could not read the note, or answered a shape this route cannot read */
+            /** @description The daemon could not read the note */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -7619,7 +7649,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginInstallResponse"];
+                    "application/json": components["schemas"]["PluginInstallReply"];
                 };
             };
             /** @description The caller is not the app */
@@ -7671,7 +7701,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginRemoveResponse"];
+                    "application/json": components["schemas"]["PluginRemoveReply"];
                 };
             };
             /** @description The caller is not the app */
@@ -7721,7 +7751,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginOptionCallResponse"];
+                    "application/json": components["schemas"]["PluginOptionCallReply"];
                 };
             };
             /** @description No caller identity was sent, or the caller draws for another plugin */
@@ -7767,7 +7797,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginReloadResponse"];
+                    "application/json": components["schemas"]["PluginReloadReply"];
                 };
             };
             /** @description The caller is not the app */
@@ -7807,7 +7837,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginRunCommandResponse"];
+                    "application/json": components["schemas"]["PluginRunCommandReply"];
                 };
             };
             /** @description No caller identity was sent, or the command belongs to another plugin */
@@ -7847,7 +7877,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginCommandsResponse"];
+                    "application/json": components["schemas"]["PluginCommandsReply"];
                 };
             };
             /** @description The daemon could not list the commands, or answered a shape this route cannot read */
@@ -7873,7 +7903,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginOptionsResponse"];
+                    "application/json": components["schemas"]["PluginOptionsReply"];
                 };
             };
             /** @description The daemon could not read the settings trees, or answered a shape this route cannot read */
@@ -7905,7 +7935,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginPublicationsResponse"];
+                    "application/json": components["schemas"]["PluginPublicationsReply"];
                 };
             };
             /** @description No caller identity was sent */

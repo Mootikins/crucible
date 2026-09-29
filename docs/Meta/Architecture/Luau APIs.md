@@ -50,7 +50,7 @@ this page's files.
 | --- | --- | --- |
 | `crates/crucible-lua/src/auth_plugin.rs` | 220 | `cru.on_provider_auth` hook registration and firing (`fire_provider_auth_hooks`) for provider HTTP headers. |
 | `crates/crucible-lua/src/authorship.rs` | 343 | `AuthorRoots`/`config_layer` — pure classification of a config write's `ConfigSource` layer from its chunk name. |
-| `crates/crucible-lua/src/command_effect.rs` | 130 | `CommandEffect` (`Read`/`Write`) — a plugin's self-declared, unverified label for a command's data-loss risk. |
+| `crates/crucible-core/src/types/command_effect.rs` | 150 | `CommandEffect` (`Read`/`Write`) — a plugin's self-declared, unverified label for a command's data-loss risk. Owned in `crucible-core` (it crosses the wire in the `plugin.commands` reply); `crucible-lua` re-exports it. |
 | `crates/crucible-lua/src/context.rs` | 675 | `cru.context.*` bulk ops (`usage`, `compact`, `messages`, `remove`) over `DaemonSessionApi`, stub-then-upgrade. |
 | `crates/crucible-lua/src/context_attach.rs` | 386 | `ContextAttachRegistry` — the per-session, budget-capped, dedup buffer behind `cru.context.attach`, tagging each block with the attaching plugin. |
 | `crates/crucible-lua/src/embed.rs` | 150 | `cru.embed` — re-embeds text with the kiln's own embedding provider, through a resolver the host injects. |
@@ -415,7 +415,7 @@ one, closing off a way a Bases call could otherwise borrow another
 session's write permissions and ledger.
 
 Closed vocabularies stay closed by a compiler-enforced rule:
-`crates/crucible-lua/src/command_effect.rs`'s `CommandEffect` and
+`crates/crucible-core/src/types/command_effect.rs`'s `CommandEffect` and
 `crates/crucible-lua/src/surfaces.rs`'s `Shape`/`Mark` all forbid a wildcard
 match arm, so a new variant is a compile error everywhere it is not named.
 `cru.geometry` (`crates/crucible-lua/src/ui_geometry.rs`) is deliberately a

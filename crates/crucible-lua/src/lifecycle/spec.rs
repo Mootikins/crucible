@@ -1,8 +1,8 @@
 use super::{LifecycleError, LifecycleResult};
-use crate::command_effect::CommandEffect;
 use crate::discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
 };
+use crucible_core::types::CommandEffect;
 use mlua::{Table, Value};
 use std::path::Path;
 

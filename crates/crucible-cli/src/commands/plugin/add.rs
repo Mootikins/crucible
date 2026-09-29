@@ -28,6 +28,7 @@ pub async fn execute(args: AddArgs) -> Result<()> {
             let resp = client
                 .plugin_install(&args.url, args.branch.as_deref(), args.pin.as_deref())
                 .await?;
+            let name = resp.name.clone();
             let (output, load_error) = render_install_response(&resp);
             print!("{output}");
             if let Some(err) = load_error {
@@ -35,9 +36,8 @@ pub async fn execute(args: AddArgs) -> Result<()> {
                 // above), but "installed" must not read as success while the
                 // plugin sits broken in the daemon.
                 anyhow::bail!(
-                    "plugin '{}' installed but failed to load: {err}\n\
-                     (it stays recorded; the next daemon start retries it)",
-                    resp["name"].as_str().unwrap_or(&args.url)
+                    "plugin '{name}' installed but failed to load: {err}\n\
+                     (it stays recorded; the next daemon start retries it)"
                 );
             }
             Ok(())
@@ -53,34 +53,30 @@ pub async fn execute(args: AddArgs) -> Result<()> {
 /// when the plugin installed but failed to load, the load error. Split
 /// rather than bailed inside so the caller can print what DID happen (clone,
 /// manifest entry) before failing the exit code.
-fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>) {
-    let name = resp["name"].as_str().unwrap_or("?");
+fn render_install_response(
+    resp: &crucible_core::types::PluginInstallReply,
+) -> (String, Option<String>) {
+    let name = &resp.name;
     let mut out = String::new();
-    match resp["outcome"]["kind"].as_str() {
-        Some("cloned") => {
-            let dest = resp["outcome"]["dest"].as_str().unwrap_or("?");
+    match &resp.outcome {
+        crucible_core::types::PluginInstallOutcome::Cloned { dest } => {
             let _ = writeln!(out, "Cloned '{name}' to {dest}");
         }
-        Some("already_present") => {
+        crucible_core::types::PluginInstallOutcome::AlreadyPresent => {
             let _ = writeln!(
                 out,
                 "Plugin '{name}' is already cloned; recording in the installed manifest"
             );
         }
-        _ => {}
+        crucible_core::types::PluginInstallOutcome::Disabled => {}
     }
-    let manifest = resp["manifest"]
-        .as_str()
-        .unwrap_or("plugins.installed.json");
-    let _ = writeln!(out, "Recorded '{name}' in {manifest}");
+    let _ = writeln!(out, "Recorded '{name}' in {}", resp.manifest);
 
-    if resp["loaded"].as_bool().unwrap_or(false) {
+    if resp.loaded {
         let _ = writeln!(
             out,
             "Loaded in daemon: {} tool(s), {} command(s), {} service(s).",
-            resp["tools"].as_u64().unwrap_or(0),
-            resp["commands"].as_u64().unwrap_or(0),
-            resp["services"].as_u64().unwrap_or(0),
+            resp.tools, resp.commands, resp.services,
         );
         // Design decision: runtime-installed plugins are not added to the
         // file watcher until the next daemon start.
@@ -90,10 +86,10 @@ fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>)
         );
         (out, None)
     } else {
-        let err = resp["error"]
-            .as_str()
+        let err = resp
+            .error
+            .clone()
             .filter(|e| !e.is_empty())
-            .map(str::to_string)
             .unwrap_or_else(|| "plugin did not load; see `cru plugin list`".to_string());
         (out, Some(err))
     }
@@ -137,22 +133,44 @@ async fn install_offline(args: AddArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::render_install_response;
-    use serde_json::json;
+    use crucible_core::types::{PluginInstallOutcome, PluginInstallReply};
+
+    fn reply(
+        name: &str,
+        loaded: bool,
+        tools: u64,
+        commands: u64,
+        services: u64,
+        error: Option<&str>,
+        outcome: PluginInstallOutcome,
+    ) -> PluginInstallReply {
+        PluginInstallReply {
+            name: name.to_string(),
+            installed: true,
+            loaded,
+            tools,
+            commands,
+            services,
+            error: error.map(str::to_string),
+            watch: "not hot-watched until restart".to_string(),
+            outcome,
+            manifest: "/data/plugins.installed.json".to_string(),
+        }
+    }
 
     #[test]
     fn a_loaded_install_reports_counts_and_no_error() {
-        let resp = json!({
-            "name": "greeter",
-            "installed": true,
-            "loaded": true,
-            "tools": 2,
-            "commands": 1,
-            "services": 0,
-            "error": null,
-            "watch": "not hot-watched until restart",
-            "outcome": { "kind": "cloned", "dest": "/plugins/greeter" },
-            "manifest": "/data/plugins.installed.json",
-        });
+        let resp = reply(
+            "greeter",
+            true,
+            2,
+            1,
+            0,
+            None,
+            PluginInstallOutcome::Cloned {
+                dest: "/plugins/greeter".to_string(),
+            },
+        );
         let (out, load_error) = render_install_response(&resp);
         assert!(
             load_error.is_none(),
@@ -178,18 +196,15 @@ mod tests {
 
     #[test]
     fn an_install_that_failed_to_load_surfaces_the_error_instead_of_success() {
-        let resp = json!({
-            "name": "broken",
-            "installed": true,
-            "loaded": false,
-            "tools": 0,
-            "commands": 0,
-            "services": 0,
-            "error": "boom inside setup",
-            "watch": "not hot-watched until restart",
-            "outcome": { "kind": "already_present" },
-            "manifest": "/data/plugins.installed.json",
-        });
+        let resp = reply(
+            "broken",
+            false,
+            0,
+            0,
+            0,
+            Some("boom inside setup"),
+            PluginInstallOutcome::AlreadyPresent,
+        );
         let (out, load_error) = render_install_response(&resp);
         // The install DID happen on disk — say so before failing.
         assert!(
@@ -202,14 +217,15 @@ mod tests {
 
     #[test]
     fn a_load_failure_without_a_reason_still_fails_with_a_pointer() {
-        let resp = json!({
-            "name": "mute",
-            "installed": true,
-            "loaded": false,
-            "error": null,
-            "outcome": { "kind": "already_present" },
-            "manifest": "/data/plugins.installed.json",
-        });
+        let resp = reply(
+            "mute",
+            false,
+            0,
+            0,
+            0,
+            None,
+            PluginInstallOutcome::AlreadyPresent,
+        );
         let (_, load_error) = render_install_response(&resp);
         let err = load_error.expect("loaded: false must produce an error even without a reason");
         assert!(

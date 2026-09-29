@@ -45,7 +45,7 @@ interface Neighborhood {
  * Refuse a reply that is not a `Neighborhood`, instead of asserting it.
  *
  * The `run_command` route answers every command with a bare JSON value
- * (`PluginRunCommandResponse.result`), so no contract types this shape for
+ * (`PluginRunCommandReply.result`), so no contract types this shape for
  * us: one generic route serves every plugin, and a shape it validated would
  * be a shape only today's plugins could send. The check is as strict as the
  * renderer below is — exactly the fields it reads, no more — so a plugin
