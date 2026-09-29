@@ -341,7 +341,7 @@ test.describe('live C2 entities', () => {
     await option.click();
 
     await expect
-      .poll(() => log.count('POST', `/api/session/${id}/model`), {
+      .poll(() => log.count('PUT', `/api/session/${id}/knob`), {
         timeout: 20_000,
         message: 'the picker sent no model write',
       })
