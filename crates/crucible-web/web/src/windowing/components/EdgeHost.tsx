@@ -15,11 +15,14 @@ import { DockedBody } from './DockedBody';
  */
 export const EdgeHost: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
+  const expanded = () => windowStore.expandedEdge === props.position;
   return (
     <div
       class="flex flex-row bg-shell-bg overflow-hidden"
+      classList={{ 'flex-1 min-w-0': expanded() }}
       data-testid={`edge-host-${props.position}`}
       data-edge-mode={panel().mode}
+      data-edge-expanded={expanded() ? '' : undefined}
     >
       {props.position === 'left' && <Ribbon position="left" />}
       <DockedBody position={props.position} />

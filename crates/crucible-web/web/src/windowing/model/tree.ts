@@ -52,6 +52,8 @@ export function emptyState<C extends string = string>(): WindowState<C> {
     activePaneId: centrePane,
     focusedRegion: 'center',
     nextZIndex: 100,
+    expandedEdge: null,
+    expandExit: 'toggle',
   };
 }
 
@@ -103,6 +105,48 @@ export function replacePaneWithSplit(
 export function findFirstPane(layout: LayoutNode): PaneNode | null {
   if (layout.type === 'pane') return layout;
   return findFirstPane(layout.first) || findFirstPane(layout.second);
+}
+
+/**
+ * The tab group of the first leaf that has one, in reading order, or null.
+ *
+ * Not `findFirstPane(layout)?.tabGroupId`: a leaf with no group is skipped,
+ * so a layout whose first pane lost its group still names a group to open in.
+ */
+export function firstLeafGroupId(layout: LayoutNode): string | null {
+  if (layout.type === 'pane') return layout.tabGroupId ?? null;
+  return firstLeafGroupId(layout.first) || firstLeafGroupId(layout.second);
+}
+
+/**
+ * End an expanded rail because focus moved to `groupId`, when the setting
+ * asks for that. Mutates a draft.
+ *
+ * Only a group of the centre TILING counts. A floating window is not the
+ * centre, even though the store files its focus under `center`: a peek that
+ * floats over an expanded rail must not end the expand when it is clicked.
+ */
+export function releaseExpandOnCentreFocus<C extends string>(
+  s: WindowState<C>,
+  groupId: string | null,
+): void {
+  if (!s.expandedEdge || s.expandExit !== 'centre-focus' || !groupId) return;
+  if (collectLeafGroupIds(s.layout).includes(groupId)) s.expandedEdge = null;
+}
+
+/**
+ * The leaf at one edge of a layout: the leftmost or the rightmost pane.
+ *
+ * A stacked (vertical) split has no left or right, so both of its halves
+ * count as the same edge, and the top one wins.
+ */
+export function edgeLeaf(
+  layout: LayoutNode,
+  side: EdgePanelPosition,
+): { paneId: string; groupId: string | null } {
+  if (layout.type === 'pane') return { paneId: layout.id, groupId: layout.tabGroupId ?? null };
+  if (layout.direction === 'horizontal') return edgeLeaf(side === 'left' ? layout.first : layout.second, side);
+  return edgeLeaf(layout.first, side);
 }
 
 export function collapseEmptyNodes<C extends string>(

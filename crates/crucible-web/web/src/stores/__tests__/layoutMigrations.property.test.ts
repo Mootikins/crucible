@@ -186,6 +186,8 @@ describe('layout round-trip property tests', () => {
             activePaneId: null,
             focusedRegion: 'center',
             nextZIndex: 1,
+            expandedEdge: null,
+            expandExit: 'toggle',
           };
 
           // Should not throw

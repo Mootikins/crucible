@@ -82,6 +82,8 @@ function createTestState(): WindowState {
     activePaneId: 'pane-1',
     focusedRegion: 'center',
     nextZIndex: 1,
+    expandedEdge: null,
+    expandExit: 'toggle',
   };
 }
 
@@ -289,6 +291,8 @@ describe('layout history and restore', () => {
       activePaneId: 'pane-1',
       focusedRegion: 'center',
       nextZIndex: 1,
+      expandedEdge: null,
+      expandExit: 'toggle',
     };
 
     // Serialize and deserialize

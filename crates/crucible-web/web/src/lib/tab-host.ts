@@ -1,10 +1,10 @@
-import { edgeCenterPane, filesSide } from './panel-actions';
+import { filesSide } from './panel-actions';
 import { isCompact } from '@/stores/deviceStore';
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
-import { primaryEdgeGroupId } from '@/windowing';
+import { edgeLeaf, firstLeafGroupId, primaryEdgeGroupId } from '@/windowing';
 import { tabStack, tabStackActions } from '@/stores/tabStackStore';
 import { getGlobalRegistry } from '@/lib/panel-registry';
-import { editorGroupId, findFirstCenterPaneGroupId } from '@/lib/panel-actions';
+import { editorGroupId } from '@/lib/panel-actions';
 import { openTabBesideEditor } from '@/lib/session-actions';
 import type { Tab } from '@/types/windowTypes';
 
@@ -79,8 +79,7 @@ const windowTabHost: TabHost = {
     if (!groupId) {
       // The centre holds only conversations. A file gets its own pane on the
       // files side of the pane at that edge, never a tab on top of a chat.
-      const edge = edgeCenterPane(filesSide());
-      if (!edge) return false;
+      const edge = edgeLeaf(windowStore.layout, filesSide());
       return windowActions.openTabInNewPane(edge.paneId, filesSide(), tab) !== null;
     }
     windowActions.addTab(groupId, tab);
@@ -128,7 +127,7 @@ function openBesideEditor(tab: Tab): boolean {
 function openInDefaultZone(tab: Tab): boolean {
   const zone = getGlobalRegistry().get(tab.contentType)?.defaultZone ?? 'center';
   if (zone === 'center') {
-    const groupId = findFirstCenterPaneGroupId();
+    const groupId = firstLeafGroupId(windowStore.layout);
     if (!groupId) return false;
     windowActions.addTab(groupId, tab);
     windowActions.setActiveTab(groupId, tab.id);

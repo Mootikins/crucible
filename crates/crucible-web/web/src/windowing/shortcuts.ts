@@ -19,6 +19,9 @@ export const LAYOUT_SHORTCUTS: ShortcutAction[] = [
   { key: '\\', modifiers: ['ctrl', 'shift'], action: 'swapSidePanels', description: 'Swap side panels' },
   { key: 'b', modifiers: ['ctrl'], action: 'toggleLeftPanel', description: 'Toggle left panel' },
   { key: 'e', modifiers: ['ctrl', 'shift'], action: 'toggleRightPanel', description: 'Toggle right panel' },
+  // Zed's zoom chord. It expands the focused rail over the centre, and from
+  // anywhere it gives an expanded rail's centre back.
+  { key: 'Escape', modifiers: ['shift'], action: 'toggleExpandFocusedEdge', description: 'Expand the focused side panel' },
 ];
 
 /** The action names in `LAYOUT_SHORTCUTS`. */

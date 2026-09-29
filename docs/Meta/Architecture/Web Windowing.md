@@ -170,6 +170,39 @@ the centre or in a rail. No app code calls it yet. No component reads
 `reveal` to change how a collapsed pane opens. The write path and the field
 exist; the hover behavior does not.
 
+## Expand
+
+A rail can cover the centre. `WindowState.expandedEdge` names the rail that
+covers it, or holds `null`. The actions are `expandEdge`, `collapseExpandedEdge`,
+`toggleEdgeExpanded` and `setExpandExit`, and the chord `Shift+Escape`
+(`toggleExpandFocusedEdge`) toggles the focused rail. The chord is Zed's zoom
+chord, and a policy can bind another one.
+
+- **The centre stays mounted.** `CentreColumn` sets `hidden` while a rail
+  covers it, so an editor keeps its buffer, scroll and undo history. The rail's
+  `DockedBody` fills the row and draws no resize handle.
+- **What ends it.** `WindowState.expandExit` is a setting, not a policy
+  decision: `toggle` ends an expand on its toggle only, and `centre-focus` also
+  ends it when a tab or a pane of the centre TILING takes focus. A floating
+  window does not count, although the store files its focus under `center`: a
+  peek that floats over the expanded rail must not end the expand.
+  `releaseExpandOnCentreFocus` (`model/tree.ts`) holds that rule for both
+  `setActiveTab` and `setActivePane`.
+- **What else ends it.** A rail that leaves `docked` (toggle, collapse or
+  `setEdgeMode`) cannot cover the centre, so it ends the expand. A reset and a
+  restore end it and keep `expandExit`. A swap carries it to the rail's new side.
+- **Not stored.** The serializer does not write `expandedEdge`, so a reload
+  opens the plain layout.
+
+## Layout queries the app uses
+
+`model/tree.ts` holds the pure queries over a layout. Two of them moved here
+from `lib/panel-actions.ts`, because they know no product:
+
+- `edgeLeaf(layout, side)` — the leftmost or rightmost leaf. Both halves of a
+  stacked split count as the same edge, and the top one wins.
+- `firstLeafGroupId(layout)` — the tab group of the first leaf that has one.
+
 ## The saved layout
 
 The core owns the **current** format and the one step into it. The app owns

@@ -1,6 +1,7 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { findFirstCenterPaneGroupId, edgeCenterPane, sessionsSide } from './panel-actions';
+import { edgeLeaf, firstLeafGroupId } from '@/windowing';
+import { sessionsSide } from './panel-actions';
 import { iconForContentType } from './tab-icons';
 import { tabHost } from './tab-host';
 
@@ -23,8 +24,8 @@ const SESSION_CONTENT = new Set(['chat', 'chat-draft']);
 export function sessionPane(): { groupId: string } | null {
   // The pane next to the sessions rail, when it is a conversation pane or
   // empty. A session pane that was dragged elsewhere is not the default.
-  const edge = edgeCenterPane(sessionsSide());
-  if (edge?.groupId) {
+  const edge = edgeLeaf(windowStore.layout, sessionsSide());
+  if (edge.groupId) {
     const group = windowStore.tabGroups[edge.groupId];
     const tabs = group?.tabs ?? [];
     // A pane that mixes a chat with a file is an editor pane with a stray
@@ -39,9 +40,8 @@ export function sessionPane(): { groupId: string } | null {
  * Put a session in the centre pane beside the SESSIONS RAIL, splitting the
  * centre if that pane holds an editor.
  *
- * The side follows the rail, so a swap flips it. Falls back to adding a tab
- * to the first centre group when the layout has no pane to split (a shell
- * with nothing open).
+ * The side follows the rail, so a swap flips it. Every layout has a leaf at
+ * each edge, so there is always a pane to use or to split.
  */
 export function openTabBesideEditor(tab: Tab): boolean {
   const existing = sessionPane();
@@ -52,14 +52,8 @@ export function openTabBesideEditor(tab: Tab): boolean {
   }
 
   // The edge pane holds editor content: split it, new pane on the rail side.
-  const edge = edgeCenterPane(sessionsSide());
-  if (edge) return windowActions.openTabInNewPane(edge.paneId, sessionsSide(), tab) !== null;
-
-  const groupId = findFirstCenterPaneGroupId();
-  if (!groupId) return false;
-  windowActions.addTab(groupId, tab);
-  windowActions.setActiveTab(groupId, tab.id);
-  return true;
+  const edge = edgeLeaf(windowStore.layout, sessionsSide());
+  return windowActions.openTabInNewPane(edge.paneId, sessionsSide(), tab) !== null;
 }
 
 export function openSessionInChat(sessionId: string, sessionTitle: string): void {
@@ -86,7 +80,7 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
       host.activate(tab.id);
       return;
     }
-    const fallback = windowStore.tabGroups[group] ? group : findFirstCenterPaneGroupId();
+    const fallback = windowStore.tabGroups[group] ? group : firstLeafGroupId(windowStore.layout);
     if (fallback) {
       windowActions.addTab(fallback, tab);
       windowActions.setActiveTab(fallback, tab.id);

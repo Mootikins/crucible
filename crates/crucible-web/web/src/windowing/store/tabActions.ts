@@ -20,6 +20,7 @@ import {
   findPaneInLayout,
   generateId,
   insertPaneRelative,
+  releaseExpandOnCentreFocus,
   replacePaneWithSplit,
   updatePaneInLayout,
   updateRootWhere,
@@ -166,6 +167,7 @@ export function createTabActions<C extends string>(
     // tab never gets the focused (ember) treatment, since nothing else on the
     // click path sets focusedRegion for edges.
     setStore('focusedRegion', findEdgePanelForGroup(store, groupId) ?? 'center');
+    setStore(produce((s) => releaseExpandOnCentreFocus(s, groupId)));
     policy().onActiveTabChange(store.tabGroups[groupId]?.tabs.find((t) => t.id === tabId));
   };
 

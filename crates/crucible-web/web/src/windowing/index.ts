@@ -42,7 +42,9 @@ export { isEdgeCollapsed } from './model/types';
 export {
   collectLeafGroupIds,
   collectPanes,
+  edgeLeaf,
   findFirstPane,
+  firstLeafGroupId,
   generateId,
   primaryEdgeGroupId,
 } from './model/tree';

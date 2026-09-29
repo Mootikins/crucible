@@ -2,6 +2,7 @@ import { produce } from 'solid-js/store';
 import type {
   EdgeCue,
   EdgeMode,
+  ExpandExit,
   EdgePanel as EdgePanelType,
   EdgePanelPosition,
   LayoutNode,
@@ -22,6 +23,7 @@ import {
   findPaneInLayout,
   mirrorLayout,
   regionOfPane,
+  releaseExpandOnCentreFocus,
   updateRootWhere,
   updateSplitRatio,
 } from '../model/tree';
@@ -37,6 +39,17 @@ export interface LayoutActions<C extends string = string> {
    * stored preference, and only the `hidden` mode reads it.
    */
   setEdgeMode(position: EdgePanelPosition, mode: EdgeMode, opts?: { cue?: EdgeCue }): void;
+  /**
+   * Let a rail take over the centre. The rail docks if it was stowed, and
+   * focus moves to it. The centre stays mounted, hidden.
+   */
+  expandEdge(position: EdgePanelPosition): void;
+  /** Give the centre back. A no-op when no rail is expanded. */
+  collapseExpandedEdge(): void;
+  /** Expand the rail, or give the centre back when that rail is expanded. */
+  toggleEdgeExpanded(position: EdgePanelPosition): void;
+  /** Set what ends an expanded rail. See `ExpandExit`. */
+  setExpandExit(exit: ExpandExit): void;
   /** Set how a pane opens from its band. The pane can be in the centre or in a rail. */
   setPaneReveal(paneId: string, reveal: PaneReveal): void;
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null): void;
@@ -67,6 +80,10 @@ export function createLayoutActions<C extends string>(
     // Panes live in the center tiling OR inside an edge panel's tree —
     // focus follows the pane's actual region.
     setStore('focusedRegion', paneId ? regionOfPane(store, paneId) : 'center');
+    if (paneId) {
+      const groupId = findPaneAnywhere(store, paneId)?.tabGroupId ?? null;
+      setStore(produce((s) => releaseExpandOnCentreFocus(s, groupId)));
+    }
     // Focusing a pane focuses its active tab, so the policy hears of it the
     // same way it does when a tab activates (see setActiveTab).
     if (paneId) {
@@ -84,11 +101,35 @@ export function createLayoutActions<C extends string>(
   const toggleEdgePanel = (position: EdgePanelPosition) => {
     setStore(
       produce((s) => {
-        s.edgePanels[position].mode = isEdgeCollapsed(s.edgePanels[position])
-          ? 'docked'
-          : 'strip';
+        const stowing = !isEdgeCollapsed(s.edgePanels[position]);
+        s.edgePanels[position].mode = stowing ? 'strip' : 'docked';
+        // A stowed rail cannot cover the centre: stowing it gives the centre back.
+        if (stowing && s.expandedEdge === position) s.expandedEdge = null;
       })
     );
+  };
+
+  const expandEdge = (position: EdgePanelPosition) => {
+    setStore(
+      produce((s) => {
+        s.edgePanels[position].mode = 'docked';
+        s.expandedEdge = position;
+        s.focusedRegion = position;
+      })
+    );
+  };
+
+  const collapseExpandedEdge = () => {
+    setStore('expandedEdge', null);
+  };
+
+  const toggleEdgeExpanded = (position: EdgePanelPosition) => {
+    if (store.expandedEdge === position) collapseExpandedEdge();
+    else expandEdge(position);
+  };
+
+  const setExpandExit = (exit: ExpandExit) => {
+    setStore('expandExit', exit);
   };
 
   /**
@@ -153,6 +194,8 @@ export function createLayoutActions<C extends string>(
         // flip it. A focus on the centre is untouched.
         if (s.focusedRegion === 'left') s.focusedRegion = 'right';
         else if (s.focusedRegion === 'right') s.focusedRegion = 'left';
+        // An expanded rail stays expanded on its new side.
+        if (s.expandedEdge) s.expandedEdge = s.expandedEdge === 'left' ? 'right' : 'left';
       })
     );
   };
@@ -161,7 +204,12 @@ export function createLayoutActions<C extends string>(
     position: EdgePanelPosition,
     collapsed: boolean
   ) => {
-    setStore('edgePanels', position, 'mode', collapsed ? 'strip' : 'docked');
+    setStore(
+      produce((s) => {
+        s.edgePanels[position].mode = collapsed ? 'strip' : 'docked';
+        if (collapsed && s.expandedEdge === position) s.expandedEdge = null;
+      })
+    );
   };
 
   const setEdgeMode = (
@@ -174,6 +222,8 @@ export function createLayoutActions<C extends string>(
         const panel = s.edgePanels[position];
         panel.mode = mode;
         if (opts?.cue !== undefined) panel.cue = opts.cue;
+        // Only a docked rail can cover the centre.
+        if (mode !== 'docked' && s.expandedEdge === position) s.expandedEdge = null;
       })
     );
   };
@@ -348,6 +398,8 @@ export function createLayoutActions<C extends string>(
     markLayoutRestore(() =>
     setStore(
       produce((s) => {
+        // A restore replaces the rails, so no rail is expanded after it.
+        s.expandedEdge = null;
         s.layout = restored.layout;
         s.tabGroups = restored.tabGroups;
         s.edgePanels = restored.edgePanels as Record<EdgePanelPosition, EdgePanelType>;
@@ -390,6 +442,9 @@ export function createLayoutActions<C extends string>(
           s.activePaneId = fresh.activePaneId;
           s.focusedRegion = 'center';
           s.nextZIndex = 100;
+          // The seed's rails replace the expanded one. The exit setting is
+          // the user's, not the layout's, so the reset leaves it alone.
+          s.expandedEdge = null;
           // The same repair as a restore, so that "reset" cannot drift away
           // from the invariant the restore path enforces.
           policy().repairLayout(s);
@@ -405,6 +460,10 @@ export function createLayoutActions<C extends string>(
     swapSidePanels,
     setEdgePanelCollapsed,
     setEdgeMode,
+    expandEdge,
+    collapseExpandedEdge,
+    toggleEdgeExpanded,
+    setExpandExit,
     setPaneReveal,
     setEdgePanelActiveTab,
     setEdgePanelSize,

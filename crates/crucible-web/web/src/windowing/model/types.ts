@@ -91,6 +91,19 @@ export const EDGE_CUES = ['grip', 'none'] as const satisfies readonly EdgeCue[];
 /** How a pane collapsed to its band comes back. */
 export type PaneReveal = 'click' | 'hover';
 
+/**
+ * What ends an expanded rail.
+ *
+ * `toggle`: only the expand toggle (its button or its chord). `centre-focus`:
+ * the toggle, and also any move of focus into the centre, as Zed ends a zoom
+ * when a centre pane takes focus. Users differ here, so it is a setting, not
+ * a policy decision.
+ */
+export type ExpandExit = 'toggle' | 'centre-focus';
+
+/** Every `ExpandExit`, with the same two checks as `EDGE_MODES`. */
+export const EXPAND_EXITS = ['toggle', 'centre-focus'] as const satisfies readonly ExpandExit[];
+
 type FocusedRegion = EdgePanelPosition | 'center';
 
 export interface EdgePanel {
@@ -180,6 +193,17 @@ export interface WindowState<C extends string = string> {
   activePaneId: string | null;
   focusedRegion: FocusedRegion;
   nextZIndex: number;
+  /**
+   * The rail that took over the centre, or null.
+   *
+   * The centre stays MOUNTED while a rail is expanded, hidden from paint and
+   * from the tab order, so an editor keeps its buffer, its scroll and its
+   * undo history across an expand. Runtime state only: the serializer does
+   * not store it, so a reload opens the plain layout.
+   */
+  expandedEdge: EdgePanelPosition | null;
+  /** What ends an expanded rail. See `ExpandExit`. */
+  expandExit: ExpandExit;
 }
 
 export type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';

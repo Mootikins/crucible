@@ -530,6 +530,13 @@ The rail's `…` button is the LAYOUT control. It offers **Re-add pane**, a subm
 **TUI parity:** none. The TUI has no comment box; `@comment:<id>` attaches a stored comment (WS-327).
 **Tests:** W1 (`diff-comments.test.ts` — `dragSpan`, the rows of the two ends as whole lines, removed rows included). W2 (`e2e/diff-text-comment.spec.ts` — the tint, the hidden selection and the box of a drag; a click with no box; a removed row at either end; one wrapped line; the whole lines that **Cancel** selects, and no text after the **Cancel** of a drag over the line numbers; a drag while a box is open; `e2e/diff-split.spec.ts` — the hunk headers of both editors, and a drag over the base text that stores a base-side comment).
 
+### WS-326: A side panel covers the centre and gives it back
+
+**As a user**, I let the session (or any side panel) take the whole centre when I read a long turn, and I get my documents back exactly as I left them.
+**Acceptance:** the windowing core expands a rail over the centre (`expandEdge`, `toggleEdgeExpanded`, chord `Shift+Escape` on the focused rail). The centre stays MOUNTED and hidden, so an open editor keeps its state. What ends an expand is a setting, `expandExit`: `toggle` (only the toggle) or `centre-focus` (also a tab or pane of the centre tiling taking focus; a floating window does not count). A rail leaving `docked`, a reset and a restore end the expand; a swap carries it; the layout file never stores it. See [[Meta/Architecture/Web Windowing#Expand]].
+**Tests:** W1 (`windowing/__tests__/expandEdge.test.ts` — dock and focus on expand, the toggle, both exit settings, a floating peek and the rail itself keeping the expand, each stow path, the swap, reset and restore; `windowing/components/__tests__/expand-render.test.tsx` — the centre hidden and still mounted, `Shift+Escape` on the focused rail and from the centre; `windowing/__tests__/types.test.ts` — the `EXPAND_EXITS` table). W2 GAP: no app surface binds it yet; the dev-only `/shell-mockup.html` (`src/test-harness/shell-mockup/`) drives it from the session header.
+**TUI parity:** none, and none is owed. The TUI has no panes to cover.
+
 ## Infra requirements these stories impose (status)
 
 1. **vitest gates CI** — DONE: `just ci` runs `web-test unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).

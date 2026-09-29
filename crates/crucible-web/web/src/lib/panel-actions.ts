@@ -1,12 +1,12 @@
 import { statusBarStore } from '@/stores/statusBarStore';
 import { windowStore } from '@/stores/windowStore';
-import { collectLeafGroupIds } from '@/windowing';
+import { collectLeafGroupIds, edgeLeaf } from '@/windowing';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 import { getGlobalRegistry, type PanelDefinition } from './panel-registry';
 import { iconForPanelId } from './tab-icons';
 import { tabHost } from './tab-host';
 import { terminalAllowed } from './terminal-availability';
-import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
+import type { Tab, TabContentType } from '@/types/windowTypes';
 import {
   diffsetKey,
   diffsetTitle,
@@ -15,15 +15,6 @@ import {
   type DiffsetSource,
 } from './diffset';
 
-/** First pane group in the center tiling — where center-zone tabs open. */
-export function findFirstCenterPaneGroupId(): string | null {
-  function findFirst(node: LayoutNode): string | null {
-    if (node.type === 'pane') return node.tabGroupId ?? null;
-    return findFirst(node.first) || findFirst(node.second);
-  }
-
-  return findFirst(windowStore.layout);
-}
 
 /** Content that belongs to a conversation, not to the editor. */
 const SESSION_CONTENT = new Set(['chat', 'chat-draft']);
@@ -53,22 +44,6 @@ export function filesSide(): EdgePanelPosition {
   return sessionsSide() === 'left' ? 'right' : 'left';
 }
 
-/**
- * The centre pane at one edge: the leftmost or rightmost leaf. A stacked
- * split has no left or right, so both halves count as the same edge and the
- * top one wins.
- */
-export function edgeCenterPane(
-  side: EdgePanelPosition,
-): { paneId: string; groupId: string | null } | null {
-  function walk(node: LayoutNode): { paneId: string; groupId: string | null } | null {
-    if (node.type === 'pane') return { paneId: node.id, groupId: node.tabGroupId ?? null };
-    if (node.direction === 'horizontal') return walk(side === 'left' ? node.first : node.second);
-    return walk(node.first);
-  }
-  return walk(windowStore.layout);
-}
-
 function groupHolds(groupId: string | null, pred: (contentType: string) => boolean): boolean {
   const g = groupId ? windowStore.tabGroups[groupId] : undefined;
   return !!g && g.tabs.some((t) => pred(t.contentType));
@@ -93,7 +68,7 @@ function groupIsEditorRoom(groupId: string | null): boolean {
  */
 export function editorGroupId(): string | null {
   // The pane next to the files rail first: that is where a file belongs.
-  const edge = edgeCenterPane(filesSide());
+  const edge = edgeLeaf(windowStore.layout, filesSide());
   if (edge?.groupId && groupIsEditorRoom(edge.groupId)) return edge.groupId;
 
   const centre = collectLeafGroupIds(windowStore.layout)

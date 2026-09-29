@@ -61,8 +61,15 @@ function DragOverlayContent() {
 /** The middle column of the rail row. Its key never changes, so it never moves. */
 function CentreColumn() {
   const windowing = useWindowing();
+  // Hidden, never unmounted, while a rail covers it: an editor keeps its
+  // buffer, scroll and undo history, and `hidden` takes it out of paint,
+  // hit-testing and the tab order.
   return (
-    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+    <div
+      class="flex-1 flex flex-col overflow-hidden min-w-0"
+      data-testid="centre-column"
+      hidden={windowStore.expandedEdge !== null}
+    >
       {/* relative: the corner slot floats at this area's bottom-right. */}
       <div class="relative flex-1 flex flex-col overflow-hidden min-h-0">
         <CenterTiling />
@@ -204,6 +211,12 @@ function InnerManager() {
       windowActions.toggleEdgePanel('right');
     } else if (action === 'swapSidePanels') {
       windowActions.swapSidePanels();
+    } else if (action === 'toggleExpandFocusedEdge') {
+      // An expanded rail always gives the centre back, wherever focus is.
+      // Otherwise the focused rail expands; the centre has nothing to expand.
+      const region = windowStore.focusedRegion;
+      if (windowStore.expandedEdge) windowActions.collapseExpandedEdge();
+      else if (region !== 'center') windowActions.expandEdge(region);
     }
   };
 

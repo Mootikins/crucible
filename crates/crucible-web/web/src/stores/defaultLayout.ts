@@ -144,5 +144,7 @@ export function defaultLayout(): WindowState {
     activePaneId: mainPaneId,
     focusedRegion: 'center',
     nextZIndex: 100,
+    expandedEdge: null,
+    expandExit: 'toggle',
   };
 }

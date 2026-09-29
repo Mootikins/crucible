@@ -73,10 +73,12 @@ function EdgePanelResizeHandle(props: { position: EdgePanelPosition }) {
 export const DockedBody: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
   const isCollapsed = () => isEdgeCollapsed(panel());
+  /** The rail covers the centre: it fills the row, and its width does not apply. */
+  const coversCentre = () => windowStore.expandedEdge === props.position;
 
   const expandedPanel = () => (
     <>
-      {props.position === 'right' && (
+      {props.position === 'right' && !coversCentre() && (
         <EdgePanelResizeHandle position={props.position} />
       )}
       {/* No border here — the ribbon and handle lines are the separators.
@@ -86,13 +88,16 @@ export const DockedBody: Component<{ position: EdgePanelPosition }> = (props) =>
       <div
         data-edge-panel-body={props.position}
         class="flex flex-col overflow-hidden"
-        style={{ width: panel().width ? `${panel().width}px` : '250px', 'min-width': '0' }}
+        style={{
+          width: coversCentre() ? '100%' : panel().width ? `${panel().width}px` : '250px',
+          'min-width': '0',
+        }}
       >
         <div class="flex-1 min-h-0 min-w-0">
           <SplitPane node={panel().layout} />
         </div>
       </div>
-      {props.position === 'left' && <EdgePanelResizeHandle position={props.position} />}
+      {props.position === 'left' && !coversCentre() && <EdgePanelResizeHandle position={props.position} />}
     </>
   );
 
@@ -172,12 +177,17 @@ export const DockedBody: Component<{ position: EdgePanelPosition }> = (props) =>
   // Panel size + the 1px resize handle that lives inside the wrapper.
   const fullSize = () => (panel().width || 250) + 1;
   const frameStyle = () => ({
-    width: `${Math.round(fullSize() * progress())}px`,
+    // An expanded rail takes the row. The slide still runs on a collapse,
+    // because a collapse ends the expand first (see toggleEdgePanel).
+    ...(coversCentre()
+      ? { flex: '1 1 auto', 'min-width': '0' }
+      : { width: `${Math.round(fullSize() * progress())}px` }),
     // Fully closed panels leave paint, hit-testing, and the tab order —
     // clipped-but-visible content is still keyboard-reachable otherwise.
     visibility: progress() > 0 ? ('visible' as const) : ('hidden' as const),
   });
   const innerStyle = () => {
+    if (coversCentre()) return { width: '100%' };
     const off = (1 - progress()) * 100;
     return {
       width: `${fullSize()}px`,
