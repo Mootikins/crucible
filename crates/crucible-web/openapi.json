@@ -3168,79 +3168,6 @@
         }
       }
     },
-    "/api/session/{id}/config/context-strategy": {
-      "get": {
-        "operationId": "get_context_strategy",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to read",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ContextStrategyResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not read the value"
-          }
-        }
-      },
-      "put": {
-        "operationId": "set_context_strategy",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to configure",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetContextStrategyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon does not know the strategy named"
-          },
-          "502": {
-            "description": "The daemon could not store the value"
-          }
-        }
-      }
-    },
     "/api/session/{id}/config/plugin-approvals": {
       "get": {
         "operationId": "list_plugin_approvals",
@@ -3261,68 +3188,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PluginApprovalsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/session/{id}/config/plugin-turn-limit": {
-      "get": {
-        "operationId": "get_plugin_turn_limit",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PluginTurnLimitResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "set_plugin_turn_limit",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetPluginTurnLimitRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
                 }
               }
             }
@@ -3404,79 +3269,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/session/{id}/config/precognition": {
-      "get": {
-        "operationId": "get_precognition",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to read",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PrecognitionResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not read the value"
-          }
-        }
-      },
-      "put": {
-        "operationId": "set_precognition",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to configure",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetPrecognitionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The session cannot carry the knob"
-          },
-          "502": {
-            "description": "The daemon could not store the value"
           }
         }
       }
@@ -3683,6 +3475,95 @@
         }
       }
     },
+    "/api/session/{id}/knob": {
+      "put": {
+        "summary": "Write one session knob — model, mode, context strategy, precognition or\nplugin turn limit. The body names its own knob (`KnobValue`'s tag), so\none route serves all five: a knob added later needs no sibling route.",
+        "operationId": "set_knob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to configure",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnobValue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The session cannot carry the knob, or the value is invalid"
+          },
+          "502": {
+            "description": "The daemon could not store the value"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/knob/{knob}": {
+      "get": {
+        "summary": "Read one session knob, in the same [`crucible_core::types::KnobValue`]\nshape [`set_knob`] writes.",
+        "operationId": "get_knob",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "knob",
+            "in": "path",
+            "description": "The knob to read: model, mode, context_strategy, precognition or plugin_turn_limit",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnobValue"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The session cannot carry the knob"
+          },
+          "502": {
+            "description": "The daemon could not read the value"
+          }
+        }
+      }
+    },
     "/api/session/{id}/knobs": {
       "get": {
         "summary": "Which settings this session can change.",
@@ -3712,119 +3593,6 @@
           },
           "502": {
             "description": "The daemon could not describe the settings"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/mode": {
-      "get": {
-        "summary": "Read the session mode. `session.get_mode` has existed all along with no web\nreader, so the panel could set a mode and then render whatever it last\nguessed. Exempt from gate A2e by design (`mode` is not a `config/` knob), so\nnothing would have failed if this stayed missing.",
-        "operationId": "get_mode",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose mode to read",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModeResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not read the mode"
-          }
-        }
-      },
-      "post": {
-        "summary": "Set the session mode (normal/plan/auto). The daemon persists it on the\nagent config and applies it to the live handle; confirmation reaches the\nUI as a `mode_changed` SSE event.",
-        "operationId": "set_mode",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose mode to set",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetModeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not set the mode"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/model": {
-      "post": {
-        "operationId": "switch_model",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose model to switch",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SwitchModelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not switch the model"
           }
         }
       }
@@ -6230,18 +5998,6 @@
           "Truncate",
           "Summarize"
         ]
-      },
-      "ContextStrategyResponse": {
-        "type": "object",
-        "properties": {
-          "context_strategy": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The strategy's string spelling, or `null` where the session carries no\nchoice of its own."
-          }
-        }
       },
       "CreateEntryParams": {
         "type": "object",
@@ -8773,6 +8529,116 @@
           }
         }
       },
+      "KnobValue": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The model id, as `session.switch_model` used to carry it.",
+            "required": [
+              "value",
+              "knob"
+            ],
+            "properties": {
+              "value": {
+                "type": "string",
+                "description": "The model id, as `session.switch_model` used to carry it."
+              },
+              "knob": {
+                "type": "string",
+                "enum": [
+                  "model"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The mode id. `None` is the agent's default mode: no mode was ever\nset.",
+            "required": [
+              "value",
+              "knob"
+            ],
+            "properties": {
+              "value": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The mode id. `None` is the agent's default mode: no mode was ever\nset."
+              },
+              "knob": {
+                "type": "string",
+                "enum": [
+                  "mode"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The strategy's string spelling, parsed and validated by the daemon.",
+            "required": [
+              "value",
+              "knob"
+            ],
+            "properties": {
+              "value": {
+                "type": "string",
+                "description": "The strategy's string spelling, parsed and validated by the daemon."
+              },
+              "knob": {
+                "type": "string",
+                "enum": [
+                  "context_strategy"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Whether the kiln is searched before the first message.",
+            "required": [
+              "value",
+              "knob"
+            ],
+            "properties": {
+              "value": {
+                "type": "boolean",
+                "description": "Whether the kiln is searched before the first message."
+              },
+              "knob": {
+                "type": "string",
+                "enum": [
+                  "precognition"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Maximum consecutive plugin turns before approval becomes Ask.",
+            "required": [
+              "value",
+              "knob"
+            ],
+            "properties": {
+              "value": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Maximum consecutive plugin turns before approval becomes Ask.",
+                "minimum": 0
+              },
+              "knob": {
+                "type": "string",
+                "enum": [
+                  "plugin_turn_limit"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One knob and the value to read or write.\n\n`session.knob.set` carries this as its whole body: the tag names the\nknob, so a client that sends `{\"knob\": \"mode\", \"value\": \"plan\"}` cannot\nname a knob and then send the wrong value's shape. `session.knob.get`\nanswers the same type, so a client reads a value the same way it wrote\nit.\n\nOne variant per [`SessionKnob`] entry, and the compiler proves the two\nenums stay matched: [`Self::knob`] has no wildcard arm, so a\n[`SessionKnob`] variant added without a matching [`KnobValue`] variant\nfails to compile here, not at run time."
+      },
       "LayoutWriteResponse": {
         "type": "object",
         "description": "What a layout write answers.\n\n`POST` and `DELETE /api/layout` answer the same object, because both say\nonly that the file on disk now reflects the request. One type keeps them\nfrom separating.",
@@ -9028,18 +8894,6 @@
           "theirs": {
             "type": "string",
             "description": "The cluster as their side wrote it."
-          }
-        }
-      },
-      "ModeResponse": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The session's mode id. `null` is the normal mode."
           }
         }
       },
@@ -10408,19 +10262,6 @@
           }
         }
       },
-      "PluginTurnLimitResponse": {
-        "type": "object",
-        "required": [
-          "limit"
-        ],
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
       "PluginsDiscoveredPayload": {
         "type": "object",
         "required": [
@@ -10557,18 +10398,6 @@
             "type": "number",
             "format": "double",
             "description": "Search relevance score from the vector index. Defaults for payloads\nrecorded before the field existed."
-          }
-        }
-      },
-      "PrecognitionResponse": {
-        "type": "object",
-        "description": "Response for precognition config.",
-        "required": [
-          "precognition_enabled"
-        ],
-        "properties": {
-          "precognition_enabled": {
-            "type": "boolean"
           }
         }
       },
@@ -12588,28 +12417,6 @@
           }
         }
       },
-      "SetContextStrategyRequest": {
-        "type": "object",
-        "required": [
-          "context_strategy"
-        ],
-        "properties": {
-          "context_strategy": {
-            "type": "string"
-          }
-        }
-      },
-      "SetModeRequest": {
-        "type": "object",
-        "required": [
-          "mode"
-        ],
-        "properties": {
-          "mode": {
-            "type": "string"
-          }
-        }
-      },
       "SetPluginApprovalRequest": {
         "type": "object",
         "required": [
@@ -12618,30 +12425,6 @@
         "properties": {
           "approval": {
             "$ref": "#/components/schemas/PluginApproval"
-          }
-        }
-      },
-      "SetPluginTurnLimitRequest": {
-        "type": "object",
-        "required": [
-          "limit"
-        ],
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "SetPrecognitionRequest": {
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
           }
         }
       },
@@ -13551,17 +13334,6 @@
                 "description": "Status, or `null` when the row has none. Always written, so `null`\nmeans \"no status\", never \"unknown\"."
               }
             ]
-          }
-        }
-      },
-      "SwitchModelRequest": {
-        "type": "object",
-        "required": [
-          "model_id"
-        ],
-        "properties": {
-          "model_id": {
-            "type": "string"
           }
         }
       },

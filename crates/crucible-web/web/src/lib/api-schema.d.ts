@@ -1509,22 +1509,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/session/{id}/config/context-strategy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_context_strategy"];
-        put: operations["set_context_strategy"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/session/{id}/config/plugin-approvals": {
         parameters: {
             query?: never;
@@ -1541,22 +1525,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/session/{id}/config/plugin-turn-limit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_plugin_turn_limit"];
-        put: operations["set_plugin_turn_limit"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/session/{id}/config/plugins/{plugin}/approval": {
         parameters: {
             query?: never;
@@ -1566,22 +1534,6 @@ export interface paths {
         };
         get: operations["get_plugin_approval"];
         put: operations["set_plugin_approval"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/config/precognition": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_precognition"];
-        put: operations["set_precognition"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1670,6 +1622,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/knob": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write one session knob — model, mode, context strategy, precognition or
+         *     plugin turn limit. The body names its own knob (`KnobValue`'s tag), so
+         *     one route serves all five: a knob added later needs no sibling route.
+         */
+        put: operations["set_knob"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/knob/{knob}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one session knob, in the same [`crucible_core::types::KnobValue`]
+         *     shape [`set_knob`] writes.
+         */
+        get: operations["get_knob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/knobs": {
         parameters: {
             query?: never;
@@ -1688,49 +1681,6 @@ export interface paths {
         get: operations["list_knobs"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/mode": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read the session mode. `session.get_mode` has existed all along with no web
-         *     reader, so the panel could set a mode and then render whatever it last
-         *     guessed. Exempt from gate A2e by design (`mode` is not a `config/` knob), so
-         *     nothing would have failed if this stayed missing.
-         */
-        get: operations["get_mode"];
-        put?: never;
-        /**
-         * Set the session mode (normal/plan/auto). The daemon persists it on the
-         *     agent config and applies it to the live handle; confirmation reaches the
-         *     UI as a `mode_changed` SSE event.
-         */
-        post: operations["set_mode"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/model": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["switch_model"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2830,13 +2780,6 @@ export interface components {
          * @enum {string}
          */
         ContextStrategy: "Truncate" | "Summarize";
-        ContextStrategyResponse: {
-            /**
-             * @description The strategy's string spelling, or `null` where the session carries no
-             *     choice of its own.
-             */
-            context_strategy?: string | null;
-        };
         /**
          * @description `base.create_entry`: create a note that the base's filters admit.
          *
@@ -3853,6 +3796,52 @@ export interface components {
             supported: boolean;
         };
         /**
+         * @description One knob and the value to read or write.
+         *
+         *     `session.knob.set` carries this as its whole body: the tag names the
+         *     knob, so a client that sends `{"knob": "mode", "value": "plan"}` cannot
+         *     name a knob and then send the wrong value's shape. `session.knob.get`
+         *     answers the same type, so a client reads a value the same way it wrote
+         *     it.
+         *
+         *     One variant per [`SessionKnob`] entry, and the compiler proves the two
+         *     enums stay matched: [`Self::knob`] has no wildcard arm, so a
+         *     [`SessionKnob`] variant added without a matching [`KnobValue`] variant
+         *     fails to compile here, not at run time.
+         */
+        KnobValue: {
+            /** @enum {string} */
+            knob: "model";
+            /** @description The model id, as `session.switch_model` used to carry it. */
+            value: string;
+        } | {
+            /** @enum {string} */
+            knob: "mode";
+            /**
+             * @description The mode id. `None` is the agent's default mode: no mode was ever
+             *     set.
+             */
+            value: string | null;
+        } | {
+            /** @enum {string} */
+            knob: "context_strategy";
+            /** @description The strategy's string spelling, parsed and validated by the daemon. */
+            value: string;
+        } | {
+            /** @enum {string} */
+            knob: "precognition";
+            /** @description Whether the kiln is searched before the first message. */
+            value: boolean;
+        } | {
+            /** @enum {string} */
+            knob: "plugin_turn_limit";
+            /**
+             * Format: int32
+             * @description Maximum consecutive plugin turns before approval becomes Ask.
+             */
+            value: number;
+        };
+        /**
          * @description What a layout write answers.
          *
          *     `POST` and `DELETE /api/layout` answer the same object, because both say
@@ -4004,10 +3993,6 @@ export interface components {
          */
         ModelsResponse: {
             models: string[];
-        };
-        ModeResponse: {
-            /** @description The session's mode id. `null` is the normal mode. */
-            mode?: string | null;
         };
         /**
          * @description One mode a session may enter.
@@ -4671,10 +4656,6 @@ export interface components {
              */
             version?: string | null;
         };
-        PluginTurnLimitResponse: {
-            /** Format: int32 */
-            limit: number;
-        };
         /**
          * @description A simple popup entry for cross-platform use
          *
@@ -4758,10 +4739,6 @@ export interface components {
              */
             score?: number;
             title: string;
-        };
-        /** @description Response for precognition config. */
-        PrecognitionResponse: {
-            precognition_enabled: boolean;
         };
         /**
          * @description A registered project — a directory the user works on.
@@ -5679,21 +5656,8 @@ export interface components {
             option_id: string;
             value: string;
         };
-        SetContextStrategyRequest: {
-            context_strategy: string;
-        };
-        SetModeRequest: {
-            mode: string;
-        };
         SetPluginApprovalRequest: {
             approval: components["schemas"]["PluginApproval"];
-        };
-        SetPluginTurnLimitRequest: {
-            /** Format: int32 */
-            limit: number;
-        };
-        SetPrecognitionRequest: {
-            enabled: boolean;
         };
         /**
          * @description `base.set_property`: set or delete one frontmatter property of a note.
@@ -6094,9 +6058,6 @@ export interface components {
             mark: null | components["schemas"]["Mark"];
             /** @description The row's own text. */
             text: string;
-        };
-        SwitchModelRequest: {
-            model_id: string;
         };
         /**
          * @description One frame of the system stream. The SSE `event:` name tells the two
@@ -7071,7 +7032,6 @@ export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextLimitResolvedPayload = components['schemas']['ContextLimitResolvedPayload'];
 export type SchemaContextLimitSource = components['schemas']['ContextLimitSource'];
 export type SchemaContextStrategy = components['schemas']['ContextStrategy'];
-export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateEntryParams = components['schemas']['CreateEntryParams'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDelegationConfig = components['schemas']['DelegationConfig'];
@@ -7134,6 +7094,7 @@ export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
 export type SchemaKilnNotesIndexedPayload = components['schemas']['KilnNotesIndexedPayload'];
 export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
+export type SchemaKnobValue = components['schemas']['KnobValue'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
 export type SchemaLineRange = components['schemas']['LineRange'];
@@ -7148,7 +7109,6 @@ export type SchemaMcpStatus = components['schemas']['McpStatus'];
 export type SchemaMcpStopped = components['schemas']['McpStopped'];
 export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
-export type SchemaModeResponse = components['schemas']['ModeResponse'];
 export type SchemaModeRow = components['schemas']['ModeRow'];
 export type SchemaNamedKiln = components['schemas']['NamedKiln'];
 export type SchemaNoteByNameReply = components['schemas']['NoteByNameReply'];
@@ -7195,13 +7155,11 @@ export type SchemaPluginRunCommandReply = components['schemas']['PluginRunComman
 export type SchemaPluginRunCommandRequest = components['schemas']['PluginRunCommandRequest'];
 export type SchemaPluginsDiscoveredPayload = components['schemas']['PluginsDiscoveredPayload'];
 export type SchemaPluginStatusEntry = components['schemas']['PluginStatusEntry'];
-export type SchemaPluginTurnLimitResponse = components['schemas']['PluginTurnLimitResponse'];
 export type SchemaPopupEntry = components['schemas']['PopupEntry'];
 export type SchemaPopupRequest = components['schemas']['PopupRequest'];
 export type SchemaPopupResponse = components['schemas']['PopupResponse'];
 export type SchemaPrecognition = components['schemas']['Precognition'];
 export type SchemaPrecognitionNoteInfo = components['schemas']['PrecognitionNoteInfo'];
-export type SchemaPrecognitionResponse = components['schemas']['PrecognitionResponse'];
 export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectKiln = components['schemas']['ProjectKiln'];
 export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest'];
@@ -7268,11 +7226,7 @@ export type SchemaSessionStatusResponse = components['schemas']['SessionStatusRe
 export type SchemaSessionSummary = components['schemas']['SessionSummary'];
 export type SchemaSessionType = components['schemas']['SessionType'];
 export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionRequest'];
-export type SchemaSetContextStrategyRequest = components['schemas']['SetContextStrategyRequest'];
-export type SchemaSetModeRequest = components['schemas']['SetModeRequest'];
 export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApprovalRequest'];
-export type SchemaSetPluginTurnLimitRequest = components['schemas']['SetPluginTurnLimitRequest'];
-export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitionRequest'];
 export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
 export type SchemaSettingsPayload = components['schemas']['SettingsPayload'];
 export type SchemaSetupPayload = components['schemas']['SetupPayload'];
@@ -7295,7 +7249,6 @@ export type SchemaSurface = components['schemas']['Surface'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
 export type SchemaSurfaceListReply = components['schemas']['SurfaceListReply'];
 export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
-export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
 export type SchemaSystemPayload = components['schemas']['SystemPayload'];
 export type SchemaTextField = components['schemas']['TextField'];
@@ -10426,75 +10379,6 @@ export interface operations {
             };
         };
     };
-    get_context_strategy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to read */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContextStrategyResponse"];
-                };
-            };
-            /** @description The daemon could not read the value */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    set_context_strategy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to configure */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetContextStrategyRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            /** @description The daemon does not know the strategy named */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not store the value */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     list_plugin_approvals: {
         parameters: {
             query?: never;
@@ -10512,52 +10396,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginApprovalsResponse"];
-                };
-            };
-        };
-    };
-    get_plugin_turn_limit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PluginTurnLimitResponse"];
-                };
-            };
-        };
-    };
-    set_plugin_turn_limit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetPluginTurnLimitRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
         };
@@ -10607,75 +10445,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
                 };
-            };
-        };
-    };
-    get_precognition: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to read */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PrecognitionResponse"];
-                };
-            };
-            /** @description The daemon could not read the value */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    set_precognition: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to configure */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetPrecognitionRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            /** @description The session cannot carry the knob */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not store the value */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -10851,6 +10620,84 @@ export interface operations {
             };
         };
     };
+    set_knob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to configure */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnobValue"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description The session cannot carry the knob, or the value is invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not store the value */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_knob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to read */
+                id: string;
+                /** @description The knob to read: model, mode, context_strategy, precognition or plugin_turn_limit */
+                knob: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnobValue"];
+                };
+            };
+            /** @description The session cannot carry the knob */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not read the value */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_knobs: {
         parameters: {
             query?: never;
@@ -10872,101 +10719,6 @@ export interface operations {
                 };
             };
             /** @description The daemon could not describe the settings */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_mode: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose mode to read */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModeResponse"];
-                };
-            };
-            /** @description The daemon could not read the mode */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    set_mode: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose mode to set */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetModeRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            /** @description The daemon could not set the mode */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    switch_model: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose model to switch */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SwitchModelRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            /** @description The daemon could not switch the model */
             502: {
                 headers: {
                     [name: string]: unknown;
