@@ -9,10 +9,10 @@
 //! `LlmToolDefinition`/`FunctionDefinition` pair used to wrap it in an
 //! OpenAI-shaped `{type: "function", function: {...}}` envelope, but no
 //! caller ever read `r#type` (it was always `"function"`) or serialized the
-//! wrapper to the wire — every caller converted it straight to
-//! `genai::chat::Tool` (`crucible-daemon/src/provider/tool_bridge.rs`). The
-//! wrapper is gone; `tool_bridge::llm_tool_to_genai` takes a
-//! `ToolDefinition` directly.
+//! wrapper to the wire — every caller converted it straight to the
+//! provider crate's own tool type behind the provider seam
+//! (`crucible-daemon/src/provider/tool_bridge.rs`). The wrapper is gone;
+//! `tool_bridge::llm_tool_to_genai` takes a `ToolDefinition` directly.
 
 use serde::{Deserialize, Serialize};
 
