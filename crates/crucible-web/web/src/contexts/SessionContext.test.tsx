@@ -328,7 +328,7 @@ describe('createSession param forwarding', () => {
         sent.push(await request.json());
         return wire({ id: 'new-id', title: null });
       },
-      'POST /api/session/new-id/model': () => new Response(null, { status: 204 }),
+      'PUT /api/session/new-id/knob': () => new Response(null, { status: 204 }),
       'GET /api/session/new-id/models': () => ({ models: [] }),
       ...routes,
     });
@@ -353,7 +353,7 @@ describe('createSession param forwarding', () => {
 
     await waitFor(() => expect(sent[0]).toEqual({ kilns: ['/kilns/main'] }));
     await waitFor(() =>
-      expect(env.fetch.calls('POST /api/session/new-id/model')).toBe(1),
+      expect(env.fetch.calls('PUT /api/session/new-id/knob')).toBe(1),
     );
   });
 
@@ -370,7 +370,7 @@ describe('createSession param forwarding', () => {
     expect(params.agent_type).toBe('acp');
     expect(params.agent_name).toBe('claude');
     expect(params.kilns).toBeUndefined();
-    expect(env.fetch.calls('POST /api/session/new-id/model')).toBe(0);
+    expect(env.fetch.calls('PUT /api/session/new-id/knob')).toBe(0);
   });
 
   it('forwards every kiln in one flat set', async () => {

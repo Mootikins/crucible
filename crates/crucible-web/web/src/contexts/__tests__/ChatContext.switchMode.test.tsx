@@ -13,9 +13,9 @@ import { installFakeEventSource } from '@/test-utils/sse';
 
 /** What `GET /api/session/s1` nests under `agent`: the only route that sends a mode at all. */
 let agent: { model: string; mode: string } | null = null;
-/** The bodies the mode route took, in order. */
-const modeWrites: { mode: string }[] = [];
-/** What `POST /api/session/s1/mode` answers; a case that means a refusal replaces it. */
+/** The bodies the knob route took, in order. */
+const modeWrites: { knob: string; value: string }[] = [];
+/** What `PUT /api/session/s1/knob` answers; a case that means a refusal replaces it. */
 let modeAnswer: () => Response = () => new Response(null, { status: 204 });
 
 let env: TestQueryEnv;
@@ -41,8 +41,8 @@ beforeEach(() => {
       archived: false,
     }),
     'GET /api/session/s1/history': () => ({ session_id: 's1', history: [], total_events: 0 }),
-    'POST /api/session/s1/mode': async (request) => {
-      modeWrites.push((await request.clone().json()) as { mode: string });
+    'PUT /api/session/s1/knob': async (request) => {
+      modeWrites.push((await request.clone().json()) as { knob: string; value: string });
       return modeAnswer();
     },
   });
@@ -78,7 +78,7 @@ describe('ChatContext.switchMode', () => {
     expect(ctx.chatMode()).toBe('plan'); // optimistic
     await waitFor(() => {
       // The wire took the mode the chip offered, for this session.
-      expect(modeWrites).toEqual([{ mode: 'plan' }]);
+      expect(modeWrites).toEqual([{ knob: 'mode', value: 'plan' }]);
     });
     expect(ctx.chatMode()).toBe('plan'); // stays after success
   });

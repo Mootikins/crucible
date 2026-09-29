@@ -6,18 +6,15 @@ import {
   type UseQueryResult,
 } from '@tanstack/solid-query';
 import {
-  getContextStrategy,
-  getPrecognition,
+  getKnob,
   getSessionStatus,
   listAgentOptions,
   listKnobs,
   listPluginApprovals,
-  getPluginTurnLimit,
   setAgentOption,
-  setContextStrategy,
-  setPrecognition,
+  setKnob,
   setPluginApproval,
-  setPluginTurnLimit,
+  type KnobValue,
   type PluginApproval,
   type StatusDisplayItem,
 } from '@/lib/api';
@@ -112,111 +109,85 @@ export function useSetAgentOption(): UseMutationResult<
   );
 }
 
-/** Whether this session injects context before a turn. */
-export function useGetPrecognition(
+/**
+ * One knob's value, read from `session.knob.get`.
+ *
+ * The one generic pair every knob shares: a new knob needs no sibling read
+ * hook here, only a call site that names it.
+ */
+/** The value type of one [`KnobValue`] variant, by its `knob` tag. */
+type KnobValueOf<K extends KnobValue['knob']> = Extract<KnobValue, { knob: K }>['value'];
+
+export function useKnob<K extends KnobValue['knob']>(
   id: Accessor<string | null>,
-): UseQueryResult<boolean, Error> {
-  return sessionQuery(id, keys.sessionPrecognition, getPrecognition);
+  knob: K,
+): UseQueryResult<KnobValueOf<K>, Error> {
+  // `KnobValueOf<K>` does not simplify while `K` is a type parameter, so
+  // `sessionQuery`'s own generic cannot unify with it at this call site. The
+  // cast at the boundary is the one place that limitation is paid; the field
+  // the daemon and this file agree on, `value.value`, is still read without
+  // a cast.
+  type Result = UseQueryResult<KnobValueOf<K>, Error>;
+  return sessionQuery(
+    id,
+    (sessionId) => keys.sessionKnob(sessionId, knob),
+    async (sessionId) => (await getKnob(sessionId, knob)).value,
+  ) as unknown as Result;
 }
 
 /**
- * Turns precognition on or off.
+ * Writes one knob's value, through `session.knob.set`.
  *
- * The toggle moves before the daemon answers, because the control must respond
- * to the click, and moves back when the daemon refuses: a setting nothing
- * applies must not look applied.
+ * The held value moves before the daemon answers, because a control must
+ * respond to the click, and moves back when the daemon refuses: a setting
+ * nothing applies must not look applied. This is the one generic pair every
+ * knob shares; a new knob needs no sibling write hook here.
  */
-export function useSetPrecognition(): UseMutationResult<
+export function useSetKnob(): UseMutationResult<
   void,
   Error,
-  { id: string; enabled: boolean },
-  { replaced: boolean | undefined }
+  { id: string; value: KnobValue },
+  { replaced: unknown }
 > {
-  const hold = (id: string, enabled: boolean): boolean | undefined => {
-    let replaced: boolean | undefined;
-    getQueryClient().setQueryData<boolean>(keys.sessionPrecognition(id), (held) => {
+  const hold = (id: string, value: KnobValue): unknown => {
+    let replaced: unknown;
+    getQueryClient().setQueryData(keys.sessionKnob(id, value.knob), (held: unknown) => {
       replaced = held;
-      return enabled;
+      return value.value;
     });
     return replaced;
   };
 
   return useMutation(
     () => ({
-      mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-        setPrecognition(id, enabled),
-      onMutate: ({ id, enabled }: { id: string; enabled: boolean }) => ({
-        replaced: hold(id, enabled),
+      mutationFn: ({ id, value }: { id: string; value: KnobValue }) => setKnob(id, value),
+      onMutate: ({ id, value }: { id: string; value: KnobValue }) => ({
+        replaced: hold(id, value),
       }),
       onError: (
         _error: Error,
-        { id }: { id: string; enabled: boolean },
-        context: { replaced: boolean | undefined } | undefined,
+        { id, value }: { id: string; value: KnobValue },
+        context: { replaced: unknown } | undefined,
       ) => {
-        if (context?.replaced !== undefined) hold(id, context.replaced);
+        if (context?.replaced !== undefined) {
+          getQueryClient().setQueryData(keys.sessionKnob(id, value.knob), context.replaced);
+        }
       },
       onSettled: (
         _result: void | undefined,
         _error: Error | null,
-        { id }: { id: string; enabled: boolean },
-      ) => getQueryClient().invalidateQueries({ queryKey: keys.sessionPrecognition(id) }),
+        { id, value }: { id: string; value: KnobValue },
+      ) => getQueryClient().invalidateQueries({ queryKey: keys.sessionKnob(id, value.knob) }),
     }),
     () => getQueryClient(),
   );
 }
 
-/** How this session assembles its context, or null while it has no setting. */
-export function useGetContextStrategy(
-  id: Accessor<string | null>,
-): UseQueryResult<string | null, Error> {
-  return sessionQuery(id, keys.sessionContextStrategy, getContextStrategy);
-}
-
-/**
- * Sets the context-assembly strategy.
- *
- * The daemon parses the string and refuses one it does not know, so the held
- * value is replaced only once it accepts, and then re-read: the daemon may
- * store a name other than the one the dropdown sent.
- */
-export function useSetContextStrategy(): UseMutationResult<
-  void,
-  Error,
-  { id: string; strategy: string }
-> {
-  return useMutation(
-    () => ({
-      mutationFn: ({ id, strategy }: { id: string; strategy: string }) =>
-        setContextStrategy(id, strategy),
-      onSuccess: (_result: void, { id, strategy }: { id: string; strategy: string }) => {
-        const client = getQueryClient();
-        client.setQueryData<string | null>(keys.sessionContextStrategy(id), strategy);
-        return client.invalidateQueries({ queryKey: keys.sessionContextStrategy(id) });
-      },
-    }),
-    () => getQueryClient(),
-  );
-}
 
 export function usePluginApprovals(
   id: Accessor<string | null>,
 ): UseQueryResult<Record<string, PluginApproval>, Error> {
   return sessionQuery(id, keys.sessionPluginApprovals, listPluginApprovals);
-}
-
-export function usePluginTurnLimit(id: Accessor<string | null>): UseQueryResult<number, Error> {
-  return sessionQuery(id, keys.sessionPluginTurnLimit, getPluginTurnLimit);
-}
-
-export function useSetPluginTurnLimit(): UseMutationResult<void, Error, { id: string; limit: number }> {
-  return useMutation(
-    () => ({
-      mutationFn: ({ id, limit }: { id: string; limit: number }) => setPluginTurnLimit(id, limit),
-      onSuccess: (_result: void, { id }: { id: string; limit: number }) =>
-        getQueryClient().invalidateQueries({ queryKey: keys.sessionPluginTurnLimit(id) }),
-    }),
-    () => getQueryClient(),
-  );
 }
 
 export function useSetPluginApproval(): UseMutationResult<

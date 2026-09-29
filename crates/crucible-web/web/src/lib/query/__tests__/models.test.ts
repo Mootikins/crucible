@@ -7,7 +7,7 @@ import { resetSessionsForTests, useSessions } from '../sessions';
 import { useAllModels, useSessionModels, useSwitchModel } from '../models';
 
 const SESSION_MODELS = 'GET /api/session/s-1/models';
-const SWITCH = 'POST /api/session/s-1/model';
+const SWITCH = 'PUT /api/session/s-1/knob';
 const ALL_MODELS = 'GET /api/models';
 const SESSION_LIST = 'GET /api/session/list';
 
@@ -173,7 +173,7 @@ describe('useSwitchModel', () => {
     env = createTestQueryEnv({
       [SESSION_MODELS]: () => body(['a/one']),
       [SWITCH]: async (request) => {
-        asked = ((await request.json()) as { model_id: string }).model_id;
+        asked = ((await request.json()) as { knob: string; value: string }).value;
         return new Response(null, { status: 204 });
       },
     });

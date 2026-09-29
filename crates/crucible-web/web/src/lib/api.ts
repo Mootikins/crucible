@@ -1149,25 +1149,6 @@ export async function setPluginApproval(
   );
 }
 
-export async function getPluginTurnLimit(sessionId: string): Promise<number> {
-  return decode(
-    await client.GET('/api/session/{id}/config/plugin-turn-limit', {
-      params: { path: { id: sessionId } },
-    }),
-    'Failed to load plugin turn limit',
-  ).limit;
-}
-
-export async function setPluginTurnLimit(sessionId: string, limit: number): Promise<void> {
-  expectOk(
-    await client.PUT('/api/session/{id}/config/plugin-turn-limit', {
-      params: { path: { id: sessionId } },
-      body: { limit },
-    }),
-    'Failed to set plugin turn limit',
-  );
-}
-
 /**
  * The settings this session's external agent advertised for itself.
  *
@@ -1208,25 +1189,13 @@ export async function listModes(sessionId: string): Promise<SessionModes> {
 
 /** Switch the model for a session. */
 export async function switchModel(sessionId: string, modelId: string): Promise<void> {
-  expectOk(
-    await client.POST('/api/session/{id}/model', {
-      params: { path: { id: sessionId } },
-      body: { model_id: modelId },
-    }),
-    'Failed to switch model',
-  );
+  await setKnob(sessionId, { knob: 'model', value: modelId });
 }
 
 /** Set the session mode (normal/plan/auto). Confirmation echoes back as a
  * mode_changed SSE event. */
 export async function setSessionMode(sessionId: string, mode: string): Promise<void> {
-  expectOk(
-    await client.POST('/api/session/{id}/mode', {
-      params: { path: { id: sessionId } },
-      body: { mode },
-    }),
-    'Failed to set session mode',
-  );
+  await setKnob(sessionId, { knob: 'mode', value: mode });
 }
 
 /** Set the title for a session. */
@@ -1303,51 +1272,51 @@ export async function listAllModels(): Promise<string[]> {
 }
 
 // =============================================================================
-// Session Config Endpoints
+// Session knobs
+//
+// One route pair for every knob — model, mode, context strategy,
+// precognition, plugin turn limit. `KnobValue` names its own knob (the
+// `knob` tag), so `setKnob` cannot send a value shaped for the wrong knob.
 // =============================================================================
+
+export type KnobValue = components['schemas']['KnobValue'];
+
+/** Write one session knob. */
+export async function setKnob(sessionId: string, value: KnobValue): Promise<void> {
+  expectOk(
+    await client.PUT('/api/session/{id}/knob', {
+      params: { path: { id: sessionId } },
+      body: value,
+    }),
+    `Failed to set ${value.knob}`,
+  );
+}
+
+/** Read one session knob, in the same shape `setKnob` writes. */
+export async function getKnob(sessionId: string, knob: KnobValue['knob']): Promise<KnobValue> {
+  return decode(
+    await client.GET('/api/session/{id}/knob/{knob}', {
+      params: { path: { id: sessionId, knob } },
+    }),
+    `Failed to get ${knob}`,
+  );
+}
 
 /** Get the precognition state for a session. */
 export async function getPrecognition(sessionId: string): Promise<boolean> {
-  return decode(
-    await client.GET('/api/session/{id}/config/precognition', {
-      params: { path: { id: sessionId } },
-    }),
-    'Failed to get precognition',
-  ).precognition_enabled;
+  const value = await getKnob(sessionId, 'precognition');
+  return value.knob === 'precognition' ? value.value : true;
 }
 
 /** Set the precognition state for a session. */
 export async function setPrecognition(sessionId: string, enabled: boolean): Promise<void> {
-  expectOk(
-    await client.PUT('/api/session/{id}/config/precognition', {
-      params: { path: { id: sessionId } },
-      body: { enabled },
-    }),
-    'Failed to set precognition',
-  );
+  await setKnob(sessionId, { knob: 'precognition', value: enabled });
 }
-
-// -----------------------------------------------------------------------------
-// The nine session config knobs the daemon advertised but the web could not
-// reach. Gate A2e (crucible-cli/tests/architecture_tests.rs) fails when a knob
-// in the daemon's METHODS list has no route; gate A2c fails when a path named
-// here has no backend route, so these two directions are both covered.
-//
-// The request/response field names are the DAEMON's wire names, which are not
-// always the knob name — `execution-timeout` carries `timeout_secs`. Renaming
-// one of these to match its route would 200 and drop the value.
-// -----------------------------------------------------------------------------
 
 /** Get the context-assembly strategy, by its string spelling. */
 export async function getContextStrategy(sessionId: string): Promise<string | null> {
-  return (
-    decode(
-      await client.GET('/api/session/{id}/config/context-strategy', {
-        params: { path: { id: sessionId } },
-      }),
-      'Failed to get context strategy',
-    ).context_strategy ?? null
-  );
+  const value = await getKnob(sessionId, 'context_strategy');
+  return value.knob === 'context_strategy' ? value.value : null;
 }
 
 /**
@@ -1358,13 +1327,7 @@ export async function getContextStrategy(sessionId: string): Promise<string | nu
  * every time the enum grows.
  */
 export async function setContextStrategy(sessionId: string, strategy: string): Promise<void> {
-  expectOk(
-    await client.PUT('/api/session/{id}/config/context-strategy', {
-      params: { path: { id: sessionId } },
-      body: { context_strategy: strategy },
-    }),
-    'Failed to set context strategy',
-  );
+  await setKnob(sessionId, { knob: 'context_strategy', value: strategy });
 }
 
 // =============================================================================

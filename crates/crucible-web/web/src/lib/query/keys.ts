@@ -33,10 +33,11 @@ export const keys = {
   sessionStatus: (id: string) => ['session', id, 'status'] as const,
   sessionKnobs: (id: string) => ['session', id, 'knobs'] as const,
   sessionAgentOptions: (id: string) => ['session', id, 'config/agent-options'] as const,
-  sessionPrecognition: (id: string) => ['session', id, 'config/precognition'] as const,
-  sessionContextStrategy: (id: string) => ['session', id, 'config/context-strategy'] as const,
+  // One key shape for every session knob — model, mode, context strategy,
+  // precognition, plugin turn limit — so a knob added later needs no sibling
+  // key here.
+  sessionKnob: (id: string, knob: string) => ['session', id, 'knob', knob] as const,
   sessionPluginApprovals: (id: string) => ['session', id, 'config/plugin-approvals'] as const,
-  sessionPluginTurnLimit: (id: string) => ['session', id, 'config/plugin-turn-limit'] as const,
   sessionScope: (id: string) => ['session', id, 'scope'] as const,
   allModels: () => ['models', 'all'] as const,
   providers: () => ['providers'] as const,

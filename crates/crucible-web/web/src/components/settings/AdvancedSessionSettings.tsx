@@ -15,7 +15,7 @@ import { Component, For, createSignal } from 'solid-js';
 
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { useGetContextStrategy, usePluginApprovals, usePluginTurnLimit, useSetContextStrategy, useSetPluginApproval, useSetPluginTurnLimit, type PluginApproval } from '@/lib/query/session-config';
+import { useKnob, usePluginApprovals, useSetKnob, useSetPluginApproval, type PluginApproval } from '@/lib/query/session-config';
 
 import { SettingRow, SettingsSectionState } from './primitives';
 
@@ -39,13 +39,12 @@ export const AdvancedSessionSettingsSection: Component = () => {
   const sessionId = () => session.currentSession()?.session_id ?? null;
   // Keyed by session, so the panel follows the selection instead of holding
   // the strategy of whichever session it was opened on.
-  const strategyQuery = useGetContextStrategy(sessionId);
+  const strategyQuery = useKnob(sessionId, 'context_strategy');
   const contextStrategy = () => strategyQuery.data ?? '';
-  const setStrategy = useSetContextStrategy();
+  const setKnob = useSetKnob();
   const approvals = usePluginApprovals(sessionId);
   const setApproval = useSetPluginApproval();
-  const turnLimit = usePluginTurnLimit(sessionId);
-  const setTurnLimit = useSetPluginTurnLimit();
+  const turnLimit = useKnob(sessionId, 'plugin_turn_limit');
 
   /** The failure of one write, which is not the failure of the read. */
   const [writeError, setWriteError] = createSignal<string | null>(null);
@@ -77,7 +76,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
             try {
               // The hook holds the new value and re-reads it: the daemon may
               // store a name other than the one this dropdown sent.
-              await setStrategy.mutateAsync({ id, strategy: val });
+              await setKnob.mutateAsync({ id, value: { knob: 'context_strategy', value: val } });
             } catch (err) {
               setWriteError(
                 err instanceof Error ? err.message : 'Failed to set context strategy',
@@ -106,7 +105,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
             if (!id || !Number.isSafeInteger(limit) || limit < 1) return;
             setWriteError(null);
             try {
-              await setTurnLimit.mutateAsync({ id, limit });
+              await setKnob.mutateAsync({ id, value: { knob: 'plugin_turn_limit', value: limit } });
             } catch (err) {
               setWriteError(err instanceof Error ? err.message : 'Failed to set plugin turn limit');
             }

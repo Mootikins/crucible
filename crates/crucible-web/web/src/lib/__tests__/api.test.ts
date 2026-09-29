@@ -348,17 +348,17 @@ describe('listProviders', () => {
 // =============================================================================
 
 describe('switchModel', () => {
-  it('sends POST to /api/session/{id}/model with model_id', async () => {
+  it('PUTs /api/session/{id}/knob with the model knob', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/session/ses-1/model': { body: {} },
+      'PUT /api/session/ses-1/knob': { body: {} },
     });
     global.fetch = mockFetch;
 
     await switchModel('ses-1', 'openai:gpt-4');
 
     const sent = await mockFetch.sent(0);
-    expect(sent.method).toBe('POST');
-    expect(sent.body).toEqual({ model_id: 'openai:gpt-4' });
+    expect(sent.method).toBe('PUT');
+    expect(sent.body).toEqual({ knob: 'model', value: 'openai:gpt-4' });
   });
 });
 
@@ -808,18 +808,18 @@ describe('getSessionHistory', () => {
 describe('precognition endpoints', () => {
   it('getPrecognition returns the flag', async () => {
     global.fetch = createMockFetch({
-      'GET /api/session/ses-1/config/precognition': { body: { precognition_enabled: true } },
+      'GET /api/session/ses-1/knob/precognition': { body: { knob: 'precognition', value: true } },
     });
     expect(await getPrecognition('ses-1')).toBe(true);
   });
 
-  it('setPrecognition PUTs { enabled }', async () => {
+  it('setPrecognition PUTs the precognition knob', async () => {
     const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/config/precognition': { body: {} },
+      'PUT /api/session/ses-1/knob': { body: {} },
     });
     global.fetch = mockFetch;
     await setPrecognition('ses-1', false);
-    expect((await mockFetch.sent(0)).body).toEqual({ enabled: false });
+    expect((await mockFetch.sent(0)).body).toEqual({ knob: 'precognition', value: false });
   });
 
 });

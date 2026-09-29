@@ -114,7 +114,7 @@ function routeSessionEvent(event: ChatEvent, { client, bus, sessionId }: Session
       break;
 
     case 'plugin_turn_limit_changed':
-      void client.invalidateQueries({ queryKey: keys.sessionPluginTurnLimit(sessionId) });
+      void client.invalidateQueries({ queryKey: keys.sessionKnob(sessionId, 'plugin_turn_limit') });
       break;
     case 'plugin_approval_changed':
       void client.invalidateQueries({ queryKey: keys.sessionPluginApprovals(sessionId) });

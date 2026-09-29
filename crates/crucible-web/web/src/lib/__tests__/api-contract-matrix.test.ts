@@ -35,13 +35,13 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     ['/api/session/s%2Fx/knobs', () => api.listKnobs('s/x'), { supported: [] }, { supported: [] }],
     ['/api/session/s%2Fx/config/agent-options', () => api.listAgentOptions('s/x'), { options: [] }, { options: [] }],
     ['/api/session/s%2Fx/config/agent-options', () => api.setAgentOption('s/x', 'o', 'v'), {}, undefined, { option_id: 'o', value: 'v' }],
-    ['/api/session/s%2Fx/mode', () => api.setSessionMode('s/x', 'plan'), {}, undefined, { mode: 'plan' }],
+    ['/api/session/s%2Fx/knob', () => api.setSessionMode('s/x', 'plan'), {}, undefined, { knob: 'mode', value: 'plan' }],
     ['/api/session/s%2Fx/kilns/connect', () => api.connectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
     ['/api/session/s%2Fx/kilns/disconnect', () => api.disconnectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
     ['/api/agents', api.listAgents, { agents: [{ name: 'a' }] }, [{ name: 'a' }]],
     ['/api/models', api.listAllModels, { models: ['m'] }, ['m']],
-    ['/api/session/s%2Fx/config/context-strategy', () => api.getContextStrategy('s/x'), { context_strategy: null }, null],
-    ['/api/session/s%2Fx/config/context-strategy', () => api.setContextStrategy('s/x', 'truncate'), {}, undefined, { context_strategy: 'truncate' }],
+    ['/api/session/s%2Fx/knob/context_strategy', () => api.getContextStrategy('s/x'), { knob: 'context_strategy', value: null }, null],
+    ['/api/session/s%2Fx/knob', () => api.setContextStrategy('s/x', 'truncate'), {}, undefined, { knob: 'context_strategy', value: 'truncate' }],
     ['/api/session/s%2Fx/commands', () => api.listSessionCommands('s/x'), { commands: [{ name: 'help' }] }, [{ name: 'help' }]],
     ['/api/surfaces', api.getSurfaces, { surfaces: [{ id: 'p' }] }, [{ id: 'p' }]],
     ['/api/notes/resolve?kiln=k&name=a%20b', () => api.resolveNotePath('k', 'a b'), { path: 'a' }, { path: 'a' }],
@@ -59,7 +59,7 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     expect(await call(), path).toEqual(expected);
     const wire = await sent(fetch);
     expect(wire.url, path).toBe(path);
-    const method = path.endsWith('/workspace') || path.endsWith('/context-strategy') && body !== undefined || path === '/api/canvas' ? 'PUT' : body === undefined ? 'GET' : 'POST';
+    const method = path.endsWith('/workspace') || path.endsWith('/knob') || path === '/api/canvas' ? 'PUT' : body === undefined ? 'GET' : 'POST';
     expect(wire.method, path).toBe(method);
     expect(wire.body, path).toEqual(body);
   }

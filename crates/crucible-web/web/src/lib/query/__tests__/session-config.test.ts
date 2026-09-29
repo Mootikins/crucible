@@ -6,22 +6,19 @@ import type { AgentConfigOption } from '@/lib/types';
 import { keys } from '../keys';
 import {
   useAgentOptions,
-  useGetContextStrategy,
-  useGetPrecognition,
+  useKnob,
   useSessionKnobs,
   useSessionStatus,
   useSetAgentOption,
-  useSetContextStrategy,
-  useSetPrecognition,
+  useSetKnob,
 } from '../session-config';
 
 const KNOBS = 'GET /api/session/s-1/knobs';
 const OPTIONS = 'GET /api/session/s-1/config/agent-options';
 const SET_OPTION = 'POST /api/session/s-1/config/agent-options';
-const PRECOG = 'GET /api/session/s-1/config/precognition';
-const SET_PRECOG = 'PUT /api/session/s-1/config/precognition';
-const STRATEGY = 'GET /api/session/s-1/config/context-strategy';
-const SET_STRATEGY = 'PUT /api/session/s-1/config/context-strategy';
+const PRECOG = 'GET /api/session/s-1/knob/precognition';
+const SET_KNOB = 'PUT /api/session/s-1/knob';
+const STRATEGY = 'GET /api/session/s-1/knob/context_strategy';
 const STATUS = 'GET /api/session/s-1/status';
 
 /**
@@ -67,13 +64,13 @@ describe('session config reads', () => {
     env = createTestQueryEnv({
       [KNOBS]: () => ({ knobs: [{ id: 'precognition', supported: true }] }),
       [OPTIONS]: () => ({ session_id: 's-1', options: [option('thought_level', 'low')] }),
-      [PRECOG]: () => ({ precognition_enabled: true }),
+      [PRECOG]: () => ({ knob: 'precognition', value: true }),
     });
 
     const readers = inRoot(() => ({
       knobs: useSessionKnobs(() => 's-1'),
       options: useAgentOptions(() => 's-1'),
-      precognition: useGetPrecognition(() => 's-1'),
+      precognition: useKnob(() => 's-1', 'precognition'),
       secondKnobs: useSessionKnobs(() => 's-1'),
     }));
 
@@ -98,12 +95,12 @@ describe('session config reads', () => {
     // was current then. Opening it, switching session and reading it again
     // showed the first session's settings.
     env = createTestQueryEnv({
-      [PRECOG]: () => ({ precognition_enabled: true }),
-      'GET /api/session/s-2/config/precognition': () => ({ precognition_enabled: false }),
+      [PRECOG]: () => ({ knob: 'precognition', value: true }),
+      'GET /api/session/s-2/knob/precognition': () => ({ knob: 'precognition', value: false }),
     });
     const [id, setId] = createSignal<string | null>('s-1');
 
-    const query = inRoot(() => useGetPrecognition(id));
+    const query = inRoot(() => useKnob(id, 'precognition'));
     await vi.waitFor(() => expect(query.data).toBe(true));
 
     setId('s-2');
@@ -150,19 +147,22 @@ describe('session config mutations invalidate scoped cache', () => {
     let release: () => void = () => {};
     const answered = new Promise<void>((resolve) => (release = resolve));
     env = createTestQueryEnv({
-      [PRECOG]: () => ({ precognition_enabled: true }),
-      [SET_PRECOG]: async () => {
+      [PRECOG]: () => ({ knob: 'precognition', value: true }),
+      [SET_KNOB]: async () => {
         await answered;
         return new Response(null, { status: 204 });
       },
     });
-    const held = () => env.client.getQueryData<boolean>(keys.sessionPrecognition('s-1'));
+    const held = () => env.client.getQueryData<boolean>(keys.sessionKnob('s-1', 'precognition'));
 
-    const query = inRoot(() => useGetPrecognition(() => 's-1'));
+    const query = inRoot(() => useKnob(() => 's-1', 'precognition'));
     await vi.waitFor(() => expect(query.data).toBe(true));
-    const setting = inRoot(() => useSetPrecognition());
+    const setting = inRoot(() => useSetKnob());
 
-    const writing = setting.mutateAsync({ id: 's-1', enabled: false });
+    const writing = setting.mutateAsync({
+      id: 's-1',
+      value: { knob: 'precognition', value: false },
+    });
     await vi.waitFor(() => expect(held()).toBe(false));
 
     release();
@@ -184,21 +184,24 @@ describe('session config mutations invalidate scoped cache', () => {
       [PRECOG]: async () => {
         reads += 1;
         if (reads > 1) await reread;
-        return { precognition_enabled: true };
+        return { knob: 'precognition', value: true };
       },
-      [SET_PRECOG]: apiError(422, 'precognition is unsupported here'),
+      [SET_KNOB]: apiError(422, 'precognition is unsupported here'),
     });
 
-    const query = inRoot(() => useGetPrecognition(() => 's-1'));
+    const query = inRoot(() => useKnob(() => 's-1', 'precognition'));
     await vi.waitFor(() => expect(query.data).toBe(true));
-    const setting = inRoot(() => useSetPrecognition());
+    const setting = inRoot(() => useSetKnob());
 
-    const writing = setting.mutateAsync({ id: 's-1', enabled: false });
+    const writing = setting.mutateAsync({
+      id: 's-1',
+      value: { knob: 'precognition', value: false },
+    });
 
     // The re-read starts after the revert ran, and it is the held call, so
     // the value asserted here is the one the revert wrote.
     await vi.waitFor(() => expect(reads).toBe(2));
-    expect(env.client.getQueryData<boolean>(keys.sessionPrecognition('s-1'))).toBe(true);
+    expect(env.client.getQueryData<boolean>(keys.sessionKnob('s-1', 'precognition'))).toBe(true);
 
     release();
     await expect(writing).rejects.toThrow();
@@ -207,18 +210,18 @@ describe('session config mutations invalidate scoped cache', () => {
   it('holds the new context strategy, and asks the daemon again', async () => {
     let stored: string | null = 'truncate';
     env = createTestQueryEnv({
-      [STRATEGY]: () => ({ context_strategy: stored }),
-      [SET_STRATEGY]: async (request) => {
-        stored = ((await request.json()) as { context_strategy: string }).context_strategy;
+      [STRATEGY]: () => ({ knob: 'context_strategy', value: stored }),
+      [SET_KNOB]: async (request) => {
+        stored = ((await request.json()) as { knob: string; value: string }).value;
         return new Response(null, { status: 204 });
       },
     });
 
-    const query = inRoot(() => useGetContextStrategy(() => 's-1'));
+    const query = inRoot(() => useKnob(() => 's-1', 'context_strategy'));
     await vi.waitFor(() => expect(query.data).toBe('truncate'));
-    const setting = inRoot(() => useSetContextStrategy());
+    const setting = inRoot(() => useSetKnob());
 
-    await setting.mutateAsync({ id: 's-1', strategy: 'summarize' });
+    await setting.mutateAsync({ id: 's-1', value: { knob: 'context_strategy', value: 'summarize' } });
 
     await vi.waitFor(() => expect(query.data).toBe('summarize'));
   });

@@ -10,7 +10,7 @@ import { installSessionEventRoute } from '../routes/session';
 import { useSessionModes, useSetSessionMode } from '../modes';
 
 const LIST = 'GET /api/session/s-1/modes';
-const SET = 'POST /api/session/s-1/mode';
+const SET = 'PUT /api/session/s-1/knob';
 
 /** The list the daemon declares for one session, in Lua. */
 function modes(current: string, ...ids: string[]): SessionModes {
@@ -113,9 +113,9 @@ describe('useSetSessionMode', () => {
     env = createTestQueryEnv({
       [LIST]: () => modes(current, 'ask', 'plan'),
       [SET]: async (request) => {
-        const asked = (await request.json()) as { mode: string };
+        const asked = (await request.json()) as { knob: string; value: string };
         await answered;
-        current = asked.mode;
+        current = asked.value;
         return new Response(null, { status: 204 });
       },
     });

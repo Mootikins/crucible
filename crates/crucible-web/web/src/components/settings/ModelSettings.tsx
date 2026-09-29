@@ -10,10 +10,10 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 import type { AgentConfigOption } from '@/lib/types';
 import {
   useAgentOptions,
-  useGetPrecognition,
+  useKnob,
   useSessionKnobs,
   useSetAgentOption,
-  useSetPrecognition,
+  useSetKnob,
 } from '@/lib/query/session-config';
 
 export const ModelSettingsSection: Component = () => {
@@ -47,11 +47,11 @@ export const ModelSettingsSection: Component = () => {
    */
   const options = useAgentOptions(sessionId);
   const agentOptions = () => options.data?.options ?? [];
-  const precognitionQuery = useGetPrecognition(sessionId);
+  const precognitionQuery = useKnob(sessionId, 'precognition');
   const precognition = () => precognitionQuery.data !== false;
 
   const setOption = useSetAgentOption();
-  const setPrecognition = useSetPrecognition();
+  const setKnob = useSetKnob();
 
   // The three reads are keyed by session, so the panel reopened on a session
   // it already read paints at once and no longer shows a loading barrier.
@@ -90,7 +90,7 @@ export const ModelSettingsSection: Component = () => {
     try {
       // The hook moves the toggle first and puts it back if the daemon
       // refuses, so nothing here touches the value.
-      await setPrecognition.mutateAsync({ id, enabled: !precognition() });
+      await setKnob.mutateAsync({ id, value: { knob: 'precognition', value: !precognition() } });
     } catch (err) {
       setWriteError(err instanceof Error ? err.message : 'Failed to set precognition');
     }

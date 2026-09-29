@@ -28,7 +28,7 @@ import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
 const KNOBS = 'GET /api/session/s1/knobs';
 const OPTIONS = 'GET /api/session/s1/config/agent-options';
 const SET_OPTION = 'POST /api/session/s1/config/agent-options';
-const PRECOG = 'GET /api/session/s1/config/precognition';
+const PRECOG = 'GET /api/session/s1/knob/precognition';
 
 let env: TestQueryEnv;
 
@@ -37,7 +37,7 @@ function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
   env = createTestQueryEnv({
     [KNOBS]: () => ALL_SUPPORTED,
     [OPTIONS]: () => ({ session_id: 's1', options: [] }),
-    [PRECOG]: () => ({ precognition_enabled: true }),
+    [PRECOG]: () => ({ knob: 'precognition', value: true }),
     [SET_OPTION]: () => new Response(null, { status: 204 }),
     ...routes,
   });
