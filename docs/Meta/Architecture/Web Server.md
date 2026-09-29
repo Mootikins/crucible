@@ -122,7 +122,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 
 | File | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-web/src/routes/session/mod.rs` | 1388 | `/api/session*` CRUD, lifecycle, scope, modes/knobs, providers, and the session notifications read/dismiss routes. |
+| `crates/crucible-web/src/routes/session/mod.rs` | 1144 | `/api/session*` CRUD, lifecycle, scope, modes, providers, and the session notifications read/dismiss routes. Also `set_knob`/`get_knob` (`PUT /api/session/{id}/knob`, `GET /api/session/{id}/knob/{knob}`): one route pair for every `SessionKnob` — model, mode, context strategy, precognition, plugin turn limit (step 13 of the simplification plan). |
 | `crates/crucible-web/src/routes/session/search_scope_tests.rs` | 55 | Tests for the session-search kiln-scope query parsing. |
 | `crates/crucible-web/src/routes/session/shape_tests.rs` | 430 | Shape/round-trip tests for the session handlers. |
 | `crates/crucible-web/src/routes/session/tests.rs` | 651 | `create_session` (forwarding its endpoint to the daemon unchecked), scope, export, session-history, and provider-listing tests. |
@@ -131,11 +131,10 @@ Paths are relative to the repository root. Line counts are as recorded at
 
 | File | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-web/src/routes/session_config/approval.rs` | 129 | Per-session, per-plugin approval mode (`ask`/`stop`/…) and the plugin-turn-limit knob. |
-| `crates/crucible-web/src/routes/session_config/basic.rs` | 192 | Precognition get/set and agent-self-advertised option list/set. |
-| `crates/crucible-web/src/routes/session_config/mod.rs` | 79 | Assembles the config-knob router from `approval.rs`, `basic.rs` and `prompt.rs`. |
-| `crates/crucible-web/src/routes/session_config/prompt.rs` | 77 | The `context-strategy` session knob. |
-| `crates/crucible-web/src/routes/session_config/tests.rs` | 270 | Round-trip tests proving each knob's wire field name in both directions. |
+| `crates/crucible-web/src/routes/session_config/approval.rs` | 89 | Per-session, per-plugin approval mode (`ask`/`stop`/…) — not a `SessionKnob`, since it takes a second key (the plugin name). |
+| `crates/crucible-web/src/routes/session_config/basic.rs` | 139 | The agent-self-advertised option list/set (`agent_option`, also not a `SessionKnob`). |
+| `crates/crucible-web/src/routes/session_config/mod.rs` | 59 | Assembles the plugin-approval and agent-option routes from `approval.rs` and `basic.rs`. Every `SessionKnob` — precognition, context strategy, model, mode, plugin turn limit — moved to `routes/session/mod.rs`'s `set_knob`/`get_knob` in step 13 of the simplification plan; `prompt.rs` (the old `context-strategy` route) is gone. |
+| `crates/crucible-web/src/routes/session_config/tests.rs` | 258 | Round-trip tests for `set_knob`/`get_knob`, plugin approval and agent options. |
 
 ### `crates/crucible-web/src/services/`
 
@@ -149,7 +148,6 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/services/daemon_plugins.rs` | 101 | Forwards `plugin.*` RPCs for the plugin panel and settings pane. |
 | `crates/crucible-web/src/services/daemon_proposals.rs` | 50 | Forwards `proposal.*` RPCs (list, get, accept, reject, dismiss, resolve) with the daemon's `Proposal` type. |
 | `crates/crucible-web/src/services/daemon_retry_tests.rs` | 548 | Real-Unix-socket tests for `ReconnectingDaemon`'s reconnect/replay machinery and the `Interest`/`EventStream` upstream-subscription protocol, driven through both the raw client and the assembled router's SSE routes. |
-| `crates/crucible-web/src/services/daemon_session_config.rs` | 17 | Forwards the two session-context-strategy RPCs. |
 | `crates/crucible-web/src/services/forwarding.rs` | 32 | `ReplayPolicy` and the `forward_rpc!` macro shared by every `daemon_*.rs` forwarder. |
 
 ### `crates/crucible-web/web/src/lib/` (selected)
@@ -722,12 +720,12 @@ losing or duplicating the decision.
   `SIDE_CHANNEL_EVENTS` table (`crates/crucible-web/web/src/lib/api.ts`),
   checked by `routes/chat.rs`'s `every_side_channel_event_name_has_a_frontend_listener`,
   which parses that table rather than grepping for `addEventListener` calls.
-- **A new session knob** lands under
-  `crates/crucible-web/src/routes/session_config/`, registered in
-  `session_config/mod.rs::config_routes`; a knob the daemon advertises but
-  this module does not reach fails gate A2e
-  (`crucible-cli/tests/architecture_tests.rs`). Its wire field name, not its
-  route name, is the contract to test (see `session_config/tests.rs`).
+- **A new session knob** (since step 13 of the simplification plan) needs
+  no new web route: `set_knob`/`get_knob` in `routes/session/mod.rs` already
+  serve every `SessionKnob`. It needs the `SessionKnob` variant and its
+  `KnobValue` arm in `crates/crucible-core/src/types/knob.rs`, and the
+  daemon's apply arm in `handle_session_knob_set`/`get`
+  (`crates/crucible-daemon/src/server/session/params.rs`).
 - **A new daemon RPC forwarder** is a `forward_rpc!` line in
   `services/daemon.rs` or a sibling `daemon_*.rs` file, choosing `Safe` only
   for a call whose replay after a lost response is harmless.
@@ -824,16 +822,13 @@ page's file set and are not summarized above.
 
 ## Findings
 
-- **`session_config`'s module docs outrun its code.** `session_config/mod.rs`
-  and `session_config/prompt.rs` both cite an "execution timeout" knob
-  (`session.set_execution_timeout`) and a second string-spelling enum knob
-  as the motivating examples for this module's wire-field-name testing
-  discipline, but no file in this page implements that knob, and
-  `session_config/tests.rs` has three section-header comments
-  (`// ── Context ──`, `// ── Execution ──`, `// ── Nullable knobs ──`) with
-  no test beneath any of them. Either the knob lives outside this page's
-  file set or the documentation is stale; as written, the motivating example
-  for the module's own design rationale does not exist in it.
+- **Resolved.** `session_config`'s module docs used to cite a knob
+  (`session.set_execution_timeout`) that no file in this crate implemented,
+  and `session_config/tests.rs` carried three empty section-header comments.
+  Step 13 of the simplification plan removed the per-knob routes and types
+  those docs and headers were about (`prompt.rs`, and the precognition and
+  plugin-turn-limit routes in `basic.rs`/`approval.rs`), so the stale example
+  and the empty headers are gone rather than fixed in place.
 - **A known, named frontend/backend drift.** `crucible-web/web/src/lib/api.ts`'s
   `InstallPluginResult` (`crucible_core::types::PluginInstallReply.manifest`)
   doc notes the file used to call the same field `plugins_toml`; the comment

@@ -637,33 +637,96 @@ a daemon whose `build_sha` differs. So no method needs an old alias.
 
 ## Step 13. One generic knob
 
-**Now.** Each of the five `SessionKnob` values (model, mode, context
-strategy, precognition, plugin turn limit) has its own RPC method pair, core
+**Status: done.**
+
+**Was.** Each of the five `SessionKnob` values (model, mode, context
+strategy, precognition, plugin turn limit) had its own RPC method pair, core
 request type, handler, client method, web route pair, web request and
-response types, TUI message and TS hook: about 90 functions and 11 types in
-all. Mode sits on `AgentHandle`, not on `SessionKnobs`. The AGENTS.md
-cross-layer checklist exists because of this.
+response types, TUI message and TS hook. Mode sat on `AgentHandle`, not on
+`SessionKnobs`. The AGENTS.md cross-layer checklist existed because of this.
 
-**Change.** One RPC pair, `session.knob.set { session_id, knob, value }` and
-`session.knob.get { session_id, knob }`, with `value: KnobValue`, an enum
-with one variant per knob. The daemon validates the value once and applies
-it through the existing `on_acp` table, so the ACP rules stay in one place.
-The web gets one route pair. The TUI's `:set` and `/mode` send the knob and
-the value. Delete the per-knob methods, types, routes, client methods,
-messages and hooks. Replace the cross-layer checklist with the few steps
-that a new knob still needs.
+**Change.** One RPC pair, `session.knob.set` and `session.knob.get`, in
+`crates/crucible-core/src/protocol/rpc/method.rs`. The set body IS
+`crucible_core::types::KnobValue` — an adjacently tagged enum (`{"knob":
+"model", "value": "…"}`) with one variant per knob, so the tag names the
+knob and the daemon cannot receive a value shaped for the wrong one. The get
+body is `KnobRef { knob: SessionKnob }`, and the reply is a `KnobValue`. The
+daemon's `handle_session_knob_set`/`handle_session_knob_get`
+(`crates/crucible-daemon/src/server/session/params.rs`) refuse a knob
+`on_acp` marks `Absent` for an ACP session once, in one place, before
+dispatching to each knob's own apply logic (kept exactly as it was: the ACP
+live-handle path for model, the alias resolution and deferred-apply for
+mode, the string parse for context strategy). The web gets one route pair,
+`PUT /api/session/{id}/knob` and `GET /api/session/{id}/knob/{knob}`
+(`routes/session/mod.rs`'s `set_knob`/`get_knob`), using the core types
+directly — no web-side request/response types. The TUI's `:set` and
+`ModeChanged` (`:mode`, Shift+Tab) build a `KnobValue` and send it through
+one `ChatAppMsg::SetKnob`. Deleted: the ten per-knob RPC methods
+(`SessionSwitchModel`, `SessionSetMode`/`GetMode`,
+`SessionSetContextStrategy`/`GetContextStrategy`,
+`SessionSetPrecognition`/`GetPrecognition`,
+`SessionSetPluginTurnLimit`/`GetPluginTurnLimit`, and `rpc_set_method`'s
+whole reason to exist), their five core request types, the nine daemon
+handlers plus the two `dispatch_session_setter!`/`dispatch_session_getter!`
+macros, the nine `DaemonClient` methods plus `get_session_option`, the nine
+web route handlers plus their nine request/response types
+(`session_config/prompt.rs` deleted outright), and four of the five
+per-knob `ChatAppMsg`/`SetRpcAction` variants (mode keeps `ModeChanged`,
+since Shift-Tab and `:mode` are not `classify_set_value` call sites).
 
-**Done when.**
-- The ten per-knob RPC methods, their request types, client methods, web
-  routes, web types, TUI messages and TS hooks are gone: about 11 types and
-  about 90 functions fewer.
-- The change cost of a knob falls from about 15 places to 3, measured by
-  adding a scratch knob on a scratch branch.
-- Set, get and resume work for every knob through the TUI's `:set`, the web
-  client and Lua, tested on each real path. An ACP session refuses the
-  knobs that `on_acp` marks absent, on every path.
-- The AGENTS.md cross-layer checklist is replaced by the three steps a new
-  knob still needs.
+**Done.**
+- **Gone** (measured with the counts in "How a step is accepted"): Rust
+  struct/enum declarations in `crates/{core,daemon,web,cli}/src` went from
+  1550 to 1538 — core 635→632 (net of 5 removed request types and the 2
+  added, `KnobValue`/`KnobRef`), daemon 531→531 (no type changed, only
+  functions and macro invocations), web 136→127 (9 request/response types
+  deleted, none added), CLI 248→248 (variants collapsed inside existing
+  enums, not a type count). The ten RPC methods, the five core request
+  types, the nine `DaemonClient` client methods, the nine web route
+  handlers and their nine types, and six TS hooks
+  (`useGetPrecognition`/`useSetPrecognition`/`useGetContextStrategy`/
+  `useSetContextStrategy`/`usePluginTurnLimit`/`useSetPluginTurnLimit`) no
+  longer exist. `crucible-web`'s `services/daemon_session_config.rs` and
+  `routes/session_config/prompt.rs` are deleted files.
+- **Cheaper to change.** Verified on a scratch branch (deleted after
+  measuring): a sixth knob, `plugin_priority` (a `u8`), needed the three
+  places the rewritten cross-layer checklist names — the `SessionKnob`/
+  `KnobValue` variant and its `on_acp` arm in
+  `crates/crucible-core/src/types/knob.rs`; the apply arm in
+  `handle_session_knob_set`/`get` plus a getter/setter on `AgentManager`
+  (two files, one bullet: "the daemon's apply arm"); and a `:set` key in
+  `tui/oil/commands/set.rs` plus its local-mirror decision in
+  `command_handling.rs` (again two files, one bullet: "a client control").
+  No RPC method, no web route, no client method and no new message were
+  touched. The scratch knob needed two more production files —
+  `agent_manager/mod.rs` and `residue.rs` — but only because it invented
+  new per-session daemon state to hold its value; the five real knobs all
+  reuse a field that predates the knob system (`SessionAgent::model`,
+  `::mode`, `::precognition_enabled`, `::context_strategy`,
+  `Session::plugin_turn_limit`) and need no such field, so a knob that
+  reuses existing storage is 3 files, and one that needs new per-session
+  daemon state is 5. Three test files also needed the new variant
+  (`acp_session_knobs_e2e.rs`, `test_support.rs`'s mock daemon match, and
+  the TUI reachability gate's `TUI_SET_KEYS` row) — expected of the "Proof"
+  step, not counted against the places a person edits to add the setting
+  itself. Before step 13: about 15 (the cross-layer checklist this
+  replaced).
+- **Same behavior on every path.** `rpc_config_agent_e2e.rs`'s
+  `all_config_knobs_round_trip_over_the_wire` and
+  `rpc_integration/models.rs`'s switch-model/set-mode round trips prove
+  set/get/resume through the real socket. The knob RPC matrix
+  (`crates/crucible-cli/src/tui/oil/chat_runner/tests/knob_rpc.rs`) proves
+  every knob's `:set` key (and `ModeChanged`) reaches `session.knob.set`
+  carrying the matching `knob` tag, not just the matching method name — the
+  exact miswiring class the matrix exists to catch, which a method-name-only
+  check can no longer catch now that every knob shares one method.
+  `crucible-web`'s `session_config/tests.rs` and `openapi_contract.rs` prove
+  the one web route pair for all five. `session_bridge.rs`'s Lua
+  `set_mode` calls `AgentManager::set_mode` directly, the same method
+  `session.knob.set` calls; no other `cru.session` function writes a knob.
+- **The AGENTS.md cross-layer checklist** is replaced by the three steps in
+  its "Cross-layer checklist" section: the `SessionKnob`/`KnobValue` variant,
+  the daemon's apply arm, and a client control if one is wanted.
 
 
 ## Step 14. Simpler core APIs and the audit list

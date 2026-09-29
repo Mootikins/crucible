@@ -101,40 +101,46 @@ setting that only changes the display (theme, show-thinking, verbose) stays
 in the client. It needs no RPC. Before you start, decide the scope: if two
 clients on one session must agree, the setting belongs to the session.
 
+Every session knob shares one RPC method pair, `session.knob.set` and
+`session.knob.get`, and one web route pair, `PUT /api/session/{id}/knob` and
+`GET /api/session/{id}/knob/{knob}`. A new knob needs no new method, no new
+route and no new client method: it needs three things.
+
 **Before you add a setting**
-- [ ] Look for an existing `SessionKnob` variant or RPC method with the same job.
+- [ ] Look for an existing `SessionKnob` variant with the same job.
 - [ ] Read [Session Services](<docs/Meta/Architecture/Session Services.md>).
 
-**Core**
+**1. The `SessionKnob` variant and its value type**
 - [ ] Add the variant to `SessionKnob` in `crates/crucible-core/src/types/knob.rs`.
-- [ ] Add the field to the session record in `crates/crucible-core/src/session/types/session.rs`.
-- [ ] Add the field to the settings event in `crates/crucible-core/src/protocol/session_events/settings.rs`.
+- [ ] Add its `#[deny]`-checked arm to `SessionKnob::on_acp` (Daemon, Wire,
+      AdvertisedModel or Absent).
+- [ ] Add the matching variant to `KnobValue`, in the same file.
 
-**Daemon**
-- [ ] Add the getter and setter to `SessionKnobs` in `crates/crucible-daemon/src/agent_manager/handle.rs`.
-- [ ] Implement them in `GenaiAgentHandle` and `AcpAgentHandle`.
-- [ ] Forward them in the `Box<dyn AgentHandle>` implementation in the same file.
-- [ ] Add the setter to `crates/crucible-daemon/src/agent_manager/models.rs`.
-- [ ] Add the RPC arm to `crates/crucible-daemon/src/rpc/dispatch.rs`.
-- [ ] Add the params to `crates/crucible-daemon/src/server/session/params.rs`.
-- [ ] Add the client method to `crates/crucible-daemon/src/rpc_client/client/agent.rs`.
+**2. The daemon's apply arm**
+- [ ] Add the match arm to `handle_session_knob_set` and
+      `handle_session_knob_get` in
+      `crates/crucible-daemon/src/server/session/params.rs`.
+- [ ] Add the getter/setter to `AgentManager`
+      (`crates/crucible-daemon/src/agent_manager/models.rs`), and to
+      `SessionKnobs` only if the handle really needs a per-knob operation
+      (the ACP handle maps model and mode to distinct wire calls; most knobs
+      need no handle method at all).
+- [ ] Keep the knob's own `SettingsPayload` event and emit it on write.
 
-**TUI**
-- [ ] Add the `:set` key to `crates/crucible-cli/src/tui/oil/commands/set.rs`.
-- [ ] Handle the message in `crates/crucible-cli/src/tui/oil/chat_app/command_handling.rs`.
-- [ ] Call the `DaemonClient` method in `crates/crucible-cli/src/tui/oil/chat_runner/actions.rs`.
-
-**Web**
-- [ ] Add the route to `crates/crucible-web/src/routes/session_config/`.
-- [ ] Forward it in `crates/crucible-web/src/services/daemon.rs`.
-- [ ] Run `just web-contract` to regenerate the API schema.
-- [ ] Use it in `crates/crucible-web/web/src/lib/query/routes/session.ts`.
+**3. A client control, if one is wanted**
+- [ ] TUI: a `:set` key in `crates/crucible-cli/src/tui/oil/commands/set.rs`
+      (`classify_set_value`), returning
+      `SetRpcAction::Knob(KnobValue::YourVariant(_))`.
+- [ ] Web: a call site through `session_knob_set`/`session_knob_get` in
+      `crates/crucible-web/web/src/lib/api.ts` (`setKnob`/`getKnob`) and the
+      `useKnob`/`useSetKnob` hooks in
+      `crates/crucible-web/web/src/lib/query/session-config.ts`.
 
 **Proof**
-- [ ] The RPC field names are the same in the client and the server.
-- [ ] A test proves set, get and resume.
+- [ ] A test proves set, get and resume for the new knob.
+- [ ] An ACP session refuses the knob if `on_acp` marks it `Absent`.
 - [ ] The knob RPC matrix in `crates/crucible-cli/src/tui/oil/chat_runner/tests/knob_rpc.rs` covers the new knob.
-- [ ] The architecture tests in `crates/crucible-cli/tests/architecture_tests.rs` find the knob in the TUI and the web client.
+- [ ] The TUI gate in `crates/crucible-cli/tests/architecture_tests.rs` (`every_session_knob_is_reachable_from_the_tui`) finds the knob's `:set` key, or names it exempt with a reason.
 
 The TUI calls the daemon directly. It holds no agent handle and no copy
 of the session state.

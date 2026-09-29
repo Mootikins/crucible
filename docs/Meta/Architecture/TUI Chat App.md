@@ -115,7 +115,7 @@ This subsystem must not own:
   `plugin_command_names`). Every other type in this page
   is created to fill, or read from, one of these fields.
 - **`ChatAppMsg` / `MsgCategory`** (`messages.rs`). One enum for both
-  directions of traffic: outbound intents (`UserMessage`, `SwitchModel`,
+  directions of traffic: outbound intents (`UserMessage`, `SetKnob`,
   `ConfigSet`) and inbound daemon events (`Transcript`,
   `StreamComplete`); around 75 variants in all, most added long before this
   slice. `OilChatApp::update`'s handlers construct it as
@@ -358,11 +358,16 @@ returns one of three effects. A `SetEffect::TuiLocal` key (`thinking`,
 no daemon round trip. `model` and `precognition` are `SetEffect::DaemonRpc`
 keys, not `TuiLocal`: `apply_daemon_set_action` writes the optimistic local
 copy itself (`self.model`/`self.precognition`, plus `runtime_config`) *and*
-returns `Action::Send(ChatAppMsg::SwitchModel/SetPrecognition)`, so these two
-keys get both a local write and an RPC. `SetRpcAction::SetPluginTurnLimit`
-joins that same local-write-and-RPC path (a `plugin_turn_limit` write); its
-sibling `SetRpcAction::SetPluginApproval` writes no local copy at all — the
-runner shows the value the daemon holds. A `plugin_approval.<plugin>?` read
+returns `Action::Send(ChatAppMsg::SetKnob(KnobValue::Model/Precognition(_)))`,
+so these two keys get both a local write and an RPC. `context_strategy` and
+`plugin_turn_limit` join that same `SetKnob` path with no local mirror — the
+runner shows the value the daemon holds, same as `SetRpcAction::SetPluginApproval`,
+which is not a `SessionKnob` at all (it takes a plugin name) and keeps its
+own `SetRpcAction` variant. Every knob rides `SetRpcAction::Knob(KnobValue)` →
+`ChatAppMsg::SetKnob(KnobValue)` → `DaemonClient::session_knob_set`, one RPC
+method for all of them (step 13 of the simplification plan); mode is the one
+exception, since `:mode`/Shift+Tab produce `ChatAppMsg::ModeChanged`
+directly rather than going through `classify_set_value`. A `plugin_approval.<plugin>?` read
 bypasses `key_home` entirely: `handle_set_query` strips the `PLUGIN_APPROVAL`
 prefix before the client/daemon split and sends
 `Action::Send(ChatAppMsg::PluginApproval{plugin, set: None})` directly. Every
@@ -495,7 +500,7 @@ forward a real daemon event, but can never reach the daemon itself.
   `input_handling.rs`/`command_handling.rs`/`autocomplete.rs`/`shell.rs`
   (outbound); the RPC side of an outbound variant, and the production of an
   inbound one, are `chat_runner`'s job (outside this page, see
-  [[TUI Components]]). Every variant this slice added — `SetPluginTurnLimit`,
+  [[TUI Components]]). Every variant this slice added — `SetKnob`,
   `PluginApproval`, `FetchProposals`, `ProposalChanged`, `OpenDiff`,
   `FetchSessions`, and the rest — followed exactly this seam;
   `ProposalChanged` is the case where the same change added the daemon-side

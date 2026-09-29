@@ -165,10 +165,10 @@ Directory `crates/crucible-daemon/src/server/session/` (session RPC surface):
 | `crates/crucible-daemon/src/server/session/list.rs` | 772 | `session.list`/`search`/`get` (the `get` reply now includes `plugin_approvals`/`plugin_turn_limit`). |
 | `crates/crucible-daemon/src/server/session/messaging.rs` | 597 | `configure_agent`/`send_message`(with review-comment context resolution)/`clear`/context injection/cancel/interaction respond. `handle_session_send_message` reads `content` through `AgentManager::slash_route` first — a mode, a plugin command or a skill is routed there, and the reply is a `SendOutcome`, not a bare `message_id`. |
 | `crates/crucible-daemon/src/server/session/mod.rs` | 273 | Module aggregator plus the post-create background `spawn_setup_task` (typed `SetupPayload` events). |
-| `crates/crucible-daemon/src/server/session/models.rs` | 200 | `switch_model`/`list_models`/`models.list`/`providers.list`/`fork` (fork now refuses an ACP-run parent by name). |
+| `crates/crucible-daemon/src/server/session/models.rs` | 165 | `list_models`/`models.list`/`providers.list`/`fork` (fork now refuses an ACP-run parent by name). `switch_model` moved into `params.rs`'s `handle_session_knob_set` (step 13). |
 | `crates/crucible-daemon/src/server/session/modes.rs` | 456 | `list_modes`/`list_knobs`/`list_agent_options`/`set_agent_option`; each mode descriptor now carries a `writes: WriteMode` (`Apply`/`Propose`). `handle_session_commands` answers `session.commands` by calling `AgentManager::session_commands`. |
 | `crates/crucible-daemon/src/server/session/notifications.rs` | 96 | `add_notification`/`list_notifications`/`dismiss_notification`, reading/writing `NotificationHub` directly for a live-or-stored session. |
-| `crates/crucible-daemon/src/server/session/params.rs` | 313 | `set_mode`/`set_precognition`/`get_*`/`undo`/`can_undo`/`undo_depth`/`cache_stats`/`set_plugin_turn_limit`/`get_plugin_turn_limit`. Each handler deserializes its core request type. The `session_config_getter!` macro generates the getters. |
+| `crates/crucible-daemon/src/server/session/params.rs` | 315 | `session.knob.set`/`session.knob.get`: one handler pair for every `SessionKnob` (model, mode, context strategy, precognition, plugin turn limit — step 13 of the simplification plan). `handle_session_knob_set` deserializes `Scoped<KnobValue>`, refuses a knob `on_acp` marks absent for an ACP session, then dispatches to the knob's own apply logic (the ACP live-handle path for model, the mode alias resolution and deferred-apply-on-busy-turn for mode, the string parse for context strategy). `handle_session_knob_get` deserializes `Scoped<KnobRef>` and answers the same `KnobValue` shape. Also `undo`/`can_undo`/`undo_depth`/`cache_stats`. |
 | `crates/crucible-daemon/src/server/session/scope.rs` | 344 | `caller_kiln_scope`, `connect_kiln`/`disconnect_kiln`/`set_workspace`, `connect_kiln` now gated by the one shared trust gate. |
 
 Directory `crates/crucible-daemon/src/server/tests/` (integration tests, in-process daemon):
@@ -711,9 +711,13 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
   golden fixture in `assets/fixtures/golden/requests/` with its test in
   `requests/golden_tests.rs`. To keep an old caller valid, give a field a
   serde default. Do not read the field by hand.
-- **A new session knob** needs an arm in
-  `rpc_set_method` in `crates/crucible-core/src/protocol/rpc/method.rs`, whose own
-  `#[deny]`s make a missing arm a compile error.
+- **A new session knob** (since step 13 of the simplification plan) needs:
+  the `SessionKnob` variant and its `KnobValue` arm in
+  `crates/crucible-core/src/types/knob.rs`; an apply arm in
+  `handle_session_knob_set`/`handle_session_knob_get`
+  (`crates/crucible-daemon/src/server/session/params.rs`); and a client
+  control if one is wanted. `session.knob.set`/`session.knob.get` need no new
+  RPC method — every knob shares the one pair.
 - **A new daemon-internal event that a plugin should see** gets one `EventRow`
   in `ROWS` in `crates/crucible-daemon/src/event_map.rs`; `event_map` is the only
   place outbound naming and inbound `cru.on` matching are decided. Whatever

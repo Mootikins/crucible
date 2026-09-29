@@ -149,10 +149,11 @@ must not construct a second agent configuration or write pipeline."
   The body type holds only the other fields (`MessageInput`, `Title`,
   `NamedKiln`, `WorkflowSource`, and so on). A web route takes the session
   id from its URL path and reads only the body, so `Scoped<T>` has no
-  `ToSchema`. The knob requests (`session.switch_model`, `session.set_mode`,
-  `session.set_context_strategy`, `session.set_precognition`,
-  `session.set_plugin_turn_limit`) keep their flat types until step 13 of
-  the simplification plan replaces them.
+  `ToSchema`. Step 13 of the simplification plan replaced the five knob
+  request types with one pair: `session.knob.set` takes `Scoped<KnobValue>`
+  (the body IS the value — its own tag names the knob) and
+  `session.knob.get` takes `Scoped<KnobRef>` (`{ knob: SessionKnob }`) and
+  answers a `KnobValue`.
 - **Methods without params.** The client sends `NO_PARAMS`, an empty map,
   so the JSON is `{}`, as it was before.
   `requests/storage.rs` also carries `ListedComment` (moved from
@@ -237,9 +238,10 @@ mode switch, an undo, a prompt answer — as its own `DaemonClient` call:
    subscription exists. It then subscribes to the session's own id and
    best-effort reads any pending prompts via `session_pending_interactions`.
 2. Each later action is one `DaemonClient` method — `session_send_message`,
-   `session_switch_model`, `session_undo`, `session_cancel`,
-   `session_set_mode`, `session_interaction_respond`, and so on — with no
-   adapter trait and no cached mirror in between. The reply, when the action
+   `session_knob_set`/`session_knob_get` (every session knob, since step 13:
+   model, mode, context strategy, precognition, plugin turn limit),
+   `session_undo`, `session_cancel`, `session_interaction_respond`, and so
+   on — with no adapter trait and no cached mirror in between. The reply, when the action
    needs one, comes back on the same RPC; the ongoing turn's content comes
    back on the subscribed `SessionEvent` stream, read directly by the
    caller's own event loop (the TUI's `chat_runner`, covered in [[TUI Chat
