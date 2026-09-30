@@ -58,18 +58,15 @@ must not construct a second agent configuration or write pipeline."
 | `crates/crucible-daemon/src/rpc_client/error_ext.rs` | 59 | `ChatResultExt` trait (one method, `chat_comm`, that folds any displayable error into `ChatError::Communication`) and `rpc_error_message`, a free function that strips the `RPC error: {json}` envelope down to the daemon's own message. |
 | `crates/crucible-daemon/src/rpc_client/lifecycle.rs` | 183 | Synchronous daemon-process utilities: socket path, log path, log rotation on spawn, log tail read, `is_daemon_running`. |
 | `crates/crucible-daemon/src/rpc_client/storage.rs` | 621 | `DaemonStorageClient` (`KnowledgeRepository` impl) and `DaemonNoteStore` (`NoteStore` impl): adapt canonical storage traits onto `DaemonClient` RPC calls. |
-| `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1168 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/surface/notification-adjacent RPC methods that have no dedicated submodule. It declares every `client` submodule and imports each request type through `crucible_core::protocol::requests::*`. |
-| `crates/crucible-daemon/src/rpc_client/client/generated.rs` | 55 | One `impl DaemonClient` block, macro-generated: a `rpc_<method>` for every `rpc_methods!` row, each typed as that row's own params/reply pair. Closes gap 1 of step 19 (see Findings below). |
-| `crates/crucible-daemon/src/rpc_client/client/types.rs` | 28 | What is left after the request and reply types moved to core: the `SessionEvent` alias and the `extract_string_array` helper, shared by two or more submodules. `DaemonCapabilities` and `VersionCheck` now live in `crucible_core::protocol::requests::common`. |
-| `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 547 | `DaemonClient` methods for `session.*` agent/model/mode RPCs, `models.list`, `providers.list`, `embeddings.models`, `skills.*`, `agents.*`, and the plugin-approval/plugin-turn-limit `session.*` RPCs. The request and reply types live in `crucible_core::protocol::requests::agent`. |
-| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 564 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `decode_status_items`. The request and reply types live in `crucible_core::protocol::requests::session`. |
-| `crates/crucible-daemon/src/rpc_client/client/storage.rs` | 971 | `DaemonClient` methods for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, webhook ingress, project and filesystem RPCs (including `fs.read`), and `diff.*` RPCs (get/file/comment/resolve_comment/delete_comment/comments) over branch, session-record and proposal diffset sources. The request and reply types, `first_per_note`, and the `Diff*` DTOs live in `crucible_core::protocol::requests::storage`. |
-| `crates/crucible-daemon/src/rpc_client/client/proposals.rs` | 132 | `DaemonClient` methods for `proposal.*` RPCs: list, get, accept, reject, dismiss, resolve — the decision surface for propose-mode writes. The request types live in `crucible_core::protocol::requests::proposals`. |
-| `crates/crucible-daemon/src/rpc_client/client/subscription.rs` | 31 | `DaemonClient` methods for `session.subscribe`/`session.unsubscribe`. The request type lives in `crucible_core::protocol::requests::subscription`. |
-| `crates/crucible-daemon/src/rpc_client/client/workflow.rs` | 48 | `DaemonClient` methods for `workflow.start`/`approve_gate`/`status`/`cancel`. The request types live in `crucible_core::protocol::requests::workflow`. |
-| `crates/crucible-daemon/src/rpc_client/client/lua.rs` | 61 | `DaemonClient` methods for `lua.*` plugin-lifecycle RPCs: init/shutdown session, discover, health check, generate stubs, run plugin tests. The request and reply types live in `crucible_core::protocol::requests::lua`. |
-| `crates/crucible-daemon/src/rpc_client/client/notifications.rs` | 42 | `DaemonClient` methods for `notification.list`/`notification.dismiss`. The request and reply types live in `crucible_core::protocol::requests::notifications`. |
-| `crates/crucible-daemon/src/rpc_client/client/tests.rs` | 933 | The test module for the whole `client` submodule: unit tests, wire-format round-trips, live in-process server integration tests, response-correlation tests, and signal-reaper tests. |
+| `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1139 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/`client_state.*` RPC methods that have no dedicated submodule (kept because `crucible-web`'s `forward_rpc!` calls each by name, or — `plugin_list_info` — decodes a real field). It declares every `client` submodule and imports each request type through `crucible_core::protocol::requests::*`. |
+| `crates/crucible-daemon/src/rpc_client/client/generated.rs` | 58 | One `impl DaemonClient` block, macro-generated: a `rpc_<method>` for every `rpc_methods!` row, each typed as that row's own params/reply pair. Closes gap 1 of step 19 (see Findings below). |
+| `crates/crucible-daemon/src/rpc_client/client/types.rs` | 12 | What is left after the request and reply types moved to core: the `SessionEvent` alias, shared by two or more submodules. `DaemonCapabilities` and `VersionCheck` now live in `crucible_core::protocol::requests::common`. |
+| `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 338 | `DaemonClient` methods for `session.*` agent/model/mode RPCs, `providers.list`, `embeddings.models`, `skills.*`, and the plugin-approval/knob `session.*` RPCs — each kept for a retry policy, a `&Path`-to-wire-`String` transform, or a wire-`String`-to-enum decode (see the per-method doc comments and item 9 of step 19 in the Simplification Plan). `models.list` moved here too (`list_all_models`, retry). `agents.list_profiles`/`agents.list_cards`/`agents.resolve_profile` and the plain (non-summary) `providers.list` had no caller, or one CLI-only caller with no transform, and are gone: their one caller each now calls the generated `rpc_<variant>` method and reads the typed reply. The request and reply types live in `crucible_core::protocol::requests::agent`. |
+| `crates/crucible-daemon/src/rpc_client/client/session.rs` | 485 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `decode_status_items`. The request and reply types live in `crucible_core::protocol::requests::session`. |
+| `crates/crucible-daemon/src/rpc_client/client/storage.rs` | 927 | `DaemonClient` methods for kiln registry, text/vector/grep search, note CRUD, link graph, pipeline processing, MCP control, webhook ingress, project and filesystem RPCs (including `fs.read`), and `diff.*` RPCs (get/file/comment/resolve_comment/delete_comment/comments) over branch, session-record and proposal diffset sources. The request and reply types, `first_per_note`, and the `Diff*` DTOs live in `crucible_core::protocol::requests::storage`. |
+| `crates/crucible-daemon/src/rpc_client/client/proposals.rs` | 132 | `DaemonClient` methods for `proposal.*` RPCs: list, get, accept, reject, dismiss, resolve — the decision surface for propose-mode writes; `list`/`get` retry, and the rest layer default arguments (whole-proposal accept/reject, single-file resolve) onto the `_files`/`_file` row call so no caller repeats an empty `paths`/`files` vec. The request types live in `crucible_core::protocol::requests::proposals`. |
+| `crates/crucible-daemon/src/rpc_client/client/subscription.rs` | 37 | `DaemonClient` methods for `session.subscribe`/`session.unsubscribe`: kept for the borrowed-`&[&str]`-to-owned-`Vec<String>` transform ~30 call sites across the daemon, CLI and web lean on. The request type lives in `crucible_core::protocol::requests::subscription`. |
+| `crates/crucible-daemon/src/rpc_client/client/tests.rs` | 1015 | The test module for the whole `client` submodule: unit tests, wire-format round-trips, live in-process server integration tests, response-correlation tests, and signal-reaper tests. |
 
 ## Key types and traits
 
@@ -453,19 +450,19 @@ either; they are exercised, if at all, outside this page's file set.
 
 - `crates/crucible-core/src/protocol/requests/lua.rs` defines
   `LuaCommands`, the body of `lua.register_commands`, but no
-  `impl DaemonClient` method in
-  `crates/crucible-daemon/src/rpc_client/client/lua.rs` builds or sends it —
-  the type is unused from this client's own methods (it may be built ad hoc
-  by a caller elsewhere; not confirmed in this file set).
-- `crates/crucible-daemon/src/rpc_client/client/notifications.rs`'s
-  `notification_list` always sends `kilns: Vec::new()` even though
-  `NotificationListRequest` has a `kilns` field; there is no public method
-  on this client that can populate it, so kiln-scoped notification filtering
-  is unreachable through this RPC client today.
-- `crates/crucible-daemon/src/rpc_client/client/workflow.rs`'s writes bypass
-  `call_with_retry` with no inline comment explaining why, unlike the
-  parallel and better-documented rationale in `proposals.rs`'s module doc —
-  a minor commenting-discipline gap, not a behavior defect.
+  `DaemonClient` method builds or sends it — the type is unused from this
+  client's own methods (it may be built ad hoc by a caller elsewhere; not
+  confirmed in this file set).
+- `notification_list`/`notification_dismiss` and `workflow_status`/
+  `workflow_cancel` had no caller anywhere (the web reaches
+  `notification.*` through `POST /api/rpc/{method}`; the CLI's `workflow
+  status`/`workflow cancel` now read the generated `rpc_workflow_status`/
+  `rpc_workflow_cancel` reply's typed `WorkflowStatus` enum instead of
+  hand-navigating a `serde_json::Value`) — all four, and the `lua.rs` and
+  `workflow.rs` submodules that held them, are gone (step 19 item 9). The
+  `kiln`-scoped-notification-filtering gap the former `notification_list`
+  left is gone with it; nothing in this client sends `notification.list`
+  today.
 - No conflict with AGENTS.md ownership was found beyond the above: every
   mutating method in this module is a pass-through to a daemon RPC, and the
   deliberate `Err`/empty-value stubs in `crates/crucible-daemon/src/rpc_client/storage.rs`
@@ -543,7 +540,39 @@ either; they are exercised, if at all, outside this page's file set.
   ergonomic `&Path` argument into the row's `String` wire field, and the
   CLI still calls them by name. A method's category (4) forwarder going
   away does not delete the method; only a method with no other category
-  left after its domain migrates does. **Not closed:** a row's
+  left after its domain migrates does.
+- **Step 19 item 9, this pass.** 165 hand-written `pub async fn` methods
+  before, 140 after (`generated.rs` excluded from both counts). Gone: the
+  `lua.rs` (6 methods) and `workflow.rs` (2: `workflow_status`/
+  `workflow_cancel`, category-(1)/(2) in name only — both discarded or
+  hand-navigated a `Value` the row's own typed reply already made
+  redundant) submodules entirely; `notifications.rs` (2 methods, no
+  caller); and, from `mod.rs`/`agent.rs`, `ping`/`shutdown`/`capabilities`
+  (the row is already typed `() => String`/`DaemonCapabilities`, so the
+  hand-written decode added nothing), `plugin_list`/`plugin_list_spec`
+  (one caller each, no transform — `plugin_list_info` stays, reachable
+  from `crucible-web`'s `daemon_plugins.rs` `forward_rpc!`),
+  `surface_list`/`surface_get` (no caller), `agents_list_profiles`/
+  `agents_list_cards`/`agents_resolve_profile` and the plain
+  `list_providers` (each one CLI caller or none, no transform —
+  `list_providers_summary` stays, the only shape anything calls),
+  `session_connect_kiln`/`session_disconnect_kiln` (test-only callers, no
+  transform beyond a `Scoped`/`NamedKiln` wrap a caller builds as easily),
+  `session_undo` (its own decode was a manual field pull the row's now-typed
+  `SessionUndoReply.undone` makes moot), and `session_set_agent_option`
+  (no caller — the row had already gained
+  `SessionSetAgentOptionRequest` in core, orphaning this method's
+  function-local duplicate `Params` struct). Each caller now calls the
+  matching `rpc_<variant>` method directly; two — `cru workflow status`
+  and `gate_id_from_status` — read the row's typed `WorkflowStatus` enum
+  instead of hand-walking a `Value`, which is a strictly more precise
+  decode, not a behavior change. **Not closed:** `agent.rs`'s and
+  `mod.rs`'s remaining methods are unaudited item by item beyond what this
+  pass's per-method doc comments record; `storage.rs`, `session.rs` and
+  `crucible-web`'s other `services/*.rs` `forward_rpc!` domains are a
+  separate pass, since their forwarders reach `routes/plugin.rs` and
+  `routes/rpc.rs`, both under a parallel change in this same window.
+  **Not closed:** a row's
   declared `Req`/`Resp` still is not enforced *at the row itself* — nothing
   stops a future row from being edited to a type a handler no longer
   matches; that is a dispatch-side property, and the module doc of
