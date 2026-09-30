@@ -897,12 +897,13 @@ fn every_route_the_router_serves_is_in_the_document() {
 /// a path. It stays in the list, so a path that returns to it is still found.
 ///
 /// `api.ts`'s own floor fell further as the session domain moved onto
-/// `rpc(method, params)` (Simplification Plan step 19 item 9): a call
-/// through `rpc()` names no `/api/...` literal for this scan to find, since
-/// every method shares the one `POST /api/rpc/{method}` path. The floor is
-/// still a sanity check on the scan itself, not a target — it drops further
-/// as more domains migrate.
-const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 33), ("lib/diff-api.ts", 0)];
+/// `rpc(method, params)` (Simplification Plan step 19 item 9), and again as
+/// `getPluginPublications`/`runPluginCommand` moved onto `rpc(..., {
+/// caller })` (step 19 item 4): a call through `rpc()` names no `/api/...`
+/// literal for this scan to find, since every method shares the one `POST
+/// /api/rpc/{method}` path. The floor is still a sanity check on the scan
+/// itself, not a target — it drops further as more domains migrate.
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 31), ("lib/diff-api.ts", 0)];
 
 /// A path with its parameter names removed: `/api/session/{id}` and
 /// `/api/session/${id}` both read as `/api/session/{}`.

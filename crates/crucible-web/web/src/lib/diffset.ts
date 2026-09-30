@@ -3,10 +3,8 @@
  *
  * `DiffsetSource` is a closed set. The daemon has one exhaustive match on it.
  * The switches below are the matches of the web client, and `unreachable`
- * fails the compile when a variant has no branch. `diff-api.ts` used to
- * switch on the source too, to flatten it into a query string; `rpc(...)`
- * takes the tagged union directly now (Simplification Plan step 19), so
- * `unreachable` stays file-private.
+ * fails the compile when a variant has no branch. `unreachable` stays
+ * file-private.
  *
  * This module imports no API client, so the tab actions can use it.
  */

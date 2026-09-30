@@ -2,7 +2,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use super::shared::{build_state, build_test_app, start_mock_daemon};
@@ -283,26 +283,25 @@ async fn an_option_call_naming_no_path_is_rejected() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-/// `?key=` narrows DAEMON-side, not in the client.
+/// `?key=` (now the body's own `key`) narrows DAEMON-side, not in the
+/// client.
 ///
 /// The daemon has always accepted a `key`; the route did not pass one, so
 /// every caller received every plugin's published data and filtered it in the
 /// browser. That is more than a block drawing one key needs, and once
 /// third-party block code can run on this origin it is more than it should
-/// receive. Drop the query wiring and this test sees the unnarrowed answer.
+/// receive. Drop the wiring and this test sees the unnarrowed answer.
 #[tokio::test]
 async fn a_publications_key_reaches_the_daemon() {
     let (_mock, client) = start_mock_daemon().await;
     let app = build_test_app(build_state(client));
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/plugins/publications?key=kanban:board")
-                .header("x-crucible-plugin", "app")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(rpc_request_as(
+            Some("app"),
+            "plugin.publications",
+            json!({ "key": "kanban:board" }),
+        ))
         .await
         .unwrap();
 
@@ -327,13 +326,11 @@ async fn publications_without_a_key_still_answers_everything() {
     let app = build_test_app(build_state(client));
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/plugins/publications")
-                .header("x-crucible-plugin", "app")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(rpc_request_as(
+            Some("app"),
+            "plugin.publications",
+            json!({}),
+        ))
         .await
         .unwrap();
 
@@ -402,19 +399,38 @@ fn gated_routes() -> Vec<(&'static str, &'static str, Option<&'static str>)> {
     vec![
         (
             "POST",
-            "/api/plugins/command",
-            Some(r#"{"name":"mock_command","args":{}}"#),
-        ),
-        (
-            "POST",
             "/api/plugins/mock-plugin/option",
             Some(r#"{"action":"get","path":["image"]}"#),
         ),
         ("POST", "/api/plugins", Some(r#"{"url":"user/repo"}"#)),
         ("DELETE", "/api/plugins/mock-plugin", None),
         ("POST", "/api/plugins/mock-plugin/reload", None),
-        ("GET", "/api/plugins/publications", None),
     ]
+}
+
+/// A request to one row of `POST /api/rpc/{method}`, with the caller header
+/// the way a plugin block or the app would send it.
+///
+/// `plugin.run_command` and `plugin.publications` reach the browser only
+/// through this route now ([[Simplification Plan#Step 19]] item 4): a
+/// caller narrows itself the same way the six routes above do, but through
+/// the header `rpc()` (`lib/api-client.ts`) merges onto every call, not a
+/// per-route `PluginCaller` extractor. Unlike that extractor, an ABSENT or
+/// empty header on this route resolves to the app rather than a refusal —
+/// see `routes/rpc.rs`'s own `rpc_caller` doc comment for why: almost none
+/// of this route's callers are plugin business, so refusing the common case
+/// (no header at all) would 403 the route for its main caller.
+fn rpc_request_as(caller: Option<&str>, method: &str, body: Value) -> Request<Body> {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(format!("/api/rpc/{method}"));
+    if let Some(caller) = caller {
+        builder = builder.header("x-crucible-plugin", caller);
+    }
+    builder
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
 }
 
 fn request_as(
@@ -462,6 +478,14 @@ async fn a_request_naming_no_caller_is_refused_on_every_gated_route() {
 
 /// An empty header value names nobody either — a client that built the header
 /// from an unset variable must not read as the app.
+///
+/// Proved through `/api/plugins/{name}/option`, not the RPC route: every
+/// route still gated by `PluginCaller`'s own extractor shares this behavior,
+/// and `option_call` is the one of the six this file exercises elsewhere
+/// too. `POST /api/rpc/{method}` reads the SAME empty-or-absent header
+/// differently by design (see `rpc_request_as`'s own doc comment) — that
+/// difference is what `an_empty_or_absent_caller_on_the_rpc_route_is_the_app`
+/// below proves, so both readings of one empty header stay tested.
 #[tokio::test]
 async fn an_empty_caller_header_names_nobody() {
     let (_mock, client) = start_mock_daemon().await;
@@ -470,14 +494,38 @@ async fn an_empty_caller_header_names_nobody() {
     let response = app
         .oneshot(request_as(
             Some("   "),
-            "GET",
-            "/api/plugins/publications",
-            None,
+            "POST",
+            "/api/plugins/mock-plugin/option",
+            Some(r#"{"action":"get","path":["image"]}"#),
         ))
         .await
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// The RPC route's own reading of the same empty header: an absent or
+/// whitespace-only `x-crucible-plugin` is the app there, not a refusal — see
+/// `rpc_request_as`'s doc comment. Both callers reach `plugin.publications`
+/// and see the unnarrowed answer.
+#[tokio::test]
+async fn an_empty_or_absent_caller_on_the_rpc_route_is_the_app() {
+    for caller in [None, Some("   ")] {
+        let (_mock, client) = start_mock_daemon().await;
+        let app = build_test_app(build_state(client));
+
+        let response = app
+            .oneshot(rpc_request_as(caller, "plugin.publications", json!({})))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK, "caller {caller:?}");
+        let json = response_json(response).await;
+        assert!(
+            json["publications"].get("and-more").is_some(),
+            "the app's unnarrowed answer, caller {caller:?}: got {json}"
+        );
+    }
 }
 
 /// The app reaches every gated route. `api.ts` and the plugins panel declare
@@ -509,11 +557,10 @@ async fn a_plugin_may_invoke_its_own_command() {
     let app = build_test_app(build_state(client));
 
     let response = app
-        .oneshot(request_as(
+        .oneshot(rpc_request_as(
             Some("mock-plugin"),
-            "POST",
-            "/api/plugins/command",
-            Some(r#"{"name":"mock_command","args":{}}"#),
+            "plugin.run_command",
+            json!({"name":"mock_command","args":{}}),
         ))
         .await
         .unwrap();
@@ -527,11 +574,10 @@ async fn a_plugin_may_not_invoke_another_plugins_command() {
     let app = build_test_app(build_state(client));
 
     let response = app
-        .oneshot(request_as(
+        .oneshot(rpc_request_as(
             Some("other-plugin"),
-            "POST",
-            "/api/plugins/command",
-            Some(r#"{"name":"mock_command","args":{}}"#),
+            "plugin.run_command",
+            json!({"name":"mock_command","args":{}}),
         ))
         .await
         .unwrap();
@@ -546,11 +592,10 @@ async fn a_plugin_may_not_invoke_a_command_nobody_owns() {
     let app = build_test_app(build_state(client));
 
     let response = app
-        .oneshot(request_as(
+        .oneshot(rpc_request_as(
             Some("mock-plugin"),
-            "POST",
-            "/api/plugins/command",
-            Some(r#"{"name":"no_such_command","args":{}}"#),
+            "plugin.run_command",
+            json!({"name":"no_such_command","args":{}}),
         ))
         .await
         .unwrap();
@@ -629,11 +674,10 @@ async fn a_plugin_reads_only_its_own_publications() {
     let app = build_test_app(build_state(client));
 
     let response = app
-        .oneshot(request_as(
+        .oneshot(rpc_request_as(
             Some("mock-plugin"),
-            "GET",
-            "/api/plugins/publications",
-            None,
+            "plugin.publications",
+            json!({}),
         ))
         .await
         .unwrap();

@@ -26,11 +26,6 @@ impl ReconnectingDaemon {
         -> Vec<crucible_core::types::PluginCommand> = plugin_commands();
     }
 
-    // surface.list: the browser calls it through `POST /api/rpc/{method}` now
-    // (Simplification Plan step 19), so this forwarder is gone.
-    // `DaemonClient::surface_list`/`surface_get` had no other caller either,
-    // so both are gone too (step 19 item 9).
-
     forward_rpc! {
         Safe PluginPublications =>
         plugin_publications(key: Option<String>)

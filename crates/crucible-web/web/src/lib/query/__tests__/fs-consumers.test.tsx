@@ -67,8 +67,6 @@ beforeEach(() => {
       content_hash: 'base-hash',
     }),
     // The tree the panel browses, and the note list the shell may ask for.
-    // `fs.list_dir`/`list_notes` reach the browser through
-    // `POST /api/rpc/{method}` now (Simplification Plan step 19 item 3).
     'POST /api/rpc/fs.list_dir': () => ({ entries: [], truncated: false }),
     'POST /api/rpc/list_notes': () => [],
   });
@@ -126,9 +124,7 @@ describe('the shared fs stream', () => {
       kind: 'modified',
     });
 
-    await waitFor(() =>
-      expect(editor.openFiles()[0]!.content).toBe('another writer was here\n'),
-    );
+    await waitFor(() => expect(editor.openFiles()[0]!.content).toBe('another writer was here\n'));
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 });
