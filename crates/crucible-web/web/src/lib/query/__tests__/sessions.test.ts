@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { apiError } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { notificationActions, notificationStore } from '@/stores/notificationStore';
 import type { Session } from '@/lib/types';
 import { keys } from '../keys';
 import {
@@ -330,7 +331,11 @@ describe('the lifecycle mutations', () => {
     env = createTestQueryEnv({
       [LIST]: () => listReply([row]),
       'POST /api/rpc/session.pause': () => ({}),
-      'POST /api/session/s-1/resume': () => new Response(null, { status: 204 }),
+      'POST /api/session/s-1/resume': () => ({
+        session_id: 's-1',
+        previous_state: 'paused',
+        state: 'active',
+      }),
       'POST /api/session/s-1/end': () => new Response(null, { status: 204 }),
     });
 
@@ -350,6 +355,61 @@ describe('the lifecycle mutations', () => {
 
     await parts.end.mutateAsync('s-1');
     expect(parts.list.data?.[0].state).toBe('ended');
+  });
+});
+
+describe('useResumeSession warnings', () => {
+  beforeEach(() => {
+    notificationActions.clearAll();
+  });
+
+  it('shows a notification for each warning a stored resume answers', async () => {
+    const row = session('s-1');
+    env = createTestQueryEnv({
+      [LIST]: () => listReply([row]),
+      'POST /api/session/s-1/resume': () => ({
+        session_id: 's-1',
+        type: 'chat',
+        state: 'active',
+        kilns: [],
+        history: [],
+        total_events: 0,
+        warnings: [
+          { kind: 'plugin_state_reset' },
+          { kind: 'kiln_unavailable', path: '/kilns/gone' },
+        ],
+      }),
+    });
+
+    const resume = inRoot(() => useResumeSession());
+    const warnings = await resume.mutateAsync('s-1');
+
+    expect(warnings).toEqual([
+      { kind: 'plugin_state_reset' },
+      { kind: 'kiln_unavailable', path: '/kilns/gone' },
+    ]);
+    const visible = notificationStore.notifications.filter((n) => !n.dismissed);
+    expect(visible).toHaveLength(2);
+    expect(visible[0].type).toBe('warning');
+    expect(visible[1].message).toContain('/kilns/gone');
+  });
+
+  it('a live resume answers no warnings and shows no notification', async () => {
+    const row = session('s-1');
+    env = createTestQueryEnv({
+      [LIST]: () => listReply([row]),
+      'POST /api/session/s-1/resume': () => ({
+        session_id: 's-1',
+        previous_state: 'paused',
+        state: 'active',
+      }),
+    });
+
+    const resume = inRoot(() => useResumeSession());
+    const warnings = await resume.mutateAsync('s-1');
+
+    expect(warnings).toEqual([]);
+    expect(notificationStore.notifications.filter((n) => !n.dismissed)).toHaveLength(0);
   });
 });
 

@@ -261,6 +261,44 @@ async fn a_cold_resume_answers_the_restored_history() {
     assert_eq!(json["history"][0]["event"], "user_message");
 }
 
+/// A cold resume carries `session.resume`'s own `warnings` alongside the
+/// restored history, so the browser knows what the revived session lost,
+/// not only what it now holds.
+#[tokio::test]
+async fn a_cold_resume_answers_the_resume_warnings() {
+    let (status, json) =
+        crate::test_support::request_json("POST", "/api/session/cold-resume-session/resume", None)
+            .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+    let kinds: Vec<&str> = json["warnings"]
+        .as_array()
+        .expect("a cold resume must carry warnings")
+        .iter()
+        .map(|w| w["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            "plugin_state_reset",
+            "pending_work_cleared",
+            "kiln_unavailable"
+        ],
+        "body: {json}"
+    );
+    assert_eq!(json["warnings"][2]["path"], "/tmp/kiln-gone");
+}
+
+/// A warm resume carries no `warnings` key at all — nothing was torn down,
+/// so there is nothing to report.
+#[tokio::test]
+async fn a_warm_resume_answers_no_warnings_key() {
+    let (status, json) =
+        crate::test_support::request_json("POST", "/api/session/test-session-001/resume", None)
+            .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+    assert!(json.get("warnings").is_none(), "body: {json}");
+}
+
 // =========================================================================
 // export_session Tests
 // =========================================================================

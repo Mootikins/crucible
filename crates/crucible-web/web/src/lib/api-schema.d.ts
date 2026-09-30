@@ -4984,6 +4984,32 @@ export interface components {
          *     daemon added would turn an extension into a 502 on three healthy routes.
          */
         ResumeSessionResponse: components["schemas"]["SessionHistoryResponse"] | components["schemas"]["SessionLifecycleResponse"];
+        /**
+         * @description One thing a session lost by reviving from storage instead of staying
+         *     live. `session.resume` computes the whole list once, so the TUI and the
+         *     web client show the same warnings from the same reply, worded in each
+         *     client's own way.
+         *
+         *     Each variant names a loss that the daemon can prove from its own state at
+         *     resume time, not a guess. The daemon tears down a session's live state in
+         *     `AgentManager::cleanup_session` when the session ends (`agent_manager/mod.rs`),
+         *     and rebuilds it from the plugin `session_start` hooks and the stored
+         *     `meta.json` when the session revives (`SessionLifecycle::enforce_session_start`,
+         *     `SessionManager::resume_session_from_storage`). Anything torn down there and
+         *     not restored from storage is a real loss and gets a variant here.
+         */
+        ResumeWarning: {
+            /** @enum {string} */
+            kind: "plugin_state_reset";
+        } | {
+            /** @enum {string} */
+            kind: "pending_work_cleared";
+        } | {
+            /** @enum {string} */
+            kind: "kiln_unavailable";
+            /** @description The stored path of the kiln that no longer resolves. */
+            path: string;
+        };
         /** @description Review and undo events. */
         ReviewPayload: {
             /**
@@ -5536,6 +5562,14 @@ export interface components {
             transcript?: components["schemas"]["Transcript"];
             /** @description The session type prefix. */
             type: string;
+            /**
+             * @description What the storage resume that led here did not bring back. Read from
+             *     `session.resume`'s own reply, because `session.history` (which builds
+             *     the rest of this struct) does not compute them: `session.resume` is
+             *     the one call that runs `AgentManager::cleanup_session`'s counterpart
+             *     checks, once, for every caller.
+             */
+            warnings?: components["schemas"]["ResumeWarning"][];
         };
         /**
          * @description A session identifier that is safe to join onto a directory.
@@ -5872,6 +5906,13 @@ export interface components {
             resumed_from_storage?: boolean;
             session_id: string;
             state: string;
+            /**
+             * @description `session.resume` only, and only for a resume from storage: what the
+             *     revived session does not have, compared with the live session that
+             *     ended. Empty and omitted for a resume that stays in memory, because
+             *     nothing there was torn down.
+             */
+            warnings?: components["schemas"]["ResumeWarning"][];
         };
         /**
          * @description Type of session, determines logging format and behavior.
@@ -7801,6 +7842,7 @@ export type SchemaReorderGroupsParams = components['schemas']['ReorderGroupsPara
 export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
+export type SchemaResumeWarning = components['schemas']['ResumeWarning'];
 export type SchemaReviewPayload = components['schemas']['ReviewPayload'];
 export type SchemaRow = components['schemas']['Row'];
 export type SchemaRowHeight = components['schemas']['RowHeight'];

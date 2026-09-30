@@ -11072,6 +11072,61 @@
         ],
         "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session — a decision `session.resume` itself makes and\nreports (`SessionTransitionReply::resumed_from_storage`), not something\nthis route infers from which daemon call happened to succeed.\n\nThe warm path answers the state change alone. The cold path (the session\nwas not held in memory, or was held but not `Paused` — most commonly\n`Ended`) also answers the full history, read with `session.history`\nafter the daemon's own resume, because the browser's view of a session it\ndid not just have open may be stale.\n\n**`Restored` must stay first.** The daemon sends no tag, so the variants\nare told apart by their fields, and `Live`'s required fields\n(`session_id`, `state`) are a subset of `Restored`'s. An untagged enum\ntakes the first variant that fits, so with the order reversed every\nrestored history would read back as a bare state change and every event\nwould be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`\nholds the order.\n\n`deny_unknown_fields` would be the other way to separate them, and it is\nnot used here: these are daemon replies, and refusing a field a newer\ndaemon added would turn an extension into a 502 on three healthy routes."
       },
+      "ResumeWarning": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The session's Lua plugin state, kept only in the session's own Lua\nVM, is gone. `AgentManager::cleanup_session` drops that VM when the\nsession ends, and the revived session gets a fresh one from the\n`session_start` hooks. Values a plugin stored with\n`session:set_variable` survive (the daemon persists them and seeds\nthe new VM from them); anything a hook kept only in a Lua local or\nclosure does not.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plugin_state_reset"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Work in progress when the session ended did not survive: running\nsubagents, an in-flight tool call, and any permission or other\nprompt the session was waiting on. `AgentManager::cleanup_session`\ncancels the session's delegated children and drops its pending\n`permissions` and `interactions` maps, and the revived session\nstarts with none of them. A prompt the user never answered is not\nwaiting any more; the next turn asks fresh, if it asks at all.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pending_work_cleared"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A kiln this session used no longer resolves in the kiln registry —\nrenamed, unregistered, or moved. `SessionStorage::load` runs kiln\nresolution on every load, including a resume from storage, and\nleaves what does not resolve in `Session::unresolved_kiln_paths`.\nThe session keeps searching its other kilns; this one contributes no\nroot, no search source and no prompt line until it is re-registered.",
+            "required": [
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "The stored path of the kiln that no longer resolves."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "kiln_unavailable"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One thing a session lost by reviving from storage instead of staying\nlive. `session.resume` computes the whole list once, so the TUI and the\nweb client show the same warnings from the same reply, worded in each\nclient's own way.\n\nEach variant names a loss that the daemon can prove from its own state at\nresume time, not a guess. The daemon tears down a session's live state in\n`AgentManager::cleanup_session` when the session ends (`agent_manager/mod.rs`),\nand rebuilds it from the plugin `session_start` hooks and the stored\n`meta.json` when the session revives (`SessionLifecycle::enforce_session_start`,\n`SessionManager::resume_session_from_storage`). Anything torn down there and\nnot restored from storage is a real loss and gets a variant here."
+      },
       "ReviewPayload": {
         "oneOf": [
           {
@@ -12302,6 +12357,13 @@
           "transcript": {
             "$ref": "#/components/schemas/Transcript",
             "description": "The whole log, folded into what a client draws. The daemon folds it;\na client renders it and does not fold the events again."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResumeWarning"
+            },
+            "description": "What the storage resume that led here did not bring back. Read from\n`session.resume`'s own reply, because `session.history` (which builds\nthe rest of this struct) does not compute them: `session.resume` is\nthe one call that runs `AgentManager::cleanup_session`'s counterpart\nchecks, once, for every caller."
           }
         }
       },
@@ -13014,6 +13076,13 @@
           "resumed_from_storage": {
             "type": "boolean",
             "description": "`session.resume` only: the session was not resumable in memory (not\nheld at all, or held but not `Paused`), so the daemon reloaded it\nfrom storage and revived it. A caller that needs the full transcript\nafter a resume — the web client does — reads this to decide whether\nits own view is stale and it must also call `session.history`.\nOmitted, not `false`, for `session.pause`, which never sets it."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResumeWarning"
+            },
+            "description": "`session.resume` only, and only for a resume from storage: what the\nrevived session does not have, compared with the live session that\nended. Empty and omitted for a resume that stays in memory, because\nnothing there was torn down."
           }
         }
       },

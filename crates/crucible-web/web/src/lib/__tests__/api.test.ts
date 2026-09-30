@@ -670,13 +670,27 @@ describe('session lifecycle endpoints', () => {
     expect(sent.body).toEqual({ session_id: 'ses-1' });
   });
 
-  it('resumeSession POSTs to /resume', async () => {
-    const mockFetch = createMockFetch({ 'POST /api/session/ses-1/resume': { body: {} } });
+  it('resumeSession POSTs to /resume and answers the warnings, if any', async () => {
+    const mockFetch = createMockFetch({
+      'POST /api/session/ses-1/resume': {
+        body: { session_id: 'ses-1', state: 'active', warnings: [{ kind: 'plugin_state_reset' }] },
+      },
+    });
     global.fetch = mockFetch;
-    await expect(resumeSession('ses-1')).resolves.toBeUndefined();
+    await expect(resumeSession('ses-1')).resolves.toEqual([{ kind: 'plugin_state_reset' }]);
     const sent = await mockFetch.sent(0);
     expect(sent.path).toBe('/api/session/ses-1/resume');
     expect(sent.method).toBe('POST');
+  });
+
+  it('resumeSession answers no warnings for the live (no-warnings) shape', async () => {
+    const mockFetch = createMockFetch({
+      'POST /api/session/ses-1/resume': {
+        body: { session_id: 'ses-1', state: 'active' },
+      },
+    });
+    global.fetch = mockFetch;
+    await expect(resumeSession('ses-1')).resolves.toEqual([]);
   });
 
   // `endSession`, `archiveSession` and `deleteSession` keep their own REST

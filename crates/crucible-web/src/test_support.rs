@@ -839,6 +839,11 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             });
             if session_id == "cold-resume-session" {
                 reply["resumed_from_storage"] = json!(true);
+                reply["warnings"] = json!([
+                    {"kind": "plugin_state_reset"},
+                    {"kind": "pending_work_cleared"},
+                    {"kind": "kiln_unavailable", "path": "/tmp/kiln-gone"}
+                ]);
             }
             reply
         }

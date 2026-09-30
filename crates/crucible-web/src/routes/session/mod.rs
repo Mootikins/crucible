@@ -33,7 +33,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use crucible_core::protocol::requests::SessionCreateRequest;
+use crucible_core::protocol::requests::{ResumeWarning, SessionCreateRequest};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use utoipa::ToSchema;
@@ -68,6 +68,13 @@ struct SessionHistoryResponse {
     /// a client renders it and does not fold the events again.
     #[serde(default)]
     transcript: crucible_core::transcript::Transcript,
+    /// What the storage resume that led here did not bring back. Read from
+    /// `session.resume`'s own reply, because `session.history` (which builds
+    /// the rest of this struct) does not compute them: `session.resume` is
+    /// the one call that runs `AgentManager::cleanup_session`'s counterpart
+    /// checks, once, for every caller.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<ResumeWarning>,
 }
 
 /// What `session.resume`'s warm path answers (`SessionTransitionReply`'s own
@@ -332,7 +339,14 @@ async fn resume_session(
             .session_history(&id, Default::default())
             .await
             .map_err(|e| map_session_not_found(e, &id))?;
-        ResumeSessionResponse::Restored(Box::new(daemon_shape(history, "session.history")?))
+        let mut restored: SessionHistoryResponse = daemon_shape(history, "session.history")?;
+        restored.warnings = daemon_shape(
+            raw.get("warnings")
+                .cloned()
+                .unwrap_or(serde_json::json!([])),
+            "session.resume",
+        )?;
+        ResumeSessionResponse::Restored(Box::new(restored))
     } else {
         ResumeSessionResponse::Live(daemon_shape(raw, "session.resume")?)
     };

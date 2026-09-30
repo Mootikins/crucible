@@ -1,4 +1,5 @@
 import type { components } from './api-schema';
+import type { SchemaResumeWarning } from './api-schema';
 import type { RpcMethods } from './rpc-methods';
 import type { SessionCommand } from './slash-commands';
 import {
@@ -1175,12 +1176,21 @@ export async function pauseSession(id: string): Promise<void> {
   await rpc('session.pause', { session_id: id });
 }
 
-/** Resume a session (also auto-subscribes to events on the backend). */
-export async function resumeSession(id: string): Promise<void> {
-  expectOk(
+/**
+ * Resume a session (also auto-subscribes to events on the backend).
+ *
+ * Answers the warnings the daemon computed for this resume — what a stored
+ * revival did not bring back (see `ResumeWarning` in `crucible-core`). Empty
+ * for a resume that stayed in memory, which lost nothing.
+ */
+export async function resumeSession(id: string): Promise<SchemaResumeWarning[]> {
+  const data = decode(
     await client.POST('/api/session/{id}/resume', { params: { path: { id } } }),
     'Failed to resume session',
   );
+  // Only the restored (cold-resume) shape carries `warnings` at all; the
+  // live shape has nothing torn down to report.
+  return 'warnings' in data ? (data.warnings ?? []) : [];
 }
 
 /**

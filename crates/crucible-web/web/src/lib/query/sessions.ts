@@ -16,11 +16,32 @@ import {
   pauseSession,
   resumeSession,
 } from '@/lib/api';
+import type { SchemaResumeWarning } from '@/lib/api-schema';
 import { rpc } from '@/lib/api-client';
 import { readLocalCache, writeLocalCache } from '@/lib/local-cache';
+import { notificationActions } from '@/stores/notificationStore';
 import type { CreateSessionParams, Session, SessionDetail } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
+
+/**
+ * The web's own wording of one `ResumeWarning`. The one place this client
+ * turns the daemon's warning list into text, so every caller reads the same
+ * sentence for the same warning — matching the TUI's `resume_warning_text`
+ * in spirit, not in words: each client writes its own.
+ */
+function resumeWarningText(warning: SchemaResumeWarning): string {
+  switch (warning.kind) {
+    case 'plugin_state_reset':
+      return "This session's plugin state did not survive the resume. Saved variables came back; anything else a plugin kept in memory did not.";
+    case 'pending_work_cleared':
+      return 'Work in progress when this session ended did not survive: any running subagent, in-flight tool call, or unanswered prompt is gone.';
+    case 'kiln_unavailable':
+      return `The kiln at ${warning.path} no longer resolves. This session keeps searching its other kilns, but not this one, until it is registered again.`;
+    default:
+      return 'This session lost some state when it resumed.';
+  }
+}
 
 /**
  * The session roster and every write that changes it.
@@ -278,9 +299,27 @@ export function usePauseSession(): UseMutationResult<void, Error, string> {
   return useLifecycleMutation(pauseSession, 'paused');
 }
 
-/** Resumes a session; patches its state and re-reads that session. */
-export function useResumeSession(): UseMutationResult<void, Error, string> {
-  return useLifecycleMutation(resumeSession, 'active');
+/**
+ * Resumes a session; patches its state, re-reads that session, and shows a
+ * notification for each warning the daemon reports (what a stored resume
+ * did not bring back). Not built on `useLifecycleMutation`: the other
+ * lifecycle writes answer nothing to display, and `resumeSession` answers
+ * the warning list, not `void`.
+ */
+export function useResumeSession(): UseMutationResult<SchemaResumeWarning[], Error, string> {
+  return useMutation(
+    () => ({
+      mutationFn: resumeSession,
+      onSuccess: (warnings: SchemaResumeWarning[], id: string) => {
+        patchCachedSession(id, { state: 'active' });
+        for (const warning of warnings) {
+          notificationActions.addNotification('warning', resumeWarningText(warning));
+        }
+        return seededClient().invalidateQueries({ queryKey: keys.session(id) });
+      },
+    }),
+    () => seededClient(),
+  );
 }
 
 /** Ends a session; patches its state and re-reads that session. */
