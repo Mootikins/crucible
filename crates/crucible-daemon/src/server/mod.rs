@@ -45,6 +45,7 @@ use tracing::{debug, error, info, warn};
 
 mod accept;
 mod bind;
+pub mod client_state;
 mod core;
 pub mod diff;
 pub(crate) mod diff_comments;

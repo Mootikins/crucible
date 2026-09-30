@@ -40,12 +40,12 @@ pub async fn start_server(
 
     let mut state = daemon::init_daemon(app_config.clone()).await?;
 
-    // A standalone instance (isolated debug/test daemon) must not share the
-    // production layout file — its tab experiments would silently trash the
+    // A standalone instance must not share the production instance's
+    // client-state namespace — its tab experiments would silently trash the
     // installed instance's restored workspace.
     if standalone {
-        state.layout_path = Arc::new(daemon::standalone_layout_path());
-        tracing::info!(path = %state.layout_path.display(), "Standalone: using isolated web layout");
+        state.client_state_id = Arc::from(daemon::WEB_STANDALONE_CLIENT_STATE_ID);
+        tracing::info!("Standalone: using an isolated client-state namespace");
     }
 
     let api_key = resolve_api_key(web_config.api_key.as_deref());

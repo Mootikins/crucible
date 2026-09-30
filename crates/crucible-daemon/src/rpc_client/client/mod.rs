@@ -863,6 +863,49 @@ impl DaemonClient {
         self.call(RpcMethod::DaemonCapabilities, NO_PARAMS).await
     }
 
+    /// The opaque blob a caller previously stored under `(client, key)` with
+    /// [`Self::client_state_set`], or `None` if nothing was ever stored
+    /// there.
+    pub async fn client_state_get(
+        &self,
+        client: &str,
+        key: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        let reply: crucible_core::protocol::requests::ClientStateGetReply = self
+            .call(
+                RpcMethod::ClientStateGet,
+                crucible_core::protocol::requests::ClientStateKey {
+                    client: client.to_string(),
+                    key: key.to_string(),
+                },
+            )
+            .await?;
+        Ok(reply.value)
+    }
+
+    /// Store `value` under `(client, key)`, opaque to the daemon, for a
+    /// later [`Self::client_state_get`] — the same caller's own display
+    /// state (a pane layout, a recents list), kept in one place instead of
+    /// wherever that caller's own process happens to keep its files.
+    pub async fn client_state_set(
+        &self,
+        client: &str,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        let _: crucible_core::protocol::requests::StatusReply = self
+            .call(
+                RpcMethod::ClientStateSet,
+                crucible_core::protocol::requests::ClientStateSetRequest {
+                    client: client.to_string(),
+                    key: key.to_string(),
+                    value,
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn check_version(&self) -> Result<VersionCheck> {
         let caps = self.capabilities().await?;
         let client_sha = option_env!("CRUCIBLE_BUILD_SHA").unwrap_or("dev");

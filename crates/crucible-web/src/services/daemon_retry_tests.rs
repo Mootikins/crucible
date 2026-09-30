@@ -233,7 +233,7 @@ async fn browser_stream_at(peer: &Peer, uri: &str) -> axum::body::Body {
         events: peer.daemon.broker.clone(),
         config: Arc::new(CliAppConfig::default()),
         http_client: reqwest::Client::new(),
-        layout_path: Arc::new(peer._dir.path().join("layout.json")),
+        client_state_id: Arc::from(crate::services::daemon::WEB_CLIENT_STATE_ID),
         remote_shell: false,
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),
     };

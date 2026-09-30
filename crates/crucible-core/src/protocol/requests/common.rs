@@ -221,6 +221,34 @@ where
     })
 }
 
+/// One opaque blob in the daemon's generic client-state store
+/// (`client_state.get`/`client_state.set`).
+///
+/// `client` names the kind of caller (`"web"`, `"web-standalone"`); `key`
+/// names one blob within it (`"layout"`, `"recents"`). The daemon stores
+/// `value` verbatim and never reads it — the shape belongs entirely to the
+/// caller, the same way the web's own layout blob always has.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClientStateKey {
+    pub client: String,
+    pub key: String,
+}
+
+/// Request for `client_state.set`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClientStateSetRequest {
+    pub client: String,
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+/// Reply from `client_state.get`. `None` when nothing was ever stored under
+/// that `(client, key)` — not an error, the common case before a first save.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClientStateGetReply {
+    pub value: Option<serde_json::Value>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

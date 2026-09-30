@@ -101,6 +101,20 @@ impl RpcDispatcher {
             RpcMethod::Ping => to_response(id, self.handle_ping()),
             RpcMethod::DaemonCapabilities => to_response(id, self.handle_capabilities()),
             RpcMethod::Shutdown => to_response(id, self.handle_shutdown()),
+            RpcMethod::ClientStateGet => forward!(
+                id,
+                crate::server::client_state::handle_client_state_get(
+                    req.clone(),
+                    &self.ctx.data_home
+                )
+            ),
+            RpcMethod::ClientStateSet => forward!(
+                id,
+                crate::server::client_state::handle_client_state_set(
+                    req.clone(),
+                    &self.ctx.data_home
+                )
+            ),
 
             // Subscription handlers (need client_id)
             RpcMethod::SessionSubscribe => to_response(id, self.handle_subscribe(client_id, &req)),

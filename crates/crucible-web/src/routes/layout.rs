@@ -3,9 +3,17 @@
 //! The SolidJS frontend serializes its pane layout and persists it via this
 //! endpoint (`saveLayout`/`loadLayout`/`resetLayout` in `web/src/lib/api.ts`).
 //! The blob is opaque to the server — it is stored as-is and handed back.
+//!
+//! Both this and the recents list below are stored through the daemon's
+//! generic `client_state.get`/`client_state.set` (`AppState::client_state_id`
+//! names this process's namespace), not on this process's own disk: the
+//! location and the durability of a client's display state is the daemon's
+//! concern like everything else it stores, and a value kept here alone would
+//! vanish the moment this web process's own directory changed, independent
+//! of the daemon it talks to.
 
 use crate::services::daemon::AppState;
-use crate::WebError;
+use crate::{error::WebResultExt, WebError};
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -46,17 +54,19 @@ struct LayoutWriteResponse {
     )
 )]
 async fn get_layout(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
-    let bytes = match tokio::fs::read(state.layout_path.as_path()).await {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(WebError::NotFound("No saved layout".to_string()));
+    let value = state
+        .daemon
+        .client_state_get(&state.client_state_id, LAYOUT_KEY)
+        .await
+        .daemon_err()?;
+    // `Null` is [`reset_layout`]'s own marker for "forgotten", not a client's
+    // layout: nothing a `SerializedLayout` writes is ever bare null.
+    match value {
+        None | Some(serde_json::Value::Null) => {
+            Err(WebError::NotFound("No saved layout".to_string()))
         }
-        Err(e) => return Err(WebError::Internal(format!("Failed to read layout: {e}"))),
-    };
-
-    let layout: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|e| WebError::Internal(format!("Stored layout is not valid JSON: {e}")))?;
-    Ok(Json(layout))
+        Some(layout) => Ok(Json(layout)),
+    }
 }
 
 /// `POST /api/layout` — store this browser's pane layout.
@@ -76,18 +86,11 @@ async fn save_layout(
     State(state): State<AppState>,
     Json(layout): Json<serde_json::Value>,
 ) -> Result<Json<LayoutWriteResponse>, WebError> {
-    let path = state.layout_path.as_path();
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| WebError::Internal(format!("Failed to create layout dir: {e}")))?;
-    }
-
-    let bytes = serde_json::to_vec(&layout)
-        .map_err(|e| WebError::Internal(format!("Failed to serialize layout: {e}")))?;
-    write_atomic(path, &bytes)
+    state
+        .daemon
+        .client_state_set(&state.client_state_id, LAYOUT_KEY, layout)
         .await
-        .map_err(|e| WebError::Internal(format!("Failed to write layout: {e}")))?;
+        .daemon_err()?;
     Ok(Json(LayoutWriteResponse { ok: true }))
 }
 
@@ -105,11 +108,13 @@ async fn save_layout(
 async fn reset_layout(
     State(state): State<AppState>,
 ) -> Result<Json<LayoutWriteResponse>, WebError> {
-    match tokio::fs::remove_file(state.layout_path.as_path()).await {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(WebError::Internal(format!("Failed to delete layout: {e}"))),
-    }
+    // The store has no delete of its own; `null` is [`get_layout`]'s marker
+    // that nothing is saved, and it is already idempotent to write again.
+    state
+        .daemon
+        .client_state_set(&state.client_state_id, LAYOUT_KEY, serde_json::Value::Null)
+        .await
+        .daemon_err()?;
     Ok(Json(LayoutWriteResponse { ok: true }))
 }
 
@@ -119,22 +124,13 @@ async fn reset_layout(
 //
 // The splash's "pick up where you left off" list. Persisted server-side —
 // localStorage recents are per-origin, so they vanished across ports,
-// browsers, and debug instances. Stored next to the layout blob and
-// inheriting its standalone isolation: `web-layout.json` →
-// `web-layout.recents.json`.
+// browsers, and debug instances. Stored in the daemon's client-state store
+// under this process's own namespace (`AppState::client_state_id`), which is
+// what gives a standalone instance the same isolation the layout blob has.
 
 const MAX_RECENTS: usize = 20;
-
-/// Write through `crucible_core::fs::write_private`: a sibling file renamed
-/// into place, so a crash mid-write or a concurrent read never sees a
-/// truncated blob.
-async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    let path = path.to_path_buf();
-    let bytes = bytes.to_vec();
-    tokio::task::spawn_blocking(move || crucible_core::fs::write_private(&path, &bytes))
-        .await
-        .map_err(std::io::Error::other)?
-}
+const LAYOUT_KEY: &str = "layout";
+const RECENTS_KEY: &str = "recents";
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 struct RecentFile {
@@ -155,14 +151,14 @@ struct RecentsResponse {
     recents: Vec<RecentFile>,
 }
 
-fn recents_path(state: &AppState) -> std::path::PathBuf {
-    state.layout_path.with_extension("recents.json")
-}
-
 async fn read_recents(state: &AppState) -> Vec<RecentFile> {
-    match tokio::fs::read(recents_path(state)).await {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-        Err(_) => Vec::new(),
+    match state
+        .daemon
+        .client_state_get(&state.client_state_id, RECENTS_KEY)
+        .await
+    {
+        Ok(Some(value)) => serde_json::from_value(value).unwrap_or_default(),
+        Ok(None) | Err(_) => Vec::new(),
     }
 }
 
@@ -223,17 +219,13 @@ async fn record_recent(
     );
     recents.truncate(MAX_RECENTS);
 
-    let path = recents_path(&state);
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| WebError::Internal(format!("Failed to create recents dir: {e}")))?;
-    }
-    let bytes = serde_json::to_vec(&recents)
+    let value = serde_json::to_value(&recents)
         .map_err(|e| WebError::Internal(format!("Failed to serialize recents: {e}")))?;
-    write_atomic(&path, &bytes)
+    state
+        .daemon
+        .client_state_set(&state.client_state_id, RECENTS_KEY, value)
         .await
-        .map_err(|e| WebError::Internal(format!("Failed to write recents: {e}")))?;
+        .daemon_err()?;
     Ok(Json(RecentsResponse { recents }))
 }
 
@@ -243,18 +235,16 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use serde_json::json;
-    use std::sync::Arc;
     use tower::ServiceExt;
 
-    /// App with layout routes over a tempdir-backed layout path.
-    /// Returns the TempDir so it stays alive for the test's duration.
-    async fn layout_test_app() -> (tempfile::TempDir, axum::Router) {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let (_mock, client) = crate::test_support::start_mock_daemon().await;
-        let mut state = crate::test_support::build_state(client);
-        state.layout_path = Arc::new(tmp.path().join("web-layout.json"));
+    /// App with layout routes over a REAL daemon: the mock has no
+    /// persistence, and the store this route now uses lives entirely in the
+    /// daemon. Returns the daemon so it stays alive for the test's duration.
+    async fn layout_test_app() -> (crucible_daemon::test_support::InProcessDaemon, axum::Router) {
+        let (daemon, client) = crate::test_support::start_real_daemon_with_kilns(&[]).await;
+        let state = crate::test_support::build_state(client);
         let app = axum::Router::from(layout_routes()).with_state(state);
-        (tmp, app)
+        (daemon, app)
     }
 
     fn get_request() -> Request<Body> {
@@ -291,7 +281,7 @@ mod tests {
 
     #[tokio::test]
     async fn recents_record_dedupes_and_orders_newest_first() {
-        let (_tmp, app) = layout_test_app().await;
+        let (_daemon, app) = layout_test_app().await;
 
         // Empty before anything is recorded.
         let response = app
@@ -346,14 +336,14 @@ mod tests {
 
     #[tokio::test]
     async fn get_layout_returns_404_when_none_saved() {
-        let (_tmp, app) = layout_test_app().await;
+        let (_daemon, app) = layout_test_app().await;
         let response = app.oneshot(get_request()).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
     async fn save_then_load_round_trips_the_blob() {
-        let (_tmp, app) = layout_test_app().await;
+        let (_daemon, app) = layout_test_app().await;
         let layout = json!({
             "version": 1,
             "panes": [{"id": "chat", "size": 0.6}, {"id": "editor", "size": 0.4}]
@@ -369,7 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_overwrites_previous_layout() {
-        let (_tmp, app) = layout_test_app().await;
+        let (_daemon, app) = layout_test_app().await;
         let first = json!({"version": 1});
         let second = json!({"version": 2});
 
@@ -382,7 +372,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_resets_layout_and_is_idempotent() {
-        let (_tmp, app) = layout_test_app().await;
+        let (_daemon, app) = layout_test_app().await;
         app.clone()
             .oneshot(post_request(&json!({"version": 1})))
             .await
@@ -433,7 +423,7 @@ mod tests {
     /// becomes a second owner of the pane vocabulary.
     #[tokio::test]
     async fn the_layout_blob_keeps_the_keys_the_client_wrote() {
-        let (_tmp, app) = layout_test_app().await;
+        let (_daemon, app) = layout_test_app().await;
         let layout = json!({
             "version": 99,
             "panes": [{ "id": "a-pane-this-server-never-heard-of", "size": 0.5 }],

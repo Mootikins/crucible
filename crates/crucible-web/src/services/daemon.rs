@@ -29,9 +29,11 @@ pub struct AppState {
     pub events: Arc<EventBroker>,
     pub config: Arc<CliAppConfig>,
     pub http_client: reqwest::Client,
-    /// Where the web UI's serialized pane layout is persisted (JSON blob,
-    /// opaque to the server). Tests point this at a tempdir.
-    pub layout_path: Arc<std::path::PathBuf>,
+    /// The `client` this process is, in the daemon's generic
+    /// `client_state.get`/`client_state.set` store — `"web"` normally,
+    /// `"web-standalone"` for a `--standalone` (debug/test) instance, so it
+    /// never shares state with the production one.
+    pub client_state_id: Arc<str>,
     /// Whether non-loopback terminal/shell access is active (opt-in env var
     /// AND an API key configured) — surfaced to the frontend via /api/config
     /// so the terminal panel knows whether to connect from a LAN client.
@@ -41,24 +43,14 @@ pub struct AppState {
     pub recents_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
-/// Default persistence location for the web UI layout:
-/// `~/.config/crucible/web-layout.json` (alongside `api_key`).
-pub fn default_layout_path() -> std::path::PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("crucible")
-        .join("web-layout.json")
-}
+/// The `client` this process is in the daemon's client-state store, for a
+/// normal (non-`--standalone`) instance.
+pub const WEB_CLIENT_STATE_ID: &str = "web";
 
-/// Layout file for `--standalone` instances: same directory, separate file,
-/// so a debug/test web server never overwrites the installed instance's
-/// restored workspace.
-pub fn standalone_layout_path() -> std::path::PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("crucible")
-        .join("web-layout.standalone.json")
-}
+/// As [`WEB_CLIENT_STATE_ID`], for a `--standalone` (debug/test) instance —
+/// a distinct namespace, so it never shares a pane layout or a recents list
+/// with the production instance it is standing in for.
+pub const WEB_STANDALONE_CLIENT_STATE_ID: &str = "web-standalone";
 
 pub struct ReconnectingDaemon {
     daemon: Arc<RwLock<DaemonClient>>,
@@ -779,6 +771,18 @@ impl ReconnectingDaemon {
         )
         -> String = session_render_markdown(&session_id, include_timestamps, include_tokens, include_tools, max_content_length);
     }
+
+    forward_rpc! {
+        Safe ClientStateGet =>
+        client_state_get(client: &str, key: &str)
+        -> Option<serde_json::Value> = client_state_get(&client, &key);
+    }
+
+    forward_rpc! {
+        Once ClientStateSet =>
+        client_state_set(client: &str, key: &str, value: serde_json::Value)
+        -> () = client_state_set(&client, &key, value);
+    }
 }
 
 pub struct EventBroker {
@@ -875,7 +879,7 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
         events: broker,
         config: Arc::new(config),
         http_client,
-        layout_path: Arc::new(default_layout_path()),
+        client_state_id: Arc::from(WEB_CLIENT_STATE_ID),
         // start_server overwrites this once the API key is resolved.
         remote_shell: false,
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),

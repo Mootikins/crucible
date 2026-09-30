@@ -1620,6 +1620,12 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
         | RpcMethod::WorkflowApproveGate
         | RpcMethod::WorkflowStatus
         | RpcMethod::WorkflowCancel => Value::Null,
+        // Stateless: this mock never persists a value across calls (it has
+        // no client-state store of its own). Route tests that need a real
+        // round trip use a real daemon instead — see
+        // `routes::layout::tests::layout_test_app`.
+        RpcMethod::ClientStateGet => json!({ "value": null }),
+        RpcMethod::ClientStateSet => json!({ "status": "ok" }),
     }
 }
 
@@ -1642,23 +1648,10 @@ pub fn build_state_with_config(client: DaemonClient, config: CliAppConfig) -> Ap
         events: broker,
         config: Arc::new(config),
         http_client: reqwest::Client::new(),
-        layout_path: Arc::new(unique_test_layout_path()),
+        client_state_id: Arc::from(crate::services::daemon::WEB_CLIENT_STATE_ID),
         remote_shell: false,
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),
     }
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-/// Per-call unique layout path so parallel tests never share a file.
-/// Layout-specific tests build their own AppState over a TempDir instead.
-pub fn unique_test_layout_path() -> std::path::PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    std::env::temp_dir().join(format!(
-        "crucible-test-layout-{}-{}.json",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    ))
 }
 
 #[cfg(any(test, feature = "test-utils"))]

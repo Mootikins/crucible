@@ -135,6 +135,8 @@ rpc_methods! {
     Ping = "ping": () => String,
     DaemonCapabilities = "daemon.capabilities": () => crucible_core::protocol::requests::DaemonCapabilities,
     Shutdown = "shutdown": () => String,
+    ClientStateGet = "client_state.get": crucible_core::protocol::requests::ClientStateKey => crucible_core::protocol::requests::ClientStateGetReply,
+    ClientStateSet = "client_state.set": crucible_core::protocol::requests::ClientStateSetRequest => crucible_core::protocol::requests::StatusReply,
     KilnOpen = "kiln.open": crucible_core::protocol::requests::KilnOpenRequest => crucible_core::protocol::requests::KilnOpenReply,
     KilnClose = "kiln.close": crucible_core::protocol::requests::PathRequest => crucible_core::protocol::requests::StatusReply,
     KilnList = "kiln.list": () => Vec<crucible_core::protocol::requests::KilnRow>,
