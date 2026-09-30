@@ -1346,10 +1346,19 @@ route.
    says `unknown` for most typed rows (155 after gap 2B, 158 after gap 2A).
    One `components(schemas(...))` list, or a document generated from the
    rows, fixes it; a row whose type is missing then fails the build.
-8. Capture the reply fixtures of gap 2A again, from the code before that
-   change. Its 31 wire tests compare the new types with JSON written by hand
-   from the old `json!` calls in the same change, which the acceptance rules
-   do not accept as proof.
+8. **(done)** Capture the reply fixtures of gap 2A again, from the code
+   before that change. Its 31 wire tests used to compare the new types with
+   JSON written by hand from the old `json!` calls in the same change, which
+   the acceptance rules do not accept as proof. `step19_gap2_wire.rs` now
+   reads `assets/fixtures/golden/replies/*.json`, captured by running the
+   daemon at `0dfc583f1` (the commit before gap 2A) over its real socket, and
+   — for `session.pending_interactions`' populated case and
+   `workflow.cancel`'s "cancelled" case, which have no RPC-only way to reach
+   that state — through the real `RpcDispatcher` in a unit test that seeds
+   the state with the production `AgentManager::request_interaction` and a
+   hung agent turn. `session.set_workspace` shares `SessionScopeReply` but
+   the old handler always refused it, so its fixture comes from
+   `connect_kiln`/`disconnect_kiln` instead.
 9. Delete the hand-written `DaemonClient` methods that only forward one
    row. Gap 1 added one generated `rpc_<method>` function per row, so each
    such method is now a second way to make the same call. About 160 stay
