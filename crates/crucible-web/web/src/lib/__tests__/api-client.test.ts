@@ -35,13 +35,13 @@ afterEach(() => {
 
 describe('the generated client', () => {
   it('asks for the path the caller named, with the method it named', async () => {
-    const mockFetch = createMockFetch({ 'GET /api/kilns': { body: { kilns: ['m'] } } });
+    const mockFetch = createMockFetch({ 'GET /api/plugins': { body: { plugins: [] } } });
     global.fetch = mockFetch;
 
-    const answer = decode(await client.GET('/api/kilns'), 'Failed to list models');
+    const answer = decode(await client.GET('/api/plugins'), 'Failed to list plugins');
 
-    expect(answer.kilns).toEqual(['m']);
-    expect(mockFetch.calls('GET /api/kilns')).toBe(1);
+    expect(answer.plugins).toEqual([]);
+    expect(mockFetch.calls('GET /api/plugins')).toBe(1);
   });
 
   it('puts a path parameter in the path and a query parameter in the query', async () => {
@@ -60,10 +60,10 @@ describe('the generated client', () => {
   });
 
   it('names the app as the caller on every request', async () => {
-    const mockFetch = createMockFetch({ 'GET /api/kilns': { body: { kilns: [] } } });
+    const mockFetch = createMockFetch({ 'GET /api/plugins': { body: { plugins: [] } } });
     global.fetch = mockFetch;
 
-    await client.GET('/api/kilns');
+    await client.GET('/api/plugins');
 
     expect((await mockFetch.sent(0)).headers.get(PLUGIN_CALLER_HEADER)).toBe(APP_CALLER);
   });
@@ -84,35 +84,35 @@ describe('the generated client', () => {
 describe('a refusal', () => {
   it('becomes an error carrying the daemon sentence, not the envelope', async () => {
     global.fetch = createMockFetch({
-      'GET /api/kilns': apiError(422, 'provider ollama is unreachable'),
+      'GET /api/plugins': apiError(422, 'provider ollama is unreachable'),
     });
 
     const thrown = await client
-      .GET('/api/kilns')
+      .GET('/api/plugins')
       .then((result) => {
-        decode(result, 'Failed to list models');
+        decode(result, 'Failed to list plugins');
         return null;
       })
       .catch((error: ApiError) => error);
 
-    expect(thrown?.message).toBe('Failed to list models: provider ollama is unreachable');
+    expect(thrown?.message).toBe('Failed to list plugins: provider ollama is unreachable');
     expect(thrown?.message).not.toContain('{');
     expect(thrown?.status).toBe(422);
   });
 
   it('falls back to the status when the body carries no sentence', async () => {
-    global.fetch = createMockFetch({ 'GET /api/kilns': { status: 500 } });
+    global.fetch = createMockFetch({ 'GET /api/plugins': { status: 500 } });
 
     await expect(
-      client.GET('/api/kilns').then((r) => decode(r, 'Failed to list models')),
-    ).rejects.toThrow('Failed to list models: HTTP 500');
+      client.GET('/api/plugins').then((r) => decode(r, 'Failed to list plugins')),
+    ).rejects.toThrow('Failed to list plugins: HTTP 500');
   });
 
   it('raises one toast when the caller asks to notify', async () => {
-    global.fetch = createMockFetch({ 'GET /api/kilns': apiError(502, 'daemon is down') });
+    global.fetch = createMockFetch({ 'GET /api/plugins': apiError(502, 'daemon is down') });
 
     await expect(
-      client.GET('/api/kilns').then((r) => decode(r, 'Failed to list models', { notify: true })),
+      client.GET('/api/plugins').then((r) => decode(r, 'Failed to list plugins', { notify: true })),
     ).rejects.toThrow('daemon is down');
 
     expect(errorToasts()).toHaveLength(1);
@@ -135,11 +135,11 @@ describe('a 401', () => {
   it('asks for the key, and once only inside the throttle window', async () => {
     const prompted = vi.fn();
     const stopListening = getBus().on('authRequired', prompted);
-    global.fetch = createMockFetch({ 'GET /api/kilns': { status: 401 } });
+    global.fetch = createMockFetch({ 'GET /api/plugins': { status: 401 } });
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await expect(
-        client.GET('/api/kilns').then((r) => decode(r, 'Failed to list models')),
+        client.GET('/api/plugins').then((r) => decode(r, 'Failed to list plugins')),
       ).rejects.toThrow(/sign in with the API key/);
     }
 
@@ -148,10 +148,10 @@ describe('a 401', () => {
   });
 
   it('raises no toast beside the prompt, which would say the same twice', async () => {
-    global.fetch = createMockFetch({ 'GET /api/kilns': { status: 401 } });
+    global.fetch = createMockFetch({ 'GET /api/plugins': { status: 401 } });
 
     await expect(
-      client.GET('/api/kilns').then((r) => decode(r, 'Failed to list models', { notify: true })),
+      client.GET('/api/plugins').then((r) => decode(r, 'Failed to list plugins', { notify: true })),
     ).rejects.toThrow();
 
     expect(errorToasts()).toHaveLength(0);
@@ -160,10 +160,10 @@ describe('a 401', () => {
 
 describe('a reply that is not the shape the document declares', () => {
   it('fails the decode rather than answering undefined', async () => {
-    global.fetch = createMockFetch({ 'GET /api/kilns': { status: 200 } });
+    global.fetch = createMockFetch({ 'GET /api/plugins': { status: 200 } });
 
     await expect(
-      client.GET('/api/kilns').then((r) => decode(r, 'Failed to list models')),
+      client.GET('/api/plugins').then((r) => decode(r, 'Failed to list plugins')),
     ).rejects.toThrow(/carried no body/);
   });
 

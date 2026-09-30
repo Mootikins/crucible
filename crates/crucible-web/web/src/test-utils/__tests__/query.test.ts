@@ -174,13 +174,13 @@ describe('createMockFetch', () => {
   });
 
   it('counts the calls of one route, and answers zero for a route nobody called', async () => {
-    const mockFetch = createMockFetch({ 'GET /api/mcp/status': () => ({ running: false }) });
+    const mockFetch = createMockFetch({ 'GET /api/plugins': () => ({ plugins: [] }) });
     global.fetch = mockFetch;
 
-    expect(mockFetch.calls('GET /api/mcp/status')).toBe(0);
-    await client.GET('/api/mcp/status');
-    await client.GET('/api/mcp/status');
-    expect(mockFetch.calls('GET /api/mcp/status')).toBe(2);
+    expect(mockFetch.calls('GET /api/plugins')).toBe(0);
+    await client.GET('/api/plugins');
+    await client.GET('/api/plugins');
+    expect(mockFetch.calls('GET /api/plugins')).toBe(2);
     expect(mockFetch.calls('GET /api/config')).toBe(0);
   });
 
