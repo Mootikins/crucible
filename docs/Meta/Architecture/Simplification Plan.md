@@ -1526,10 +1526,14 @@ not "Gone" ones.
    step 12) and calling `POST /api/rpc/{method}` through `openapi-fetch`'s
    own `client`. One error mapping, `expectOk`, covers every method — the
    403/404/422/502 mapping `routes/rpc.rs` already gives, read the same way
-   every other typed call already reads it. `rpcKey(method, params)` builds
-   a query/mutation key from the method and its params, so a caller does not
-   write one key by hand for a new method. **The migration itself, per
-   domain:** moving each REST-route caller onto `rpc(...)` and deleting the
+   every other typed call already reads it. A caller with no existing
+   `keys.ts` entry builds its query/mutation key from the method and its
+   params, `['rpc', method, params]`, rather than adding one by hand; the
+   `skills` domain below kept its existing `keys.ts` entries instead, per
+   "Keep TanStack Query keys where they exist" — no caller has needed the
+   built form yet, so no helper for it exists until one does. **The
+   migration itself, per domain:** moving each REST-route caller onto
+   `rpc(...)` and deleting the
    per-route TS function/types and the Rust route/forwarder is a separate
    pass per domain (`session`, `kiln`/`note`/`search`, `fs`, `plugin`/
    `surface`, `diff`/`proposal`, `skills`/`agents`/`models`/`providers`,

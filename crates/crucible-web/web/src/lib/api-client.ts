@@ -287,18 +287,3 @@ export async function rpc<M extends keyof RpcMethods>(
   expectOk(result, `RPC \`${method}\` failed`, options);
   return result.data as RpcMethods[M]['result'];
 }
-
-/**
- * The query/mutation key for one RPC call: `['rpc', method, params]`.
- *
- * Built from the method and its params rather than written by hand per
- * caller, so two call sites for the same method and params always share one
- * cache entry, and a rename of the method changes the key without a second
- * edit anywhere else.
- */
-export function rpcKey<M extends keyof RpcMethods>(
-  method: M,
-  params: RpcMethods[M]['params'],
-): readonly ['rpc', M, RpcMethods[M]['params']] {
-  return ['rpc', method, params] as const;
-}
