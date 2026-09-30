@@ -598,16 +598,14 @@ body { background: var(--mk-nav); }
   background: radial-gradient(circle at var(--mk-end) top, transparent calc(var(--mk-radius) - 0.5px), var(--mk-strip) var(--mk-radius));
 }
 
-/* The toolbox "Rail tabs: Vertical" (the default). A rail pane shows no tab
-   bar and no pane marker: the ribbon icons are its tabs. A folded pane takes
-   no room, and its ribbon icon is the only thing that opens it. */
-:root:not([data-mk-railtabs='horizontal']) {
-  .wm-edge-host .wm-tabbar, .wm-pane-marker { display: none; }
-  .wm-edge-host .wm-pane { padding-top: var(--mk-pane-top); }
-  [data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]),
-  [data-edge-panel-body] .wm-splitter:has(+ div > .wm-pane[data-pane-collapsed]),
-  [data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]) + .wm-splitter { display: none; }
-}
+/* Rail tabs are vertical: a rail pane shows no tab bar and no pane marker,
+   because the ribbon icons are its tabs. A folded pane takes no room, and
+   its ribbon icon is the only thing that opens it. */
+.wm-edge-host .wm-tabbar, .wm-pane-marker { display: none; }
+.wm-edge-host .wm-pane { padding-top: var(--mk-pane-top); }
+[data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]),
+[data-edge-panel-body] .wm-splitter:has(+ div > .wm-pane[data-pane-collapsed]),
+[data-edge-panel-body] div:has(> .wm-pane[data-pane-collapsed]) + .wm-splitter { display: none; }
 
 /* Horizontal tabs: the title is the grab handle, so the icon never turns
    into the grip. A Markdown note shows no icon, because its title names it. */

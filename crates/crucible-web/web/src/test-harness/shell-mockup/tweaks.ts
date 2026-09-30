@@ -40,7 +40,6 @@ const defaults = (): Tweaks => ({
   // Glass, except where the OS asks for less transparency.
   material: 'flat',
   tabs: 'leaf',
-  railTabs: 'vertical',
   darkPanes: true,
   gap: 8,
   radius: 12,
@@ -124,7 +123,6 @@ export function applyTweaks() {
   root.toggleAttribute('data-mk-black', t.black);
   // `pill` is the windowing library's default theme; `flat` and `leaf` restyle it.
   root.dataset.mkTabs = t.tabs;
-  root.dataset.mkRailtabs = t.railTabs;
   root.toggleAttribute('data-mk-darkpanes', t.darkPanes);
   // The rail icons sit at the window edge. The inside placement is off.
   windowActions.setRibbonPlacement('edge');

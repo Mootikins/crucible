@@ -12,7 +12,6 @@ export interface Tweaks {
   theme: 'dark' | 'light';
   material: 'flat' | 'glass';
   tabs: 'flat' | 'leaf' | 'pill';
-  railTabs: 'vertical' | 'horizontal';
   darkPanes: boolean;
   gap: number;
   radius: number;

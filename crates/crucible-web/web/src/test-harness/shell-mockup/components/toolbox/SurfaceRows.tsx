@@ -19,13 +19,6 @@ export const SurfaceRows: Component<TweakRowsProps> = (props) => (
         onChange={(v) => props.onSet('tabs', v)}
       />
     </FieldRow>
-    <FieldRow label="Rail tabs" hint="Vertical: the ribbon icons only">
-      <Segmented
-        value={props.tweaks.railTabs}
-        options={[['vertical', 'Vertical'], ['horizontal', 'Horizontal']]}
-        onChange={(v) => props.onSet('railTabs', v)}
-      />
-    </FieldRow>
     <FieldRow label="Right rail" hint="Card: the focus tone, padded">
       <Segmented
         value={props.tweaks.darkPanes ? 'dark' : 'ground'}
