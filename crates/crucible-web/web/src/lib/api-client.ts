@@ -20,6 +20,7 @@
  */
 import createClient, { type Middleware } from 'openapi-fetch';
 import type { paths } from './api-schema';
+import type { RpcMethods } from './rpc-methods';
 import { notificationActions } from '@/stores/notificationStore';
 import { getBus } from '@/lib/bus';
 
@@ -245,4 +246,59 @@ export function decode<T>(
  */
 export function callerParam(caller: string = APP_CALLER): { 'x-crucible-plugin': string } {
   return { 'x-crucible-plugin': caller };
+}
+
+// =============================================================================
+// The one RPC call
+// =============================================================================
+//
+// [[Simplification Plan#Step 19]] item 4. Before this, a new daemon method
+// the browser needed cost a route, route types, a forwarding function in
+// `services/daemon.rs`, a TS function and TS types. `POST /api/rpc/{method}`
+// (`crates/crucible-web/src/routes/rpc.rs`) is the one route; `rpc-methods.d.ts`
+// (generated from the `rpc_methods!` table) is the one typed map. A caller
+// below now costs three places: the row (already exists), the browser's
+// allow-list line in `routes/rpc.rs`, and the call site itself.
+
+/**
+ * The one call for every daemon RPC method the browser may reach.
+ *
+ * `M` selects one row of {@link RpcMethods}, which is generated from the
+ * `rpc_methods!` table — a method renamed or retyped in Rust fails `bun run
+ * typecheck` here, not at a user's runtime. Every call goes through
+ * `POST /api/rpc/{method}`, so one error mapping ({@link expectOk}) covers
+ * every method: a 403 (not on the browser's allow list), a 404 (no
+ * such method), a 422 (the daemon refused the params) and a 502 (anything
+ * else) all read the same `{"error": {"code", "message"}}` body
+ * `crates/crucible-web/src/error.rs` writes.
+ */
+export async function rpc<M extends keyof RpcMethods>(
+  method: M,
+  params: RpcMethods[M]['params'],
+  options: FailureOptions = {},
+): Promise<RpcMethods[M]['result']> {
+  const result = await client.POST('/api/rpc/{method}', {
+    params: { path: { method: method as string } },
+    // `rpc_methods!`'s own no-params rows are typed `null` here; the daemon
+    // canonicalizes a `null` body to `{}` on its own side
+    // (`DaemonClient::send_raw`), so this call sends `params` as it is.
+    body: (params ?? null) as never,
+  });
+  expectOk(result, `RPC \`${method}\` failed`, options);
+  return result.data as RpcMethods[M]['result'];
+}
+
+/**
+ * The query/mutation key for one RPC call: `['rpc', method, params]`.
+ *
+ * Built from the method and its params rather than written by hand per
+ * caller, so two call sites for the same method and params always share one
+ * cache entry, and a rename of the method changes the key without a second
+ * edit anywhere else.
+ */
+export function rpcKey<M extends keyof RpcMethods>(
+  method: M,
+  params: RpcMethods[M]['params'],
+): readonly ['rpc', M, RpcMethods[M]['params']] {
+  return ['rpc', method, params] as const;
 }
