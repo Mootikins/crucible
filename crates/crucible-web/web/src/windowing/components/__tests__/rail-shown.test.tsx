@@ -49,4 +49,16 @@ describe('the shown state of a rail', () => {
     expect(host('left').hasAttribute('data-edge-shown')).toBe(true);
     expect(alphaIcon().hasAttribute('data-highlighted')).toBe(true);
   });
+
+  it('publishes the slide progress, from 1 when open to 0 when shut', () => {
+    mount();
+    const progress = () => Number(host('left').style.getPropertyValue('--wm-edge-progress'));
+    expect(progress()).toBe(1);
+    windowActions.setEdgePanelCollapsed('left', true);
+    vi.advanceTimersByTime(100);
+    expect(progress()).toBeGreaterThan(0);
+    expect(progress()).toBeLessThan(1);
+    finishSlide();
+    expect(progress()).toBe(0);
+  });
 });

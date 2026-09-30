@@ -459,6 +459,7 @@ theme reads them to place a part. The default theme reads none of them.
 | `--wm-ribbon-ceiling` | The bottom of the leading run: the toggle, the leading tab icons and the `railHead` slot |
 | `--wm-ribbon-floor` | The top of the pinned tail (`wm-ribbon-tail`) |
 | `--wm-ribbon-trailing-height` | The height of `wm-ribbon-trailing` |
+| `--wm-edge-progress` | On `wm-edge-host`, not on the ribbon: how far the rail is open, from 0 (shut) to 1 (open), on every frame of its slide. A theme fades or mixes a rail colour with it, so the colour moves with the body |
 
 `rail-geometry.ts` holds the measure loop, which `RibbonPaneStrip` also uses.
 A ResizeObserver watches the body, the panes and the clusters, and an effect
