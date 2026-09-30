@@ -535,7 +535,15 @@ either; they are exercised, if at all, outside this page's file set.
   (`daemon.$client_method(...)`) — deleting these would have meant
   reworking that macro's grammar to call through a second segment, which is
   web-crate work outside this change's files, so they were left for a
-  follow-up rather than touched incidentally. **Not closed:** a row's
+  follow-up rather than touched incidentally. Step 19's own item 9 is that
+  follow-up, migrating one web domain at a time: `skills_list`/`skills_get`/
+  `skills_search` lost their `forward_rpc!` callers when the `skills`
+  domain moved to `POST /api/rpc/{method}`, but the three methods
+  themselves stayed, because they are ALSO category (1) — each reshapes an
+  ergonomic `&Path` argument into the row's `String` wire field, and the
+  CLI still calls them by name. A method's category (4) forwarder going
+  away does not delete the method; only a method with no other category
+  left after its domain migrates does. **Not closed:** a row's
   declared `Req`/`Resp` still is not enforced *at the row itself* — nothing
   stops a future row from being edited to a type a handler no longer
   matches; that is a dispatch-side property, and the module doc of

@@ -130,11 +130,16 @@ document, generically — the typed contract a caller reads is the generated
 `crates/crucible-web/web/src/lib/rpc-methods.d.ts` map, not 169 hand-written
 paths.
 
-This route is additive today: it does not yet replace a single existing REST
-route, so the frontend keeps working unchanged while a later change moves
-callers over one at a time and then deletes the routes that only forwarded
-one RPC (step 19 item 9) and the generated typed client that replaces their
-hand-written TS functions (item 4).
+The generated typed client that reaches this route is `rpc<M>(method,
+params)` (`crates/crucible-web/web/src/lib/api-client.ts`, step 19 item 4):
+it reads its params and reply types off the generated `RpcMethods[M]`, and
+one error mapping, `expectOk`, covers every method. The migration moving
+each domain's callers onto `rpc(...)` and deleting the REST route that only
+forwarded one RPC (item 9) is per-domain and in progress: the `skills`
+domain is done (`GET /api/skills`, `/api/skills/{name}` and
+`/api/skills/search` are gone, and `lib/query/skills.ts` calls
+`rpc('skills.list' | 'skills.get' | 'skills.search', ...)` directly); the
+other domains still keep their REST route and forwarder.
 
 `crates/crucible-web/src/routes/search.rs`'s `resolve_note` still walks the
 filesystem directly (a walk that deliberately bypasses the note index), but
@@ -203,7 +208,6 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/search.rs` | 1506 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. `list_kilns`, `list_notes`, `get_note` and `get_backlinks` return core's own reply types (`KilnRow`, `NoteListRow`, `NoteByNameReply`, `GetBacklinksReply`) unchanged, rather than a local row type decoded through `daemon_shape`. |
 | `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
-| `crates/crucible-web/src/routes/skills.rs` | 171 | `/api/skills*` — proxies to daemon skill discovery. |
 | `crates/crucible-web/src/routes/surface.rs` | 176 | `GET /api/surfaces`. The SSE change stream moved to `routes/events.rs` (the `system` topic) in step 19. |
 | `crates/crucible-web/src/routes/terminal.rs` | 504 | `GET /api/terminal/ws` — WebSocket-to-PTY bridge. |
 | `crates/crucible-web/src/routes/webhook.rs` | 465 | `POST /api/webhook/{name}` — signed webhook ingress. |

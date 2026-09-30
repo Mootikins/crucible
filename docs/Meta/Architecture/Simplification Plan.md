@@ -1062,8 +1062,10 @@ the route itself (parts 1-6 of the change below) is not started.**
 `notification.*`, `workflow.*`, `subagent.*`, `daemon.*`, `ping` and
 `shutdown` rows (below); "What the web itself needs"'s four moved rules and
 two moved stores are done (below); the route itself's items 1-3 and 6 are
-done (below); item 4 (the generated typed client), the route migration and
-item 9 (deleting the routes that only forward one RPC) are open.**
+done (below); item 4 (the generated typed client) is done (below); the
+route migration is started, one domain (skills) done as the worked
+pattern, the rest open; item 9 (deleting the routes that only forward
+one RPC) is started for the skills domain, open for the rest.**
 
 **Status: the "one event stream" decision of part 5 is done.** `GET
 /api/events` (`crates/crucible-web/src/routes/events.rs`) replaces the four
@@ -1518,9 +1520,29 @@ not "Gone" ones.
    `a_plugin_may_not_run_another_plugins_command`,
    `a_plugin_may_not_call_a_method_that_is_not_its_own` and
    `plugin_publications_are_narrowed_to_the_caller`.
-4. A generated typed client: `rpc<M>(method, params)`, from the typed
-   `rpc_methods!` rows of step 12, with a generated method map in TS. The
-   per-route TS functions and types go. **Not started.**
+4. **Done.** A typed client, `rpc<M>(method, params)`
+   (`crates/crucible-web/web/src/lib/api-client.ts`), reading its params and
+   reply types off `RpcMethods[M]` (the generated `rpc-methods.d.ts` map of
+   step 12) and calling `POST /api/rpc/{method}` through `openapi-fetch`'s
+   own `client`. One error mapping, `expectOk`, covers every method — the
+   403/404/422/502 mapping `routes/rpc.rs` already gives, read the same way
+   every other typed call already reads it. `rpcKey(method, params)` builds
+   a query/mutation key from the method and its params, so a caller does not
+   write one key by hand for a new method. **The migration itself, per
+   domain:** moving each REST-route caller onto `rpc(...)` and deleting the
+   per-route TS function/types and the Rust route/forwarder is a separate
+   pass per domain (`session`, `kiln`/`note`/`search`, `fs`, `plugin`/
+   `surface`, `diff`/`proposal`, `skills`/`agents`/`models`/`providers`,
+   `project`/`scm`, `base`). The `skills` domain is done, as the worked
+   pattern: `GET /api/skills`, `/api/skills/{name}` and `/api/skills/search`
+   are gone, `routes/skills.rs` and its three `forward_rpc!` forwarders in
+   `services/daemon.rs` are gone, and `lib/query/skills.ts` calls
+   `rpc('skills.list' | 'skills.get' | 'skills.search', ...)` directly.
+   `DaemonClient::skills_list`/`skills_get`/`skills_search` stay (item 9):
+   each reshapes an ergonomic `&Path` argument into the wire request's
+   `String` field, and the CLI still calls them by name. The other domains
+   are not migrated yet — each still has its REST route, its forwarder and
+   its TS function.
 5. Do the decisions in the table above: one event stream, the catalog cache
    and client state in the daemon, the four rules in the daemon. **Done**,
    recorded above in "What the web itself needs".
@@ -1577,22 +1599,44 @@ not "Gone" ones.
    because the web's `forward_rpc!` calls them by name; the one route of
    this step removes those callers. Keep a method only where it adds
    behavior (a retry or timeout policy, a derived value, an argument
-   transform), and name the behavior.
+   transform), and name the behavior. **Started, on the skills domain**:
+   `AppState::skills_list`/`skills_get`/`skills_search`'s three
+   `forward_rpc!` forwarders in `services/daemon.rs` are gone, since
+   `routes/skills.rs` was their only caller. `DaemonClient::skills_list`/
+   `skills_get`/`skills_search` themselves stay, because each is an
+   argument-transforming method (`&Path` in, a `String` wire field out) that
+   the CLI (`crates/crucible-cli/src/commands/skills.rs`) still calls by
+   name — not the redundancy this item removes. The rest of the about-160
+   forwarders in `services/*.rs` are still named by a live web route and are
+   not touched yet.
 
 **Done when.**
 - The web server has the routes in the "keep" rows, one event stream and the
   RPC route, and no route that only forwards one RPC. About 90 types and
-  about 70 TS functions are gone.
+  about 70 TS functions are gone. **Not yet**: one domain (skills, 3 routes,
+  3 forwarders, 3 TS functions) is migrated; the rest of the about-75
+  one-RPC routes and about-87 forwarders named in "Now" above still stand.
 - The change cost of a browser method falls from about 9 places to 3 (plus
-  one allow-list line), measured by adding a scratch method.
-- No hand-written `DaemonClient` method only forwards one row.
+  one allow-list line), measured by adding a scratch method. **Not yet
+  measured on a scratch branch** — a new method already needs only the row
+  (existing) and the allow-list line, once its caller uses `rpc(...)`, but
+  this has not been proved with an added-then-reverted scratch method the
+  way step 19's earlier gaps were.
+- No hand-written `DaemonClient` method only forwards one row. **Not yet**:
+  true only of the skills domain's three; the rest of `rpc_client/client/*.rs`
+  is unaudited against this rule.
 - The generated TS method map has no `unknown` entry except for the rows
   whose reply is open by design (for example `lua.eval`, `config.get`), and
-  each such row names its reason.
-- Each local-admin method answers 403 through the real HTTP route.
+  each such row names its reason. **Done**, per item 7 above (149 → 21).
+- Each local-admin method answers 403 through the real HTTP route. **Done**,
+  per item 2 above.
 - The four moved rules refuse a bad call from the TUI and from Lua too,
-  tested through the daemon RPC, not only through the web.
+  tested through the daemon RPC, not only through the web. **Done**, per
+  "What the web itself needs" above.
 - The web end-to-end tests pass through the one route and the one stream.
+  **Not yet** for the route: only the skills domain's `ui`/`stories`/`live`
+  specs were moved to `POST /api/rpc/{method}`; the rest of the mocked and
+  live Playwright tiers still hit the per-domain REST routes that remain.
 
 
 ## Step 20. Plugin data schemas
