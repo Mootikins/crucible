@@ -16,7 +16,11 @@
 cru.plugin = cru.plugin or mock({})
 local sessions = require("sessions")
 local support = require("discord.tests.support")
-type Calls = support.Calls
+
+--- The recorder `support.recording_api` returns. Declared again here, not
+--- imported, because the checker resolves a `require`d module's own value
+--- shape but not a type name reached through it.
+type Calls = { created: { any }, configured: number, ended: { any } }
 
 local DM_SESSION_TTL = 86400
 

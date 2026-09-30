@@ -25,7 +25,7 @@ export type RecordingOpts = { prefix: string?, configure_fails: boolean? }
 
 --- A session API that records what it was asked to do.
 function M.recording_api(opts: RecordingOpts?): (Calls, { [string]: any })
-    local o = opts or {}
+    local o: RecordingOpts = opts or {}
     local prefix = o.prefix or "chat"
     local calls: Calls = { created = {}, configured = 0, ended = {} }
     return calls, {

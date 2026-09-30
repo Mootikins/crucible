@@ -10,7 +10,13 @@
 cru.plugin = cru.plugin or mock({})
 local sessions = require("sessions")
 local support = require("discord.tests.support")
-type Calls = support.Calls
+
+--- The recorder `support.recording_api` returns. `calls` is a record, not a
+--- list: the tests read `calls.created`, `calls.configured` and
+--- `calls.ended` by name. Declared again here, not imported, because the
+--- checker resolves a `require`d module's own value shape but not a type
+--- name reached through it.
+type Calls = { created: { any }, configured: number, ended: { any } }
 
 --- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
 --- and the test VM has no `cru.plugin.config` — same shape as `routing_test`.
