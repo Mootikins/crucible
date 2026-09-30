@@ -127,6 +127,15 @@ const STARTED_WRITE_GRACE: Duration = Duration::from_secs(1);
 pub struct Server {
     listener: UnixListener,
     shutdown_tx: broadcast::Sender<()>,
+    /// Subscribed the moment `shutdown_tx` was created, so a shutdown sent
+    /// any time after that — including while the rest of boot (plugin
+    /// activation, ACP agent discovery, kiln open) still runs, before
+    /// `run` is ever called — has a receiver waiting for it. A broadcast
+    /// sender delivers only to receivers that already exist; `run`
+    /// subscribing fresh left a window between bind returning and `run`
+    /// starting where a signal caught during boot, forwarded right after
+    /// bind, reached zero receivers and was dropped for good.
+    shutdown_rx: Option<broadcast::Receiver<()>>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     workspace_tools: Arc<WorkspaceTools>,
@@ -211,7 +220,10 @@ impl Server {
         crucible_core::protocol::remove_socket(&params.path);
 
         let listener = bind_private_listener(&params.path)?;
-        let (shutdown_tx, _) = broadcast::channel(1);
+        // Subscribed immediately: see the `shutdown_rx` field doc for why a
+        // receiver must exist from this line on, not from whenever `run`
+        // happens to call `subscribe` later.
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
         // The persist task reads this journal, not the broadcast ring, so a
         // lag of the ring cannot lose a line of a session log.
         let (event_tx, journal) = crate::EventBus::journaled_channel(EVENT_CHANNEL_CAPACITY);
@@ -643,6 +655,7 @@ impl Server {
         Ok(Self {
             listener,
             shutdown_tx,
+            shutdown_rx: Some(shutdown_rx),
             kiln_manager,
             session_manager,
             workspace_tools,
@@ -691,8 +704,17 @@ impl Server {
     }
 
     /// Run the server until shutdown
-    pub async fn run(self) -> Result<()> {
-        let mut shutdown_rx = self.shutdown_tx.subscribe();
+    pub async fn run(mut self) -> Result<()> {
+        // Not a fresh `self.shutdown_tx.subscribe()`: that would open a
+        // window, from here back to whenever `shutdown_tx` was created,
+        // where a send has no receiver and is dropped. `self.shutdown_rx`
+        // has existed since bind, so a shutdown sent anytime after bind —
+        // including while the rest of boot was still running — is already
+        // queued for it.
+        let mut shutdown_rx = self
+            .shutdown_rx
+            .take()
+            .expect("bind() always fills shutdown_rx, and run() takes self by value so no earlier call could have taken it");
 
         // A daemon with declarative schedules is supposed to sit there with
         // nobody attached — exiting would stop the schedules from firing — so

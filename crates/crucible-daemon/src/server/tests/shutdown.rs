@@ -14,6 +14,50 @@ async fn stop_keeping_files(server: &mut TestServer) {
     let _ = (&mut server.task).await;
 }
 
+/// A shutdown signal sent between bind and run is not lost.
+///
+/// `cru daemon serve` installs the SIGTERM handler before it binds, then
+/// forwards the first signal it catches onto the server's shutdown channel
+/// only after `bind` returns — boot (plugin activation, ACP agent discovery,
+/// kiln open) all runs in between. A test connects the moment the listener
+/// accepts, which can be before that boot tail finishes; a signal sent in
+/// that window reaches `shutdown_handle()` before `run()` has subscribed to
+/// it. `tokio::sync::broadcast::Sender::send` delivers to receivers that
+/// already exist; it does not queue for one that subscribes later, so a
+/// `Server` that built its shutdown channel with the receiver thrown away
+/// and re-subscribed inside `run` loses that signal outright — the daemon
+/// then runs until an external timeout kills the process instead of the
+/// signal it already received.
+#[tokio::test]
+async fn a_shutdown_sent_before_run_is_not_lost() {
+    let tmp = TempDir::new().unwrap();
+    let sock_path = tmp.path().join("test.sock");
+    let kiln_path = tmp.path().join("kiln");
+    std::fs::create_dir_all(&kiln_path).unwrap();
+
+    let server = Server::bind_with_data_home_and_kilns(
+        &sock_path,
+        tmp.path().to_path_buf(),
+        &[("kiln", &kiln_path)],
+    )
+    .await
+    .unwrap();
+
+    // Mirrors `cru daemon serve`'s own ordering: the shutdown handle is
+    // taken and signalled before `run` is ever called, exactly as a signal
+    // that arrives while boot is still finishing would.
+    let shutdown_tx = server.shutdown_handle();
+    let _ = shutdown_tx.send(());
+
+    let task = tokio::spawn(server.run());
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), task).await;
+
+    assert!(
+        outcome.is_ok(),
+        "run() never returned: a shutdown sent before it started was lost"
+    );
+}
+
 /// Every event in the persist queue at the shutdown signal reaches disk.
 #[tokio::test]
 async fn events_queued_at_shutdown_are_all_persisted() {
