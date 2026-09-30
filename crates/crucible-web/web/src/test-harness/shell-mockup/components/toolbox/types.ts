@@ -28,6 +28,8 @@ export interface Tweaks {
   plugin: PluginCssId;
   /** A/B variant: the changes view as B, or B with A's controls. */
   changesControls: 'b' | 'ab';
+  /** How a rail pane moves as the rail opens: it slides, or it also grows down from its tab. */
+  motion: 'slide' | 'genie';
 }
 
 export type SetTweak = <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void;

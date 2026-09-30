@@ -8,11 +8,20 @@ import { Segmented } from '../primitives/Segmented';
 import type { TweakRowsProps } from './types';
 
 export const VariantRows: Component<TweakRowsProps> = (props) => (
-  <FieldRow label="Changes view" hint="A/B variant">
-    <Segmented
-      value={props.tweaks.changesControls}
-      options={[['b', 'B'], ['ab', "B + A's controls"]]}
-      onChange={(v) => props.onSet('changesControls', v)}
-    />
-  </FieldRow>
+  <>
+    <FieldRow label="Rail motion" hint="Grow: the pane comes down from its tab">
+      <Segmented
+        value={props.tweaks.motion}
+        options={[['slide', 'Slide'], ['genie', 'Grow from tab']]}
+        onChange={(v) => props.onSet('motion', v)}
+      />
+    </FieldRow>
+    <FieldRow label="Changes view" hint="A/B variant">
+      <Segmented
+        value={props.tweaks.changesControls}
+        options={[['b', 'B'], ['ab', "B + A's controls"]]}
+        onChange={(v) => props.onSet('changesControls', v)}
+      />
+    </FieldRow>
+  </>
 );

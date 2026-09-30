@@ -643,3 +643,13 @@ body { background: var(--mk-nav); }
 .mk-review-controls { display: flex; align-items: center; gap: 16px; margin: -4px 0 14px; }
 .mk-review-controls .mk-tb-seg { width: auto; }
 .mk-review-controls .mk-check { padding: 0; }
+
+/* Rail motion "Grow from tab" (toolbox). While the rail slides, each pane is
+   also clipped to a band at its top, level with its tab, and its bottom
+   comes down with the slide; the content fades in with it. On close, the
+   bottom goes back up into the tab. `--wm-edge-progress` drives both. */
+:root[data-mk-motion='genie'] .wm-edge-host [data-edge-panel-body] .wm-pane {
+  clip-path: inset(0 0 calc((1 - var(--wm-edge-progress, 1)) * (100% - var(--mk-genie-band))) 0 round var(--mk-pane-r, 0px));
+}
+:root[data-mk-motion='genie'] .wm-edge-host [data-edge-panel-body] .wm-pane > * { opacity: var(--wm-edge-progress, 1); }
+:root { --mk-genie-band: 44px; }

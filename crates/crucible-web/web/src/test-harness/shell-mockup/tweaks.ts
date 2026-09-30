@@ -55,6 +55,7 @@ const defaults = (): Tweaks => ({
   reading: 15,
   plugin: 'none',
   changesControls: 'ab',
+  motion: 'slide',
 });
 
 // v2: the defaults changed, so the settings saved under v1 no longer apply.
@@ -123,6 +124,7 @@ export function applyTweaks() {
   // `pill` is the windowing library's default theme; `flat` and `leaf` restyle it.
   root.dataset.mkTabs = t.tabs;
   root.dataset.mkRailtabs = t.railTabs;
+  root.dataset.mkMotion = t.motion;
   root.toggleAttribute('data-mk-darkpanes', t.darkPanes);
   // The rail icons sit at the window edge. The inside placement is off.
   windowActions.setRibbonPlacement('edge');
