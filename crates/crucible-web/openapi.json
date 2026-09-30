@@ -11123,6 +11123,42 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The provider's prompt cache probably does not hold this session's\nprefix any more. A storage resume always builds a new agent handle\n(`AgentManager::cleanup_session` dropped the old one when the session\nended; `slot.rs`'s `BuildCache` rebuilds from nothing on next use),\nand for an ACP session that means a new agent *process*\n(`AcpAgentHandle::connect`'s doc: dropping the handle sends\n`session/close` and then kills the process). Neither the daemon nor\nthis new handle can read the provider's own cache state, so this\nnames how long the session sat idle and lets the reader judge the\nodds against the provider's own TTL (a few minutes, typically) —\nit is a probable cost, not a certain one.",
+            "required": [
+              "idle_seconds",
+              "kind"
+            ],
+            "properties": {
+              "idle_seconds": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Seconds since the session's last recorded activity, or since it\nstarted if it never had one."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "prompt_cache_cold"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An ACP session's agent-side history did not come back at all: the\nsession never finished a turn with its agent (no `acp_session_id`\nwas ever persisted), so the next turn's handshake has no session to\nname and calls `session/new` directly — see\n`CrucibleAcpClient::handshake`, which only attempts `session/resume`\nwhen a prior id exists. The agent starts with an empty history,\nwhich the daemon's own stored transcript does not: the two can\ndiverge until the agent's own replies rebuild its side.\n\nNot raised when a prior `acp_session_id` exists: the agent may still\nanswer `session/resume` and keep its history, and the daemon cannot\ntell before it tries.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "context_not_restored"
+                ]
+              }
+            }
           }
         ],
         "description": "One thing a session lost by reviving from storage instead of staying\nlive. `session.resume` computes the whole list once, so the TUI and the\nweb client show the same warnings from the same reply, worded in each\nclient's own way.\n\nEach variant names a loss that the daemon can prove from its own state at\nresume time, not a guess. The daemon tears down a session's live state in\n`AgentManager::cleanup_session` when the session ends (`agent_manager/mod.rs`),\nand rebuilds it from the plugin `session_start` hooks and the stored\n`meta.json` when the session revives (`SessionLifecycle::enforce_session_start`,\n`SessionManager::resume_session_from_storage`). Anything torn down there and\nnot restored from storage is a real loss and gets a variant here."

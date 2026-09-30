@@ -5009,6 +5009,18 @@ export interface components {
             kind: "kiln_unavailable";
             /** @description The stored path of the kiln that no longer resolves. */
             path: string;
+        } | {
+            /**
+             * Format: int64
+             * @description Seconds since the session's last recorded activity, or since it
+             *     started if it never had one.
+             */
+            idle_seconds: number;
+            /** @enum {string} */
+            kind: "prompt_cache_cold";
+        } | {
+            /** @enum {string} */
+            kind: "context_not_restored";
         };
         /** @description Review and undo events. */
         ReviewPayload: {

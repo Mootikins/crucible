@@ -383,6 +383,21 @@ If a kiln the session used no longer resolves in the kiln registry (renamed
 or unregistered since), the session keeps searching its other kilns, but not
 that one, until it is registered again.
 
+The revival also builds a new connection to the model or agent, so the
+provider's prompt cache probably does not hold this session's prefix any
+more. The next turn probably sends the whole conversation again, which costs
+more and runs slower than a turn in a session that stayed warm. The daemon
+cannot see the provider's own cache, so it names only how long the session
+sat idle, and states the cost as probable, not certain.
+
+An ACP session that never finished a turn before it ended has no agent-side
+session of its own to resume. Its next turn starts the agent with no
+history at all, even though the daemon's own transcript still shows the
+earlier conversation. An ACP session that did finish a turn may still keep
+its agent-side history — the agent may answer `session/resume` — so the
+daemon warns about this only in the empty case, which it can tell for
+certain.
+
 The daemon reports each of these in `session.resume`'s reply as a
 `warnings` list, and both the TUI and the web client show one notice per
 warning right after the resume completes. A resume that stays in memory (a

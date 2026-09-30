@@ -60,6 +60,34 @@ pub(crate) fn resume_warning_text(
                  its other kilns, but not this one, until it is registered again."
             )
         }
+        ResumeWarning::PromptCacheCold { idle_seconds } => {
+            format!(
+                "This resume built a new agent connection. The provider's prompt cache \
+                 probably does not hold this session's prefix any more (idle {}), so the \
+                 next turn probably sends the whole context again and costs more and runs \
+                 slower.",
+                format_idle_seconds(*idle_seconds)
+            )
+        }
+        ResumeWarning::ContextNotRestored => {
+            "This session's agent never finished a turn before it ended, so the agent has \
+             no session of its own to resume. The next turn starts the agent with no \
+             history, even though this console still shows the earlier one."
+                .to_string()
+        }
+    }
+}
+
+/// A short, human phrase for a count of idle seconds, for
+/// [`resume_warning_text`]'s `PromptCacheCold` sentence.
+fn format_idle_seconds(idle_seconds: i64) -> String {
+    let idle_seconds = idle_seconds.max(0);
+    if idle_seconds < 60 {
+        format!("{idle_seconds}s")
+    } else if idle_seconds < 3600 {
+        format!("{}m", idle_seconds / 60)
+    } else {
+        format!("{}h", idle_seconds / 3600)
     }
 }
 

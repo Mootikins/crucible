@@ -104,9 +104,12 @@ pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
 /// at all lost the same state to a restart. Either way, the live state
 /// `cleanup_session` tears down — the session's own Lua VM, its pending
 /// permission and interaction prompts, and its running delegated children —
-/// is gone before this function runs, so every warning below is
-/// unconditional on the fact of a storage resume, not a guess about what
-/// might have been running.
+/// is gone before this function runs, so `PluginStateReset`,
+/// `PendingWorkCleared` and `PromptCacheCold` are unconditional on the fact
+/// of a storage resume, not a guess about what might have been running.
+/// `KilnUnavailable` and `ContextNotRestored` read a fact of the stored
+/// session instead (an unresolved kiln path, an absent `acp_session_id`),
+/// so they fire only where that fact holds.
 async fn resume_stored(
     sm: &Arc<SessionManager>,
     session_id: &str,
@@ -120,15 +123,34 @@ async fn resume_stored(
         .state;
     let session = sm.resume_session_from_storage(&id).await?;
 
+    let idle_seconds = chrono::Utc::now()
+        .signed_duration_since(session.last_activity.unwrap_or(session.started_at))
+        .num_seconds()
+        .max(0);
     let mut warnings = vec![
         ResumeWarning::PluginStateReset,
         ResumeWarning::PendingWorkCleared,
+        ResumeWarning::PromptCacheCold { idle_seconds },
     ];
     warnings.extend(session.unresolved_kiln_paths().iter().map(|path| {
         ResumeWarning::KilnUnavailable {
             path: path.display().to_string(),
         }
     }));
+    // An ACP session that never finished a turn with its agent has no
+    // `acp_session_id` to resume: the next handshake calls `session/new`
+    // directly (`CrucibleAcpClient::handshake`), so the agent's own history
+    // starts empty. A session with an id may still keep its history — the
+    // agent might answer `session/resume` — so this only fires on the
+    // provably empty case.
+    if session
+        .agent
+        .as_ref()
+        .is_some_and(|agent| agent.agent_type == "acp")
+        && session.acp_session_id.is_none()
+    {
+        warnings.push(ResumeWarning::ContextNotRestored);
+    }
     Ok((previous, warnings))
 }
 

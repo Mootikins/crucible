@@ -457,6 +457,35 @@ pub enum ResumeWarning {
         /// The stored path of the kiln that no longer resolves.
         path: String,
     },
+    /// The provider's prompt cache probably does not hold this session's
+    /// prefix any more. A storage resume always builds a new agent handle
+    /// (`AgentManager::cleanup_session` dropped the old one when the session
+    /// ended; `slot.rs`'s `BuildCache` rebuilds from nothing on next use),
+    /// and for an ACP session that means a new agent *process*
+    /// (`AcpAgentHandle::connect`'s doc: dropping the handle sends
+    /// `session/close` and then kills the process). Neither the daemon nor
+    /// this new handle can read the provider's own cache state, so this
+    /// names how long the session sat idle and lets the reader judge the
+    /// odds against the provider's own TTL (a few minutes, typically) —
+    /// it is a probable cost, not a certain one.
+    PromptCacheCold {
+        /// Seconds since the session's last recorded activity, or since it
+        /// started if it never had one.
+        idle_seconds: i64,
+    },
+    /// An ACP session's agent-side history did not come back at all: the
+    /// session never finished a turn with its agent (no `acp_session_id`
+    /// was ever persisted), so the next turn's handshake has no session to
+    /// name and calls `session/new` directly — see
+    /// `CrucibleAcpClient::handshake`, which only attempts `session/resume`
+    /// when a prior id exists. The agent starts with an empty history,
+    /// which the daemon's own stored transcript does not: the two can
+    /// diverge until the agent's own replies rebuild its side.
+    ///
+    /// Not raised when a prior `acp_session_id` exists: the agent may still
+    /// answer `session/resume` and keep its history, and the daemon cannot
+    /// tell before it tries.
+    ContextNotRestored,
 }
 
 /// Reply from `session.history` and `session.resume_from_storage`: the

@@ -227,16 +227,44 @@ Grouped by directory. Lines are as of `582c5e6c1`.
   back, compared with the live session that ended. `handle_session_resume`
   computes the whole list once, on the storage-resume path only, and puts
   it on `SessionTransitionReply::warnings` (omitted when empty, so a warm
-  resume's wire shape is unchanged). `PluginStateReset` and
-  `PendingWorkCleared` are unconditional for a storage resume: the state
+  resume's wire shape is unchanged). `PluginStateReset`, `PendingWorkCleared`
+  and `PromptCacheCold` are unconditional for a storage resume: the state
   they name is exactly what `AgentManager::cleanup_session` tears down when
   a session ends (the session's own Lua VM, its pending `permissions` and
-  `interactions` maps, its running delegated children) and what
-  `SessionLifecycle::enforce_session_start`'s `session_start` hooks and a
-  fresh `SessionSlot` rebuild, not restore, on revival. `KilnUnavailable`
-  reads `Session::unresolved_kiln_paths`, which `SessionStorage::load` sets
-  on every load, including this one, from the current kiln registry. The
-  TUI (`crucible-cli/src/tui/oil/chat_runner/mod.rs::resume_warning_text`)
+  `interactions` maps, its running delegated children, and the built agent
+  handle itself) and what `SessionLifecycle::enforce_session_start`'s
+  `session_start` hooks and a fresh `SessionSlot` rebuild, not restore, on
+  revival. `KilnUnavailable` reads `Session::unresolved_kiln_paths`, which
+  `SessionStorage::load` sets on every load, including this one, from the
+  current kiln registry.
+
+  `PromptCacheCold` says the provider's prompt cache is *probably* cold,
+  not certainly: the daemon cannot see a provider's own cache state, only
+  `idle_seconds`, from `Session::last_activity` (or `started_at` if the
+  session never had one). It fires for every storage resume, ACP included —
+  dropping the session's `AcpAgentHandle` sends `session/close` and kills
+  the agent process (`agent_manager/models.rs`'s doc on `set_temperature`),
+  so a storage resume always faces a cold new process on that side too, and
+  nothing in this codebase shows an ACP agent keeping its own cache across
+  that restart.
+
+  `ContextNotRestored` fires only for an ACP session with no persisted
+  `acp_session_id` — a session that never finished a turn with its agent.
+  `CrucibleAcpClient::handshake` (`acp/client/connection.rs`) only attempts
+  `session/resume` when a prior id exists; otherwise it calls `session/new`
+  directly, so the agent's next turn starts with no history at all. A
+  session that *does* have a prior id may still get its history back — the
+  agent may answer `session/resume` — so this case raises no warning: the
+  daemon cannot tell without a live handshake, which resuming the daemon
+  session does not attempt. A genai (internal-agent) session gets neither
+  warning about its transcript: `AgentManager::get_or_rebuild_session_tree`
+  replays the full stored log into the conversation tree on first use after
+  a resume, and the per-turn context-budget truncation
+  (`genai_handle.rs::enforce_context_budget`) that may shorten what a turn
+  actually sends runs identically for a live session and a resumed one, so
+  it is not a resume-specific loss.
+
+  The TUI (`crucible-cli/src/tui/oil/chat_runner/mod.rs::resume_warning_text`)
   and the web client (`crucible-web/web/src/lib/query/sessions.ts::resumeWarningText`)
   each hold one function that turns a warning into display text; neither
   decides which warnings apply — that stays in the daemon.

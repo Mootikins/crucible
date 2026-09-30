@@ -394,6 +394,37 @@ describe('useResumeSession warnings', () => {
     expect(visible[1].message).toContain('/kilns/gone');
   });
 
+  it('shows a probable-cost notice for a cold cache, and a lost-context notice for an ACP session with no agent-side id', async () => {
+    const row = session('s-1');
+    env = createTestQueryEnv({
+      [LIST]: () => listReply([row]),
+      'POST /api/session/s-1/resume': () => ({
+        session_id: 's-1',
+        type: 'chat',
+        state: 'active',
+        kilns: [],
+        history: [],
+        total_events: 0,
+        warnings: [
+          { kind: 'prompt_cache_cold', idle_seconds: 90 },
+          { kind: 'context_not_restored' },
+        ],
+      }),
+    });
+
+    const resume = inRoot(() => useResumeSession());
+    const warnings = await resume.mutateAsync('s-1');
+
+    expect(warnings).toEqual([
+      { kind: 'prompt_cache_cold', idle_seconds: 90 },
+      { kind: 'context_not_restored' },
+    ]);
+    const visible = notificationStore.notifications.filter((n) => !n.dismissed);
+    expect(visible).toHaveLength(2);
+    expect(visible[0].message).toContain('probably');
+    expect(visible[1].message).toContain('no history');
+  });
+
   it('a live resume answers no warnings and shows no notification', async () => {
     const row = session('s-1');
     env = createTestQueryEnv({

@@ -38,9 +38,26 @@ function resumeWarningText(warning: SchemaResumeWarning): string {
       return 'Work in progress when this session ended did not survive: any running subagent, in-flight tool call, or unanswered prompt is gone.';
     case 'kiln_unavailable':
       return `The kiln at ${warning.path} no longer resolves. This session keeps searching its other kilns, but not this one, until it is registered again.`;
-    default:
-      return 'This session lost some state when it resumed.';
+    case 'prompt_cache_cold':
+      return `This resume built a new agent connection. The provider's prompt cache probably does not hold this session's prefix any more (idle ${formatIdleSeconds(warning.idle_seconds)}), so the next turn probably sends the whole context again and costs more and runs slower.`;
+    case 'context_not_restored':
+      return "This session's agent never finished a turn before it ended, so the agent has no session of its own to resume. The next turn starts the agent with no history, even though this session still shows the earlier one.";
+    default: {
+      // Exhaustiveness check: a new `ResumeWarning` variant that reaches
+      // here without a case above fails to compile, the same gate the
+      // TUI's `resume_warning_text` match has.
+      const exhaustive: never = warning;
+      throw new Error(`unhandled ResumeWarning kind: ${JSON.stringify(exhaustive)}`);
+    }
   }
+}
+
+/** A short, human phrase for a count of idle seconds. See `resumeWarningText`'s `prompt_cache_cold` case. */
+function formatIdleSeconds(idleSeconds: number): string {
+  const seconds = Math.max(0, idleSeconds);
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  return `${Math.floor(seconds / 3600)}h`;
 }
 
 /**

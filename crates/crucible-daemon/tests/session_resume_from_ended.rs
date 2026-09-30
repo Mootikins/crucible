@@ -135,6 +135,149 @@ async fn session_resume_from_storage_warns_about_lost_state() {
         kinds.contains(&"pending_work_cleared"),
         "a stored resume cancelled any work in flight when the session ended: {reply}"
     );
+    let cache_warning = warnings
+        .iter()
+        .find(|w| w["kind"] == "prompt_cache_cold")
+        .unwrap_or_else(|| panic!("a stored resume always builds a new agent handle: {reply}"));
+    let idle = cache_warning["idle_seconds"]
+        .as_i64()
+        .expect("prompt_cache_cold names how long the session sat idle");
+    assert!(idle >= 0, "idle_seconds must not be negative: {reply}");
+}
+
+/// `idle_seconds` grows with how long the session actually sat ended, so a
+/// caller who reads it gets real information, not a constant.
+#[tokio::test]
+async fn prompt_cache_cold_names_real_idle_time() {
+    let server = InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .start()
+        .await
+        .expect("failed to start server");
+    let client = DaemonClient::connect_to(server.socket_path())
+        .await
+        .expect("failed to connect");
+
+    let id = ended_session(&client).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+
+    let reply: Value = client
+        .session_resume(&id)
+        .await
+        .expect("session.resume should revive an ended session");
+
+    let idle = reply["warnings"]
+        .as_array()
+        .expect("warnings")
+        .iter()
+        .find(|w| w["kind"] == "prompt_cache_cold")
+        .expect("prompt_cache_cold")["idle_seconds"]
+        .as_i64()
+        .expect("idle_seconds");
+    assert!(
+        idle >= 1,
+        "the session sat idle over a second: idle_seconds={idle}"
+    );
+}
+
+/// An ACP session that never finished a turn has no `acp_session_id` to
+/// resume, so the next handshake calls `session/new` with no history —
+/// `ContextNotRestored` names that.
+#[tokio::test]
+async fn session_resume_warns_when_an_acp_session_never_had_an_agent_side_id() {
+    let server = InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .start()
+        .await
+        .expect("failed to start server");
+    let client = DaemonClient::connect_to(server.socket_path())
+        .await
+        .expect("failed to connect");
+
+    let session = client
+        .session_create(SessionCreateRequest {
+            session_type: "chat".to_string(),
+            ..Default::default()
+        })
+        .await
+        .expect("session_create failed");
+    let id = session.id.to_string();
+
+    let agent = crucible_core::session::SessionAgent {
+        agent_type: "acp".to_string(),
+        agent_name: Some("never-connected".to_string()),
+        provider_key: None,
+        provider: crucible_core::config::BackendType::Mock,
+        model: "mock-model".to_string(),
+        system_prompt: String::new(),
+        max_context_tokens: None,
+        endpoint: None,
+        env_overrides: Default::default(),
+        mcp_servers: Vec::new(),
+        agent_card_name: None,
+        agent_description: None,
+        delegation_config: None,
+        precognition_enabled: false,
+        context_budget: None,
+        context_strategy: Default::default(),
+        mode: None,
+        tool_policy: None,
+    };
+    client
+        .session_configure_agent(&id, &agent)
+        .await
+        .expect("configure the session as an ACP agent, without ever connecting one");
+
+    // No message was ever sent, so no `acp_session_id` was ever persisted.
+    client.session_end(&id).await.expect("session_end failed");
+
+    let reply: Value = client
+        .session_resume(&id)
+        .await
+        .expect("session.resume should revive an ended session");
+
+    let kinds: Vec<&str> = reply["warnings"]
+        .as_array()
+        .expect("warnings")
+        .iter()
+        .map(|w| w["kind"].as_str().unwrap())
+        .collect();
+    assert!(
+        kinds.contains(&"context_not_restored"),
+        "an ACP session with no agent-side id must warn that its next turn starts empty: {reply}"
+    );
+}
+
+/// A non-ACP (internal) session never gets `context_not_restored`: only an
+/// ACP session names an agent-side history that could fail to come back.
+#[tokio::test]
+async fn session_resume_never_warns_context_not_restored_for_an_internal_session() {
+    let server = InProcessDaemonBuilder::new()
+        .expect("a test daemon builder")
+        .start()
+        .await
+        .expect("failed to start server");
+    let client = DaemonClient::connect_to(server.socket_path())
+        .await
+        .expect("failed to connect");
+
+    let id = ended_session(&client).await;
+
+    let reply: Value = client
+        .session_resume(&id)
+        .await
+        .expect("session.resume should revive an ended session");
+
+    let kinds: Vec<&str> = reply["warnings"]
+        .as_array()
+        .expect("warnings")
+        .iter()
+        .map(|w| w["kind"].as_str().unwrap())
+        .collect();
+    assert!(
+        !kinds.contains(&"context_not_restored"),
+        "an internal session has no agent-side history to lose: {reply}"
+    );
 }
 
 /// A resume that stays in memory (a `Paused` session) never touched
