@@ -116,35 +116,6 @@ async fn show(config: &CliAppConfig, name: String) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    /// The JSON shape of `cru skills list --format json` must not move.
-    /// This literal is the shape from before the SkillOutput copy of
-    /// SkillSummary was deleted, captured so the deletion cannot change
-    /// the wire.
-    #[test]
-    fn skill_output_json_matches_the_captured_shape() {
-        let output = vec![crucible_core::types::SkillSummary {
-            name: "example".to_string(),
-            scope: "personal".to_string(),
-            description: "An example skill.".to_string(),
-            shadowed_count: 1,
-        }];
-        let json = serde_json::to_string_pretty(&output).expect("serialize");
-        assert_eq!(
-            json,
-            r#"[
-  {
-    "name": "example",
-    "scope": "personal",
-    "description": "An example skill.",
-    "shadowed_count": 1
-  }
-]"#
-        );
-    }
-}
-
 /// Search skills (basic text matching)
 async fn search(config: &CliAppConfig, query: String, limit: usize) -> Result<()> {
     println!("Searching for: '{}' (limit: {})", query, limit);
@@ -172,4 +143,33 @@ async fn search(config: &CliAppConfig, query: String, limit: usize) -> Result<()
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// The JSON shape of `cru skills list --format json` must not move.
+    /// This literal is the shape from before the SkillOutput copy of
+    /// SkillSummary was deleted, captured so the deletion cannot change
+    /// the wire.
+    #[test]
+    fn skill_output_json_matches_the_captured_shape() {
+        let output = vec![crucible_core::types::SkillSummary {
+            name: "example".to_string(),
+            scope: "personal".to_string(),
+            description: "An example skill.".to_string(),
+            shadowed_count: 1,
+        }];
+        let json = serde_json::to_string_pretty(&output).expect("serialize");
+        assert_eq!(
+            json,
+            r#"[
+  {
+    "name": "example",
+    "scope": "personal",
+    "description": "An example skill.",
+    "shadowed_count": 1
+  }
+]"#
+        );
+    }
 }
