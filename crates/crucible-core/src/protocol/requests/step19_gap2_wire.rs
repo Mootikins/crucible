@@ -1,525 +1,226 @@
-//! Wire-compatibility proof for step 19 gap 2.
+//! Wire-compatibility proof for step 19 gap 2A.
 //!
-//! Each `wire` call below names the JSON the *pre-change* code built with
-//! `json!` for one RPC method (transcribed from the `crucible-daemon` source
-//! before this change gave the method a named reply type — see the
-//! Simplification Plan, step 19). It checks two things at once:
+//! Each fixture in `assets/fixtures/golden/replies/` holds the JSON of one
+//! reply shape, captured from the pre-change `crucible-daemon` handler — the
+//! commit just before gap 2A gave the method a named reply type (see the
+//! Simplification Plan, step 19) — by running the real daemon over a real
+//! socket (or, for the two cases that need to seed internal registry state,
+//! the real `RpcDispatcher` in-process) and recording its actual reply.
+//! Session ids, generated request ids and timestamps are normalized to fixed
+//! placeholders; everything else is what the old code actually produced.
 //!
-//! 1. The new type, filled with the same values, serializes to that exact
-//!    JSON — so the wire did not move.
-//! 2. That JSON still deserializes into the new type — so a client library
-//!    or a stored fixture built against the old shape still reads.
+//! A test reads the fixture, deserializes each case into the new type, and
+//! re-serializes it, so a difference between the fixture and either
+//! direction is a wire change.
 //!
-//! A change here on purpose (the wire moving) means editing the literal by
+//! A change here on purpose (the wire moving) means editing the fixture by
 //! hand in the same commit as the code change, and saying why.
 
 use super::*;
 use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
+use std::path::PathBuf;
 
-fn wire<T: Serialize + DeserializeOwned>(value: T, expected: Value) {
-    let actual = serde_json::to_value(&value).expect("the reply serializes");
-    assert_eq!(
-        actual, expected,
-        "the reply JSON moved from its pre-change shape"
-    );
-    let read: T = serde_json::from_value(expected).expect("the pre-change JSON still reads");
-    assert_eq!(
-        serde_json::to_value(&read).unwrap(),
-        actual,
-        "the pre-change JSON does not round-trip"
-    );
+fn fixture_path(name: &str) -> PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fixtures/golden/replies")
+        .join(format!("{name}.json"))
+}
+
+/// Compare the JSON of each case in the fixture `name` with the reply type
+/// `T`, then prove each entry survives a read and a write.
+fn golden<T: Serialize + DeserializeOwned>(name: &str) {
+    let path = fixture_path(name);
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let expected: Value = serde_json::from_str(&text).expect("the fixture is JSON");
+    let cases = expected.as_array().expect("a fixture is an array");
+    assert!(!cases.is_empty(), "{name}: the fixture has no cases");
+    for case in cases {
+        let read: T = serde_json::from_value(case.clone())
+            .unwrap_or_else(|e| panic!("{name}: the fixture does not read as the reply type: {e}"));
+        assert_eq!(
+            &serde_json::to_value(&read).expect("a reply writes JSON"),
+            case,
+            "{name}: the reply JSON differs from {}. The wire changed",
+            path.display()
+        );
+    }
 }
 
 #[test]
 fn session_pause_and_resume() {
-    wire(
-        SessionTransitionReply {
-            session_id: "chat-1".to_string(),
-            previous_state: "Active".to_string(),
-            state: "paused".to_string(),
-        },
-        json!({"session_id": "chat-1", "previous_state": "Active", "state": "paused"}),
-    );
-    wire(
-        SessionTransitionReply {
-            session_id: "chat-1".to_string(),
-            previous_state: "Paused".to_string(),
-            state: "active".to_string(),
-        },
-        json!({"session_id": "chat-1", "previous_state": "Paused", "state": "active"}),
-    );
+    golden::<SessionTransitionReply>("session_transition");
 }
 
 #[test]
 fn session_history_and_resume_from_storage() {
-    wire(
-        SessionHistoryReply {
-            session_id: crate::session::SessionId::parse("chat-1").unwrap(),
-            session_type: "chat".to_string(),
-            state: "Active".to_string(),
-            kilns: vec![crate::config::KilnName::parse("docs").unwrap()],
-            history: vec![json!({"event": "turn_started"})],
-            total_events: 1,
-            transcript: crate::transcript::Transcript::default(),
-        },
-        json!({
-            "session_id": "chat-1",
-            "type": "chat",
-            "state": "Active",
-            "kilns": ["docs"],
-            "history": [{"event": "turn_started"}],
-            "total_events": 1,
-            "transcript": {"as_of_seq": 0, "items": []},
-        }),
-    );
+    golden::<SessionHistoryReply>("session_history");
 }
 
 #[test]
 fn session_end() {
-    wire(
-        SessionEndReply {
-            session_id: crate::session::SessionId::parse("chat-1").unwrap(),
-            state: "ended".to_string(),
-            kilns: vec![crate::config::KilnName::parse("docs").unwrap()],
-        },
-        json!({"session_id": "chat-1", "state": "ended", "kilns": ["docs"]}),
-    );
+    golden::<SessionEndReply>("session_end");
 }
 
 #[test]
 fn session_delete() {
-    wire(
-        SessionDeleteReply {
-            session_id: crate::session::SessionId::parse("chat-1").unwrap(),
-            deleted: true,
-        },
-        json!({"session_id": "chat-1", "deleted": true}),
-    );
+    golden::<SessionDeleteReply>("session_delete");
 }
 
 #[test]
 fn session_archive_and_unarchive() {
-    wire(
-        SessionArchiveReply {
-            session_id: crate::session::SessionId::parse("chat-1").unwrap(),
-            archived: true,
-        },
-        json!({"session_id": "chat-1", "archived": true}),
-    );
+    golden::<SessionArchiveReply>("session_archive");
 }
 
 #[test]
 fn session_replay() {
-    wire(
-        SessionReplayStartedReply {
-            session_id: "replay-abc".to_string(),
-            status: "replaying".to_string(),
-            speed: 1.0,
-        },
-        json!({"session_id": "replay-abc", "status": "replaying", "speed": 1.0}),
-    );
+    golden::<SessionReplayStartedReply>("session_replay_started");
 }
 
 #[test]
 fn session_compact() {
-    wire(
-        SessionCompactReply {
-            session_id: crate::session::SessionId::parse("chat-1").unwrap(),
-            state: "Active".to_string(),
-            compaction_requested: true,
-        },
-        json!({"session_id": "chat-1", "state": "Active", "compaction_requested": true}),
-    );
+    golden::<SessionCompactReply>("session_compact");
 }
 
 #[test]
 fn session_subscribe_and_unsubscribe() {
-    wire(
-        SessionSubscribeReply {
-            subscribed: vec!["chat-1".to_string()],
-            client_id: "ClientId(1)".to_string(),
-        },
-        json!({"subscribed": ["chat-1"], "client_id": "ClientId(1)"}),
-    );
-    wire(
-        SessionUnsubscribeReply {
-            unsubscribed: vec!["chat-1".to_string()],
-            client_id: "ClientId(1)".to_string(),
-        },
-        json!({"unsubscribed": ["chat-1"], "client_id": "ClientId(1)"}),
-    );
+    golden::<SessionSubscribeReply>("session_subscribe");
+    golden::<SessionUnsubscribeReply>("session_unsubscribe");
 }
 
 #[test]
 fn session_set_title_and_generate_title() {
-    wire(
-        SessionTitleReply {
-            session_id: "chat-1".to_string(),
-            title: "Fix the parser".to_string(),
-        },
-        json!({"session_id": "chat-1", "title": "Fix the parser"}),
-    );
+    // `session.set_title` and `session.generate_title` share
+    // `SessionTitleReply`. `generate_title` needs a real LLM turn to produce
+    // a title, so this fixture is captured from `set_title` alone; the
+    // shared type is what the wire compatibility claim is about.
+    golden::<SessionTitleReply>("session_title");
 }
 
 #[test]
 fn session_configure_agent() {
-    wire(
-        SessionConfigureAgentReply {
-            session_id: "chat-1".to_string(),
-            configured: true,
-        },
-        json!({"session_id": "chat-1", "configured": true}),
-    );
+    golden::<SessionConfigureAgentReply>("session_configure_agent");
 }
 
 #[test]
 fn session_inject_context() {
-    wire(
-        SessionInjectContextReply {
-            status: "ok".to_string(),
-        },
-        json!({"status": "ok"}),
-    );
+    golden::<SessionInjectContextReply>("session_inject_context");
 }
 
 #[test]
 fn session_clear() {
-    wire(
-        SessionClearReply {
-            session_id: "chat-1".to_string(),
-        },
-        json!({"session_id": "chat-1"}),
-    );
+    golden::<SessionClearReply>("session_clear");
 }
 
 #[test]
 fn session_connect_disconnect_and_set_workspace_scope() {
-    wire(
-        SessionScopeReply {
-            session_id: crate::session::SessionId::parse("chat-1").unwrap(),
-            kilns: vec![crate::config::KilnName::parse("docs").unwrap()],
-            workspace: Some("/work/space".to_string()),
-        },
-        json!({"session_id": "chat-1", "kilns": ["docs"], "workspace": "/work/space"}),
-    );
+    // `session.set_workspace` shares `SessionScopeReply` but never reaches
+    // it: `server/session/scope.rs::handle_session_set_workspace` always
+    // answers `AgentError::WorkspaceFixed` (the workspace is fixed at
+    // creation; the method stays on the wire only to give an older client a
+    // named refusal instead of `METHOD_NOT_FOUND`). The fixture is captured
+    // from `session.connect_kiln` and `session.disconnect_kiln`, which do
+    // produce it.
+    golden::<SessionScopeReply>("session_scope");
 }
 
 #[test]
 fn session_list_models() {
-    wire(
-        SessionListModelsReply {
-            session_id: "chat-1".to_string(),
-            models: vec!["ollama/llama3.2".to_string()],
-        },
-        json!({"session_id": "chat-1", "models": ["ollama/llama3.2"]}),
-    );
+    golden::<SessionListModelsReply>("session_list_models");
 }
 
 #[test]
 fn session_commands() {
-    wire(
-        SessionCommandsReply {
-            session_id: "chat-1".to_string(),
-            commands: Vec::new(),
-        },
-        json!({"session_id": "chat-1", "commands": []}),
-    );
+    golden::<SessionCommandsReply>("session_commands");
 }
 
 #[test]
 fn session_list_agent_options() {
-    wire(
-        SessionListAgentOptionsReply {
-            session_id: "chat-1".to_string(),
-            options: Vec::new(),
-        },
-        json!({"session_id": "chat-1", "options": []}),
-    );
+    golden::<SessionListAgentOptionsReply>("session_list_agent_options");
 }
 
 #[test]
 fn session_knob_set() {
-    wire(
-        SessionKnobSetReply {
-            session_id: "chat-1".to_string(),
-            knob: "model".to_string(),
-            set: true,
-        },
-        json!({"session_id": "chat-1", "knob": "model", "set": true}),
-    );
+    golden::<SessionKnobSetReply>("session_knob_set");
 }
 
 #[test]
 fn session_add_list_and_dismiss_notification() {
-    wire(
-        SessionAddNotificationReply {
-            session_id: "chat-1".to_string(),
-            success: true,
-        },
-        json!({"session_id": "chat-1", "success": true}),
-    );
-    wire(
-        SessionListNotificationsReply {
-            session_id: "chat-1".to_string(),
-            notifications: Vec::new(),
-        },
-        json!({"session_id": "chat-1", "notifications": []}),
-    );
-    wire(
-        SessionDismissNotificationReply {
-            session_id: "chat-1".to_string(),
-            notification_id: "n-1".to_string(),
-            success: true,
-        },
-        json!({"session_id": "chat-1", "notification_id": "n-1", "success": true}),
-    );
+    golden::<SessionAddNotificationReply>("session_add_notification");
+    golden::<SessionListNotificationsReply>("session_list_notifications");
+    golden::<SessionDismissNotificationReply>("session_dismiss_notification");
 }
 
 #[test]
 fn session_pending_interactions_and_respond() {
-    wire(
-        SessionPendingInteractionsReply {
-            pending: vec![PendingInteraction {
-                session_id: "chat-1".to_string(),
-                request_id: "req-1".to_string(),
-                request: crate::interaction::InteractionRequest::Ask(
-                    crate::interaction::AskRequest {
-                        question: "Which?".to_string(),
-                        choices: None,
-                        allow_other: false,
-                        multi_select: false,
-                    },
-                ),
-            }],
-        },
-        json!({"pending": [{
-            "session_id": "chat-1",
-            "request_id": "req-1",
-            "request": {
-                "kind": "ask",
-                "question": "Which?",
-                "allow_other": false,
-                "multi_select": false,
-            },
-        }]}),
-    );
-    wire(
-        SessionInteractionRespondReply {
-            session_id: "chat-1".to_string(),
-            request_id: "req-1".to_string(),
-        },
-        json!({"session_id": "chat-1", "request_id": "req-1"}),
-    );
+    golden::<SessionPendingInteractionsReply>("session_pending_interactions");
+    golden::<SessionInteractionRespondReply>("session_interaction_respond");
 }
 
 #[test]
 fn session_plugin_approval() {
-    wire(
-        PluginApprovalReply {
-            plugin: "oci".to_string(),
-            approval: "ask".to_string(),
-        },
-        json!({"plugin": "oci", "approval": "ask"}),
-    );
-    wire(
-        SessionListPluginApprovalsReply {
-            approvals: std::collections::BTreeMap::from([(
-                "oci".to_string(),
-                crate::session::PluginApproval::Ask,
-            )]),
-        },
-        json!({"approvals": {"oci": "ask"}}),
-    );
+    golden::<PluginApprovalReply>("plugin_approval");
+    golden::<SessionListPluginApprovalsReply>("session_list_plugin_approvals");
 }
 
 #[test]
 fn session_test_interaction() {
-    wire(
-        SessionTestInteractionReply {
-            session_id: "chat-1".to_string(),
-            request_id: "test-abc".to_string(),
-            interaction_type: "ask".to_string(),
-        },
-        json!({"session_id": "chat-1", "request_id": "test-abc", "type": "ask"}),
-    );
+    golden::<SessionTestInteractionReply>("session_test_interaction");
 }
 
 #[test]
 fn session_fork() {
-    wire(
-        SessionForkReply {
-            id: crate::session::SessionId::parse("chat-2").unwrap(),
-            parent_id: "chat-1".to_string(),
-            messages_copied: 3,
-        },
-        json!({"id": "chat-2", "parent_id": "chat-1", "messages_copied": 3}),
-    );
+    golden::<SessionForkReply>("session_fork");
 }
 
 #[test]
 fn session_cache_stats() {
-    wire(
-        SessionCacheStatsReply {
-            session_id: "chat-1".to_string(),
-            hits: 1,
-            misses: 2,
-            read_tokens: 100,
-            creation_tokens: 200,
-            prompt_tokens: 300,
-            completion_tokens: 400,
-            hit_rate: Some(0.5),
-        },
-        json!({
-            "session_id": "chat-1",
-            "hits": 1,
-            "misses": 2,
-            "read_tokens": 100,
-            "creation_tokens": 200,
-            "prompt_tokens": 300,
-            "completion_tokens": 400,
-            "hit_rate": 0.5,
-        }),
-    );
+    golden::<SessionCacheStatsReply>("session_cache_stats");
 }
 
 #[test]
 fn session_undo_can_undo_and_undo_depth() {
-    wire(
-        SessionUndoReply {
-            session_id: "chat-1".to_string(),
-            undone: vec![crate::types::UndoSummary {
-                messages_removed: 2,
-            }],
-        },
-        json!({"session_id": "chat-1", "undone": [{"messages_removed": 2}]}),
-    );
-    wire(
-        SessionCanUndoReply {
-            session_id: "chat-1".to_string(),
-            can_undo: true,
-        },
-        json!({"session_id": "chat-1", "can_undo": true}),
-    );
-    wire(
-        SessionUndoDepthReply {
-            session_id: "chat-1".to_string(),
-            undo_depth: 2,
-        },
-        json!({"session_id": "chat-1", "undo_depth": 2}),
-    );
+    golden::<SessionUndoReply>("session_undo");
+    golden::<SessionCanUndoReply>("session_can_undo");
+    golden::<SessionUndoDepthReply>("session_undo_depth");
 }
 
 #[test]
 fn session_status() {
-    wire(
-        SessionStatusReply { status: Vec::new() },
-        json!({"status": []}),
-    );
+    golden::<SessionStatusReply>("session_status");
 }
 
 #[test]
 fn session_cleanup() {
-    wire(
-        SessionCleanupReply {
-            deleted: vec![crate::session::SessionId::parse("chat-1").unwrap()],
-            total: 1,
-            dry_run: false,
-            scope: "docs".to_string(),
-        },
-        json!({"deleted": ["chat-1"], "total": 1, "dry_run": false, "scope": "docs"}),
-    );
+    golden::<SessionCleanupReply>("session_cleanup");
 }
 
 #[test]
 fn session_render_markdown_and_export_to_file() {
-    wire(
-        SessionRenderMarkdownResponse {
-            markdown: "# Hi".to_string(),
-        },
-        json!({"markdown": "# Hi"}),
-    );
-    wire(
-        SessionExportToFileResponse {
-            status: "ok".to_string(),
-            output_path: "/tmp/session.md".to_string(),
-        },
-        json!({"status": "ok", "output_path": "/tmp/session.md"}),
-    );
+    golden::<SessionRenderMarkdownResponse>("session_render_markdown");
+    golden::<SessionExportToFileResponse>("session_export_to_file");
 }
 
 #[test]
 fn lua_register_commands() {
-    wire(
-        LuaRegisterCommandsReply { registered: 2 },
-        json!({"registered": 2}),
-    );
+    golden::<LuaRegisterCommandsReply>("lua_register_commands");
 }
 
 #[test]
 fn config_set_and_save() {
-    wire(
-        ConfigSetReply {
-            ok: true,
-            rejected: vec!["kilns".to_string()],
-        },
-        json!({"ok": true, "rejected": ["kilns"]}),
-    );
-    wire(
-        ConfigSaveReply {
-            ok: true,
-            refused: Vec::new(),
-            rejected: Vec::new(),
-        },
-        json!({"ok": true, "refused": [], "rejected": []}),
-    );
+    golden::<ConfigSetReply>("config_set");
+    golden::<ConfigSaveReply>("config_save");
 }
 
 #[test]
 fn ui_set_theme() {
-    wire(
-        UiSetThemeReply {
-            theme: "dark".to_string(),
-        },
-        json!({"theme": "dark"}),
-    );
+    golden::<UiSetThemeReply>("ui_set_theme");
 }
 
 #[test]
 fn workflow_start_approve_gate_status_and_cancel() {
-    wire(
-        WorkflowRunReply {
-            session_id: "chat-1".to_string(),
-            status: crate::workflow::WorkflowStatus::Completed,
-        },
-        json!({"session_id": "chat-1", "status": {"kind": "completed"}}),
-    );
-    wire(
-        WorkflowStatusReply {
-            status: crate::workflow::WorkflowStatus::Running,
-            completed_slots: 1,
-            total_slots: 3,
-            scope: std::collections::HashMap::from([("out".to_string(), json!("value"))]),
-        },
-        json!({
-            "status": {"kind": "running"},
-            "completed_slots": 1,
-            "total_slots": 3,
-            "scope": {"out": "value"},
-        }),
-    );
-    wire(
-        WorkflowCancelReply {
-            session_id: "chat-1".to_string(),
-            status: "cancelled".to_string(),
-        },
-        json!({"session_id": "chat-1", "status": "cancelled"}),
-    );
-    wire(
-        WorkflowCancelReply {
-            session_id: "chat-1".to_string(),
-            status: "not_found".to_string(),
-        },
-        json!({"session_id": "chat-1", "status": "not_found"}),
-    );
+    golden::<WorkflowRunReply>("workflow_run");
+    golden::<WorkflowStatusReply>("workflow_status");
+    golden::<WorkflowCancelReply>("workflow_cancel");
 }
