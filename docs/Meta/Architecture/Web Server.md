@@ -131,10 +131,13 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
 | `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with read-path reference redaction, within the root the daemon's `fs.read` names; the write-path containment check itself is the daemon's `fs.write`. |
 | `crates/crucible-web/src/routes/chat.rs` | 542 | Chat turn intake (with attached diff comments), the session SSE event stream, and pending-interaction routes. |
+
+| `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with strict containment and reference redaction, within the root the daemon's `fs.read` names. |
+| `crates/crucible-web/src/routes/chat.rs` | 527 | Chat turn intake (with attached diff comments) and pending-interaction routes. The session SSE stream moved to `routes/events.rs` in Simplification Plan step 19. |
 | `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. |
 | `crates/crucible-web/src/routes/diff.rs` | 609 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
-| `crates/crucible-web/src/routes/events.rs` | 180 | `GET /api/events/system` — `publication_changed` and `proposal_changed` pushed on the daemon's system session; also the shared `system_stream` helper `fs.rs` and `surface.rs` reuse. |
-| `crates/crucible-web/src/routes/fs.rs` | 486 | File-tree explorer routes: list, move, mkdir, trash, and a live SSE stream built on the shared `system_stream` helper. `fs_list_dir`/`fs_move`/`fs_trash` return the daemon's typed `FsListing`/`FsMoveReply`/`FsTrashReply` directly, with no `daemon_shape` decode. |
+| `crates/crucible-web/src/routes/events.rs` | 550 | `GET /api/events` — the one SSE route (Simplification Plan step 19). A client names as many topics as it wants in `?topics=a,b,...`: a session id for the chat stream, or `system` for publications, proposals, surface changes and filesystem changes. Every frame's JSON body gains a `topic` field; the payload types are unchanged (`SessionEventPayload`, `FsEvent`, `SurfaceChangedEvent`, `PublicationChangedEvent`, `ProposalChangedEvent`). Replaces the four routes `chat.rs::event_stream`, `fs.rs::fs_event_stream`, `surface.rs::surface_event_stream` and this file's own former `system_event_stream` used to serve separately. |
+| `crates/crucible-web/src/routes/fs.rs` | 398 | File-tree explorer routes: list, move, mkdir, trash. The live SSE stream moved to `routes/events.rs` (the `system` topic) in step 19. `fs_list_dir`/`fs_move`/`fs_trash` return the daemon's typed `FsListing`/`FsMoveReply`/`FsTrashReply` directly, with no `daemon_shape` decode. |
 | `crates/crucible-web/src/routes/health.rs` | 49 | `/health` liveness and `/ready` readiness probes. |
 | `crates/crucible-web/src/routes/helpers.rs` | 115 | Shared stream-versioning, note-projection, and note-name-validation helpers. |
 | `crates/crucible-web/src/routes/kiln.rs` | 1300 | Kiln/project file listing, the note-link graph, and text/raw file read-write, all through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers. `kiln_graph` returns core's own `KilnGraphReply` unchanged. |
@@ -149,7 +152,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
 | `crates/crucible-web/src/routes/skills.rs` | 171 | `/api/skills*` — proxies to daemon skill discovery. |
-| `crates/crucible-web/src/routes/surface.rs` | 206 | `GET /api/surfaces` and its SSE change stream, built on the shared `system_stream` helper. |
+| `crates/crucible-web/src/routes/surface.rs` | 176 | `GET /api/surfaces`. The SSE change stream moved to `routes/events.rs` (the `system` topic) in step 19. |
 | `crates/crucible-web/src/routes/terminal.rs` | 504 | `GET /api/terminal/ws` — WebSocket-to-PTY bridge. |
 | `crates/crucible-web/src/routes/webhook.rs` | 465 | `POST /api/webhook/{name}` — signed webhook ingress. |
 
@@ -245,25 +248,27 @@ Paths are relative to the repository root. Line counts are as recorded at
   flight — rather than `Daemon` (502). `rpc_error_parts` (same file) is
   `pub(crate)` so `routes/bases.rs` can reuse the same JSON-RPC code/message
   split to map the daemon's bases-specific `NOT_FOUND` code to 404.
-- **The chat SSE stream carries one vocabulary, not two.** The route
-  (`crates/crucible-web/src/routes/chat.rs`, function `to_sse`) forwards the
-  daemon's own `{event, data}` pair for every session event — the same shape
-  `SessionEventMessage` and `session.jsonl` carry — with the SSE `event:`
-  field set to `event.event`. There is no second, web-only enum re-encoding
-  each event: `crucible_core::protocol::session_events::SessionEventPayload`
-  carries `ToSchema`, so `openapi.json` and the generated
+- **The chat topic of the one SSE stream carries one vocabulary, not two.**
+  The route (`crates/crucible-web/src/routes/events.rs`, function
+  `session_event_frames`) forwards the daemon's own `{event, data}` pair for
+  every session event — the same shape `SessionEventMessage` and
+  `session.jsonl` carry — with the SSE `event:` field set to `event.event`
+  and a `topic` field added to the envelope (Simplification Plan step 19).
+  There is no second, web-only enum re-encoding each event:
+  `crucible_core::protocol::session_events::SessionEventPayload` carries
+  `ToSchema`, so `openapi.json` and the generated
   `web/src/lib/api-schema.d.ts` describe the real wire union, and
   `web/src/lib/types.ts` aliases it as `SessionEvent`. A live event that
   changed the transcript still sends a second frame, `transcript`
-  (`TranscriptFrame` in `routes/chat.rs`), with the same `id:` as the first.
-  `ChatEvent::from_daemon_event` and `normalize_interaction`, which used to
-  build the second vocabulary and flatten permission requests, are gone; a
-  permission request's suggested grant (`PermRequest.pattern`) is now filled
-  in once, by `SessionEventMessage::interaction_requested`
+  (`TranscriptFrame` in `routes/events.rs`), with the same `id:` as the
+  first. `ChatEvent::from_daemon_event` and `normalize_interaction`, which
+  used to build the second vocabulary and flatten permission requests, are
+  gone; a permission request's suggested grant (`PermRequest.pattern`) is
+  now filled in once, by `SessionEventMessage::interaction_requested`
   (`crates/crucible-core/src/protocol/rpc/mod.rs`), before the request
   reaches any client. **`FsEvent`** (`crates/crucible-web/src/fs_events.rs`)
   is the one remaining browser-facing projection enum, for the filesystem
-  watcher stream, which this step did not touch.
+  watcher, carried on the `system` topic of the same route.
 - **`ApiKeyState`**, **`HostPolicy`**, **`SessionStore`**, **`ShellGateState`**
   (`crates/crucible-web/src/middleware/auth/mod.rs`, `host/mod.rs`,
   `session.rs`, `shell.rs`) — the auth/host/session state consumed by
@@ -366,55 +371,64 @@ lifts only under the fail-closed `remote_shell_active` opt-in.
 
 ### SSE subscribe-before-forward
 
-Every browser SSE route reads an `EventStream` from
-`ReconnectingDaemon::subscribe_events` (`crates/crucible-web/src/services/daemon.rs`,
-implemented in `crates/crucible-web/src/services/daemon_event_stream.rs`),
-which subscribes the local `EventBroker` channel before it reconciles the
-daemon's own `session.subscribe`, so an event emitted between the two steps
-is not lost. `crates/crucible-web/src/routes/events.rs`'s `system_stream`
-is the one shared implementation of this rule for the daemon's system
-channel: `crates/crucible-web/src/routes/fs.rs`'s file-watcher stream and
-`crates/crucible-web/src/routes/surface.rs`'s surface-change stream both
-call it rather than assembling their own subscribe/forward/SSE pipeline.
-`crates/crucible-web/src/routes/chat.rs`'s per-session stream is not
-system-scoped, so it does not call `system_stream`; it calls
-`subscribe_events` directly, collapsing what used to be two separate calls
-(a local broker subscribe, then a daemon `session.subscribe` RPC) into one.
-`crates/crucible-web/src/routes/plugin.rs` has no SSE stream of its own left
-at all — its former `GET /api/plugins/events` route is deleted, superseded
-by `GET /api/events/system`.
+Every topic of the one browser SSE route, `GET /api/events`
+(`crates/crucible-web/src/routes/events.rs`, Simplification Plan step 19),
+reads its own `EventStream` from `ReconnectingDaemon::subscribe_events`
+(`crates/crucible-web/src/services/daemon.rs`, implemented in
+`crates/crucible-web/src/services/daemon_event_stream.rs`), which subscribes
+the local `EventBroker` channel before it reconciles the daemon's own
+`session.subscribe`, so an event emitted between the two steps is not lost.
+The route subscribes every named topic before it replays any of them: an
+event emitted during a slow replay read of one topic must not be lost
+because a later topic had not subscribed yet. The `system` topic (the
+daemon's system channel: publications, proposals, filesystem and surface
+changes) and a session's own topic (chat) both go through this one function,
+where each used to call its own copy — `fs.rs`'s and `surface.rs`'s former
+file-watcher and surface-change streams called a shared `system_stream`
+helper, and `chat.rs`'s former per-session stream called `subscribe_events`
+directly. `crates/crucible-web/src/routes/plugin.rs` has no SSE stream of
+its own left at all — its former `GET /api/plugins/events` route is
+deleted, superseded first by `GET /api/events/system` and now by the
+`system` topic of `GET /api/events`.
 
 ```mermaid
 sequenceDiagram
     participant Browser
-    participant Route as routes/chat.rs::event_stream
+    participant Route as routes/events.rs::events_stream
     participant Reconnecting as services/daemon.rs::ReconnectingDaemon
     participant Interest as services/daemon_event_stream.rs::reconcile
     participant CoreDaemon as crucible-daemon
 
-    Browser->>Route: GET /api/chat/events/{id}
-    Route->>Reconnecting: subscribe_events(session_id)
-    Reconnecting->>Reconnecting: EventBroker subscribe (local, first)
-    Reconnecting->>Interest: reconcile(session_id)
-    Interest->>CoreDaemon: RPC session.subscribe (if not already On)
-    CoreDaemon-->>Interest: events begin forwarding
-    Interest-->>Reconnecting: EventStream
-    Reconnecting-->>Route: EventStream yields SessionEvent
-    Route->>Route: to_sse (event.event, event.data)
-    Route-->>Browser: SSE frame
-    Route-->>Browser: transcript frame (when the event has ops)
+    Browser->>Route: GET /api/events?topics=<session id>,system
+    loop each named topic
+        Route->>Reconnecting: subscribe_events(topic)
+        Reconnecting->>Reconnecting: EventBroker subscribe (local, first)
+        Reconnecting->>Interest: reconcile(topic)
+        Interest->>CoreDaemon: RPC session.subscribe (if not already On)
+        CoreDaemon-->>Interest: events begin forwarding
+        Interest-->>Reconnecting: EventStream
+    end
+    Reconnecting-->>Route: one EventStream per topic, merged
+    Route->>Route: session_event_frames / system_event_frame, topic added
+    Route-->>Browser: SSE frame (topic in the body)
+    Route-->>Browser: transcript frame (when a session event has ops)
 ```
 
-`to_sse` in `crates/crucible-web/src/routes/chat.rs` turns one daemon event
-into one or two SSE frames. The first frame's `event:` name is `event.event`
-and its `data:` is `{"event": event.event, "data": event.data}` — the
-daemon's own pair, forwarded, not re-encoded. When the live event has
-transcript ops, a second frame follows. Its name is
-`transcript`, its `id:` is the seq of the event, and its data is
-`{"type": "transcript", "seq": <seq or null>, "ops": [...]}`. A replayed
-event comes from the stored log, so it has no ops and no second frame. The
-test `a_live_event_sends_its_transcript_ops_as_a_second_frame` in the same
-file reads the SSE body.
+`session_event_frames` in `crates/crucible-web/src/routes/events.rs` turns
+one daemon event of a session topic into one or two SSE frames. The first
+frame's `event:` name is `event.event` and its `data:` is `{"topic":
+<topic>, "event": event.event, "data": event.data}` — the daemon's own pair,
+forwarded, not re-encoded, with the topic added to the envelope. When the
+live event has transcript ops, a second frame follows. Its name is
+`transcript`, its `id:` is `<topic>:<seq>`, and its data is `{"topic":
+<topic>, "type": "transcript", "seq": <seq or null>, "ops": [...]}`. A
+replayed event comes from the stored log, so it has no ops and no second
+frame. `system_event_frame` does the equivalent for the `system` topic,
+trying each of the four payload shapes (`FsEvent`, `SurfaceChangedEvent`,
+`PublicationChangedEvent`, `ProposalChangedEvent`) in turn and dropping an
+event none of them recognise. The test
+`a_live_event_sends_its_transcript_ops_as_a_second_frame` in the same file
+reads the SSE body.
 
 Three paths can raise a `stream_gap` event, and each names why.
 `EventStream`'s `Stream` implementation
@@ -427,11 +441,12 @@ reconnect, once the dead connection's event-router task has been stopped
 and awaited to completion, so no event the dead connection still held can
 follow the gap; `EventBroker::dispatch` fans a wildcard-addressed event out
 to every session's sender, since no per-session sender is keyed to the
-wildcard. `crates/crucible-web/src/routes/chat.rs`'s replay-cursor filter
-treats either gap as ending its "hide already-replayed events" window
-(resetting its `floor` to 0), because a reconnected daemon renumbers events
-from its own persisted log, so a seq at or below the old floor can be a
-genuinely new event.
+wildcard. `events_stream`'s per-topic replay-cursor filter treats either gap
+as ending its "hide already-replayed events" window (resetting its `floor`
+to 0), because a reconnected daemon renumbers events from its own persisted
+log, so a seq at or below the old floor can be a genuinely new event. Each
+topic keeps its own `floor`, so a gap on one session's topic does not reset
+another topic's window.
 
 ### Browser-side stream recovery
 
@@ -442,11 +457,15 @@ recovery layer for the browser's own link to the web server: the
 never sees, such as an HTTP 5xx or a wrong content type, which leaves a
 browser `EventSource` permanently `CLOSED` with no further retry of its own.
 `openReconnectingSource` (`crates/crucible-web/web/src/lib/api.ts`) closes a
-failed source itself and opens a new one after an exponential backoff, so
-each of the four browser streams — chat, surface, filesystem and system —
-recovers on its own after such an error. An open resets the backoff to its
-first step; a manual `reconnect()` on the shared root in
-`crates/crucible-web/web/src/lib/query/sse.ts` skips the backoff outright.
+failed source itself and opens a new one after an exponential backoff. Since
+Simplification Plan step 19 there is one such source for the whole page,
+`joinEventsTopic`'s shared connection, carrying every topic the page reads —
+a session's chat events, surface changes, filesystem changes and the
+daemon's publications and proposals — so one backoff now covers all of them
+at once. An open resets the backoff to its first step; a manual
+`reconnect()` on a root in `crates/crucible-web/web/src/lib/query/sse.ts`
+calls `reconnectEventsConnection`, which rebuilds the one shared connection
+(every joined topic's manual retry at once) and skips the backoff outright.
 
 On a reconnect or a `stream_gap`, a consumer must not lose a change that
 arrived while its first fetch of the same data was still in flight.

@@ -1,9 +1,11 @@
 //! Chat Route Contract Tests
 //!
-//! The SSE stream carries the daemon's own `{event, data}` pair — one event
+//! The SSE stream carries the daemon's own `{event, data}` pair, plus the
+//! topic Simplification Plan step 19 added to the envelope — one event
 //! vocabulary, not a second one re-encoded for the browser (see
-//! `crates/crucible-web/src/routes/chat.rs::to_sse`). There is no `ChatEvent`
-//! type left to test here: the wire tests below exercise the stream itself.
+//! `crates/crucible-web/src/routes/events.rs::session_event_frames`). There
+//! is no `ChatEvent` type left to test here: the wire tests below exercise
+//! the stream itself, through the one route, `GET /api/events`.
 
 use crucible_core::protocol::rpc::RpcMethod;
 
@@ -204,12 +206,20 @@ async fn chat_events_replays_past_the_cursor_and_stamps_seq_ids() {
     // Cursor 1: the mock's log holds seqs 1-4, so the tail is 2, 3, 4.
     let (_state, text, _body) = read_stream(
         client,
-        "/api/chat/events/test-session-001?after=1",
+        "/api/events?topics=test-session-001&after=test-session-001:1",
         &[],
         |text| text.matches("id:").count() >= 3,
     )
     .await;
-    assert_eq!(frame_ids(&text), vec!["2", "3", "4"], "frames: {text}");
+    assert_eq!(
+        frame_ids(&text),
+        vec![
+            "test-session-001:2",
+            "test-session-001:3",
+            "test-session-001:4"
+        ],
+        "frames: {text}"
+    );
     assert!(
         text.contains("Second turn") && text.contains("Second answer"),
         "the replay carries the payload, not just the seq: {text}"
@@ -232,13 +242,17 @@ async fn chat_events_skips_live_events_the_replay_already_covered() {
     let (_mock, client) = start_mock_daemon().await;
     let (state, replayed, body) = read_stream(
         client,
-        "/api/chat/events/test-session-001?after=3",
+        "/api/events?topics=test-session-001&after=test-session-001:3",
         &[],
         |text| text.matches("id:").count() >= 1,
     )
     .await;
     // Cursor 3: the tail is seq 4 alone.
-    assert_eq!(frame_ids(&replayed), vec!["4"], "replay: {replayed}");
+    assert_eq!(
+        frame_ids(&replayed),
+        vec!["test-session-001:4"],
+        "replay: {replayed}"
+    );
 
     // Below the tail (long covered) and at the tail (the tail itself).
     state
@@ -276,7 +290,11 @@ async fn chat_events_skips_live_events_the_replay_already_covered() {
     // The SAME connection: the live frames land in the receiver the route
     // opened before it replayed, which is the whole ordering claim.
     let (live, _body) = drain(body, &|text: &str| text.contains("Third answer")).await;
-    assert_eq!(frame_ids(&live), vec!["5"], "live frames: {live}");
+    assert_eq!(
+        frame_ids(&live),
+        vec!["test-session-001:5"],
+        "live frames: {live}"
+    );
     assert!(
         !live.contains("First answer") && !live.contains("Second turn"),
         "the covered events did not reach the client a second time: {live}"
@@ -291,12 +309,16 @@ async fn chat_events_accepts_the_last_event_id_header_as_the_cursor() {
 
     let (_state, text, _body) = read_stream(
         client,
-        "/api/chat/events/test-session-001",
-        &[("Last-Event-ID", "3")],
+        "/api/events?topics=test-session-001",
+        &[("Last-Event-ID", "test-session-001:3")],
         |text| text.matches("id:").count() >= 1,
     )
     .await;
-    assert_eq!(frame_ids(&text), vec!["4"], "frames: {text}");
+    assert_eq!(
+        frame_ids(&text),
+        vec!["test-session-001:4"],
+        "frames: {text}"
+    );
 
     let params = mock
         .received_params(RpcMethod::SessionEventsAfter)
@@ -319,7 +341,7 @@ async fn chat_events_without_a_cursor_replays_nothing() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/chat/events/test-session-001")
+                .uri("/api/events?topics=test-session-001")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -341,7 +363,7 @@ async fn chat_events_data_payload_is_the_daemon_event_data_pair() {
     let (_mock, client) = start_mock_daemon().await;
     let (state, _replayed, body) = read_stream(
         client,
-        "/api/chat/events/test-session-001?after=4",
+        "/api/events?topics=test-session-001&after=test-session-001:4",
         &[],
         |_| true,
     )
@@ -364,7 +386,41 @@ async fn chat_events_data_payload_is_the_daemon_event_data_pair() {
     let parsed: Value = serde_json::from_str(data).unwrap();
     assert_eq!(
         parsed,
-        json!({ "event": "text_delta", "data": { "content": "hi" } }),
-        "the data: payload is {{event, data}}, not a {{type, ...}} tag: {live}"
+        json!({ "topic": "test-session-001", "event": "text_delta", "data": { "content": "hi" } }),
+        "the data: payload is {{topic, event, data}}, not a {{type, ...}} tag: {live}"
+    );
+}
+
+/// A client subscribed to one session's topic gets no frame of another
+/// session, even though both travel the same connection.
+#[tokio::test]
+async fn a_topic_carries_no_frame_of_another_session() {
+    let (_mock, client) = start_mock_daemon().await;
+    let (state, _text, body) = read_stream(
+        client,
+        "/api/events?topics=test-session-001&after=test-session-001:4",
+        &[],
+        |text| text.contains("stream_version"),
+    )
+    .await;
+
+    state
+        .events
+        .publish_for_tests(stamped(5, "text_delta", json!({ "content": "mine" })))
+        .await;
+    state
+        .events
+        .publish_for_tests(SessionEvent::new(
+            "other-session",
+            "text_delta",
+            json!({ "content": "not mine" }),
+        ))
+        .await;
+
+    let (live, _body) = drain(body, &|text: &str| text.contains("mine")).await;
+    assert!(live.contains("\"content\":\"mine\""), "{live}");
+    assert!(
+        !live.contains("not mine"),
+        "a topic this connection never named must not appear: {live}"
     );
 }

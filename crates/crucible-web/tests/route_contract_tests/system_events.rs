@@ -1,7 +1,10 @@
-//! The system stream (`GET /api/events/system`).
+//! The `system` topic of `GET /api/events`.
 //!
-//! The daemon sends `publication_changed` and `proposal_changed` on the
-//! system session, and the route forwards both.
+//! The daemon sends `publication_changed`, `proposal_changed`, the
+//! filesystem watcher events and `surface_changed` on the system session, and
+//! this topic forwards all four (Simplification Plan step 19 folded the
+//! former `/api/events/system`, `/api/fs/events` and `/api/surfaces/events`
+//! into it).
 
 use std::time::Duration;
 
@@ -73,11 +76,13 @@ async fn stream_after_both_events(uri: &str) -> String {
 
 #[tokio::test]
 async fn the_system_stream_carries_proposal_changed() {
-    let text = stream_after_both_events("/api/events/system").await;
+    let text = stream_after_both_events("/api/events?topics=system").await;
 
     assert!(
         text.contains(&format!("event: {}", SystemPayload::PROPOSAL_CHANGED))
-            && text.contains(&format!("data: {{\"id\":\"{PROPOSAL_ID}\"}}")),
+            && text.contains(&format!(
+                "data: {{\"id\":\"{PROPOSAL_ID}\",\"topic\":\"system\"}}"
+            )),
         "no proposal frame: {text}"
     );
     assert!(
@@ -129,7 +134,7 @@ async fn assert_gap_reaches_projection(uri: &str, event: &str, data: serde_json:
 #[tokio::test]
 async fn system_projection_reports_gaps() {
     assert_gap_reaches_projection(
-        "/api/events/system",
+        "/api/events?topics=system",
         "publication_changed",
         json!({"plugin":"gap-probe", "key":"rows"}),
     )
@@ -139,7 +144,7 @@ async fn system_projection_reports_gaps() {
 #[tokio::test]
 async fn filesystem_projection_reports_gaps() {
     assert_gap_reaches_projection(
-        "/api/fs/events",
+        "/api/events?topics=system",
         "file_changed",
         json!({"path":"/gap-probe.md", "kind":"modified"}),
     )
@@ -149,7 +154,7 @@ async fn filesystem_projection_reports_gaps() {
 #[tokio::test]
 async fn surface_projection_reports_gaps() {
     assert_gap_reaches_projection(
-        "/api/surfaces/events",
+        "/api/events?topics=system",
         "surface_changed",
         json!({"plugin":"gap-probe", "name":"rows", "version":1}),
     )

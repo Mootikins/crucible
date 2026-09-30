@@ -538,19 +538,19 @@ flowchart LR
    `ReconnectingDaemon::forward_rpc` in `crates/crucible-web/src/services/daemon.rs`,
    itself a thin call into the same `DaemonClient` RPC surface `crucible-cli`
    uses (`crates/crucible-daemon/src/rpc_client/client/`).
-4. For an SSE endpoint the handler subscribes its local channel *before* the
-   daemon can forward anything into it, so no event emitted between the two
-   steps is lost. `routes/chat.rs` implements this itself for a session's
-   own stream (step 8 of flow 3).
-   `crates/crucible-web/src/routes/fs.rs` and
-   `crates/crucible-web/src/routes/surface.rs` instead call the shared
-   `system_stream` helper in
-   `crates/crucible-web/src/routes/events.rs` — the same helper backs that
-   file's own `GET /api/events/system` route — which subscribes the daemon's
-   system session before returning the stream (flow 12). `routes/plugin.rs`
-   defines the `PublicationChangedEvent` shape a plugin's publication
-   projects into, but opens no stream of its own: a publication change
-   travels the system stream, not a plugin-specific one.
+4. The one SSE route, `GET /api/events` (`crates/crucible-web/src/routes/events.rs`,
+   Simplification Plan step 19), subscribes every topic a client names in
+   `?topics=a,b,...` before it replays or forwards anything into any of
+   them, so no event emitted between subscribe and replay is lost. A
+   session's own topic (chat, step 8 of flow 3) and the `system` topic
+   (publications, proposals, filesystem and surface changes, flow 12) both
+   go through the same `subscribe_events` call inside this one route, in
+   place of the four routes (`chat.rs`, `fs.rs`, `surface.rs`, and this
+   file's own former `system_event_stream`) that used to call it
+   separately. `routes/plugin.rs` defines the `PublicationChangedEvent`
+   shape a plugin's publication projects into, but opens no stream of its
+   own: a publication change travels the `system` topic, not a
+   plugin-specific one.
 5. On a connection-shaped error, `forward_rpc` retries once, only for a
    `ReplayPolicy::Safe` call; a `Once`-policy write (any daemon-side
    mutation) returns the error immediately rather than risk executing
@@ -834,37 +834,48 @@ flowchart LR
 
 ## 12. The web event stream: browser SSE reconciled against the daemon
 
-Flow 3 step 8 covers one session's own SSE stream. This flow covers the
-system-scoped stream `publication_changed`/`proposal_changed` events travel,
-and the interest bookkeeping both share.
+Flow 3 step 8 covers a session's own topic of the one SSE route. This flow
+covers the `system` topic `publication_changed`/`proposal_changed`,
+filesystem and surface-change events travel, and the interest bookkeeping
+every topic shares, all inside the one route Simplification Plan step 19
+put them on, `GET /api/events` (`crates/crucible-web/src/routes/events.rs`).
 
-1. A browser opens `GET /api/events/system` (`crates/crucible-web/src/routes/events.rs`),
-   or `routes/fs.rs`/`routes/surface.rs`'s own SSE routes, each of which
-   calls the shared `system_stream` helper in `routes/events.rs`.
-2. `system_stream` calls `state.daemon.subscribe_events("system")`
+1. A browser opens `GET /api/events?topics=system` (bare, or alongside a
+   session id: `?topics=<session id>,system`). One connection carries every
+   topic the page currently needs; the four routes this replaced
+   (`chat.rs::event_stream`, `fs.rs::fs_event_stream`,
+   `surface.rs::surface_event_stream`, and this file's own former
+   `system_event_stream`) each opened their own.
+2. `events_stream` calls `state.daemon.subscribe_events(topic)`
    (`ReconnectingDaemon::subscribe_events`,
-   `crates/crucible-web/src/services/daemon_event_stream.rs`) *before*
-   returning the stream, for the same reason flow 3 step 8 subscribes first:
-   `EventBroker::dispatch` drops an event for a session id with no local
-   subscriber.
-3. `subscribe_events` subscribes a per-session (here, the `"system"`
-   session) broadcast channel inside `EventBroker`, then calls `reconcile`.
+   `crates/crucible-web/src/services/daemon_event_stream.rs`) for every named
+   topic *before* it replays or forwards anything into any of them, for the
+   same reason flow 3 step 8 subscribes first: `EventBroker::dispatch` drops
+   an event for a session id with no local subscriber.
+3. `subscribe_events` subscribes a per-topic (here, the `"system"` topic)
+   broadcast channel inside `EventBroker`, then calls `reconcile`.
    `reconcile` compares `wants_events` (does any local channel still have a
    receiver) against the daemon-side `Upstream` state it is tracking for
    that id, and calls `session_subscribe`/`unsubscribe_events` on the daemon
    only when the two disagree — so a second browser tab opening the same
-   stream costs one more local receiver, not a second daemon RPC, and the
+   topic costs one more local receiver, not a second daemon RPC, and the
    last tab closing releases the daemon subscription rather than leaking it.
 4. `spawn_event_router` (`crates/crucible-web/src/services/daemon.rs`) is
    the one task reading the daemon's raw event channel; it calls
    `EventBroker::dispatch` for every event, which fans it into whichever
-   per-session channels `subscribe_events` handed out, `"system"` included.
-5. `system_stream`'s own filter turns a `stream_gap` event into a control
-   frame regardless of shape, and every other event through `project`:
-   `PublicationChangedEvent::from_daemon_event` (`SystemPayload::PUBLICATION_CHANGED`,
-   type defined in `crates/crucible-web/src/routes/plugin.rs`) or
+   per-topic channels `subscribe_events` handed out, `"system"` included.
+5. `events_stream` merges the per-topic streams (`futures::stream::select_all`)
+   and turns a `stream_gap` event on the `system` topic into a control frame
+   regardless of shape, and every other `system`-topic event through
+   `system_event_frame`, which tries each of `FsEvent::from_daemon_event`,
+   `SurfaceChangedEvent::from_daemon_event`,
+   `PublicationChangedEvent::from_daemon_event`
+   (`SystemPayload::PUBLICATION_CHANGED`, type defined in
+   `crates/crucible-web/src/routes/plugin.rs`) and
    `ProposalChangedEvent::from_daemon_event` (`SystemPayload::PROPOSAL_CHANGED`,
-   defined in `routes/events.rs`). The browser reacts by refetching —
+   defined in `routes/events.rs`) in turn, dropping an event none of them
+   recognise. Every frame's body gains a `topic` field before it is written.
+   The browser reacts to a publication or a proposal by refetching —
    `GET /api/plugins/publications` or `GET /api/proposals/{id}` — never by
    reading a value out of the event itself.
 
@@ -875,18 +886,18 @@ the first place.
 ```mermaid
 sequenceDiagram
     participant Browser
-    participant Route as routes/events.rs system_stream
+    participant Route as routes/events.rs events_stream
     participant RD as services/daemon_event_stream.rs ReconnectingDaemon
     participant EB as services/daemon.rs EventBroker
     participant Router as spawn_event_router
     participant Daemon as crucible-daemon system session
 
-    Browser->>Route: GET /api/events/system (or fs.rs / surface.rs)
-    Route->>RD: subscribe_events("system")
-    RD->>EB: subscribe per-session channel
+    Browser->>Route: GET /api/events?topics=system (or <session id>,system)
+    Route->>RD: subscribe_events("system") [one call per named topic]
+    RD->>EB: subscribe per-topic channel
     RD->>RD: reconcile -- session_subscribe only if not already Upstream::On
     Router->>EB: dispatch(event) for every daemon event
-    EB-->>Route: SessionEvent (system channel)
-    Route->>Route: project -> PublicationChangedEvent | ProposalChangedEvent | stream_gap
-    Route-->>Browser: SSE frame
+    EB-->>Route: SessionEvent (system topic)
+    Route->>Route: system_event_frame -> FsEvent | SurfaceChangedEvent | PublicationChangedEvent | ProposalChangedEvent | stream_gap
+    Route-->>Browser: SSE frame (topic in the body)
 ```

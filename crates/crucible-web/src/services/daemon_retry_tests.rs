@@ -222,7 +222,7 @@ async fn replay_safe_reads_reconnect_once_and_restore_active_events() {
 }
 
 async fn browser_stream(peer: &Peer, session: &str) -> axum::body::Body {
-    browser_stream_at(peer, &format!("/api/chat/events/{session}")).await
+    browser_stream_at(peer, &format!("/api/events?topics={session}")).await
 }
 
 async fn browser_stream_at(peer: &Peer, uri: &str) -> axum::body::Body {
@@ -328,7 +328,7 @@ async fn refused_subscription_releases_its_local_receiver() {
     let response = crate::test_support::build_test_app(state)
         .oneshot(
             Request::builder()
-                .uri("/api/chat/events/chat")
+                .uri("/api/events?topics=chat")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -441,12 +441,12 @@ async fn simultaneous_last_readers_unsubscribe_upstream_once() {
 #[tokio::test]
 async fn a_cursor_does_not_hide_the_events_of_a_restarted_daemon() {
     let peer = Peer::losing_first_reply("plugin.commands").await;
-    let mut body = browser_stream_at(&peer, "/api/chat/events/chat?after=5").await;
+    let mut body = browser_stream_at(&peer, "/api/events?topics=chat&after=chat:5").await;
     peer.daemon.plugin_commands().await.unwrap();
     let text = browser_frame(&mut body, "after reconnect").await;
     assert!(text.contains("stream_gap"), "{text}");
     assert!(
-        text.contains("id: 1"),
+        text.contains("id: chat:1"),
         "the new event keeps its seq: {text}"
     );
 }

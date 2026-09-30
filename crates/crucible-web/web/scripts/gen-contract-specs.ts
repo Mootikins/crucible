@@ -143,10 +143,8 @@ const HAND_COVERED: Record<string, string> = {
 
 /** A response that never completes, or never speaks HTTP at all. */
 const NON_REQUEST: Record<string, string> = {
-  'GET /api/chat/events/{session_id}': 'server-sent event stream: the body never ends',
-  'GET /api/fs/events': 'server-sent event stream: the body never ends',
-  'GET /api/surfaces/events': 'server-sent event stream: the body never ends',
-  'GET /api/events/system': 'server-sent event stream: the body never ends',
+  // Simplification Plan step 19 folded the four SSE routes into this one.
+  'GET /api/events': 'server-sent event stream: the body never ends',
   'GET /api/terminal/ws': 'websocket upgrade: the document answers 101, not a body',
 };
 

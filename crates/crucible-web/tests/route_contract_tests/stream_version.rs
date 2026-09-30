@@ -1,7 +1,8 @@
-//! Task G6: every versioned stream names its protocol on the wire.
+//! Task G6: the versioned stream names its protocol on the wire.
 //!
-//! Four streams are versioned — the chat events, the filesystem events, the
-//! surface changes and the plugin publications. Each answers with the
+//! Simplification Plan step 19 folded the chat events, the filesystem
+//! events, the surface changes and the plugin publications into one route,
+//! `GET /api/events`, topic-tagged. It still answers with the
 //! `X-Crucible-Stream-Version` header AND opens its body with a
 //! `stream_version` frame, because the browser's `EventSource` cannot read
 //! response headers and the client's fail-closed gate reads the frame.
@@ -60,14 +61,13 @@ async fn open(uri: &str) -> (Option<String>, String) {
 
 /// The one assertion every versioned stream must satisfy: the header names
 /// version 1, and the body opens with the mirroring frame the browser can
-/// actually read.
+/// actually read. One route now carries every topic, so one uri stands for
+/// all four of the old streams.
 #[tokio::test]
 async fn every_versioned_stream_names_its_protocol_twice() {
     for uri in [
-        "/api/chat/events/test-session-001",
-        "/api/fs/events",
-        "/api/surfaces/events",
-        "/api/events/system",
+        "/api/events?topics=test-session-001",
+        "/api/events?topics=system",
     ] {
         let (header, body) = open(uri).await;
 
@@ -84,7 +84,7 @@ async fn every_versioned_stream_names_its_protocol_twice() {
 /// reading a post-G6 stream.
 #[tokio::test]
 async fn the_handshake_frame_is_an_ignorable_named_event() {
-    let (_header, body) = open("/api/fs/events").await;
+    let (_header, body) = open("/api/events?topics=system").await;
 
     let first_event = body
         .lines()
@@ -108,7 +108,7 @@ async fn the_chat_stream_replays_behind_the_handshake() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/chat/events/test-session-001?after=3")
+                .uri("/api/events?topics=test-session-001&after=test-session-001:3")
                 .body(Body::empty())
                 .unwrap(),
         )

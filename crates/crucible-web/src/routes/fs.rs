@@ -1,14 +1,13 @@
 //! File-tree explorer routes: `GET /api/fs/list` (project dir listing proxy),
-//! `POST /api/fs/move` (DnD move / rename), `POST /api/fs/mkdir`,
-//! `POST /api/fs/trash` (context-menu mutations), and `GET /api/fs/events`
-//! (live filesystem-change SSE).
+//! `POST /api/fs/move` (DnD move / rename), `POST /api/fs/mkdir`, and
+//! `POST /api/fs/trash` (context-menu mutations). Live filesystem changes
+//! travel on the `system` topic of `GET /api/events` (`routes/events.rs`),
+//! not a route of their own.
 
-use crate::fs_events::FsEvent;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Query, State},
-    response::sse::Event,
     Json,
 };
 // The daemon owns every shape these four routes forward. Its module used to
@@ -27,7 +26,6 @@ pub fn fs_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(move_path))
         .routes(routes!(mkdir_path))
         .routes(routes!(trash_path))
-        .routes(routes!(fs_event_stream))
 }
 
 /// `GET /api/fs/list` — one directory level inside a registered root.
@@ -150,38 +148,6 @@ async fn trash_path(
         .await
         .daemon_err()?;
     Ok(Json(outcome))
-}
-
-/// Live filesystem-change stream for the file-tree explorer.
-///
-/// The body schema describes one SSE `data:` payload, not the whole stream.
-#[utoipa::path(
-    get,
-    path = "/api/fs/events",
-    responses((
-        status = 200,
-        content_type = "text/event-stream",
-        body = FsEvent,
-        headers((
-            "X-Crucible-Stream-Version" = u64,
-            description = "The stream protocol this build speaks (also the first \
-                           `stream_version` frame, for clients whose transport \
-                           cannot read headers)"
-        ))
-    ))
-)]
-async fn fs_event_stream(
-    State(state): State<AppState>,
-) -> Result<crate::routes::events::SystemStream, WebError> {
-    crate::routes::events::system_stream(&state, |event| {
-        FsEvent::from_daemon_event(event).map(|frame| {
-            let name = frame.event_name();
-            Event::default()
-                .event(name)
-                .data(serde_json::to_string(&frame).unwrap_or_default())
-        })
-    })
-    .await
 }
 
 #[cfg(test)]

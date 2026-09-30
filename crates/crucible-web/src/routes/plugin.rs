@@ -36,8 +36,8 @@ const CALLER_HEADER_DOC: &str =
 /// Ungated, and each for a reason worth knowing before you "finish the job":
 /// `GET /api/plugins`, `/commands` and `/options` are enumerations the plugins
 /// panel needs and no route rewrites, so gating them buys nothing while a
-/// block can call itself `app`. The publication push stream,
-/// `GET /api/events/system`, **cannot** be gated this way at all: browsers
+/// block can call itself `app`. The publication push stream, the `system`
+/// topic of `GET /api/events`, **cannot** be gated this way at all: browsers
 /// open it with `EventSource`, which sets no headers. An identity for the push
 /// stream needs a different carrier.
 /// **No route here serves a plugin's own web assets, and adding one has a

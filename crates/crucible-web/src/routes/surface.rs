@@ -1,17 +1,20 @@
 //! Plugin surfaces: the panels a plugin declares for every client to draw.
 //!
-//! Two endpoints and no interpretation. `GET /api/surfaces` passes the daemon's
-//! answer through verbatim, exactly as publications do, and the SSE stream says
-//! only that a surface moved. Nothing here knows what a plugin's rows mean: a row
-//! is `{id, text, detail, mark}` and the component draws it from that, so a
-//! plugin shipped tomorrow gets a panel with no change on this side.
+//! One endpoint and no interpretation. `GET /api/surfaces` passes the daemon's
+//! answer through verbatim, exactly as publications do. A surface changing
+//! travels on the `system` topic of `GET /api/events`
+//! (`routes/events.rs::system_event_frame`), which says only that a surface
+//! moved. Nothing here knows what a plugin's rows mean: a row is `{id, text,
+//! detail, mark}` and the component draws it from that, so a plugin shipped
+//! tomorrow gets a panel with no change on this side.
 //!
-//! Its own channel rather than a variant on [`FsEvent`](crate::fs_events::FsEvent),
-//! which is a *filesystem* change by its own definition. A focused type per
-//! channel is what keeps either one honest.
+//! Its own event shape rather than a variant on
+//! [`FsEvent`](crate::fs_events::FsEvent), which is a *filesystem* change by
+//! its own definition. A focused type per channel is what keeps either one
+//! honest.
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{extract::State, response::sse::Event, Json};
+use axum::{extract::State, Json};
 use crucible_core::protocol::requests::SurfaceListReply;
 use crucible_core::protocol::SystemPayload;
 use crucible_daemon::SessionEvent;
@@ -19,9 +22,7 @@ use serde::Serialize;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn surface_routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
-        .routes(routes!(list_surfaces))
-        .routes(routes!(surface_event_stream))
+    OpenApiRouter::new().routes(routes!(list_surfaces))
 }
 
 /// A surface changed, delivered to the browser.
@@ -95,37 +96,6 @@ impl SurfaceChangedEvent {
 async fn list_surfaces(State(state): State<AppState>) -> Result<Json<SurfaceListReply>, WebError> {
     let surfaces = state.daemon.surfaces().await.daemon_err()?;
     Ok(Json(SurfaceListReply { surfaces }))
-}
-
-/// Live stream of surface changes.
-///
-/// The body schema describes one SSE `data:` payload, not the whole stream.
-#[utoipa::path(
-    get,
-    path = "/api/surfaces/events",
-    responses((
-        status = 200,
-        content_type = "text/event-stream",
-        body = SurfaceChangedEvent,
-        headers((
-            "X-Crucible-Stream-Version" = u64,
-            description = "The stream protocol this build speaks (also the first \
-                           `stream_version` frame, for clients whose transport \
-                           cannot read headers)"
-        ))
-    ))
-)]
-async fn surface_event_stream(
-    State(state): State<AppState>,
-) -> Result<crate::routes::events::SystemStream, WebError> {
-    crate::routes::events::system_stream(&state, |event| {
-        SurfaceChangedEvent::from_daemon_event(event).map(|frame| {
-            Event::default()
-                .event(SurfaceChangedEvent::EVENT_NAME)
-                .data(serde_json::to_string(&frame).unwrap_or_default())
-        })
-    })
-    .await
 }
 
 #[cfg(test)]

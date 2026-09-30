@@ -320,54 +320,44 @@ fn every_fs_sse_event_name_is_in_the_document() {
     );
 }
 
-/// Every stream route says it streams, and names the union it streams.
+/// The one stream route says it streams, and names the union it streams.
+///
+/// Simplification Plan step 19 folded the chat, filesystem, surface and
+/// system streams into `GET /api/events`, one topic-tagged route, so there is
+/// one path and one schema to check now, not four.
 #[test]
 fn every_stream_route_answers_with_an_event_stream() {
     let spec = spec_json();
 
-    for (method, path, schema) in [
-        ("get", "/api/chat/events/{session_id}", "ChatSseFrame"),
-        ("get", "/api/fs/events", "FsEvent"),
-        ("get", "/api/events/system", "SystemEvent"),
-        ("get", "/api/surfaces/events", "SurfaceChangedEvent"),
-    ] {
-        let operation = &spec["paths"][path][method];
-        assert!(
-            !operation.is_null(),
-            "the document has no {method} {path} operation"
-        );
+    let operation = &spec["paths"]["/api/events"]["get"];
+    assert!(
+        !operation.is_null(),
+        "the document has no get /api/events operation"
+    );
 
-        let content = &operation["responses"]["200"]["content"]["text/event-stream"];
-        assert!(
-            !content.is_null(),
-            "{method} {path} does not answer `text/event-stream`: {operation:#}"
-        );
-        assert_eq!(
-            content["schema"]["$ref"].as_str(),
-            Some(format!("#/components/schemas/{schema}").as_str()),
-            "{method} {path} does not name `{schema}`"
-        );
-    }
+    let content = &operation["responses"]["200"]["content"]["text/event-stream"];
+    assert!(
+        !content.is_null(),
+        "get /api/events does not answer `text/event-stream`: {operation:#}"
+    );
+    assert_eq!(
+        content["schema"]["$ref"].as_str(),
+        Some("#/components/schemas/EventsFrame"),
+        "get /api/events does not name `EventsFrame`"
+    );
 }
 
-/// The four versioned streams document their protocol header (Task G6).
+/// The one stream documents its protocol header (Task G6).
 #[test]
 fn every_versioned_stream_documents_the_protocol_header() {
     let spec = spec_json();
 
-    for path in [
-        "/api/chat/events/{session_id}",
-        "/api/fs/events",
-        "/api/events/system",
-        "/api/surfaces/events",
-    ] {
-        let headers =
-            &spec["paths"][path]["get"]["responses"]["200"]["headers"]["X-Crucible-Stream-Version"];
-        assert!(
-            !headers.is_null(),
-            "{path} does not document `X-Crucible-Stream-Version`"
-        );
-    }
+    let headers = &spec["paths"]["/api/events"]["get"]["responses"]["200"]["headers"]
+        ["X-Crucible-Stream-Version"];
+    assert!(
+        !headers.is_null(),
+        "/api/events does not document `X-Crucible-Stream-Version`"
+    );
 }
 
 // ===========================================================================

@@ -1064,6 +1064,90 @@ the route itself (parts 1-6 of the change below) is not started.**
 two moved stores are done (below); the route itself (parts 1-6 of the
 change below) is not started.**
 
+**Status: the "one event stream" decision of part 5 is done.** `GET
+/api/events` (`crates/crucible-web/src/routes/events.rs`) replaces the four
+former routes `GET /api/chat/events/{session_id}` (`routes/chat.rs`), `GET
+/api/events/system` (`routes/events.rs`'s own former route), `GET
+/api/fs/events` (`routes/fs.rs`) and `GET /api/surfaces/events`
+(`routes/surface.rs`). A client names as many topics as it wants in
+`?topics=a,b,...`: a session id for the chat stream, or `system` for
+publications, proposals, surface changes and filesystem changes — the same
+grouping the daemon's own event bus already used, since all four rode the
+daemon's `"system"` session before this step. Every frame's JSON body gains
+a `topic` field; the payload types are unchanged
+(`SessionEventPayload`/`TranscriptFrame`, `FsEvent`, `SurfaceChangedEvent`,
+`PublicationChangedEvent`, `ProposalChangedEvent`), matching the design
+rule that only the envelope, not the vocabulary, may grow.
+
+**Gone** (measured): the four routes and their handlers
+(`chat::event_stream`, `fs::fs_event_stream`, `surface::surface_event_stream`,
+`events::system_event_stream`), the `chat.rs` types `EventStreamQuery` and
+`ChatSseFrame`, the `events.rs` types `SystemStream` and the `system_stream`
+helper function, and the frontend's four independent `subscribeTo*`
+`EventSource` constructions (`lib/api.ts`) and the e2e helper
+`mockSSERoute`. Rust struct/enum count is unchanged, 1839 in `crates/*/src`
+before and after
+(`rg -c -t rust '^\s*(pub(\([a-z:]+\))? )?(struct|enum) [A-Z]' crates/*/src`):
+the route reuses every existing payload type rather than adding a
+one-struct-per-topic table (`EventsQuery`, `EventsFrame` and the small
+per-frame builders are new, offset by the four deleted route-local types).
+TS interface/type count is unchanged, 697 before and after
+(`rg -c '^\s*(export )?(interface|type) [A-Z]' crates/crucible-web/web/src
+-g '*.ts' -g '*.tsx' -g '!api-schema.d.ts' -g '!rpc-methods.d.ts' -g
+'!**/__tests__/**'`): the deleted `SideChannelListeners` type is offset by
+the new `EventsTopicHandlers` interface the shared connection needs, and
+`ChatEvent`/`SequencedChatEvent`/`FsEvent`/`SurfaceChangedEvent`/
+`SystemEvent` are untouched.
+
+**Same behavior on every path, tested through the one stream.** Each
+behavior the four streams had, and where it lives now:
+- **Per-session resume cursor.** `?after=` becomes `topic:seq` pairs,
+  comma-separated (`sess-1:5,sess-2:9`); the `Last-Event-ID` header (a
+  browser's own retry, which cannot set a query string) carries one
+  `topic:seq` pair the same way. `events_stream`'s per-topic `session_events_after`
+  replay and its `floor` gap filter are unchanged in kind, just keyed per
+  topic instead of once per route. Tested by
+  `route_contract_tests/chat.rs::chat_events_replays_past_the_cursor_and_stamps_seq_ids`
+  and `::chat_events_accepts_the_last_event_id_header_as_the_cursor`.
+- **The stream-version handshake.** One `stream_version` frame opens the
+  merged stream (not one per topic), and the `X-Crucible-Stream-Version`
+  header is unchanged. Tested by
+  `route_contract_tests/stream_version.rs`.
+- **Subscribe-before-forward and the replay-gap floor reset.** Every named
+  topic subscribes to the daemon's `EventBroker` before any topic's replay
+  read runs, and a `stream_gap` on one topic's own channel resets only that
+  topic's floor. Tested by
+  `route_contract_tests/chat.rs::chat_events_skips_live_events_the_replay_already_covered`
+  and the daemon-reconnect tests in `services/daemon_retry_tests.rs`.
+- **The `system` topic's four projections and its own gap handling.**
+  `FsEvent`, `SurfaceChangedEvent`, `PublicationChangedEvent` and
+  `ProposalChangedEvent` each still decode from the raw daemon event the
+  same way; `stream_gap` on the `system` topic is forwarded raw, not
+  wrapped in `{event, data}`, exactly as `system_stream` did. Tested by
+  `route_contract_tests/system_events.rs`.
+- **Topic isolation.** A client subscribed to one session's topic gets no
+  frame of another session, proved through the one route in
+  `route_contract_tests/chat.rs::a_topic_carries_no_frame_of_another_session`,
+  and through the shared connection's own dispatch in
+  `lib/query/__tests__/sse.test.ts` ("the shared connection" describe
+  block).
+- **The frontend's one `EventSource`.** `lib/api.ts`'s `joinEventsTopic`
+  owns one shared connection; a new topic joining or the last reader of a
+  topic leaving rebuilds it with the updated `topics=` set, while a second
+  reader of an already-carried topic (two chat panes, or the filesystem and
+  surfaces panels both reading `system`) costs no new connection.
+  `subscribeToEvents`, `subscribeToFsEvents`, `subscribeToSurfaceEvents` and
+  `subscribeToSystemEvents` keep their old names and signatures, so
+  `lib/query/sse.ts`'s four stream roots did not change their own public
+  shape. Tested by `lib/query/__tests__/sse.test.ts` and the mocked
+  Playwright tier (`crates/crucible-web/web/e2e`, the `ui` and `stories`
+  projects), all passing through the one connection.
+
+**Not verified in this pass:** the `e2e/live` Playwright tier (a real
+`cru` binary and daemon) was updated to the new topic-occupancy assertions
+but not executed end to end in this session; `just web-test live` should
+confirm it before this status line is trusted as fully proven.
+
 **Gap 2, done for one row set.** Of the 97 rows in that set, 64 named
 `serde_json::Value` as their reply (plus 2 more — `ui.config` and
 `session.set_agent_option` — whose *params* were `serde_json::Value`
