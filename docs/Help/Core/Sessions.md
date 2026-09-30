@@ -369,6 +369,25 @@ The TUI then leaves the open session and shows the chosen one with its full
 history, the same way `cru chat --resume <id>` does. The daemon must know the
 id, and a turn that runs must end first.
 
+#### Resuming an ended session
+
+`session.resume` also revives a session in the `ended` state, straight from
+storage. The revived session keeps its transcript, its model, its kilns and
+its settings, but it lost the live state that only existed while the daemon
+held the session in memory: the session's own Lua plugin state (a plugin's
+`session:set_variable` values survive; anything else a hook kept in memory
+does not), and any work in progress when the session ended — a running
+subagent, an in-flight tool call, or a prompt nobody had answered yet.
+
+If a kiln the session used no longer resolves in the kiln registry (renamed
+or unregistered since), the session keeps searching its other kilns, but not
+that one, until it is registered again.
+
+The daemon reports each of these in `session.resume`'s reply as a
+`warnings` list, and both the TUI and the web client show one notice per
+warning right after the resume completes. A resume that stays in memory (a
+merely `paused` session) tore nothing down, so it reports no warnings.
+
 ## Session Archiving
 
 Sessions have two states: **active** and **archived**. Active sessions appear in `session.list` by default. Archived sessions are hidden unless you explicitly ask for them.

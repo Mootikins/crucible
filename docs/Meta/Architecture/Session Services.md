@@ -222,6 +222,24 @@ Grouped by directory. Lines are as of `582c5e6c1`.
   Now every caller of `session.resume` gets the same fallback, and the web
   route only decides whether it also needs to re-read the transcript with
   the read-only `session.history`.
+- **`ResumeWarning`** (`crucible-core/src/protocol/requests/session.rs`,
+  beside `SessionTransitionReply`) — what a storage revival did not bring
+  back, compared with the live session that ended. `handle_session_resume`
+  computes the whole list once, on the storage-resume path only, and puts
+  it on `SessionTransitionReply::warnings` (omitted when empty, so a warm
+  resume's wire shape is unchanged). `PluginStateReset` and
+  `PendingWorkCleared` are unconditional for a storage resume: the state
+  they name is exactly what `AgentManager::cleanup_session` tears down when
+  a session ends (the session's own Lua VM, its pending `permissions` and
+  `interactions` maps, its running delegated children) and what
+  `SessionLifecycle::enforce_session_start`'s `session_start` hooks and a
+  fresh `SessionSlot` rebuild, not restore, on revival. `KilnUnavailable`
+  reads `Session::unresolved_kiln_paths`, which `SessionStorage::load` sets
+  on every load, including this one, from the current kiln registry. The
+  TUI (`crucible-cli/src/tui/oil/chat_runner/mod.rs::resume_warning_text`)
+  and the web client (`crucible-web/web/src/lib/query/sessions.ts::resumeWarningText`)
+  each hold one function that turns a warning into display text; neither
+  decides which warnings apply — that stays in the daemon.
 - **`DaemonSessionBridge`** (`crates/crucible-daemon/src/session_bridge.rs`)
   — implements `crucible_lua::DaemonSessionApi`; holds `ctx: Arc<RpcContext>`,
   `session_manager`, `agent_manager`, `event_tx: crate::EventBus`, a
