@@ -53,7 +53,6 @@ const defaults = (): Tweaks => ({
   accent: 'theme',
   reading: 15,
   plugin: 'none',
-  changesControls: 'ab',
   hoverBar: 'title',
   fileLabels: 'extensions',
 });

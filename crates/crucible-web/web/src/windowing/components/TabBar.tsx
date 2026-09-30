@@ -293,12 +293,30 @@ const TabStrip: Component<TabStripProps> = (props) => {
   const [isOverflowing, setIsOverflowing] = createSignal(false);
   const [showDropdown, setShowDropdown] = createSignal(false);
   let tabsContainerRef: HTMLDivElement | undefined;
+  let revealFrame: number | undefined;
+  const revealActive = () => {
+    if (revealFrame !== undefined) cancelAnimationFrame(revealFrame);
+    // Overflow controls change the strip's width. Measure after their layout,
+    // including when a pane shrinks without changing its selected tab.
+    revealFrame = requestAnimationFrame(() => {
+      const strip = tabsContainerRef;
+      const tab = [...(strip?.querySelectorAll<HTMLElement>('[data-tab-id]') ?? [])]
+        .find(el => el.dataset.tabId === props.activeTabId());
+      if (!strip || !tab) return;
+      const bounds = strip.getBoundingClientRect();
+      const selected = tab.getBoundingClientRect();
+      if (selected.right > bounds.right) strip.scrollLeft += selected.right - bounds.right;
+      else if (selected.left < bounds.left) strip.scrollLeft -= bounds.left - selected.left;
+    });
+  };
+  onCleanup(() => { if (revealFrame !== undefined) cancelAnimationFrame(revealFrame); });
 
   onMount(() => {
     if (!tabsContainerRef) return;
     const checkOverflow = () => {
       if (tabsContainerRef) {
         setIsOverflowing(tabsContainerRef.scrollWidth > tabsContainerRef.clientWidth);
+        revealActive();
       }
     };
     const observer = new ResizeObserver(checkOverflow);
@@ -315,10 +333,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
   createEffect(() => {
     const activeId = props.activeTabId();
     if (!activeId) return;
-    queueMicrotask(() => {
-      const tabEl = tabsContainerRef?.querySelector(`[data-tab-id="${activeId}"]`);
-      tabEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-    });
+    revealActive();
   });
 
   createEffect(() => {

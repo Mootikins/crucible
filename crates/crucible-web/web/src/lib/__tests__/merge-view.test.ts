@@ -227,7 +227,7 @@ describe('the hunks', () => {
     expect(diffHunks(v.state, { margin: 3, minSize: 4 }).map((h) => h.label)).toEqual([
       '@@ -7,7 +7,7 @@',
     ]);
-    expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -7,7 +7,7 @@']);
+    expect(headers(v).map((h) => h.textContent)).toEqual(['−7,7 +7,7']);
     expect(headers(v)[0].getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -245,13 +245,13 @@ describe('the hunks', () => {
     // The context of line 10 ends at 13, and the context of line 15 starts at
     // 12, so the unchanged lines between them do not fold.
     const near = unified(changed(10, 15));
-    expect(headers(near).map((h) => h.textContent)).toEqual(['@@ -7,14 +7,14 @@']);
+    expect(headers(near).map((h) => h.textContent)).toEqual(['−7,14 +7,14']);
     near.destroy();
     // Lines 3 and 15 are far apart. The lines between them fold.
     const far = unified(changed(3, 15));
     expect(headers(far).map((h) => h.textContent)).toEqual([
-      '@@ -1,6 +1,6 @@',
-      '@@ -12,9 +12,9 @@',
+      '−1,6 +1,6',
+      '−12,9 +12,9',
     ]);
   });
 
@@ -276,7 +276,7 @@ describe('the hunks', () => {
   it('a hidden hunk on the first line hides the removed row above that line', () => {
     // The removed row of a change on line 1 is a block before position 0.
     const v = unified(ORIGINAL.replace('line 1\n', 'line one\n'), () => true);
-    expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -1,4 +1,4 @@']);
+    expect(headers(v).map((h) => h.textContent)).toEqual(['−1,4 +1,4']);
     expect(v.dom.querySelector('.cm-deletedChunk')).toBeNull();
     expect(v.dom.querySelector('.cm-changedLine')).toBeNull();
   });
@@ -299,7 +299,7 @@ describe('the hunks', () => {
       }),
       parent,
     });
-    expect(headers(view).map((h) => h.textContent)).toEqual(['@@ -1,2 +1,1 @@']);
+    expect(headers(view).map((h) => h.textContent)).toEqual(['−1,2 +1,1']);
     view.dispatch({ effects: setHiddenHunks.of(() => true) });
     expect(view.dom.querySelector('.cm-deletedChunk')).toBeNull();
   });
@@ -340,14 +340,14 @@ describe('the hunks', () => {
 
     it('an added file, unified', () => {
       const v = unifiedOf('', TEXT);
-      expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -0,0 +1,3 @@']);
+      expect(headers(v).map((h) => h.textContent)).toEqual(['−0,0 +1,3']);
     });
 
     it('an added file, split: the base editor shows no row', () => {
       const merge = splitOf('', TEXT);
       try {
-        expect(headers(merge.a).map((h) => h.textContent)).toEqual(['@@ -0,0 +1,3 @@']);
-        expect(headers(merge.b).map((h) => h.textContent)).toEqual(['@@ -0,0 +1,3 @@']);
+        expect(headers(merge.a).map((h) => h.textContent)).toEqual(['−0,0 +1,3']);
+        expect(headers(merge.b).map((h) => h.textContent)).toEqual(['−0,0 +1,3']);
         expect(merge.a.dom.querySelectorAll('.cm-line')).toHaveLength(0);
       } finally {
         merge.destroy();
@@ -356,7 +356,7 @@ describe('the hunks', () => {
 
     it('a deleted file, unified: the current side shows no row', () => {
       const v = unifiedOf(TEXT, '');
-      expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -1,3 +0,0 @@']);
+      expect(headers(v).map((h) => h.textContent)).toEqual(['−1,3 +0,0']);
       expect(v.dom.querySelectorAll('.cm-line')).toHaveLength(0);
       // The removed rows stay.
       expect(v.dom.querySelectorAll('.cm-deletedChunk .cm-deletedLine')).toHaveLength(3);
@@ -365,8 +365,8 @@ describe('the hunks', () => {
     it('a deleted file, split: the current editor shows no row', () => {
       const merge = splitOf(TEXT, '');
       try {
-        expect(headers(merge.a).map((h) => h.textContent)).toEqual(['@@ -1,3 +0,0 @@']);
-        expect(headers(merge.b).map((h) => h.textContent)).toEqual(['@@ -1,3 +0,0 @@']);
+        expect(headers(merge.a).map((h) => h.textContent)).toEqual(['−1,3 +0,0']);
+        expect(headers(merge.b).map((h) => h.textContent)).toEqual(['−1,3 +0,0']);
         expect(merge.b.dom.querySelectorAll('.cm-line')).toHaveLength(0);
       } finally {
         merge.destroy();
@@ -395,8 +395,8 @@ describe('the hunks', () => {
       collapseUnchanged: { margin: 3, minSize: 4 },
     });
     try {
-      expect(headers(merge.a).map((h) => h.textContent)).toEqual(['@@ -8,6 +8,7 @@']);
-      expect(headers(merge.b).map((h) => h.textContent)).toEqual(['@@ -8,6 +8,7 @@']);
+      expect(headers(merge.a).map((h) => h.textContent)).toEqual(['−8,6 +8,7']);
+      expect(headers(merge.b).map((h) => h.textContent)).toEqual(['−8,6 +8,7']);
     } finally {
       merge.destroy();
     }

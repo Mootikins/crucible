@@ -16,12 +16,5 @@ export const VariantRows: Component<TweakRowsProps> = (props) => (
         onChange={(v) => props.onSet('hoverBar', v)}
       />
     </FieldRow>
-    <FieldRow label="Changes view" hint="A/B variant">
-      <Segmented
-        value={props.tweaks.changesControls}
-        options={[['b', 'B'], ['ab', "B + A's controls"]]}
-        onChange={(v) => props.onSet('changesControls', v)}
-      />
-    </FieldRow>
   </>
 );

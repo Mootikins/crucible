@@ -229,7 +229,7 @@ describe('DiffPanel', () => {
       serve([entry('src/a.rs')]);
       render(() => <DiffPanel source={source} />);
       const [header] = await hunkHeaders('src/a.rs');
-      expect(header.textContent).toBe('@@ -1,2 +1,3 @@');
+      expect(header.textContent).toBe('−1,2 +1,3');
       expect(header.tagName).toBe('BUTTON');
       expect(header.getAttribute('aria-expanded')).toBe('true');
     });

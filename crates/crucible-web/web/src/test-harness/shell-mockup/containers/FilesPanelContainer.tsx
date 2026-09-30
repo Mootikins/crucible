@@ -1,7 +1,7 @@
 /**
  * The Files pane on the mock store and the window store. A port reads
  * `useKilns`, `useProjects` and `useListDir`, and the review counts from
- * `reviewStore.hunksForPath`. The root, the open folders and the order are
+ * `the pending proposals for this path`. The root, the open folders and the order are
  * display state, so they stay in the client.
  */
 import { createSignal, type Component } from 'solid-js';

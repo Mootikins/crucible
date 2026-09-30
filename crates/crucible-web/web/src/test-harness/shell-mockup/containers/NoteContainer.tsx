@@ -2,7 +2,7 @@
 import { Match, Show, Switch, type Component, type JSX } from 'solid-js';
 import { useFloatingWindow } from '@/windowing';
 import { windowActions, windowStore } from '@/windowing/store';
-import { canGoBack, canGoForward, goHistory, openNote } from '../actions';
+import { canGoBack, canGoForward, goHistory, openNote, openReview } from '../actions';
 import { basename } from '../components/path';
 import { HoverCornerControls } from '../components/note/HoverCornerControls';
 import { HoverCrumbsBar } from '../components/note/HoverCrumbsBar';
@@ -10,6 +10,8 @@ import { HoverTitleBar } from '../components/note/HoverTitleBar';
 import { NoteView } from '../components/note/NoteView';
 import { pendingHunks, state } from '../state';
 import { tweaks } from '../tweaks';
+import { proposalPending } from '../review';
+import { Button } from '../components/primitives/Button';
 import { HunkContainer } from './HunkContainer';
 import { noteLinks } from './wikilinks';
 
@@ -37,6 +39,7 @@ export const NoteContainer: Component<{ tabId?: string; path: string }> = (props
   };
   return (
     <NoteView
+      proposalBar={<Show when={proposalPending().includes(props.path)}><div class="mk-proposal-bar">Reflection pass proposes a change<Button variant="ghost" onClick={() => openReview('proposal', 's3', props.path)}>Review</Button></div></Show>}
       path={props.path}
       source={state.notes[props.path]}
       history={

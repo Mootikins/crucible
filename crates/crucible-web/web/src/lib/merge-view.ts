@@ -89,19 +89,19 @@ const tint = (color: string, percent: number) =>
  * last class. Each rule then has one class more than the library's rule.
  */
 const diffTheme = EditorView.theme({
-  '&.cm-editor.cm-merge-b .cm-changedLine': { backgroundColor: tint('--color-ok', 12) },
+  '&.cm-editor.cm-merge-b .cm-changedLine': { backgroundColor: tint('--color-ok', 22) },
   '&.cm-editor.cm-merge-a .cm-changedLine, &.cm-editor .cm-deletedChunk': {
-    backgroundColor: tint('--color-error', 12),
+    backgroundColor: tint('--color-error', 22),
   },
   // The changed side draws its own word marks (`wordMarks`), so the library's
   // marks on the changed side carry no tint.
   '&.cm-editor.cm-merge-b .cm-changedText.cm-changedText': { background: 'none' },
   '&.cm-editor .cm-wordChange': {
-    background: tint('--color-ok', 32),
+    background: tint('--color-ok', 38),
     borderRadius: 'var(--cru-radius-sm)',
   },
   '&.cm-editor.cm-merge-a .cm-changedText.cm-changedText, &.cm-editor .cm-deletedChunk .cm-deletedText.cm-deletedText':
-    { background: tint('--color-error', 32), borderRadius: 'var(--cru-radius-sm)' },
+    { background: tint('--color-error', 38), borderRadius: 'var(--cru-radius-sm)' },
   '&.cm-editor .cm-changedLineGutter.cm-changedLineGutter': { background: 'var(--color-ok)' },
   '&.cm-editor .cm-deletedLineGutter.cm-deletedLineGutter, &.cm-editor.cm-merge-a .cm-changedLineGutter.cm-changedLineGutter':
     { background: 'var(--color-error)' },
@@ -396,7 +396,11 @@ class HunkHeader extends WidgetType {
     svg.setAttribute('class', 'cm-diff-hunk-chevron');
     const path = svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'path'));
     path.setAttribute('d', CHEVRON_PATH);
-    button.append(svg, document.createTextNode(this.label));
+    button.setAttribute(
+      'aria-label',
+      `${this.hidden ? 'Expand' : 'Collapse'} changes ${this.label.slice(3, -3)}`,
+    );
+    button.append(svg, document.createTextNode(this.label.slice(3, -3).replace(/^-/, '−')));
     const label = this.label;
     button.addEventListener('click', () => view.state.facet(hunkSetup)?.onToggle(label));
     return row;

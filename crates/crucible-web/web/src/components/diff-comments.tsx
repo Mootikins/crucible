@@ -655,13 +655,11 @@ const commentTheme = EditorView.theme({
   // The gap is padding on the block, never a margin on the card: see
   // `commentBlock`.
   '.cm-diff-comment-block': { padding: '4px 8px 4px 0' },
-  // A bar on the left edge in the hue of the selection ties the card to its
-  // lines. A full frame drew a second box around each comment.
+  // The selected lines carry the anchor color; comments need no outer frame.
   '.cm-diff-comment, .cm-diff-comment-box': {
     padding: '4px 8px',
     border: 'none',
-    borderLeft: `2px solid ${tint(0.7)}`,
-    background: tint(0.06),
+    background: 'transparent',
     fontFamily: 'var(--font-sans, sans-serif)',
     whiteSpace: 'pre-wrap',
   },
@@ -676,7 +674,7 @@ const commentTheme = EditorView.theme({
   '.cm-diff-comment-actions': { display: 'flex', alignItems: 'center', gap: '6px' },
   '.cm-diff-comment-action': {
     padding: '0 6px',
-    border: '1px solid var(--color-hairline)',
+    border: 'none',
     borderRadius: 'var(--cru-radius-sm)',
     background: 'transparent',
     color: 'var(--color-muted)',
@@ -713,7 +711,7 @@ export function commentExtensions(host: CommentHost): Extension[] {
   ];
 }
 
-const boxButton = 'rounded border px-2 py-0.5 text-floor disabled:opacity-50 focus-ring';
+const boxButton = 'rounded px-2 py-0.5 text-floor disabled:opacity-50 focus-ring';
 /** Comment: the primary action of the box. */
 const primaryButton = `${boxButton} border-primary bg-primary text-on-primary hover:bg-primary-hover hover:border-primary-hover disabled:hover:bg-primary disabled:hover:border-primary`;
 /** Cancel. */
@@ -769,7 +767,7 @@ function CommentBox(props: {
             props.onCancel();
           }
         }}
-        class="w-full resize-y rounded border border-hairline bg-transparent px-2 py-1 text-xs text-shell-ink"
+        class="w-full resize-y rounded-lg border-0 bg-control px-3 py-2 text-xs text-shell-ink focus-ring"
       />
       <Show when={error()}>
         {(message) => <span class="text-floor text-error">{message()}</span>}

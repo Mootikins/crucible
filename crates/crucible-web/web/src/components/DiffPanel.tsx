@@ -14,7 +14,7 @@
  * file and scrolls to it, so a click in the Changes panel or on a tool card
  * shows the clicked file.
  *
- * Each hunk has a header row with its patch range. A click on the header
+ * Each hunk has a caret header with its line ranges, without patch delimiters. A click on the header
  * hides the hunk or shows it again. The panel keeps that choice, so that a new
  * editor for the file (a wrap or a layout change) keeps it too.
  *

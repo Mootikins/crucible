@@ -24,6 +24,7 @@ export interface NoteViewProps {
   orphanHunks: string[];
   /** See `NoteToolbarProps.windowControls`. */
   windowControls?: JSX.Element;
+  proposalBar?: JSX.Element;
   /** A bar in place of the toolbar, for example the bar of a hover popup. */
   bar?: (view: { mode: NoteMode; setMode: (mode: NoteMode) => void }) => JSX.Element;
 }
@@ -59,6 +60,7 @@ export const NoteView: Component<NoteViewProps> = (props) => {
       >
         {(bar) => bar()({ mode: mode(), setMode })}
       </Show>
+      {props.proposalBar}
       <div class="mk-scroll" ref={scrollFade('y')}>
         <Show
           when={parsed()}

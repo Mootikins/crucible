@@ -62,7 +62,7 @@ test('a click on Split shows both sides, with the hunk headers in each', async (
 
   await expect(file.locator('.cm-merge-a')).toBeVisible();
   await expect(file.locator('.cm-merge-b')).toBeVisible();
-  const labels = ['@@ -14,7 +14,7 @@', '@@ -29,7 +29,10 @@'];
+  const labels = ['−14,7 +14,7', '−29,7 +29,10'];
   for (const side of ['.cm-merge-a', '.cm-merge-b']) {
     await expect(file.locator(side).getByTestId('diff-hunk-toggle')).toHaveText(labels);
   }
@@ -114,7 +114,7 @@ test.describe('an empty side shows no line and counts none', () => {
     await expect(added.locator('.cm-merge-a')).toBeVisible();
     for (const side of ['.cm-merge-a', '.cm-merge-b']) {
       await expect(added.locator(side).getByTestId('diff-hunk-toggle')).toHaveText([
-        '@@ -0,0 +1,3 @@',
+        '−0,0 +1,3',
       ]);
     }
     await expect(added.locator('.cm-merge-a [data-testid^="diff-line-"]')).toHaveCount(0);
@@ -129,7 +129,7 @@ test.describe('an empty side shows no line and counts none', () => {
     await openSession(page, MOCK_SESSION.session_id);
     await openBranchDiff(page);
     const old = page.getByTestId(OLD);
-    await expect(old.getByTestId('diff-hunk-toggle')).toHaveText(['@@ -1,3 +0,0 @@']);
+    await expect(old.getByTestId('diff-hunk-toggle')).toHaveText(['−1,3 +0,0']);
     await expect(old.locator('[data-testid^="diff-line-"]')).toHaveCount(0);
     await expect(old.locator('[data-testid^="diff-base-line-"]')).toHaveCount(3);
   });
@@ -142,7 +142,7 @@ test.describe('an empty side shows no line and counts none', () => {
     await expect(old.locator('.cm-merge-b')).toBeVisible();
     for (const side of ['.cm-merge-a', '.cm-merge-b']) {
       await expect(old.locator(side).getByTestId('diff-hunk-toggle')).toHaveText([
-        '@@ -1,3 +0,0 @@',
+        '−1,3 +0,0',
       ]);
     }
     await expect(old.locator('.cm-merge-a [data-testid^="diff-line-"]')).toHaveCount(3);

@@ -1,7 +1,7 @@
 /** The tool-line handlers of a transcript, on the mock store. */
-import { openNote } from '../actions';
+import { openReview } from '../actions';
 import type { ToolLineHandlers } from '../components/session/types';
-import { decide, hunkLines, setState, state } from '../state';
+import { hunkLines, setState, state } from '../state';
 
 export const mockToolHandlers: ToolLineHandlers = {
   isOpen: (id) => !!state.open[id],
@@ -10,6 +10,5 @@ export const mockToolHandlers: ToolLineHandlers = {
     const h = state.hunks[hunkId];
     return h ? { state: h.state, path: h.path, ...hunkLines(hunkId) } : undefined;
   },
-  onOpenPath: (path) => openNote(path, { fromSession: true }),
-  onDecide: (hunkId, accept) => decide([hunkId], accept),
+  onOpenPath: (path) => { const sid = Object.values(state.hunks).find(h => h.path === path)?.session ?? state.active; openReview(sid === 's3' ? 'proposal' : 'record', sid, path); },
 };

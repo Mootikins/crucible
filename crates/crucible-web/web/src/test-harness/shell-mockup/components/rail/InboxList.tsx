@@ -1,8 +1,4 @@
-/**
- * The inbox: every permission request, then every session whose edits wait
- * for review. The real app reads the requests from the attention store's
- * `pendingInteraction` and the counts from `reviewStore.unreviewedCount`.
- */
+/** Permission requests and open proposals share the Inbox. */
 import { For, Show, type Component } from 'solid-js';
 import { Button } from '../primitives/Button';
 import { EmptyText } from '../primitives/EmptyText';
@@ -45,9 +41,10 @@ export const InboxList: Component<InboxListProps> = (props) => (
         </InboxItem>
       )}
     </For>
+    <Show when={props.reviews.length}><SectionLabel>Proposals</SectionLabel></Show>
     <For each={props.reviews}>
       {(r) => (
-        <InboxItem title={r.title} color={r.color} text={`${r.pending} to review`}>
+        <InboxItem title={r.title} color={r.color} text={`${r.pending} files · Open proposal`}>
           <Button onClick={() => props.onReview(r.id)}>Review</Button>
         </InboxItem>
       )}

@@ -61,14 +61,14 @@ const [state, setState] = createStore({
   sessions: {
     s1: { title: 'Tighten the Precognition note', group: NO_PROJECT, roots: ['folder', 'docs'], color: canvas('cyan'), status: 'need', time: '2 m', model: 'glm-5.2', mode: 'Ask', ctx: 18 },
     s4: { title: 'Draft Windows setup troubleshooting', group: NO_PROJECT, roots: ['folder', 'docs'], color: canvas('orange'), status: 'idle', time: 'Yesterday', model: 'glm-5.2', mode: 'Ask', ctx: 31 },
-    s2: { title: 'Explain the review undo stack', group: 'crucible', roots: ['crucible', 'docs'], color: canvas('green'), status: 'run', time: 'now', model: 'glm-5.2', mode: 'Auto', ctx: 9 },
+    s2: { title: 'Explain proposal acceptance', group: 'crucible', roots: ['crucible', 'docs'], color: canvas('green'), status: 'run', time: 'now', model: 'glm-5.2', mode: 'Auto', ctx: 9 },
     s5: { title: 'Check kiln chip copy against the glossary', group: 'crucible', roots: ['crucible', 'docs'], color: canvas('yellow'), status: 'idle', time: '3 d', model: 'glm-5.2', mode: 'Plan', ctx: 12 },
     s3: { title: 'Nightly reflection pass', group: 'Reflections', roots: ['docs'], color: canvas('purple'), status: 'owe', time: '6 h', model: 'reflection', mode: 'Auto', ctx: 22, plugin: true },
   } as Record<string, Session>,
   active: 's1',
   notes: { ...NOTE_TEXT } as Record<string, string>,
   hunks: {
-    h1: { session: 's1', path: 'Help/Concepts/Precognition', call: 'c3', state: 'pending' },
+    h1: { session: 's1', path: 'Help/Concepts/Precognition', call: 'c3', state: 'accepted' },
     h2: { session: 's1', path: 'Help/Concepts/Precognition', call: 'c6', state: 'absent' },
     x1: { session: 's1', path: 'Guides/Getting Started', external: true, state: 'pending', del: ['Crucible is a knowledge-grounded agent runtime.'], add: ['Crucible is a knowledge-grounded agent runtime — agents that draw from a knowledge graph make better decisions.'] },
     h3: { session: 's3', path: 'Help/Concepts/Kilns', call: 'r1', state: 'pending' },
@@ -94,11 +94,11 @@ const [state, setState] = createStore({
       { t: 'tool', id: 'c6', name: 'write_file', path: 'Help/Concepts/Precognition', hunk: 'h2', st: 'ask' },
     ],
     s2: [
-      { t: 'user', text: 'Why does an undo sometimes refuse a whole batch? I rejected two hunks and one undo did nothing.', time: '7:44 PM' },
+      { t: 'user', text: 'What happens when I reject a proposal? Does it undo the edit?', time: '7:44 PM' },
       { t: 'precog', notes: [['Help/Concepts/Review Ledger', 0.93], ['Help/Concepts/Note Sync', 0.71]] },
       { t: 'tool', id: 'd1', name: 'read_note', path: 'Help/Concepts/Review Ledger', st: 'ok', out: '96 lines' },
-      { t: 'tool', id: 'd2', name: 'grep', arg: 'undo_reject', st: 'ok', out: '6 hits in 3 files under crates/crucible-daemon/src' },
-      { t: 'text', md: 'An undo pops the **whole batch** that one reject action pushed. If the file of any hunk in that batch moved on after the revert, the daemon refuses the whole batch as stale.' },
+      { t: 'tool', id: 'd2', name: 'grep', arg: 'proposal_reject', st: 'ok', out: '6 hits in 3 files under crates/crucible-daemon/src' },
+      { t: 'text', md: 'A proposal holds suggested text separately from the note. **Reject** records the decision without changing the note; **Accept** writes the proposed text after checking its base.' },
     ],
     s3: [
       { t: 'record', text: 'Reflection on “Draft Windows setup troubleshooting”' },
@@ -179,29 +179,6 @@ function refreshStatus(sid: string) {
   );
 }
 
-/** Accept keeps the new text; reject restores the old. Both rewrite the note. */
-export function decide(ids: string[], accept: boolean) {
-  for (const id of ids) {
-    const h = state.hunks[id];
-    if (!h || h.state !== 'pending' || h.external) continue;
-    if (!h.del && !h.add && state.notes[h.path]) {
-      const re = new RegExp(`:::hunk ${id}\\n([\\s\\S]*?)\\n:::\\n?`);
-      setState('notes', h.path, (src) =>
-        src.replace(re, (_b, body: string) => {
-          const keep = body
-            .split('\n')
-            .filter((l) => l.startsWith(accept ? '+' : '-'))
-            .map((l) => l.slice(1))
-            .join('\n');
-          return keep ? `${keep}\n` : '';
-        }),
-      );
-    }
-    setState('hunks', id, 'state', accept ? 'accepted' : 'rejected');
-    refreshStatus(h.session);
-  }
-}
-
 /** The line of record that each wider grant leaves in the transcript. */
 const GRANT_RECORD: Partial<Record<PermissionChoice, string>> = {
   session: 'Edits allowed for this session',
@@ -232,7 +209,7 @@ export function answerPermission(sid: string, choice: PermissionChoice) {
   );
   if (choice !== 'deny') {
     setState('notes', 'Help/Concepts/Precognition', (src) => src.replace('### Customizing with Lua', `${H2_BLOCK}### Customizing with Lua`));
-    setState('hunks', 'h2', 'state', 'pending');
+    setState('hunks', 'h2', 'state', 'accepted');
   }
   refreshStatus(sid);
 }

@@ -1,3 +1,4 @@
+import { proposalPending } from '../review';
 /**
  * One session on the mock store, in its own tab. A port reads ChatContext.
  */
@@ -9,7 +10,7 @@ import { SessionHeader } from '../components/session/SessionHeader';
 import { SessionLayout } from '../components/session/SessionLayout';
 import { Transcript } from '../components/session/Transcript';
 import { blocks } from '../components/session/blocks';
-import { pendingHunks, setState, state } from '../state';
+import { setState, state } from '../state';
 import { SessionFooterContainer } from './SessionFooterContainer';
 import { mockToolHandlers } from './toolHandlers';
 import { noteLinks } from './wikilinks';
@@ -49,7 +50,7 @@ export const SessionContainer: Component<{ sid: string }> = (props) => {
           title={s().title}
           color={s().color}
           ctx={s().ctx}
-          pending={pendingHunks(sid()).length}
+          pending={sid() === 's3' ? proposalPending().length : 0}
           expanded={expanded()}
           onReview={() => openChanges(sid())}
           onToggleExpand={inRail() ? () => withTransition(() => windowActions.toggleEdgeExpanded('right')) : undefined}

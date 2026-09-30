@@ -13,13 +13,14 @@ import { emptyState, generateId } from '@/windowing/model/tree';
 import { LAYOUT_SHORTCUTS } from '@/windowing/shortcuts';
 import { state } from './state';
 
-export type MockType = 'sessions' | 'files' | 'note' | 'changes' | 'session' | 'terminal';
+export type MockType = 'sessions' | 'files' | 'note' | 'changes' | 'review' | 'session' | 'terminal';
 
 export const ICONS: Record<MockType, Component<{ class?: string }>> = {
   sessions: ClipboardList,
   files: FolderTree,
   note: FileText,
   changes: GitCompare,
+  review: GitCompare,
   session: MessageSquare,
   terminal: Terminal,
 };

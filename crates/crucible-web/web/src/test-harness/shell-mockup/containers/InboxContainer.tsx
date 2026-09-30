@@ -1,12 +1,13 @@
 /** The inbox popover on the mock store. Each answer closes the popover. */
 import { mapArray, type Component } from 'solid-js';
-import { openChanges } from '../actions';
+import { openReview } from '../actions';
+import { proposalPending } from '../review';
 import { basename } from '../components/path';
 import { InboxList, type InboxPermissionView, type InboxReviewView } from '../components/rail/InboxList';
-import { answerPermission, pendingHunks, setState, state } from '../state';
+import { answerPermission, setState, state } from '../state';
 
 /** The sessions whose edits wait for review, and which ask for nothing else. */
-export const reviewWaiting = () => Object.keys(state.sessions).filter((sid) => !state.perms[sid] && pendingHunks(sid).length);
+export const reviewWaiting = () => proposalPending().length ? ['s3'] : [];
 
 /** The count that the inbox button shows. */
 export const waitingCount = () => Object.keys(state.perms).length + reviewWaiting().length;
@@ -35,7 +36,7 @@ const reviewView = (sid: string): InboxReviewView => ({
     return state.sessions[sid]!.color;
   },
   get pending() {
-    return pendingHunks(sid).length;
+    return proposalPending().length;
   },
 });
 
@@ -53,7 +54,7 @@ export const InboxContainer: Component<{ onDone: () => void }> = (props) => {
       onAllow={(sid) => done(() => answerPermission(sid, 'once'))}
       onDeny={(sid) => done(() => answerPermission(sid, 'deny'))}
       onOpen={(sid) => done(() => setState('active', sid))}
-      onReview={(sid) => done(() => openChanges(sid))}
+      onReview={(sid) => done(() => openReview('proposal', sid))}
     />
   );
 };

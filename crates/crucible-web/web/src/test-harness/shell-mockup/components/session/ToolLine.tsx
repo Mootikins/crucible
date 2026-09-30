@@ -35,7 +35,6 @@ export const ToolLine: Component<{ it: ToolItem; tools: ToolLineHandlers }> = (p
           hunk={hunk()}
           out={props.it.out}
           onShow={() => props.tools.onOpenPath(hunk()!.path)}
-          onDecide={(accept) => props.tools.onDecide(props.it.hunk!, accept)}
         />
       </ToolBody>
     </div>

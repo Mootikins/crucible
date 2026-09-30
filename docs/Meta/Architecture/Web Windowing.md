@@ -545,3 +545,49 @@ of the parts, so the check cannot pass on an empty tree.
 
 - [[Meta/Web User Stories#WS-325]] — the story this folder shape and harness satisfy.
 - [[Meta/Web User Stories#WS-324]] — the fixed-rail policy the app layers on top.
+
+
+## Shell mockup review design
+
+The dev-only `/shell-mockup.html?review` entry opens Changes and a proposal
+in the real windowing core. Changes shows the read-only session diff directly, in one tab. File headers
+open the note; there is no intermediate file-list or separate Session diff tab. The Inbox lists open proposals separately from
+permission requests. A proposal opens a diff tab named for its subject, with Accept/Reject
+for the whole proposal or one file; rejecting never changes the note. Notes
+with a pending proposal show a Review bar rather than inline decision hunks.
+Comments in the diff attach to the chat composer, and can be resolved.
+File diffs fold through a caret beside the filename, without unified-diff
+range headers. Review and permission previews share numbered monospace rows
+with addition/removal markers; review rows use quiet tints with brighter
+word-change backgrounds. Syntax colors remain visible for code.
+The mockup numbers refer to its fixture excerpts.
+
+This surface uses local design fixtures, not daemon writes. It illustrates the
+current record/proposal split; stale proposals, conflict settlement and
+line-range comment selection remain represented by the real app's diff pane,
+not this preview. The former Session/Turn, Unreviewed only, per-hunk decision
+and undo variants have been removed from the mockup and its Look toolbox.
+
+
+The mockup's comment editor uses a soft control background with no surrounding
+card border; saved comments sit directly below the diff. Transcript copy and
+regenerate controls appear once at the end of a completed assistant turn.
+Interim text before a tool or permission request reserves no action row. Copy
+collects the assistant text of that turn, stopping at the user-message boundary.
+
+The dev-only `/review-harness.html` mounts the production `DiffPanel` with
+local RPC replies. It shares a two-hunk Rust fixture with the browser tests.
+The production merge theme uses stronger row tints, caret headers without
+`@@` delimiters, and borderless line comments with a soft textarea background.
+The preview supports unified/split layouts, folding, and local comments; it
+does not send requests to the daemon.
+
+The mockup separates its title from a summary toolbar with whole-proposal
+Accept all/Reject all controls. Per-file controls stay above the rows.
+`/shell-mockup.html?review&code` shows the same two-hunk Rust example adapted
+to this style, including syntax highlighting and independent hunk folding.
+
+The tab strip reveals the active tab after its own width changes as well as
+after selection changes. It measures after the overflow controls lay out and
+scrolls only the strip, keeping the selected tab clear of those controls.
+The mockup uses an 8px tab left inset and aligns file/hunk carets on one axis.

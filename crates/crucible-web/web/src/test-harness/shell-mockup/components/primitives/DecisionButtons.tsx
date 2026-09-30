@@ -1,8 +1,4 @@
-/**
- * Reject, then Accept: the pair that every review surface shows for a hunk
- * or for a whole review. In the real app the pair calls
- * `reviewActions.setState` (accept) and `reviewActions.reject`.
- */
+/** Proposal decisions, shared by whole-proposal and per-file controls. */
 import { Show, createSignal, type Component } from 'solid-js';
 import { Check } from '@/lib/icons';
 import { Button } from './Button';

@@ -15,6 +15,11 @@ frontend on `http://localhost:3000`.
 
 Add it to `~/.config/crucible/init.lua`.
 
+## Tabs
+
+The selected tab stays visible when its pane narrows. When tabs overflow,
+use **Show all tabs** to select one from the list.
+
 ## Voice input
 
 Hold the composer's microphone button to record and release it to transcribe.

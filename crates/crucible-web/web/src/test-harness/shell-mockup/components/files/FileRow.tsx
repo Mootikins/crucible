@@ -1,6 +1,6 @@
 /**
  * A file row. It shows the count of hunks that wait for review
- * (`reviewStore.hunksForPath` in the real app); without one, a dot in the
+ * (`the pending proposals for this path` in the real app); without one, a dot in the
  * session colour marks a note that the active session used. The file
  * labels setting adds an icon to each file, or an extension label to each
  * file that is not a note.

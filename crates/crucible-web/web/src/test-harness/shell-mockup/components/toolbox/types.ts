@@ -25,8 +25,6 @@ export interface Tweaks {
   accent: AccentId;
   reading: number;
   plugin: PluginCssId;
-  /** A/B variant: the changes view as B, or B with A's controls. */
-  changesControls: 'b' | 'ab';
   /** The bar of a hover popup, until it is pinned. */
   hoverBar: 'title' | 'none' | 'crumbs';
   /** How the file tree marks a file: an icon on each, or the extension of each file that is not a note. */

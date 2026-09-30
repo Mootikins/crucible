@@ -80,7 +80,7 @@ vim -q <(cru diff comments session-<id>)
   This is how the TUI attaches a comment, because the TUI has no comment box.
 
 In the web diff pane, each hunk has a header row with its patch range, for
-example `@@ -14,7 +14,7 @@`. A click on the header hides the hunk or shows it
+example `−14,7 +14,7`, beside a caret. A click on the header hides the hunk or shows it
 again. **Collapse all** in the toolbar hides every hunk, and **Expand all**
 shows every hunk again. The chevron of a file hides the whole file.
 

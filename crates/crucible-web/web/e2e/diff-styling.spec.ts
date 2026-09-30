@@ -11,8 +11,7 @@ import { MOCK_PROJECT, MOCK_SESSION } from './helpers/fixtures';
  *   a grey band.
  * - A hunk header draws no rule of its own. The fold above it, or the file
  *   header, already separates it.
- * - A stored comment and the comment box carry a bar on the left edge, in
- *   the hue of the selection, and no full frame.
+ * - Stored comments and the comment box have no surrounding frame.
  * - The comment box puts the range label in the row of its buttons, so that
  *   the box takes one row less.
  *
@@ -77,7 +76,7 @@ test('a hunk header draws no rule of its own', async ({ page }) => {
   expect(border).toBe('0px');
 });
 
-test('a comment and the comment box carry a bar on the left, and no frame', async ({ page }) => {
+test('a comment and the comment box have no surrounding frame', async ({ page }) => {
   const file = await openDiff(page);
   const box = await commentBox(page, file, 17);
   await box.getByTestId('diff-comment-input').fill('Why ten seconds?');
@@ -91,7 +90,7 @@ test('a comment and the comment box carry a bar on the left, and no frame', asyn
       const s = getComputedStyle(el);
       return [s.borderLeftWidth, s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth];
     });
-    expect(edges).toEqual(['2px', '0px', '0px', '0px']);
+    expect(edges).toEqual(['0px', '0px', '0px', '0px']);
   }
 });
 

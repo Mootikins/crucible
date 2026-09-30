@@ -5,7 +5,7 @@
  * (`lib/query/sessions.ts`), and derives three states in
  * `lib/session-status.ts`: `waiting` (here `need`), `working` (`run`) and
  * `idle`. The mockup adds `owe`: an idle session whose edits wait for review
- * (`reviewStore.unreviewedCount` > 0).
+ * (`pending proposal count` > 0).
  */
 export type SessionMarkStatus = 'need' | 'run' | 'owe' | 'idle';
 

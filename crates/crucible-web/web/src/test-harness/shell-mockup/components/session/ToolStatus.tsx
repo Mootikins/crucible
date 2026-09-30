@@ -18,13 +18,8 @@ export const ToolStatus: Component<{ st: ToolState; out?: string; hunkState?: Hu
     <Show when={props.st === 'err'}>
       <span class="mk-tlst err">{props.out}</span>
     </Show>
-    <Show when={props.st === 'review' && props.hunkState === 'pending'}>
-      <span class="mk-tlst attn" title="Waits for your review">
-        <StatusMark status="owe" />
-      </span>
-    </Show>
     <Show when={props.st === 'review' && props.hunkState === 'rejected'}>
-      <span class="mk-tlst">Reverted</span>
+      <span class="mk-tlst">Rejected proposal</span>
     </Show>
   </>
 );

@@ -5,7 +5,6 @@
 import { Show, type Component } from 'solid-js';
 import { Eye } from '@/lib/icons';
 import { Button } from '../primitives/Button';
-import { DecisionButtons } from '../primitives/DecisionButtons';
 import { MiniDiff } from '../primitives/MiniDiff';
 import type { ToolHunkView } from './types';
 
@@ -13,7 +12,6 @@ export interface ToolDetailsProps {
   hunk?: ToolHunkView;
   out?: string;
   onShow: () => void;
-  onDecide: (accept: boolean) => void;
 }
 
 export const ToolDetails: Component<ToolDetailsProps> = (props) => (
@@ -21,14 +19,13 @@ export const ToolDetails: Component<ToolDetailsProps> = (props) => (
     {(h) => (
       <>
         <MiniDiff del={h().del} add={h().add} />
-        <Show when={h().state === 'pending'}>
+        <Show when={h().state !== 'absent'}>
           <div class="mk-tlacts">
             <Button variant="ghost" onClick={() => props.onShow()}>
               <Eye class="mk-i" />
-              Show in note
+              Open diff
             </Button>
             <span class="mk-grow" />
-            <DecisionButtons onReject={() => props.onDecide(false)} onAccept={() => props.onDecide(true)} />
           </div>
         </Show>
       </>

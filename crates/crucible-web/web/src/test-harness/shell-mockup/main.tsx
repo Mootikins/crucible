@@ -1,3 +1,4 @@
+import { initializeHighlighter } from '@/lib/shiki';
 /**
  * DEV-ONLY shell mockup (model F) on the real windowing core. It is NOT part
  * of the shipped app.
@@ -25,8 +26,9 @@ import type { Tab } from '@/windowing/model/types';
 import { mockPolicy, type MockType } from './policy';
 import { applyTweaks } from './tweaks';
 import { setFocusedNote, setState } from './state';
-import { focusComposer, openNote } from './actions';
+import { focusComposer, openNote, openChanges, openReview } from './actions';
 import { TerminalView } from './components/terminal/TerminalView';
+import { ReviewContainer } from './containers/ReviewContainer';
 import { ChangesContainer } from './containers/ChangesContainer';
 import { FilesPanelContainer } from './containers/FilesPanelContainer';
 import { NoteContainer } from './containers/NoteContainer';
@@ -45,6 +47,7 @@ configureWindowing(
 );
 Object.assign(window, { __windowStore: windowStore, __windowActions: windowActions });
 applyTweaks();
+void initializeHighlighter();
 
 /** The composer's context chip follows the note that has focus in the centre. */
 function FocusedNoteTracker() {
@@ -87,7 +90,9 @@ const renderContent = (tab: () => Tab) => {
       // Read through `tab()`: a navigation replaces the path in place.
       return <NoteContainer tabId={t.id} path={tab().metadata?.path as string} />;
     case 'changes':
-      return <ChangesContainer sid={t.metadata?.sid as string} />;
+      return <ChangesContainer sid={t.metadata?.sid as string} path={tab().metadata?.path as string | undefined} />;
+    case 'review':
+      return <ReviewContainer source={t.metadata?.source as 'record' | 'proposal'} sid={t.metadata?.sid as string} path={t.metadata?.path as string | undefined} />;
     case 'session':
       return <SessionContainer sid={t.metadata?.sid as string} />;
     case 'terminal':
@@ -107,3 +112,9 @@ render(
   ),
   document.getElementById('root')!,
 );
+
+// Shareable review entry point; the regular design page keeps its usual seed.
+if (new URLSearchParams(location.search).has('review')) {
+  openChanges(new URLSearchParams(location.search).has('code') ? 'code-preview' : 's1');
+  if (!new URLSearchParams(location.search).has('code')) openReview('proposal', 's3');
+}

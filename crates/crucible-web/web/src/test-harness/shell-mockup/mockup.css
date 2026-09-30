@@ -335,15 +335,16 @@
 .mk-pdiff { margin: 0 12px 8px; border-radius: 6px; background: var(--mk-nav-solid); overflow: hidden; font-family: var(--cru-font-mono); font-size: 11px; line-height: 1.6; }
 .mk-pdhead { display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: var(--cru-color-body); }
 .mk-pdhead .mk-t { flex: 1; }
-.mk-pdrows { max-height: 12rem; overflow: auto; padding-bottom: 2px; }
-.mk-pdrow { display: grid; grid-template-columns: 4ch 4ch 2.5ch minmax(0, 1fr); color: var(--cru-color-muted); }
-.mk-pdrow .n { text-align: right; color: var(--cru-color-muted-dark); user-select: none; }
-.mk-pdrow .m { text-align: center; user-select: none; }
-.mk-pdrow .c { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 8px; }
-.mk-pdrow.add { background: var(--mk-diff-add); color: var(--cru-color-body); }
-.mk-pdrow.add .m { color: var(--cru-color-ok); }
-.mk-pdrow.remove { background: var(--mk-diff-del); }
-.mk-pdrow.remove .m { color: var(--cru-color-error); }
+.mk-pdiff .mk-diff-rows { max-height: 12rem; overflow: auto; padding-bottom: 2px; }
+.mk-diff-rows { font-family:var(--cru-font-mono); font-size:11px; line-height:1.6; }
+.mk-diff-row { display: grid; grid-template-columns: 4ch 4ch 2.5ch minmax(0, 1fr); color: var(--cru-color-muted); }
+.mk-diff-row .n { text-align: right; color: var(--cru-color-muted-dark); user-select: none; }
+.mk-diff-row .m { text-align: center; user-select: none; }
+.mk-diff-row .c { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 8px; }
+.mk-diff-row.add { background: var(--mk-diff-add); color: var(--cru-color-body); }
+.mk-diff-row.add .m { color: var(--cru-color-ok); }
+.mk-diff-row.remove { background: var(--mk-diff-del); }
+.mk-diff-row.remove .m { color: var(--cru-color-error); }
 .mk-pa { display: flex; align-items: center; gap: 6px; padding: 0 calc(12px - var(--mk-icon-inset)) 10px 12px; }
 /* A queued message: a mild accent, and the override beside it. */
 .mk-queued { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: var(--cru-radius-card); border: 1px dashed color-mix(in srgb, var(--cru-color-primary) 45%, transparent); background: color-mix(in srgb, var(--cru-color-primary) 7%, transparent); font-size: 12.5px; }
@@ -631,7 +632,7 @@ body { background: var(--mk-nav); }
 :root[data-mk-tabs='leaf'] {
   .wm-tabbar { background: var(--mk-strip); border-bottom-width: 0; }
   .wm-tabstrip { gap: 0; padding-inline: calc(var(--mk-pad) - var(--mk-tab-pad)); align-self: stretch; }
-  .wm-tab { margin: var(--mk-tab-top) 0 0; padding-block: 0; padding-left: var(--mk-tab-pad); height: 30px; align-self: flex-end; border-radius: 8px 8px 0 0; outline: none; background: transparent; color: var(--cru-color-muted); }
+  .wm-tab { margin: var(--mk-tab-top) 0 0; padding-block: 0; padding-left: 8px; height: 30px; align-self: flex-end; border-radius: 8px 8px 0 0; outline: none; background: transparent; color: var(--cru-color-muted); }
   .wm-tab:not([data-active]):hover { color: var(--cru-color-ink); }
   .wm-tab[data-active] { background: var(--mk-pane-bg); color: var(--cru-color-ink); }
   .wm-tab[data-active]:not([data-focused]) { color: var(--cru-color-body); }
@@ -806,7 +807,55 @@ body { background: var(--mk-nav); }
 /* The tab menu takes focus when it opens; the menu itself shows no ring. */
 [data-scope='menu'][data-part='content'] { outline: none; }
 
-/* The review controls row of the variant "B with A's controls". */
-.mk-review-controls { display: flex; align-items: center; gap: 16px; margin: -4px 0 14px; }
-.mk-review-controls .mk-tb-seg { width: auto; }
-.mk-review-controls .mk-check { padding: 0; }
+/* A single diff surface for recorded changes and proposals. */
+.mk-review { padding-top:16px; }
+.mk-review header { align-items:center; margin-bottom:8px; min-height:24px; }
+.mk-review h2 { font-size:14px; line-height:24px; }
+.mk-review-meta { font-size:12px; line-height:18px; color:var(--cru-color-muted); }
+.mk-review-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin-bottom:24px; }
+.mk-review-summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px; flex:1 1 12rem; font-size:12px; color:var(--cru-color-muted); }
+.mk-review-toolbar > .mk-review-actions { flex-wrap:nowrap; margin-left:auto; }
+.mk-review-actions, .mk-review-file-head, .mk-review-chips { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.mk-review .mk-btn.sm { height:24px; font-size:12px; line-height:1; }
+.mk-review-file { margin:0 0 24px; scroll-margin-top:16px; }
+.mk-review-file-head { min-height:24px; padding:0 0 8px; column-gap:16px; row-gap:6px; }
+.mk-review-file-actions { display:flex; align-items:center; gap:8px; flex:0 0 auto; margin-left:auto; white-space:nowrap; }
+.mk-review-file-name { flex:1 1 15rem; min-width:0; display:flex; align-items:center; gap:6px; }
+.mk-review-file-name .mk-stat { flex-shrink:0; }
+.mk-review-file-head .mk-f { flex:1 1 auto; min-width:0; text-align:left; overflow-wrap:anywhere; font-size:13px; line-height:20px; color:var(--cru-color-body); }
+.mk-review-file-head .mk-f:hover { color:var(--cru-color-ink); }
+.mk-review-diff { overflow:auto; }
+.mk-review-diff + .mk-review-diff { margin-top:16px; }
+.mk-review .mk-mini { font-size:12px; line-height:1.6; }
+.mk-review-file > .mk-btn { margin-top:4px; }
+.mk-review-comment { margin:12px 0 0; font-size:13px; line-height:1.55; }
+.mk-review-comment p { margin:0 0 6px; }
+.mk-review-comment label { font-size:12px; color:var(--cru-color-muted); }
+.mk-review-comment .mk-review-actions { justify-content:flex-end; }
+.mk-review-comment .mk-review-actions small { margin-right:auto; font-size:11.5px; }
+.mk-review-comment textarea { display:block; width:100%; min-height:76px; padding:10px 12px; margin:6px 0; font:inherit; font-size:13px; color:var(--cru-color-body); background:color-mix(in srgb, var(--cru-color-control) 92%, var(--cru-color-ink)); border:0; border-radius:10px; resize:vertical; outline:none; }
+.mk-review-comment textarea:focus-visible { outline:2px solid color-mix(in srgb, var(--cru-color-primary) 45%, transparent); outline-offset:2px; }
+.mk-review-chips:empty { display:none; }
+.mk-review-chips { padding:0 12px; }
+.mk-proposal-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 20px; font-size:12px; border-bottom:1px solid var(--cru-color-hairline); color:var(--cru-color-muted); }
+
+:root[data-theme='light'] .mk-review-comment textarea { background:color-mix(in srgb, var(--cru-color-control) 35%, var(--cru-color-surface-base)); }
+.mk-review .mk-comment-toggle { color:var(--cru-color-primary); height:24px; margin-top:0; }
+.mk-review .mk-comment-toggle .mk-i { width:16px; height:16px; stroke-width:1.8; }
+.mk-review .mk-comment-toggle:hover { color:var(--cru-color-primary-hover); background:var(--cru-color-hover-wash); }
+
+.mk-review-diff .mk-diff-rows { font-size:12px; }
+.mk-review-diff .mk-diff-row { padding-block:2px; grid-template-columns:3.5ch 3.5ch 2.5ch minmax(0,1fr); }
+.mk-review-diff .mk-diff-row { border-left:2px solid transparent; color:var(--cru-color-body); }
+.mk-review-diff .mk-diff-row.add { background:color-mix(in srgb, var(--cru-color-ok) 12%, transparent); border-left-color:color-mix(in srgb, var(--cru-color-ok) 65%, transparent); }
+.mk-review-diff .mk-diff-row.remove { background:color-mix(in srgb, var(--cru-color-error) 12%, transparent); border-left-color:color-mix(in srgb, var(--cru-color-error) 65%, transparent); }
+.mk-review-diff .add .mk-diff-word { background:color-mix(in srgb, var(--cru-color-ok) 32%, transparent); color:var(--cru-color-ink); border-radius:2px; }
+.mk-review-diff .remove .mk-diff-word { background:color-mix(in srgb, var(--cru-color-error) 32%, transparent); color:var(--cru-color-ink); border-radius:2px; }
+.mk-review-diff.code .mk-diff-rows { width:max-content; min-width:100%; }
+.mk-review-diff.code .c { white-space:pre; overflow-wrap:normal; }
+.mk-review-hunk-toggle { display:flex; align-items:center; gap:6px; margin-bottom:6px; padding:0; font-size:11px; color:var(--cru-color-muted-dark); }
+.mk-review-hunk-toggle .mk-i { width:20px; height:14px; padding-inline:3px; box-sizing:border-box; }
+.mk-review-hunk-toggle:hover { color:var(--cru-color-ink); }
+.mk-review-diff .mk-diff-row .m { font-weight:600; }
+.mk-review .mk-diff-toggle { flex-shrink:0; width:20px; min-width:20px; padding:0; height:24px; color:var(--cru-color-muted); }
+.mk-review .mk-diff-toggle:hover { color:var(--cru-color-ink); }

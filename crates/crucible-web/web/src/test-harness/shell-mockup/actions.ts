@@ -200,10 +200,11 @@ export function peek(path: string) {
 }
 
 /** The review of one session, as a tab where the documents are. */
-export function openChanges(sid = state.active) {
-  const tab: Tab<MockType> = { id: `changes:${sid}`, title: 'Changes', contentType: 'changes', icon: ICONS.changes, metadata: { sid } };
+export function openChanges(sid = state.active, path?: string) {
+  const tab: Tab<MockType> = { id: `changes:${sid}`, title: 'Changes', contentType: 'changes', icon: ICONS.changes, metadata: { sid, path } };
   const holder = groupHolding(tab.id);
   if (holder) {
+    windowActions.updateTab(holder, tab.id, { metadata: { sid, path } });
     windowActions.setActiveTab(holder, tab.id);
     return;
   }
@@ -264,4 +265,19 @@ export function hoverEnd() {
     // Long enough to move the pointer from the link into the popup, or to
     // come back after a short slip past its edge.
   }, 700);
+}
+
+/** One diff tab per source; a proposal stays distinct from the session record. */
+export function openReview(source: 'record' | 'proposal', sid = state.active, path?: string) {
+  if (source === 'record') { openChanges(sid, path); return; }
+  const id = `review:${source}:${sid}`;
+  const holder = groupHolding(id);
+  if (holder) {
+    windowActions.setActiveTab(holder, id);
+    return;
+  }
+  const group = editorGroup();
+  if (!group) return;
+  windowActions.addTab(group, { id, title: 'Knowledge notes', contentType: 'review', icon: ICONS.review, metadata: { source, sid, path } });
+  windowActions.setActiveTab(group, id);
 }
