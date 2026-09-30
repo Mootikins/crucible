@@ -7,7 +7,7 @@ import { windowActions, windowStore } from '@/windowing/store';
 import { collectLeafGroupIds, firstLeafGroupId } from '@/windowing/model/tree';
 import type { Tab } from '@/windowing/model/types';
 import { setState, state } from './state';
-import { ICONS, type MockType } from './policy';
+import { ICONS, sessionTab, type MockType } from './policy';
 import { basename } from './components/path';
 let nextDoc = 1;
 const noteTab = (path: string): Tab<MockType> => ({
@@ -44,9 +44,13 @@ function groupHolding(tabId: string): string | null {
   return centreGroupHolding(tabId) ?? Object.values(windowStore.tabGroups).find((g) => g.tabs.some((t) => t.id === tabId))?.id ?? null;
 }
 
-/** Where a document opens when sessions take the centre: the right rail's first pane. */
-function railDocGroup(): string | null {
-  return firstLeafGroupId(windowStore.edgePanels.right.layout);
+/**
+ * The right rail's group for a kind of tab: the group that holds one
+ * already, else the rail's first pane.
+ */
+function railGroupFor(type: MockType): string | null {
+  const ids = collectLeafGroupIds(windowStore.edgePanels.right.layout);
+  return ids.find((id) => windowStore.tabGroups[id]?.tabs.some((t) => t.contentType === type)) ?? firstLeafGroupId(windowStore.edgePanels.right.layout);
 }
 
 /** The centre group that has focus, else the first one. */
@@ -83,7 +87,7 @@ export function openNote(path: string, opts: { fromSession?: boolean; where?: Op
   }
   // Sessions take the centre: a document opens in the right rail instead.
   const inRail = state.spawn === 'sessions';
-  let group = inRail ? railDocGroup() : editorGroup();
+  let group = inRail ? railGroupFor('note') : editorGroup();
   if (!group) return;
   if (inRail) windowActions.setEdgePanelCollapsed('right', false);
   if (where === 'split' && !inRail) {
@@ -149,28 +153,32 @@ export function goHistory(tabId: string, step: -1 | 1) {
 }
 
 /**
- * Open a session. Documents first: the right rail shows it. Sessions first:
- * it opens as a centre tab, one tab for each session.
+ * Open a session in its own tab: in the right rail while documents take the
+ * centre, else in the centre. A session that is open already takes focus.
  */
 export function openSession(sid: string) {
   setState('active', sid);
-  if (state.spawn === 'docs') return;
-  const tab: Tab<MockType> = {
-    id: `session:${sid}`,
-    title: state.sessions[sid]!.title,
-    contentType: 'session',
-    icon: ICONS.session,
-    metadata: { sid },
-  };
-  const holder = centreGroupHolding(tab.id);
+  const tab = sessionTab(sid);
+  const inRail = state.spawn === 'docs';
+  if (inRail) windowActions.setEdgePanelCollapsed('right', false);
+  const holder = groupHolding(tab.id);
   if (holder) {
     windowActions.setActiveTab(holder, tab.id);
     return;
   }
-  const group = editorGroup();
+  const group = inRail ? railGroupFor('session') : editorGroup();
   if (!group) return;
   windowActions.addTab(group, tab);
   windowActions.setActiveTab(group, tab.id);
+}
+
+/**
+ * Swap the centre and the right rail, as they are: the documents and the
+ * sessions trade places. New tabs of each kind follow them there.
+ */
+export function swapCentre() {
+  windowActions.swapCentreWithEdge('right');
+  setState('spawn', state.spawn === 'docs' ? 'sessions' : 'docs');
 }
 
 /** A note in a floating window over the right side: the click-only peek. */
@@ -191,15 +199,17 @@ export function peek(path: string) {
   });
 }
 
-/** The review of one session, as a centre tab. */
+/** The review of one session, as a tab where the documents are. */
 export function openChanges(sid = state.active) {
   const tab: Tab<MockType> = { id: `changes:${sid}`, title: 'Changes', contentType: 'changes', icon: ICONS.changes, metadata: { sid } };
-  const holder = centreGroupHolding(tab.id);
+  const holder = groupHolding(tab.id);
   if (holder) {
     windowActions.setActiveTab(holder, tab.id);
     return;
   }
-  const group = editorGroup();
+  const inRail = state.spawn === 'sessions';
+  if (inRail) windowActions.setEdgePanelCollapsed('right', false);
+  const group = inRail ? railGroupFor('note') : editorGroup();
   if (!group) return;
   windowActions.addTab(group, tab);
   windowActions.setActiveTab(group, tab.id);

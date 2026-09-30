@@ -18,7 +18,8 @@ export interface SessionHeaderProps {
   /** The session covers the centre. */
   expanded: boolean;
   onReview: () => void;
-  onToggleExpand: () => void;
+  /** Absent where the session cannot cover the centre: in the centre itself. */
+  onToggleExpand?: () => void;
 }
 
 export const SessionHeader: Component<SessionHeaderProps> = (props) => (
@@ -32,15 +33,19 @@ export const SessionHeader: Component<SessionHeaderProps> = (props) => (
         {props.pending}
       </IconButton>
     </Show>
-    <IconButton
-      label={`${props.expanded ? 'Back to the documents' : 'Cover the centre'} (Shift+Esc)`}
-      pressed={props.expanded}
-      onClick={() => props.onToggleExpand()}
-    >
-      <Show when={props.expanded} fallback={<Maximize2 class="mk-i" />}>
-        <Minimize2 class="mk-i" />
-      </Show>
-    </IconButton>
+    <Show when={props.onToggleExpand}>
+      {(toggle) => (
+        <IconButton
+          label={`${props.expanded ? 'Back to the documents' : 'Cover the centre'} (Shift+Esc)`}
+          pressed={props.expanded}
+          onClick={() => toggle()()}
+        >
+          <Show when={props.expanded} fallback={<Maximize2 class="mk-i" />}>
+            <Minimize2 class="mk-i" />
+          </Show>
+        </IconButton>
+      )}
+    </Show>
     <IconButton label="More">
       <MoreHorizontal class="mk-i" />
     </IconButton>

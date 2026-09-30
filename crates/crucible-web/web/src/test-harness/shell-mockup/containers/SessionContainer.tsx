@@ -1,9 +1,9 @@
 /**
- * One session on the mock store. In the right rail it shows the active
- * session; as a centre tab it shows its own. A port reads ChatContext.
+ * One session on the mock store, in its own tab. A port reads ChatContext.
  */
 import type { Component } from 'solid-js';
 import { windowActions, windowStore } from '@/windowing/store';
+import { collectLeafGroupIds } from '@/windowing/model/tree';
 import { focusComposer, openChanges, withTransition } from '../actions';
 import { SessionHeader } from '../components/session/SessionHeader';
 import { SessionLayout } from '../components/session/SessionLayout';
@@ -14,10 +14,15 @@ import { SessionFooterContainer } from './SessionFooterContainer';
 import { mockToolHandlers } from './toolHandlers';
 import { noteLinks } from './wikilinks';
 
-export const SessionContainer: Component<{ sid?: string }> = (props) => {
-  const sid = () => props.sid ?? state.active;
+export const SessionContainer: Component<{ sid: string }> = (props) => {
+  const sid = () => props.sid;
   const s = () => state.sessions[sid()]!;
   const expanded = () => windowStore.expandedEdge === 'right';
+  // Only a session in the right rail can cover the centre.
+  const inRail = () =>
+    collectLeafGroupIds(windowStore.edgePanels.right.layout).some((id) =>
+      windowStore.tabGroups[id]?.tabs.some((t) => t.id === `session:${sid()}`),
+    );
   const links = noteLinks(true);
   let root: HTMLDivElement | undefined;
   // While the session covers the centre, a peek floats at the right edge.
@@ -47,7 +52,7 @@ export const SessionContainer: Component<{ sid?: string }> = (props) => {
           pending={pendingHunks(sid()).length}
           expanded={expanded()}
           onReview={() => openChanges(sid())}
-          onToggleExpand={() => withTransition(() => windowActions.toggleEdgeExpanded('right'))}
+          onToggleExpand={inRail() ? () => withTransition(() => windowActions.toggleEdgeExpanded('right')) : undefined}
         />
       }
       transcript={

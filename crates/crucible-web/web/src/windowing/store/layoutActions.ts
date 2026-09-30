@@ -35,6 +35,12 @@ export interface LayoutActions<C extends string = string> {
   setActivePane(paneId: string | null): void;
   toggleEdgePanel(position: EdgePanelPosition): void;
   swapSidePanels(): void;
+  /**
+   * Exchange the centre's whole layout with one rail's layout, splits
+   * included. The rail docks, so both halves of the swap show. A second
+   * call gives each layout back.
+   */
+  swapCentreWithEdge(position: EdgePanelPosition): void;
   setEdgePanelCollapsed(position: EdgePanelPosition, collapsed: boolean): void;
   /**
    * Set how a rail presents. `cue` changes only when given: the cue is a
@@ -210,6 +216,30 @@ export function createLayoutActions<C extends string>(
         else if (s.focusedRegion === 'right') s.focusedRegion = 'left';
         // An expanded rail stays expanded on its new side.
         if (s.expandedEdge) s.expandedEdge = s.expandedEdge === 'left' ? 'right' : 'left';
+      })
+    );
+  };
+
+  /**
+   * Trade the centre and a rail, as a whole: every pane, split and ratio
+   * goes across, and each pane keeps its id. The rail keeps its width, its
+   * mode cue and its id, because those describe the column, not the panes.
+   *
+   * The rail docks: a swap into a stowed rail would hide half of the
+   * change. An expanded rail would cover the centre it just filled, so the
+   * expand ends. Focus stays on the pane that had it; its region is found
+   * again, because that pane can be on the other side now.
+   */
+  const swapCentreWithEdge = (position: EdgePanelPosition) => {
+    setStore(
+      produce((s) => {
+        const panel = s.edgePanels[position];
+        const centre = s.layout;
+        s.layout = panel.layout;
+        panel.layout = centre;
+        panel.mode = 'docked';
+        s.expandedEdge = null;
+        s.focusedRegion = s.activePaneId ? regionOfPane(s, s.activePaneId) : 'center';
       })
     );
   };
@@ -473,6 +503,7 @@ export function createLayoutActions<C extends string>(
     setActivePane,
     toggleEdgePanel,
     swapSidePanels,
+    swapCentreWithEdge,
     setEdgePanelCollapsed,
     setEdgeMode,
     expandEdge,

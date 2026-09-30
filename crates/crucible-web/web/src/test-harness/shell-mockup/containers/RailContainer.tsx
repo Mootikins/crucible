@@ -14,7 +14,8 @@ import { InboxButton } from '../components/rail/InboxButton';
 import { RailButton } from '../components/rail/RailButton';
 import { SettingsPanel } from '../components/rail/SettingsPanel';
 import { SpawnButton, spawnText } from '../components/rail/SpawnButton';
-import { setState, state } from '../state';
+import { swapCentre } from '../actions';
+import { state } from '../state';
 import { setTweak, toggleToolbox, tweaks } from '../tweaks';
 import { InboxContainer, waitingCount } from './InboxContainer';
 import { ToolboxContainer } from './ToolboxContainer';
@@ -38,11 +39,10 @@ const closePop = () => setPop(null);
 const [notice, setNotice] = createSignal<{ text: string; anchor: DOMRect } | null>(null);
 let noticeTimer: number | undefined;
 
-/** Swap what opens in the centre. Nothing moves, so a notice says what changed. */
+/** Swap the centre and the right rail. A notice names what the centre holds now. */
 function toggleSpawn(e: MouseEvent) {
-  const next = state.spawn === 'docs' ? 'sessions' : 'docs';
-  setState('spawn', next);
-  setNotice({ text: spawnText(next), anchor: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+  swapCentre();
+  setNotice({ text: spawnText(state.spawn), anchor: (e.currentTarget as HTMLElement).getBoundingClientRect() });
   window.clearTimeout(noticeTimer);
   noticeTimer = window.setTimeout(() => setNotice(null), 2200);
 }
@@ -74,7 +74,7 @@ export function mockSlots(onNewSession: () => void, onSearch: () => void): Windo
           <RibbonCommand title="Switch theme" testId="mk-theme" onClick={() => setTweak('theme', tweaks.theme === 'dark' ? 'light' : 'dark')}><Contrast class="w-4 h-4" /></RibbonCommand>
           <RibbonCommand title="Look" testId="mk-look" onClick={toggleToolbox}><SlidersHorizontal class="w-4 h-4" /></RibbonCommand>
           {/* The core's own swap button (it swaps the rails) is hidden by the
-              mockup stylesheet; this one swaps what opens in the centre. */}
+              mockup stylesheet; this one swaps the centre and the right rail. */}
           <SpawnButton spawn={state.spawn} onToggle={toggleSpawn} />
           <Show when={notice()} keyed>
             {(n) => <Notice text={n.text} anchor={n.anchor} />}

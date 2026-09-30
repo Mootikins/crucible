@@ -203,6 +203,21 @@ chord, and a policy can bind another one.
 - **Not stored.** The serializer does not write `expandedEdge`, so a reload
   opens the plain layout.
 
+## Swap the centre with a rail
+
+`swapCentreWithEdge(position)` exchanges the centre's layout with one rail's
+layout. An app uses it to put sessions in the centre and documents in a rail
+with one press. `swapSidePanels` is a different action: it mirrors the two rails.
+
+- **The whole layout moves.** Every pane, split, ratio and collapsed pane goes
+  across. Each pane keeps its id, so its tabs and its state stay.
+- **The column stays.** The rail keeps its width, its cue and its id, because
+  they describe the column and not the panes.
+- **Both halves show.** The rail docks, and an expand ends: an expanded rail
+  would cover the centre that it just filled.
+- **Focus stays on its pane.** `focusedRegion` names the pane's new side.
+- **A second call restores the layouts.**
+
 ## Ribbon placement
 
 `WindowState.ribbonPlacement` sets where the rail ribbons sit. The action is

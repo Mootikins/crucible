@@ -1,8 +1,8 @@
 /**
  * Model F on the real windowing core: the seed and the policy.
  *
- * Left rail: sessions over files. Centre: note tabs. Right rail: the session,
- * with the terminal folded into the rail's corner. The session covers the
+ * Left rail: sessions over files. Centre: note tabs. Right rail: a tab for
+ * each open session, with the terminal folded into the rail's corner. The session covers the
  * centre with the core's expand (Shift+Esc, or the button in its header).
  */
 import type { Component } from 'solid-js';
@@ -11,6 +11,7 @@ import type { WindowPolicy } from '@/windowing/store/policy';
 import type { WindowState } from '@/windowing/model/types';
 import { emptyState, generateId } from '@/windowing/model/tree';
 import { LAYOUT_SHORTCUTS } from '@/windowing/shortcuts';
+import { state } from './state';
 
 export type MockType = 'sessions' | 'files' | 'note' | 'changes' | 'session' | 'terminal';
 
@@ -22,6 +23,15 @@ export const ICONS: Record<MockType, Component<{ class?: string }>> = {
   session: MessageSquare,
   terminal: Terminal,
 };
+
+/** The tab of one session. Each open session has its own. */
+export const sessionTab = (sid: string) => ({
+  id: `session:${sid}`,
+  title: state.sessions[sid]?.title ?? 'Session',
+  contentType: 'session' as const,
+  icon: ICONS.session,
+  metadata: { sid },
+});
 
 const note = (path: string) => ({
   id: `note:${path}`,
@@ -43,7 +53,7 @@ function seed(): WindowState<MockType> {
   const centre = group([note('Index'), note('Help/Concepts/Kilns'), note('Help/Concepts/Precognition')], 2);
   const sessions = group([{ id: 'sessions', title: 'Sessions', contentType: 'sessions', icon: ICONS.sessions }]);
   const files = group([{ id: 'files', title: 'Files', contentType: 'files', icon: ICONS.files }]);
-  const session = group([{ id: 'session', title: 'Session', contentType: 'session', icon: ICONS.session }]);
+  const session = group([sessionTab(state.active)]);
   const terminal = group([{ id: 'terminal', title: 'Terminal', contentType: 'terminal', icon: ICONS.terminal }]);
   const centrePane = generateId();
   s.layout = { id: centrePane, type: 'pane', tabGroupId: centre };
@@ -88,8 +98,8 @@ const APP_SHORTCUTS = [
 export function mockPolicy(onShortcut: (action: string, e: KeyboardEvent) => boolean): WindowPolicy<MockType> {
   return {
     seed,
-    // The two rails' identity panes stay, as in the app (WS-324).
-    mayCloseTab: (_s, _g, tabId) => !['sessions', 'files', 'session'].includes(tabId),
+    // The left rail's identity panes stay, as in the app (WS-324). A session tab closes.
+    mayCloseTab: (_s, _g, tabId) => !['sessions', 'files'].includes(tabId),
     repairLayout: () => {},
     onActiveTabChange: () => {},
     iconFor: (type) => ICONS[type],

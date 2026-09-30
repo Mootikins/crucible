@@ -20,7 +20,7 @@ import { WindowManager } from '@/windowing/components/WindowManager';
 import type { Tab } from '@/windowing/model/types';
 import { mockPolicy, type MockType } from './policy';
 import { applyTweaks } from './tweaks';
-import { setFocusedNote, state } from './state';
+import { setFocusedNote, setState } from './state';
 import { focusComposer, openNote } from './actions';
 import { TerminalView } from './components/terminal/TerminalView';
 import { ChangesContainer } from './containers/ChangesContainer';
@@ -54,16 +54,20 @@ function FocusedNoteTracker() {
 }
 
 /**
- * The right rail's session tab takes the active session's title, so the
- * ribbon tooltip names the session. The seed calls it "Session".
+ * A session tab that comes to the front makes its session the active one,
+ * so the sessions list marks it. A rail icon click activates a tab without
+ * the policy hook, so this watches every group's active tab.
  */
-function SessionTabTitle() {
+function ActiveSessionTracker() {
+  let shown = new Set<string>();
   createEffect(() => {
-    const title = state.sessions[state.active]?.title;
-    const group = Object.values(windowStore.tabGroups).find((g) => g.tabs.some((t) => t.id === 'session'));
-    const tab = group?.tabs.find((t) => t.id === 'session');
-    // Only a changed title writes: the write makes a new tab object.
-    if (group && tab && title && tab.title !== title) windowActions.updateTab(group.id, 'session', { title });
+    const now = Object.values(windowStore.tabGroups)
+      .map((g) => g.tabs.find((t) => t.id === g.activeTabId))
+      .filter((t) => t?.contentType === 'session')
+      .map((t) => t!.metadata?.sid as string);
+    const fresh = now.find((sid) => !shown.has(sid));
+    shown = new Set(now);
+    if (fresh) setState('active', fresh);
   });
   return null;
 }
@@ -81,7 +85,7 @@ const renderContent = (tab: () => Tab) => {
     case 'changes':
       return <ChangesContainer sid={t.metadata?.sid as string} />;
     case 'session':
-      return <SessionContainer sid={t.metadata?.sid as string | undefined} />;
+      return <SessionContainer sid={t.metadata?.sid as string} />;
     case 'terminal':
       return <TerminalView />;
   }
@@ -94,7 +98,7 @@ render(
       slots={mockSlots(focusComposer, () => openNote('Index'))}
     >
       <FocusedNoteTracker />
-      <SessionTabTitle />
+      <ActiveSessionTracker />
     </WindowManager>
   ),
   document.getElementById('root')!,
