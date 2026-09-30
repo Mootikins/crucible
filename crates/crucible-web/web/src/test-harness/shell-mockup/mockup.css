@@ -167,11 +167,14 @@
 .mk-i + .mk-t { margin-left: 0; }
 .mk-trow .mk-i { color: var(--cru-color-muted-dark); }
 /* A file that is not a note shows its extension (toolbox "File labels"). */
-.mk-ext { flex: none; font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; line-height: 14px; padding: 0 4px; border-radius: 3px; color: var(--cru-color-muted-dark); background: var(--mk-line); }
-/* An open folder's children hang from a faint guide in the other shade,
-   under the centre of the folder's caret. */
+.mk-ext { flex: none; font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; line-height: 14px; padding: 0 4px; border-radius: 3px; color: var(--cru-color-muted-dark); background: var(--mk-strip); }
+/* An open folder's children hang from a faint guide in the rail's strip
+   shade (the colour of the icon strip and the split gap), under the centre
+   of the folder's caret. */
 .mk-tchildren { position: relative; }
-.mk-tchildren::before { content: ''; position: absolute; inset-block: 0; left: calc(16.5px + var(--mk-depth) * 14px); width: 1px; background: var(--mk-line); pointer-events: none; }
+/* Rows paint over the guide, so a selected row's fill is not cut. */
+.mk-tchildren > * { position: relative; }
+.mk-tchildren::before { content: ''; position: absolute; inset-block: 0; left: calc(16.5px + var(--mk-depth) * 14px); width: 1px; background: var(--mk-strip); pointer-events: none; }
 
 /* Note */
 .mk-body { display: grid; grid-template-rows: 30px minmax(0, 1fr); height: 100%; min-height: 0; background: var(--cru-color-shell-panel); }
