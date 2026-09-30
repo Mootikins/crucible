@@ -11,11 +11,15 @@ import {
   useSendChatMessage,
 } from '../history';
 
-const FIRST = 'GET /api/session/s-1/history';
-const SECOND = 'GET /api/session/s-2/history';
-const SEND = 'POST /api/chat/send';
+// `session.history` and `session.send_message` are RPC methods now
+// ([[Simplification Plan#Step 19]] item 9): every session's read shares the
+// one `POST /api/rpc/session.history` key, so a fixture that must answer
+// differently per session reads `session_id` off the request body instead of
+// keying on a per-session URL.
+const HISTORY = 'POST /api/rpc/session.history';
+const SEND = 'POST /api/rpc/session.send_message';
 
-/** One history document, as `GET /api/session/{id}/history` answers it. */
+/** One history document, as `session.history` answers it. */
 function history(id: string, events: SessionHistoryResponse['history'] = []): SessionHistoryResponse {
   return {
     session_id: id,
@@ -24,6 +28,7 @@ function history(id: string, events: SessionHistoryResponse['history'] = []): Se
     kilns: [],
     history: events,
     total_events: events.length,
+    transcript: { as_of_seq: 0, items: [] },
   };
 }
 
@@ -35,6 +40,14 @@ function userTurn(id: string, messageId: string, content: string): SessionHistor
     event: 'user_message',
     data: { message_id: messageId, content },
     timestamp: '2026-09-16T00:00:00Z',
+  };
+}
+
+/** Answers `history(sessionId)` for whichever `session_id` the body names. */
+function historyByBody(bodies: Record<string, SessionHistoryResponse>) {
+  return async (request: Request) => {
+    const body = (await request.clone().json()) as { session_id: string };
+    return bodies[body.session_id];
   };
 }
 
@@ -59,7 +72,7 @@ describe('useSessionHistory', () => {
   it('fetches once for two panes on one session', async () => {
     // The gate of this task: two `ChatProvider`s on one session held two
     // documents and asked twice. One key answers both.
-    env = createTestQueryEnv({ [FIRST]: () => history('s-1') });
+    env = createTestQueryEnv({ [HISTORY]: () => history('s-1') });
 
     const panes = inRoot(() => ({
       left: useSessionHistory(() => 's-1'),
@@ -68,17 +81,18 @@ describe('useSessionHistory', () => {
 
     await vi.waitFor(() => expect(panes.left.data).toEqual(history('s-1')));
     expect(panes.right.data).toEqual(history('s-1'));
-    expect(env.fetch.calls(FIRST)).toBe(1);
+    expect(env.fetch.calls(HISTORY)).toBe(1);
   });
 
   it('asks for the whole transcript, not the default page', async () => {
     // The server pages from the FRONT, and a long agentic turn logs hundreds
     // of events: the default page cuts off the tail, which holds the tool
     // results and the assistant's actual text.
-    let asked: string | null = null;
+    let asked: number | undefined;
     env = createTestQueryEnv({
-      [FIRST]: (request) => {
-        asked = new URL(request.url).searchParams.get('limit');
+      [HISTORY]: async (request) => {
+        const body = (await request.clone().json()) as { limit?: number };
+        asked = body.limit;
         return history('s-1');
       },
     });
@@ -86,16 +100,16 @@ describe('useSessionHistory', () => {
     const query = inRoot(() => useSessionHistory(() => 's-1'));
 
     await vi.waitFor(() => expect(query.data).toBeDefined());
-    expect(asked).toBe('10000');
+    expect(asked).toBe(10000);
   });
 
   it('asks nothing while the pane shows no session', async () => {
-    env = createTestQueryEnv({ [FIRST]: () => history('s-1') });
+    env = createTestQueryEnv({ [HISTORY]: () => history('s-1') });
 
     const query = inRoot(() => useSessionHistory(() => null));
 
     await vi.waitFor(() => expect(query.fetchStatus).toBe('idle'));
-    expect(env.fetch.calls(FIRST)).toBe(0);
+    expect(env.fetch.calls(HISTORY)).toBe(0);
   });
 
   it('a session change is a key change, not an abort and a second ask', async () => {
@@ -103,8 +117,7 @@ describe('useSessionHistory', () => {
     // bind, so going back to a session it had already read asked for the
     // whole transcript a second time.
     env = createTestQueryEnv({
-      [FIRST]: () => history('s-1'),
-      [SECOND]: () => history('s-2'),
+      [HISTORY]: historyByBody({ 's-1': history('s-1'), 's-2': history('s-2') }),
     });
     // The test client drops an entry the moment nothing reads it (`gcTime: 0`),
     // so one case cannot answer the next. This case is about going BACK to a
@@ -123,8 +136,7 @@ describe('useSessionHistory', () => {
     setId('s-1');
     await vi.waitFor(() => expect(query.data).toEqual(history('s-1')));
 
-    expect(env.fetch.calls(FIRST)).toBe(1);
-    expect(env.fetch.calls(SECOND)).toBe(1);
+    expect(env.fetch.calls(HISTORY)).toBe(2);
   });
 
 });
@@ -133,13 +145,13 @@ describe('refetchSessionHistory', () => {
   it('reads the transcript again although the cache holds it', async () => {
     // The transcript store asks when its copy fell behind the daemon, so the
     // cached answer is the one that is wrong.
-    env = createTestQueryEnv({ [FIRST]: () => history('s-1') });
+    env = createTestQueryEnv({ [HISTORY]: () => history('s-1') });
     env.client.setQueryData(keys.sessionHistory('s-1'), { ...history('s-1'), total_events: 99 });
 
     const answered = await refetchSessionHistory('s-1');
 
     expect(answered).toEqual(history('s-1'));
-    expect(env.fetch.calls(FIRST)).toBe(1);
+    expect(env.fetch.calls(HISTORY)).toBe(1);
   });
 });
 
@@ -147,14 +159,14 @@ describe('fetchSessionHistoryOnce', () => {
   it('shares the one request the hook already made', async () => {
     // The bind awaits the document before it dispatches a staged first
     // message. It must not be a second GET of the same transcript.
-    env = createTestQueryEnv({ [FIRST]: () => history('s-1') });
+    env = createTestQueryEnv({ [HISTORY]: () => history('s-1') });
 
     const query = inRoot(() => useSessionHistory(() => 's-1'));
     const answered = await fetchSessionHistoryOnce('s-1');
 
     expect(answered).toEqual(history('s-1'));
     await vi.waitFor(() => expect(query.data).toEqual(history('s-1')));
-    expect(env.fetch.calls(FIRST)).toBe(1);
+    expect(env.fetch.calls(HISTORY)).toBe(1);
   });
 });
 

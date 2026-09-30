@@ -5,7 +5,10 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { ProviderInfo } from '@/lib/types';
 import { useProviders } from '../providers';
 
-const LIST = 'GET /api/providers';
+// `GET /api/providers` only forwarded `providers.list` and is gone
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc('providers.list', ...)` now.
+const LIST = 'POST /api/rpc/providers.list';
 
 /** The storage key `swrLocal('providers')` wrote, which the hook keeps. */
 const STORAGE_KEY = 'crucible:cache:providers';
@@ -90,7 +93,7 @@ describe('useProviders', () => {
     const query = inRoot(() => useProviders());
 
     await vi.waitFor(() => expect(query.isError).toBe(true));
-    expect(query.error?.message).toContain('Failed to list providers');
+    expect(query.error?.message).toContain('providers.list');
     expect(query.data).toBeUndefined();
   });
 });

@@ -24,7 +24,13 @@ import {
 /** The storage key `SessionContext` wrote its last roster under, which the hook keeps. */
 const STORAGE_KEY = 'crucible:cache:sessions';
 
-const LIST = 'GET /api/session/list';
+// Most session routes are gone ([[Simplification Plan#Step 19]] item 9): the
+// browser calls `rpc(method, params)` through `POST /api/rpc/{method}` now,
+// so every session's list/get/pause/etc. shares one key and a fixture that
+// must answer differently per session reads the request body instead of a
+// per-session URL. `create`, `resume` and `export` keep their own REST
+// routes (real web-only behavior), so those three keys are unchanged.
+const LIST = 'POST /api/rpc/session.list';
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return {
@@ -55,8 +61,15 @@ function listReply(rows: Session[]): { sessions: Session[]; total: number } {
 }
 
 /** True when the request asked for the archived rows too. */
-function wantsArchived(request: Request): boolean {
-  return new URL(request.url).searchParams.get('include_archived') === 'true';
+async function wantsArchived(request: Request): Promise<boolean> {
+  const body = (await request.clone().json()) as { include_archived?: boolean };
+  return body.include_archived === true;
+}
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
 }
 
 let env: TestQueryEnv;
@@ -102,7 +115,7 @@ describe('useSessions', () => {
     const active = session('s-1');
     const archived = session('s-2', { archived: true });
     env = createTestQueryEnv({
-      [LIST]: (request) => listReply(wantsArchived(request) ? [active, archived] : [active]),
+      [LIST]: async (request) => listReply((await wantsArchived(request)) ? [active, archived] : [active]),
     });
 
     const both = inRoot(() => ({
@@ -121,7 +134,7 @@ describe('useSessions', () => {
     const query = inRoot(() => useSessions(() => false));
 
     await vi.waitFor(() => expect(query.isError).toBe(true));
-    expect(query.error?.message).toContain('Failed to list sessions');
+    expect(query.error?.message).toContain('session.list');
     expect(query.data).toBeUndefined();
   });
 
@@ -179,6 +192,9 @@ describe('useDeleteSession', () => {
         if (calls > 2) await refetched;
         return listReply(rows);
       },
+      // `DELETE /api/session/{id}` keeps its own route: it also releases
+      // this web process's own SSE broker entry for the session, which a
+      // plain `rpc()` forward cannot reach.
       'DELETE /api/session/s-2': () => {
         rows = [kept];
         return new Response(null, { status: 204 });
@@ -230,7 +246,9 @@ describe('useArchiveSession', () => {
     let active = [kept, moving];
     let all = [kept, moving];
     env = createTestQueryEnv({
-      [LIST]: (request) => listReply(wantsArchived(request) ? all : active),
+      [LIST]: async (request) => listReply((await wantsArchived(request)) ? all : active),
+      // `POST /api/session/{id}/archive` keeps its own route: see the note
+      // on `useDeleteSession` above.
       'POST /api/session/s-2/archive': () => {
         active = [kept];
         all = [kept, { ...moving, archived: true }];
@@ -260,9 +278,10 @@ describe('useUnarchiveSession', () => {
     let rows: Session[] = [];
     env = createTestQueryEnv({
       [LIST]: () => listReply(rows),
-      'POST /api/session/s-2/unarchive': () => {
+      'POST /api/rpc/session.unarchive': async (request) => {
+        const id = await sessionIdOf(request);
         rows = [{ ...restored, archived: false }];
-        return new Response(null, { status: 204 });
+        return { session_id: id, archived: false };
       },
     });
 
@@ -309,7 +328,7 @@ describe('the lifecycle mutations', () => {
     const row = session('s-1');
     env = createTestQueryEnv({
       [LIST]: () => listReply([row]),
-      'POST /api/session/s-1/pause': () => new Response(null, { status: 204 }),
+      'POST /api/rpc/session.pause': () => ({}),
       'POST /api/session/s-1/resume': () => new Response(null, { status: 204 }),
       'POST /api/session/s-1/end': () => new Response(null, { status: 204 }),
     });
@@ -339,9 +358,9 @@ describe('useSetSessionTitle', () => {
     let sent: unknown = null;
     env = createTestQueryEnv({
       [LIST]: () => listReply([row]),
-      'PUT /api/session/s-1/title': async (request) => {
+      'POST /api/rpc/session.set_title': async (request) => {
         sent = await request.json();
-        return new Response(null, { status: 204 });
+        return {};
       },
     });
 
@@ -351,7 +370,7 @@ describe('useSetSessionTitle', () => {
 
     await both.rename.mutateAsync({ id: 's-1', title: 'new' });
 
-    expect(sent).toEqual({ title: 'new' });
+    expect(sent).toEqual({ session_id: 's-1', title: 'new' });
     expect(both.list.data?.[0].title).toBe('new');
     expect(env.client.getQueryData<Session>(keys.session('s-1'))?.title).toBe('new');
   });
@@ -362,7 +381,7 @@ describe('useCancelSession', () => {
     const rows = [session('s-1')];
     env = createTestQueryEnv({
       [LIST]: () => listReply(rows),
-      'POST /api/session/s-1/cancel': () => ({ cancelled: true }),
+      'POST /api/rpc/session.cancel': () => ({ cancelled: true }),
     });
 
     const both = inRoot(() => ({ list: useSessions(() => false), cancel: useCancelSession() }));
@@ -389,30 +408,30 @@ describe('useExportSession', () => {
 describe('useSession and fetchSessionOnce', () => {
   it('read one session, and answer the second caller from the cache', async () => {
     const row = session('s-1');
-    env = createTestQueryEnv({ 'GET /api/session/s-1': () => row });
+    env = createTestQueryEnv({ 'POST /api/rpc/session.get': () => row });
 
     const query = inRoot(() => useSession(() => 's-1'));
 
     await vi.waitFor(() => expect(query.data).toEqual(row));
     await expect(fetchSessionOnce('s-1')).resolves.toEqual(row);
-    expect(env.fetch.calls('GET /api/session/s-1')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/session.get')).toBe(1);
   });
 
   it('asks for nothing until there is a session to ask about', async () => {
-    env = createTestQueryEnv({ 'GET /api/session/s-1': () => session('s-1') });
+    env = createTestQueryEnv({ 'POST /api/rpc/session.get': () => session('s-1') });
 
     const query = inRoot(() => useSession(() => null));
 
     await Promise.resolve();
     expect(query.data).toBeUndefined();
-    expect(env.fetch.calls('GET /api/session/s-1')).toBe(0);
+    expect(env.fetch.calls('POST /api/rpc/session.get')).toBe(0);
   });
 
   it('reports a session the daemon no longer holds', async () => {
     env = createTestQueryEnv({
-      'GET /api/session/s-gone': apiError(404, 'no such session'),
+      'POST /api/rpc/session.get': apiError(404, 'no such session'),
     });
 
-    await expect(fetchSessionOnce('s-gone')).rejects.toThrow(/Failed to get session/);
+    await expect(fetchSessionOnce('s-gone')).rejects.toThrow(/session.get/);
   });
 });

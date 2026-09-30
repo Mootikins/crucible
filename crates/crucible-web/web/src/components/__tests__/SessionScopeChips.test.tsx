@@ -28,8 +28,11 @@ vi.mock('@/contexts/ChatContext', () => ({
 // `lib/query/scope.ts`, so both writes answer the ROUTES below: that is what
 // proves the daemon is told the registry NAME, and it is the only way to see
 // that the chip has no path to `setSessionWorkspace` at all.
-const CONNECT = 'POST /api/session/s1/kilns/connect';
-const DISCONNECT = 'POST /api/session/s1/kilns/disconnect';
+// Every one of these routes only forwarded one RPC row and is gone
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now.
+const CONNECT = 'POST /api/rpc/session.connect_kiln';
+const DISCONNECT = 'POST /api/rpc/session.disconnect_kiln';
 
 /** What each write was sent, in the order the chip sent it. */
 const sent: { route: string; kiln: string }[] = [];

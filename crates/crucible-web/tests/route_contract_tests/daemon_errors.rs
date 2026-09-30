@@ -37,8 +37,10 @@ async fn session_get_daemon_error_maps_to_502_with_error_body() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/session/test-session-001")
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/rpc/session.get")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"session_id":"test-session-001"}"#))
                 .unwrap(),
         )
         .await
@@ -66,7 +68,7 @@ async fn chat_send_daemon_error_maps_to_502() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/chat/send")
+                .uri("/api/rpc/session.send_message")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     r#"{"session_id":"test-session-001","content":"hi"}"#,
@@ -88,10 +90,12 @@ async fn set_mode_daemon_error_maps_to_502() {
     let response = app
         .oneshot(
             Request::builder()
-                .method("PUT")
-                .uri("/api/session/test-session-001/knob")
+                .method("POST")
+                .uri("/api/rpc/session.knob.set")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"knob":"mode","value":"yolo"}"#))
+                .body(Body::from(
+                    r#"{"session_id":"test-session-001","knob":"mode","value":"yolo"}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -109,8 +113,10 @@ async fn session_list_daemon_error_maps_to_502() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/session/list")
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/rpc/session.list")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
                 .unwrap(),
         )
         .await
@@ -210,8 +216,10 @@ async fn unscripted_methods_still_succeed_alongside_errors() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/session/list")
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/rpc/session.list")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
                 .unwrap(),
         )
         .await

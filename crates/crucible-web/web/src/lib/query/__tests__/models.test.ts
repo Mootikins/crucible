@@ -6,10 +6,20 @@ import type { Session } from '@/lib/types';
 import { resetSessionsForTests, useSessions } from '../sessions';
 import { useAllModels, useSessionModels, useSwitchModel } from '../models';
 
-const SESSION_MODELS = 'GET /api/session/s-1/models';
-const SWITCH = 'PUT /api/session/s-1/knob';
+// `session.list_models`, `session.knob.set`, `session.list` and
+// `models.list` are all RPC methods now ([[Simplification Plan#Step 19]]
+// items 9): every session's read shares one key, so a fixture that must
+// answer differently per session reads `session_id` off the request body.
+const SESSION_MODELS = 'POST /api/rpc/session.list_models';
+const SWITCH = 'POST /api/rpc/session.knob.set';
 const ALL_MODELS = 'POST /api/rpc/models.list';
-const SESSION_LIST = 'GET /api/session/list';
+const SESSION_LIST = 'POST /api/rpc/session.list';
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
 
 /** The storage key `swrLocal('models')` wrote, which `useAllModels` keeps. */
 const STORAGE_KEY = 'crucible:cache:models';
@@ -108,11 +118,11 @@ describe('useSessionModels', () => {
     let release: () => void = () => {};
     const answered = new Promise<void>((resolve) => (release = resolve));
     env = createTestQueryEnv({
-      [SESSION_MODELS]: async () => {
+      [SESSION_MODELS]: async (request) => {
+        if ((await sessionIdOf(request)) === 's-2') return body(['fast/one']);
         await answered;
         return body(['slow/one']);
       },
-      'GET /api/session/s-2/models': () => body(['fast/one']),
     });
     const [id, setId] = createSignal<string | null>('s-1');
 

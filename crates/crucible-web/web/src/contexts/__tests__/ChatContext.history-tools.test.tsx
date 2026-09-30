@@ -28,8 +28,8 @@ beforeEach(() => {
   installFakeEventSource();
   env = createTestQueryEnv({
     'GET /api/interactions/pending': () => ({ pending: [] }),
-    'GET /api/session/s1': () => SESSION,
-    'GET /api/session/s1/history': () => held,
+    'POST /api/rpc/session.get': () => SESSION,
+    'POST /api/rpc/session.history': () => held,
   });
 });
 

@@ -13,8 +13,42 @@ import type { Session, SessionDetail } from '@/lib/types';
 // proves the context asks for the right thing, and it is the only way to
 // count the requests two readers of one list make between them.
 
-const LIST = 'GET /api/session/list';
-const PROVIDERS = 'GET /api/providers';
+// Most of these routes only forwarded one RPC row and are gone
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now, so a fixture
+// that must answer differently per session reads `session_id` off the
+// request body instead of a per-session URL. `POST /api/session` (create),
+// `POST /api/session/{id}/resume`, `.../end`, `.../archive` and
+// `DELETE /api/session/{id}` keep their own REST routes: the last three also
+// release this web process's own SSE broker entry for the session, which a
+// plain RPC forward cannot reach.
+const LIST = 'POST /api/rpc/session.list';
+const PROVIDERS = 'POST /api/rpc/providers.list';
+const GET = 'POST /api/rpc/session.get';
+const MODELS = 'POST /api/rpc/session.list_models';
+const DELETE = 'DELETE /api/session/s-2';
+const ARCHIVE = 'POST /api/session/s-2/archive';
+const UNARCHIVE = 'POST /api/rpc/session.unarchive';
+const KNOB_SET = 'POST /api/rpc/session.knob.set';
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
+
+/** How many calls of `route` named this `session_id` in their body. */
+async function callsFor(route: string, sessionId: string): Promise<number> {
+  const [method, path] = route.split(' ');
+  let matched = 0;
+  for (let i = 0; i < env.fetch.mock.calls.length; i += 1) {
+    const sent = await env.fetch.sent(i);
+    if (sent.method === method && sent.path === path && (sent.body as { session_id?: string })?.session_id === sessionId) {
+      matched += 1;
+    }
+  }
+  return matched;
+}
 
 /** One session as the daemon sends it, which `lib/api.ts` maps. */
 function wire(over: Partial<SessionDetail> & { id: string }): Record<string, unknown> {
@@ -135,8 +169,8 @@ describe('selectSession auto-resume', () => {
   /** Serves one session by id, its models, and its resume route. */
   function serveSession(state: Session['state'], extra: Record<string, MockFetchAnswer> = {}) {
     return serve({
-      'GET /api/session/test-id': () => wire({ id: 'test-id', state }),
-      'GET /api/session/test-id/models': () => ({ models: [] }),
+      [GET]: () => wire({ id: 'test-id', state }),
+      [MODELS]: () => ({ models: [] }),
       'POST /api/session/test-id/resume': () => new Response(null, { status: 204 }),
       ...extra,
     });
@@ -199,8 +233,8 @@ describe('selectSession auto-resume', () => {
 
     screen.getByTestId('select').click();
 
-    await waitFor(() => expect(served.fetch.calls('GET /api/session/test-id')).toBe(1));
-    expect(served.fetch.calls('GET /api/session/test-id/history')).toBe(0);
+    await waitFor(() => expect(served.fetch.calls(GET)).toBe(1));
+    expect(served.fetch.calls('POST /api/rpc/session.history')).toBe(0);
 
     await waitFor(() => {
       expect(opened).toContain('test-id');
@@ -212,7 +246,7 @@ describe('selectSession auto-resume', () => {
     // have deleted the session since. A failed read prunes the dead row.
     const served = serve({
       [LIST]: () => listOf([{ id: 'test-id' }]),
-      'GET /api/session/test-id': apiError(404, 'no such session'),
+      [GET]: apiError(404, 'no such session'),
     });
 
     let context!: ReturnType<typeof useSession>;
@@ -273,7 +307,7 @@ describe('applySessionScope', () => {
         rows = [created];
         return wire(created);
       },
-      'GET /api/session/new-id/models': () => ({ models: [] }),
+      [MODELS]: () => ({ models: [] }),
     });
 
     render(() => (
@@ -328,8 +362,8 @@ describe('createSession param forwarding', () => {
         sent.push(await request.json());
         return wire({ id: 'new-id', title: null });
       },
-      'PUT /api/session/new-id/knob': () => new Response(null, { status: 204 }),
-      'GET /api/session/new-id/models': () => ({ models: [] }),
+      [KNOB_SET]: () => new Response(null, { status: 204 }),
+      [MODELS]: () => ({ models: [] }),
       ...routes,
     });
 
@@ -352,9 +386,7 @@ describe('createSession param forwarding', () => {
     );
 
     await waitFor(() => expect(sent[0]).toEqual({ kilns: ['/kilns/main'] }));
-    await waitFor(() =>
-      expect(env.fetch.calls('PUT /api/session/new-id/knob')).toBe(1),
-    );
+    await waitFor(() => expect(env.fetch.calls(KNOB_SET)).toBe(1));
   });
 
   it('forwards a kiln-less ACP create without a model override', async () => {
@@ -370,7 +402,7 @@ describe('createSession param forwarding', () => {
     expect(params.agent_type).toBe('acp');
     expect(params.agent_name).toBe('claude');
     expect(params.kilns).toBeUndefined();
-    expect(env.fetch.calls('PUT /api/session/new-id/knob')).toBe(0);
+    expect(env.fetch.calls(KNOB_SET)).toBe(0);
   });
 
   it('forwards every kiln in one flat set', async () => {
@@ -404,13 +436,12 @@ describe('the model list of the selected session', () => {
       releaseFirst = resolve;
     });
     serve({
-      'GET /api/session/s-one': () => wire({ id: 's-one' }),
-      'GET /api/session/s-two': () => wire({ id: 's-two' }),
-      'GET /api/session/s-one/models': async () => {
+      [GET]: async (request) => wire({ id: await sessionIdOf(request) }),
+      [MODELS]: async (request) => {
+        if ((await sessionIdOf(request)) === 's-two') return { models: ['llama3.2', 'mistral'] };
         await first;
         return { models: ['stale-only'] };
       },
-      'GET /api/session/s-two/models': () => ({ models: ['llama3.2', 'mistral'] }),
     });
 
     function Probe() {
@@ -426,7 +457,7 @@ describe('the model list of the selected session', () => {
     // The shell points at one session, then at another, while the first
     // session's models are still in flight.
     statusBarActions.setActiveSessionId('s-one');
-    await waitFor(() => expect(env.fetch.calls('GET /api/session/s-one/models')).toBe(1));
+    await waitFor(async () => expect(await callsFor(MODELS, 's-one')).toBe(1));
     statusBarActions.setActiveSessionId('s-two');
     await waitFor(() => {
       expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
@@ -434,7 +465,7 @@ describe('the model list of the selected session', () => {
 
     // The earlier call completes now, with a different answer.
     releaseFirst?.();
-    await waitFor(() => expect(env.fetch.calls('GET /api/session/s-one/models')).toBe(1));
+    await waitFor(async () => expect(await callsFor(MODELS, 's-one')).toBe(1));
     expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
   });
 
@@ -442,8 +473,8 @@ describe('the model list of the selected session', () => {
   /// still offers the provider's list rather than an empty menu.
   it('falls back to the provider models when the session declares none', async () => {
     serve({
-      'GET /api/session/s-one': () => wire({ id: 's-one' }),
-      'GET /api/session/s-one/models': () => ({ models: [] }),
+      [GET]: () => wire({ id: 's-one' }),
+      [MODELS]: () => ({ models: [] }),
       [PROVIDERS]: () => ({
         providers: [
           {
@@ -518,8 +549,8 @@ describe('adopting the focused pane’s session', () => {
 
   it('adopts a session announced by a restored pane', async () => {
     serve({
-      'GET /api/session/s-restored': () => wire({ id: 's-restored' }),
-      'GET /api/session/s-restored/models': () => ({ models: [] }),
+      [GET]: async (request) => wire({ id: await sessionIdOf(request) }),
+      [MODELS]: () => ({ models: [] }),
     });
 
     mount();
@@ -535,10 +566,8 @@ describe('adopting the focused pane’s session', () => {
 
   it('follows a switch to another pane', async () => {
     serve({
-      'GET /api/session/s-one': () => wire({ id: 's-one' }),
-      'GET /api/session/s-two': () => wire({ id: 's-two' }),
-      'GET /api/session/s-one/models': () => ({ models: [] }),
-      'GET /api/session/s-two/models': () => ({ models: [] }),
+      [GET]: async (request) => wire({ id: await sessionIdOf(request) }),
+      [MODELS]: () => ({ models: [] }),
     });
     mount();
 
@@ -550,24 +579,24 @@ describe('adopting the focused pane’s session', () => {
   });
 
   it('does not refetch a session that is already current', async () => {
-    const served = serve({
-      'GET /api/session/s-same': () => wire({ id: 's-same' }),
-      'GET /api/session/s-same/models': () => ({ models: [] }),
+    serve({
+      [GET]: async (request) => wire({ id: await sessionIdOf(request) }),
+      [MODELS]: () => ({ models: [] }),
     });
     mount();
 
     statusBarActions.setActiveSessionId('s-same');
     await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('s-same'));
-    const calls = served.fetch.calls('GET /api/session/s-same');
+    const calls = await callsFor(GET, 's-same');
 
     // A re-announce of the same id (pane refocus) must not thrash the network.
     statusBarActions.setActiveSessionId('s-same');
     await Promise.resolve();
-    expect(served.fetch.calls('GET /api/session/s-same')).toBe(calls);
+    expect(await callsFor(GET, 's-same')).toBe(calls);
   });
 
   it('leaves the current session alone when the fetch fails', async () => {
-    serve({ 'GET /api/session/s-broken': apiError(502, 'Bad Gateway') });
+    serve({ [GET]: apiError(502, 'Bad Gateway') });
     mount();
 
     statusBarActions.setActiveSessionId('s-broken');
@@ -598,8 +627,8 @@ describe('the model list of a session that was not just created', () => {
   it('lists the daemon’s models after a rail click on an existing session', async () => {
     const served = serve({
       [LIST]: () => listOf([{ id: 's-old' }]),
-      'GET /api/session/s-old': () => wire({ id: 's-old' }),
-      'GET /api/session/s-old/models': () => ({ models: ['llama3.2', 'mistral'] }),
+      [GET]: () => wire({ id: 's-old' }),
+      [MODELS]: () => ({ models: ['llama3.2', 'mistral'] }),
     });
 
     let ctx: ReturnType<typeof useSession> | undefined;
@@ -613,7 +642,7 @@ describe('the model list of a session that was not just created', () => {
     await ctx!.selectSession('s-old');
 
     expect(screen.getByTestId('current').textContent).toBe('s-old');
-    expect(served.fetch.calls('GET /api/session/s-old/models')).toBeGreaterThan(0);
+    expect(served.fetch.calls(MODELS)).toBeGreaterThan(0);
     expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
   });
 
@@ -627,8 +656,8 @@ describe('the model list of a session that was not just created', () => {
    */
   it('adopts a stored session with one read, then lists its models', async () => {
     const served = serve({
-      'GET /api/session/s-old': () => wire({ id: 's-old' }),
-      'GET /api/session/s-old/models': () => ({ models: ['llama3.2', 'mistral'] }),
+      [GET]: () => wire({ id: 's-old' }),
+      [MODELS]: () => ({ models: ['llama3.2', 'mistral'] }),
     });
 
     render(() => (
@@ -643,15 +672,15 @@ describe('the model list of a session that was not just created', () => {
       expect(screen.getByTestId('current').textContent).toBe('s-old');
     });
     // One read of the record; no history page to bring it back first.
-    expect(served.fetch.calls('GET /api/session/s-old')).toBe(1);
-    expect(served.fetch.calls('GET /api/session/s-old/history')).toBe(0);
+    expect(served.fetch.calls(GET)).toBe(1);
+    expect(served.fetch.calls('POST /api/rpc/session.history')).toBe(0);
     await waitFor(() => {
       expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
     });
   });
 
   it('still leaves the current session alone when the session is really gone', async () => {
-    serve({ 'GET /api/session/s-gone': apiError(404, 'Failed to load session') });
+    serve({ [GET]: apiError(404, 'Failed to load session') });
 
     render(() => (
       <SessionProvider>
@@ -752,9 +781,9 @@ describe('the mutations every reader shares', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const served = serve({
       [LIST]: () => listOf(rows),
-      'DELETE /api/session/s-2': () => {
+      [DELETE]: () => {
         rows = [{ id: 's-1' }];
-        return new Response(null, { status: 204 });
+        return { session_id: 's-2', deleted: true };
       },
     });
     let ctx!: ReturnType<typeof useSession>;
@@ -768,7 +797,7 @@ describe('the mutations every reader shares', () => {
     await ctx.deleteSession('s-2');
 
     expect(screen.getByTestId('ids').textContent).toBe('s-1');
-    expect(served.fetch.calls('DELETE /api/session/s-2')).toBe(1);
+    expect(served.fetch.calls(DELETE)).toBe(1);
     confirmSpy.mockRestore();
   });
 
@@ -776,9 +805,9 @@ describe('the mutations every reader shares', () => {
     let rows = [{ id: 's-1' }, { id: 's-2' }];
     const { ctx } = await mountWith({
       [LIST]: () => listOf(rows),
-      'POST /api/session/s-2/archive': () => {
+      [ARCHIVE]: () => {
         rows = [{ id: 's-1' }];
-        return new Response(null, { status: 204 });
+        return { session_id: 's-2', archived: true };
       },
     });
 
@@ -791,9 +820,9 @@ describe('the mutations every reader shares', () => {
     let rows = [{ id: 's-1' }];
     const served = serve({
       [LIST]: () => listOf(rows),
-      'POST /api/session/s-2/unarchive': () => {
+      [UNARCHIVE]: () => {
         rows = [{ id: 's-1' }, { id: 's-2' }];
-        return new Response(null, { status: 204 });
+        return { session_id: 's-2', archived: false };
       },
     });
     let ctx!: ReturnType<typeof useSession>;

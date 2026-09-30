@@ -24,7 +24,7 @@ let files: FileEntry[] = [];
 let notes: FileEntry[] = [];
 /** What `fs.list_dir` answers, by the `rel_path` it is asked for. */
 let dirs: Record<string, Array<{ name: string; rel_path: string; is_dir: boolean }>> = {};
-/** When true, `GET /api/session/s-1/commands` refuses once. */
+/** When true, `POST /api/rpc/session.commands` refuses once. */
 let refuseCommands = false;
 /** When true, `fs.list_dir` refuses the root, as the daemon does for a root it did not admit. */
 let refuseDirs = false;
@@ -33,7 +33,7 @@ let env: TestQueryEnv;
 
 function installEnv(): void {
   env = createTestQueryEnv({
-    'GET /api/session/s-1/commands': () => {
+    'POST /api/rpc/session.commands': () => {
       if (!refuseCommands) return { commands };
       refuseCommands = false;
       return new Response(JSON.stringify({ error: { code: 503, message: 'offline' } }), {
@@ -150,7 +150,7 @@ describe('useAutocomplete slash commands', () => {
     await createRoot(async (dispose) => {
       const { auto, type } = harness();
       await type('/');
-      expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(1);
+      expect(env.fetch.calls('POST /api/rpc/session.commands')).toBe(1);
       // Descriptions come across for the popup's second line, with the source
       // of a command that the daemon runs.
       expect(auto.items().find((i) => i.label === '/help')?.detail).toBe('Show available commands');
@@ -171,13 +171,13 @@ describe('useAutocomplete slash commands', () => {
       const second = harness();
       await second.type('/h');
       expect(second.auto.isOpen()).toBe(true);
-      expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(1);
+      expect(env.fetch.calls('POST /api/rpc/session.commands')).toBe(1);
 
       // The seam: a daemon restarted under a browser that stayed open serves a
       // different set, and this is what lets the next keystroke see it.
       await resetCommandCache();
       await first.type('/m');
-      expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(2);
+      expect(env.fetch.calls('POST /api/rpc/session.commands')).toBe(2);
       dispose();
     });
   });

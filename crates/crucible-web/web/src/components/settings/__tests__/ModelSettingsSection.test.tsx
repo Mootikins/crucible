@@ -25,10 +25,13 @@ import { ModelSettingsSection } from '../ModelSettings';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
 
-const KNOBS = 'GET /api/session/s1/knobs';
-const OPTIONS = 'GET /api/session/s1/config/agent-options';
-const SET_OPTION = 'POST /api/session/s1/config/agent-options';
-const PRECOG = 'GET /api/session/s1/knob/precognition';
+// These routes only forwarded one RPC row and are gone
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now.
+const KNOBS = 'POST /api/rpc/session.list_knobs';
+const OPTIONS = 'POST /api/rpc/session.list_agent_options';
+const SET_OPTION = 'POST /api/rpc/session.set_agent_option';
+const PRECOG = 'POST /api/rpc/session.knob.get';
 
 let env: TestQueryEnv;
 
@@ -149,7 +152,9 @@ describe('ModelSettingsSection agent options', () => {
     select.value = 'high';
     select.dispatchEvent(new Event('change', { bubbles: true }));
 
-    await waitFor(() => expect(sent).toEqual({ option_id: 'thought_level', value: 'high' }));
+    await waitFor(() =>
+      expect(sent).toEqual({ session_id: 's1', option_id: 'thought_level', value: 'high' }),
+    );
     // The agent is the authority on what the value became, so the list is
     // re-read rather than patched.
     await waitFor(() => expect(env.fetch.calls(OPTIONS)).toBe(2));

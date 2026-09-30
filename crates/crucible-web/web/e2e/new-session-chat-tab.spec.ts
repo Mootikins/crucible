@@ -125,14 +125,23 @@ test.describe('New Session -> Chat Tab', () => {
   });
 
   test('clicking an existing session opens its chat tab in the centre pane beside the sessions rail', async ({ page }) => {
-    await page.route('**/api/session/test-session-002', (route) => route.fulfill({ json: MOCK_SESSION_2 }));
+    // `session.get` is one RPC method now (Simplification Plan step 19 item
+    // 9), told apart per session by the request body, not the URL.
+    await page.route('**/api/rpc/session.get', (route) => {
+      const { session_id: id } = route.request().postDataJSON() as { session_id: string };
+      if (id === 'test-session-002') return route.fulfill({ json: MOCK_SESSION_2 });
+      return route.fallback();
+    });
 
     const centreBefore = await getCentrePanes(page);
     expect(centreBefore).toHaveLength(1);
     expect(centreBefore[0].tabs.filter(isChat)).toHaveLength(0);
 
     const getSessionRequest = page.waitForRequest(
-      (req) => req.url().includes('/api/session/test-session-002') && req.method() === 'GET',
+      (req) =>
+        req.url().includes('/api/rpc/session.get') &&
+        req.method() === 'POST' &&
+        (req.postDataJSON() as { session_id?: string })?.session_id === 'test-session-002',
     );
 
     await page.getByTestId('session-item-test-session-002').click();

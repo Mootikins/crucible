@@ -21,7 +21,9 @@ import { append, emitOps, historyOf, segment, upsert, userTurn } from '@/test-ut
 // sessionEvents root.
 
 const ID = 'store-session';
-const HISTORY_ROUTE = `GET /api/session/${ID}/history`;
+// `session.history` is an RPC method now ([[Simplification Plan#Step 19]]
+// item 9); the browser calls `rpc('session.history', ...)` now.
+const HISTORY_ROUTE = 'POST /api/rpc/session.history';
 
 /** What the history route answers next. */
 let snapshot: Transcript;

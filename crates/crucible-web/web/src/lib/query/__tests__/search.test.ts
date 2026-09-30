@@ -54,9 +54,13 @@ function searchRoutes() {
         truncated: false,
       };
     },
-    'GET /api/sessions/search': (request: Request) => {
-      const params = new URL(request.url).searchParams;
-      asked.push({ route: 'sessions', query: params.get('q') ?? '', root: params.get('kiln') ?? '' });
+    // `session.search` is an RPC method now ([[Simplification Plan#Step
+    // 19]] item 9): the browser calls `rpc('session.search', ...)` through
+    // `POST /api/rpc/session.search`, reading the query and the kiln scope
+    // off the JSON body instead of a query string.
+    'POST /api/rpc/session.search': async (request: Request) => {
+      const body = (await request.json()) as { query: string; kilns?: string[] };
+      asked.push({ route: 'sessions', query: body.query, root: body.kilns?.[0] ?? '' });
       // The route answers matched LINES under `matches`, never a bare array.
       return { matches: [], total: 0 };
     },

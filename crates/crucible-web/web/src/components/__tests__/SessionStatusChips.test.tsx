@@ -21,8 +21,19 @@ vi.mock('@/contexts/SessionContext', () => ({
 //
 // The chips retain the session's review state, which lists the composed diff.
 // That one call is stubbed below: this suite is about the chips.
-const STATUS = 'GET /api/session/s1/status';
-const MODES = 'GET /api/session/s1/modes';
+// Every one of these routes only forwarded one RPC row and is gone
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now, so a fixture
+// that must answer differently per session reads `session_id` off the
+// request body instead of a per-session URL.
+const STATUS = 'POST /api/rpc/session.status';
+const MODES = 'POST /api/rpc/session.list_modes';
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
 
 /** One status item as the daemon sends it, with the fields a case does not name. */
 function item(fields: { id: string; plugin: string; text: string } & Record<string, unknown>) {
@@ -38,7 +49,7 @@ function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
     [MODES]: () => ({ current_mode_id: 'ask', modes: [] }),
     // What the chat pane touches on mount; the last case mounts one around
     // the chips to count the reads of one mode list.
-    'GET /api/session/s1': () => ({
+    'POST /api/rpc/session.get': () => ({
       session_id: 's1',
       type: 'chat',
       kilns: ['/kilns/main'],
@@ -50,7 +61,12 @@ function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
       started_at: '2026-01-01T00:00:00Z',
       event_count: 0,
     }),
-    'GET /api/session/s1/history': () => ({ session_id: 's1', history: [], total_events: 0 }),
+    'POST /api/rpc/session.history': () => ({
+      session_id: 's1',
+      history: [],
+      total_events: 0,
+      transcript: { as_of_seq: 0, items: [] },
+    }),
     'GET /api/interactions/pending': () => ({ pending: [] }),
     ...routes,
   });
@@ -92,7 +108,7 @@ describe('SessionStatusChips', () => {
     color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval',
     progress: null, kind: 'plugin_turns',
   };
-  const APPROVALS = 'GET /api/session/s1/config/plugin-approvals';
+  const APPROVALS = 'POST /api/rpc/session.list_plugin_approvals';
 
   it('opens the approval menu from the command route with the daemon list', async () => {
     setCurrentSession(baseSession());
@@ -124,7 +140,7 @@ describe('SessionStatusChips', () => {
 
   it('sets the knob through the daemon when a value is chosen from the item', async () => {
     setCurrentSession(baseSession());
-    const put = 'PUT /api/session/s1/config/plugins/goal/approval';
+    const put = 'POST /api/rpc/session.set_plugin_approval';
     const env = serve({
       [STATUS]: () => ({ status: [engineItem] }),
       [APPROVALS]: () => ({ approvals: { goal: 'ask' } }),
@@ -138,9 +154,11 @@ describe('SessionStatusChips', () => {
     stop.click();
     await waitFor(() => expect(env.fetch.calls(put)).toBe(1));
     const sent = await env.fetch.sent(
-      env.fetch.mock.calls.findIndex(([input]) => String(input instanceof Request ? input.url : input).includes('/plugins/goal/approval')),
+      env.fetch.mock.calls.findIndex(([input]) =>
+        String(input instanceof Request ? input.url : input).includes('session.set_plugin_approval'),
+      ),
     );
-    expect(sent.body).toEqual({ approval: 'stop' });
+    expect(sent.body).toEqual({ session_id: 's1', plugin: 'goal', approval: 'stop' });
   });
 
   it('renders a slot from a plugin it has never heard of', async () => {
@@ -299,10 +317,12 @@ describe('SessionStatusChips', () => {
       releaseSecond = resolve;
     });
     serve({
-      [STATUS]: () => ({ status: [item({ id: 'a', plugin: 'p', text: 'first' })] }),
-      'GET /api/session/s2/status': async () => {
-        await secondAnswered;
-        return { status: [item({ id: 'b', plugin: 'p', text: 'second' })] };
+      [STATUS]: async (request) => {
+        if ((await sessionIdOf(request)) === 's2') {
+          await secondAnswered;
+          return { status: [item({ id: 'b', plugin: 'p', text: 'second' })] };
+        }
+        return { status: [item({ id: 'a', plugin: 'p', text: 'first' })] };
       },
     });
 
@@ -311,7 +331,7 @@ describe('SessionStatusChips', () => {
     await waitFor(() => expect(screen.getByTestId('session-status-a')).toBeInTheDocument());
 
     setCurrentSession(baseSession('s2'));
-    await waitFor(() => expect(env.fetch.calls('GET /api/session/s2/status')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls(STATUS)).toBe(2));
     expect(screen.queryByTestId('session-status-a')).toBeNull();
 
     // ...and the in-flight answer still lands when it finally arrives.

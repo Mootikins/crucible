@@ -104,8 +104,12 @@ async fn the_web_route_lists_the_notifications_of_one_session() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri(format!("/api/session/{}/notifications", ids[0]))
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/rpc/session.list_notifications")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "session_id": ids[0] }).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -182,11 +186,15 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
 
     let app =
         crucible_web::test_support::build_test_app(crucible_web::test_support::build_state(client));
-    let request = |method: &str, uri: String| {
+    // `session.list_notifications` and `session.dismiss_notification` are
+    // RPC methods now ([[Simplification Plan#Step 19]] item 9); the browser
+    // calls `rpc(method, params)` through `POST /api/rpc/{method}`.
+    let rpc_request = |method: &str, body: serde_json::Value| {
         Request::builder()
-            .method(method)
-            .uri(uri)
-            .body(Body::empty())
+            .method("POST")
+            .uri(format!("/api/rpc/{method}"))
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
             .unwrap()
     };
     let json_of = |response: axum::response::Response| async move {
@@ -202,9 +210,9 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     // stream through the lease that a browser stream holds.
     let snapshot = json_of(
         app.clone()
-            .oneshot(request(
-                "GET",
-                format!("/api/session/{}/notifications", sessions[0]),
+            .oneshot(rpc_request(
+                "session.list_notifications",
+                serde_json::json!({ "session_id": sessions[0] }),
             ))
             .await
             .unwrap(),
@@ -226,12 +234,9 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
 
     let closed = json_of(
         app.clone()
-            .oneshot(request(
-                "POST",
-                format!(
-                    "/api/session/{}/notifications/{shared_id}/dismiss",
-                    sessions[0]
-                ),
+            .oneshot(rpc_request(
+                "session.dismiss_notification",
+                serde_json::json!({ "session_id": sessions[0], "notification_id": shared_id }),
             ))
             .await
             .unwrap(),
@@ -258,9 +263,9 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
         reconciled.retain(|n| n["id"] != dismissed.as_str());
         let current = json_of(
             app.clone()
-                .oneshot(request(
-                    "GET",
-                    format!("/api/session/{}/notifications", sessions[0]),
+                .oneshot(rpc_request(
+                    "session.list_notifications",
+                    serde_json::json!({ "session_id": sessions[0] }),
                 ))
                 .await
                 .unwrap(),
@@ -276,9 +281,9 @@ async fn the_web_route_closes_a_shared_notice_for_one_session() {
     for (session, expected) in [(&sessions[0], 0), (&sessions[1], 1)] {
         let listed = json_of(
             app.clone()
-                .oneshot(request(
-                    "GET",
-                    format!("/api/session/{session}/notifications"),
+                .oneshot(rpc_request(
+                    "session.list_notifications",
+                    serde_json::json!({ "session_id": session }),
                 ))
                 .await
                 .unwrap(),

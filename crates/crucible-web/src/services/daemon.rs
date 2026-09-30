@@ -3,7 +3,7 @@ use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
 use crucible_core::protocol::requests::{GetBacklinksReply, SessionCreateRequest, VectorHit};
 use crucible_core::protocol::RpcMethod;
-use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
+use crucible_daemon::{DaemonClient, SessionEvent};
 use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::path::Path;
@@ -341,21 +341,6 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        Safe SessionList =>
-        session_list(
-            kiln: Option<&crucible_core::config::KilnName> => kiln.cloned(),
-            workspace: Option<&Path> => workspace.map(Path::to_path_buf),
-            session_type: Option<&str> => session_type.map(str::to_owned),
-            state: Option<&str> => state.map(str::to_owned),
-            include_archived: Option<bool>,
-        )
-        -> crucible_core::protocol::requests::SessionListReply = session_list(
-            kiln.as_ref(), workspace.as_deref(), session_type.as_deref(),
-            state.as_deref(), include_archived,
-        );
-    }
-
-    forward_rpc! {
         /// `kilns` is the caller's whole kiln set: `session.search` scopes by
         /// kiln-set overlap, so sending a subset hides the sessions that share the
         /// members left out.
@@ -387,12 +372,6 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        Once SessionPause =>
-        session_pause(session_id: &str)
-        -> serde_json::Value = session_pause(&session_id);
-    }
-
-    forward_rpc! {
         Once SessionResume =>
         session_resume(session_id: &str)
         -> serde_json::Value = session_resume(&session_id);
@@ -405,27 +384,15 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        Once SessionDelete =>
-        session_delete(session_id: &str)
-        -> serde_json::Value = session_delete(&session_id);
-    }
-
-    forward_rpc! {
         Once SessionArchive =>
         session_archive(session_id: &str)
         -> serde_json::Value = session_archive(&session_id);
     }
 
     forward_rpc! {
-        Once SessionUnarchive =>
-        session_unarchive(session_id: &str)
-        -> serde_json::Value = session_unarchive(&session_id);
-    }
-
-    forward_rpc! {
-        Once SessionCancel =>
-        session_cancel(session_id: &str)
-        -> bool = session_cancel(&session_id);
+        Once SessionDelete =>
+        session_delete(session_id: &str)
+        -> serde_json::Value = session_delete(&session_id);
     }
 
     forward_rpc! {
@@ -469,12 +436,6 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        Once SessionSendMessage =>
-        session_send_message(session_id: &str, content: &str, comments: &[crucible_core::diff::CommentRef])
-        -> crucible_core::types::SendOutcome = session_send_message_with_comments(&session_id, &content, &comments, true);
-    }
-
-    forward_rpc! {
         Once SessionInteractionRespond =>
         session_interaction_respond(session_id: &str, request_id: &str, response: crucible_core::interaction::InteractionResponse)
         -> () = session_interaction_respond(&session_id, &request_id, response);
@@ -488,28 +449,6 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        /// Attach a kiln to a session's connected set. Returns the updated scope.
-        Once SessionConnectKiln =>
-        session_connect_kiln(session_id: &str, kiln: &crucible_core::config::KilnName)
-        -> serde_json::Value = session_connect_kiln(&session_id, &kiln);
-    }
-
-    forward_rpc! {
-        /// Detach a kiln from the session's set. Any member may be detached — the
-        /// set is flat, including the kiln the session was created with.
-        Once SessionDisconnectKiln =>
-        session_disconnect_kiln(session_id: &str, kiln: &crucible_core::config::KilnName)
-        -> serde_json::Value = session_disconnect_kiln(&session_id, &kiln);
-    }
-
-    forward_rpc! {
-        /// Set (Some) or detach (None) the session's workspace.
-        Once SessionSetWorkspace =>
-        session_set_workspace(session_id: &str, workspace: Option<&Path> => workspace.map(Path::to_path_buf))
-        -> serde_json::Value = session_set_workspace(&session_id, workspace.as_deref());
-    }
-
-    forward_rpc! {
         /// Write one session knob. One RPC method serves every
         /// [`crucible_core::types::KnobValue`] variant — model, mode, context
         /// strategy, precognition, plugin turn limit — so a knob added later
@@ -520,71 +459,9 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        /// Read one session knob, in the same [`crucible_core::types::KnobValue`]
-        /// shape [`Self::session_knob_set`] writes.
-        Safe SessionKnobGet =>
-        session_knob_get(session_id: &str, knob: crucible_core::types::SessionKnob)
-        -> crucible_core::types::KnobValue = session_knob_get(&session_id, knob);
-    }
-
-    forward_rpc! {
-        Once SessionSetTitle =>
-        session_set_title(session_id: &str, title: &str)
-        -> () = session_set_title(&session_id, &title);
-    }
-
-    forward_rpc! {
-        Once SessionGenerateTitle =>
-        session_generate_title(session_id: &str)
-        -> serde_json::Value = session_generate_title(&session_id);
-    }
-
-    forward_rpc! {
         Safe SessionListModels =>
         session_list_models(session_id: &str)
         -> Vec<String> = session_list_models(&session_id);
-    }
-
-    forward_rpc! {
-        /// The status list of a session, forwarded as the daemon shaped it
-        /// (`{"status": [StatusDisplayItem, …]}`).
-        Safe SessionStatus =>
-        session_status(session_id: &str)
-        -> serde_json::Value = session_status(&session_id);
-    }
-
-    forward_rpc! {
-        /// The notifications of a session, from the daemon's one store.
-        Safe SessionListNotifications =>
-        session_list_notifications(session_id: &str)
-        -> Vec<crucible_core::types::Notification> = session_list_notifications(&session_id);
-    }
-
-    forward_rpc! {
-        /// Close one notification for one session: the daemon drops a
-        /// notification of the session and hides a shared one for this
-        /// session only. `Once`, because a replayed removal answers `false`.
-        Once SessionDismissNotification =>
-        session_dismiss_notification(session_id: &str, notification_id: &str)
-        -> bool = session_dismiss_notification(&session_id, &notification_id);
-    }
-
-    forward_rpc! {
-        Safe SessionListAgentOptions =>
-        session_list_agent_options(session_id: &str)
-        -> serde_json::Value = session_list_agent_options(&session_id);
-    }
-
-    forward_rpc! {
-        Once SessionSetAgentOption =>
-        session_set_agent_option(session_id: &str, option_id: &str, value: &str)
-        -> () = session_set_agent_option(&session_id, &option_id, &value);
-    }
-
-    forward_rpc! {
-        Safe SessionListKnobs =>
-        session_list_knobs(session_id: &str)
-        -> crucible_core::types::SessionKnobSupport = session_list_knobs(&session_id);
     }
 
     forward_rpc! {
@@ -593,34 +470,11 @@ impl ReconnectingDaemon {
         -> crucible_core::types::mode::SessionModes = session_list_modes(&session_id);
     }
 
-    forward_rpc! {
-        Safe ProvidersList =>
-        list_providers(kiln_path: Option<&std::path::Path> => kiln_path.map(Path::to_path_buf))
-        -> Vec<ProviderInfo> = list_providers(kiln_path.as_deref());
-    }
-
-    // models.list and agents.list_profiles: the browser calls them through
-    // `POST /api/rpc/{method}` now (Simplification Plan step 19), so these
-    // forwarders are gone. `DaemonClient::list_all_models`/
-    // `agents_list_profiles` stay (item 9 is a separate pass).
-
-    forward_rpc! {
-        Once SessionSetPluginApproval =>
-        session_set_plugin_approval(session_id: &str, plugin: &str, approval: crucible_core::session::PluginApproval)
-        -> () = session_set_plugin_approval(&session_id, &plugin, approval);
-    }
-
-    forward_rpc! {
-        Safe SessionGetPluginApproval =>
-        session_get_plugin_approval(session_id: &str, plugin: &str)
-        -> crucible_core::session::PluginApproval = session_get_plugin_approval(&session_id, &plugin);
-    }
-
-    forward_rpc! {
-        Safe SessionListPluginApprovals =>
-        session_list_plugin_approvals(session_id: &str)
-        -> std::collections::BTreeMap<String, crucible_core::session::PluginApproval> = session_list_plugin_approvals(&session_id);
-    }
+    // providers.list, models.list and agents.list_profiles: the browser
+    // calls them through `POST /api/rpc/{method}` now (Simplification Plan
+    // step 19), so these forwarders are gone. `DaemonClient::list_providers`/
+    // `list_all_models`/`agents_list_profiles` stay (item 9 is a separate
+    // pass; the `rpc.rs` route reaches them directly).
 
     // Used only by this module's own startup auto-registration of the
     // operator-configured kiln path, which is a local, trusted decision, not

@@ -67,9 +67,9 @@ describe('daemon refusals reach the user with the reason', () => {
 
   it('a refused send, model list and mode list each notify with the reason', async () => {
     global.fetch = createMockFetch({
-      'POST /api/chat/send': refusal(422, 'session ses-1 has no agent configured'),
+      'POST /api/rpc/session.send_message': refusal(422, 'session ses-1 has no agent configured'),
       'POST /api/rpc/models.list': refusal(502, 'provider ollama is unreachable'),
-      'GET /api/session/ses-1/modes': refusal(422, 'session ses-1 is not active'),
+      'POST /api/rpc/session.list_modes': refusal(422, 'session ses-1 is not active'),
     });
 
     await expect(sendChatMessage('ses-1', 'hi')).rejects.toThrow('no agent configured');

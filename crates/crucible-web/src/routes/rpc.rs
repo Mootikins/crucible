@@ -463,43 +463,18 @@ mod tests {
         }
     }
 
-    /// `POST /api/rpc/session.get` answers the same body `GET
-    /// /api/session/{id}` does: the row's reply (`SessionDetail`) is not
-    /// wrapped either way.
-    ///
-    /// Compared through `SessionDetail` rather than the raw bytes: the REST
-    /// route decodes the daemon's reply into that type and re-encodes it,
-    /// which spells out an absent optional field as an explicit `null` and a
-    /// defaulted one (`plugin_approvals`) as `{}`; this route forwards the
-    /// daemon's own bytes unchanged, which is item 1's own contract, so the
-    /// mock's leaner JSON simply omits the keys the type would default. Both
-    /// decode to the same value, which is the parity that matters.
-    #[tokio::test]
-    async fn session_get_matches_the_existing_route() {
-        let (_, rest) = request_json("GET", "/api/session/test-session-001", None).await;
-        let (status, rpc) = request_json(
-            "POST",
-            "/api/rpc/session.get",
-            Some(json!({ "session_id": "test-session-001" })),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        let rest: crucible_core::session::SessionDetail = serde_json::from_value(rest).unwrap();
-        let rpc: crucible_core::session::SessionDetail = serde_json::from_value(rpc).unwrap();
-        assert_eq!(
-            serde_json::to_value(&rest).unwrap(),
-            serde_json::to_value(&rpc).unwrap()
-        );
-    }
-
+    // `session_get_matches_the_existing_route`,
     // `search_grep_matches_the_existing_route` and
     // `kiln_list_matches_the_existing_routes_own_data` are gone with the
-    // routes they compared against: `POST /api/search/grep` and
-    // `GET /api/kilns` only forwarded one RPC row each, and are deleted
-    // ([[Simplification Plan#Step 19]] item 3, the "migration") — there is
-    // no second route left to prove parity with. `search_grep`'s and
-    // `kiln.list`'s own shapes are proved directly in
-    // `routes/search.rs`'s (`search_grep_answers_the_declared_shape_through_the_rpc_route`,
+    // routes they compared against: `GET /api/session/{id}`, `POST
+    // /api/search/grep` and `GET /api/kilns` only forwarded one RPC row each,
+    // and are deleted ([[Simplification Plan#Step 19]] items 3 and 9, the
+    // "migration") — there is no second route left to prove parity with.
+    // `session.get`'s own shape is proved against a real daemon in
+    // `route_contract_tests/sessions.rs`'s `get_session_returns_session_data`;
+    // `search_grep`'s and `kiln.list`'s are proved directly in
+    // `routes/search.rs`'s
+    // (`search_grep_answers_the_declared_shape_through_the_rpc_route`,
     // `kiln_list_answers_the_declared_shape_through_the_rpc_route`).
 
     /// `GET /api/plugins` renames the row's `plugin_info` field to `plugins`

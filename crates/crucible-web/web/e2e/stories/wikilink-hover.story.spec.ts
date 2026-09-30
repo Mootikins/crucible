@@ -104,7 +104,7 @@ async function setupNoteRoutes(page: Page) {
 async function streamTurn(page: Page) {
   let markSent: (() => void) | null = null;
   const sent = new Promise<void>((r) => (markSent = r));
-  await page.route('**/api/chat/send', (route) => {
+  await page.route('**/api/rpc/session.send_message', (route) => {
     markSent?.();
     return route.fulfill({ json: { message_id: 'msg-1' } });
   });

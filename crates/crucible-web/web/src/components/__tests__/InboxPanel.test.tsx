@@ -24,7 +24,15 @@ const { default: InboxPanel } = await import('../InboxPanel');
 // `lib/query/sessions.ts`, so the list it draws and the list the rail draws
 // are one cache entry; a mocked module would hide exactly that.
 
-const LIST = 'GET /api/session/list';
+// `session.list` and `session.unarchive` only forwarded one RPC row and are
+// gone ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now.
+// `DELETE /api/session/{id}` stays its own route: it also releases this web
+// process's own SSE broker entry for the session, which a plain RPC forward
+// cannot reach.
+const LIST = 'POST /api/rpc/session.list';
+const DELETE = 'DELETE /api/session/s-old';
+const UNARCHIVE = 'POST /api/rpc/session.unarchive';
 
 const perm: InteractionOf<'permission'> = {
   kind: 'permission',
@@ -199,8 +207,8 @@ describe('the list the inbox shares with the rail', () => {
 
   it('asks the daemon the wider question when the archived section opens', async () => {
     const served = serve({
-      [LIST]: (request) =>
-        new URL(request.url).searchParams.get('include_archived') === 'true'
+      [LIST]: async (request) =>
+        ((await request.clone().json()) as { include_archived?: boolean }).include_archived === true
           ? { sessions: [wire('s-1', false), wire('s-old', true)], total: 2 }
           : { sessions: [wire('s-1', false)], total: 1 },
     });
@@ -218,9 +226,9 @@ describe('the list the inbox shares with the rail', () => {
     let rows = [wire('s-1', false), wire('s-old', true)];
     const served = serve({
       [LIST]: () => ({ sessions: rows, total: rows.length }),
-      'DELETE /api/session/s-old': () => {
+      [DELETE]: () => {
         rows = [wire('s-1', false)];
-        return new Response(null, { status: 204 });
+        return { session_id: 's-old', deleted: true };
       },
     });
 
@@ -233,16 +241,16 @@ describe('the list the inbox shares with the rail', () => {
     (getByText('SURE?') as HTMLElement).click();
 
     await waitFor(() => expect(queryByText('Session s-old')).toBeNull());
-    expect(served.fetch.calls('DELETE /api/session/s-old')).toBe(1);
+    expect(served.fetch.calls(DELETE)).toBe(1);
   });
 
   it('restores an archived session through the shared mutation', async () => {
     let rows = [wire('s-old', true)];
     const served = serve({
       [LIST]: () => ({ sessions: rows, total: rows.length }),
-      'POST /api/session/s-old/unarchive': () => {
+      [UNARCHIVE]: () => {
         rows = [wire('s-old', false)];
-        return new Response(null, { status: 204 });
+        return { session_id: 's-old', archived: false };
       },
     });
 
@@ -252,7 +260,7 @@ describe('the list the inbox shares with the rail', () => {
 
     (getByText('RESTORE') as HTMLElement).click();
 
-    await waitFor(() => expect(served.fetch.calls('POST /api/session/s-old/unarchive')).toBe(1));
+    await waitFor(() => expect(served.fetch.calls(UNARCHIVE)).toBe(1));
     // The row is back in the recent list, which is the same list.
     await waitFor(() => expect(getByText(/1 recent sessions/)).toBeTruthy());
   });

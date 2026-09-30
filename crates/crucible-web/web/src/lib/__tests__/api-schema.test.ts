@@ -6,9 +6,9 @@ import type { components, paths } from '../api-schema';
 // The type level half of the gate. `paths` must carry the route, the method and
 // the reply shape, so `bunx tsc --noEmit` fails when the generator did not run
 // after a handler changed. `just lint types` is what reports that failure.
-type ModelsBody =
-  paths['/api/session/{id}/models']['get']['responses']['200']['content']['application/json'];
-const declaredReply: ModelsBody = { models: ['claude-opus-5'] };
+type PendingInteractionsBody =
+  paths['/api/interactions/pending']['get']['responses']['200']['content']['application/json'];
+const declaredReply: PendingInteractionsBody = { pending: [] };
 
 // The chat SSE union must narrow on `SessionEventPayload`'s `event` tag, or
 // every consumer falls back to a cast and the document buys the browser
@@ -60,24 +60,25 @@ const SESSION_EVENT_GROUPS = [
   'SystemPayload',
 ] as const;
 
-it('the generated schema names the session models route', () => {
-  expect(declaredReply.models).toEqual(['claude-opus-5']);
+it('the generated schema names the pending-interactions route', () => {
+  expect(declaredReply.pending).toEqual([]);
 
   // A type only import disappears at run time, so this tier proves nothing about
   // the generated file unless it reads the file. Run `just web-contract` to write it.
   const generated = readFileSync(resolvePath(process.cwd(), 'src/lib/api-schema.d.ts'), 'utf8');
-  expect(generated).toContain('"/api/session/{id}/models"');
+  expect(generated).toContain('"/api/interactions/pending"');
 
-  expect(Object.keys(spec.paths)).toContain('/api/session/{id}/models');
-  const operation = spec.paths['/api/session/{id}/models'].get;
+  expect(Object.keys(spec.paths)).toContain('/api/interactions/pending');
+  const operation = spec.paths['/api/interactions/pending'].get;
   expect(operation).toBeDefined();
   expect(operation.responses['200']).toMatchObject({
-    content: { 'application/json': { schema: { $ref: '#/components/schemas/ModelsResponse' } } },
+    content: {
+      'application/json': { schema: { $ref: '#/components/schemas/PendingInteractionsResponse' } },
+    },
   });
-  expect(spec.components.schemas.ModelsResponse).toMatchObject({
+  expect(spec.components.schemas.PendingInteractionsResponse).toMatchObject({
     type: 'object',
-    required: ['models'],
-    properties: { models: { type: 'array', items: { type: 'string' } } },
+    required: ['pending'],
   });
 });
 

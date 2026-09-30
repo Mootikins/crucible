@@ -165,7 +165,9 @@ async function driveComplete(page: Page) {
   await setupBasicMocks(page, { sseEvents: [] });
   let markSent: (() => void) | null = null;
   const sent = new Promise<void>((r) => (markSent = r));
-  await page.route('**/api/chat/send', (route) => {
+  // `session.send_message` is one RPC method now (Simplification Plan step
+  // 19 item 9), replacing the old `POST /api/chat/send`.
+  await page.route('**/api/rpc/session.send_message', (route) => {
     markSent?.();
     return route.fulfill({ json: { message_id: 'msg-1' } });
   });

@@ -13,13 +13,23 @@ import {
   useSetKnob,
 } from '../session-config';
 
-const KNOBS = 'GET /api/session/s-1/knobs';
-const OPTIONS = 'GET /api/session/s-1/config/agent-options';
-const SET_OPTION = 'POST /api/session/s-1/config/agent-options';
-const PRECOG = 'GET /api/session/s-1/knob/precognition';
-const SET_KNOB = 'PUT /api/session/s-1/knob';
-const STRATEGY = 'GET /api/session/s-1/knob/context_strategy';
-const STATUS = 'GET /api/session/s-1/status';
+// Every one of these routes only forwarded one RPC row and is gone
+// ([[Simplification Plan#Step 19]] item 9): the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now, so every
+// session's read shares the one key and a fixture that must answer
+// differently per session reads `session_id` off the request body.
+const KNOBS = 'POST /api/rpc/session.list_knobs';
+const OPTIONS = 'POST /api/rpc/session.list_agent_options';
+const SET_OPTION = 'POST /api/rpc/session.set_agent_option';
+const KNOB_GET = 'POST /api/rpc/session.knob.get';
+const SET_KNOB = 'POST /api/rpc/session.knob.set';
+const STATUS = 'POST /api/rpc/session.status';
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
 
 /**
  * One advertised agent option.
@@ -64,7 +74,7 @@ describe('session config reads', () => {
     env = createTestQueryEnv({
       [KNOBS]: () => ({ knobs: [{ id: 'precognition', supported: true }] }),
       [OPTIONS]: () => ({ session_id: 's-1', options: [option('thought_level', 'low')] }),
-      [PRECOG]: () => ({ knob: 'precognition', value: true }),
+      [KNOB_GET]: () => ({ knob: 'precognition', value: true }),
     });
 
     const readers = inRoot(() => ({
@@ -95,8 +105,10 @@ describe('session config reads', () => {
     // was current then. Opening it, switching session and reading it again
     // showed the first session's settings.
     env = createTestQueryEnv({
-      [PRECOG]: () => ({ knob: 'precognition', value: true }),
-      'GET /api/session/s-2/knob/precognition': () => ({ knob: 'precognition', value: false }),
+      [KNOB_GET]: async (request) =>
+        (await sessionIdOf(request)) === 's-2'
+          ? { knob: 'precognition', value: false }
+          : { knob: 'precognition', value: true },
     });
     const [id, setId] = createSignal<string | null>('s-1');
 
@@ -129,7 +141,7 @@ describe('session config mutations invalidate scoped cache', () => {
       [OPTIONS]: () => ({ session_id: 's-1', options: [option('thought_level', current)] }),
       [SET_OPTION]: async (request) => {
         current = ((await request.json()) as { value: string }).value;
-        return new Response(null, { status: 204 });
+        return {};
       },
     });
 
@@ -147,10 +159,10 @@ describe('session config mutations invalidate scoped cache', () => {
     let release: () => void = () => {};
     const answered = new Promise<void>((resolve) => (release = resolve));
     env = createTestQueryEnv({
-      [PRECOG]: () => ({ knob: 'precognition', value: true }),
+      [KNOB_GET]: () => ({ knob: 'precognition', value: true }),
       [SET_KNOB]: async () => {
         await answered;
-        return new Response(null, { status: 204 });
+        return {};
       },
     });
     const held = () => env.client.getQueryData<boolean>(keys.sessionKnob('s-1', 'precognition'));
@@ -181,7 +193,7 @@ describe('session config mutations invalidate scoped cache', () => {
     let release: () => void = () => {};
     const reread = new Promise<void>((resolve) => (release = resolve));
     env = createTestQueryEnv({
-      [PRECOG]: async () => {
+      [KNOB_GET]: async () => {
         reads += 1;
         if (reads > 1) await reread;
         return { knob: 'precognition', value: true };
@@ -210,10 +222,10 @@ describe('session config mutations invalidate scoped cache', () => {
   it('holds the new context strategy, and asks the daemon again', async () => {
     let stored: string | null = 'truncate';
     env = createTestQueryEnv({
-      [STRATEGY]: () => ({ knob: 'context_strategy', value: stored }),
+      [KNOB_GET]: () => ({ knob: 'context_strategy', value: stored }),
       [SET_KNOB]: async (request) => {
         stored = ((await request.json()) as { knob: string; value: string }).value;
-        return new Response(null, { status: 204 });
+        return {};
       },
     });
 
@@ -256,10 +268,12 @@ describe('useSessionStatus', () => {
     let release: () => void = () => {};
     const answered = new Promise<void>((resolve) => (release = resolve));
     env = createTestQueryEnv({
-      [STATUS]: () => ({ status: [{ id: 'branch', plugin: 'scm', text: 'master', color_group: 'info', priority: 128, pinned: false, action: null, kind: 'published', progress: null }] }),
-      'GET /api/session/s-2/status': async () => {
-        await answered;
-        return { status: [] };
+      [STATUS]: async (request) => {
+        if ((await sessionIdOf(request)) === 's-2') {
+          await answered;
+          return { status: [] };
+        }
+        return { status: [{ id: 'branch', plugin: 'scm', text: 'master', color_group: 'info', priority: 128, pinned: false, action: null, kind: 'published', progress: null }] };
       },
     });
     const [id, setId] = createSignal<string | null>('s-1');

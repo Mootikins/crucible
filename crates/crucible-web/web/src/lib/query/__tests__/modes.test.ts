@@ -9,8 +9,18 @@ import { sessionEvents } from '../sse';
 import { installSessionEventRoute } from '../routes/session';
 import { useSessionModes, useSetSessionMode } from '../modes';
 
-const LIST = 'GET /api/session/s-1/modes';
-const SET = 'PUT /api/session/s-1/knob';
+// `session.list_modes` and `session.knob.set` are RPC methods now
+// ([[Simplification Plan#Step 19]] item 9): every session's read shares one
+// key, so a fixture that must answer differently per session reads
+// `session_id` off the request body.
+const LIST = 'POST /api/rpc/session.list_modes';
+const SET = 'POST /api/rpc/session.knob.set';
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
 
 /** The list the daemon declares for one session, in Lua. */
 function modes(current: string, ...ids: string[]): SessionModes {
@@ -73,8 +83,8 @@ describe('useSessionModes', () => {
     // The list is per session, and the pane that read it once read it for
     // whichever session it held at the time it was built.
     env = createTestQueryEnv({
-      [LIST]: () => modes('ask', 'ask'),
-      'GET /api/session/s-2/modes': () => modes('plan', 'plan'),
+      [LIST]: async (request) =>
+        (await sessionIdOf(request)) === 's-2' ? modes('plan', 'plan') : modes('ask', 'ask'),
     });
     const [id, setId] = createSignal<string | null>('s-1');
 

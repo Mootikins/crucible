@@ -1,4 +1,10 @@
 //! Session Route Contract Tests (with mock daemon)
+//!
+//! Most session routes only forwarded one RPC row and are gone
+//! ([[Simplification Plan#Step 19]] item 9): the browser calls
+//! `rpc(method, params)` through `POST /api/rpc/{method}` now. `create_session`
+//! and `export_session` keep their own routes (web-only validation and a
+//! two-call composition), so those tests still drive them directly.
 
 use crucible_core::protocol::rpc::RpcMethod;
 
@@ -9,107 +15,98 @@ use tower::ServiceExt;
 
 use super::shared::{build_state, build_test_app, start_mock_daemon, start_real_daemon_with_kilns};
 
+/// Drive one request through a fresh mock-daemon-backed app and decode JSON.
+async fn send_json(method: &str, uri: &str, body: Value) -> (StatusCode, Value) {
+    let (_mock, client) = start_mock_daemon().await;
+    let state = build_state(client);
+    let app = build_test_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+/// `POST /api/rpc/{method}` with `body`.
+async fn call_rpc(method: &str, body: Value) -> (StatusCode, Value) {
+    send_json("POST", &format!("/api/rpc/{method}"), body).await
+}
+
+// =========================================================================
+// session.list / session.get / session.search Route Contract Tests
+// =========================================================================
+
 #[tokio::test]
 async fn list_sessions_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/session/list")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    let (status, _json) = call_rpc("session.list", json!({})).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
-async fn get_session_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/session/test-session-001")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+async fn list_sessions_with_include_archived_returns_200() {
+    let (status, _json) = call_rpc("session.list", json!({"include_archived": true})).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "include_archived should be accepted"
+    );
 }
+
+#[tokio::test]
+async fn get_session_returns_session_data() {
+    let (status, json) = call_rpc("session.get", json!({"session_id": "test-session-001"})).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["session_id"], "test-session-001");
+    assert_eq!(json["state"], "active");
+    // `type`, not `session_type`: that is the name the daemon writes
+    // (`server/session/list.rs:302`) and the name the browser reads. The mock
+    // answered `session_type` until this route named its reply, and this
+    // assertion held the mock's spelling rather than the wire's.
+    assert_eq!(json["type"], "chat");
+}
+
+// =========================================================================
+// Session lifecycle Route Contract Tests
+// =========================================================================
 
 #[tokio::test]
 async fn pause_session_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/pause")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    let (status, _json) =
+        call_rpc("session.pause", json!({"session_id": "test-session-001"})).await;
+    assert_eq!(status, StatusCode::OK);
 }
+
+// `end_session`, `archive_session` and `delete_session` keep their own REST
+// routes ([[Simplification Plan#Step 19]] item 9): each also releases this
+// web process's own SSE broker entry for the session
+// (`ReconnectingDaemon::close_event_streams`), which a plain
+// `POST /api/rpc/{method}` forward has no way to reach.
 
 #[tokio::test]
 async fn end_session_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/end")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    let (status, _json) = send_json("POST", "/api/session/test-session-001/end", json!({})).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
 async fn cancel_session_returns_200_with_cancelled_field() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/cancel")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let (status, json) =
+        call_rpc("session.cancel", json!({"session_id": "test-session-001"})).await;
+    assert_eq!(status, StatusCode::OK);
     assert!(
         json.get("cancelled").is_some(),
         "Response must contain 'cancelled' field"
@@ -117,98 +114,83 @@ async fn cancel_session_returns_200_with_cancelled_field() {
 }
 
 #[tokio::test]
+async fn delete_session_returns_200_with_deleted_field() {
+    let (status, json) = send_json("DELETE", "/api/session/test-session-001", json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["deleted"], true, "Response must contain deleted: true");
+}
+
+#[tokio::test]
+async fn archive_session_returns_200_with_archived_true() {
+    let (status, json) =
+        send_json("POST", "/api/session/test-session-001/archive", json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["archived"], true,
+        "Response must contain archived: true"
+    );
+}
+
+#[tokio::test]
+async fn unarchive_session_returns_200_with_archived_false() {
+    let (status, json) = call_rpc(
+        "session.unarchive",
+        json!({"session_id": "test-session-001"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["archived"], false,
+        "Response must contain archived: false"
+    );
+}
+
+#[tokio::test]
 async fn list_models_returns_200_with_models_array() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/session/test-session-001/models")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
+    let (status, json) = call_rpc(
+        "session.list_models",
+        json!({"session_id": "test-session-001"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     assert!(
         json["models"].is_array(),
         "Response must have 'models' array"
     );
 }
 
+// =========================================================================
+// session.knob.set / session.set_title Route Contract Tests
+// =========================================================================
+
 #[tokio::test]
 async fn switch_model_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/session/test-session-001/knob")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"knob": "model", "value": "mistral"}).to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    let (status, _json) = call_rpc(
+        "session.knob.set",
+        json!({"session_id": "test-session-001", "knob": "model", "value": "mistral"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
 async fn set_mode_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/session/test-session-001/knob")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"knob": "mode", "value": "plan"}).to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    let (status, _json) = call_rpc(
+        "session.knob.set",
+        json!({"session_id": "test-session-001", "knob": "mode", "value": "plan"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
 async fn set_session_title_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/session/test-session-001/title")
-                .header("content-type", "application/json")
-                .body(Body::from(json!({"title": "My Chat Session"}).to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    let (status, _json) = call_rpc(
+        "session.set_title",
+        json!({"session_id": "test-session-001", "title": "My Chat Session"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 // =========================================================================
@@ -365,183 +347,15 @@ async fn export_session_returns_markdown_content_type() {
     assert!(!text.is_empty(), "Exported markdown should not be empty");
 }
 
-#[tokio::test]
-async fn get_session_returns_session_data() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/session/test-session-001")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["session_id"], "test-session-001");
-    assert_eq!(json["state"], "active");
-    // `type`, not `session_type`: that is the name the daemon writes
-    // (`server/session/list.rs:302`) and the name the browser reads. The mock
-    // answered `session_type` until this route named its reply, and this
-    // assertion held the mock's spelling rather than the wire's.
-    assert_eq!(json["type"], "chat");
-}
-
 // =========================================================================
-// Session Delete/Archive/Unarchive Route Contract Tests (with mock daemon)
+// Session Scope (kilns/workspace) Route Contract Tests
 // =========================================================================
-
-#[tokio::test]
-async fn delete_session_returns_200_with_deleted_field() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/api/session/test-session-001")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["deleted"], true, "Response must contain deleted: true");
-}
-
-#[tokio::test]
-async fn archive_session_returns_200_with_archived_true() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/archive")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(
-        json["archived"], true,
-        "Response must contain archived: true"
-    );
-}
-
-#[tokio::test]
-async fn unarchive_session_returns_200_with_archived_false() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/unarchive")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(
-        json["archived"], false,
-        "Response must contain archived: false"
-    );
-}
-
-#[tokio::test]
-async fn list_sessions_with_include_archived_returns_200() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/session/list?include_archived=true")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "include_archived query param should be accepted"
-    );
-}
-
-// =========================================================================
-// Session Scope (kilns/workspace) Route Contract Tests (with mock daemon)
-// =========================================================================
-
-/// Drive one request through a fresh mock-daemon-backed app and decode JSON.
-async fn send_json(method: &str, uri: &str, body: Value) -> (StatusCode, Value) {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(method)
-                .uri(uri)
-                .header("content-type", "application/json")
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    (status, json)
-}
 
 #[tokio::test]
 async fn connect_kiln_returns_scope_shape() {
-    let (status, json) = send_json(
-        "POST",
-        "/api/session/test-session-001/kilns/connect",
-        json!({"kiln": "extra-kiln"}),
+    let (status, json) = call_rpc(
+        "session.connect_kiln",
+        json!({"session_id": "test-session-001", "kiln": "extra-kiln"}),
     )
     .await;
 
@@ -554,10 +368,9 @@ async fn connect_kiln_returns_scope_shape() {
 
 #[tokio::test]
 async fn disconnect_kiln_returns_scope_shape() {
-    let (status, json) = send_json(
-        "POST",
-        "/api/session/test-session-001/kilns/disconnect",
-        json!({"kiln": "extra-kiln"}),
+    let (status, json) = call_rpc(
+        "session.disconnect_kiln",
+        json!({"session_id": "test-session-001", "kiln": "extra-kiln"}),
     )
     .await;
 
@@ -572,10 +385,9 @@ async fn disconnect_kiln_returns_scope_shape() {
 
 #[tokio::test]
 async fn set_workspace_attaches_project_dir() {
-    let (status, json) = send_json(
-        "PUT",
-        "/api/session/test-session-001/workspace",
-        json!({"workspace": "/repos/crucible"}),
+    let (status, json) = call_rpc(
+        "session.set_workspace",
+        json!({"session_id": "test-session-001", "workspace": "/repos/crucible"}),
     )
     .await;
 
@@ -586,10 +398,9 @@ async fn set_workspace_attaches_project_dir() {
 
 #[tokio::test]
 async fn set_workspace_null_detaches_to_kiln() {
-    let (status, json) = send_json(
-        "PUT",
-        "/api/session/test-session-001/workspace",
-        json!({"workspace": null}),
+    let (status, json) = call_rpc(
+        "session.set_workspace",
+        json!({"session_id": "test-session-001", "workspace": null}),
     )
     .await;
 
@@ -599,30 +410,13 @@ async fn set_workspace_null_detaches_to_kiln() {
 }
 
 // =========================================================================
-// Plugin Status Route Contract Tests (with mock daemon)
+// session.status Route Contract Tests
 // =========================================================================
-
-/// Drive one GET through a fresh mock-daemon-backed app and decode JSON.
-async fn get_json(uri: &str) -> (StatusCode, Value) {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    (status, json)
-}
 
 #[tokio::test]
 async fn status_route_forwards_every_plugin_slot_verbatim() {
-    let (status, json) = get_json("/api/session/test-session-001/status").await;
+    let (status, json) =
+        call_rpc("session.status", json!({"session_id": "test-session-001"})).await;
 
     assert_eq!(status, StatusCode::OK, "body: {json}");
     let slots = json["status"].as_array().expect("status array");
@@ -653,7 +447,7 @@ async fn status_route_forwards_every_plugin_slot_verbatim() {
 async fn a_session_with_no_plugin_slots_returns_an_empty_status_array() {
     // 200 + empty, never 404: most sessions publish nothing, and a chip strip
     // that treated "quiet" as an error would light up on every one of them.
-    let (status, json) = get_json("/api/session/quiet-session/status").await;
+    let (status, json) = call_rpc("session.status", json!({"session_id": "quiet-session"})).await;
 
     assert_eq!(status, StatusCode::OK, "body: {json}");
     assert_eq!(json["status"], json!([]));

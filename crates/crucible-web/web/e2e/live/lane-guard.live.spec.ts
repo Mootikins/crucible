@@ -152,7 +152,9 @@ test.describe('live lane guard', () => {
     const sessionId = ((await created.json()) as { session_id: string }).session_id;
 
     const marker = `hermetic guard ${Date.now()}`;
-    const sent = await api.post('/api/chat/send', {
+    // `session.send_message` is one RPC method now (Simplification Plan step
+    // 19 item 9), replacing the old `POST /api/chat/send`.
+    const sent = await api.post('/api/rpc/session.send_message', {
       data: { session_id: sessionId, content: marker },
     });
     expect(sent.status(), await sent.text()).toBe(200);

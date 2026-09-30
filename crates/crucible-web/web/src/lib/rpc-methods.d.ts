@@ -16,8 +16,12 @@ type Schemas = components['schemas'];
 
 /** A session-scoped request body: the daemon reads `session_id` at the
  * top level, flattened beside the method's own fields (`Scoped<T>` on the
- * Rust side). */
-export type WithSessionId<T> = { session_id: string } & T;
+ * Rust side). `Scoped<()>` (no fields of its own) maps `T` to `unknown`
+ * rather than intersecting `Record<string, never>` directly: TS checks a
+ * named property of an intersection against a sibling index signature, so
+ * `{ session_id: string } & Record<string, never>` refused every
+ * `session_id` as not assignable to the index signature's `never`. */
+export type WithSessionId<T> = { session_id: string } & (T extends Record<string, never> ? unknown : T);
 
 export interface RpcMethods {
   'ping': { params: null; result: string };

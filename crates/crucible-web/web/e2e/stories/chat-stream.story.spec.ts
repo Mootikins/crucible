@@ -172,7 +172,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
     // then deliver the whole turn. Post-completion reconnects hang (no churn).
     let markSent: (() => void) | null = null;
     const sent = new Promise<void>((r) => (markSent = r));
-    await page.route('**/api/chat/send', (route) => {
+    await page.route('**/api/rpc/session.send_message', (route) => {
       markSent?.();
       return route.fulfill({ json: { message_id: 'msg-1' } });
     });
@@ -235,7 +235,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
     // model reasons.
     let markSent: (() => void) | null = null;
     const sent = new Promise<void>((r) => (markSent = r));
-    await page.route('**/api/chat/send', (route) => {
+    await page.route('**/api/rpc/session.send_message', (route) => {
       markSent?.();
       return route.fulfill({ json: { message_id: 'msg-1' } });
     });
@@ -344,7 +344,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
     });
     // The send POST answers (the turn is admitted) but no events follow.
     let sendCount = 0;
-    await page.route('**/api/chat/send', (route) => {
+    await page.route('**/api/rpc/session.send_message', (route) => {
       sendCount += 1;
       return route.fulfill({ json: { message_id: 'msg-1' } });
     });

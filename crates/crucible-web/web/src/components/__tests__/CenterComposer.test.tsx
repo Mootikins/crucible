@@ -104,7 +104,9 @@ beforeEach(async () => {
     // The model chip and its default hint are real reads now: the composer
     // shares both keys with the session context and the phone sheet.
     'POST /api/rpc/models.list': () => ({ models: ['ollama/llama3.2', 'openai/gpt-4o'] }),
-    'GET /api/providers': () => ({
+    // `providers.list` is an RPC method now ([[Simplification Plan#Step
+    // 19]] item 9); the browser calls `rpc('providers.list', ...)`.
+    'POST /api/rpc/providers.list': () => ({
       providers: [
         {
           name: 'ollama',

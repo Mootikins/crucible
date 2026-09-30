@@ -57,7 +57,7 @@ afterEach(() => {
   env.restore();
 });
 
-/** One history document, as `GET /api/session/{id}/history` answers it. */
+/** One history document, as `session.history` answers it. */
 function history(events: SessionHistoryResponse['history']): SessionHistoryResponse {
   return {
     session_id: SESSION,
@@ -66,6 +66,7 @@ function history(events: SessionHistoryResponse['history']): SessionHistoryRespo
     kilns: [],
     history: events,
     total_events: events.length,
+    transcript: { as_of_seq: 0, items: [] },
   };
 }
 

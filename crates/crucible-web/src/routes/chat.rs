@@ -1,3 +1,10 @@
+//! `POST /api/chat/send` moved onto `rpc('session.send_message', ...)`
+//! ([[Simplification Plan#Step 19]] item 4/9): it only forwarded one RPC row,
+//! and its one piece of web-only behavior — refusing an empty message with no
+//! comment — moved to the browser, in `sendChatMessage`
+//! (`crates/crucible-web/web/src/lib/api.ts`), since a plain forward gives
+//! the daemon no such check to make once for every caller.
+
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{extract::State, Json};
@@ -7,52 +14,8 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn chat_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .routes(routes!(send_message))
         .routes(routes!(interaction_respond))
         .routes(routes!(pending_interactions))
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-struct SendMessageRequest {
-    session_id: String,
-    content: String,
-    /// Stored review comments that the message attaches. The daemon builds
-    /// the context of each one, and refuses an unknown or resolved comment.
-    #[serde(default)]
-    comments: Vec<crucible_core::diff::CommentRef>,
-}
-
-/// Start a turn in a session, or run the daemon command that the message
-/// names.
-///
-/// A turn answers its `message_id`: the browser correlates the SSE events
-/// that follow with it. A command that ran without a turn, such as a plugin
-/// command, answers its result instead.
-#[utoipa::path(
-    post,
-    path = "/api/chat/send",
-    request_body = SendMessageRequest,
-    responses(
-        (status = 200, body = crucible_core::types::SendOutcome),
-        (status = 400, description = "The message is empty and attaches no comment"),
-        (status = 502, description = "The daemon could not accept the message"),
-    )
-)]
-async fn send_message(
-    State(state): State<AppState>,
-    Json(req): Json<SendMessageRequest>,
-) -> Result<Json<crucible_core::types::SendOutcome>, WebError> {
-    if req.content.trim().is_empty() && req.comments.is_empty() {
-        return Err(WebError::Chat("Message cannot be empty".to_string()));
-    }
-
-    let outcome = state
-        .daemon
-        .session_send_message(&req.session_id, &req.content, &req.comments)
-        .await
-        .daemon_err()?;
-
-    Ok(Json(outcome))
 }
 
 /// One interaction a session is waiting on an answer to.
@@ -207,75 +170,6 @@ mod tests {
     use super::*;
     use crate::test_support::request_json;
     use crucible_core::interaction::InteractionResponse;
-    use crucible_core::protocol::rpc::RpcMethod;
-
-    #[tokio::test]
-    async fn send_message_answers_the_declared_shape() {
-        let (status, json) = request_json(
-            "POST",
-            "/api/chat/send",
-            Some(serde_json::json!({ "session_id": "s-1", "content": "hello" })),
-        )
-        .await;
-        assert_eq!(status, axum::http::StatusCode::OK);
-
-        let parsed: crucible_core::types::SendOutcome =
-            serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}: {json}"));
-        assert_eq!(
-            parsed,
-            crucible_core::types::SendOutcome::Turn {
-                message_id: "msg-001".into()
-            }
-        );
-    }
-
-    /// The route forwards the comment references as the client sent them.
-    /// The daemon, not the route, builds their context.
-    #[tokio::test]
-    async fn send_message_forwards_the_attached_comments() {
-        use crate::test_support::{build_state, build_test_app, start_mock_daemon};
-        use tower::ServiceExt;
-
-        let comments = serde_json::json!([{
-            "id": "c1",
-            "source": { "kind": "session_record", "session": "s-1" },
-        }]);
-        let (mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_state(client));
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/api/chat/send")
-                    .header("content-type", "application/json")
-                    .body(axum::body::Body::from(
-                        serde_json::json!({
-                            "session_id": "s-1",
-                            "content": "",
-                            "comments": comments,
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            response.status(),
-            axum::http::StatusCode::OK,
-            "a message with only a comment is not empty"
-        );
-        let params = mock.received_params(RpcMethod::SessionSendMessage).unwrap();
-        assert_eq!(params["comments"], comments);
-
-        let (status, _) = request_json(
-            "POST",
-            "/api/chat/send",
-            Some(serde_json::json!({ "session_id": "s-1", "content": " " })),
-        )
-        .await;
-        assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
-    }
 
     #[tokio::test]
     async fn interaction_respond_answers_the_declared_shape() {

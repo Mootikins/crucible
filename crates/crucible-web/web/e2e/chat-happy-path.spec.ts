@@ -63,10 +63,10 @@ test.describe('Chat happy path', () => {
     await setupBasicMocks(page, { sseEvents: [] });
 
     // Mock the title endpoints (auto-title fires after first response)
-    await page.route('**/api/session/*/auto-title', (route) =>
+    await page.route('**/api/rpc/session.generate_title', (route) =>
       route.fulfill({ json: { title: 'Generated Title' } }),
     );
-    await page.route('**/api/session/*/title', (route) =>
+    await page.route('**/api/rpc/session.set_title', (route) =>
       route.fulfill({ status: 200, body: '{}' }),
     );
 
@@ -124,7 +124,7 @@ test.describe('Chat happy path', () => {
 
     // Intercept the POST /api/chat/send request
     const sendPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/chat/send') && req.method() === 'POST',
+      (req) => req.url().includes('/api/rpc/session.send_message') && req.method() === 'POST',
     );
 
     // Click send
@@ -163,13 +163,13 @@ test.describe('Chat happy path', () => {
     await setupBasicMocks(page, { sseEvents: [] });
 
     // Mock cancel and title endpoints BEFORE goto
-    await page.route('**/api/session/*/cancel', (route) =>
+    await page.route('**/api/rpc/session.cancel', (route) =>
       route.fulfill({ json: { cancelled: true } }),
     );
-    await page.route('**/api/session/*/auto-title', (route) =>
+    await page.route('**/api/rpc/session.generate_title', (route) =>
       route.fulfill({ json: { title: 'Generated Title' } }),
     );
-    await page.route('**/api/session/*/title', (route) =>
+    await page.route('**/api/rpc/session.set_title', (route) =>
       route.fulfill({ status: 200, body: '{}' }),
     );
 
@@ -211,7 +211,7 @@ test.describe('Chat happy path', () => {
     // Send a message
     await chatInput.fill('Tell me something long');
     const sendPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/chat/send') && req.method() === 'POST',
+      (req) => req.url().includes('/api/rpc/session.send_message') && req.method() === 'POST',
     );
     await page.getByTestId('send-button').click();
     await sendPromise;
@@ -222,9 +222,7 @@ test.describe('Chat happy path', () => {
 
     // Intercept cancel request
     const cancelPromise = page.waitForRequest(
-      (req) =>
-        req.url().includes(`/api/session/${MOCK_SESSION.session_id}/cancel`) &&
-        req.method() === 'POST',
+      (req) => req.url().includes('/api/rpc/session.cancel') && req.method() === 'POST',
     );
 
     // Click cancel — still before SSE completes, so isStreaming stays true.

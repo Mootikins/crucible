@@ -15,8 +15,6 @@ mod scm;
 mod search;
 mod session;
 mod session_commands;
-mod session_config;
-mod session_status;
 mod surface;
 mod terminal;
 mod webhook;

@@ -76,7 +76,9 @@ test.describe('live session lifecycle', () => {
     // A real turn, answered by the fake model server. The mocked version of
     // this test hand-wrote a transcript the daemon had never stored, so it
     // could not tell a working history read from a broken one.
-    const sent = await api.post('/api/chat/send', {
+    // `session.send_message` is one RPC method now (Simplification Plan step
+    // 19 item 9), replacing the old `POST /api/chat/send`.
+    const sent = await api.post('/api/rpc/session.send_message', {
       data: { session_id: id, content: 'hermetic turn before resume' },
     });
     expect(sent.status(), await sent.text()).toBe(200);

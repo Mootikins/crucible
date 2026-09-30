@@ -1,7 +1,7 @@
 import type { components } from './api-schema';
+import type { RpcMethods } from './rpc-methods';
 import type { SessionCommand } from './slash-commands';
 import { APP_CALLER, callerParam, client, decode, expectOk, rpc, type ApiError } from './api-client';
-import type { RpcMethods } from './rpc-methods';
 import { getBus } from './bus';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import type { CommentRef } from './diffset';
@@ -185,18 +185,24 @@ export type SendOutcome = Schemas['SendOutcome'];
  * Send a chat message to a session.
  * Returns what the daemon did with it. A turn does NOT stream here —
  * subscribe to events separately via `subscribeToEvents`.
+ *
+ * Refuses a blank message with no attached comment before it ever reaches
+ * the daemon: `session.send_message` (`POST /api/rpc/{method}` now — see
+ * [[Simplification Plan#Step 19]]) has no such check, since a plain forward
+ * gives the daemon no place to make this decision once for every caller.
  */
 export async function sendChatMessage(
   sessionId: string,
   content: string,
   comments?: CommentRef[],
 ): Promise<SendOutcome> {
-  return decode(
-    await client.POST('/api/chat/send', {
-      // The references only. The daemon builds the context of each comment.
-      body: { session_id: sessionId, content, ...(comments?.length ? { comments } : {}) },
-    }),
-    'Failed to send message',
+  if (content.trim().length === 0 && !comments?.length) {
+    throw new Error('Failed to send message: Message cannot be empty');
+  }
+  return rpc(
+    'session.send_message',
+    // The references only. The daemon builds the context of each comment.
+    { session_id: sessionId, content, ...(comments?.length ? { comments } : {}) },
     { notify: true },
   );
 }
@@ -1060,20 +1066,13 @@ export async function listSessions(filters?: {
   state?: string;
   includeArchived?: boolean;
 }): Promise<Session[]> {
-  const data = decode(
-    await client.GET('/api/session/list', {
-      params: {
-        query: {
-          kiln: filters?.kiln,
-          workspace: filters?.workspace,
-          type: filters?.type,
-          state: filters?.state,
-          include_archived: filters?.includeArchived ? true : undefined,
-        },
-      },
-    }),
-    'Failed to list sessions',
-  );
+  const data = await rpc('session.list', {
+    kilns: filters?.kiln ? [filters.kiln] : undefined,
+    workspace: filters?.workspace,
+    type: filters?.type,
+    state: filters?.state,
+    include_archived: filters?.includeArchived ? true : undefined,
+  });
   return expectList(data.sessions, 'sessions', 'Failed to list sessions');
 }
 
@@ -1095,12 +1094,7 @@ export async function searchSessions(
   limit?: number,
 ): Promise<SessionSearchResponse> {
   const scope = (typeof kilns === 'string' ? [kilns] : (kilns ?? [])).filter(Boolean);
-  const data = decode(
-    await client.GET('/api/sessions/search', {
-      params: { query: { q: query, kiln: scope, limit } },
-    }),
-    'Failed to search sessions',
-  );
+  const data = await rpc('session.search', { query, kilns: scope, limit });
   return {
     ...data,
     matches: expectList(data.matches, 'matches', 'Failed to search sessions'),
@@ -1108,10 +1102,7 @@ export async function searchSessions(
 }
 
 export async function getSession(id: string): Promise<SessionDetail> {
-  return decode(
-    await client.GET('/api/session/{id}', { params: { path: { id } } }),
-    'Failed to get session',
-  );
+  return rpc('session.get', { session_id: id });
 }
 
 // =============================================================================
@@ -1174,10 +1165,7 @@ export async function semanticSearch(
 
 /** Pause a session. */
 export async function pauseSession(id: string): Promise<void> {
-  expectOk(
-    await client.POST('/api/session/{id}/pause', { params: { path: { id } } }),
-    'Failed to pause session',
-  );
+  await rpc('session.pause', { session_id: id });
 }
 
 /** Resume a session (also auto-subscribes to events on the backend). */
@@ -1188,7 +1176,14 @@ export async function resumeSession(id: string): Promise<void> {
   );
 }
 
-/** End a session. */
+/**
+ * End a session.
+ *
+ * Kept as its own route, not `rpc('session.end', ...)`: the route also
+ * releases the web process's own SSE broker entry for the session
+ * (`ReconnectingDaemon::close_event_streams`), which is local web-process
+ * state a plain RPC forward has no way to reach.
+ */
 export async function endSession(id: string): Promise<void> {
   expectOk(
     await client.POST('/api/session/{id}/end', { params: { path: { id } } }),
@@ -1196,7 +1191,12 @@ export async function endSession(id: string): Promise<void> {
   );
 }
 
-/** Delete a session permanently. */
+/**
+ * Delete a session permanently.
+ *
+ * Kept as its own route for the same reason as {@link endSession}: it
+ * releases the web process's own SSE broker entry too.
+ */
 export async function deleteSession(id: string): Promise<void> {
   expectOk(
     await client.DELETE('/api/session/{id}', { params: { path: { id } } }),
@@ -1204,7 +1204,12 @@ export async function deleteSession(id: string): Promise<void> {
   );
 }
 
-/** Archive a session (hide from default listing). */
+/**
+ * Archive a session (hide from default listing).
+ *
+ * Kept as its own route for the same reason as {@link endSession}: it
+ * releases the web process's own SSE broker entry too.
+ */
 export async function archiveSession(id: string): Promise<void> {
   expectOk(
     await client.POST('/api/session/{id}/archive', { params: { path: { id } } }),
@@ -1214,27 +1219,17 @@ export async function archiveSession(id: string): Promise<void> {
 
 /** Unarchive a session (restore to default listing). */
 export async function unarchiveSession(id: string): Promise<void> {
-  expectOk(
-    await client.POST('/api/session/{id}/unarchive', { params: { path: { id } } }),
-    'Failed to unarchive session',
-  );
+  await rpc('session.unarchive', { session_id: id });
 }
 
 /** Cancel the current agent operation in a session. */
 export async function cancelSession(id: string): Promise<boolean> {
-  return decode(
-    await client.POST('/api/session/{id}/cancel', { params: { path: { id } } }),
-    'Failed to cancel session',
-  ).cancelled;
+  return (await rpc('session.cancel', { session_id: id })).cancelled;
 }
 
 /** List available models for a session. */
 export async function listModels(sessionId: string): Promise<string[]> {
-  return decode(
-    await client.GET('/api/session/{id}/models', { params: { path: { id: sessionId } } }),
-    'Failed to list models',
-    { notify: true },
-  ).models;
+  return (await rpc('session.list_models', { session_id: sessionId }, { notify: true })).models;
 }
 
 /**
@@ -1245,10 +1240,7 @@ export async function listModels(sessionId: string): Promise<string[]> {
  * `lib/query/routes/session.ts`), so a caller reads it again on a change.
  */
 export async function getSessionStatus(sessionId: string): Promise<StatusDisplayItem[]> {
-  return decode(
-    await client.GET('/api/session/{id}/status', { params: { path: { id: sessionId } } }),
-    'Failed to load session status',
-  ).status;
+  return (await rpc('session.status', { session_id: sessionId })).status;
 }
 
 /**
@@ -1257,11 +1249,8 @@ export async function getSessionStatus(sessionId: string): Promise<StatusDisplay
  */
 export async function getSessionNotifications(
   sessionId: string,
-): Promise<components['schemas']['SessionNotificationsResponse']['notifications']> {
-  return decode(
-    await client.GET('/api/session/{id}/notifications', { params: { path: { id: sessionId } } }),
-    'Failed to load the notifications of the session',
-  ).notifications;
+): Promise<RpcMethods['session.list_notifications']['result']['notifications']> {
+  return (await rpc('session.list_notifications', { session_id: sessionId })).notifications;
 }
 
 /**
@@ -1273,11 +1262,11 @@ export async function dismissSessionNotification(
   sessionId: string,
   notificationId: string,
 ): Promise<boolean> {
-  return decode(
-    await client.POST('/api/session/{id}/notifications/{notification_id}/dismiss', {
-      params: { path: { id: sessionId, notification_id: notificationId } },
-    }),
-    'Failed to close the notification',
+  return (
+    await rpc('session.dismiss_notification', {
+      session_id: sessionId,
+      notification_id: notificationId,
+    })
   ).success;
 }
 
@@ -1289,22 +1278,14 @@ export async function dismissSessionNotification(
  * loop, so the daemon's caps and context policy, and offering one is a control that changes nothing.
  */
 export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> {
-  return decode(
-    await client.GET('/api/session/{id}/knobs', { params: { path: { id: sessionId } } }),
-    'Failed to list settings',
-  );
+  return rpc('session.list_knobs', { session_id: sessionId });
 }
 
 export type PluginApproval = components['schemas']['PluginApproval'];
 
 /** Read the persisted approval floors for this session's plugins. */
 export async function listPluginApprovals(sessionId: string): Promise<Record<string, PluginApproval>> {
-  return decode(
-    await client.GET('/api/session/{id}/config/plugin-approvals', {
-      params: { path: { id: sessionId } },
-    }),
-    'Failed to load plugin approvals',
-  ).approvals;
+  return (await rpc('session.list_plugin_approvals', { session_id: sessionId })).approvals;
 }
 
 export async function setPluginApproval(
@@ -1312,13 +1293,7 @@ export async function setPluginApproval(
   plugin: string,
   approval: PluginApproval,
 ): Promise<void> {
-  expectOk(
-    await client.PUT('/api/session/{id}/config/plugins/{plugin}/approval', {
-      params: { path: { id: sessionId, plugin } },
-      body: { approval },
-    }),
-    'Failed to set plugin approval',
-  );
+  await rpc('session.set_plugin_approval', { session_id: sessionId, plugin, approval });
 }
 
 /**
@@ -1328,12 +1303,7 @@ export async function setPluginApproval(
  * connects to it. Empty always for an internal agent.
  */
 export async function listAgentOptions(sessionId: string): Promise<AgentConfigOptions> {
-  return decode(
-    await client.GET('/api/session/{id}/config/agent-options', {
-      params: { path: { id: sessionId } },
-    }),
-    'Failed to list agent settings',
-  );
+  return rpc('session.list_agent_options', { session_id: sessionId });
 }
 
 /** Set one of the agent's own settings. */
@@ -1342,21 +1312,15 @@ export async function setAgentOption(
   optionId: string,
   value: string,
 ): Promise<void> {
-  expectOk(
-    await client.POST('/api/session/{id}/config/agent-options', {
-      params: { path: { id: sessionId } },
-      body: { option_id: optionId, value },
-    }),
-    'Failed to set agent setting',
-  );
+  await rpc('session.set_agent_option', {
+    session_id: sessionId,
+    option_id: optionId,
+    value,
+  });
 }
 
 export async function listModes(sessionId: string): Promise<SessionModes> {
-  return decode(
-    await client.GET('/api/session/{id}/modes', { params: { path: { id: sessionId } } }),
-    'Failed to list modes',
-    { notify: true },
-  );
+  return rpc('session.list_modes', { session_id: sessionId }, { notify: true });
 }
 
 /** Switch the model for a session. */
@@ -1372,13 +1336,7 @@ export async function setSessionMode(sessionId: string, mode: string): Promise<v
 
 /** Set the title for a session. */
 export async function setSessionTitle(sessionId: string, title: string): Promise<void> {
-  expectOk(
-    await client.PUT('/api/session/{id}/title', {
-      params: { path: { id: sessionId } },
-      body: { title },
-    }),
-    'Failed to set session title',
-  );
+  await rpc('session.set_title', { session_id: sessionId, title });
 }
 
 export async function getSessionHistory(
@@ -1387,30 +1345,18 @@ export async function getSessionHistory(
   offset?: number,
   signal?: AbortSignal,
 ): Promise<SessionHistoryResponse> {
-  return decode(
-    await client.GET('/api/session/{id}/history', {
-      params: { path: { id: sessionId }, query: { limit, offset } },
-      signal,
-    }),
-    'Failed to load session history',
-  );
+  return rpc('session.history', { session_id: sessionId, limit, offset }, { signal });
 }
 
 /** List available LLM providers and their models. */
 export async function listProviders(): Promise<ProviderInfo[]> {
-  const data = decode(await client.GET('/api/providers'), 'Failed to list providers');
+  const data = await rpc('providers.list', {});
   return expectList(data.providers, 'providers', 'Failed to list providers');
 }
 
 /** Attach a kiln to the session's kiln set. Idempotent. */
 export async function connectSessionKiln(sessionId: string, kiln: string): Promise<SessionScope> {
-  return decode(
-    await client.POST('/api/session/{id}/kilns/connect', {
-      params: { path: { id: sessionId } },
-      body: { kiln },
-    }),
-    'Failed to attach kiln',
-  );
+  return rpc('session.connect_kiln', { session_id: sessionId, kiln });
 }
 
 /** Detach a kiln from the session's kiln set. Any member may be detached. */
@@ -1418,13 +1364,7 @@ export async function disconnectSessionKiln(
   sessionId: string,
   kiln: string,
 ): Promise<SessionScope> {
-  return decode(
-    await client.POST('/api/session/{id}/kilns/disconnect', {
-      params: { path: { id: sessionId } },
-      body: { kiln },
-    }),
-    'Failed to detach kiln',
-  );
+  return rpc('session.disconnect_kiln', { session_id: sessionId, kiln });
 }
 
 // Agents and models: `lib/query/agents.ts` and `lib/query/models.ts` call
@@ -1443,23 +1383,12 @@ export type KnobValue = components['schemas']['KnobValue'];
 
 /** Write one session knob. */
 export async function setKnob(sessionId: string, value: KnobValue): Promise<void> {
-  expectOk(
-    await client.PUT('/api/session/{id}/knob', {
-      params: { path: { id: sessionId } },
-      body: value,
-    }),
-    `Failed to set ${value.knob}`,
-  );
+  await rpc('session.knob.set', { session_id: sessionId, ...value });
 }
 
 /** Read one session knob, in the same shape `setKnob` writes. */
 export async function getKnob(sessionId: string, knob: KnobValue['knob']): Promise<KnobValue> {
-  return decode(
-    await client.GET('/api/session/{id}/knob/{knob}', {
-      params: { path: { id: sessionId, knob } },
-    }),
-    `Failed to get ${knob}`,
-  );
+  return rpc('session.knob.get', { session_id: sessionId, knob });
 }
 
 /** Get the precognition state for a session. */
@@ -1536,10 +1465,7 @@ export async function executeCommand(sessionId: string, command: string): Promis
 export async function listSessionCommands(
   sessionId: string,
 ): Promise<SessionCommand[]> {
-  return decode(
-    await client.GET('/api/session/{id}/commands', { params: { path: { id: sessionId } } }),
-    'Failed to list commands',
-  ).commands;
+  return (await rpc('session.commands', { session_id: sessionId })).commands;
 }
 
 // =============================================================================

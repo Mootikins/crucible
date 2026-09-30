@@ -144,7 +144,7 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
     for method in [
         "plugin.run_command",
         "plugin.option_execute",
-        "session.send_message",
+        "session.knob.set",
         "diff.resolve_comment",
     ] {
         let peer = Peer::losing_first_reply(method).await;
@@ -160,9 +160,9 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
                         .plugin_option_execute("test", vec!["run".into()])
                         .await
                 }
-                "session.send_message" => peer
+                "session.knob.set" => peer
                     .daemon
-                    .session_send_message("s", "hello", &[])
+                    .session_knob_set("s", crucible_core::types::KnobValue::Model("m".into()))
                     .await
                     .map(|_| ()),
                 // `diff.resolve_comment` no longer has its own named forwarder

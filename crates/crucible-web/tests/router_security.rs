@@ -52,9 +52,10 @@ async fn assembled_routes_require_credentials_before_dispatch_but_keep_bootstrap
     let router = app(build_state(client), false, Some("secret"));
     for path in [
         "/api/rpc/agents.list_profiles",
-        "/api/chat/send",
+        "/api/rpc/session.send_message",
         "/api/config",
-        "/api/session/list",
+        "/api/rpc/session.list",
+        "/api/project/list",
         "/api/scm/clone",
         "/api/plugins",
         "/api/rpc/surface.list",

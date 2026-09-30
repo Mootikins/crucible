@@ -46,17 +46,17 @@ describe('the generated client', () => {
 
   it('puts a path parameter in the path and a query parameter in the query', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/a%2Fb/history': { body: { history: [] } },
+      'DELETE /api/plugins/a%2Fb': { body: { removed: true } },
     });
     global.fetch = mockFetch;
 
-    await client.GET('/api/session/{id}/history', {
-      params: { path: { id: 'a/b' }, query: { limit: 5 } },
+    await client.DELETE('/api/plugins/{name}', {
+      params: { path: { name: 'a/b' }, query: { purge: true }, header: callerParam() },
     });
 
     const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/a%2Fb/history');
-    expect(sent.query.get('limit')).toBe('5');
+    expect(sent.path).toBe('/api/plugins/a%2Fb');
+    expect(sent.query.get('purge')).toBe('true');
   });
 
   it('names the app as the caller on every request', async () => {
@@ -120,12 +120,12 @@ describe('a refusal', () => {
   });
 
   it('answers nothing for a write whose reply nobody reads', async () => {
-    global.fetch = createMockFetch({ 'POST /api/session/s1/pause': { status: 200 } });
+    global.fetch = createMockFetch({ 'POST /api/session/s1/resume': { status: 200 } });
 
     expect(
       expectOk(
-        await client.POST('/api/session/{id}/pause', { params: { path: { id: 's1' } } }),
-        'Failed to pause session',
+        await client.POST('/api/session/{id}/resume', { params: { path: { id: 's1' } } }),
+        'Failed to resume session',
       ),
     ).toBeUndefined();
   });

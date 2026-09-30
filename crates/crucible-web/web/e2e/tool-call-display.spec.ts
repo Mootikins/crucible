@@ -69,7 +69,7 @@ test.describe('Tool call display', () => {
     await setupBasicMocks(page, { sseEvents: [] });
 
     // Mock the title endpoint (auto-title fires after first response)
-    await page.route('**/api/session/*/title', (route) =>
+    await page.route('**/api/rpc/session.set_title', (route) =>
       route.fulfill({ status: 200, body: '{}' }),
     );
 
@@ -117,7 +117,7 @@ test.describe('Tool call display', () => {
     await chatInput.fill('Read the file');
 
     const sendPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/chat/send') && req.method() === 'POST',
+      (req) => req.url().includes('/api/rpc/session.send_message') && req.method() === 'POST',
     );
     await page.getByTestId('send-button').click();
 

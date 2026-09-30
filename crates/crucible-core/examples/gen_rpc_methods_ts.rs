@@ -130,8 +130,14 @@ fn main() {
     println!();
     println!("/** A session-scoped request body: the daemon reads `session_id` at the");
     println!(" * top level, flattened beside the method's own fields (`Scoped<T>` on the");
-    println!(" * Rust side). */");
-    println!("export type WithSessionId<T> = {{ session_id: string }} & T;");
+    println!(" * Rust side). `Scoped<()>` (no fields of its own) maps `T` to `unknown`");
+    println!(" * rather than intersecting `Record<string, never>` directly: TS checks a");
+    println!(" * named property of an intersection against a sibling index signature, so");
+    println!(" * `{{ session_id: string }} & Record<string, never>` refused every");
+    println!(" * `session_id` as not assignable to the index signature's `never`. */");
+    println!(
+        "export type WithSessionId<T> = {{ session_id: string }} & (T extends Record<string, never> ? unknown : T);"
+    );
     println!();
     println!("export interface RpcMethods {{");
     for method in RpcMethod::ALL {

@@ -18,22 +18,31 @@ import { AdvancedSessionSettingsSection } from '../settings/AdvancedSessionSetti
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
 
-const GET = 'GET /api/session/s1/knob/context_strategy';
-const SET_KNOB = 'PUT /api/session/s1/knob';
-const APPROVALS = 'GET /api/session/s1/config/plugin-approvals';
-const SET_APPROVAL = 'PUT /api/session/s1/config/plugins/alpha/approval';
-const GET_LIMIT = 'GET /api/session/s1/knob/plugin_turn_limit';
+// Every one of these routes only forwarded one RPC row and is gone
+// ([[Simplification Plan#Step 19]] item 9): the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now.
+// `session.knob.get` serves every knob, so the context-strategy and
+// plugin-turn-limit reads share the one key and are told apart by the
+// `knob` field of the request body.
+const GET_KNOB = 'POST /api/rpc/session.knob.get';
+const SET_KNOB = 'POST /api/rpc/session.knob.set';
+const APPROVALS = 'POST /api/rpc/session.list_plugin_approvals';
+const SET_APPROVAL = 'POST /api/rpc/session.set_plugin_approval';
 
 let env: TestQueryEnv;
 
 /** Installs a fresh cache and a fetch answering the strategy routes. */
 function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
   env = createTestQueryEnv({
-    [GET]: () => ({ knob: 'context_strategy', value: 'recent' }),
+    [GET_KNOB]: async (request) => {
+      const body = (await request.clone().json()) as { knob: string };
+      return body.knob === 'plugin_turn_limit'
+        ? { knob: 'plugin_turn_limit', value: 5 }
+        : { knob: 'context_strategy', value: 'recent' };
+    },
     [SET_KNOB]: () => new Response(null, { status: 204 }),
     [APPROVALS]: () => ({ approvals: { alpha: 'inherit' } }),
     [SET_APPROVAL]: () => ({ success: true }),
-    [GET_LIMIT]: () => ({ knob: 'plugin_turn_limit', value: 5 }),
     ...routes,
   });
   return env;
@@ -66,7 +75,9 @@ describe('AdvancedSessionSettings', () => {
     const input = await screen.findByTestId('plugin-turn-limit');
     await waitFor(() => expect((input as HTMLInputElement).value).toBe('5'));
     fireEvent.change(input, { target: { value: '7' } });
-    await waitFor(() => expect(sent).toEqual({ knob: 'plugin_turn_limit', value: 7 }));
+    await waitFor(() =>
+      expect(sent).toEqual({ session_id: 's1', knob: 'plugin_turn_limit', value: 7 }),
+    );
   });
   it('shows loaded plugins and persists a stricter approval', async () => {
     let sent: unknown;
@@ -80,7 +91,9 @@ describe('AdvancedSessionSettings', () => {
     const select = await screen.findByTestId('plugin-approval-alpha');
     expect((select as HTMLSelectElement).value).toBe('inherit');
     fireEvent.change(select, { target: { value: 'ask' } });
-    await waitFor(() => expect(sent).toEqual({ approval: 'ask' }));
+    await waitFor(() =>
+      expect(sent).toEqual({ session_id: 's1', plugin: 'alpha', approval: 'ask' }),
+    );
   });
   it('sends the enum knob by its string spelling', async () => {
     let sent: { knob: string; value: string } | null = null;
@@ -97,14 +110,23 @@ describe('AdvancedSessionSettings', () => {
       target: { value: 'truncate' },
     });
 
-    await waitFor(() => expect(sent).toEqual({ knob: 'context_strategy', value: 'truncate' }));
+    await waitFor(() =>
+      expect(sent).toEqual({ session_id: 's1', knob: 'context_strategy', value: 'truncate' }),
+    );
   });
 
   it('keeps a strategy name the dropdown does not know about', async () => {
     // The daemon owns the enum; a value it accepts must not vanish from the UI
     // because this file's convenience list is out of date. Nothing here
     // validates — the daemon answers 422 for a name it rejects.
-    serve({ [GET]: () => ({ knob: 'context_strategy', value: 'some-future-strategy' }) });
+    serve({
+      [GET_KNOB]: async (request) => {
+        const body = (await request.clone().json()) as { knob: string };
+        return body.knob === 'plugin_turn_limit'
+          ? { knob: 'plugin_turn_limit', value: 5 }
+          : { knob: 'context_strategy', value: 'some-future-strategy' };
+      },
+    });
 
     renderSection();
 

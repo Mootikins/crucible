@@ -15,7 +15,7 @@ import { installFakeEventSource } from '@/test-utils/sse';
 let agent: { model: string; mode: string } | null = null;
 /** The bodies the knob route took, in order. */
 const modeWrites: { knob: string; value: string }[] = [];
-/** What `PUT /api/session/s1/knob` answers; a case that means a refusal replaces it. */
+/** What `session.knob.set` answers; a case that means a refusal replaces it. */
 let modeAnswer: () => Response = () => new Response(null, { status: 204 });
 
 let env: TestQueryEnv;
@@ -27,7 +27,7 @@ beforeEach(() => {
   modeAnswer = () => new Response(null, { status: 204 });
   env = createTestQueryEnv({
     'GET /api/interactions/pending': () => ({ pending: [] }),
-    'GET /api/session/s1': () => ({
+    'POST /api/rpc/session.get': () => ({
       session_id: 's1',
       type: 'chat',
       title: 'T',
@@ -40,9 +40,14 @@ beforeEach(() => {
       event_count: 0,
       archived: false,
     }),
-    'GET /api/session/s1/history': () => ({ session_id: 's1', history: [], total_events: 0 }),
-    'PUT /api/session/s1/knob': async (request) => {
-      modeWrites.push((await request.clone().json()) as { knob: string; value: string });
+    'POST /api/rpc/session.history': () => ({ session_id: 's1', history: [], total_events: 0 }),
+    'POST /api/rpc/session.knob.set': async (request) => {
+      const { session_id: _sessionId, ...rest } = (await request.clone().json()) as {
+        session_id: string;
+        knob: string;
+        value: string;
+      };
+      modeWrites.push(rest);
       return modeAnswer();
     },
   });

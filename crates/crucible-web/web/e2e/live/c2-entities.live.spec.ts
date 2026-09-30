@@ -40,7 +40,9 @@ async function createSession(api: APIRequestContext, title: string): Promise<str
 const HISTORY = /^\/api\/session\/[^/]+\/history$/;
 const MODES = /^\/api\/session\/[^/]+\/modes$/;
 const MODELS = /^\/api\/session\/[^/]+\/models$/;
-const STATUS = /^\/api\/session\/[^/]+\/status$/;
+// `session.status` is one RPC method now (Simplification Plan step 19 item
+// 9), reached through `POST /api/rpc/session.status`.
+const STATUS = /^\/api\/rpc\/session\.status$/;
 
 /** The session record the daemon holds, read straight from it. */
 async function sessionRecord(
@@ -151,7 +153,7 @@ test.describe('live C2 entities', () => {
     expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBe(1);
     expect(log.count('GET', MODES)).toBe(1);
     expect(log.count('GET', MODELS)).toBe(1);
-    expect(log.count('GET', STATUS)).toBe(1);
+    expect(log.count('POST', STATUS)).toBe(1);
     expect((await sourcesFor(page, id)).filter((s) => s.open).length, 'one open source names this session').toBe(1);
 
     // A SECOND pane, side by side, bound to the same session. This is the
@@ -164,7 +166,7 @@ test.describe('live C2 entities', () => {
     expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBe(1);
     expect(log.count('GET', MODES)).toBe(1);
     expect(log.count('GET', MODELS)).toBe(1);
-    expect(log.count('GET', STATUS)).toBe(1);
+    expect(log.count('POST', STATUS)).toBe(1);
     expect(
       (await sourcesFor(page, id)).filter((s) => s.open).length,
       'one open source names this session',
@@ -298,7 +300,9 @@ test.describe('live C2 entities', () => {
 
     // One send, and the stream that was already open carried the reply — the
     // turn opened no second one.
-    expect(log.count('POST', '/api/chat/send')).toBe(1);
+    // `session.send_message` is one RPC method now (Simplification Plan step
+    // 19 item 9), replacing the old `POST /api/chat/send`.
+    expect(log.count('POST', '/api/rpc/session.send_message')).toBe(1);
     expect(
       (await sourcesFor(page, id)).filter((s) => s.open).length,
       'one open source names this session',
@@ -432,7 +436,7 @@ test.describe('live C2 entities', () => {
 
     expect((await sessionRecord(api, id)).state).toBe('active');
     // ONE status read for the pane that bound, not one per chip that draws it.
-    expect(log.count('GET', STATUS), describeRequests(log, STATUS)).toBe(1);
+    expect(log.count('POST', STATUS), describeRequests(log, STATUS)).toBe(1);
 
     await api.dispose();
   });

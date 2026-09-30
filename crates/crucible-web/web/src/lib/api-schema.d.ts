@@ -144,29 +144,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/send": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start a turn in a session, or run the daemon command that the message
-         *     names.
-         * @description A turn answers its `message_id`: the browser correlates the SSE events
-         *     that follow with it. A command that ran without a turn, such as a plugin
-         *     command, answers its result instead.
-         */
-        post: operations["send_message"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -624,36 +601,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Cached in the daemon (`providers.list`,
-         *     `crate::agent_manager::CATALOG_CACHE_TTL`) — provider probing takes ~0.7s
-         *     and must not gate every splash render. Every caller of that RPC method
-         *     shares the cache now; it used to be a cache in this crate alone. Shape:
-         *     `{providers: [ProviderInfo]}`.
-         * @description Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and
-         *     forward the raw directory to the daemon, which fed it to
-         *     `find_workspace_and_resolve_classification` — so an arbitrary directory
-         *     could influence which providers a caller was told about, an input door
-         *     standing outside the registry floor every other kiln input now passes
-         *     through. Nothing ever sent it (`listProviders()` takes no argument), so
-         *     converting it to a name would have preserved a door for no caller.
-         */
-        get: operations["list_providers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/recents": {
         parameters: {
             query?: never;
@@ -780,7 +727,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["get_session"];
+        get?: never;
         put?: never;
         post?: never;
         delete: operations["delete_session"];
@@ -805,45 +752,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/session/{id}/auto-title": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Auto-generate a title for a session from its conversation history.
-         * @description Delegates to the daemon's `session.generate_title`, which produces a
-         *     topic-based title via the session's own LLM provider (falling back to
-         *     first-message truncation daemon-side). Idempotent: an already-titled
-         *     session returns its existing title.
-         */
-        post: operations["auto_title"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cancel_session"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/session/{id}/command": {
         parameters: {
             query?: never;
@@ -859,82 +767,6 @@ export interface paths {
          *     chat message, so this route refuses it with an `error` reply.
          */
         post: operations["execute_command"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/commands": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/session/{id}/commands` — the commands the composer completes.
-         * @description The daemon answers the catalog of the session: built-in, mode, plugin,
-         *     skill and agent commands. A `commands_changed` event on the session's
-         *     stream says when to ask again.
-         */
-        get: operations["list_commands"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/config/agent-options": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * The settings this session's external agent advertised for itself.
-         * @description These belong to the agent, not to Crucible: a reasoning-level selector, a
-         *     toggle it invented. The daemon passes them through, so the browser renders
-         *     whatever this particular agent happens to have.
-         */
-        get: operations["list_agent_options"];
-        put?: never;
-        post: operations["set_agent_option"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/config/plugin-approvals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_plugin_approvals"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/config/plugins/{plugin}/approval": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_plugin_approval"];
-        put: operations["set_plugin_approval"];
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -973,216 +805,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/session/{id}/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_session_history"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/kilns/connect": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Updated session scope, echoed by kiln/workspace mutations. */
-        post: operations["connect_kiln"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/kilns/disconnect": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["disconnect_kiln"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/knob": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Write one session knob — model, mode, context strategy, precognition or
-         *     plugin turn limit. The body names its own knob (`KnobValue`'s tag), so
-         *     one route serves all five: a knob added later needs no sibling route.
-         */
-        put: operations["set_knob"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/knob/{knob}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read one session knob, in the same [`crucible_core::types::KnobValue`]
-         *     shape [`set_knob`] writes.
-         */
-        get: operations["get_knob"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/knobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Which settings this session can change.
-         * @description The browser drew a fixed set of controls, which was wrong for every ACP
-         *     session: the protocol has no temperature and no token cap, so the panel
-         *     offered a slider for each that changed nothing. As with modes, the web
-         *     layer adds nothing — the answer is the daemon's, so the TUI and the
-         *     browser cannot disagree about what a session can do.
-         */
-        get: operations["list_knobs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_models"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/modes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * The session's modes, forwarded from the daemon unchanged.
-         * @description The web layer deliberately adds nothing here: mode labels and ordering are
-         *     the daemon's, so the TUI and the browser cannot drift into showing
-         *     different names for the same mode.
-         */
-        get: operations["list_modes"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/notifications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * The notifications of a session. A browser reads them once when it
-         *     attaches, and then follows `notification_added` and
-         *     `notification_dismissed` on the event stream.
-         */
-        get: operations["session_notifications"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/notifications/{notification_id}/dismiss": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * The user closed a notification in this session. The daemon drops a
-         *     notification of the session. A shared notification stays for the other
-         *     sessions, and this session does not see it again.
-         */
-        post: operations["dismiss_session_notification"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/pause": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["pause_session"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/session/{id}/resume": {
         parameters: {
             query?: never;
@@ -1193,122 +815,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["resume_session"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Proxy `session.status` verbatim.
-         * @description The daemon answers `{"status": [StatusDisplayItem, …]}`, ordered by
-         *     priority. Nothing here reads an id: items are generic precisely so the
-         *     chrome owner renders any plugin's state, and a match on a known id would
-         *     be this crate learning what one particular plugin does. Every future
-         *     plugin gets the channel for free, so long as this stays a passthrough.
-         *
-         *     A session that published nothing — the overwhelmingly common case, and any
-         *     session the daemon has never seen — comes back as an empty array, not an
-         *     error.
-         */
-        get: operations["session_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/title": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["set_session_title"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/unarchive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["unarchive_session"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/workspace": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["set_workspace"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_sessions"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sessions/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/sessions/search?q=…&kiln=…&kiln=…&limit=…`
-         * @description `kiln` repeats. Search scope is kiln-set *overlap*, so the caller states
-         *     every kiln it is cleared for rather than one member standing in for the
-         *     rest — one member matches only the sessions sharing that one. Parsed from
-         *     the raw pairs because `serde_urlencoded`, which `Query` uses, cannot
-         *     deserialize a repeated key into a sequence.
-         */
-        get: operations["search_sessions"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1468,13 +974,6 @@ export interface components {
             /** @description The id to send back when this choice is picked. */
             value: string;
         };
-        /** @description One choice in an agent's select option. */
-        AgentOptionChoiceRow: {
-            /** @description What to show for it. */
-            name: string;
-            /** @description The value to send back when this choice is picked. */
-            value: string;
-        };
         /**
          * @description The shape of an agent option's control.
          *
@@ -1498,50 +997,6 @@ export interface components {
             current: boolean;
             /** @enum {string} */
             kind: "toggle";
-        };
-        /**
-         * @description The control an agent option asks for.
-         *
-         *     A tagged union rather than a `kind` string beside a loose `current`: a
-         *     select carries choices and a string, a toggle carries a bool, and the
-         *     browser's hand-written type declared `current: string | boolean` with
-         *     optional choices because nothing described the pairing.
-         */
-        AgentOptionKindRow: {
-            /** @description Every value it accepts, in the order it listed them. */
-            choices: components["schemas"]["AgentOptionChoiceRow"][];
-            /** @description The value the agent reports as current. */
-            current: string;
-            /** @enum {string} */
-            kind: "select";
-        } | {
-            /** @description The value the agent reports as current. */
-            current: boolean;
-            /** @enum {string} */
-            kind: "toggle";
-        };
-        /** @description One setting an external agent advertised for itself. */
-        AgentOptionRow: components["schemas"]["AgentOptionKindRow"] & {
-            /** @description The agent's own category string, or `null`. Presentation only. */
-            category: string | null;
-            /**
-             * @description Help text the agent supplied, or `null`. Always written, so
-             *     `required` rather than optional.
-             */
-            description: string | null;
-            /** @description The id to name when setting the option. */
-            id: string;
-            /** @description What to label the control. */
-            name: string;
-        };
-        /** @description What `GET /api/session/{id}/config/agent-options` answers. */
-        AgentOptionsResponse: {
-            /**
-             * @description Empty until the first message, and empty for an internal agent always:
-             *     an agent advertises nothing until the daemon connects to it.
-             */
-            options: components["schemas"]["AgentOptionRow"][];
-            session_id: string;
         };
         /**
          * @description One ACP agent profile, with the availability probe's verdict: a row of
@@ -1611,7 +1066,12 @@ export interface components {
             /** @description What replaces it. May carry newlines, so one line becomes several. */
             replace: string;
         };
-        /** @description Response for session archive/unarchive status changes. */
+        /**
+         * @description Response for session archive/unarchive status changes. `unarchive_session`
+         *     is a pure forward now, but `archive_session` still builds this reply
+         *     itself (see the module doc) for the `close_event_streams` side effect, so
+         *     the type stays.
+         */
         ArchiveResponse: {
             archived: boolean;
         };
@@ -1884,10 +1344,6 @@ export interface components {
          * @enum {string}
          */
         BuiltinCommand: "help" | "clear" | "model" | "mode" | "undo" | "resume" | "export" | "search";
-        /** @description Response for session cancellation. */
-        CancelledResponse: {
-            cancelled: boolean;
-        };
         /** @description One tool call, classified. */
         CanonicalToolCall: {
             /** @description The ACP agent that made the call. `None` for Crucible's own tools. */
@@ -2083,10 +1539,6 @@ export interface components {
             result: string;
             /** @description `success` or `error`. */
             type: string;
-        };
-        /** @description The command catalog of one session. */
-        CommandsResponse: {
-            commands: components["schemas"]["SessionCommand"][];
         };
         /**
          * @description A review comment anchored to a line range.
@@ -2566,18 +2018,6 @@ export interface components {
             id: components["schemas"]["ProposalId"];
             /** @enum {string} */
             kind: "proposal";
-        };
-        /**
-         * @description What `POST /api/session/{id}/notifications/{notification_id}/dismiss`
-         *     answers.
-         */
-        DismissSessionNotificationResponse: {
-            /**
-             * @description True when the daemon dropped the notification of the session, or hid
-             *     a shared notification for this session. False when the notification
-             *     does not reach the session.
-             */
-            success: boolean;
         };
         /** @description Why one edit could not be applied. The index is the caller's edit index. */
         EditRefusal: {
@@ -3493,24 +2933,6 @@ export interface components {
             links: components["schemas"]["KilnGraphLink"][];
             notes: components["schemas"]["KilnGraphNote"][];
         };
-        /**
-         * @description A kiln name: the key of a `[kilns]` entry in the user's config.
-         *
-         *     Guaranteed by construction to be non-empty, at most [`MAX_LEN`] bytes, drawn
-         *     from `[A-Za-z0-9._- ]`, neither starting nor ending with a space, and not to
-         *     start with a dot — so it is never `.`, `..`, a hidden file, or anything
-         *     holding a path separator.
-         *
-         *     Two strings, not one, and the pair is the whole design: `display` is what
-         *     the user wrote and what every renderer shows; `key` is that text with ASCII
-         *     case folded, and it is the only field [`PartialEq`], [`Hash`] and [`Ord`]
-         *     read. So a map keyed by a name answers to any casing of it, and still hands
-         *     back the casing its owner chose.
-         */
-        KilnName: {
-            display: string;
-            key: string;
-        };
         KilnNotesIndexedPayload: {
             notes: string[];
         };
@@ -3661,21 +3083,6 @@ export interface components {
          */
         KnobRef: {
             knob: components["schemas"]["SessionKnob"];
-        };
-        /**
-         * @description One setting and whether this session can change it.
-         *
-         *     Mirrors `crucible_core::types::KnobDescriptor`, for the reason
-         *     [`WriteModeRow`] gives.
-         */
-        KnobRow: {
-            /** @description The knob id, such as `context_strategy`. */
-            id: string;
-            /**
-             * @description `false` means the control should not be offered: the daemon refuses
-             *     the call.
-             */
-            supported: boolean;
         };
         /**
          * @description One knob and the value to read or write.
@@ -4110,33 +3517,6 @@ export interface components {
             models: string[];
         };
         /**
-         * @description Response for model listings — the session-scoped `list_models` and the
-         *     session-less `list_all_models` return the same `{ models: [...] }` shape.
-         */
-        ModelsResponse: {
-            models: string[];
-        };
-        /**
-         * @description One mode a session may enter.
-         *
-         *     Mirrors `crucible_core::types::mode::ModeDescriptor` field for field, for
-         *     the reason [`WriteModeRow`] gives.
-         */
-        ModeRow: {
-            description?: string | null;
-            /** @description An emoji or an icon name. */
-            icon?: string | null;
-            /** @description The mode id, such as `plan`. */
-            id: string;
-            /** @description The label to draw. */
-            name: string;
-            /**
-             * @description What a note write in this mode does, already degraded to what this
-             *     session's agent can hold back.
-             */
-            writes: components["schemas"]["WriteModeRow"];
-        };
-        /**
          * @description The body of `session.connect_kiln` and `session.disconnect_kiln`, inside
          *     `Scoped`.
          */
@@ -4470,10 +3850,6 @@ export interface components {
             message: string;
             status: string;
         };
-        /** @description Standard acknowledgment response for successful mutations. */
-        OkResponse: {
-            ok: boolean;
-        };
         /** @description One kiln `project.open_kilns` opened. */
         OpenedKiln: {
             /**
@@ -4701,15 +4077,6 @@ export interface components {
         PluginApprovalReply: {
             approval: string;
             plugin: string;
-        };
-        PluginApprovalResponse: {
-            approval: components["schemas"]["PluginApproval"];
-            plugin: string;
-        };
-        PluginApprovalsResponse: {
-            approvals: {
-                [key: string]: components["schemas"]["PluginApproval"];
-            };
         };
         /**
          * @description One executable primitive a plugin declared, and the arguments it takes.
@@ -5441,16 +4808,6 @@ export interface components {
             providers: components["schemas"]["ProviderInfo"][];
         };
         /**
-         * @description What `GET /api/providers` answers.
-         *
-         *     `crucible_core::types::ProviderInfo` is the daemon's own reply type now
-         *     that `list_providers` is typed end to end; this route no longer keeps a
-         *     field-for-field copy of it.
-         */
-        ProvidersResponse: {
-            providers: components["schemas"]["ProviderInfo"][];
-        };
-        /**
          * @description A plugin's published data changed, delivered to the browser.
          *
          *     Carries who published and under which key, never the value — the same
@@ -5860,15 +5217,6 @@ export interface components {
             /** @description The block's text, or `null` when there is none. Always written. */
             snippet: string | null;
         };
-        SendMessageRequest: {
-            /**
-             * @description Stored review comments that the message attaches. The daemon builds
-             *     the context of each one, and refuses an unknown or resolved comment.
-             */
-            comments?: components["schemas"]["CommentRef"][];
-            content: string;
-            session_id: string;
-        };
         /** @description What `session.send_message` did with the text. */
         SendOutcome: {
             message_id: string;
@@ -6148,7 +5496,7 @@ export interface components {
         };
         /** @description Reply from `session.end`. */
         SessionEndReply: {
-            kilns: components["schemas"]["KilnName"][];
+            kilns: components["schemas"]["String"][];
             session_id: components["schemas"]["SessionId"];
             state: string;
         };
@@ -6215,7 +5563,7 @@ export interface components {
              *     `crucible_core::protocol::session_events::migrate_history`.
              */
             history: unknown[];
-            kilns: components["schemas"]["KilnName"][];
+            kilns: components["schemas"]["String"][];
             session_id: components["schemas"]["SessionId"];
             state: string;
             total_events: number;
@@ -6223,7 +5571,9 @@ export interface components {
             type: string;
         };
         /**
-         * @description What `GET /api/session/{id}/history` answers.
+         * @description What `GET /api/session/{id}/history` answers (`session.history`'s own
+         *     reply shape). Kept here, not only in core, because [`resume_session`]
+         *     decodes a `session.history` reply through it on the cold path.
          *
          *     `history` is the core [`crucible_core::protocol::SessionEventMessage`] —
          *     the same envelope the SSE stream carries — replayed whatever the
@@ -6307,14 +5657,6 @@ export interface components {
             session_id: string;
             set: boolean;
         };
-        /** @description What `GET /api/session/{id}/knobs` answers. */
-        SessionKnobsResponse: {
-            /**
-             * @description Every knob Crucible has, answered for. A client that finds an id
-             *     missing is talking to an older daemon.
-             */
-            knobs: components["schemas"]["KnobRow"][];
-        };
         /** @description What `session.list_knobs` answers. */
         SessionKnobSupport: {
             /**
@@ -6323,11 +5665,14 @@ export interface components {
              */
             knobs: components["schemas"]["KnobDescriptor"][];
         };
-        /** @description What `session.pause`, `session.resume` and `session.end` answer. */
+        /**
+         * @description What `session.resume`'s warm path answers (`SessionTransitionReply`'s own
+         *     shape, decoded here for [`resume_session`]).
+         */
         SessionLifecycleResponse: {
-            /** @description The session's kilns. Only `session.end` sends them. */
+            /** @description The session's kilns, when the daemon sends them. */
             kilns?: string[] | null;
-            /** @description The state the session left. `session.end` does not send it. */
+            /** @description The state the session left. */
             previous_state?: string | null;
             session_id: string;
             /** @description The state the session is in now. */
@@ -6413,21 +5758,6 @@ export interface components {
             /** @description Every mode the session may switch to, in declaration order. */
             modes: components["schemas"]["ModeDescriptor"][];
         };
-        /** @description What `GET /api/session/{id}/modes` answers. */
-        SessionModesResponse: {
-            /** @description The mode the session is in. Always one of `modes`. */
-            current_mode_id: string;
-            /** @description Every mode the session may switch to, in declaration order. */
-            modes: components["schemas"]["ModeRow"][];
-        };
-        /** @description What `GET /api/session/{id}/notifications` answers. */
-        SessionNotificationsResponse: {
-            /**
-             * @description The daemon's notifications of the session, newest first, each with
-             *     `id`, `kind` and `message`, as `notification_added` carries them.
-             */
-            notifications: Record<string, never>[];
-        };
         /** @description Reply from `session.pending_interactions`. */
         SessionPendingInteractionsReply: {
             pending: components["schemas"]["PendingInteraction"][];
@@ -6459,16 +5789,8 @@ export interface components {
          *     creation and this method always refuses).
          */
         SessionScopeReply: {
-            kilns: components["schemas"]["KilnName"][];
+            kilns: components["schemas"]["String"][];
             session_id: components["schemas"]["SessionId"];
-            workspace?: string | null;
-        };
-        /** @description The session scope that a kiln or workspace mutation echoes. */
-        SessionScopeResponse: {
-            /** @description Every kiln the session can query, by registry name. */
-            kilns: string[];
-            session_id: string;
-            /** @description The session's working directory. `null` is a session with no workspace. */
             workspace?: string | null;
         };
         /**
@@ -6531,24 +5853,6 @@ export interface components {
         SessionState: "active" | "paused" | "compacting" | "ended";
         /** @description Reply from `session.status`. */
         SessionStatusReply: {
-            status: components["schemas"]["StatusDisplayItem"][];
-        };
-        /**
-         * @description What `GET /api/session/{id}/status` answers.
-         *
-         *     Each item is the daemon's [`StatusDisplayItem`], the same type that the
-         *     `status_items_changed` event carries, so the browser and the TUI read one
-         *     shape. `id`, `plugin` and `text` stay plain strings: the moment a client
-         *     enumerates them, a new plugin needs a client change to be visible at all,
-         *     which is the thing this channel exists to avoid.
-         *
-         *     [`StatusDisplayItem`]: crucible_core::types::StatusDisplayItem
-         */
-        SessionStatusResponse: {
-            /**
-             * @description Every item the session has, ordered by priority. A session with no
-             *     item answers an empty list.
-             */
             status: components["schemas"]["StatusDisplayItem"][];
         };
         /** @description Reply from `session.subscribe`. */
@@ -6653,13 +5957,6 @@ export interface components {
         SessionUnsubscribeReply: {
             client_id: string;
             unsubscribed: string[];
-        };
-        SetAgentOptionRequest: {
-            option_id: string;
-            value: string;
-        };
-        SetPluginApprovalRequest: {
-            approval: components["schemas"]["PluginApproval"];
         };
         /**
          * @description `base.set_property`: set or delete one frontmatter property of a note.
@@ -7534,10 +6831,6 @@ export interface components {
         Title: {
             title: string;
         };
-        /** @description Response for title operations. */
-        TitleResponse: {
-            title: string;
-        };
         TokenUsage: {
             /**
              * Format: int32
@@ -8231,15 +7524,6 @@ export interface components {
          * @enum {string}
          */
         WriteMode: "apply" | "propose";
-        /**
-         * @description What a note write in a mode does.
-         *
-         *     Mirrors `crucible_core::types::mode::WriteMode`, which carries no
-         *     schema: `crucible-core` takes no utoipa dependency, and a client that
-         *     shows a mode has to know the values it can read.
-         * @enum {string}
-         */
-        WriteModeRow: "apply" | "propose";
         /** @description What a Bases write did. */
         WriteOutcome: {
             ancestor_hash: string;
@@ -8279,11 +7563,7 @@ export type SchemaAgentCardsListReply = components['schemas']['AgentCardsListRep
 export type SchemaAgentConfig = components['schemas']['AgentConfig'];
 export type SchemaAgentConfigOption = components['schemas']['AgentConfigOption'];
 export type SchemaAgentOptionChoice = components['schemas']['AgentOptionChoice'];
-export type SchemaAgentOptionChoiceRow = components['schemas']['AgentOptionChoiceRow'];
 export type SchemaAgentOptionKind = components['schemas']['AgentOptionKind'];
-export type SchemaAgentOptionKindRow = components['schemas']['AgentOptionKindRow'];
-export type SchemaAgentOptionRow = components['schemas']['AgentOptionRow'];
-export type SchemaAgentOptionsResponse = components['schemas']['AgentOptionsResponse'];
 export type SchemaAgentProfileEntry = components['schemas']['AgentProfileEntry'];
 export type SchemaAgentProfileResolved = components['schemas']['AgentProfileResolved'];
 export type SchemaAgentProfilesReply = components['schemas']['AgentProfilesReply'];
@@ -8305,7 +7585,6 @@ export type SchemaBaseValue = components['schemas']['BaseValue'];
 export type SchemaBlockHash = components['schemas']['BlockHash'];
 export type SchemaBlockRef = components['schemas']['BlockRef'];
 export type SchemaBuiltinCommand = components['schemas']['BuiltinCommand'];
-export type SchemaCancelledResponse = components['schemas']['CancelledResponse'];
 export type SchemaCanonicalToolCall = components['schemas']['CanonicalToolCall'];
 export type SchemaCanvas = components['schemas']['Canvas'];
 export type SchemaCanvasColor = components['schemas']['CanvasColor'];
@@ -8323,7 +7602,6 @@ export type SchemaColumn = components['schemas']['Column'];
 export type SchemaCommandEffect = components['schemas']['CommandEffect'];
 export type SchemaCommandKind = components['schemas']['CommandKind'];
 export type SchemaCommandResponse = components['schemas']['CommandResponse'];
-export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
 export type SchemaComment = components['schemas']['Comment'];
 export type SchemaCommentAnchor = components['schemas']['CommentAnchor'];
 export type SchemaCommentAuthor = components['schemas']['CommentAuthor'];
@@ -8359,7 +7637,6 @@ export type SchemaDiffset = components['schemas']['Diffset'];
 export type SchemaDiffsetId = components['schemas']['DiffsetId'];
 export type SchemaDiffsetRef = components['schemas']['DiffsetRef'];
 export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
-export type SchemaDismissSessionNotificationResponse = components['schemas']['DismissSessionNotificationResponse'];
 export type SchemaEditRefusal = components['schemas']['EditRefusal'];
 export type SchemaEditRequest = components['schemas']['EditRequest'];
 export type SchemaEditResponse = components['schemas']['EditResponse'];
@@ -8419,7 +7696,6 @@ export type SchemaKilnForgetReply = components['schemas']['KilnForgetReply'];
 export type SchemaKilnGraphLink = components['schemas']['KilnGraphLink'];
 export type SchemaKilnGraphNote = components['schemas']['KilnGraphNote'];
 export type SchemaKilnGraphReply = components['schemas']['KilnGraphReply'];
-export type SchemaKilnName = components['schemas']['KilnName'];
 export type SchemaKilnNotesIndexedPayload = components['schemas']['KilnNotesIndexedPayload'];
 export type SchemaKilnOpenError = components['schemas']['KilnOpenError'];
 export type SchemaKilnOpenReply = components['schemas']['KilnOpenReply'];
@@ -8432,7 +7708,6 @@ export type SchemaKilnRegisterRequest = components['schemas']['KilnRegisterReque
 export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobDescriptor = components['schemas']['KnobDescriptor'];
 export type SchemaKnobRef = components['schemas']['KnobRef'];
-export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaKnobValue = components['schemas']['KnobValue'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
@@ -8474,8 +7749,6 @@ export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaMessageInput = components['schemas']['MessageInput'];
 export type SchemaModeDescriptor = components['schemas']['ModeDescriptor'];
 export type SchemaModelsListReply = components['schemas']['ModelsListReply'];
-export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
-export type SchemaModeRow = components['schemas']['ModeRow'];
 export type SchemaNamedKiln = components['schemas']['NamedKiln'];
 export type SchemaNameRequest = components['schemas']['NameRequest'];
 export type SchemaNewNotification = components['schemas']['NewNotification'];
@@ -8501,7 +7774,6 @@ export type SchemaNotificationListResponse = components['schemas']['Notification
 export type SchemaNotificationPayload = components['schemas']['NotificationPayload'];
 export type SchemaNotificationScope = components['schemas']['NotificationScope'];
 export type SchemaNotImplementedReply = components['schemas']['NotImplementedReply'];
-export type SchemaOkResponse = components['schemas']['OkResponse'];
 export type SchemaOpenedKiln = components['schemas']['OpenedKiln'];
 export type SchemaOptionRequest = components['schemas']['OptionRequest'];
 export type SchemaPage = components['schemas']['Page'];
@@ -8522,8 +7794,6 @@ export type SchemaPluginAck = components['schemas']['PluginAck'];
 export type SchemaPluginApproval = components['schemas']['PluginApproval'];
 export type SchemaPluginApprovalChange = components['schemas']['PluginApprovalChange'];
 export type SchemaPluginApprovalReply = components['schemas']['PluginApprovalReply'];
-export type SchemaPluginApprovalResponse = components['schemas']['PluginApprovalResponse'];
-export type SchemaPluginApprovalsResponse = components['schemas']['PluginApprovalsResponse'];
 export type SchemaPluginCommand = components['schemas']['PluginCommand'];
 export type SchemaPluginCommandsReply = components['schemas']['PluginCommandsReply'];
 export type SchemaPluginDiscoveryError = components['schemas']['PluginDiscoveryError'];
@@ -8581,7 +7851,6 @@ export type SchemaProposedWrite = components['schemas']['ProposedWrite'];
 export type SchemaProviderInfo = components['schemas']['ProviderInfo'];
 export type SchemaProvidersListedPayload = components['schemas']['ProvidersListedPayload'];
 export type SchemaProvidersListReply = components['schemas']['ProvidersListReply'];
-export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
 export type SchemaPutCanvasRequest = components['schemas']['PutCanvasRequest'];
 export type SchemaPutFileRequest = components['schemas']['PutFileRequest'];
@@ -8611,7 +7880,6 @@ export type SchemaSearchVectorsRequest = components['schemas']['SearchVectorsReq
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
 export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearchResponse'];
 export type SchemaSemanticSearchRow = components['schemas']['SemanticSearchRow'];
-export type SchemaSendMessageRequest = components['schemas']['SendMessageRequest'];
 export type SchemaSendOutcome = components['schemas']['SendOutcome'];
 export type SchemaSessionAddNotificationReply = components['schemas']['SessionAddNotificationReply'];
 export type SchemaSessionAgent = components['schemas']['SessionAgent'];
@@ -8643,7 +7911,6 @@ export type SchemaSessionInjectContextReply = components['schemas']['SessionInje
 export type SchemaSessionInteractionRespondReply = components['schemas']['SessionInteractionRespondReply'];
 export type SchemaSessionKnob = components['schemas']['SessionKnob'];
 export type SchemaSessionKnobSetReply = components['schemas']['SessionKnobSetReply'];
-export type SchemaSessionKnobsResponse = components['schemas']['SessionKnobsResponse'];
 export type SchemaSessionKnobSupport = components['schemas']['SessionKnobSupport'];
 export type SchemaSessionLifecycleResponse = components['schemas']['SessionLifecycleResponse'];
 export type SchemaSessionListAgentOptionsReply = components['schemas']['SessionListAgentOptionsReply'];
@@ -8654,21 +7921,17 @@ export type SchemaSessionListPluginApprovalsReply = components['schemas']['Sessi
 export type SchemaSessionListReply = components['schemas']['SessionListReply'];
 export type SchemaSessionListRequest = components['schemas']['SessionListRequest'];
 export type SchemaSessionModes = components['schemas']['SessionModes'];
-export type SchemaSessionModesResponse = components['schemas']['SessionModesResponse'];
-export type SchemaSessionNotificationsResponse = components['schemas']['SessionNotificationsResponse'];
 export type SchemaSessionPendingInteractionsReply = components['schemas']['SessionPendingInteractionsReply'];
 export type SchemaSessionRenderMarkdownResponse = components['schemas']['SessionRenderMarkdownResponse'];
 export type SchemaSessionReplayRequest = components['schemas']['SessionReplayRequest'];
 export type SchemaSessionReplayStartedReply = components['schemas']['SessionReplayStartedReply'];
 export type SchemaSessionScopeReply = components['schemas']['SessionScopeReply'];
-export type SchemaSessionScopeResponse = components['schemas']['SessionScopeResponse'];
 export type SchemaSessionSearchMatch = components['schemas']['SessionSearchMatch'];
 export type SchemaSessionSearchRequest = components['schemas']['SessionSearchRequest'];
 export type SchemaSessionSearchResponse = components['schemas']['SessionSearchResponse'];
 export type SchemaSessionSetAgentOptionRequest = components['schemas']['SessionSetAgentOptionRequest'];
 export type SchemaSessionState = components['schemas']['SessionState'];
 export type SchemaSessionStatusReply = components['schemas']['SessionStatusReply'];
-export type SchemaSessionStatusResponse = components['schemas']['SessionStatusResponse'];
 export type SchemaSessionSubscribeReply = components['schemas']['SessionSubscribeReply'];
 export type SchemaSessionSubscribeRequest = components['schemas']['SessionSubscribeRequest'];
 export type SchemaSessionSummary = components['schemas']['SessionSummary'];
@@ -8679,8 +7942,6 @@ export type SchemaSessionType = components['schemas']['SessionType'];
 export type SchemaSessionUndoDepthReply = components['schemas']['SessionUndoDepthReply'];
 export type SchemaSessionUndoReply = components['schemas']['SessionUndoReply'];
 export type SchemaSessionUnsubscribeReply = components['schemas']['SessionUnsubscribeReply'];
-export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionRequest'];
-export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApprovalRequest'];
 export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
 export type SchemaSettingsPayload = components['schemas']['SettingsPayload'];
 export type SchemaSetupPayload = components['schemas']['SetupPayload'];
@@ -8723,7 +7984,6 @@ export type SchemaSystemPayload = components['schemas']['SystemPayload'];
 export type SchemaTestInteraction = components['schemas']['TestInteraction'];
 export type SchemaTextField = components['schemas']['TextField'];
 export type SchemaTitle = components['schemas']['Title'];
-export type SchemaTitleResponse = components['schemas']['TitleResponse'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaToolRender = components['schemas']['ToolRender'];
 export type SchemaToolResultBody = components['schemas']['ToolResultBody'];
@@ -8757,7 +8017,6 @@ export type SchemaWorkspaceChoice = components['schemas']['WorkspaceChoice'];
 export type SchemaWorkspaceIndexedPayload = components['schemas']['WorkspaceIndexedPayload'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
 export type SchemaWriteMode = components['schemas']['WriteMode'];
-export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
 export type SchemaWriteOutcome = components['schemas']['WriteOutcome'];
 export type $defs = Record<string, never>;
 export interface operations {
@@ -9185,43 +8444,6 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not be reached */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    send_message: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SendMessageRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SendOutcome"];
-                };
-            };
-            /** @description The message is empty and attaches no comment */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not accept the message */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -10248,32 +9470,6 @@ export interface operations {
             };
         };
     };
-    list_providers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProvidersResponse"];
-                };
-            };
-            /** @description The daemon could not list the providers */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     get_recents: {
         parameters: {
             query?: never;
@@ -10491,35 +9687,6 @@ export interface operations {
             };
         };
     };
-    get_session: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to read */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionDetail"];
-                };
-            };
-            /** @description The daemon could not read the session */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     delete_session: {
         parameters: {
             query?: never;
@@ -10592,64 +9759,6 @@ export interface operations {
             };
         };
     };
-    auto_title: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to title */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TitleResponse"];
-                };
-            };
-            /** @description The daemon could not generate a title */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    cancel_session: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose turn to cancel */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CancelledResponse"];
-                };
-            };
-            /** @description The daemon could not cancel the turn */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     execute_command: {
         parameters: {
             query?: never;
@@ -10680,180 +9789,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    list_commands: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose commands to list */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommandsResponse"];
-                };
-            };
-            /** @description The daemon could not list the commands */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_agent_options: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose agent is asked */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentOptionsResponse"];
-                };
-            };
-            /** @description The daemon knows no such session */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not ask the agent */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    set_agent_option: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose agent is set */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetAgentOptionRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            /** @description The agent knows no such option, or refuses the value */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not reach the agent */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_plugin_approvals: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PluginApprovalsResponse"];
-                };
-            };
-        };
-    };
-    get_plugin_approval: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-                plugin: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PluginApprovalResponse"];
-                };
-            };
-        };
-    };
-    set_plugin_approval: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-                plugin: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetPluginApprovalRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
             };
         };
     };
@@ -10915,374 +9850,6 @@ export interface operations {
             };
         };
     };
-    get_session_history: {
-        parameters: {
-            query?: {
-                /** @description How many items to return. */
-                limit?: number;
-                /** @description How many items to skip. */
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                /** @description The session to replay */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionHistoryResponse"];
-                };
-            };
-            /** @description The daemon could not read the transcript */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    connect_kiln: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to attach the kiln to */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NamedKiln"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionScopeResponse"];
-                };
-            };
-            /** @description The body named a path rather than a registry name */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not attach the kiln */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    disconnect_kiln: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to detach the kiln from */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NamedKiln"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionScopeResponse"];
-                };
-            };
-            /** @description The body named a path rather than a registry name */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not detach the kiln */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    set_knob: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to configure */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KnobValue"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            /** @description The session cannot carry the knob, or the value is invalid */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not store the value */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_knob: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to read */
-                id: string;
-                /** @description The knob to read: model, mode, context_strategy, precognition or plugin_turn_limit */
-                knob: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KnobValue"];
-                };
-            };
-            /** @description The session cannot carry the knob */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not read the value */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_knobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose settings to describe */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionKnobsResponse"];
-                };
-            };
-            /** @description The daemon could not describe the settings */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_models: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose models to list */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModelsResponse"];
-                };
-            };
-            /** @description The daemon could not list the models */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_modes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose modes to list */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionModesResponse"];
-                };
-            };
-            /** @description The daemon could not list the modes */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    session_notifications: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose notifications to read */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionNotificationsResponse"];
-                };
-            };
-            /** @description The daemon could not read the notifications */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    dismiss_session_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session that closes the notification */
-                id: string;
-                /** @description The notification to close */
-                notification_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DismissSessionNotificationResponse"];
-                };
-            };
-            /** @description The daemon could not close the notification */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    pause_session: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to pause */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionLifecycleResponse"];
-                };
-            };
-            /** @description The daemon could not pause the session */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     resume_session: {
         parameters: {
             query?: never;
@@ -11311,220 +9878,6 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not resume the session */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    session_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose slots to read */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionStatusResponse"];
-                };
-            };
-            /** @description The daemon could not read the slots */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    set_session_title: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to rename */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Title"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OkResponse"];
-                };
-            };
-            /** @description The daemon could not set the title */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    unarchive_session: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session to unarchive */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArchiveResponse"];
-                };
-            };
-            /** @description No session of that id */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not unarchive the session */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    set_workspace: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session whose workspace to set */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkspaceChoice"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionScopeResponse"];
-                };
-            };
-            /** @description The daemon could not set the workspace */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_sessions: {
-        parameters: {
-            query?: {
-                include_archived?: boolean;
-                /**
-                 * @description The kiln's registry NAME. A query string carrying a path is a 422 —
-                 *     which is the honest answer, because a path names no kiln.
-                 */
-                kiln?: string;
-                state?: string;
-                type?: string;
-                workspace?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionListReply"];
-                };
-            };
-            /** @description The `kiln` query carried a path rather than a registry name */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not list the sessions */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    search_sessions: {
-        parameters: {
-            query: {
-                /** @description The caller's whole kiln set, one `kiln` key per member */
-                kiln?: string[];
-                /** @description How many matches to return. The default is 20 */
-                limit?: number;
-                /** @description The substring to match, case-insensitive */
-                q: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionSearchResponse"];
-                };
-            };
-            /** @description No `q`, or every `kiln` named an unusable name */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not run the search */
             502: {
                 headers: {
                     [name: string]: unknown;

@@ -89,7 +89,13 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: overrides.projects ?? [MOCK_PROJECT] }),
   );
 
-  await page.route('**/api/session/list**', (route) =>
+  // `session.list`, `session.get`, `session.status`,
+  // `session.list_notifications`, `session.history`, `session.list_modes`
+  // and `providers.list` only forwarded one RPC row each and are gone
+  // ([[Simplification Plan#Step 19]] item 9): the browser calls
+  // `rpc(method, params)` through `POST /api/rpc/{method}` now, so each
+  // mock matches the one method path instead of a per-session URL.
+  await page.route('**/api/rpc/session.list', (route) =>
     route.fulfill({
       json: {
         sessions: overrides.sessions ?? [MOCK_SESSION],
@@ -98,32 +104,26 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }),
   );
 
-  await page.route('**/api/session/test-session-*', async (route) => {
-    if (route.request().method() === 'GET') {
-      // session.get returns the nested-agent detail shape, not the list shape.
-      route.fulfill({ json: MOCK_SESSION_DETAIL });
-    } else {
-      route.continue();
-    }
-  });
+  await page.route('**/api/rpc/session.get', (route) =>
+    // session.get returns the nested-agent detail shape, not the list shape.
+    route.fulfill({ json: MOCK_SESSION_DETAIL }),
+  );
 
-  // Registered AFTER the `**/api/session/test-session-*` GET catch-all above:
-  // Playwright matches most-recently-added first, and that glob would
-  // otherwise answer the status URL with a whole session object.
-  await page.route('**/api/session/*/status', (route) =>
+  await page.route('**/api/rpc/session.status', (route) =>
     route.fulfill({ json: overrides.sessionStatus ?? { status: [] } }),
   );
   // The notifications a chat reads once when it attaches to a session.
-  await page.route('**/api/session/*/notifications', (route) =>
+  await page.route('**/api/rpc/session.list_notifications', (route) =>
     route.fulfill({ json: { notifications: [] } }),
   );
 
-  await page.route('**/api/session/*/history**', (route) =>
+  await page.route('**/api/rpc/session.history', (route) =>
     route.fulfill({
       json: overrides.sessionHistory ?? {
         session_id: MOCK_SESSION.session_id,
         history: [],
         total_events: 0,
+        transcript: { as_of_seq: 0, items: [] },
       },
     }),
   );
@@ -138,7 +138,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: { pending: [] } }),
   );
 
-  await page.route('**/api/session/*/modes', (route) =>
+  await page.route('**/api/rpc/session.list_modes', (route) =>
     route.fulfill({ json: { current_mode_id: 'ask', modes: [] } }),
   );
 
@@ -150,7 +150,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
 
   await page.route('**/api/recents', (route) => route.fulfill({ json: { recents: [] } }));
 
-  await page.route('**/api/providers', (route) =>
+  await page.route('**/api/rpc/providers.list', (route) =>
     route.fulfill({ json: overrides.providers ?? MOCK_PROVIDERS }),
   );
 
@@ -332,29 +332,30 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }
   });
 
-  // The send route keeps each body, so a spec can read what the composer
-  // carried: the content, and the references of the attached comments.
-  await page.route('**/api/chat/send', async (route) => {
-    if (route.request().method() === 'POST') {
-      recorded.sent.push(route.request().postDataJSON() as SentMessage);
-      const override = overrides.chatMessage;
-      if (typeof override === 'number') {
-        route.fulfill({ status: override, body: 'Error' });
-      } else {
-        route.fulfill({ json: override ?? { message_id: 'msg-001' } });
-      }
+  // `session.send_message`, `session.generate_title`, `session.set_title`
+  // and `session.list_models` only forwarded one RPC row each and are gone
+  // too; the send route keeps each body, so a spec can read what the
+  // composer carried: the content, and the references of the attached
+  // comments.
+  await page.route('**/api/rpc/session.send_message', async (route) => {
+    recorded.sent.push(route.request().postDataJSON() as SentMessage);
+    const override = overrides.chatMessage;
+    if (typeof override === 'number') {
+      route.fulfill({ status: override, body: 'Error' });
     } else {
-      route.continue();
+      route.fulfill({ json: override ?? { message_id: 'msg-001' } });
     }
   });
 
-  await page.route('**/api/session/*/auto-title', (route) =>
+  await page.route('**/api/rpc/session.generate_title', (route) =>
     route.fulfill({ json: { title: 'Auto-generated Title' } }),
   );
 
-  await page.route('**/api/session/*/title', (route) => route.fulfill({ status: 200, body: '{}' }));
+  await page.route('**/api/rpc/session.set_title', (route) =>
+    route.fulfill({ status: 200, body: '{}' }),
+  );
 
-  await page.route('**/api/session/*/models', (route) =>
+  await page.route('**/api/rpc/session.list_models', (route) =>
     route.fulfill({ json: { models: ['llama3.2', 'mistral'] } }),
   );
 

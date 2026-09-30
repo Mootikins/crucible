@@ -50,7 +50,8 @@ async function mockListRenamedAfterTheStreamOpens(
 ) {
   let renamed = false;
 
-  await page.route('**/api/session/list**', (route) =>
+  // `session.list` is one RPC method now (Simplification Plan step 19 item 9).
+  await page.route('**/api/rpc/session.list', (route) =>
     route.fulfill({
       json: {
         sessions: [renamed ? { ...UNTITLED_SESSION, title } : UNTITLED_SESSION],
@@ -78,8 +79,11 @@ async function mockListRenamedAfterTheStreamOpens(
 }
 
 async function mockUntitledSessionGet(page: import('@playwright/test').Page) {
-  await page.route(`**/api/session/${SESSION_ID}`, async (route) => {
-    if (route.request().method() === 'GET') {
+  // `session.get` is one RPC method now, told apart per session by the
+  // request body, not the URL (Simplification Plan step 19 item 9).
+  await page.route('**/api/rpc/session.get', async (route) => {
+    const { session_id: id } = route.request().postDataJSON() as { session_id: string };
+    if (id === SESSION_ID) {
       await route.fulfill({ json: UNTITLED_SESSION });
     } else {
       await route.fallback();

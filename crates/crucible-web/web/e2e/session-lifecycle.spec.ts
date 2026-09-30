@@ -89,14 +89,10 @@ test.describe('Session Lifecycle', () => {
     const endedSession = { ...MOCK_SESSION, state: 'ended' as const };
     await setupBasicMocks(page, { sessions: [endedSession] });
 
-    // Override specific session GET to return ended state
-    await page.route('**/api/session/test-session-001', (route) => {
-      if (route.request().method() === 'GET') {
-        route.fulfill({ json: endedSession });
-      } else {
-        route.continue();
-      }
-    });
+    // Override `session.get` to return ended state — one RPC method now
+    // (Simplification Plan step 19 item 9), so there is only the one
+    // session under test to override for.
+    await page.route('**/api/rpc/session.get', (route) => route.fulfill({ json: endedSession }));
 
     await page.goto('/');
     await openSessionsList(page);

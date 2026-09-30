@@ -56,10 +56,29 @@ impl KilnName {
 /// read. So a map keyed by a name answers to any casing of it, and still hands
 /// back the casing its owner chose.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KilnName {
     display: String,
     key: String,
+}
+
+/// A name's schema is the schema of its wire spelling: a plain string. The
+/// struct holds two fields for equality and display, but [`Serialize`] writes
+/// only `display` — a derived schema would have published `{display, key}`,
+/// which is not what a client ever reads or sends. `SessionScopeReply.kilns`
+/// exposed the drift once this was first referenced from a TS type alias:
+/// `KilnName[]` did not accept the plain strings the wire actually carries.
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for KilnName {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        <String as utoipa::PartialSchema>::schema()
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for KilnName {
+    fn name() -> std::borrow::Cow<'static, str> {
+        <String as utoipa::ToSchema>::name()
+    }
 }
 
 impl PartialEq for KilnName {

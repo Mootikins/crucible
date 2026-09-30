@@ -19,7 +19,7 @@ let answerRecord: (answer: unknown) => void;
 beforeEach(() => {
   // The test answers the record by hand, after it aborts the bind.
   env = createTestQueryEnv({
-    'GET /api/session/s-1': () => new Promise((resolve) => { answerRecord = resolve; }),
+    'POST /api/rpc/session.get': () => new Promise((resolve) => { answerRecord = resolve; }),
   });
 });
 
@@ -37,7 +37,7 @@ async function abortThenAnswer(answer: unknown, readHistory: () => Promise<void>
     setSessionTitle: () => {},
     loadHistory,
   });
-  await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s-1')).toBe(1));
+  await vi.waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.get')).toBe(1));
   controller.abort();
   answerRecord(answer);
   await bind;
@@ -71,7 +71,7 @@ describe('bootstrapSessionWithFallback after its bind ends', () => {
       setSessionTitle: () => {},
       loadHistory,
     });
-    await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s-1')).toBe(1));
+    await vi.waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.get')).toBe(1));
     answerRecord(new Response(JSON.stringify(apiError(500, 'gone').body), { status: 500 }));
     await vi.waitFor(() => expect(loadHistory).toHaveBeenCalled());
     controller.abort();

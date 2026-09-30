@@ -11,15 +11,10 @@ import { openSessionsList } from './helpers/nav';
 
 test('switching model calls the API', async ({ page }) => {
   // Mock the knob endpoint BEFORE setupBasicMocks. Every session knob —
-  // model included — rides this one route pair now (step 13 of the
-  // simplification plan).
-  await page.route('**/api/session/*/knob', (route) => {
-    if (route.request().method() === 'PUT') {
-      route.fulfill({ status: 200, body: '' });
-    } else {
-      route.continue();
-    }
-  });
+  // model included — rides this one method now (step 13 of the
+  // simplification plan), reached through `POST /api/rpc/session.knob.set`
+  // since step 19 item 9 moved the browser onto `rpc(method, params)`.
+  await page.route('**/api/rpc/session.knob.set', (route) => route.fulfill({ status: 200, body: '' }));
 
   await setupBasicMocks(page);
   await page.goto('/');
@@ -47,16 +42,17 @@ test('switching model calls the API', async ({ page }) => {
 
   // Set up request interception before clicking
   const modelRequestPromise = page.waitForRequest(
-    (req) => req.url().includes('/knob') && req.method() === 'PUT',
+    (req) => req.url().includes('/api/rpc/session.knob.set') && req.method() === 'POST',
   );
 
   // Click mistral to switch
   await page.getByTestId('model-option-mistral').click();
 
-  // Assert PUT /api/session/{id}/knob was called with the model knob
+  // Assert POST /api/rpc/session.knob.set was called with the model knob
   const request = await modelRequestPromise;
-  expect(request.url()).toContain('/api/session/');
-  expect(request.url()).toContain('/knob');
-  expect(request.method()).toBe('PUT');
-  expect(request.postDataJSON()).toEqual({ knob: 'model', value: 'mistral' });
+  expect(request.postDataJSON()).toEqual({
+    session_id: 'test-session-001',
+    knob: 'model',
+    value: 'mistral',
+  });
 });

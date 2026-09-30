@@ -275,15 +275,17 @@ export function callerParam(caller: string = APP_CALLER): { 'x-crucible-plugin':
 export async function rpc<M extends keyof RpcMethods>(
   method: M,
   params: RpcMethods[M]['params'],
-  options: FailureOptions = {},
+  options: FailureOptions & { signal?: AbortSignal } = {},
 ): Promise<RpcMethods[M]['result']> {
+  const { signal, ...failureOptions } = options;
   const result = await client.POST('/api/rpc/{method}', {
     params: { path: { method: method as string } },
     // `rpc_methods!`'s own no-params rows are typed `null` here; the daemon
     // canonicalizes a `null` body to `{}` on its own side
     // (`DaemonClient::send_raw`), so this call sends `params` as it is.
     body: (params ?? null) as never,
+    signal,
   });
-  expectOk(result, `RPC \`${method}\` failed`, options);
+  expectOk(result, `RPC \`${method}\` failed`, failureOptions);
   return result.data as RpcMethods[M]['result'];
 }

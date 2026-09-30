@@ -17,8 +17,11 @@ const SESSION = {
   workspace: '/w', agent: { model: null }, started_at: '', event_count: 0, archived: false,
 };
 
-const SEND = 'POST /api/chat/send';
-const CANCEL = 'POST /api/session/s1/cancel';
+// `session.send_message` and `session.cancel` are RPC methods now
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now.
+const SEND = 'POST /api/rpc/session.send_message';
+const CANCEL = 'POST /api/rpc/session.cancel';
 
 /** The bodies that reached the send route, in order. */
 const sentTurns: { session_id: string; content: string }[] = [];
@@ -42,8 +45,8 @@ beforeEach(() => {
   holdSend = null;
   env = createTestQueryEnv({
     'GET /api/interactions/pending': () => ({ pending: [] }),
-    'GET /api/session/s1': () => SESSION,
-    'GET /api/session/s1/history': () => historyOf('s1', [], 0),
+    'POST /api/rpc/session.get': () => SESSION,
+    'POST /api/rpc/session.history': () => historyOf('s1', [], 0),
     [SEND]: async (request) => {
       sentTurns.push((await request.clone().json()) as { session_id: string; content: string });
       if (holdSend) {
@@ -98,7 +101,7 @@ describe('ChatContext queues mid-turn sends', () => {
     const ctx = mountProvider();
 
     // Turn one is in flight.
-    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.history')).toBe(1));
     seq = 0;
     void ctx.sendMessage('first');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first']));
@@ -146,7 +149,7 @@ describe('ChatContext queues mid-turn sends', () => {
   it('queues several messages and dispatches them in order, one turn at a time', async () => {
     const ctx = mountProvider();
 
-    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.history')).toBe(1));
     seq = 0;
     void ctx.sendMessage('first');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first']));
@@ -173,7 +176,7 @@ describe('ChatContext queues mid-turn sends', () => {
 
   it('re-queues a send the daemon refused as concurrent instead of surfacing an error', async () => {
     const ctx = mountProvider();
-    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.history')).toBe(1));
     seq = 0;
     await runTurn(ctx, 'first', 'first answer');
 
@@ -214,7 +217,7 @@ describe('ChatContext queues mid-turn sends', () => {
 describe('ChatContext closes a cancelled turn cleanly', () => {
   it('closes the turn when the daemon broadcasts ended, freeing the next send', async () => {
     const ctx = mountProvider();
-    await waitFor(() => expect(env.fetch.calls('GET /api/session/s1/history')).toBe(1));
+    await waitFor(() => expect(env.fetch.calls('POST /api/rpc/session.history')).toBe(1));
 
     void ctx.sendMessage('first');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first']));

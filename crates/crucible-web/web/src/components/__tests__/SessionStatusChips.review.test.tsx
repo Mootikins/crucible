@@ -27,7 +27,18 @@ const session = (id = 's1'): Session => ({
   archived: false,
 });
 
-const MODES = 'GET /api/session/s1/modes';
+// `session.status`/`session.list_modes` are RPC methods now
+// ([[Simplification Plan#Step 19]] item 9); every session's read shares one
+// key, so a fixture that must answer differently per session reads
+// `session_id` off the request body.
+const STATUS = 'POST /api/rpc/session.status';
+const MODES = 'POST /api/rpc/session.list_modes';
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
 
 let env: TestQueryEnv;
 /** What the mode route answers this case, which each test names up front. */
@@ -53,12 +64,13 @@ beforeEach(() => {
   // per case keeps one session's answer from serving the next one.
   secondSessionModes = Promise.resolve();
   env = createTestQueryEnv({
-    'GET /api/session/s1/status': () => ({ status: [] }),
-    'GET /api/session/s2/status': () => ({ status: [] }),
-    [MODES]: () => modeReply,
-    'GET /api/session/s2/modes': async () => {
-      await secondSessionModes;
-      return { current_mode_id: 'plan', modes: [mode('plan')] };
+    [STATUS]: () => ({ status: [] }),
+    [MODES]: async (request) => {
+      if ((await sessionIdOf(request)) === 's2') {
+        await secondSessionModes;
+        return { current_mode_id: 'plan', modes: [mode('plan')] };
+      }
+      return modeReply;
     },
   });
 });

@@ -14,6 +14,28 @@ afterEach(() => {
   }
   notificationActions.clearAll();
 });
+// `session.list_notifications` is an RPC method now
+// ([[Simplification Plan#Step 19]] item 9): every session's read shares the
+// one `POST /api/rpc/session.list_notifications` key, so a fixture that must
+// answer differently per session reads `session_id` off the request body.
+const NOTIFICATIONS = 'POST /api/rpc/session.list_notifications';
+
+/** How many `session.list_notifications` calls named this `session_id`. */
+async function callsFor(sessionId: string): Promise<number> {
+  const total = env.fetch.calls(NOTIFICATIONS);
+  let matched = 0;
+  for (let i = 0; i < env.fetch.mock.calls.length; i += 1) {
+    const sent = await env.fetch.sent(i);
+    if (sent.path === '/api/rpc/session.list_notifications' && (sent.body as { session_id?: string })?.session_id === sessionId) {
+      matched += 1;
+    }
+  }
+  // `total` sanity-bounds `matched`: every call this counts is one of the
+  // ones `calls()` already sees.
+  expect(matched).toBeLessThanOrEqual(total);
+  return matched;
+}
+
 const notice = (id: string, message = id) => ({ id, kind: 'warning', message });
 const visible = () => notificationStore.notifications.filter((n) => !n.dismissed).map((n) => n.message);
 const pending = () => {
@@ -58,11 +80,11 @@ function dismissed(source: SessionSource, id: string) {
 it('two panes share one snapshot and newer additions override its old text', async () => {
   installFakeEventSource();
   const read = pending();
-  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': () => read.promise });
+  env = createTestQueryEnv({ [NOTIFICATIONS]: () => read.promise });
   const { source } = attach();
   sessionEvents('s1').subscribe(() => {});
   expect(FakeEventSource.instances).toHaveLength(1);
-  await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(1));
+  await vi.waitFor(() => expect(env.fetch.calls(NOTIFICATIONS)).toBe(1));
   added(source, 'n1', 'new text');
   added(source, 'n2', 'only live');
   read.resolve({ notifications: [notice('done'), notice('n1', 'old text')] });
@@ -76,7 +98,7 @@ it('a reconnect discards the old response and removes missed dismissals', async 
   const old = pending();
   const next = pending();
   let reads = 0;
-  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': () => ++reads === 1 ? old.promise : next.promise });
+  env = createTestQueryEnv({ [NOTIFICATIONS]: () => ++reads === 1 ? old.promise : next.promise });
   const { source } = attach();
   await vi.waitFor(() => expect(reads).toBe(1));
   added(source, 'gone');
@@ -95,11 +117,11 @@ it('a reconnect discards the old response and removes missed dismissals', async 
 it('detach invalidates a pending snapshot, and a gap starts a fresh one', async () => {
   installFakeEventSource();
   const read = pending();
-  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': () => read.promise });
+  env = createTestQueryEnv({ [NOTIFICATIONS]: () => read.promise });
   const { source, unsubscribe } = attach();
-  await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(1));
+  await vi.waitFor(() => expect(env.fetch.calls(NOTIFICATIONS)).toBe(1));
   source.emit('stream_gap', { event: 'stream_gap', data: { dropped: 1 } });
-  await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(2));
+  await vi.waitFor(() => expect(env.fetch.calls(NOTIFICATIONS)).toBe(2));
   unsubscribe();
   await vi.waitFor(() => expect(source.closed).toBe(true));
   read.resolve({ notifications: [notice('detached')] });
@@ -111,12 +133,11 @@ it('detach invalidates a pending snapshot, and a gap starts a fresh one', async 
 it('a dismissal in one session leaves the other session’s shared notice visible', async () => {
   installFakeEventSource();
   env = createTestQueryEnv({
-    'GET /api/session/s1/notifications': { body: { notifications: [notice('shared')] } },
-    'GET /api/session/s2/notifications': { body: { notifications: [notice('shared')] } },
+    [NOTIFICATIONS]: () => ({ notifications: [notice('shared')] }),
   });
   const one = attach('s1');
   const two = attach('s2');
-  await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s2/notifications')).toBe(1));
+  await vi.waitFor(async () => expect(await callsFor('s2')).toBe(1));
   await vi.waitFor(() => expect(visible()).toContain('shared'));
   added(two.source, 'shared');
   dismissed(one.source, 'shared');
@@ -127,7 +148,7 @@ it('a dismissal in one session leaves the other session’s shared notice visibl
 
 it('a failed snapshot reports the error and live warning/toast events still work', async () => {
   installFakeEventSource();
-  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': { status: 502, body: { error: { code: 502, message: 'offline' } } } });
+  env = createTestQueryEnv({ [NOTIFICATIONS]: { status: 502, body: { error: { code: 502, message: 'offline' } } } });
   const { source } = attach();
   await vi.waitFor(() => expect(visible().some((s) => s.includes('not available'))).toBe(true));
   added(source, 'warning');
@@ -140,7 +161,7 @@ it('a failed snapshot reports the error and live warning/toast events still work
 
 it('a notification that its timer hid does not show again on a reconnect or a gap', async () => {
   installFakeEventSource();
-  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': { body: { notifications: [notice('old')] } } });
+  env = createTestQueryEnv({ [NOTIFICATIONS]: { body: { notifications: [notice('old')] } } });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
     const { source } = attach();
@@ -150,10 +171,10 @@ it('a notification that its timer hid does not show again on a reconnect or a ga
     expect(visible()).not.toContain('old');
 
     source.open();
-    await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(2));
+    await vi.waitFor(() => expect(env.fetch.calls(NOTIFICATIONS)).toBe(2));
     source.emit('stream_gap', { event: 'stream_gap', data: { dropped: 1 } });
     source.open();
-    await vi.waitFor(() => expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(4));
+    await vi.waitFor(() => expect(env.fetch.calls(NOTIFICATIONS)).toBe(4));
     vi.useRealTimers();
     // The last snapshot resolves after its fetch; let it apply.
     await new Promise((r) => setTimeout(r, 10));
@@ -167,7 +188,7 @@ it('a notification that its timer hid does not show again on a reconnect or a ga
 
 it('one open of the chat stream runs its reconcile once', () => {
   installFakeEventSource();
-  env = createTestQueryEnv({ 'GET /api/session/s1/notifications': { body: { notifications: [] } } });
+  env = createTestQueryEnv({ [NOTIFICATIONS]: { body: { notifications: [] } } });
   const reconcile = vi.fn();
   setEventRoute('session', null, reconcile);
   const opened = vi.fn();

@@ -210,11 +210,9 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/auth.rs` | 497 | `POST /api/auth/login`/`logout` — exchanges an API key for a session cookie. |
 | `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
 | `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with read-path reference redaction, within the root the daemon's `fs.read` names; the write-path containment check itself is the daemon's `fs.write`. |
-| `crates/crucible-web/src/routes/chat.rs` | 542 | Chat turn intake (with attached diff comments), the session SSE event stream, and pending-interaction routes. |
-
-| `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with strict containment and reference redaction, within the root the daemon's `fs.read` names. |
-| `crates/crucible-web/src/routes/chat.rs` | 527 | Chat turn intake (with attached diff comments) and pending-interaction routes. The session SSE stream moved to `routes/events.rs` in Simplification Plan step 19. |
+| `crates/crucible-web/src/routes/chat.rs` | 421 | `POST /api/interaction/respond` and `GET /api/interactions/pending` — the two pending-interaction routes that stay, each for its own web-only reason (legacy untagged-response inference; filling a permission's suggested pattern). `POST /api/chat/send` only forwarded `session.send_message` and is gone (Simplification Plan step 19 item 9); the browser calls `rpc('session.send_message', ...)`. The session SSE stream moved to `routes/events.rs` in step 19. |
 | `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. Kept (not migrated onto `rpc(...)`): every `config.*` RPC row is off `browser_may_call`, so this curated, credential-redacting composition is the only path a browser has to any of it. |
+| `crates/crucible-web/src/routes/diff.rs` | 609 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
 | `crates/crucible-web/src/routes/events.rs` | 550 | `GET /api/events` — the one SSE route (Simplification Plan step 19). A client names as many topics as it wants in `?topics=a,b,...`: a session id for the chat stream, or `system` for publications, proposals, surface changes and filesystem changes. Every frame's JSON body gains a `topic` field; the payload types are unchanged (`SessionEventPayload`, `FsEvent`, `SurfaceChangedEvent`, `PublicationChangedEvent`, `ProposalChangedEvent`). Replaces the four routes `chat.rs::event_stream`, `fs.rs::fs_event_stream`, `surface.rs::surface_event_stream` and this file's own former `system_event_stream` used to serve separately. |
 | `routes/fs.rs` (deleted) | — | Gone (step 19 item 3): `fs.list_dir`/`fs.move`/`fs.mkdir`/`fs.trash` only forwarded one RPC row each. The browser reaches them through `POST /api/rpc/{method}`; the live SSE stream had already moved to `routes/events.rs` (the `system` topic). |
 | `crates/crucible-web/src/routes/health.rs` | 49 | `/health` liveness and `/ready` readiness probes. |
@@ -226,37 +224,27 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/routes/project.rs` | 493 | `POST /api/project/register` and the untrusted-caller root-safety policy. |
 | `crates/crucible-web/src/routes/rpc.rs` | 642 | `POST /api/rpc/{method}` — the one generic RPC route (Simplification Plan step 19 item 1): `browser_may_call`'s exhaustive allow list, `plugin_may_call`'s stricter per-caller list, and the daemon-error-to-HTTP-status mapping. |
 | `crates/crucible-web/src/routes/scm.rs` | 93 | `POST /api/scm/clone` — thin proxy for a git clone. |
-| `crates/crucible-web/src/routes/search.rs` | 1297 | `GET /api/notes/resolve` (filesystem walk), `PUT /api/notes/{name}` (`put_note`, which builds the file name, extracts a title and stamps `updated_at`), `GET /api/backlinks` (composes `get_backlinks` with a second read for unlinked mentions) and `POST /api/search/semantic` (composes `embed.query` with `search_vectors`, folds to one row per note) — real web-owned behavior, so these routes stay. `GET /api/kilns`, `/api/notes`, `/api/notes/{name}`'s `GET` arm, and `POST /api/search/vectors`/`/grep` are gone (step 19 item 3): each only forwarded one RPC row. The browser reaches `kiln.list`/`list_notes`/`get_note_by_name`/`search_vectors`/`search_grep` through `POST /api/rpc/{method}`. |
-| `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
-| `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
+| `crates/crucible-web/src/routes/search.rs` | 1303 | `GET /api/notes/resolve` (filesystem walk), `PUT /api/notes/{name}` (`put_note`, which builds the file name, extracts a title and stamps `updated_at`), `GET /api/backlinks` (composes `get_backlinks` with a second read for unlinked mentions) and `POST /api/search/semantic` (composes `embed.query` with `search_vectors`, folds to one row per note) — real web-owned behavior, so these routes stay. `GET /api/kilns`, `/api/notes`, `/api/notes/{name}`'s `GET` arm, and `POST /api/search/vectors`/`/grep` are gone (step 19 item 3): each only forwarded one RPC row. The browser reaches `kiln.list`/`list_notes`/`get_note_by_name`/`search_vectors`/`search_grep` through `POST /api/rpc/{method}`. |
+| `crates/crucible-web/src/routes/session_commands.rs` | 273 | `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. `GET /api/session/{id}/commands` only forwarded `session.commands` and is gone (Simplification Plan step 19 item 9); the browser calls `rpc('session.commands', ...)`. |
 | `crates/crucible-web/src/routes/surface.rs` | 126 | `SurfaceChangedEvent`, the push frame `routes/events.rs`'s `system` topic carries. `GET /api/surfaces` (`surface.list`, forwarded) is gone: the browser calls `rpc('surface.list', {})` directly. |
 | `crates/crucible-web/src/routes/terminal.rs` | 504 | `GET /api/terminal/ws` — WebSocket-to-PTY bridge. |
 | `crates/crucible-web/src/routes/webhook.rs` | 465 | `POST /api/webhook/{name}` — signed webhook ingress. |
+
+`routes/session_status.rs` and `routes/session_config/` are gone (Simplification Plan step 19 item 9): every route in both only forwarded one RPC row (`session.status`, `session.list_notifications`, `session.dismiss_notification`, `session.set_plugin_approval`, `session.get_plugin_approval`, `session.list_plugin_approvals`, `session.list_agent_options`, `session.set_agent_option`), and the browser now calls `rpc(method, params)` for each directly.
 
 ### `crates/crucible-web/src/routes/session/`
 
 | File | Lines | Role |
 | --- | --- | --- |
-| `crates/crucible-web/src/routes/session/mod.rs` | 1144 | `/api/session*` CRUD, lifecycle, scope, modes, providers, and the session notifications read/dismiss routes. Also `set_knob`/`get_knob` (`PUT /api/session/{id}/knob`, `GET /api/session/{id}/knob/{knob}`): one route pair for every `SessionKnob` — model, mode, context strategy, precognition, plugin turn limit (step 13 of the simplification plan). |
-| `crates/crucible-web/src/routes/session/search_scope_tests.rs` | 55 | Tests for the session-search kiln-scope query parsing. |
-| `crates/crucible-web/src/routes/session/shape_tests.rs` | 430 | Shape/round-trip tests for the session handlers. |
-| `crates/crucible-web/src/routes/session/tests.rs` | 651 | `create_session` (forwarding its endpoint to the daemon unchecked), scope, export, session-history, and provider-listing tests. |
-
-### `crates/crucible-web/src/routes/session_config/`
-
-| File | Lines | Role |
-| --- | --- | --- |
-| `crates/crucible-web/src/routes/session_config/approval.rs` | 89 | Per-session, per-plugin approval mode (`ask`/`stop`/…) — not a `SessionKnob`, since it takes a second key (the plugin name). |
-| `crates/crucible-web/src/routes/session_config/basic.rs` | 139 | The agent-self-advertised option list/set (`agent_option`, also not a `SessionKnob`). |
-| `crates/crucible-web/src/routes/session_config/mod.rs` | 59 | Assembles the plugin-approval and agent-option routes from `approval.rs` and `basic.rs`. Every `SessionKnob` — precognition, context strategy, model, mode, plugin turn limit — moved to `routes/session/mod.rs`'s `set_knob`/`get_knob` in step 13 of the simplification plan; `prompt.rs` (the old `context-strategy` route) is gone. |
-| `crates/crucible-web/src/routes/session_config/tests.rs` | 258 | Round-trip tests for `set_knob`/`get_knob`, plugin approval and agent options. |
+| `crates/crucible-web/src/routes/session/mod.rs` | 467 | Six routes, each kept for its own web-only reason (Simplification Plan step 19 item 9): `POST /api/session` (`create_session`) validates `agent_type` before the daemon sees it, since `session.create` treats an unrecognized value as `"internal"` rather than refusing it; `POST /api/session/{id}/resume` composes `session.resume` with a conditional follow-up `session.history` call when the daemon reports `resumed_from_storage`; `POST /api/session/{id}/export` composes `session.get` and `session.render_markdown`, with a fallback markdown built from session metadata when rendering fails; `POST /api/session/{id}/end`, `POST /api/session/{id}/archive` and `DELETE /api/session/{id}` each release this process's own `EventBroker` entry for the session (`ReconnectingDaemon::close_event_streams`) after the daemon call succeeds, a local SSE fan-out concept the browser cannot reach on its own. Every other session route (list, get, pause, unarchive, cancel, history, list_models, list_modes, list_knobs, `knob.set`/`knob.get`, connect/disconnect kiln, set_workspace, set_title, generate_title, status, list/dismiss notifications, plugin approval and agent-option config, `GET /api/providers`) only forwarded one RPC row and is gone; the browser calls `rpc(method, params)` for each. |
+| `crates/crucible-web/src/routes/session/tests.rs` | 458 | `create_session` (agent-type validation, forwarding its endpoint to the daemon unchecked), `resume_session`'s warm/cold shapes, and `export_session` tests. `end`/`archive`/`delete`'s status contract is covered in `route_contract_tests/sessions.rs`, against a real daemon. |
 
 ### `crates/crucible-web/src/services/`
 
 | File | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-web/src/services/mod.rs` | 8 | Declares the `services` module tree; imports the `forward_rpc!` macro crate-wide. |
-| `crates/crucible-web/src/services/daemon.rs` | 1064 | `AppState`, `ReconnectingDaemon`, `EventBroker`, `EventStream` — the daemon RPC client wrapper, SSE fan-out, the `base.*`/`diff.*`/`proposal`-adjacent forwarders, and `rpc_forward`, the generic forwarder behind `routes/rpc.rs`. |
+| `crates/crucible-web/src/services/daemon.rs` | 888 | `AppState`, `ReconnectingDaemon`, `EventBroker`, `EventStream` — the daemon RPC client wrapper, SSE fan-out, the `base.*`/`diff.*`/`proposal`-adjacent forwarders, and `rpc_forward`, the generic forwarder behind `routes/rpc.rs`. |
 | `crates/crucible-web/src/services/daemon_config.rs` | 91 | Forwards `config.*` RPCs and redacts credentials at the crate boundary. |
 | `crates/crucible-web/src/services/daemon_event_stream.rs` | 252 | `EventStream`, `Interest` — per-session upstream subscribe/unsubscribe reconciliation and SSE lag-to-`stream_gap` translation. |
 | `crates/crucible-web/src/services/daemon_plugins.rs` | 101 | Forwards `plugin.*` RPCs for the plugin panel and settings pane. |
@@ -360,15 +348,16 @@ Paths are relative to the repository root. Line counts are as recorded at
   `ReconnectingDaemon::forward_rpc`.
 - **`crucible_core::session::{SessionSummary, SessionDetail}`**/
   `ResumeSessionResponse`/`daemon_shape`
-  (`crates/crucible-web/src/routes/session/mod.rs`) — `session.create` and
-  `session.list` answer the full core `SessionSummary` (a `session.list`
-  reply is `crucible_core::protocol::requests::SessionListReply`, a
-  `Vec<SessionSummary>` and a count); `session.get` answers
+  (`crates/crucible-web/src/routes/session/mod.rs`) — `session.create`
+  (the one session route left as a REST endpoint; see the module map)
+  answers the full core `SessionSummary` unchanged. `session.list` and
+  `session.get` moved onto `rpc(method, params)` in step 19 and answer the
+  same core types (`SessionListReply`, a `Vec<SessionSummary>` and a count;
   `SessionDetail`, a `SessionSummary` flattened onto the wire plus the
-  full-record fields. Every route returns the core type unchanged rather
-  than decoding into a web-local row. `ResumeSessionResponse` is a
+  full-record fields) directly from the RPC route, with no web-local
+  reshaping. `ResumeSessionResponse` is a
   `#[serde(untagged)]` enum whose variant order is load-bearing (`Restored`
-  must precede `Live`, tested by `shape_tests.rs`). `diff.get`/`diff.file`/
+  must precede `Live`, tested by `tests.rs`). `diff.get`/`diff.file`/
   `diff.comment`/`diff.resolve_comment`/`diff.delete_comment`/`diff.comments`
   answer `crucible_core::diff::{Diffset, DiffFileText}`/
   `crucible_core::protocol::requests::{DiffCommentReply, DiffCommentsReply,

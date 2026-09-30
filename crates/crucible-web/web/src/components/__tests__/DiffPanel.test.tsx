@@ -674,7 +674,7 @@ describe('DiffPanel', () => {
 
   it('a comment attaches to the chat of the pane, and names it in the header', async () => {
     serve([entry('src/a.rs')], [], {
-      'GET /api/session/s-7': { body: { session_id: 's-7', title: 'Review the parser' } },
+      'POST /api/rpc/session.get': { body: { session_id: 's-7', title: 'Review the parser' } },
       // The chip carries the comment as the daemon stored it.
       'POST /api/rpc/diff.comment': {
         body: {
@@ -721,7 +721,7 @@ describe('DiffPanel', () => {
       [entry('src/a.rs')],
       [{ comment: comment('c1', { body: 'why this?' }), outdated: false }],
       {
-        'GET /api/session/s-7': { body: { session_id: 's-7', title: 'Review the parser' } },
+        'POST /api/rpc/session.get': { body: { session_id: 's-7', title: 'Review the parser' } },
       },
     );
     render(() => <DiffPanel source={source} session="s-7" />);

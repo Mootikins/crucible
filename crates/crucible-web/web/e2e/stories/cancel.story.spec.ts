@@ -8,7 +8,8 @@ import { openSessionsList } from '../helpers/nav';
  * Story: WS-108 — cancel an in-flight turn.
  *
  * Sending sets isStreaming synchronously, so the stop control appears; clicking
- * it POSTs /api/session/:id/cancel, and the turn closes on the daemon's own
+ * it calls the `session.cancel` RPC method (`POST /api/rpc/session.cancel`,
+ * Simplification Plan step 19 item 9), and the turn closes on the daemon's own
  * `turn_finished` frame (the daemon emits `ended("cancelled")` and then
  * `turn_finished` on the session event stream before the cancel POST
  * resolves). The web synthesizes nothing: the transcript keeps exactly what
@@ -38,7 +39,7 @@ test.describe('WS-108 cancel a turn', () => {
     let cancelled = false;
     let markCancelled: (() => void) | null = null;
     const cancelAcknowledged = new Promise<void>((r) => (markCancelled = r));
-    await page.route('**/api/session/*/cancel', (route) => {
+    await page.route('**/api/rpc/session.cancel', (route) => {
       cancelled = true;
       markCancelled?.();
       return route.fulfill({ json: { cancelled: true } });
@@ -82,7 +83,7 @@ test.describe('WS-108 cancel a turn', () => {
     await story.step(page, 'streaming - stop control visible');
 
     const cancelReq = page.waitForRequest(
-      (r) => r.url().includes('/api/session/test-session-001/cancel') && r.method() === 'POST',
+      (r) => r.url().includes('/api/rpc/session.cancel') && r.method() === 'POST',
     );
     await cancelButton.click();
     await cancelReq;

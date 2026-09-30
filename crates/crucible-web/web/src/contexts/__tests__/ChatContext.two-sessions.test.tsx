@@ -24,15 +24,21 @@ import { resetSseForTests } from '@/lib/query/sse';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { emitOps, historyOf, segment, toolCard, upsert } from '@/test-utils/transcript';
 
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
+
 let env: TestQueryEnv;
 beforeEach(() => {
   installFakeEventSource();
   env = createTestQueryEnv({
     'GET /api/interactions/pending': () => ({ pending: [] }),
-    'GET /api/session/session-a': () => sessionOf('session-a'),
-    'GET /api/session/session-b': () => sessionOf('session-b'),
-    'GET /api/session/session-a/history': () => historyOf('session-a', [], 0),
-    'GET /api/session/session-b/history': () => historyOf('session-b', [], 0),
+    // Both sessions' reads share one key now ([[Simplification Plan#Step
+    // 19]] item 9), told apart by `session_id` in the request body.
+    'POST /api/rpc/session.get': async (request) => sessionOf(await sessionIdOf(request)),
+    'POST /api/rpc/session.history': async (request) => historyOf(await sessionIdOf(request), [], 0),
   });
 });
 

@@ -1,4 +1,8 @@
 //! Router Wiring + Providers Route Contract Tests
+//!
+//! `GET /api/providers` only forwarded `providers.list` and is gone
+//! ([[Simplification Plan#Step 19]] item 9); the browser calls
+//! `rpc('providers.list', ...)` now.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -13,12 +17,12 @@ async fn get_on_post_only_route_returns_method_not_allowed() {
     let state = build_state(client);
     let app = build_test_app(state);
 
-    // /api/chat/send is POST-only
+    // /api/rpc/{method} is POST-only
     let response = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/chat/send")
+                .uri("/api/rpc/session.get")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -56,8 +60,10 @@ async fn list_providers_returns_200_with_providers_array() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/providers")
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/rpc/providers.list")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
                 .unwrap(),
         )
         .await

@@ -5,7 +5,10 @@ import { resetDaemonNotificationsForTests, showDaemonNotification } from '@/lib/
 import { notificationActions } from '@/stores/notificationStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
-const CLOSE = 'POST /api/session/s1/notifications/n1/dismiss';
+// `session.dismiss_notification` is an RPC method now
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc('session.dismiss_notification', ...)` now.
+const CLOSE = 'POST /api/rpc/session.dismiss_notification';
 
 let env: TestQueryEnv;
 

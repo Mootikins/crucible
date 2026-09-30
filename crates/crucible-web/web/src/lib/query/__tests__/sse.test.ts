@@ -60,7 +60,7 @@ describe('sessionEvents', () => {
 
   it('reads the notifications of the session once, when it attaches, oldest first', async () => {
     const env: TestQueryEnv = createTestQueryEnv({
-      'GET /api/session/s1/notifications': () => ({
+      'POST /api/rpc/session.list_notifications': () => ({
         notifications: [
           { id: 'n2', kind: 'toast', message: 'newer' },
           { id: 'n1', kind: 'warning', message: 'older' },
@@ -83,7 +83,7 @@ describe('sessionEvents', () => {
           ['info', 'newer'],
         ]),
       );
-      expect(env.fetch.calls('GET /api/session/s1/notifications')).toBe(1);
+      expect(env.fetch.calls('POST /api/rpc/session.list_notifications')).toBe(1);
     } finally {
       env.restore();
     }
@@ -91,10 +91,10 @@ describe('sessionEvents', () => {
 
   it('a notice read on attach closes in the daemon for its session', async () => {
     const env: TestQueryEnv = createTestQueryEnv({
-      'GET /api/session/s1/notifications': () => ({
+      'POST /api/rpc/session.list_notifications': () => ({
         notifications: [{ id: 'n-attach', kind: 'warning', message: 'read on attach' }],
       }),
-      'POST /api/session/s1/notifications/n-attach/dismiss': () => ({ success: true }),
+      'POST /api/rpc/session.dismiss_notification': () => ({ success: true }),
     });
     try {
       sessionEvents('s1').subscribe(vi.fn());
@@ -110,7 +110,7 @@ describe('sessionEvents', () => {
       notificationActions.dismiss(entry.id);
 
       await vi.waitFor(() =>
-        expect(env.fetch.calls('POST /api/session/s1/notifications/n-attach/dismiss')).toBe(1),
+        expect(env.fetch.calls('POST /api/rpc/session.dismiss_notification')).toBe(1),
       );
     } finally {
       env.restore();

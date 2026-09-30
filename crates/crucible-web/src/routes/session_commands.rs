@@ -1,10 +1,10 @@
-//! `/api/session/{id}/commands` and `/api/session/{id}/command` — the web
-//! client's slash commands.
+//! `/api/session/{id}/command` — the web client's built-in slash commands.
 //!
-//! The daemon owns the command catalog of a session. The composer completes
-//! from it. A built-in command is the client's own action, so this route
-//! runs it; every other command goes to the daemon as a chat message, which
-//! the daemon routes.
+//! The daemon owns the command catalog of a session
+//! (`session.commands`, called through `POST /api/rpc/{method}` now — see
+//! [[Simplification Plan#Step 19]]). A built-in command is the client's own
+//! action, so this route runs it; every other command goes to the daemon as
+//! a chat message, which the daemon routes.
 
 #![deny(clippy::wildcard_enum_match_arm)]
 #![deny(clippy::match_wildcard_for_single_variants)]
@@ -57,34 +57,6 @@ impl CommandResponse {
             open_session: None,
         })
     }
-}
-
-/// The command catalog of one session.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct CommandsResponse {
-    commands: Vec<SessionCommand>,
-}
-
-/// `GET /api/session/{id}/commands` — the commands the composer completes.
-///
-/// The daemon answers the catalog of the session: built-in, mode, plugin,
-/// skill and agent commands. A `commands_changed` event on the session's
-/// stream says when to ask again.
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/commands",
-    params(("id" = String, Path, description = "The session whose commands to list")),
-    responses(
-        (status = 200, body = CommandsResponse),
-        (status = 502, description = "The daemon could not list the commands"),
-    )
-)]
-pub(super) async fn list_commands(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<CommandsResponse>, WebError> {
-    let commands = state.daemon.session_commands(&id).await.daemon_err()?;
-    Ok(Json(CommandsResponse { commands }))
 }
 
 /// `/name hint — description (source)`, one line of `/help`.

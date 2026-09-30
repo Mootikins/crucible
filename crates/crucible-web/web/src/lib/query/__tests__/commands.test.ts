@@ -32,18 +32,30 @@ function inRoot<T>(body: () => T): T {
   });
 }
 
+// `session.commands` is an RPC method now ([[Simplification Plan#Step 19]]
+// item 9): every session's read shares the one
+// `POST /api/rpc/session.commands` key, so a fixture that must answer
+// differently per session reads `session_id` off the request body.
+const COMMANDS_ROUTE = 'POST /api/rpc/session.commands';
+
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
+
 describe('the slash command list', () => {
-  // The catalog moves only when the daemon says so, so one GET per session
+  // The catalog moves only when the daemon says so, so one call per session
   // is the point.
   it('asks once however many times a composer reads it', async () => {
-    env = createTestQueryEnv({ 'GET /api/session/s-1/commands': () => ({ commands: COMMANDS }) });
+    env = createTestQueryEnv({ [COMMANDS_ROUTE]: () => ({ commands: COMMANDS }) });
 
     expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
     expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
     const query = inRoot(() => useSlashCommands(() => 's-1'));
 
     await vi.waitFor(() => expect(query.data).toEqual(COMMANDS));
-    expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(1);
+    expect(env.fetch.calls(COMMANDS_ROUTE)).toBe(1);
   });
 
   // A failed fetch must not poison the cache: the composer's next keystroke
@@ -52,7 +64,7 @@ describe('the slash command list', () => {
   it('asks again after a refusal', async () => {
     let refuse = true;
     env = createTestQueryEnv({
-      'GET /api/session/s-1/commands': () =>
+      [COMMANDS_ROUTE]: () =>
         refuse
           ? new Response(JSON.stringify({ error: { code: 500, message: 'not ready' } }), {
               status: 500,
@@ -60,17 +72,17 @@ describe('the slash command list', () => {
           : { commands: COMMANDS },
     });
 
-    await expect(fetchSlashCommandsOnce('s-1')).rejects.toThrow('Failed to list commands');
+    await expect(fetchSlashCommandsOnce('s-1')).rejects.toThrow(/session.commands/);
     refuse = false;
 
     expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
-    expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(2);
+    expect(env.fetch.calls(COMMANDS_ROUTE)).toBe(2);
   });
 
   it('keeps one catalog per session', async () => {
     env = createTestQueryEnv({
-      'GET /api/session/s-1/commands': () => ({ commands: COMMANDS }),
-      'GET /api/session/s-2/commands': () => ({ commands: [] }),
+      [COMMANDS_ROUTE]: async (request) =>
+        (await sessionIdOf(request)) === 's-2' ? { commands: [] } : { commands: COMMANDS },
     });
 
     expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
@@ -78,13 +90,13 @@ describe('the slash command list', () => {
   });
 
   it('asks again after the cache is reset', async () => {
-    env = createTestQueryEnv({ 'GET /api/session/s-1/commands': () => ({ commands: COMMANDS }) });
+    env = createTestQueryEnv({ [COMMANDS_ROUTE]: () => ({ commands: COMMANDS }) });
 
     expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
     await resetCommandCache();
 
     expect(await fetchSlashCommandsOnce('s-1')).toEqual(COMMANDS);
-    expect(env.fetch.calls('GET /api/session/s-1/commands')).toBe(2);
+    expect(env.fetch.calls(COMMANDS_ROUTE)).toBe(2);
   });
 });
 

@@ -6,10 +6,13 @@ import type { Session } from '@/lib/types';
 import { resetSessionsForTests, useSession, useSessions } from '../sessions';
 import { useConnectSessionKiln, useDisconnectSessionKiln } from '../scope';
 
-const CONNECT = 'POST /api/session/s-1/kilns/connect';
-const DISCONNECT = 'POST /api/session/s-1/kilns/disconnect';
-const LIST = 'GET /api/session/list';
-const ONE = 'GET /api/session/s-1';
+// Every one of these routes only forwarded one RPC row and is gone
+// ([[Simplification Plan#Step 19]] item 9): the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now.
+const CONNECT = 'POST /api/rpc/session.connect_kiln';
+const DISCONNECT = 'POST /api/rpc/session.disconnect_kiln';
+const LIST = 'POST /api/rpc/session.list';
+const ONE = 'POST /api/rpc/session.get';
 
 /** The storage key the session roster is seeded from. */
 const STORAGE_KEY = 'crucible:cache:sessions';
@@ -131,10 +134,10 @@ describe('session scope mutations patch with echo', () => {
   });
 
   it('sends the kiln by the name the registry issued', async () => {
-    let sent: { kiln: string } | null = null;
+    let sent: { session_id: string; kiln: string } | null = null;
     env = createTestQueryEnv({
       [CONNECT]: async (request) => {
-        sent = (await request.json()) as { kiln: string };
+        sent = (await request.json()) as { session_id: string; kiln: string };
         return { session_id: 's-1', kilns: ['main', 'extra'], workspace: null };
       },
     });
@@ -142,7 +145,7 @@ describe('session scope mutations patch with echo', () => {
     const connect = inRoot(() => useConnectSessionKiln());
     await connect.mutateAsync({ id: 's-1', kiln: 'extra' });
 
-    expect(sent).toEqual({ kiln: 'extra' });
+    expect(sent).toEqual({ session_id: 's-1', kiln: 'extra' });
   });
 
   it('leaves the cached set alone when the daemon refuses the attach', async () => {

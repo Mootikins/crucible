@@ -225,64 +225,40 @@ async fn create_session_accepts_internal_agent_type() {
 }
 
 // =========================================================================
-// Session scope (kilns/workspace) Tests
+// resume_session Tests
 // =========================================================================
 
-async fn send_json(
-    method: &str,
-    uri: &str,
-    body: serde_json::Value,
-) -> (axum::http::StatusCode, serde_json::Value) {
-    crate::test_support::request_json(method, uri, Some(body)).await
+/// The two resume shapes read back as the variant that wrote them.
+///
+/// This is the gate on the variant order in `ResumeSessionResponse`. The live
+/// shape's required fields are a subset of the restored one's, so an untagged
+/// union that lists `Live` first answers `Live` for a restored history and
+/// drops every event, with no error anywhere. Both directions are asserted,
+/// because only one of them fails when the order is wrong.
+#[tokio::test]
+async fn resume_session_answers_the_warm_path_shape() {
+    let (status, json) =
+        crate::test_support::request_json("POST", "/api/session/test-session-001/resume", None)
+            .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
+    // The warm path, because the mock's `session.resume` succeeds.
+    assert!(json.get("history").is_none(), "warm resume: {json}");
+    assert_eq!(json["state"], "active");
 }
 
+/// The cold path answers the restored history, and it reads back as
+/// `Restored`.
 #[tokio::test]
-async fn connect_kiln_returns_updated_scope() {
-    let (status, json) = send_json(
-        "POST",
-        "/api/session/test-session-001/kilns/connect",
-        serde_json::json!({"kiln": "extra-kiln"}),
-    )
-    .await;
+async fn a_cold_resume_answers_the_restored_history() {
+    // "cold-resume-session" is the mock's own stand-in for a session
+    // `session.resume` had to reload from storage: the daemon's reply names
+    // `resumed_from_storage: true`, which is the ONLY thing that decides this
+    // route also reads `session.history` — not a second daemon call failing.
+    let (status, json) =
+        crate::test_support::request_json("POST", "/api/session/cold-resume-session/resume", None)
+            .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
-    assert_eq!(json["kilns"][1], "extra-kiln");
-}
-
-#[tokio::test]
-async fn disconnect_kiln_returns_updated_scope() {
-    let (status, json) = send_json(
-        "POST",
-        "/api/session/test-session-001/kilns/disconnect",
-        serde_json::json!({"kiln": "extra-kiln"}),
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
-    assert_eq!(json["kilns"].as_array().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn set_workspace_accepts_null_for_detach() {
-    let (status, json) = send_json(
-        "PUT",
-        "/api/session/test-session-001/workspace",
-        serde_json::json!({ "workspace": null }),
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
-    // Detach falls back to the kiln path (mock echoes the default).
-    assert_eq!(json["workspace"], "/tmp/test-kiln");
-}
-
-#[tokio::test]
-async fn set_workspace_attaches_project_dir() {
-    let (status, json) = send_json(
-        "PUT",
-        "/api/session/test-session-001/workspace",
-        serde_json::json!({ "workspace": "/repos/crucible" }),
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
-    assert_eq!(json["workspace"], "/repos/crucible");
+    assert_eq!(json["history"][0]["event"], "user_message");
 }
 
 // =========================================================================
@@ -407,74 +383,6 @@ async fn export_session_with_valid_session_returns_200() {
 }
 
 // =========================================================================
-// auto_title Tests
-// =========================================================================
-
-#[tokio::test]
-async fn auto_title_returns_200_with_title_field() {
-    let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_state(client);
-    let app = crate::test_support::build_test_app(state);
-
-    let response = app
-        .oneshot(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/auto-title")
-                .body(axum::body::Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    assert!(
-        json.get("title").is_some(),
-        "Response should contain 'title' field"
-    );
-    assert!(json["title"].is_string(), "Title should be a string");
-}
-
-#[tokio::test]
-async fn auto_title_delegates_to_daemon_generate_title() {
-    // Title generation is daemon-owned (topic-based LLM with truncation
-    // fallback); the web route only forwards and unwraps the result.
-    let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_state(client);
-    let app = crate::test_support::build_test_app(state);
-
-    let response = app
-        .oneshot(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri("/api/session/test-session-001/auto-title")
-                .body(axum::body::Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    assert_eq!(
-        json["title"].as_str().unwrap(),
-        "Merkle tree sync design",
-        "Title should come from the daemon's session.generate_title"
-    );
-}
-
-// =========================================================================
 // Session creation smart defaults & provider filtering
 // =========================================================================
 
@@ -547,108 +455,4 @@ async fn test_create_session_with_explicit_provider_still_works() {
         "Response must contain session_id with explicit provider/model"
     );
     assert_eq!(json["session_id"], "test-session-001");
-}
-
-#[tokio::test]
-async fn test_list_providers_with_kiln_query_param_returns_200() {
-    let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_state(client);
-    let app = crate::test_support::build_test_app(state);
-
-    let response = app
-        .oneshot(
-            axum::http::Request::builder()
-                .uri("/api/providers?kiln=/tmp/test-kiln")
-                .body(axum::body::Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(
-        json["providers"].is_array(),
-        "Response must have 'providers' array when kiln query param is provided"
-    );
-}
-
-/// The modes route forwards the daemon's list verbatim. Asserting the
-/// field names here is the point: the browser reads `current_mode_id` and
-/// `modes[].id`, and a rename on either side would otherwise surface as a
-/// mode chip that silently falls back to its placeholder.
-#[tokio::test]
-async fn list_modes_returns_the_daemon_s_modes_and_current_mode() {
-    let (_mock, client) = crate::test_support::start_mock_daemon().await;
-    let state = crate::test_support::build_state(client);
-    let app = crate::test_support::build_test_app(state);
-
-    let response = app
-        .oneshot(
-            axum::http::Request::builder()
-                .method("GET")
-                .uri("/api/session/test-session-001/modes")
-                .body(axum::body::Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    assert_eq!(json["current_mode_id"], "ask");
-    let ids: Vec<&str> = json["modes"]
-        .as_array()
-        .expect("modes must be an array")
-        .iter()
-        .map(|m| m["id"].as_str().expect("mode id"))
-        .collect();
-    assert_eq!(ids, vec!["ask", "plan", "propose"]);
-    // The route passes `writes` through; a descriptor without it reads `apply`.
-    assert_eq!(json["modes"][0]["writes"], "apply");
-    assert_eq!(json["modes"][2]["writes"], "propose");
-}
-
-/// Reading a session's history must not bring the session back to life.
-///
-/// The history route called `session.resume_from_storage`, which sets an
-/// ended session to `Active`, saves it, and runs the start checks, which can
-/// pull a container. A page that only showed the transcript revived the
-/// session every time it loaded.
-#[tokio::test]
-async fn reading_the_history_does_not_resume_the_session() {
-    use crate::test_support::{build_state, build_test_app, start_mock_daemon};
-    let (mock, client) = start_mock_daemon().await;
-    let response = build_test_app(build_state(client))
-        .oneshot(
-            axum::http::Request::builder()
-                .method("GET")
-                .uri("/api/session/test-session-001/history?limit=5&offset=2")
-                .body(axum::body::Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let methods = mock.received_methods();
-    assert!(
-        !methods
-            .iter()
-            .any(|m| m.as_str().starts_with("session.resume")),
-        "a history read must not resume the session: {methods:?}"
-    );
-    let params = mock
-        .received_params(RpcMethod::SessionHistory)
-        .unwrap_or_else(|| panic!("the history read must use session.history: {methods:?}"));
-    assert_eq!(params["session_id"], "test-session-001");
-    assert_eq!(params["limit"], 5);
-    assert_eq!(params["offset"], 2);
 }

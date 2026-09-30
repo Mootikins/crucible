@@ -17,31 +17,14 @@ use tower::ServiceExt;
 use super::shared::{build_state, build_test_app, start_mock_daemon};
 
 // =========================================================================
-// Chat Route Contract Tests (with mock daemon)
+// session.send_message Route Contract Tests (with mock daemon)
+//
+// `POST /api/chat/send` is gone ([[Simplification Plan#Step 19]] item 9): it
+// only forwarded `session.send_message`, so the browser calls
+// `rpc('session.send_message', ...)` through `POST /api/rpc/{method}` now.
+// The empty-message refusal moved to the browser (`sendChatMessage` in
+// `lib/api.ts`), so there is no server-side 400 case here any more.
 // =========================================================================
-
-#[tokio::test]
-async fn chat_send_empty_message_returns_400() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/chat/send")
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    json!({"session_id": "s1", "content": "  "}).to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
 
 #[tokio::test]
 async fn chat_send_valid_message_returns_200() {
@@ -53,7 +36,7 @@ async fn chat_send_valid_message_returns_200() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/chat/send")
+                .uri("/api/rpc/session.send_message")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({"session_id": "test-session-001", "content": "Hello"}).to_string(),
@@ -75,27 +58,10 @@ async fn chat_send_valid_message_returns_200() {
     );
 }
 
-#[tokio::test]
-async fn chat_send_missing_fields_returns_422() {
-    let (_mock, client) = start_mock_daemon().await;
-    let state = build_state(client);
-    let app = build_test_app(state);
-
-    // Missing content field
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/chat/send")
-                .header("content-type", "application/json")
-                .body(Body::from(json!({"session_id": "s1"}).to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-}
+// A message missing a required field (e.g. `content`) is now a generic
+// INVALID_PARAMS → 422, proved once for every RPC method by
+// `routes/rpc.rs`'s own `a_daemon_invalid_params_error_is_422`, not
+// re-proved per domain here.
 
 #[tokio::test]
 async fn chat_send_invalid_json_returns_error() {
@@ -107,7 +73,7 @@ async fn chat_send_invalid_json_returns_error() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/chat/send")
+                .uri("/api/rpc/session.send_message")
                 .header("content-type", "application/json")
                 .body(Body::from("not json"))
                 .unwrap(),

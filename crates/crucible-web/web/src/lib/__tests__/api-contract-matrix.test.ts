@@ -32,18 +32,18 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     ['/api/plugins/p%2Fx/option', () => api.getPluginOption('p/x', ['a']), { value: 7 }, 7, { action: 'get', path: ['a'] }],
     ['/api/plugins/p%2Fx/option', () => api.setPluginOption('p/x', ['a'], 7), {}, undefined, { action: 'set', path: ['a'], value: 7 }],
     ['/api/plugins/p%2Fx/option', () => api.executePluginOption('p/x', ['a']), {}, undefined, { action: 'execute', path: ['a'] }],
-    ['/api/session/s%2Fx/knobs', () => api.listKnobs('s/x'), { supported: [] }, { supported: [] }],
-    ['/api/session/s%2Fx/config/agent-options', () => api.listAgentOptions('s/x'), { options: [] }, { options: [] }],
-    ['/api/session/s%2Fx/config/agent-options', () => api.setAgentOption('s/x', 'o', 'v'), {}, undefined, { option_id: 'o', value: 'v' }],
-    ['/api/session/s%2Fx/knob', () => api.setSessionMode('s/x', 'plan'), {}, undefined, { knob: 'mode', value: 'plan' }],
-    ['/api/session/s%2Fx/kilns/connect', () => api.connectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
-    ['/api/session/s%2Fx/kilns/disconnect', () => api.disconnectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
+    ['/api/rpc/session.list_knobs', () => api.listKnobs('s/x'), { supported: [] }, { supported: [] }, { session_id: 's/x' }],
+    ['/api/rpc/session.list_agent_options', () => api.listAgentOptions('s/x'), { options: [] }, { options: [] }, { session_id: 's/x' }],
+    ['/api/rpc/session.set_agent_option', () => api.setAgentOption('s/x', 'o', 'v'), {}, undefined, { session_id: 's/x', option_id: 'o', value: 'v' }],
+    ['/api/rpc/session.knob.set', () => api.setSessionMode('s/x', 'plan'), {}, undefined, { session_id: 's/x', knob: 'mode', value: 'plan' }],
+    ['/api/rpc/session.connect_kiln', () => api.connectSessionKiln('s/x', 'k'), scope, scope, { session_id: 's/x', kiln: 'k' }],
+    ['/api/rpc/session.disconnect_kiln', () => api.disconnectSessionKiln('s/x', 'k'), scope, scope, { session_id: 's/x', kiln: 'k' }],
     // agents.list_profiles / models.list: `api.listAgents`/`listAllModels`
     // are gone; `lib/query/agents.ts`/`models.ts` call `rpc(...)` directly
     // now (Simplification Plan step 19), covered in their own query tests.
-    ['/api/session/s%2Fx/knob/context_strategy', () => api.getContextStrategy('s/x'), { knob: 'context_strategy', value: null }, null],
-    ['/api/session/s%2Fx/knob', () => api.setContextStrategy('s/x', 'truncate'), {}, undefined, { knob: 'context_strategy', value: 'truncate' }],
-    ['/api/session/s%2Fx/commands', () => api.listSessionCommands('s/x'), { commands: [{ name: 'help' }] }, [{ name: 'help' }]],
+    ['/api/rpc/session.knob.get', () => api.getContextStrategy('s/x'), { knob: 'context_strategy', value: null }, null, { session_id: 's/x', knob: 'context_strategy' }],
+    ['/api/rpc/session.knob.set', () => api.setContextStrategy('s/x', 'truncate'), {}, undefined, { session_id: 's/x', knob: 'context_strategy', value: 'truncate' }],
+    ['/api/rpc/session.commands', () => api.listSessionCommands('s/x'), { commands: [{ name: 'help' }] }, [{ name: 'help' }], { session_id: 's/x' }],
     // surface.list: `api.getSurfaces` is gone; `lib/query/surfaces.ts` calls
     // `rpc('surface.list', {})` directly (Simplification Plan step 19),
     // covered in `lib/query/__tests__/surfaces.test.ts`.

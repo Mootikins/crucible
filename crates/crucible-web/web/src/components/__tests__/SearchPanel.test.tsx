@@ -57,12 +57,16 @@ beforeEach(() => {
             ],
           };
     },
-    'GET /api/sessions/search': (request: Request) => {
-      const params = new URL(request.url).searchParams;
+    // `session.search` is an RPC method now ([[Simplification Plan#Step
+    // 19]] item 9); the browser calls `rpc('session.search', ...)` through
+    // `POST /api/rpc/session.search`, reading the query and the kiln scope
+    // off the JSON body instead of a query string.
+    'POST /api/rpc/session.search': async (request: Request) => {
+      const body = (await request.json()) as { query: string; kilns?: string[]; limit?: number };
       sessionSearches.push({
-        query: params.get('q') ?? '',
-        kilns: params.getAll('kiln'),
-        limit: params.get('limit'),
+        query: body.query,
+        kilns: body.kilns ?? [],
+        limit: body.limit === undefined ? null : String(body.limit),
       });
       // Matched LINES under `matches` — the route answers the transcript line
       // it found, not the session.

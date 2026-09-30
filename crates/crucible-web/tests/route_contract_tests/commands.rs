@@ -31,14 +31,18 @@ async fn run(app: axum::Router, line: &str) -> Value {
     serde_json::from_slice(&body).unwrap()
 }
 
-/// GET the session's command catalog.
+/// The session's command catalog, through `session.commands`
+/// (`POST /api/rpc/session.commands` now — [[Simplification Plan#Step 19]]).
 async fn catalog(app: axum::Router) -> Vec<Value> {
     let response = app
         .oneshot(
             Request::builder()
-                .method("GET")
-                .uri("/api/session/test-session-001/commands")
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/rpc/session.commands")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "session_id": "test-session-001" }).to_string(),
+                ))
                 .unwrap(),
         )
         .await

@@ -37,11 +37,19 @@ vi.mock('@/lib/turn', async (original) => ({
 // the daemon to speak emits a frame on it directly.
 
 const ID = 'test-session-1';
-const HISTORY_ROUTE = `GET /api/session/${ID}/history`;
-const SEND_ROUTE = 'POST /api/chat/send';
-/** Every session id some case binds a pane to. */
-const IDS = [ID, 'test-session-2', 'session-a', 'session-b'] as const;
+// Every one of these routes only forwarded one RPC row and is gone
+// ([[Simplification Plan#Step 19]] item 9); the browser calls
+// `rpc(method, params)` through `POST /api/rpc/{method}` now, so every
+// session's read or write shares one key and a handler tells sessions apart
+// by `session_id` in the request body rather than by a per-session URL.
+const HISTORY_ROUTE = 'POST /api/rpc/session.history';
+const SEND_ROUTE = 'POST /api/rpc/session.send_message';
 
+/** The `session_id` a `POST /api/rpc/{method}` call named in its body. */
+async function sessionIdOf(request: Request): Promise<string> {
+  const body = (await request.clone().json()) as { session_id: string };
+  return body.session_id;
+}
 const mockSession: Session = {
   session_id: 'test-session-1',
   type: 'chat',
@@ -104,29 +112,31 @@ function serve(): void {
   const routes: Record<string, (request: Request) => unknown> = {
     'GET /api/interactions/pending': () => ({ pending: [] }),
     'POST /api/rpc/kiln.list': () => [],
-    'GET /api/session/list': () => listAnswer(),
+    'POST /api/rpc/session.list': () => listAnswer(),
     [SEND_ROUTE]: async (request) => {
       sentTurns.push((await request.clone().json()) as { session_id: string; content: string });
       return sendAnswer();
     },
-  };
-  for (const id of IDS) {
     // A pane that binds reads the session it named: the record answers under
     // the id it was asked for, so a fixed record would hand every pane one
     // session whatever it bound to.
-    routes[`GET /api/session/${id}`] = () =>
-      id === ID ? sessionAnswer() : { ...mockSession, session_id: id };
-    routes[`GET /api/session/${id}/history`] = (request) => {
+    'POST /api/rpc/session.get': async (request) => {
+      const id = await sessionIdOf(request);
+      return id === ID ? sessionAnswer() : { ...mockSession, session_id: id };
+    },
+    [HISTORY_ROUTE]: async (request) => {
+      const id = await sessionIdOf(request);
+      const asked = (await request.clone().json()) as { limit?: number };
       historyAsked.push(id);
-      historyLimits.push(new URL(request.url).searchParams.get('limit'));
+      historyLimits.push(asked.limit === undefined ? null : String(asked.limit));
       return id === ID
         ? historyAnswer()
-        : { session_id: id, history: [], total_events: 0 };
-    };
-    routes[`GET /api/session/${id}/modes`] = () =>
-      modesOnce.length ? modesOnce.shift()!() : modesAnswer();
-    routes[`POST /api/session/${id}/mode`] = () => setModeAnswer();
-  }
+        : { session_id: id, history: [], total_events: 0, transcript: { as_of_seq: 0, items: [] } };
+    },
+    'POST /api/rpc/session.list_modes': () =>
+      modesOnce.length ? modesOnce.shift()!() : modesAnswer(),
+    'POST /api/rpc/session.knob.set': () => setModeAnswer(),
+  };
   routes[`POST /api/session/${ID}/command`] = async (request) => {
     sentCommands.push(((await request.clone().json()) as { command: string }).command);
     return { result: 'Context cleared', type: 'success' };

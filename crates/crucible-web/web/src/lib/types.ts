@@ -288,10 +288,10 @@ export type ChatMode = string;
  * The daemon degrades `writes` by what the agent can hold back before it
  * sends the row, so the value is what a note write does in this session.
  */
-export type ModeDescriptor = Schemas['ModeRow'];
+export type ModeDescriptor = Schemas['ModeDescriptor'];
 
-/** Response of `GET /api/session/{id}/modes`. */
-export type SessionModes = Schemas['SessionModesResponse'];
+/** What `session.list_modes` answers. */
+export type SessionModes = Schemas['SessionModes'];
 
 /**
  * Which settings a session can change.
@@ -299,7 +299,7 @@ export type SessionModes = Schemas['SessionModesResponse'];
  * Not every agent has every setting: ACP has no temperature and no token cap,
  * so a panel that draws a fixed list offers controls the daemon refuses.
  */
-export type SessionKnobSupport = Schemas['SessionKnobsResponse'];
+export type SessionKnobSupport = Schemas['SessionKnobSupport'];
 
 /**
  * A setting an external agent advertised for itself.
@@ -312,9 +312,9 @@ export type SessionKnobSupport = Schemas['SessionKnobsResponse'];
  * a string `current` and its `choices`, a `toggle` carries a boolean `current`
  * and no choices. Narrow on `kind` before reading either.
  */
-export type AgentConfigOption = Schemas['AgentOptionRow'];
+export type AgentConfigOption = Schemas['AgentConfigOption'];
 
-export type AgentConfigOptions = Schemas['AgentOptionsResponse'];
+export type AgentConfigOptions = Schemas['SessionListAgentOptionsReply'];
 
 /** Notification type. Client-local: the toast store's own vocabulary. */
 export type NotificationType = 'info' | 'warning' | 'error' | 'success';
@@ -653,16 +653,16 @@ export type SessionSearchResponse = Schemas['SessionSearchResponse'];
 
 /** Session scope echoed by kiln mutations. `workspace` is `null` when the
  * session has none — see `sessionWorkspace()`. */
-export type SessionScope = Schemas['SessionScopeResponse'];
+export type SessionScope = Schemas['SessionScopeReply'];
 
 /**
- * What `GET /api/session/{id}/history` answers.
+ * What `session.history` answers.
  *
  * It carries the session's `type`, `state` and `kilns` beside the events, so a
  * resume does not need a second `session.get` to learn what it resumed. The
  * web client draws its `transcript`, the daemon's fold of the events.
  */
-export type SessionHistoryResponse = Schemas['SessionHistoryResponse'];
+export type SessionHistoryResponse = Schemas['SessionHistoryReply'];
 
 /** One row of a plugin surface. The mark is declared; the client picks the
  * glyph. An unknown mark renders blank. */

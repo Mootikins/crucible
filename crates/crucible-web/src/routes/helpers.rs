@@ -6,14 +6,10 @@
 
 use crate::WebError;
 
-/// Response for model listings — the session-scoped `list_models` and the
-/// session-less `list_all_models` return the same `{ models: [...] }` shape.
-// `Deserialize` is for the route tests, which read a reply back into the
-// struct that wrote it. Nothing deserialises it on the wire.
-#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-pub(crate) struct ModelsResponse {
-    pub(crate) models: Vec<String>,
-}
+// `ModelsResponse` (the session-scoped `list_models` and the session-less
+// `list_all_models` reply shape) is gone: both routes only forwarded one RPC
+// row each and moved onto `rpc('session.list_models'/'models.list', ...)`
+// (Simplification Plan step 19 item 9).
 
 // =========================================================================
 // Stream versioning (Task G6)

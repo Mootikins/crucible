@@ -36,25 +36,21 @@ fn openapi_json_path() -> PathBuf {
 
 #[test]
 fn the_spec_describes_list_all_models() {
-    // `GET /api/models` only forwarded `models.list`, so it is gone
-    // ([[Simplification Plan#Step 19]]); the browser reaches it through
-    // `POST /api/rpc/{method}` now. `GET /api/session/{id}/models` (the
-    // session-scoped list) still answers the same `ModelsResponse` shape, so
-    // this test reads that operation instead.
+    // `GET /api/models` and `GET /api/session/{id}/models` each only
+    // forwarded one RPC row (`models.list`, `session.list_models`), so both
+    // are gone ([[Simplification Plan#Step 19]] items 9); the browser reaches
+    // them through `POST /api/rpc/{method}` now. Every RPC method's reply
+    // still names a component in the document (`RpcMethodSchemas`), even
+    // though the one generic route's own operation cannot ref a single
+    // method's schema, so this test reads `models.list`'s reply component
+    // directly instead of an operation.
     let spec = spec_json();
 
-    let operation = &spec["paths"]["/api/session/{id}/models"]["get"];
+    let schema = &spec["components"]["schemas"]["ModelsListReply"];
     assert!(
-        !operation.is_null(),
-        "the document has no GET /api/session/{{id}}/models operation"
+        !schema.is_null(),
+        "the document has no ModelsListReply component"
     );
-
-    let reference = operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
-        .as_str()
-        .unwrap_or_else(|| panic!("the 200 reply names no schema: {operation:#}"));
-    assert_eq!(reference, "#/components/schemas/ModelsResponse");
-
-    let schema = &spec["components"]["schemas"]["ModelsResponse"];
     assert_eq!(
         schema["properties"]["models"]["type"], "array",
         "`models` is not an array: {schema:#}"
@@ -896,11 +892,17 @@ fn every_route_the_router_serves_is_in_the_document() {
 
 /// The TypeScript modules that name `/api` paths as literals.
 ///
-/// `diff-api.ts` is here because the regex scan that this test replaces never
 /// read a module beside `api.ts`, and those paths went unchecked. The floor
 /// of `lib/diff-api.ts` is 0: its calls name a method through `rpc(...)`, not
 /// a path. It stays in the list, so a path that returns to it is still found.
-const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 54), ("lib/diff-api.ts", 0)];
+///
+/// `api.ts`'s own floor fell further as the session domain moved onto
+/// `rpc(method, params)` (Simplification Plan step 19 item 9): a call
+/// through `rpc()` names no `/api/...` literal for this scan to find, since
+/// every method shares the one `POST /api/rpc/{method}` path. The floor is
+/// still a sanity check on the scan itself, not a target — it drops further
+/// as more domains migrate.
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 33), ("lib/diff-api.ts", 0)];
 
 /// A path with its parameter names removed: `/api/session/{id}` and
 /// `/api/session/${id}` both read as `/api/session/{}`.

@@ -85,9 +85,9 @@ const rawSession = {
 // =============================================================================
 
 describe('sendChatMessage', () => {
-  it('sends POST to /api/chat/send and returns the outcome', async () => {
+  it('sends POST to /api/rpc/session.send_message and returns the outcome', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/chat/send': { body: { outcome: 'turn', message_id: 'msg-001' } },
+      'POST /api/rpc/session.send_message': { body: { outcome: 'turn', message_id: 'msg-001' } },
     });
     global.fetch = mockFetch;
 
@@ -96,18 +96,28 @@ describe('sendChatMessage', () => {
     expect(result).toEqual({ outcome: 'turn', message_id: 'msg-001' });
     expect(mockFetch).toHaveBeenCalledOnce();
     const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/chat/send');
+    expect(sent.path).toBe('/api/rpc/session.send_message');
     expect(sent.method).toBe('POST');
     expect(sent.body).toEqual({ session_id: 'ses-1', content: 'Hello world' });
   });
 
+  it('refuses a blank message with no comment before the daemon ever sees it', async () => {
+    const mockFetch = createMockFetch({});
+    global.fetch = mockFetch;
+
+    await expect(sendChatMessage('ses-1', '  ')).rejects.toThrow(
+      'Failed to send message: Message cannot be empty',
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('throws on non-ok response', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/chat/send': { status: 500 },
+      'POST /api/rpc/session.send_message': { status: 500 },
     });
     global.fetch = mockFetch;
 
-    await expect(sendChatMessage('ses-1', 'fail')).rejects.toThrow('Failed to send message: HTTP 500');
+    await expect(sendChatMessage('ses-1', 'fail')).rejects.toThrow(/RPC `session.send_message` failed/);
   });
 });
 
@@ -201,9 +211,9 @@ describe('createSession', () => {
 // =============================================================================
 
 describe('listSessions', () => {
-  it('fetches /api/session/list without filters and maps sessions', async () => {
+  it('calls session.list without filters and maps sessions', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/list': { body: { sessions: [rawSession], total: 1 } },
+      'POST /api/rpc/session.list': { body: { sessions: [rawSession], total: 1 } },
     });
     global.fetch = mockFetch;
 
@@ -212,29 +222,29 @@ describe('listSessions', () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0].session_id).toBe('ses-abc');
     expect(sessions[0].type).toBe('chat');
-    // Verify URL had no query string
-    const { url } = await mockFetch.sent(0);
-    expect(url).toBe('/api/session/list');
+    const sent = await mockFetch.sent(0);
+    expect(sent.path).toBe('/api/rpc/session.list');
+    expect(sent.body).toEqual({});
   });
 
   it.each([
-    { name: 'appends filter query params when provided', args: { kiln: 'my-kiln', state: 'active' }, expectedParams: ['kiln=my-kiln', 'state=active'] },
-    { name: 'appends workspace, type, includeArchived filters', args: { workspace: '/w', type: 'agent', includeArchived: true }, expectedParams: ['workspace=%2Fw', 'type=agent', 'include_archived=true'] },
-  ])('$name', async ({ args, expectedParams }: { args: Parameters<typeof listSessions>[0]; expectedParams: string[] }) => {
-    const mockFetch = createMockFetch({ 'GET /api/session/list': { body: { sessions: [], total: 0 } } });
+    { name: 'passes filter fields when provided', args: { kiln: 'my-kiln', state: 'active' }, expectedBody: { kilns: ['my-kiln'], state: 'active' } },
+    { name: 'passes workspace, type, includeArchived filters', args: { workspace: '/w', type: 'agent', includeArchived: true }, expectedBody: { workspace: '/w', type: 'agent', include_archived: true } },
+  ])('$name', async ({ args, expectedBody }: { args: Parameters<typeof listSessions>[0]; expectedBody: Record<string, unknown> }) => {
+    const mockFetch = createMockFetch({ 'POST /api/rpc/session.list': { body: { sessions: [], total: 0 } } });
     global.fetch = mockFetch;
     await listSessions(args);
-    const { url } = await mockFetch.sent(0);
-    for (const param of expectedParams) expect(url).toContain(param);
+    const { body } = await mockFetch.sent(0);
+    expect(body).toEqual(expect.objectContaining(expectedBody));
   });
 
   it('throws on non-ok response', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/list': { status: 503 },
+      'POST /api/rpc/session.list': { status: 503 },
     });
     global.fetch = mockFetch;
 
-    await expect(listSessions()).rejects.toThrow('Failed to list sessions: HTTP 503');
+    await expect(listSessions()).rejects.toThrow(/RPC `session.list` failed/);
   });
 });
 
@@ -243,9 +253,9 @@ describe('listSessions', () => {
 // =============================================================================
 
 describe('getSession', () => {
-  it('fetches /api/session/{id} and maps response', async () => {
+  it('calls session.get and maps response', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/ses-abc': { body: rawSession },
+      'POST /api/rpc/session.get': { body: rawSession },
     });
     global.fetch = mockFetch;
 
@@ -253,6 +263,7 @@ describe('getSession', () => {
 
     expect(session.session_id).toBe('ses-abc');
     expect(session.type).toBe('chat');
+    expect((await mockFetch.sent(0)).body).toEqual({ session_id: 'ses-abc' });
   });
 
   // `session.get` answers the NESTED agent record (`agent.model`, `agent.mode`)
@@ -261,7 +272,7 @@ describe('getSession', () => {
   // reads `agent.model`.
   it('carries the nested agent record session.get answers', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/ses-get': {
+      'POST /api/rpc/session.get': {
         body: {
           session_id: 'ses-get',
           type: 'chat',
@@ -316,12 +327,12 @@ describe('executeCommand', () => {
 // =============================================================================
 
 describe('listProviders', () => {
-  it('fetches /api/providers and returns provider array', async () => {
+  it('calls providers.list and returns provider array', async () => {
     const providers = [
       { name: 'ollama', provider_type: 'ollama', available: true, default_model: 'mistral', models: ['mistral'] },
     ];
     const mockFetch = createMockFetch({
-      'GET /api/providers': { body: { providers } },
+      'POST /api/rpc/providers.list': { body: { providers } },
     });
     global.fetch = mockFetch;
 
@@ -332,11 +343,11 @@ describe('listProviders', () => {
 
   it('throws on non-ok response', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/providers': { status: 500 },
+      'POST /api/rpc/providers.list': { status: 500 },
     });
     global.fetch = mockFetch;
 
-    await expect(listProviders()).rejects.toThrow('Failed to list providers: HTTP 500');
+    await expect(listProviders()).rejects.toThrow(/RPC `providers.list` failed/);
   });
 });
 
@@ -345,17 +356,17 @@ describe('listProviders', () => {
 // =============================================================================
 
 describe('switchModel', () => {
-  it('PUTs /api/session/{id}/knob with the model knob', async () => {
+  it('calls session.knob.set with the model knob', async () => {
     const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/knob': { body: {} },
+      'POST /api/rpc/session.knob.set': { body: {} },
     });
     global.fetch = mockFetch;
 
     await switchModel('ses-1', 'openai:gpt-4');
 
     const sent = await mockFetch.sent(0);
-    expect(sent.method).toBe('PUT');
-    expect(sent.body).toEqual({ knob: 'model', value: 'openai:gpt-4' });
+    expect(sent.method).toBe('POST');
+    expect(sent.body).toEqual({ session_id: 'ses-1', knob: 'model', value: 'openai:gpt-4' });
   });
 });
 
@@ -401,7 +412,7 @@ describe('searchSessions', () => {
   // field the panel read was undefined.
   it('reads the matched lines the route answers', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/sessions/search': {
+      'POST /api/rpc/session.search': {
         body: { matches: [{ session_id: 'ses-abc', line: 12, context: 'the refactor' }], total: 1 },
       },
     });
@@ -414,15 +425,15 @@ describe('searchSessions', () => {
     expect(found.matches[0].line).toBe(12);
     expect(found.matches[0].context).toBe('the refactor');
     expect(found.total).toBe(1);
-    const { url } = await mockFetch.sent(0);
-    expect(url).toContain('q=refactor');
+    const { body } = await mockFetch.sent(0);
+    expect(body).toEqual(expect.objectContaining({ query: 'refactor' }));
   });
 
   // An unscoped search searches nothing, and the daemon says so in a sentence
   // the panel has to be able to show.
   it('carries the daemon note an unscoped search answers', async () => {
     global.fetch = createMockFetch({
-      'GET /api/sessions/search': {
+      'POST /api/rpc/session.search': {
         body: { matches: [], total: 0, note: "Specify 'kilns' to scope the search" },
       },
     });
@@ -433,32 +444,31 @@ describe('searchSessions', () => {
     expect(found.note).toBe("Specify 'kilns' to scope the search");
   });
 
-  it('appends kiln and limit when provided', async () => {
+  it('sends kiln and limit when provided', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/sessions/search': { body: { matches: [], total: 0 } },
+      'POST /api/rpc/session.search': { body: { matches: [], total: 0 } },
     });
     global.fetch = mockFetch;
 
     await searchSessions('foo', 'my-kiln', 10);
 
-    const { url } = await mockFetch.sent(0);
-    expect(url).toContain('kiln=my-kiln');
-    expect(url).toContain('limit=10');
+    const { body } = await mockFetch.sent(0);
+    expect(body).toEqual({ query: 'foo', kilns: ['my-kiln'], limit: 10 });
   });
 
   // Scope is kiln-set overlap, so a caller cleared for several kilns states
-  // all of them — `kiln` repeats rather than one member standing in.
-  it('repeats kiln for every kiln in the scope', async () => {
+  // all of them — the whole array travels in one JSON body now, not a
+  // repeated query key.
+  it('sends every kiln in the scope', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/sessions/search': { body: { matches: [], total: 0 } },
+      'POST /api/rpc/session.search': { body: { matches: [], total: 0 } },
     });
     global.fetch = mockFetch;
 
     await searchSessions('foo', ['/kilns/a', '/kilns/b']);
 
-    const { url } = await mockFetch.sent(0);
-    expect(url).toContain(`kiln=${encodeURIComponent('/kilns/a')}`);
-    expect(url).toContain(`kiln=${encodeURIComponent('/kilns/b')}`);
+    const { body } = await mockFetch.sent(0);
+    expect(body).toEqual(expect.objectContaining({ kilns: ['/kilns/a', '/kilns/b'] }));
   });
 });
 
@@ -467,9 +477,9 @@ describe('searchSessions', () => {
 // =============================================================================
 
 describe('listModels', () => {
-  it('fetches models for a session and returns string array', async () => {
+  it('calls session.list_models and returns string array', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/models': { body: { models: ['a', 'b', 'c'] } },
+      'POST /api/rpc/session.list_models': { body: { models: ['a', 'b', 'c'] } },
     });
     global.fetch = mockFetch;
 
@@ -671,7 +681,7 @@ describe('getSessionStatus', () => {
     const oci = { ...shared, id: 'oci', plugin: 'oci', text: 'sandboxed: alpine:latest', color_group: 'hue-4' };
     const weather = { ...shared, id: 'weather', plugin: 'weather', text: 'storm warning', color_group: 'warn' };
     global.fetch = createMockFetch({
-      'GET /api/session/ses-1/status': {
+      'POST /api/rpc/session.status': {
         body: {
           status: [
             oci,
@@ -684,13 +694,11 @@ describe('getSessionStatus', () => {
     expect(await getSessionStatus('ses-1')).toEqual([oci, weather]);
   });
 
-  it('encodes the session id and throws on non-ok', async () => {
-    const mockFetch = createMockFetch({ 'GET /api/session/a%2Fb/status': { status: 502 } });
+  it('sends the session id in the body and throws on non-ok', async () => {
+    const mockFetch = createMockFetch({ 'POST /api/rpc/session.status': { status: 502 } });
     global.fetch = mockFetch;
-    await expect(getSessionStatus('a/b')).rejects.toThrow(
-      'Failed to load session status: HTTP 502',
-    );
-    expect((await mockFetch.sent(0)).path).toBe('/api/session/a%2Fb/status');
+    await expect(getSessionStatus('a/b')).rejects.toThrow(/RPC `session.status` failed/);
+    expect((await mockFetch.sent(0)).body).toEqual({ session_id: 'a/b' });
   });
 });
 
@@ -700,34 +708,84 @@ describe('getSessionStatus', () => {
 
 describe('session lifecycle endpoints', () => {
   it.each([
-    { name: 'pauseSession POSTs to /pause', fn: pauseSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/pause', method: 'POST' },
-    { name: 'resumeSession POSTs to /resume', fn: resumeSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/resume', method: 'POST' },
-    { name: 'endSession POSTs to /end', fn: endSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/end', method: 'POST' },
-    { name: 'deleteSession DELETEs the session', fn: deleteSession as (id: string) => Promise<unknown>, route: 'DELETE /api/session/ses-1', method: 'DELETE' },
-    { name: 'archiveSession POSTs to /archive', fn: archiveSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/archive', method: 'POST' },
-    { name: 'unarchiveSession POSTs to /unarchive', fn: unarchiveSession as (id: string) => Promise<unknown>, route: 'POST /api/session/ses-1/unarchive', method: 'POST' },
-  ])('$name', async ({ fn, route, method }) => {
+    { name: 'pauseSession calls session.pause', fn: pauseSession as (id: string) => Promise<unknown>, route: 'POST /api/rpc/session.pause' },
+    { name: 'unarchiveSession calls session.unarchive', fn: unarchiveSession as (id: string) => Promise<unknown>, route: 'POST /api/rpc/session.unarchive' },
+  ])('$name', async ({ fn, route }) => {
     const mockFetch = createMockFetch({ [route]: { body: {} } });
     global.fetch = mockFetch;
     await expect(fn('ses-1')).resolves.toBeUndefined();
     expect(mockFetch).toHaveBeenCalledOnce();
     const sent = await mockFetch.sent(0);
     expect(sent.path).toBe(route.split(' ')[1]);
-    expect(sent.method).toBe(method);
+    expect(sent.body).toEqual({ session_id: 'ses-1' });
+  });
+
+  it('resumeSession POSTs to /resume', async () => {
+    const mockFetch = createMockFetch({ 'POST /api/session/ses-1/resume': { body: {} } });
+    global.fetch = mockFetch;
+    await expect(resumeSession('ses-1')).resolves.toBeUndefined();
+    const sent = await mockFetch.sent(0);
+    expect(sent.path).toBe('/api/session/ses-1/resume');
+    expect(sent.method).toBe('POST');
+  });
+
+  // `endSession`, `archiveSession` and `deleteSession` keep their own REST
+  // routes ([[Simplification Plan#Step 19]] item 9): each also releases this
+  // web process's own SSE broker entry for the session, which a plain
+  // `rpc()` forward cannot reach.
+  it('endSession POSTs to /end', async () => {
+    const mockFetch = createMockFetch({ 'POST /api/session/ses-1/end': { body: {} } });
+    global.fetch = mockFetch;
+    await expect(endSession('ses-1')).resolves.toBeUndefined();
+    const sent = await mockFetch.sent(0);
+    expect(sent.path).toBe('/api/session/ses-1/end');
+    expect(sent.method).toBe('POST');
+  });
+
+  it('archiveSession POSTs to /archive', async () => {
+    const mockFetch = createMockFetch({ 'POST /api/session/ses-1/archive': { body: {} } });
+    global.fetch = mockFetch;
+    await expect(archiveSession('ses-1')).resolves.toBeUndefined();
+    const sent = await mockFetch.sent(0);
+    expect(sent.path).toBe('/api/session/ses-1/archive');
+    expect(sent.method).toBe('POST');
+  });
+
+  it('deleteSession DELETEs the session', async () => {
+    const mockFetch = createMockFetch({ 'DELETE /api/session/ses-1': { body: {} } });
+    global.fetch = mockFetch;
+    await expect(deleteSession('ses-1')).resolves.toBeUndefined();
+    const sent = await mockFetch.sent(0);
+    expect(sent.path).toBe('/api/session/ses-1');
+    expect(sent.method).toBe('DELETE');
   });
 
   it('cancelSession returns the cancelled bool', async () => {
     global.fetch = createMockFetch({
-      'POST /api/session/ses-1/cancel': { body: { cancelled: true } },
+      'POST /api/rpc/session.cancel': { body: { cancelled: true } },
     });
     expect(await cancelSession('ses-1')).toBe(true);
   });
 
   it('pauseSession throws on error', async () => {
     global.fetch = createMockFetch({
-      'POST /api/session/ses-1/pause': { status: 500 },
+      'POST /api/rpc/session.pause': { status: 500 },
     });
-    await expect(pauseSession('ses-1')).rejects.toThrow('Failed to pause session: HTTP 500');
+    await expect(pauseSession('ses-1')).rejects.toThrow(/RPC `session.pause` failed/);
+  });
+
+  it('endSession throws on error', async () => {
+    global.fetch = createMockFetch({
+      'POST /api/session/ses-1/end': { status: 500 },
+    });
+    await expect(endSession('ses-1')).rejects.toThrow('Failed to end session: HTTP 500');
+  });
+
+  it('archiveSession throws on error', async () => {
+    global.fetch = createMockFetch({
+      'POST /api/session/ses-1/archive': { status: 500 },
+    });
+    await expect(archiveSession('ses-1')).rejects.toThrow('Failed to archive session: HTTP 500');
   });
 
   it('deleteSession throws on error', async () => {
@@ -739,9 +797,9 @@ describe('session lifecycle endpoints', () => {
 
   it('cancelSession throws on error', async () => {
     global.fetch = createMockFetch({
-      'POST /api/session/ses-1/cancel': { status: 500 },
+      'POST /api/rpc/session.cancel': { status: 500 },
     });
-    await expect(cancelSession('ses-1')).rejects.toThrow('Failed to cancel session: HTTP 500');
+    await expect(cancelSession('ses-1')).rejects.toThrow(/RPC `session.cancel` failed/);
   });
 });
 
@@ -750,15 +808,15 @@ describe('session lifecycle endpoints', () => {
 // =============================================================================
 
 describe('session title endpoints', () => {
-  it('setSessionTitle PUTs the title', async () => {
+  it('setSessionTitle calls session.set_title', async () => {
     const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/title': { body: {} },
+      'POST /api/rpc/session.set_title': { body: {} },
     });
     global.fetch = mockFetch;
     await setSessionTitle('ses-1', 'New title');
     const sent = await mockFetch.sent(0);
-    expect(sent.method).toBe('PUT');
-    expect(sent.body).toEqual({ title: 'New title' });
+    expect(sent.method).toBe('POST');
+    expect(sent.body).toEqual({ session_id: 'ses-1', title: 'New title' });
   });
 
 });
@@ -769,20 +827,19 @@ describe('session title endpoints', () => {
 
 describe('getSessionHistory', () => {
   it.each([
-    { name: 'passes limit/offset and returns parsed response', limit: 50, offset: 100, expectPresent: ['limit=50', 'offset=100'], expectAbsent: ['kiln'] as string[] },
-    { name: 'omits limit/offset when undefined', expectPresent: [] as string[], expectAbsent: ['limit', 'offset'] },
-  ])('$name', async ({ limit, offset, expectPresent, expectAbsent }: { limit?: number; offset?: number; expectPresent: string[]; expectAbsent: string[] }) => {
-    const mockFetch = createMockFetch({ 'GET /api/session/ses-1/history': { body: { session_id: 'ses-1', history: [], total_events: 0 } } });
+    { name: 'passes limit/offset', limit: 50, offset: 100, expectedBody: { limit: 50, offset: 100 } },
+    { name: 'omits limit/offset when undefined', expectedBody: {} },
+  ])('$name', async ({ limit, offset, expectedBody }: { limit?: number; offset?: number; expectedBody: Record<string, unknown> }) => {
+    const mockFetch = createMockFetch({ 'POST /api/rpc/session.history': { body: { session_id: 'ses-1', history: [], total_events: 0 } } });
     global.fetch = mockFetch;
     await getSessionHistory('ses-1', limit, offset);
-    const { url } = await mockFetch.sent(0);
-    for (const p of expectPresent) expect(url).toContain(p);
-    for (const p of expectAbsent) expect(url).not.toContain(p);
+    const { body } = await mockFetch.sent(0);
+    expect(body).toEqual({ session_id: 'ses-1', ...expectedBody });
   });
 
   it('forwards AbortSignal to fetch', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/ses-1/history': {
+      'POST /api/rpc/session.history': {
         body: { session_id: 'ses-1', history: [], total_events: 0 },
       },
     });
@@ -805,18 +862,22 @@ describe('getSessionHistory', () => {
 describe('precognition endpoints', () => {
   it('getPrecognition returns the flag', async () => {
     global.fetch = createMockFetch({
-      'GET /api/session/ses-1/knob/precognition': { body: { knob: 'precognition', value: true } },
+      'POST /api/rpc/session.knob.get': { body: { knob: 'precognition', value: true } },
     });
     expect(await getPrecognition('ses-1')).toBe(true);
   });
 
-  it('setPrecognition PUTs the precognition knob', async () => {
+  it('setPrecognition calls session.knob.set with the precognition knob', async () => {
     const mockFetch = createMockFetch({
-      'PUT /api/session/ses-1/knob': { body: {} },
+      'POST /api/rpc/session.knob.set': { body: {} },
     });
     global.fetch = mockFetch;
     await setPrecognition('ses-1', false);
-    expect((await mockFetch.sent(0)).body).toEqual({ knob: 'precognition', value: false });
+    expect((await mockFetch.sent(0)).body).toEqual({
+      session_id: 'ses-1',
+      knob: 'precognition',
+      value: false,
+    });
   });
 
 });

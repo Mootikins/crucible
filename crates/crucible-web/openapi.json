@@ -406,41 +406,6 @@
         }
       }
     },
-    "/api/chat/send": {
-      "post": {
-        "summary": "Start a turn in a session, or run the daemon command that the message\nnames.",
-        "description": "A turn answers its `message_id`: the browser correlates the SSE events\nthat follow with it. A command that ran without a turn, such as a plugin\ncommand, answers its result instead.",
-        "operationId": "send_message",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SendMessageRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SendOutcome"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The message is empty and attaches no comment"
-          },
-          "502": {
-            "description": "The daemon could not accept the message"
-          }
-        }
-      }
-    },
     "/api/config": {
       "get": {
         "summary": "`GET /api/config` — the effective config, its per-leaf provenance, and the\ntwo fields this route has always served.",
@@ -1371,28 +1336,6 @@
         }
       }
     },
-    "/api/providers": {
-      "get": {
-        "summary": "Cached in the daemon (`providers.list`,\n`crate::agent_manager::CATALOG_CACHE_TTL`) — provider probing takes ~0.7s\nand must not gate every splash render. Every caller of that RPC method\nshares the cache now; it used to be a cache in this crate alone. Shape:\n`{providers: [ProviderInfo]}`.",
-        "description": "Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and\nforward the raw directory to the daemon, which fed it to\n`find_workspace_and_resolve_classification` — so an arbitrary directory\ncould influence which providers a caller was told about, an input door\nstanding outside the registry floor every other kiln input now passes\nthrough. Nothing ever sent it (`listProviders()` takes no argument), so\nconverting it to a name would have preserved a door for no caller.",
-        "operationId": "list_providers",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProvidersResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the providers"
-          }
-        }
-      }
-    },
     "/api/recents": {
       "get": {
         "summary": "`GET /api/recents` — the files this server last recorded as opened.",
@@ -1602,102 +1545,7 @@
         }
       }
     },
-    "/api/session/list": {
-      "get": {
-        "operationId": "list_sessions",
-        "parameters": [
-          {
-            "name": "kiln",
-            "in": "query",
-            "description": "The kiln's registry NAME. A query string carrying a path is a 422 —\nwhich is the honest answer, because a path names no kiln.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "include_archived",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionListReply"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The `kiln` query carried a path rather than a registry name"
-          },
-          "502": {
-            "description": "The daemon could not list the sessions"
-          }
-        }
-      }
-    },
     "/api/session/{id}": {
-      "get": {
-        "operationId": "get_session",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to read",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionDetail"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not read the session"
-          }
-        }
-      },
       "delete": {
         "operationId": "delete_session",
         "parameters": [
@@ -1765,70 +1613,6 @@
         }
       }
     },
-    "/api/session/{id}/auto-title": {
-      "post": {
-        "summary": "Auto-generate a title for a session from its conversation history.",
-        "description": "Delegates to the daemon's `session.generate_title`, which produces a\ntopic-based title via the session's own LLM provider (falling back to\nfirst-message truncation daemon-side). Idempotent: an already-titled\nsession returns its existing title.",
-        "operationId": "auto_title",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to title",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TitleResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not generate a title"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/cancel": {
-      "post": {
-        "operationId": "cancel_session",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose turn to cancel",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CancelledResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not cancel the turn"
-          }
-        }
-      }
-    },
     "/api/session/{id}/command": {
       "post": {
         "summary": "Run one built-in command in a session.",
@@ -1868,222 +1652,6 @@
           },
           "502": {
             "description": "The daemon could not serve the command"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/commands": {
-      "get": {
-        "summary": "`GET /api/session/{id}/commands` — the commands the composer completes.",
-        "description": "The daemon answers the catalog of the session: built-in, mode, plugin,\nskill and agent commands. A `commands_changed` event on the session's\nstream says when to ask again.",
-        "operationId": "list_commands",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose commands to list",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommandsResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the commands"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/config/agent-options": {
-      "get": {
-        "summary": "The settings this session's external agent advertised for itself.",
-        "description": "These belong to the agent, not to Crucible: a reasoning-level selector, a\ntoggle it invented. The daemon passes them through, so the browser renders\nwhatever this particular agent happens to have.",
-        "operationId": "list_agent_options",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose agent is asked",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentOptionsResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon knows no such session"
-          },
-          "502": {
-            "description": "The daemon could not ask the agent"
-          }
-        }
-      },
-      "post": {
-        "operationId": "set_agent_option",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose agent is set",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetAgentOptionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The agent knows no such option, or refuses the value"
-          },
-          "502": {
-            "description": "The daemon could not reach the agent"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/config/plugin-approvals": {
-      "get": {
-        "operationId": "list_plugin_approvals",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PluginApprovalsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/session/{id}/config/plugins/{plugin}/approval": {
-      "get": {
-        "operationId": "get_plugin_approval",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "plugin",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PluginApprovalResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "set_plugin_approval",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "plugin",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetPluginApprovalRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -2150,436 +1718,6 @@
         }
       }
     },
-    "/api/session/{id}/history": {
-      "get": {
-        "operationId": "get_session_history",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to replay",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "How many items to return.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "description": "How many items to skip.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionHistoryResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not read the transcript"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/kilns/connect": {
-      "post": {
-        "summary": "Updated session scope, echoed by kiln/workspace mutations.",
-        "operationId": "connect_kiln",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to attach the kiln to",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NamedKiln"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionScopeResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body named a path rather than a registry name"
-          },
-          "502": {
-            "description": "The daemon could not attach the kiln"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/kilns/disconnect": {
-      "post": {
-        "operationId": "disconnect_kiln",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to detach the kiln from",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NamedKiln"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionScopeResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The body named a path rather than a registry name"
-          },
-          "502": {
-            "description": "The daemon could not detach the kiln"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/knob": {
-      "put": {
-        "summary": "Write one session knob — model, mode, context strategy, precognition or\nplugin turn limit. The body names its own knob (`KnobValue`'s tag), so\none route serves all five: a knob added later needs no sibling route.",
-        "operationId": "set_knob",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to configure",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnobValue"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The session cannot carry the knob, or the value is invalid"
-          },
-          "502": {
-            "description": "The daemon could not store the value"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/knob/{knob}": {
-      "get": {
-        "summary": "Read one session knob, in the same [`crucible_core::types::KnobValue`]\nshape [`set_knob`] writes.",
-        "operationId": "get_knob",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to read",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "knob",
-            "in": "path",
-            "description": "The knob to read: model, mode, context_strategy, precognition or plugin_turn_limit",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnobValue"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The session cannot carry the knob"
-          },
-          "502": {
-            "description": "The daemon could not read the value"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/knobs": {
-      "get": {
-        "summary": "Which settings this session can change.",
-        "description": "The browser drew a fixed set of controls, which was wrong for every ACP\nsession: the protocol has no temperature and no token cap, so the panel\noffered a slider for each that changed nothing. As with modes, the web\nlayer adds nothing — the answer is the daemon's, so the TUI and the\nbrowser cannot disagree about what a session can do.",
-        "operationId": "list_knobs",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose settings to describe",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionKnobsResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not describe the settings"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/models": {
-      "get": {
-        "operationId": "list_models",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose models to list",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelsResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the models"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/modes": {
-      "get": {
-        "summary": "The session's modes, forwarded from the daemon unchanged.",
-        "description": "The web layer deliberately adds nothing here: mode labels and ordering are\nthe daemon's, so the TUI and the browser cannot drift into showing\ndifferent names for the same mode.",
-        "operationId": "list_modes",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose modes to list",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionModesResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not list the modes"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/notifications": {
-      "get": {
-        "summary": "The notifications of a session. A browser reads them once when it\nattaches, and then follows `notification_added` and\n`notification_dismissed` on the event stream.",
-        "operationId": "session_notifications",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose notifications to read",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionNotificationsResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not read the notifications"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/notifications/{notification_id}/dismiss": {
-      "post": {
-        "summary": "The user closed a notification in this session. The daemon drops a\nnotification of the session. A shared notification stays for the other\nsessions, and this session does not see it again.",
-        "operationId": "dismiss_session_notification",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session that closes the notification",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "notification_id",
-            "in": "path",
-            "description": "The notification to close",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DismissSessionNotificationResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not close the notification"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/pause": {
-      "post": {
-        "operationId": "pause_session",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to pause",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionLifecycleResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not pause the session"
-          }
-        }
-      }
-    },
     "/api/session/{id}/resume": {
       "post": {
         "operationId": "resume_session",
@@ -2610,213 +1748,6 @@
           },
           "502": {
             "description": "The daemon could not resume the session"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/status": {
-      "get": {
-        "summary": "Proxy `session.status` verbatim.",
-        "description": "The daemon answers `{\"status\": [StatusDisplayItem, …]}`, ordered by\npriority. Nothing here reads an id: items are generic precisely so the\nchrome owner renders any plugin's state, and a match on a known id would\nbe this crate learning what one particular plugin does. Every future\nplugin gets the channel for free, so long as this stays a passthrough.\n\nA session that published nothing — the overwhelmingly common case, and any\nsession the daemon has never seen — comes back as an empty array, not an\nerror.",
-        "operationId": "session_status",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose slots to read",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionStatusResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not read the slots"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/title": {
-      "put": {
-        "operationId": "set_session_title",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to rename",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Title"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not set the title"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/unarchive": {
-      "post": {
-        "operationId": "unarchive_session",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to unarchive",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ArchiveResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No session of that id"
-          },
-          "502": {
-            "description": "The daemon could not unarchive the session"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/workspace": {
-      "put": {
-        "operationId": "set_workspace",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session whose workspace to set",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WorkspaceChoice"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionScopeResponse"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The daemon could not set the workspace"
-          }
-        }
-      }
-    },
-    "/api/sessions/search": {
-      "get": {
-        "summary": "`GET /api/sessions/search?q=…&kiln=…&kiln=…&limit=…`",
-        "description": "`kiln` repeats. Search scope is kiln-set *overlap*, so the caller states\nevery kiln it is cleared for rather than one member standing in for the\nrest — one member matches only the sessions sharing that one. Parsed from\nthe raw pairs because `serde_urlencoded`, which `Query` uses, cannot\ndeserialize a repeated key into a sequence.",
-        "operationId": "search_sessions",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "description": "The substring to match, case-insensitive",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "kiln",
-            "in": "query",
-            "description": "The caller's whole kiln set, one `kiln` key per member",
-            "required": false,
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "How many matches to return. The default is 20",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionSearchResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "No `q`, or every `kiln` named an unusable name"
-          },
-          "502": {
-            "description": "The daemon could not run the search"
           }
         }
       }
@@ -3099,24 +2030,6 @@
           }
         }
       },
-      "AgentOptionChoiceRow": {
-        "type": "object",
-        "description": "One choice in an agent's select option.",
-        "required": [
-          "value",
-          "name"
-        ],
-        "properties": {
-          "value": {
-            "type": "string",
-            "description": "The value to send back when this choice is picked."
-          },
-          "name": {
-            "type": "string",
-            "description": "What to show for it."
-          }
-        }
-      },
       "AgentOptionKind": {
         "oneOf": [
           {
@@ -3169,121 +2082,6 @@
           }
         ],
         "description": "The shape of an agent option's control.\n\nACP's `SessionConfigKind` is `#[non_exhaustive]`; a kind this does not\ncover is dropped rather than guessed at, because a control rendered from a\nshape nobody understood is worse than no control."
-      },
-      "AgentOptionKindRow": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "Pick one of several values.",
-            "required": [
-              "current",
-              "choices",
-              "kind"
-            ],
-            "properties": {
-              "current": {
-                "type": "string",
-                "description": "The value the agent reports as current."
-              },
-              "choices": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/AgentOptionChoiceRow"
-                },
-                "description": "Every value it accepts, in the order it listed them."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "select"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "On or off.",
-            "required": [
-              "current",
-              "kind"
-            ],
-            "properties": {
-              "current": {
-                "type": "boolean",
-                "description": "The value the agent reports as current."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "toggle"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "The control an agent option asks for.\n\nA tagged union rather than a `kind` string beside a loose `current`: a\nselect carries choices and a string, a toggle carries a bool, and the\nbrowser's hand-written type declared `current: string | boolean` with\noptional choices because nothing described the pairing."
-      },
-      "AgentOptionRow": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/AgentOptionKindRow",
-            "description": "The control to draw, and its current value."
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "name",
-              "description",
-              "category"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "description": "The id to name when setting the option."
-              },
-              "name": {
-                "type": "string",
-                "description": "What to label the control."
-              },
-              "description": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Help text the agent supplied, or `null`. Always written, so\n`required` rather than optional."
-              },
-              "category": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "The agent's own category string, or `null`. Presentation only."
-              }
-            }
-          }
-        ],
-        "description": "One setting an external agent advertised for itself."
-      },
-      "AgentOptionsResponse": {
-        "type": "object",
-        "description": "What `GET /api/session/{id}/config/agent-options` answers.",
-        "required": [
-          "session_id",
-          "options"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "options": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AgentOptionRow"
-            },
-            "description": "Empty until the first message, and empty for an internal agent always:\nan agent advertises nothing until the daemon connects to it."
-          }
-        }
       },
       "AgentProfileEntry": {
         "type": "object",
@@ -3421,7 +2219,7 @@
       },
       "ArchiveResponse": {
         "type": "object",
-        "description": "Response for session archive/unarchive status changes.",
+        "description": "Response for session archive/unarchive status changes. `unarchive_session`\nis a pure forward now, but `archive_session` still builds this reply\nitself (see the module doc) for the `close_event_streams` side effect, so\nthe type stays.",
         "required": [
           "archived"
         ],
@@ -4155,18 +2953,6 @@
           "search"
         ]
       },
-      "CancelledResponse": {
-        "type": "object",
-        "description": "Response for session cancellation.",
-        "required": [
-          "cancelled"
-        ],
-        "properties": {
-          "cancelled": {
-            "type": "boolean"
-          }
-        }
-      },
       "CanonicalToolCall": {
         "type": "object",
         "description": "One tool call, classified.",
@@ -4664,21 +3450,6 @@
               "null"
             ],
             "description": "The session the browser opens, for `/resume <id>`."
-          }
-        }
-      },
-      "CommandsResponse": {
-        "type": "object",
-        "description": "The command catalog of one session.",
-        "required": [
-          "commands"
-        ],
-        "properties": {
-          "commands": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SessionCommand"
-            }
           }
         }
       },
@@ -5640,19 +4411,6 @@
           }
         ],
         "description": "Where the two sides of a diffset come from.\n\nThis set is closed. The daemon has one exhaustive match on it, and the web\nclient has one."
-      },
-      "DismissSessionNotificationResponse": {
-        "type": "object",
-        "description": "What `POST /api/session/{id}/notifications/{notification_id}/dismiss`\nanswers.",
-        "required": [
-          "success"
-        ],
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "description": "True when the daemon dropped the notification of the session, or hid\na shared notification for this session. False when the notification\ndoes not reach the session."
-          }
-        }
       },
       "EditRefusal": {
         "oneOf": [
@@ -8014,22 +6772,6 @@
           }
         }
       },
-      "KilnName": {
-        "type": "object",
-        "description": "A kiln name: the key of a `[kilns]` entry in the user's config.\n\nGuaranteed by construction to be non-empty, at most [`MAX_LEN`] bytes, drawn\nfrom `[A-Za-z0-9._- ]`, neither starting nor ending with a space, and not to\nstart with a dot — so it is never `.`, `..`, a hidden file, or anything\nholding a path separator.\n\nTwo strings, not one, and the pair is the whole design: `display` is what\nthe user wrote and what every renderer shows; `key` is that text with ASCII\ncase folded, and it is the only field [`PartialEq`], [`Hash`] and [`Ord`]\nread. So a map keyed by a name answers to any casing of it, and still hands\nback the casing its owner chose.",
-        "required": [
-          "display",
-          "key"
-        ],
-        "properties": {
-          "display": {
-            "type": "string"
-          },
-          "key": {
-            "type": "string"
-          }
-        }
-      },
       "KilnNotesIndexedPayload": {
         "type": "object",
         "required": [
@@ -8319,24 +7061,6 @@
         "properties": {
           "knob": {
             "$ref": "#/components/schemas/SessionKnob"
-          }
-        }
-      },
-      "KnobRow": {
-        "type": "object",
-        "description": "One setting and whether this session can change it.\n\nMirrors `crucible_core::types::KnobDescriptor`, for the reason\n[`WriteModeRow`] gives.",
-        "required": [
-          "id",
-          "supported"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "The knob id, such as `context_strategy`."
-          },
-          "supported": {
-            "type": "boolean",
-            "description": "`false` means the control should not be offered: the daemon refuses\nthe call."
           }
         }
       },
@@ -9264,60 +7988,9 @@
           }
         }
       },
-      "ModeRow": {
-        "type": "object",
-        "description": "One mode a session may enter.\n\nMirrors `crucible_core::types::mode::ModeDescriptor` field for field, for\nthe reason [`WriteModeRow`] gives.",
-        "required": [
-          "id",
-          "name",
-          "writes"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "The mode id, such as `plan`."
-          },
-          "name": {
-            "type": "string",
-            "description": "The label to draw."
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "icon": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "An emoji or an icon name."
-          },
-          "writes": {
-            "$ref": "#/components/schemas/WriteModeRow",
-            "description": "What a note write in this mode does, already degraded to what this\nsession's agent can hold back."
-          }
-        }
-      },
       "ModelsListReply": {
         "type": "object",
         "description": "What `models.list` answers.",
-        "required": [
-          "models"
-        ],
-        "properties": {
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "ModelsResponse": {
-        "type": "object",
-        "description": "Response for model listings — the session-scoped `list_models` and the\nsession-less `list_all_models` return the same `{ models: [...] }` shape.",
         "required": [
           "models"
         ],
@@ -10044,18 +8717,6 @@
           }
         }
       },
-      "OkResponse": {
-        "type": "object",
-        "description": "Standard acknowledgment response for successful mutations.",
-        "required": [
-          "ok"
-        ],
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          }
-        }
-      },
       "OpenedKiln": {
         "type": "object",
         "description": "One kiln `project.open_kilns` opened.",
@@ -10548,38 +9209,6 @@
           },
           "approval": {
             "type": "string"
-          }
-        }
-      },
-      "PluginApprovalResponse": {
-        "type": "object",
-        "required": [
-          "plugin",
-          "approval"
-        ],
-        "properties": {
-          "plugin": {
-            "type": "string"
-          },
-          "approval": {
-            "$ref": "#/components/schemas/PluginApproval"
-          }
-        }
-      },
-      "PluginApprovalsResponse": {
-        "type": "object",
-        "required": [
-          "approvals"
-        ],
-        "properties": {
-          "approvals": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PluginApproval"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
           }
         }
       },
@@ -12135,21 +10764,6 @@
           }
         }
       },
-      "ProvidersResponse": {
-        "type": "object",
-        "description": "What `GET /api/providers` answers.\n\n`crucible_core::types::ProviderInfo` is the daemon's own reply type now\nthat `list_providers` is typed end to end; this route no longer keeps a\nfield-for-field copy of it.",
-        "required": [
-          "providers"
-        ],
-        "properties": {
-          "providers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProviderInfo"
-            }
-          }
-        }
-      },
       "PublicationChangedEvent": {
         "type": "object",
         "description": "A plugin's published data changed, delivered to the browser.\n\nCarries who published and under which key, never the value — the same\ncontract the daemon event has, and for the same reason: a publication is\nopaque JSON of the plugin's own choosing. The browser refetches through\n`GET /api/plugins/publications`.\n\nProjected through a named type rather than passed through as raw `data`,\nwhich is the treatment `SurfaceChangedEvent` already gets: a field the\ndaemon renames then breaks the browser with nothing on this side to notice.",
@@ -12919,28 +11533,6 @@
           }
         }
       },
-      "SendMessageRequest": {
-        "type": "object",
-        "required": [
-          "session_id",
-          "content"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "comments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CommentRef"
-            },
-            "description": "Stored review comments that the message attaches. The daemon builds\nthe context of each one, and refuses an unknown or resolved comment."
-          }
-        }
-      },
       "SendOutcome": {
         "oneOf": [
           {
@@ -13643,7 +12235,7 @@
           "kilns": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/KilnName"
+              "$ref": "#/components/schemas/String"
             }
           }
         }
@@ -13787,7 +12379,7 @@
           "kilns": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/KilnName"
+              "$ref": "#/components/schemas/String"
             }
           },
           "history": {
@@ -13806,7 +12398,7 @@
       },
       "SessionHistoryResponse": {
         "type": "object",
-        "description": "What `GET /api/session/{id}/history` answers.\n\n`history` is the core [`crucible_core::protocol::SessionEventMessage`] —\nthe same envelope the SSE stream carries — replayed whatever the\ntranscript holds, including an event name a newer daemon minted. Its\n`data` stays untyped for exactly that reason: this build cannot type an\nevent it does not know.",
+        "description": "What `GET /api/session/{id}/history` answers (`session.history`'s own\nreply shape). Kept here, not only in core, because [`resume_session`]\ndecodes a `session.history` reply through it on the cold path.\n\n`history` is the core [`crucible_core::protocol::SessionEventMessage`] —\nthe same envelope the SSE stream carries — replayed whatever the\ntranscript holds, including an event name a newer daemon minted. Its\n`data` stays untyped for exactly that reason: this build cannot type an\nevent it does not know.",
         "required": [
           "session_id",
           "type",
@@ -13962,25 +12554,9 @@
           }
         }
       },
-      "SessionKnobsResponse": {
-        "type": "object",
-        "description": "What `GET /api/session/{id}/knobs` answers.",
-        "required": [
-          "knobs"
-        ],
-        "properties": {
-          "knobs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/KnobRow"
-            },
-            "description": "Every knob Crucible has, answered for. A client that finds an id\nmissing is talking to an older daemon."
-          }
-        }
-      },
       "SessionLifecycleResponse": {
         "type": "object",
-        "description": "What `session.pause`, `session.resume` and `session.end` answer.",
+        "description": "What `session.resume`'s warm path answers (`SessionTransitionReply`'s own\nshape, decoded here for [`resume_session`]).",
         "required": [
           "session_id",
           "state"
@@ -13994,7 +12570,7 @@
               "string",
               "null"
             ],
-            "description": "The state the session left. `session.end` does not send it."
+            "description": "The state the session left."
           },
           "state": {
             "type": "string",
@@ -14008,7 +12584,7 @@
             "items": {
               "type": "string"
             },
-            "description": "The session's kilns. Only `session.end` sends them."
+            "description": "The session's kilns, when the daemon sends them."
           }
         }
       },
@@ -14200,43 +12776,6 @@
           }
         }
       },
-      "SessionModesResponse": {
-        "type": "object",
-        "description": "What `GET /api/session/{id}/modes` answers.",
-        "required": [
-          "current_mode_id",
-          "modes"
-        ],
-        "properties": {
-          "current_mode_id": {
-            "type": "string",
-            "description": "The mode the session is in. Always one of `modes`."
-          },
-          "modes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ModeRow"
-            },
-            "description": "Every mode the session may switch to, in declaration order."
-          }
-        }
-      },
-      "SessionNotificationsResponse": {
-        "type": "object",
-        "description": "What `GET /api/session/{id}/notifications` answers.",
-        "required": [
-          "notifications"
-        ],
-        "properties": {
-          "notifications": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            },
-            "description": "The daemon's notifications of the session, newest first, each with\n`id`, `kind` and `message`, as `notification_added` carries them."
-          }
-        }
-      },
       "SessionPendingInteractionsReply": {
         "type": "object",
         "description": "Reply from `session.pending_interactions`.",
@@ -14316,7 +12855,7 @@
           "kilns": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/KilnName"
+              "$ref": "#/components/schemas/String"
             }
           },
           "workspace": {
@@ -14324,33 +12863,6 @@
               "string",
               "null"
             ]
-          }
-        }
-      },
-      "SessionScopeResponse": {
-        "type": "object",
-        "description": "The session scope that a kiln or workspace mutation echoes.",
-        "required": [
-          "session_id",
-          "kilns"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "kilns": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Every kiln the session can query, by registry name."
-          },
-          "workspace": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The session's working directory. `null` is a session with no workspace."
           }
         }
       },
@@ -14475,22 +12987,6 @@
             "items": {
               "$ref": "#/components/schemas/StatusDisplayItem"
             }
-          }
-        }
-      },
-      "SessionStatusResponse": {
-        "type": "object",
-        "description": "What `GET /api/session/{id}/status` answers.\n\nEach item is the daemon's [`StatusDisplayItem`], the same type that the\n`status_items_changed` event carries, so the browser and the TUI read one\nshape. `id`, `plugin` and `text` stay plain strings: the moment a client\nenumerates them, a new plugin needs a client change to be visible at all,\nwhich is the thing this channel exists to avoid.\n\n[`StatusDisplayItem`]: crucible_core::types::StatusDisplayItem",
-        "required": [
-          "status"
-        ],
-        "properties": {
-          "status": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StatusDisplayItem"
-            },
-            "description": "Every item the session has, ordered by priority. A session with no\nitem answers an empty list."
           }
         }
       },
@@ -14733,32 +13229,6 @@
           },
           "client_id": {
             "type": "string"
-          }
-        }
-      },
-      "SetAgentOptionRequest": {
-        "type": "object",
-        "required": [
-          "option_id",
-          "value"
-        ],
-        "properties": {
-          "option_id": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
-          }
-        }
-      },
-      "SetPluginApprovalRequest": {
-        "type": "object",
-        "required": [
-          "approval"
-        ],
-        "properties": {
-          "approval": {
-            "$ref": "#/components/schemas/PluginApproval"
           }
         }
       },
@@ -16671,18 +15141,6 @@
           }
         }
       },
-      "TitleResponse": {
-        "type": "object",
-        "description": "Response for title operations.",
-        "required": [
-          "title"
-        ],
-        "properties": {
-          "title": {
-            "type": "string"
-          }
-        }
-      },
       "TokenUsage": {
         "type": "object",
         "properties": {
@@ -18323,14 +16781,6 @@
       "WriteMode": {
         "type": "string",
         "description": "What a note write of a session in this mode does.\n\n`Apply` writes the file. `Propose` records the write as a proposal and\nleaves the disk unchanged, so the user accepts or rejects it later.",
-        "enum": [
-          "apply",
-          "propose"
-        ]
-      },
-      "WriteModeRow": {
-        "type": "string",
-        "description": "What a note write in a mode does.\n\nMirrors `crucible_core::types::mode::WriteMode`, which carries no\nschema: `crucible-core` takes no utoipa dependency, and a client that\nshows a mode has to know the values it can read.",
         "enum": [
           "apply",
           "propose"

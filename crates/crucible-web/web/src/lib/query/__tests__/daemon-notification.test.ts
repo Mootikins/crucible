@@ -7,7 +7,11 @@ import {
 import { notificationActions, notificationStore } from '@/stores/notificationStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
-const close = (session: string, id: string) => `POST /api/session/${session}/notifications/${id}/dismiss`;
+// `session.dismiss_notification` is an RPC method now
+// ([[Simplification Plan#Step 19]] item 9): every session's close shares the
+// one `POST /api/rpc/session.dismiss_notification` key, so telling two
+// sessions' closes apart reads `session_id` off each call's own body.
+const DISMISS = 'POST /api/rpc/session.dismiss_notification';
 
 let env: TestQueryEnv;
 
@@ -15,8 +19,7 @@ beforeEach(() => {
   resetDaemonNotificationsForTests();
   notificationActions.clearAll();
   env = createTestQueryEnv({
-    [close('s1', 'n1')]: { body: { success: true } },
-    [close('s2', 'n1')]: { body: { success: true } },
+    [DISMISS]: () => ({ success: true }),
   });
 });
 
@@ -29,6 +32,18 @@ function open(message: string) {
   return notificationStore.notifications.filter((n) => !n.dismissed && n.message === message);
 }
 
+/** How many `session.dismiss_notification` calls named this session and notification. */
+async function callsFor(sessionId: string, notificationId: string): Promise<number> {
+  let matched = 0;
+  for (let i = 0; i < env.fetch.calls(DISMISS); i += 1) {
+    const sent = await env.fetch.sent(i);
+    if (sent.path !== '/api/rpc/session.dismiss_notification') continue;
+    const body = sent.body as { session_id?: string; notification_id?: string };
+    if (body?.session_id === sessionId && body?.notification_id === notificationId) matched += 1;
+  }
+  return matched;
+}
+
 describe('daemon notifications', () => {
   it('a user close tells the daemon, once, for the session that showed it', async () => {
     showDaemonNotification({ id: 'n1', kind: 'warning', message: 'shared' }, 's1');
@@ -37,7 +52,7 @@ describe('daemon notifications', () => {
     notificationActions.dismiss(entry.id);
     notificationActions.dismiss(entry.id);
 
-    await vi.waitFor(() => expect(env.fetch.calls(close('s1', 'n1'))).toBe(1));
+    await vi.waitFor(async () => expect(await callsFor('s1', 'n1')).toBe(1));
     expect(open('shared')).toHaveLength(0);
   });
 
@@ -48,7 +63,7 @@ describe('daemon notifications', () => {
     vi.advanceTimersByTime(60_000);
 
     expect(open('shared')).toHaveLength(0);
-    expect(env.fetch.calls(close('s1', 'n1'))).toBe(0);
+    expect(env.fetch.calls(DISMISS)).toBe(0);
   });
 
   it('one notice in two sessions is one toast, and a close reaches both sessions', async () => {
@@ -58,9 +73,9 @@ describe('daemon notifications', () => {
 
     notificationActions.clearAll();
 
-    await vi.waitFor(() => {
-      expect(env.fetch.calls(close('s1', 'n1'))).toBe(1);
-      expect(env.fetch.calls(close('s2', 'n1'))).toBe(1);
+    await vi.waitFor(async () => {
+      expect(await callsFor('s1', 'n1')).toBe(1);
+      expect(await callsFor('s2', 'n1')).toBe(1);
     });
   });
 
@@ -73,14 +88,13 @@ describe('daemon notifications', () => {
 
     dropDaemonNotification('n1', 's2');
     expect(open('shared')).toHaveLength(0);
-    expect(env.fetch.calls(close('s1', 'n1'))).toBe(0);
-    expect(env.fetch.calls(close('s2', 'n1'))).toBe(0);
+    expect(env.fetch.calls(DISMISS)).toBe(0);
   });
 
   it('a failed close says so', async () => {
     env.restore();
     env = createTestQueryEnv({
-      [close('s1', 'n1')]: { status: 502, body: { error: { code: 502, message: 'daemon gone' } } },
+      [DISMISS]: { status: 502, body: { error: { code: 502, message: 'daemon gone' } } },
     });
     showDaemonNotification({ id: 'n1', kind: 'toast', message: 'shared' }, 's1');
 

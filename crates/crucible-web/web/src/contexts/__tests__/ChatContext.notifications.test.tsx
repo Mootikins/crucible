@@ -27,13 +27,13 @@ it('a delayed attach snapshot cannot resurrect a notice dismissed on the stream'
   const notice = { id: 'dismissed-notice', kind: 'warning', message: 'already closed elsewhere' };
   const sentinel = { id: 'snapshot-sentinel', kind: 'warning', message: 'snapshot finished' };
   env = createTestQueryEnv({
-    'GET /api/session/s1': () => ({
+    'POST /api/rpc/session.get': () => ({
       session_id: 's1', type: 'chat', state: 'active', kilns: [], workspace: '/w',
       agent: { model: null }, started_at: '', event_count: 0, archived: false,
     }),
-    'GET /api/session/s1/history': () => ({ session_id: 's1', history: [], total_events: 0 }),
+    'POST /api/rpc/session.history': () => ({ session_id: 's1', history: [], total_events: 0 }),
     'GET /api/interactions/pending': () => ({ pending: [] }),
-    'GET /api/session/s1/notifications': () => pending,
+    'POST /api/rpc/session.list_notifications': () => pending,
   });
   render(() => <ChatProvider sessionId="s1"><span>Chat</span></ChatProvider>);
   await waitFor(() => expect(FakeEventSource.instances.some((s) => s.url === '/api/events?topics=s1')).toBe(true));
@@ -41,7 +41,7 @@ it('a delayed attach snapshot cannot resurrect a notice dismissed on the stream'
   expect(sources).toHaveLength(1);
   const source = sources[0]!;
   source.open();
-  await waitFor(() => expect(env!.fetch.calls('GET /api/session/s1/notifications')).toBe(1));
+  await waitFor(() => expect(env!.fetch.calls('POST /api/rpc/session.list_notifications')).toBe(1));
   const visible = (id: string) => notificationStore.notifications.filter(
     (n) => !n.dismissed && n.origin?.key === id,
   );

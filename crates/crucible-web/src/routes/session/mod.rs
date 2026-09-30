@@ -1,84 +1,51 @@
-use super::session_commands::{
-    __path_execute_command, __path_list_commands, execute_command, list_commands,
-};
-use super::session_status::{
-    __path_dismiss_session_notification, __path_session_notifications, __path_session_status,
-    dismiss_session_notification, session_notifications, session_status,
-};
-use crate::routes::helpers::ModelsResponse;
+//! `POST /api/session` (create), `POST /api/session/{id}/resume`,
+//! `POST /api/session/{id}/export`, `POST /api/session/{id}/end`,
+//! `POST /api/session/{id}/archive` and `DELETE /api/session/{id}`.
+//!
+//! Every other session route that only forwarded one RPC row moved onto
+//! `rpc(method, params)` and `POST /api/rpc/{method}`
+//! ([[Simplification Plan#Step 19]] item 4/9). These six stay, each for its
+//! own reason:
+//! - `create_session` validates `agent_type` before the daemon ever sees the
+//!   request. The daemon's own `session.create` treats an unrecognized
+//!   `agent_type` (anything other than `"acp"`) as `"internal"` rather than
+//!   refusing it, so this check is web-only — not yet a decision the daemon
+//!   makes once for every caller (a candidate for a follow-up, per
+//!   AGENTS.md's "keep a behavior in the daemon" rule).
+//! - `resume_session` composes two daemon calls when
+//!   `session.resume` reports `resumed_from_storage`: a plain forward would
+//!   need the same conditional follow-up call in the browser instead.
+//! - `export_session` composes `session.get` and `session.render_markdown`,
+//!   with a fallback markdown built from session metadata when rendering
+//!   fails.
+//! - `end_session`, `archive_session` and `delete_session` each release this
+//!   web process's own `EventBroker` entry for the session
+//!   (`ReconnectingDaemon::close_event_streams`) after the daemon call
+//!   succeeds. The broker is this process's local SSE fan-out state, not a
+//!   daemon concept and not something the browser can reach on its own, so a
+//!   plain `rpc()` forward would leave a dangling upstream subscription for
+//!   a session that just ended, archived or was deleted.
+
+use super::session_commands::{__path_execute_command, execute_command};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     Json,
 };
-use crucible_core::protocol::requests::{
-    NamedKiln, Page, SessionCreateRequest, Title, WorkspaceChoice,
-};
-use crucible_core::session::SessionSearchResponse;
+use crucible_core::protocol::requests::SessionCreateRequest;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 // =========================================================================
 // Typed Response Structs
 // =========================================================================
 
-/// Standard acknowledgment response for successful mutations.
-// `pub(crate)`, not `pub(super)`: the plugin option endpoint answers this too,
-// as one arm of an untagged union. One `{"ok": true}` shape, one schema in the
-// document. The doc comment above is published to the browser, so the reason
-// stays here rather than there.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(crate) struct OkResponse {
-    pub(crate) ok: bool,
-}
-
-impl OkResponse {
-    pub(crate) fn success() -> Json<Self> {
-        Json(Self::ok())
-    }
-
-    /// The bare value, for a caller that wraps it in something other than
-    /// [`Json`].
-    pub(crate) fn ok() -> Self {
-        Self { ok: true }
-    }
-}
-
-/// Response for session archive/unarchive status changes.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct ArchiveResponse {
-    archived: bool,
-}
-
-/// Response for session deletion.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct DeleteResponse {
-    deleted: bool,
-}
-
-/// Response for session cancellation.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct CancelledResponse {
-    cancelled: bool,
-}
-
-/// Response for title operations.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct TitleResponse {
-    title: String,
-}
-
-// `session.create`, `session.list` and `session.get` all answer the core
-// `SessionSummary` (or `SessionListReply`, a `Vec<SessionSummary>` with a
-// count). The daemon used to build three shapes by hand for one entity, and
-// this route used to declare a fourth — a hand-written union, `SessionRow`
-// — to read all three. There is one shape now, so this route returns it
-// unchanged: no row, no `Option<Option<T>>` present-or-null trick.
-
-/// What `GET /api/session/{id}/history` answers.
+/// What `GET /api/session/{id}/history` answers (`session.history`'s own
+/// reply shape). Kept here, not only in core, because [`resume_session`]
+/// decodes a `session.history` reply through it on the cold path.
 ///
 /// `history` is the core [`crucible_core::protocol::SessionEventMessage`] —
 /// the same envelope the SSE stream carries — replayed whatever the
@@ -103,16 +70,17 @@ struct SessionHistoryResponse {
     transcript: crucible_core::transcript::Transcript,
 }
 
-/// What `session.pause`, `session.resume` and `session.end` answer.
+/// What `session.resume`'s warm path answers (`SessionTransitionReply`'s own
+/// shape, decoded here for [`resume_session`]).
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct SessionLifecycleResponse {
     session_id: String,
-    /// The state the session left. `session.end` does not send it.
+    /// The state the session left.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     previous_state: Option<String>,
     /// The state the session is in now.
     state: String,
-    /// The session's kilns. Only `session.end` sends them.
+    /// The session's kilns, when the daemon sends them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kilns: Option<Vec<String>>,
 }
@@ -148,24 +116,19 @@ enum ResumeSessionResponse {
     Live(SessionLifecycleResponse),
 }
 
-/// The session scope that a kiln or workspace mutation echoes.
+/// Response for session archive/unarchive status changes. `unarchive_session`
+/// is a pure forward now, but `archive_session` still builds this reply
+/// itself (see the module doc) for the `close_event_streams` side effect, so
+/// the type stays.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SessionScopeResponse {
-    session_id: String,
-    /// Every kiln the session can query, by registry name.
-    kilns: Vec<String>,
-    /// The session's working directory. `null` is a session with no workspace.
-    workspace: Option<String>,
+struct ArchiveResponse {
+    archived: bool,
 }
 
-/// What `GET /api/providers` answers.
-///
-/// `crucible_core::types::ProviderInfo` is the daemon's own reply type now
-/// that `list_providers` is typed end to end; this route no longer keeps a
-/// field-for-field copy of it.
+/// Response for session deletion.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct ProvidersResponse {
-    providers: Vec<crucible_core::types::ProviderInfo>,
+struct DeleteResponse {
+    deleted: bool,
 }
 
 /// Read a daemon reply into the shape this route promises.
@@ -203,38 +166,14 @@ fn map_session_not_found(err: impl std::fmt::Display, id: &str) -> WebError {
 pub fn session_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(create_session))
-        .routes(routes!(list_sessions))
-        .routes(routes!(search_sessions))
-        .routes(routes!(get_session, delete_session))
-        .routes(routes!(get_session_history))
-        .routes(routes!(pause_session))
         .routes(routes!(resume_session))
+        .routes(routes!(export_session))
         .routes(routes!(end_session))
         .routes(routes!(archive_session))
-        .routes(routes!(unarchive_session))
-        .routes(routes!(cancel_session))
-        .routes(routes!(list_models))
-        .routes(routes!(set_knob))
-        .routes(routes!(get_knob))
-        .routes(routes!(list_modes))
-        .routes(routes!(list_knobs))
-        .routes(routes!(session_status))
-        .routes(routes!(session_notifications))
-        .routes(routes!(dismiss_session_notification))
-        .routes(routes!(connect_kiln))
-        .routes(routes!(disconnect_kiln))
-        .routes(routes!(set_workspace))
-        .routes(routes!(set_session_title))
-        .routes(routes!(auto_title))
-        .routes(routes!(list_providers))
-        // Config knobs register themselves in `session_config`, next to their
-        // handlers: the group belongs with the knobs it serves, and has no
-        // reason to be spelled out here.
-        .merge(super::session_config::config_routes())
-        .routes(routes!(export_session))
+        .routes(routes!(delete_session))
         .routes(routes!(execute_command))
-        .routes(routes!(list_commands))
 }
+
 #[derive(Debug, Deserialize, ToSchema)]
 struct CreateSessionRequest {
     #[serde(default = "default_session_type")]
@@ -359,181 +298,6 @@ async fn create_session(
     Ok(Json(result))
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-struct ListSessionsQuery {
-    /// The kiln's registry NAME. A query string carrying a path is a 422 —
-    /// which is the honest answer, because a path names no kiln.
-    #[param(value_type = Option<String>)]
-    kiln: Option<crucible_core::config::KilnName>,
-    #[param(value_type = Option<String>)]
-    workspace: Option<PathBuf>,
-    #[serde(rename = "type")]
-    session_type: Option<String>,
-    state: Option<String>,
-    #[serde(default)]
-    include_archived: Option<bool>,
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/session/list",
-    params(ListSessionsQuery),
-    responses(
-        (status = 200, body = crucible_core::protocol::requests::SessionListReply),
-        (status = 422, description = "The `kiln` query carried a path rather than a registry name"),
-        (status = 502, description = "The daemon could not list the sessions"),
-    )
-)]
-async fn list_sessions(
-    State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<ListSessionsQuery>,
-) -> Result<Json<crucible_core::protocol::requests::SessionListReply>, WebError> {
-    let result = state
-        .daemon
-        .session_list(
-            query.kiln.as_ref(),
-            query.workspace.as_deref(),
-            query.session_type.as_deref(),
-            query.state.as_deref(),
-            query.include_archived,
-        )
-        .await
-        .daemon_err()?;
-
-    Ok(Json(result))
-}
-
-/// `GET /api/sessions/search?q=…&kiln=…&kiln=…&limit=…`
-///
-/// `kiln` repeats. Search scope is kiln-set *overlap*, so the caller states
-/// every kiln it is cleared for rather than one member standing in for the
-/// rest — one member matches only the sessions sharing that one. Parsed from
-/// the raw pairs because `serde_urlencoded`, which `Query` uses, cannot
-/// deserialize a repeated key into a sequence.
-#[utoipa::path(
-    get,
-    path = "/api/sessions/search",
-    params(
-        ("q" = String, Query, description = "The substring to match, case-insensitive"),
-        ("kiln" = Option<Vec<String>>, Query, description = "The caller's whole kiln set, one `kiln` key per member"),
-        ("limit" = Option<usize>, Query, description = "How many matches to return. The default is 20"),
-    ),
-    responses(
-        (status = 200, body = SessionSearchResponse),
-        (status = 422, description = "No `q`, or every `kiln` named an unusable name"),
-        (status = 502, description = "The daemon could not run the search"),
-    )
-)]
-async fn search_sessions(
-    State(state): State<AppState>,
-    axum::extract::Query(params): axum::extract::Query<Vec<(String, String)>>,
-) -> Result<Json<SessionSearchResponse>, WebError> {
-    let mut query = None;
-    // Names, parsed rather than accepted. The daemon draws a deliberate
-    // distinction at `server/session/scope.rs`: "no kiln key at all" is an
-    // empty scope each handler interprets for itself, while "named kilns, none
-    // of which resolve" is an INVALID_PARAMS naming the refused values —
-    // because an all-dropped set is a request that asked to NARROW and would
-    // otherwise be answered as though it had said nothing.
-    //
-    // This route has to draw the same line or it collapses the two: dropping
-    // every name silently turns `?q=x&kiln=..%2Fescape` into "searched
-    // everything, found nothing" instead of a 422. Partial drops are safe and
-    // stay silent, for the daemon's reason — the surviving members still narrow.
-    let mut kilns: Vec<crucible_core::config::KilnName> = Vec::new();
-    let mut refused: Vec<String> = Vec::new();
-    let mut limit = None;
-    for (key, value) in params {
-        match key.as_str() {
-            "q" => query = Some(value),
-            "kiln" => match crucible_core::config::KilnName::parse(&value) {
-                Ok(name) => kilns.push(name),
-                Err(_) => refused.push(value),
-            },
-            "limit" => limit = value.parse::<usize>().ok(),
-            _ => {}
-        }
-    }
-    if kilns.is_empty() && !refused.is_empty() {
-        return Err(WebError::Validation(format!(
-            "None of the kilns named in this request are usable names: {}. Kilns are addressed \
-             by the name of their `[kilns]` entry, not by path.",
-            refused
-                .iter()
-                .map(|v| format!("{v:?}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )));
-    }
-    let query = query.ok_or_else(|| WebError::Validation("Missing 'q' parameter".into()))?;
-
-    let results = state
-        .daemon
-        .session_search(&query, &kilns, limit.or(Some(20)))
-        .await
-        .daemon_err()?;
-
-    Ok(Json(results))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}",
-    params(("id" = String, Path, description = "The session to read")),
-    responses(
-        (status = 200, body = crucible_core::session::SessionDetail),
-        (status = 502, description = "The daemon could not read the session"),
-    )
-)]
-async fn get_session(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<crucible_core::session::SessionDetail>, WebError> {
-    let result = state.daemon.session_get(&id).await.daemon_err()?;
-
-    Ok(Json(result))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/history",
-    params(("id" = String, Path, description = "The session to replay"), Page),
-    responses(
-        (status = 200, body = SessionHistoryResponse),
-        (status = 502, description = "The daemon could not read the transcript"),
-    )
-)]
-async fn get_session_history(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    axum::extract::Query(page): axum::extract::Query<Page>,
-) -> Result<Json<SessionHistoryResponse>, WebError> {
-    // A read, so the session stays as it is. `session.resume_from_storage`
-    // would make an ended session live and run its start checks.
-    let result = state.daemon.session_history(&id, page).await.daemon_err()?;
-
-    Ok(Json(daemon_shape(result, "session.history")?))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/pause",
-    params(("id" = String, Path, description = "The session to pause")),
-    responses(
-        (status = 200, body = SessionLifecycleResponse),
-        (status = 502, description = "The daemon could not pause the session"),
-    )
-)]
-async fn pause_session(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<SessionLifecycleResponse>, WebError> {
-    let result = state.daemon.session_pause(&id).await.daemon_err()?;
-
-    Ok(Json(daemon_shape(result, "session.pause")?))
-}
-
 #[utoipa::path(
     post,
     path = "/api/session/{id}/resume",
@@ -620,28 +384,6 @@ async fn archive_session(
 }
 
 #[utoipa::path(
-    post,
-    path = "/api/session/{id}/unarchive",
-    params(("id" = String, Path, description = "The session to unarchive")),
-    responses(
-        (status = 200, body = ArchiveResponse),
-        (status = 404, description = "No session of that id"),
-        (status = 502, description = "The daemon could not unarchive the session"),
-    )
-)]
-async fn unarchive_session(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ArchiveResponse>, WebError> {
-    state
-        .daemon
-        .session_unarchive(&id)
-        .await
-        .map_err(|e| map_session_not_found(e, &id))?;
-    Ok(Json(ArchiveResponse { archived: false }))
-}
-
-#[utoipa::path(
     delete,
     path = "/api/session/{id}",
     params(("id" = String, Path, description = "The session to delete")),
@@ -662,381 +404,6 @@ async fn delete_session(
         .map_err(|e| map_session_not_found(e, &id))?;
     state.daemon.close_event_streams(&id).await;
     Ok(Json(DeleteResponse { deleted: true }))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/cancel",
-    params(("id" = String, Path, description = "The session whose turn to cancel")),
-    responses(
-        (status = 200, body = CancelledResponse),
-        (status = 502, description = "The daemon could not cancel the turn"),
-    )
-)]
-async fn cancel_session(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<CancelledResponse>, WebError> {
-    let cancelled = state.daemon.session_cancel(&id).await.daemon_err()?;
-    Ok(Json(CancelledResponse { cancelled }))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/models",
-    params(("id" = String, Path, description = "The session whose models to list")),
-    responses(
-        (status = 200, body = ModelsResponse),
-        (status = 502, description = "The daemon could not list the models"),
-    )
-)]
-async fn list_models(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ModelsResponse>, WebError> {
-    let models = state.daemon.session_list_models(&id).await.daemon_err()?;
-    Ok(Json(ModelsResponse { models }))
-}
-
-/// What a note write in a mode does.
-///
-/// Mirrors `crucible_core::types::mode::WriteMode`, which carries no
-/// schema: `crucible-core` takes no utoipa dependency, and a client that
-/// shows a mode has to know the values it can read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-enum WriteModeRow {
-    /// The note tools write the file.
-    Apply,
-    /// The note tools record a proposal, and the file does not change.
-    Propose,
-}
-
-impl From<crucible_core::types::WriteMode> for WriteModeRow {
-    fn from(writes: crucible_core::types::WriteMode) -> Self {
-        use crucible_core::types::WriteMode;
-        match writes {
-            WriteMode::Apply => Self::Apply,
-            WriteMode::Propose => Self::Propose,
-        }
-    }
-}
-
-/// One mode a session may enter.
-///
-/// Mirrors `crucible_core::types::mode::ModeDescriptor` field for field, for
-/// the reason [`WriteModeRow`] gives.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct ModeRow {
-    /// The mode id, such as `plan`.
-    id: String,
-    /// The label to draw.
-    name: String,
-    description: Option<String>,
-    /// An emoji or an icon name.
-    icon: Option<String>,
-    /// What a note write in this mode does, already degraded to what this
-    /// session's agent can hold back.
-    writes: WriteModeRow,
-}
-
-impl From<crucible_core::types::mode::ModeDescriptor> for ModeRow {
-    fn from(mode: crucible_core::types::mode::ModeDescriptor) -> Self {
-        Self {
-            id: mode.id,
-            name: mode.name,
-            description: mode.description,
-            icon: mode.icon,
-            writes: mode.writes.into(),
-        }
-    }
-}
-
-/// What `GET /api/session/{id}/modes` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SessionModesResponse {
-    /// The mode the session is in. Always one of `modes`.
-    current_mode_id: String,
-    /// Every mode the session may switch to, in declaration order.
-    modes: Vec<ModeRow>,
-}
-
-impl From<crucible_core::types::mode::SessionModes> for SessionModesResponse {
-    fn from(modes: crucible_core::types::mode::SessionModes) -> Self {
-        Self {
-            current_mode_id: modes.current_mode_id,
-            modes: modes.modes.into_iter().map(ModeRow::from).collect(),
-        }
-    }
-}
-
-/// The session's modes, forwarded from the daemon unchanged.
-///
-/// The web layer deliberately adds nothing here: mode labels and ordering are
-/// the daemon's, so the TUI and the browser cannot drift into showing
-/// different names for the same mode.
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/modes",
-    params(("id" = String, Path, description = "The session whose modes to list")),
-    responses(
-        (status = 200, body = SessionModesResponse),
-        (status = 502, description = "The daemon could not list the modes"),
-    )
-)]
-async fn list_modes(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<SessionModesResponse>, WebError> {
-    let modes = state.daemon.session_list_modes(&id).await.daemon_err()?;
-    Ok(Json(modes.into()))
-}
-
-/// Which settings this session can change.
-///
-/// The browser drew a fixed set of controls, which was wrong for every ACP
-/// session: the protocol has no temperature and no token cap, so the panel
-/// offered a slider for each that changed nothing. As with modes, the web
-/// layer adds nothing — the answer is the daemon's, so the TUI and the
-/// browser cannot disagree about what a session can do.
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/knobs",
-    params(("id" = String, Path, description = "The session whose settings to describe")),
-    responses(
-        (status = 200, body = SessionKnobsResponse),
-        (status = 502, description = "The daemon could not describe the settings"),
-    )
-)]
-async fn list_knobs(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<SessionKnobsResponse>, WebError> {
-    let knobs = state.daemon.session_list_knobs(&id).await.daemon_err()?;
-    Ok(Json(knobs.into()))
-}
-
-/// One setting and whether this session can change it.
-///
-/// Mirrors `crucible_core::types::KnobDescriptor`, for the reason
-/// [`WriteModeRow`] gives.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct KnobRow {
-    /// The knob id, such as `context_strategy`.
-    id: String,
-    /// `false` means the control should not be offered: the daemon refuses
-    /// the call.
-    supported: bool,
-}
-
-/// What `GET /api/session/{id}/knobs` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SessionKnobsResponse {
-    /// Every knob Crucible has, answered for. A client that finds an id
-    /// missing is talking to an older daemon.
-    knobs: Vec<KnobRow>,
-}
-
-impl From<crucible_core::types::SessionKnobSupport> for SessionKnobsResponse {
-    fn from(support: crucible_core::types::SessionKnobSupport) -> Self {
-        Self {
-            knobs: support
-                .knobs
-                .into_iter()
-                .map(|knob| KnobRow {
-                    id: knob.id,
-                    supported: knob.supported,
-                })
-                .collect(),
-        }
-    }
-}
-
-/// Write one session knob — model, mode, context strategy, precognition or
-/// plugin turn limit. The body names its own knob (`KnobValue`'s tag), so
-/// one route serves all five: a knob added later needs no sibling route.
-#[utoipa::path(
-    put,
-    path = "/api/session/{id}/knob",
-    params(("id" = String, Path, description = "The session to configure")),
-    request_body = crucible_core::types::KnobValue,
-    responses(
-        (status = 200, body = OkResponse),
-        (status = 422, description = "The session cannot carry the knob, or the value is invalid"),
-        (status = 502, description = "The daemon could not store the value"),
-    )
-)]
-async fn set_knob(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(value): Json<crucible_core::types::KnobValue>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_knob_set(&id, value)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-/// Read one session knob, in the same [`crucible_core::types::KnobValue`]
-/// shape [`set_knob`] writes.
-#[utoipa::path(
-    get,
-    path = "/api/session/{id}/knob/{knob}",
-    params(
-        ("id" = String, Path, description = "The session to read"),
-        ("knob" = String, Path, description = "The knob to read: model, mode, context_strategy, precognition or plugin_turn_limit"),
-    ),
-    responses(
-        (status = 200, body = crucible_core::types::KnobValue),
-        (status = 422, description = "The session cannot carry the knob"),
-        (status = 502, description = "The daemon could not read the value"),
-    )
-)]
-async fn get_knob(
-    State(state): State<AppState>,
-    Path((id, knob)): Path<(String, crucible_core::types::SessionKnob)>,
-) -> Result<Json<crucible_core::types::KnobValue>, WebError> {
-    let value = state
-        .daemon
-        .session_knob_get(&id, knob)
-        .await
-        .daemon_err()?;
-    Ok(Json(value))
-}
-
-/// Updated session scope, echoed by kiln/workspace mutations.
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/kilns/connect",
-    params(("id" = String, Path, description = "The session to attach the kiln to")),
-    request_body = NamedKiln,
-    responses(
-        (status = 200, body = SessionScopeResponse),
-        (status = 422, description = "The body named a path rather than a registry name"),
-        (status = 502, description = "The daemon could not attach the kiln"),
-    )
-)]
-async fn connect_kiln(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<NamedKiln>,
-) -> Result<Json<SessionScopeResponse>, WebError> {
-    let scope = state
-        .daemon
-        .session_connect_kiln(&id, &req.kiln)
-        .await
-        .daemon_err()?;
-    Ok(Json(daemon_shape(scope, "session.connect_kiln")?))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/kilns/disconnect",
-    params(("id" = String, Path, description = "The session to detach the kiln from")),
-    request_body = NamedKiln,
-    responses(
-        (status = 200, body = SessionScopeResponse),
-        (status = 422, description = "The body named a path rather than a registry name"),
-        (status = 502, description = "The daemon could not detach the kiln"),
-    )
-)]
-async fn disconnect_kiln(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<NamedKiln>,
-) -> Result<Json<SessionScopeResponse>, WebError> {
-    let scope = state
-        .daemon
-        .session_disconnect_kiln(&id, &req.kiln)
-        .await
-        .daemon_err()?;
-    Ok(Json(daemon_shape(scope, "session.disconnect_kiln")?))
-}
-
-#[utoipa::path(
-    put,
-    path = "/api/session/{id}/workspace",
-    params(("id" = String, Path, description = "The session whose workspace to set")),
-    request_body = WorkspaceChoice,
-    responses(
-        (status = 200, body = SessionScopeResponse),
-        (status = 502, description = "The daemon could not set the workspace"),
-    )
-)]
-async fn set_workspace(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<WorkspaceChoice>,
-) -> Result<Json<SessionScopeResponse>, WebError> {
-    let scope = state
-        .daemon
-        .session_set_workspace(&id, req.workspace.as_deref().map(std::path::Path::new))
-        .await
-        .daemon_err()?;
-    Ok(Json(daemon_shape(scope, "session.set_workspace")?))
-}
-
-// Mode is a knob now: `PUT /api/session/{id}/knob` with
-// `{"knob": "mode", "value": "plan"}`, and `GET
-// /api/session/{id}/knob/mode` to read it. See `set_knob`/`get_knob` above.
-
-#[utoipa::path(
-    put,
-    path = "/api/session/{id}/title",
-    params(("id" = String, Path, description = "The session to rename")),
-    request_body = Title,
-    responses(
-        (status = 200, body = OkResponse),
-        (status = 502, description = "The daemon could not set the title"),
-    )
-)]
-async fn set_session_title(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<Title>,
-) -> Result<Json<OkResponse>, WebError> {
-    state
-        .daemon
-        .session_set_title(&id, &req.title)
-        .await
-        .daemon_err()?;
-    Ok(OkResponse::success())
-}
-
-/// Auto-generate a title for a session from its conversation history.
-///
-/// Delegates to the daemon's `session.generate_title`, which produces a
-/// topic-based title via the session's own LLM provider (falling back to
-/// first-message truncation daemon-side). Idempotent: an already-titled
-/// session returns its existing title.
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/auto-title",
-    params(("id" = String, Path, description = "The session to title")),
-    responses(
-        (status = 200, body = TitleResponse),
-        (status = 502, description = "The daemon could not generate a title"),
-    )
-)]
-async fn auto_title(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<TitleResponse>, WebError> {
-    let result = state
-        .daemon
-        .session_generate_title(&id)
-        .await
-        .daemon_err()?;
-
-    let title = result
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Untitled Session")
-        .to_string();
-
-    Ok(Json(TitleResponse { title }))
 }
 
 #[utoipa::path(
@@ -1096,37 +463,5 @@ async fn export_session(
     ))
 }
 
-/// Cached in the daemon (`providers.list`,
-/// `crate::agent_manager::CATALOG_CACHE_TTL`) — provider probing takes ~0.7s
-/// and must not gate every splash render. Every caller of that RPC method
-/// shares the cache now; it used to be a cache in this crate alone. Shape:
-/// `{providers: [ProviderInfo]}`.
-///
-/// Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and
-/// forward the raw directory to the daemon, which fed it to
-/// `find_workspace_and_resolve_classification` — so an arbitrary directory
-/// could influence which providers a caller was told about, an input door
-/// standing outside the registry floor every other kiln input now passes
-/// through. Nothing ever sent it (`listProviders()` takes no argument), so
-/// converting it to a name would have preserved a door for no caller.
-#[utoipa::path(
-    get,
-    path = "/api/providers",
-    responses(
-        (status = 200, body = ProvidersResponse),
-        (status = 502, description = "The daemon could not list the providers"),
-    )
-)]
-async fn list_providers(
-    State(state): State<AppState>,
-) -> Result<Json<ProvidersResponse>, WebError> {
-    let providers = state.daemon.list_providers(None).await.daemon_err()?;
-    Ok(Json(ProvidersResponse { providers }))
-}
-
-#[cfg(test)]
-mod search_scope_tests;
-#[cfg(test)]
-mod shape_tests;
 #[cfg(test)]
 mod tests;
