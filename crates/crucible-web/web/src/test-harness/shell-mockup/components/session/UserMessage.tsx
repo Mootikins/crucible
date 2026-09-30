@@ -4,7 +4,7 @@
  * room, and shows on hover and on focus, so nothing moves when it shows.
  */
 import type { Component } from 'solid-js';
-import { Pencil } from 'lucide-solid';
+import { Pencil } from '@/lib/icons';
 import { CopyIconButton } from '../primitives/CopyIconButton';
 import { IconButton } from '../primitives/IconButton';
 import { Markdown } from '../primitives/Markdown';

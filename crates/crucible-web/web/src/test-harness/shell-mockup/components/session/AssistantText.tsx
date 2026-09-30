@@ -5,7 +5,7 @@
  * on focus. The row always holds its room, so nothing moves when it shows.
  */
 import { Show, type Component } from 'solid-js';
-import { RefreshCw } from 'lucide-solid';
+import { RefreshCw } from '@/lib/icons';
 import { CopyIconButton } from '../primitives/CopyIconButton';
 import { IconButton } from '../primitives/IconButton';
 import { Markdown } from '../primitives/Markdown';

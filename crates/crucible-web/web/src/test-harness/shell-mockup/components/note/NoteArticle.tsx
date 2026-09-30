@@ -21,6 +21,6 @@ export const NoteArticle: Component<NoteArticleProps> = (p) => (
     <Show when={Object.keys(p.props).length}>
       <NoteProperties props={p.props} />
     </Show>
-    <For each={segments(p.body)}>{(seg) => (seg.kind === 'md' ? <Markdown source={seg.text} /> : p.renderHunk(seg.id))}</For>
+    <For each={segments(p.body)}>{(seg) => (seg.kind === 'markdown' ? <Markdown source={seg.text} /> : p.renderHunk(seg.id))}</For>
   </article>
 );

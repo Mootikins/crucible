@@ -1,6 +1,6 @@
 /** The notes that precognition recalled for the turn, folded; each opens its note. */
 import { For, type Component } from 'solid-js';
-import { Sparkles } from 'lucide-solid';
+import { Sparkles } from '@/lib/icons';
 import { basename } from '../path';
 
 export const PrecogCard: Component<{ notes: [string, number][]; onOpen: (path: string) => void }> = (props) => (

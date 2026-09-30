@@ -3,7 +3,7 @@
  * They sit beside the decision buttons of a chunk.
  */
 import { Show, type Component } from 'solid-js';
-import { MessageSquare, Undo2 } from 'lucide-solid';
+import { MessageSquare, Undo2 } from '@/lib/icons';
 import { IconButton } from '../primitives/IconButton';
 
 export interface ChunkExtrasProps {

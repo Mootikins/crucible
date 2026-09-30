@@ -3,7 +3,7 @@
  * verb while it waits, its icon, and the noun that a folded group counts.
  */
 import type { Component } from 'solid-js';
-import { Eye, Pencil, Search } from 'lucide-solid';
+import { Eye, Pencil, Search } from '@/lib/icons';
 
 export interface ToolWords {
   past: string;

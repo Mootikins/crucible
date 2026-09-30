@@ -24,8 +24,7 @@ export type { WindowingSlots } from './components/context';
 
 // The controls of a floating window, and the handle that a component inside a
 // floating window reads. A tabless content puts the controls in its own bar.
-export { WindowControls, useFloatingWindow } from './components/WindowControls';
-export type { FloatingWindowHandle } from './components/WindowControls';
+export { useFloatingWindow } from './components/WindowControls';
 
 // The rail button look and the command button. These are public on purpose:
 // the app draws its own rail buttons, and they must match the core buttons.

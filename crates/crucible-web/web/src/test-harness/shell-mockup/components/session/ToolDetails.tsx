@@ -3,7 +3,7 @@
  * review buttons; any other call shows its output.
  */
 import { Show, type Component } from 'solid-js';
-import { Eye } from 'lucide-solid';
+import { Eye } from '@/lib/icons';
 import { Button } from '../primitives/Button';
 import { DecisionButtons } from '../primitives/DecisionButtons';
 import { MiniDiff } from '../primitives/MiniDiff';

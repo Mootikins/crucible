@@ -4,7 +4,7 @@
  * and stay a moment after it leaves (the stylesheet delays the fade out).
  */
 import type { Component } from 'solid-js';
-import { ExternalLink, Pin, X } from 'lucide-solid';
+import { ExternalLink, Pin, X } from '@/lib/icons';
 import { IconButton } from '../primitives/IconButton';
 import type { HoverActions } from './HoverTitleBar';
 

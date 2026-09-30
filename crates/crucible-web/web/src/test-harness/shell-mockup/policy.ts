@@ -6,7 +6,7 @@
  * centre with the core's expand (Shift+Esc, or the button in its header).
  */
 import type { Component } from 'solid-js';
-import { ClipboardList, FileText, FolderTree, GitCompare, MessageSquare, Terminal } from 'lucide-solid';
+import { ClipboardList, FileText, FolderTree, GitCompare, MessageSquare, Terminal } from '@/lib/icons';
 import type { WindowPolicy } from '@/windowing/store/policy';
 import type { WindowState } from '@/windowing/model/types';
 import { emptyState, generateId } from '@/windowing/model/tree';

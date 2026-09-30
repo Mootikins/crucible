@@ -3,7 +3,7 @@
  * the button stops the turn instead (the current app's cancel).
  */
 import { Show, type Component } from 'solid-js';
-import { ArrowUp, X } from 'lucide-solid';
+import { ArrowUp, X } from '@/lib/icons';
 
 export interface SendButtonProps {
   running: boolean;

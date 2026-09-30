@@ -1,6 +1,6 @@
 /** Consecutive quiet calls, folded into one counted line: "Read a note, searched notes ×2". */
 import { For, type Component } from 'solid-js';
-import { Sparkles } from 'lucide-solid';
+import { Sparkles } from '@/lib/icons';
 import { ToolBody } from './ToolBody';
 import { ToolLine } from './ToolLine';
 import { ToolRow } from './ToolRow';

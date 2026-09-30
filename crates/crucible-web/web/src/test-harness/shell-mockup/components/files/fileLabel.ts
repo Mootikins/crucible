@@ -5,7 +5,8 @@
  * reads the file names from `useListDir`.
  */
 import type { Component } from 'solid-js';
-import { File, FileImage, FileJson, FileText, LayoutDashboard } from 'lucide-solid';
+import { isMarkdownPath } from '@/lib/markdown-path';
+import { File, FileImage, FileJson, FileText, LayoutDashboard } from '@/lib/icons';
 
 /** Icons: an icon on every file. Extensions: no icon, and a label on each file that is not a note. */
 export type FileLabels = 'icons' | 'extensions';
@@ -21,7 +22,7 @@ export function fileLabel(name: string): FileLabel {
   // A name that starts with a dot, or has none, has no extension.
   if (dot <= 0) return { title: name };
   const ext = name.slice(dot + 1);
-  if (ext.toLowerCase() === 'md') return { title: name.slice(0, dot) };
+  if (isMarkdownPath(name)) return { title: name.slice(0, dot) };
   return { title: name.slice(0, dot), ext: ext.toUpperCase() };
 }
 

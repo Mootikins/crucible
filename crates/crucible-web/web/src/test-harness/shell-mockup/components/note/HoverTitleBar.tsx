@@ -1,6 +1,6 @@
 /** A hover popup's bar, variant "title": the note's title, then pin and close. The bar drags the popup. */
 import type { Component } from 'solid-js';
-import { Pin, X } from 'lucide-solid';
+import { Pin, X } from '@/lib/icons';
 import { IconButton } from '../primitives/IconButton';
 import { scrollFade } from '../primitives/scrollFade';
 

@@ -4,7 +4,7 @@
  */
 import type { Component } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { X } from 'lucide-solid';
+import { X } from '@/lib/icons';
 import { Button } from '../primitives/Button';
 import { CopyButton } from '../primitives/CopyButton';
 import { IconButton } from '../primitives/IconButton';

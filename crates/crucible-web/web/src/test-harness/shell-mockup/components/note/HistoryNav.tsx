@@ -1,6 +1,6 @@
 /** Back and forward through a document tab's history, as in a web browser. */
 import type { Component } from 'solid-js';
-import { ChevronLeft, ChevronRight } from 'lucide-solid';
+import { ChevronLeft, ChevronRight } from '@/lib/icons';
 import { IconButton } from '../primitives/IconButton';
 
 export interface HistoryNavProps {

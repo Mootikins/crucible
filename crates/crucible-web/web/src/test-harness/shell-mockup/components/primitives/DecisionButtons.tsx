@@ -4,7 +4,7 @@
  * `reviewActions.setState` (accept) and `reviewActions.reject`.
  */
 import { Show, createSignal, type Component } from 'solid-js';
-import { Check } from 'lucide-solid';
+import { Check } from '@/lib/icons';
 import { Button } from './Button';
 
 export interface DecisionButtonsProps {

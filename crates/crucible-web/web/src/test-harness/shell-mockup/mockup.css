@@ -810,4 +810,3 @@ body { background: var(--mk-nav); }
 .mk-review-controls { display: flex; align-items: center; gap: 16px; margin: -4px 0 14px; }
 .mk-review-controls .mk-tb-seg { width: auto; }
 .mk-review-controls .mk-check { padding: 0; }
-

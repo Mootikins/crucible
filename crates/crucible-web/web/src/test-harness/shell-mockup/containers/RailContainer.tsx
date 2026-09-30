@@ -3,7 +3,7 @@
  * head and tail slots, where the current app keeps its own.
  */
 import { Show, createSignal } from 'solid-js';
-import { Contrast, Plus, Search, Settings, SlidersHorizontal } from 'lucide-solid';
+import { Contrast, Plus, Search, Settings, SlidersHorizontal } from '@/lib/icons';
 import { RibbonCommand } from '@/windowing/components/RibbonButton';
 import type { WindowingSlots } from '@/windowing/components/context';
 import type { EdgePanelPosition } from '@/windowing/model/types';

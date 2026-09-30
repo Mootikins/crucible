@@ -3,7 +3,7 @@
  * real app), with the override that sends it now.
  */
 import type { Component } from 'solid-js';
-import { ArrowUp, X } from 'lucide-solid';
+import { ArrowUp, X } from '@/lib/icons';
 import { Button } from '../primitives/Button';
 import { IconButton } from '../primitives/IconButton';
 

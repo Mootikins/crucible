@@ -10,6 +10,8 @@ import { fileLabel } from '../fileLabel';
 describe('fileLabel', () => {
   it('gives a note no extension label', () => {
     expect(fileLabel('Precognition.md')).toEqual({ title: 'Precognition' });
+    expect(fileLabel('Precognition.MARKDOWN')).toEqual({ title: 'Precognition' });
+    expect(fileLabel('.md')).toEqual({ title: '.md' });
     // A dot inside a note name is not an extension.
     expect(fileLabel('Z.AI Setup.md')).toEqual({ title: 'Z.AI Setup' });
   });

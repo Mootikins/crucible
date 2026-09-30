@@ -3,7 +3,7 @@
  * editor) has no history, so it shows no history buttons.
  */
 import { Show, type Component, type JSX } from 'solid-js';
-import { BookOpen, Code, Pencil } from 'lucide-solid';
+import { BookOpen, Code, Pencil } from '@/lib/icons';
 import { ToggleGroup, type ToggleOption } from '../primitives/ToggleGroup';
 import { Breadcrumb } from './Breadcrumb';
 import { HistoryNav, type HistoryNavProps } from './HistoryNav';

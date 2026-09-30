@@ -6,7 +6,7 @@
  */
 import { For, Show, createSignal, type Component, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { Check } from 'lucide-solid';
+import { Check } from '@/lib/icons';
 
 /**
  * One entry: an action, a choice that can show a check, or a line. `hint`

@@ -5,7 +5,7 @@
  * shows while the rail's vertical tabs hide the pane's tab bar.
  */
 import type { Component } from 'solid-js';
-import { ArrowUpNarrowWide, FolderPlus, MoreHorizontal, SquarePen } from 'lucide-solid';
+import { ArrowUpNarrowWide, FolderPlus, MoreHorizontal, SquarePen } from '@/lib/icons';
 import { IconButton } from '../primitives/IconButton';
 import { Menu } from '../primitives/Menu';
 import type { FileLabels } from './fileLabel';

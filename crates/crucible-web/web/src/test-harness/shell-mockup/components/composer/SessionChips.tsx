@@ -4,7 +4,7 @@
  * them from `useSessionModes`, `useSessionModels` and `useSessionScopeChips`.
  */
 import type { Component } from 'solid-js';
-import { ChevronDown, CircleHelp, FlaskConical, FolderGit2, ListChecks, Zap } from 'lucide-solid';
+import { ChevronDown, CircleHelp, FlaskConical, FolderGit2, ListChecks, Zap } from '@/lib/icons';
 import { KnobButton } from './KnobButton';
 
 export type ModeId = 'Ask' | 'Auto' | 'Plan';

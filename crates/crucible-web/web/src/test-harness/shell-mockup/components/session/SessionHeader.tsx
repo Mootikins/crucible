@@ -3,7 +3,7 @@
  * review count, the expand toggle and the menu.
  */
 import { Show, type Component } from 'solid-js';
-import { GitCompare, Maximize2, Minimize2, MoreHorizontal } from 'lucide-solid';
+import { GitCompare, Maximize2, Minimize2, MoreHorizontal } from '@/lib/icons';
 import { ContextRing } from '../primitives/ContextRing';
 import { IconButton } from '../primitives/IconButton';
 import { Ident } from '../primitives/Ident';

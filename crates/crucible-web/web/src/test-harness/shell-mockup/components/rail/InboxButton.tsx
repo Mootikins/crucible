@@ -1,6 +1,6 @@
 /** The inbox button, with the count of what waits for the user. */
 import { Show, type Component } from 'solid-js';
-import { Bell } from 'lucide-solid';
+import { Bell } from '@/lib/icons';
 import { Pill } from '../primitives/Pill';
 import { RailButton } from './RailButton';
 

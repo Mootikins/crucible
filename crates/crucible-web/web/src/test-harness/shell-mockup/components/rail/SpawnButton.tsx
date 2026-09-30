@@ -4,7 +4,7 @@
  * takes the accent while sessions hold the centre.
  */
 import type { Component } from 'solid-js';
-import { ArrowLeftRight } from 'lucide-solid';
+import { ArrowLeftRight } from '@/lib/icons';
 import { RailButton } from './RailButton';
 
 export type SpawnKind = 'docs' | 'sessions';

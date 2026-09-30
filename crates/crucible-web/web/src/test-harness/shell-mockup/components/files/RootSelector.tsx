@@ -6,7 +6,7 @@
  */
 import type { Component } from 'solid-js';
 import { Show } from 'solid-js';
-import { ChevronsUpDown } from 'lucide-solid';
+import { ChevronsUpDown } from '@/lib/icons';
 import { Menu, type MenuEntry } from '../primitives/Menu';
 import type { RootKey } from './FileTree';
 

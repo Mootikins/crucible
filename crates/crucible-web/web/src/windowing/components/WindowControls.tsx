@@ -209,7 +209,7 @@ export function useFloatingWindow(): FloatingWindowHandle | null {
 }
 
 /** The attribute that marks a drag handle of a floating window. */
-export const DRAG_HANDLE_ATTR = 'data-wm-drag-handle';
+const DRAG_HANDLE_ATTR = 'data-wm-drag-handle';
 
 /** Targets that keep their own pointer behaviour inside a drag handle. */
 const INTERACTIVE =

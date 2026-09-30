@@ -4,7 +4,7 @@
  * the same in `Message.tsx` and `AssistantTurn.tsx`.
  */
 import { Show, createSignal, type Component } from 'solid-js';
-import { Check, Copy } from 'lucide-solid';
+import { Check, Copy } from '@/lib/icons';
 import { IconButton } from './IconButton';
 
 export const CopyIconButton: Component<{ text: () => string; label: string }> = (props) => {

@@ -3,7 +3,7 @@
  * the view modes, open in a tab and close.
  */
 import { For, Show, createSignal, type Component } from 'solid-js';
-import { Check, MoreHorizontal, Pin } from 'lucide-solid';
+import { Check, MoreHorizontal, Pin } from '@/lib/icons';
 import { IconButton } from '../primitives/IconButton';
 import { Breadcrumb } from './Breadcrumb';
 import type { HoverActions } from './HoverTitleBar';

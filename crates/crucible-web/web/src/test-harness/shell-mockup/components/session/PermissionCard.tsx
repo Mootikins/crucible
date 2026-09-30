@@ -6,7 +6,7 @@
  * project and user (`PermissionInteraction.tsx`).
  */
 import type { Component } from 'solid-js';
-import { MoreHorizontal } from 'lucide-solid';
+import { MoreHorizontal } from '@/lib/icons';
 import { Button } from '../primitives/Button';
 import { Menu } from '../primitives/Menu';
 import { SectionLabel } from '../primitives/SectionLabel';

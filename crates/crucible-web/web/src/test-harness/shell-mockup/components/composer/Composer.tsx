@@ -5,7 +5,7 @@
  * is one line, and takes the card radius when it wraps.
  */
 import { createEffect, createSignal, on, type Component } from 'solid-js';
-import { Mic } from 'lucide-solid';
+import { Mic } from '@/lib/icons';
 import { IconButton } from '../primitives/IconButton';
 import { SendButton } from './SendButton';
 import { SessionChips, type SessionChipsProps } from './SessionChips';

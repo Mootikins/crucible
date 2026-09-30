@@ -17,17 +17,17 @@ export function parseFront(src: string): [NoteProps, string] {
   return [props, src.slice(end + 4).replace(/^\n/, '')];
 }
 
-export type Segment = { kind: 'md'; text: string } | { kind: 'hunk'; id: string };
+export type Segment = { kind: 'markdown'; text: string } | { kind: 'hunk'; id: string };
 
 export function segments(body: string): Segment[] {
   const out: Segment[] = [];
   const re = /:::hunk (\w+)\n[\s\S]*?\n:::\n?/g;
   let at = 0;
   for (const m of body.matchAll(re)) {
-    out.push({ kind: 'md', text: body.slice(at, m.index) });
+    out.push({ kind: 'markdown', text: body.slice(at, m.index) });
     out.push({ kind: 'hunk', id: m[1]! });
     at = m.index! + m[0].length;
   }
-  out.push({ kind: 'md', text: body.slice(at) });
+  out.push({ kind: 'markdown', text: body.slice(at) });
   return out;
 }
