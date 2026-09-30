@@ -485,7 +485,6 @@ impl ReconnectingDaemon {
         -> crucible_core::types::mode::SessionModes = session_list_modes(&session_id);
     }
 
-
     // Used only by this module's own startup auto-registration of the
     // operator-configured kiln path, which is a local, trusted decision, not
     // a browser request.
