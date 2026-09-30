@@ -60,13 +60,13 @@ export function openSettings() {
 
 export function mockSlots(onNewSession: () => void, onSearch: () => void): WindowingSlots {
   return {
+    // Search sits with the documents; New session sits with the sessions.
     railHead: (position: EdgePanelPosition) =>
       position === 'left' ? (
-        <>
-          <RibbonCommand title="Search (Ctrl+K)" testId="mk-search" onClick={onSearch}><Search class="w-4 h-4" /></RibbonCommand>
-          <RibbonCommand title="New session" testId="mk-new-session" onClick={onNewSession}><Plus class="w-4 h-4" /></RibbonCommand>
-        </>
-      ) : undefined,
+        <RibbonCommand title="Search (Ctrl+K)" testId="mk-search" onClick={onSearch}><Search class="w-4 h-4" /></RibbonCommand>
+      ) : (
+        <RibbonCommand title="New session" testId="mk-new-session" onClick={onNewSession}><Plus class="w-4 h-4" /></RibbonCommand>
+      ),
     railTail: (position: EdgePanelPosition) =>
       position === 'left' ? (
         <>

@@ -2,6 +2,7 @@
 import type { Component } from 'solid-js';
 import { Pin, X } from 'lucide-solid';
 import { IconButton } from '../primitives/IconButton';
+import { scrollFade } from '../primitives/scrollFade';
 
 export interface HoverActions {
   title: string;
@@ -11,7 +12,7 @@ export interface HoverActions {
 
 export const HoverTitleBar: Component<HoverActions> = (props) => (
   <div class="mk-hoverbar" data-wm-drag-handle="">
-    <span class="mk-hovertitle">{props.title}</span>
+    <span class="mk-hovertitle" ref={scrollFade('x')}>{props.title}</span>
     <IconButton label="Pin: keep it open, with all its tools" onClick={() => props.onPin()}>
       <Pin class="mk-i" />
     </IconButton>

@@ -4,6 +4,7 @@
  * chooses the root.
  */
 import { For, Match, Switch, type Component } from 'solid-js';
+import { scrollFade } from '../primitives/scrollFade';
 import { StaticRow } from './StaticRow';
 import { TreeRows, type TreeRowsProps } from './TreeRows';
 import type { TreeNode } from './tree';
@@ -19,7 +20,7 @@ export interface FileTreeProps extends Omit<TreeRowsProps, 'node' | 'depth'> {
 }
 
 export const FileTree: Component<FileTreeProps> = (props) => (
-  <div class="mk-scroll mk-tree">
+  <div class="mk-scroll mk-tree" ref={scrollFade('y')}>
     <Switch>
       <Match when={props.root === 'docs'}>
         <TreeRows {...props} node={props.kiln} depth={0} />

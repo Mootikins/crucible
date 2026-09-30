@@ -9,6 +9,7 @@ import type { HistoryNavProps } from './HistoryNav';
 import { NoteArticle } from './NoteArticle';
 import { NoteMissing } from './NoteMissing';
 import { NoteToolbar, type NoteMode } from './NoteToolbar';
+import { scrollFade } from '../primitives/scrollFade';
 import { parseFront } from './parse';
 
 export interface NoteViewProps {
@@ -58,7 +59,7 @@ export const NoteView: Component<NoteViewProps> = (props) => {
       >
         {(bar) => bar()({ mode: mode(), setMode })}
       </Show>
-      <div class="mk-scroll">
+      <div class="mk-scroll" ref={scrollFade('y')}>
         <Show
           when={parsed()}
           fallback={

@@ -4,6 +4,7 @@
  * that floats over the right edge.
  */
 import type { Component, JSX } from 'solid-js';
+import { scrollFade } from '../primitives/scrollFade';
 
 export interface SessionLayoutProps {
   ref?: (el: HTMLDivElement) => void;
@@ -19,7 +20,7 @@ export const SessionLayout: Component<SessionLayoutProps> = (props) => {
   return (
     <div class="mk-session" ref={props.ref}>
       {props.header}
-      <div class="mk-scroll mk-transcript" style={{ 'padding-right': inset() }}>
+      <div class="mk-scroll mk-transcript" ref={scrollFade('y')} style={{ 'padding-right': inset() }}>
         {props.transcript}
       </div>
       <div class="mk-composerwrap" style={{ 'padding-right': inset() }}>
