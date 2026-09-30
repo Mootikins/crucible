@@ -219,9 +219,35 @@ either an already-routed reply or reads lines itself, handing any
 mismatched id to another caller's still-pending slot. `call_with_retry`
 retries up to twice, only on a fixed set of transient-error substrings
 (`TRANSIENT_ERROR_PATTERNS`), and never on an RPC-level `error` field.
-`typed_call`/`typed_call_with_timeout`/`typed_call_with_retry`/`typed_unit_call`
-build on `call`/`call_with_timeout`/`call_with_retry` to deserialize the
-reply into a typed struct.
+
+`call`/`call_with_timeout`/`call_with_retry` are generic over the request
+and reply type (`Req: Serialize`, `Resp: DeserializeOwned`); `Req = Resp =
+serde_json::Value` (inferred from context) behaves exactly like the old raw,
+untyped `call`, so a Value-in-Value-out call site needs no annotation
+change. The former `typed_call`/`typed_call_with_timeout`/
+`typed_call_with_retry`/`typed_unit_call` were thin wrappers that
+serialized/deserialized around a Value-only `call`; once `call` itself
+became generic they were redundant and are gone. `send_raw` (private) is
+the one place left that still speaks a bare `serde_json::Value` on the
+wire — every public `call*` method serializes down to it and deserializes
+back up from it. `typed_unit_call` and `session_id_call` (both
+`pub(super)`) stay as small convenience wrappers built on `call`, for
+"discard the reply" and "the body is just a session id," respectively.
+
+Each `RpcMethod` row (`crucible_core::protocol::rpc::method`) also names its
+params and reply type (`Variant = "wire.name": Req => Resp`), read back
+through `RpcMethod::params_type`/`RpcMethod::reply_type`. Nothing ties a
+`call::<Req, Resp>` call site to its row's declared pair at compile time —
+Rust has no way to bind one concrete type pair to one enum *value* without a
+marker type per variant, and a marker type per method is the
+one-struct-per-method growth the table exists to avoid. What the row does
+enforce: every method names a real, resolvable type — a typo or a private
+type fails `crucible-core`'s own build (`ASSERT_ROW_TYPES_RESOLVE` in
+`method.rs`) — and the pair is machine-readable enough to generate
+`crates/crucible-web/web/src/lib/rpc-methods.d.ts` (`cargo run -p
+crucible-core --example gen_rpc_methods_ts`), the TS method map step 19's
+web RPC route reads from: one entry per method, `unknown` where the row is
+`serde_json::Value` or the bare type has no `api-schema.d.ts` schema yet.
 
 ### A session action as one direct RPC
 
@@ -274,7 +300,7 @@ family (`diff_get`, `diff_file`/`diff_file_request`, `diff_comment`,
 `diff_resolve_comment`, `diff_delete_comment`, `diff_comments`), all keyed
 on a `crucible_core::diff::DiffsetSource` (a branch, a session record, or a
 proposal) rather than a bare session id. A comment anchor, a resolve, or a
-delete calls plain `typed_call` and never retries, for the same
+delete calls plain `call` and never retries, for the same
 non-idempotent-write reason as `proposal.*` below.
 
 ## State, concurrency and lifecycle
@@ -319,14 +345,14 @@ non-idempotent-write reason as `proposal.*` below.
   (`proposal_accept`/`_paths`/`_files`, `proposal_reject`/`_paths`/`_files`,
   `proposal_dismiss`, `proposal_resolve`/`_file`) and `storage.rs`'s
   `diff_comment`/`diff_resolve_comment`/`diff_delete_comment` all call plain
-  `typed_call`/`call`, never `typed_call_with_retry`/`call_with_retry`,
+  `call`, never `call_with_retry`,
   because a retried write after a timeout could repeat a decision the
   daemon already made — `proposals.rs`'s own module doc states this: "A read
   retries. A decision is sent once, because a retry after a timeout can
   repeat a decision that the daemon already made." `workflow.rs`'s four RPCs
   follow the same pattern without stating the rationale inline.
   `proposal_list`/`proposal_get` and `diff_get`/`diff_file`/`diff_comments`
-  use `typed_call_with_retry` because they mutate nothing.
+  use `call_with_retry` because they mutate nothing.
 - **Names, not paths.** `NamedKiln.kiln` is `KilnName`, never a raw
   path string, matching AGENTS.md's kiln-registry rule;
   `AgentsListCardsRequest` is the documented exception (agent cards resolve
@@ -350,10 +376,9 @@ struct in the matching file of `crates/crucible-core/src/protocol/requests/`
 (`agent.rs`, `session.rs`, `storage.rs`, `lua.rs`, `plugin.rs`, and so on),
 since every request and reply type is gate-A6-shared with the daemon's
 handler. The method itself
-goes through `typed_call`/`typed_call_with_retry`/`call` from `client/mod.rs`;
-a write with a non-idempotent side effect should follow `proposals.rs`'s
-pattern of a plain `typed_call`/`call` — never `typed_call_with_retry`/
-`call_with_retry` — rather than retry it. A new RPC also needs a
+goes through `call`/`call_with_retry` from `client/mod.rs`; a write with a
+non-idempotent side effect should follow `proposals.rs`'s pattern of a
+plain `call` — never `call_with_retry` — rather than retry it. A new RPC also needs a
 re-export line in `crates/crucible-daemon/src/rpc_client/mod.rs` if a caller
 outside `crucible-daemon` needs it. Per [[Consolidation Plan#Extension seams]],
 the daemon-side half of a new RPC starts at `crates/crucible-daemon/src/rpc/dispatch.rs`
@@ -428,3 +453,19 @@ either; they are exercised, if at all, outside this page's file set.
   mutating method in this module is a pass-through to a daemon RPC, and the
   deliberate `Err`/empty-value stubs in `crates/crucible-daemon/src/rpc_client/storage.rs`
   are documented as intentional rather than left as silent gaps.
+- Step 19 part A (typed `rpc_methods!` rows) found that roughly half the
+  169 methods have a reply the daemon still builds with `json!`, not a
+  named core type: about 91 rows carry `serde_json::Value` on one or both
+  sides, in three groups — (1) 49 client methods already returned
+  `Result<serde_json::Value>` before this step; (2) about 15 more whose
+  true wire type lives in `crucible-daemon` (`McpStatus`, `ScmCloneResponse`,
+  `GrepSearchResponse`, `FtsResult`, `FsListing`/`FsMoveReply`/`FsTrashReply`,
+  `SuggestLinksReply`, `WebhookReceiveReply`, `AgentProfilesReply`, and the
+  six `base.*` params/reply pairs in `crucible_daemon::bases`) — `crucible-core`
+  cannot name a daemon-crate type without a dependency cycle, so these stay
+  `Value` until that type moves to core, unfinished step 6/10 work; (3)
+  about 27 more behind a handler in `rpc/dispatch.rs` that still reads a raw
+  `&Request` (mostly `config.*`, `session.can_undo`/`undo_depth`/
+  `cache_stats`/`list_models`/`list_notifications`, `ui.*`), never having
+  called `typed_params`, so their reply was hand-built `json!` from the
+  start and never had a shape to name.

@@ -1010,6 +1010,104 @@ still load, shown by a fixture captured before the change.
 
 ## Step 19. One RPC route for the web
 
+**Status: part A done (typed `rpc_methods!` rows); the route itself (parts
+1-6 of the change below) is not started.**
+
+**Part A, done.** Every row in `rpc_methods!`
+(`crates/crucible-core/src/protocol/rpc/method.rs`) now names its params and
+reply type: `Variant = "wire.name": Req => Resp`. The macro's grammar makes
+a row with no types fail to compile, and a hidden
+`ASSERT_ROW_TYPES_RESOLVE` const forces every named type to actually
+resolve (proved once with a row renamed to a nonexistent type, observed to
+fail `cargo check -p crucible-core`, then reverted). `RpcMethod::params_type`/
+`reply_type` read a row's text back at runtime (`stringify!` of the macro
+argument), which the new `crates/crucible-core/examples/gen_rpc_methods_ts.rs`
+turns into `crates/crucible-web/web/src/lib/rpc-methods.d.ts` — one method
+map entry per row, referencing `api-schema.d.ts`'s schema names where they
+exist and `unknown` otherwise (`cargo run -p crucible-core --example
+gen_rpc_methods_ts -- crates/crucible-web/web/src/lib/api-schema.d.ts`).
+
+Of the 169 rows, 78 name a real core type on both sides. The other 91 name
+`serde_json::Value` on one or both sides, in three groups (counted in
+[[RPC Client#Findings]]): 49 methods whose `DaemonClient` reply was already
+`Value` before this change; about 15 whose true reply type lives in the
+`crucible-daemon` crate, which `crucible-core` cannot name without a
+dependency cycle (`McpStatus`, `ScmCloneResponse`, `GrepSearchResponse`,
+`FtsResult`, the `fs.*`/`base.*`/`suggest_links`/`webhook.receive`/
+`agents.list_profiles` replies); and about 27 behind a `rpc/dispatch.rs`
+handler that still reads a raw `&Request` and answers hand-built `json!`,
+never having called `typed_params`. None of these were given an invented
+type to fill the cell — moving a daemon-local type to core, and giving a raw
+handler a typed params struct, are both unfinished step 6/10 work, not part
+of this step.
+
+`DaemonClient::call`/`call_with_timeout`/`call_with_retry`
+(`crates/crucible-daemon/src/rpc_client/client/mod.rs`) are now generic over
+the request and reply (`Req: Serialize`, `Resp: DeserializeOwned`); `Req =
+Resp = serde_json::Value` behaves exactly like the old untyped `call`, so
+every existing Value-in-Value-out call site needed only a type annotation
+where inference could not otherwise pick `Resp` (about 30 call sites across
+`crucible-daemon`, `crucible-cli` and their tests — mostly `let x =
+client.call(...)` becoming `let x: serde_json::Value = ...`, or
+`.call::<_, serde_json::Value>(...)` at a call site with no local binding to
+annotate). The former `typed_call`/`typed_call_with_timeout`/
+`typed_call_with_retry`/`typed_unit_call` were thin wrappers that
+serialized/deserialized around a Value-only `call`; once `call` itself
+became generic they were redundant and are deleted, with their ~140 call
+sites mechanically renamed (`typed_call` → `call`, etc.) across every
+submodule of `crates/crucible-daemon/src/rpc_client/client/`,
+`crates/crucible-cli/src/commands/base.rs`,
+`crates/crucible-cli/src/tui/oil/chat_runner/actions.rs` and
+`crates/crucible-web/src/services/daemon.rs`'s `forward_rpc!` expansions.
+`typed_unit_call`/`session_id_call` stay as small `pub(super)` convenience
+wrappers built on `call`. The named, argument-transforming client methods
+(`kiln_forget`, `session_pause`, and the like) were not deleted: each turns
+an ergonomic Rust argument list into a wire body, which is not the
+redundancy `call` removes.
+
+**Gone** (measured): 0 new Rust `struct`/`enum` declarations
+(`rg -c -t rust '^\s*(pub(\([a-z:]+\))? )?(struct|enum) [A-Z]' crates/*/src`
+stays at 1770 in `crates/{core,daemon,web,cli}` and the other crates
+combined — the design rule this step's own instructions set: no
+one-struct-per-method table). `Result<serde_json::Value>` signatures in
+`crates/crucible-daemon/src/rpc_client` went from 49 to 48 (the two
+generic-infra methods that used to spell it literally — `call` and
+`call_with_timeout` — no longer do, offset by one call site gaining an
+explicit `Result<serde_json::Value>` annotation it did not need before).
+
+**Compiler proof.** A row whose type does not exist fails
+`crucible-core`'s build (`ASSERT_ROW_TYPES_RESOLVE`). A client call site
+whose annotated `Resp` does not match what it does with the reply (e.g.
+`notification_dismiss` re-typed to read `.dismissed` off a `McpStatus`)
+fails `crucible-daemon`'s build, at the point where `call`'s generic
+`Resp` is inferred from the annotation and the field access fails. Neither
+proof ties a row's declared pair to a specific call site's chosen types —
+Rust cannot bind one concrete type pair to one enum *value* without a
+marker type per variant, and a marker type per method is the
+one-struct-per-method growth this step's own design rule forbids. The
+trade-off: the row is a documented, compiler-verified-to-exist contract and
+a generator input, not a type-level guarantee that a given `call` site
+honors it. Closing that gap fully would need either 169 marker types (the
+explicitly disfavored fallback) or rewiring every dispatch arm to return
+its row's exact `Resp` through a shared macro-generated dispatch helper,
+which is web-route-sized work of its own and is left to a follow-up.
+
+**Change cost, measured on a scratch method** (`ScratchPing2`, added then
+reverted): 3 places — the `rpc_methods!` row (with its types), the dispatch
+arm, and the call site itself (`client.call(RpcMethod::ScratchPing2,
+()).await`, no wrapper method needed). This is the RPC-method half of the
+"about 9 places" figure in "How a step is accepted"; the web-route places
+(a route, its types, a forwarding function, a TS function and TS types)
+are still 6 more, because part A does not touch the web layer — that is
+parts 1-6 of the change below, not started.
+
+**Not started:** the `POST /api/rpc/{method}` route, the browser allow
+list, the per-caller allow list, replacing the per-route TS functions with
+the generated `rpc-methods.d.ts` map, the one-event-stream/catalog/
+client-state moves, and the daemon error-code mapping. `rpc-methods.d.ts`
+exists and typechecks (`bun run typecheck` in
+`crates/crucible-web/web`) but nothing imports it yet.
+
 **Now.** The web server has 119 routes and 156 Rust types. About 75 routes
 only forward one daemon RPC, and about 87 functions in `services/daemon.rs`
 do the forwarding. The frontend has 104 functions in `lib/api.ts` and 128

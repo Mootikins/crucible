@@ -286,6 +286,20 @@ by the `rpc_methods!` macro so the wire-name list and the dispatch arms
 cannot drift. `handle_client` in `crates/crucible-daemon/src/server/core/mod.rs`
 calls `dispatch()` once per request.
 
+Since step 19 part A of the simplification plan, each `rpc_methods!` row
+also names its params and reply type (`Variant = "wire.name": Req => Resp`).
+The macro's grammar makes a row with no types fail to compile, and a hidden
+`ASSERT_ROW_TYPES_RESOLVE` const forces every named type to actually
+resolve — a typo or a type the dispatcher's own handler cannot see fails
+`crucible-core`'s build, not a downstream test. This is documentation and a
+generator input, not a binding on the handler: the handler still proves its
+own request type through `typed_params::<T>`, and nothing here stops a
+handler's real reply from drifting from the row's declared one (no marker
+type per method exists to bind them — see the module doc of
+`crucible_core::protocol::rpc::method`). About half the rows still name
+`serde_json::Value` on one or both sides — see [[RPC Client#Findings]] for
+the three reasons and the counts.
+
 **`LuaSessionState`** (`crates/crucible-daemon/src/server/mod.rs`) pairs a
 per-session `LuaExecutor` with an `end_hooks_fired: bool` guard, because both
 `session.end` (`crates/crucible-daemon/src/rpc/dispatch.rs`) and
@@ -695,8 +709,10 @@ See [[Data Flows]] for the end-to-end wire path across frontends.
 ## Extension seams
 
 - **A new RPC method** is a new `RpcMethod` variant declared through the
-  `rpc_methods!` macro in `crates/crucible-core/src/protocol/rpc/method.rs`
-  and one arm in `RpcDispatcher::dispatch`
+  `rpc_methods!` macro in `crates/crucible-core/src/protocol/rpc/method.rs`,
+  with its params and reply type in the same row (`Variant = "name": Req =>
+  Resp`; use `serde_json::Value` for a side with no core type yet, rather
+  than inventing one to fill the cell), and one arm in `RpcDispatcher::dispatch`
   (`crates/crucible-daemon/src/rpc/dispatch.rs`); `#[deny(clippy::wildcard_enum_match_arm)]`
   and `#[deny(clippy::match_wildcard_for_single_variants)]` fail the build if
   the arm is missing. See [[Consolidation Plan#Extension seams]] for the
