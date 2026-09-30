@@ -11,6 +11,7 @@ import { RibbonPaneStrip } from './RibbonPaneStrip';
 import { RibbonCommand, ribbonBtn } from './RibbonButton';
 import { TabContextMenu } from './TabBar';
 import { paneTopIn, railBodyEl, watchRailGeometry } from './rail-geometry';
+import { railShown } from './rail-shown';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
 import {
   IconClose,
@@ -67,10 +68,10 @@ const RibbonTabButton: Component<{
     }
   };
 
-  const highlighted = () =>
-    props.isActive &&
-    !isEdgeCollapsed(windowStore.edgePanels[props.position]) &&
-    !paneCollapsed();
+  // The icon shows its pane as open while any of the rail is on screen, so a
+  // theme's highlight appears when the rail starts to open and leaves when it
+  // has slid shut (see rail-shown.ts).
+  const highlighted = () => props.isActive && railShown(props.position) && !paneCollapsed();
 
   // The state rides on data attributes. The theme decides how each one looks.
   // The tab menu of the tab bar wraps the icon: a theme can hide the tab bars

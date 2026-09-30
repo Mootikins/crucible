@@ -3,6 +3,7 @@ import { windowStore } from '@/windowing/store';
 import type { EdgePanelPosition } from '@/windowing/model/types';
 import { Ribbon } from './Ribbon';
 import { DockedBody } from './DockedBody';
+import { railShown } from './rail-shown';
 
 /**
  * One rail: the ribbon at the window edge, and the body that grows out of it
@@ -32,6 +33,7 @@ export const EdgeHost: Component<{ position: EdgePanelPosition }> = (props) => {
       data-edge-mode={panel().mode}
       data-edge-expanded={expanded() ? '' : undefined}
       data-ribbon-placement={windowStore.ribbonPlacement}
+      data-edge-shown={railShown(props.position) ? '' : undefined}
     >
       {props.position === 'left' && edgeRibbon()}
       <DockedBody position={props.position} />

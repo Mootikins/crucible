@@ -412,7 +412,8 @@ writes the raw state. The theme decides which state wins.
 | `data-modified` | `wm-tab` | The tab holds unsaved work |
 | `data-dragging` | `wm-tab`, `wm-ribbon-tab`, `wm-splitter`, `wm-pane-boundary` | The element moves now |
 | `data-overflows` | `wm-tab-title` | The box cuts the title |
-| `data-highlighted` | `wm-ribbon-tab` | The tab shows in an open pane |
+| `data-highlighted` | `wm-ribbon-tab` | The tab is active, its pane is not folded, and its rail is shown (see `data-edge-shown`) |
+| `data-edge-shown` | `wm-edge-host` | Some of the rail's body is on screen: the rail is open, or it still slides shut. It comes on at the start of an opening slide and goes off at the end of a closing slide, so a theme's rail colours grow out of the icon and leave with the body (`components/rail-shown.ts`) |
 | `data-unavailable` | `wm-ribbon-tab` | The policy gives a reason that the tab cannot open |
 | `data-content-type` | `wm-tab`, `wm-ribbon-tab` | The app's content type of the tab, for a theme that styles one kind of tab |
 | `data-orientation` | `wm-ribbon-tab` | `vertical` or `horizontal` |

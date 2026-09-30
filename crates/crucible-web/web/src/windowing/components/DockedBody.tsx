@@ -5,6 +5,7 @@ import { isEdgeCollapsed } from '@/windowing/model/types';
 import { isRestoringLayout } from '@/windowing/model/layout-restore';
 import { SplitPane } from './SplitPane';
 import { Ribbon, RIBBON_WIDTH_PX } from './Ribbon';
+import { setRailShown } from './rail-shown';
 
 const EDGE_PANEL_MIN_WIDTH = 120;
 // No fixed max: a rail that holds a wide panel may take most of the viewport.
@@ -168,6 +169,8 @@ export const DockedBody: Component<{ position: EdgePanelPosition }> = (props) =>
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const [progress, setProgress] = createSignal(isCollapsed() ? 0 : 1);
+  // Shown while the rail is open, and while it still slides shut. See rail-shown.ts.
+  createEffect(() => setRailShown(props.position, !isCollapsed() || progress() > 0));
   let tweenRaf: number | undefined;
 
   createEffect(
