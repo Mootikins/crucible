@@ -138,8 +138,28 @@ each domain's callers onto `rpc(...)` and deleting the REST route that only
 forwarded one RPC (item 9) is per-domain and in progress: the `skills`
 domain is done (`GET /api/skills`, `/api/skills/{name}` and
 `/api/skills/search` are gone, and `lib/query/skills.ts` calls
-`rpc('skills.list' | 'skills.get' | 'skills.search', ...)` directly); the
-other domains still keep their REST route and forwarder.
+`rpc('skills.list' | 'skills.get' | 'skills.search', ...)` directly); done
+too for `mcp.status` (`GET /api/mcp/status`, `routes/mcp.rs`, gone),
+`agents.list_profiles`/`models.list` (`GET /api/agents`, `GET /api/models`,
+`routes/agents.rs`, gone), `surface.list` (`GET /api/surfaces`,
+`routes/surface.rs` — `SurfaceChangedEvent`, the push frame's own type,
+stays in that file),
+`proposal.list`/`get`/`accept`/`reject`/`dismiss`/`resolve`
+(`/api/proposals*`, `routes/proposals.rs` and
+`services/daemon_proposals.rs`, both gone) and
+`diff.get`/`file`/`comment`/`resolve_comment`/`delete_comment`/`comments`
+(`/api/diff*`, `routes/diff.rs`, gone) — the browser now builds the tagged
+`DiffsetSource` directly and sends it as the row's own JSON body, so the
+web-side query-string flattening and its "exactly one of root, session and
+proposal" pre-check (which the tagged union already enforces at the type
+level) went with it. `routes/config.rs` (`GET`/`POST /api/config`) stays: the
+`config.*` RPC rows are off `browser_may_call` entirely (credential
+redaction only this route applies), so there is no generic path to move onto.
+`routes/plugin.rs` stays whole, for now: two of its ten routes already have
+an exact generic-path equivalent, but moving their frontend callers needs
+`rpc(...)` to carry the `x-crucible-plugin` header first — see the
+`routes/plugin.rs` table row above. The other domains still keep their REST
+route and forwarder.
 
 `crates/crucible-web/src/routes/search.rs`'s `resolve_note` still walks the
 filesystem directly (a walk that deliberately bypasses the note index), but
@@ -161,7 +181,7 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/assets.rs` | 201 | Serves the embedded SolidJS bundle or a `--static-dir` override. |
 | `crates/crucible-web/src/error.rs` | 246 | `WebError`, the crate's one error enum (now including `Conflict`), and its HTTP/JSON projection. |
 | `crates/crucible-web/src/fs_events.rs` | 138 | `FsEvent`, the file-tree explorer's SSE event enum, projected from daemon file-watcher events. |
-| `crates/crucible-web/src/server.rs` | 720 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the diff/proposal/system-event/bases/rpc route groups. |
+| `crates/crucible-web/src/server.rs` | 720 | Assembles and starts the Axum app: `start_server`, `build_router`, CORS, CSP, Host defense, OpenAPI document; merges the system-event/bases/rpc route groups. |
 | `crates/crucible-web/src/test_support.rs` | 1936 | Shared test daemons and fixtures for every route test in this crate: the mock daemon, whose reply `match` is exhaustive over `RpcMethod`, `start_real_daemon_with_kilns`, a real in-process daemon, and `request_json_with_errors`, a mock daemon that answers scripted JSON-RPC errors. |
 
 ### `crates/crucible-web/src/middleware/`
@@ -182,7 +202,6 @@ Paths are relative to the repository root. Line counts are as recorded at
 | File | Lines | Role |
 | --- | --- | --- |
 | `crates/crucible-web/src/routes/mod.rs` | 61 | Module tree and public re-export surface for every route group. |
-| `crates/crucible-web/src/routes/agents.rs` | 147 | `GET /api/agents`, `GET /api/models` — the session-creation agent picker. |
 | `crates/crucible-web/src/routes/auth.rs` | 497 | `POST /api/auth/login`/`logout` — exchanges an API key for a session cookie. |
 | `crates/crucible-web/src/routes/bases.rs` | 147 | Obsidian Bases query, view-listing and write endpoints (query/views/entries/property/group-order), a thin proxy over the daemon's `base.*` RPCs. |
 | `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with read-path reference redaction, within the root the daemon's `fs.read` names; the write-path containment check itself is the daemon's `fs.write`. |
@@ -190,25 +209,22 @@ Paths are relative to the repository root. Line counts are as recorded at
 
 | `crates/crucible-web/src/routes/canvas.rs` | 769 | `.canvas` document endpoints with strict containment and reference redaction, within the root the daemon's `fs.read` names. |
 | `crates/crucible-web/src/routes/chat.rs` | 527 | Chat turn intake (with attached diff comments) and pending-interaction routes. The session SSE stream moved to `routes/events.rs` in Simplification Plan step 19. |
-| `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. |
-| `crates/crucible-web/src/routes/diff.rs` | 609 | Branch/session-record/proposal diffset and diff-comment routes (`/api/diff`, `/api/diff/file`, `/api/diff/comment*`), a thin proxy over the daemon's `diff.*` RPCs. |
+| `crates/crucible-web/src/routes/config.rs` | 489 | `GET`/`POST /api/config` — forwards the daemon's effective config, origins, controls, and save. Kept (not migrated onto `rpc(...)`): every `config.*` RPC row is off `browser_may_call`, so this curated, credential-redacting composition is the only path a browser has to any of it. |
 | `crates/crucible-web/src/routes/events.rs` | 550 | `GET /api/events` — the one SSE route (Simplification Plan step 19). A client names as many topics as it wants in `?topics=a,b,...`: a session id for the chat stream, or `system` for publications, proposals, surface changes and filesystem changes. Every frame's JSON body gains a `topic` field; the payload types are unchanged (`SessionEventPayload`, `FsEvent`, `SurfaceChangedEvent`, `PublicationChangedEvent`, `ProposalChangedEvent`). Replaces the four routes `chat.rs::event_stream`, `fs.rs::fs_event_stream`, `surface.rs::surface_event_stream` and this file's own former `system_event_stream` used to serve separately. |
 | `crates/crucible-web/src/routes/fs.rs` | 398 | File-tree explorer routes: list, move, mkdir, trash. The live SSE stream moved to `routes/events.rs` (the `system` topic) in step 19. `fs_list_dir`/`fs_move`/`fs_trash` return the daemon's typed `FsListing`/`FsMoveReply`/`FsTrashReply` directly, with no `daemon_shape` decode. |
 | `crates/crucible-web/src/routes/health.rs` | 49 | `/health` liveness and `/ready` readiness probes. |
 | `crates/crucible-web/src/routes/helpers.rs` | 115 | Shared stream-versioning, note-projection, and note-name-validation helpers. |
 | `crates/crucible-web/src/routes/kiln.rs` | 1300 | Kiln/project file listing, the note-link graph, and text/raw file read-write, all through the shared `read_through_daemon`/`text_of`/`check_file_answer` helpers. `kiln_graph` returns core's own `KilnGraphReply` unchanged. |
 | `crates/crucible-web/src/routes/layout.rs` | 470 | Web UI layout persistence and the recently-opened-files list. |
-| `crates/crucible-web/src/routes/mcp.rs` | 97 | `GET /api/mcp/status`. |
-| `crates/crucible-web/src/routes/plugin.rs` | 981 | The nine plugin HTTP endpoints: list, install, remove, reload, options, commands, publications. Each reply is a `crucible_core::types::Plugin*` type, forwarded unchanged. It has no SSE stream of its own; see the "SSE subscribe-before-forward" flow below. |
+| `crates/crucible-web/src/routes/plugin.rs` | 964 | The ten plugin HTTP endpoints: list, install, remove, reload, option, options, commands, publications, run-command. Each reply is a `crucible_core::types::Plugin*` type, forwarded unchanged. It has no SSE stream of its own; see the "SSE subscribe-before-forward" flow below. Kept whole rather than migrated onto `rpc(...)` (Simplification Plan step 19): `POST /api/rpc/plugin.publications`/`plugin.run_command` already apply this file's own per-caller narrowing generically (`plugin_may_call`/`narrow_reply_for_caller` in `routes/rpc.rs`, reusing `narrow_to_caller`/`refuse_another_plugins_command`) and could migrate, but a caller here also needs `x-crucible-plugin`, which `rpc(...)` (`lib/api-client.ts`) does not yet carry — moving `list_publications`/`run_command`'s frontend callers means extending it first, left to a follow-up. `option_call` additionally lets a plugin read/write its own settings tree, which `plugin_may_call` does not yet allow for any method but those two; `install_plugin`/`remove_plugin` are off `browser_may_call` outright (local admin); `list_plugins`/`list_commands`/`list_options` are deliberately ungated, a property the generic route's allow list does not preserve for a caller that honestly declares itself a plugin. |
 | `crates/crucible-web/src/routes/plugin_caller.rs` | 144 | `PluginCaller` — the caller-identity extractor gating six plugin routes. |
 | `crates/crucible-web/src/routes/project.rs` | 625 | `/api/project/*` routes and the untrusted-caller root-safety policy. |
-| `crates/crucible-web/src/routes/proposals.rs` | 318 | `/api/proposals*` — accept/reject/dismiss/resolve a note-tool proposal, a thin proxy with no session in its path. |
 | `crates/crucible-web/src/routes/rpc.rs` | 642 | `POST /api/rpc/{method}` — the one generic RPC route (Simplification Plan step 19 item 1): `browser_may_call`'s exhaustive allow list, `plugin_may_call`'s stricter per-caller list, and the daemon-error-to-HTTP-status mapping. |
 | `crates/crucible-web/src/routes/scm.rs` | 93 | `POST /api/scm/clone` — thin proxy for a git clone. |
 | `crates/crucible-web/src/routes/search.rs` | 1506 | Kiln/note/search surface: kilns (with a `git` flag), notes, backlinks, vector/semantic/grep search. `list_kilns`, `list_notes`, `get_note` and `get_backlinks` return core's own reply types (`KilnRow`, `NoteListRow`, `NoteByNameReply`, `GetBacklinksReply`) unchanged, rather than a local row type decoded through `daemon_shape`. |
 | `crates/crucible-web/src/routes/session_commands.rs` | 337 | `GET /api/session/{id}/commands` answers the daemon's per-session catalog. `POST /api/session/{id}/command` runs a built-in command only, over an exhaustive `BuiltinCommand` match; any other name comes back as an `error` reply, so the composer sends it as a chat message instead. Includes a daemon-backed `/clear`, a readable `/search`, and `/resume <id>`, which answers `open_session` for the browser to open. |
 | `crates/crucible-web/src/routes/session_status.rs` | 204 | `GET /api/session/{id}/status` (`Vec<StatusDisplayItem>`, shared with the `status_items_changed` event; includes the engine's plugin-turn item), `GET .../notifications`, and `POST .../notifications/{id}/dismiss`. |
-| `crates/crucible-web/src/routes/surface.rs` | 176 | `GET /api/surfaces`. The SSE change stream moved to `routes/events.rs` (the `system` topic) in step 19. |
+| `crates/crucible-web/src/routes/surface.rs` | 126 | `SurfaceChangedEvent`, the push frame `routes/events.rs`'s `system` topic carries. `GET /api/surfaces` (`surface.list`, forwarded) is gone: the browser calls `rpc('surface.list', {})` directly. |
 | `crates/crucible-web/src/routes/terminal.rs` | 504 | `GET /api/terminal/ws` — WebSocket-to-PTY bridge. |
 | `crates/crucible-web/src/routes/webhook.rs` | 465 | `POST /api/webhook/{name}` — signed webhook ingress. |
 
@@ -239,7 +255,6 @@ Paths are relative to the repository root. Line counts are as recorded at
 | `crates/crucible-web/src/services/daemon_config.rs` | 91 | Forwards `config.*` RPCs and redacts credentials at the crate boundary. |
 | `crates/crucible-web/src/services/daemon_event_stream.rs` | 252 | `EventStream`, `Interest` — per-session upstream subscribe/unsubscribe reconciliation and SSE lag-to-`stream_gap` translation. |
 | `crates/crucible-web/src/services/daemon_plugins.rs` | 101 | Forwards `plugin.*` RPCs for the plugin panel and settings pane. |
-| `crates/crucible-web/src/services/daemon_proposals.rs` | 50 | Forwards `proposal.*` RPCs (list, get, accept, reject, dismiss, resolve) with the daemon's `Proposal` type. |
 | `crates/crucible-web/src/services/daemon_retry_tests.rs` | 548 | Real-Unix-socket tests for `ReconnectingDaemon`'s reconnect/replay machinery and the `Interest`/`EventStream` upstream-subscription protocol, driven through both the raw client and the assembled router's SSE routes. |
 | `crates/crucible-web/src/services/forwarding.rs` | 32 | `ReplayPolicy` and the `forward_rpc!` macro shared by every `daemon_*.rs` forwarder. |
 
@@ -348,11 +363,13 @@ Paths are relative to the repository root. Line counts are as recorded at
   full-record fields. Every route returns the core type unchanged rather
   than decoding into a web-local row. `ResumeSessionResponse` is a
   `#[serde(untagged)]` enum whose variant order is load-bearing (`Restored`
-  must precede `Live`, tested by `shape_tests.rs`). `crates/crucible-web/src/routes/diff.rs`
-  no longer calls `daemon_shape` for a diffset/comment reply: the daemon's
-  `diff.*` RPCs answer `crucible_core::protocol::requests::{DiffCommentReply,
-  DiffCommentsReply, DiffResolveCommentReply, DiffDeleteCommentReply}`
-  directly, and the route returns each one unchanged. `ModeRow.writes: WriteModeRow`
+  must precede `Live`, tested by `shape_tests.rs`). `diff.get`/`diff.file`/
+  `diff.comment`/`diff.resolve_comment`/`diff.delete_comment`/`diff.comments`
+  answer `crucible_core::diff::{Diffset, DiffFileText}`/
+  `crucible_core::protocol::requests::{DiffCommentReply, DiffCommentsReply,
+  DiffResolveCommentReply, DiffDeleteCommentReply}` directly; the browser
+  reads them through `rpc(...)` now (`routes/diff.rs` is gone, Simplification
+  Plan step 19). `ModeRow.writes: WriteModeRow`
   (`Apply`/`Propose`, mirroring `crucible_core::types::WriteMode` in
   `crates/crucible-core/src/types/mode.rs`) replaced `ModeRow.review_policy:
   ReviewPolicyRow`, since a mode now declares what a write *does*
@@ -361,20 +378,20 @@ Paths are relative to the repository root. Line counts are as recorded at
   `crates/crucible-core/src/diff.rs`) — a branch diff (`root`/`base`/`head`),
   a session record's base text against the current files on disk
   (`session`), or one proposal's base-of-each-write against its new text
-  (`proposal`); the query shape `crates/crucible-web/src/routes/diff.rs`
-  turns a caller's query or body into, and the key
-  `crates/crucible-web/src/services/daemon.rs`'s `Diff*` forwarders send to
-  the daemon.
+  (`proposal`); a tagged union `lib/diffset.ts` names as `Schemas['DiffsetSource']`
+  and `lib/diff-api.ts` sends as the row's own `source` field directly
+  (Simplification Plan step 19: this retired the web's own query-string
+  flattening and its "exactly one of root, session and proposal" check, both
+  now redundant with the union's own shape).
 - **`Comment`**/`CommentAnchor`/`CommentSide`/`CommentAuthor`
   (`crucible_core::session`, in `crates/crucible-core/src/session/types/review.rs`)
   — the one wire shape of a review comment, with `ToSchema` behind the
-  `openapi` feature. `/api/diff/comment*` (`crates/crucible-web/src/routes/diff.rs`)
-  names these types directly; no web-local row mirrors them.
+  `openapi` feature. `diff.comment`/`diff.resolve_comment`/`diff.delete_comment`
+  name these types directly; no web-local row mirrors them.
 - **`Proposal`**/`ProposalId` (`crucible_core::proposal`, in
   `crates/crucible-core/src/proposal.rs`) — forwarded verbatim by
-  `crates/crucible-web/src/routes/proposals.rs` and
-  `crates/crucible-web/src/services/daemon_proposals.rs`; the web declares
-  no row type of its own for a proposal.
+  `DaemonClient::proposal_*` (`crates/crucible-daemon/src/rpc_client/client/proposals.rs`);
+  the web declares no row type of its own for a proposal.
 - **`WriteOutcome`** (`crucible_daemon::bases::WriteOutcome`, in
   `crates/crucible-daemon/src/bases/operation.rs`) — the three-way answer a
   bases write gives; `crates/crucible-web/src/routes/bases.rs`'s
@@ -666,28 +683,39 @@ themselves, matching the containment split described in
 
 ### Diffset and proposal review
 
-`crates/crucible-web/src/routes/diff.rs` is a thin proxy over the daemon's
-`diff.get`/`diff.file`/`diff.comment`/`diff.resolve_comment`/
-`diff.delete_comment`/`diff.comments` RPCs. A query names exactly one
-`DiffsetSource`: a git branch diff (`root`, with an optional `base`/`head`),
-a session record's base text against the current files on disk (`session`),
-or a proposal's base-of-each-write against its new text (`proposal`); a
-session-record or proposal source takes no `base`/`head`, and additionally
-accepts an explicit `root` (either can span more than one root, unlike a
-branch source, which names its own). Each comment reply
+`routes/diff.rs` and `routes/proposals.rs` are gone (Simplification Plan
+step 19): each route only forwarded one RPC row, so the browser now calls
+`rpc('diff.get' | 'diff.file' | 'diff.comment' | 'diff.resolve_comment' |
+'diff.delete_comment' | 'diff.comments' | 'proposal.list' | 'proposal.get'
+| 'proposal.accept' | 'proposal.reject' | 'proposal.dismiss' |
+'proposal.resolve', ...)` directly (`lib/diff-api.ts`, `lib/proposal-api.ts`).
+`diff.get`/`diff.file`/`diff.comments` take a `DiffsetRef`/`DiffFileRequest`
+whose `source` field is `DiffsetSource` — a git branch diff
+(`root`/`base`/`head`), a session record's base text against the current
+files on disk (`session`), or a proposal's base-of-each-write against its
+new text (`proposal`); a session-record or proposal source takes no
+`base`/`head` at all (the enum has no such field on those variants), and a
+file request additionally carries an explicit `root` for either (either can
+span more than one root, unlike a branch source, which names its own).
+`lib/diffset.ts`'s `DiffsetSource` type is `Schemas['DiffsetSource']`, so a
+caller builds the tagged union directly; the route used to turn a flat query
+string into this same union and refuse an ambiguous or malformed one before
+ever asking the daemon, which is now dead code once the shape itself is the
+union — a malformed source fails `serde` deserialization at the daemon's own
+dispatch, mapped to a 422 the same generic way every other row's
+`INVALID_PARAMS` is. Each comment reply
 (`DiffCommentReply`/`DiffCommentsReply`/`DiffResolveCommentReply`/
 `DiffDeleteCommentReply`, in
 `crates/crucible-core/src/protocol/requests/storage.rs`) carries the core
-`crucible_core::session::Comment` type directly; the route returns each
-reply unchanged, with no web-local row to drop a field the daemon adds.
-`crates/crucible-web/src/routes/proposals.rs` serves
-`/api/proposals*` — a proposal belongs to no session, so its routes are not
-nested under `/api/session/{id}`. `accept_proposal`/`reject_proposal` take
-optional `paths`/root-qualified `files` so a caller can decide only some
-files of a proposal; the daemon moves the rest into a new proposal of the
-same author. A decision already in flight for a proposal answers
-`WebError::Conflict` (409) — the daemon's `BUSY` JSON-RPC code — rather than
-losing or duplicating the decision.
+`crucible_core::session::Comment` type directly; the row's reply is the
+daemon's own type unchanged, with no web-local row to drop a field the
+daemon adds. `proposal.accept`/`proposal.reject` take optional
+`paths`/root-qualified `files` so a caller can decide only some files of a
+proposal; the daemon moves the rest into a new proposal of the same author.
+A decision already in flight for a proposal answers `WebError::Conflict`
+(409) — the daemon's `BUSY` JSON-RPC code — rather than losing or
+duplicating the decision, mapped the same way for every RPC row by
+`routes/rpc.rs`'s `WebResultExt::daemon_err`, not by a route-local case.
 
 ## State, concurrency and lifecycle
 
@@ -793,21 +821,24 @@ losing or duplicating the decision.
   `openapi` feature, so the document names it directly. For a
   session-scoped method, `T` is the body inside `Scoped<T>`: `Title`,
   `NamedKiln`, `WorkspaceChoice`, `Page`. The web declares no copy of a
-  request. Three kinds of body stay web-owned: a body of a route that no
-  RPC answers (login, terminal, layout, recents, the SSE query, raw file
-  serving); a body that differs from the RPC request in more than an id,
-  such as `CreateSessionRequest`; and the proposal decision bodies
-  (`AcceptProposalBody`, `RejectProposalBody`, `ResolveProposalBody`),
-  whose RPC requests hold the proposal id, not a session id, so
-  `Scoped<T>` cannot remove it. `InteractionResponseRequest` also stays: it
-  carries `session_id` in its body, and `Scoped<T>` has no schema.
-- **Diffset and proposal disposition stay daemon-owned.**
-  `routes/diff.rs` forwards a `DiffsetSource` and a `comment_id` to the
-  daemon unvalidated; `routes/proposals.rs` forwards a `paths`/`files`
-  selection to `proposal.accept`/`proposal.reject` the same way. Neither
-  route holds a local copy of what a comment's anchor or a proposal's state
-  can be — a local copy could only ever refuse a case the daemon had newly
-  learned, per [[Review]].
+  request. Two kinds of body stay web-owned: a body of a route that no RPC
+  answers (login, terminal, layout, recents, the SSE query, raw file
+  serving); and a body that differs from the RPC request in more than an id,
+  such as `CreateSessionRequest`. `InteractionResponseRequest` also stays: it
+  carries `session_id` in its body, and `Scoped<T>` has no schema. The
+  proposal decision bodies (`AcceptProposalBody`, `RejectProposalBody`,
+  `ResolveProposalBody`) are gone with `routes/proposals.rs`
+  (Simplification Plan step 19): the browser sends
+  `ProposalAcceptRequest`/`ProposalRejectRequest`/`ProposalResolveRequest`
+  (`crucible_core::protocol::requests`) directly, each already carrying the
+  proposal id `Scoped<T>` had no room for.
+- **Diffset and proposal disposition stay daemon-owned.** `diff.comment`/
+  `diff.resolve_comment`/`diff.delete_comment` take a `DiffsetSource` and a
+  `comment_id` unvalidated; `proposal.accept`/`proposal.reject` take a
+  `paths`/`files` selection the same way. No web-local copy of what a
+  comment's anchor or a proposal's state can be sits in front of either row
+  — a local copy could only ever refuse a case the daemon had newly learned,
+  per [[Review]].
 
 ## Extension seams
 
@@ -856,7 +887,6 @@ losing or duplicating the decision.
   (`assets.rs`), error mapping including the new `BUSY`-to-`Conflict`
   classification (`error.rs`), the SSE frame shape and two cross-language
   drift guards against the frontend source (`routes/chat.rs`),
-  diffset/comment routes against the daemon's real `Comment` type (`diff.rs`),
   CORS/CSP/Host-header layering (`server.rs`),
   auth/session/host/shell logic (all of `middleware/auth/`), and per-route
   shape and validation behavior across `routes/*.rs`.
@@ -921,11 +951,14 @@ losing or duplicating the decision.
   registered routes, and the frontend's literal `/api` path usage mutually
   consistent, via a hand-rolled Rust/TypeScript source scan.
 - **`crates/crucible-web/tests/route_contract_tests.rs`** is a
-  module-declaration shim for 16 submodules of mock-daemon-backed HTTP
-  contract tests (plus a `shared.rs` helper module) — including
-  `diff_comments.rs` and `system_events.rs`, the successors to the deleted
-  review-route contract tests; those submodules are outside this page's
-  file set, so their individual assertions are not itemized here.
+  module-declaration shim for 21 submodules of mock-daemon-backed HTTP
+  contract tests (plus a `shared.rs` helper module, which also holds
+  `call_rpc`, the `POST /api/rpc/{method}` request helper every migrated
+  domain's submodule shares) — including `diff.rs`, `surface.rs`,
+  `proposals.rs`, `agents.rs` and `mcp.rs`, added when their REST routes
+  moved onto the one RPC route (Simplification Plan step 19); those
+  submodules are outside this page's file set, so their individual
+  assertions are not itemized here.
 - **`crates/crucible-web/tests/router_security.rs`** drives the fully
   assembled router (`build_router`) end to end, proving every sensitive
   route demands credentials before the daemon is ever reached, and that the

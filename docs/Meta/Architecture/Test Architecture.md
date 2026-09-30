@@ -414,22 +414,26 @@ Roles are condensed from the file's own doc comment or its test names.
 
 | Path | Lines | Role |
 | --- | --- | --- |
+| `crates/crucible-web/tests/route_contract_tests/agents.rs` | 46 | `agents.list_profiles`/`models.list` through `POST /api/rpc/{method}` — the session-creation agent picker and the models catalogue, since `GET /api/agents`/`GET /api/models` are gone (Simplification Plan step 19). |
 | `crates/crucible-web/tests/route_contract_tests/chat.rs` | 513 | `ChatEvent` serialization, daemon-event mapping, and the SSE chat stream's replay-past-cursor/seq numbering. `ChatEvent::ToolCall` no longer carries `diffs`; `ToolResult`/`ToolResultError` carry `render` in its place. |
 | `crates/crucible-web/tests/route_contract_tests/commands.rs` | 253 | `GET /api/session/{id}/commands` and `POST /api/session/{id}/command`: the built-in commands run, every other name is refused with an `error` reply, `/clear` forwards a real `session.clear` RPC, and `/resume <id>` answers `open_session`. |
 | `crates/crucible-web/tests/route_contract_tests/daemon_errors.rs` | 248 | Daemon JSON-RPC error envelopes surface as HTTP 502 (server), 422 (validation) or 409 (`BUSY`, e.g. a proposal decision that another decision holds), with the daemon's own message. |
-| `crates/crucible-web/tests/route_contract_tests/diff_comments.rs` | 75 | Diff-comment error-status contract: a daemon `INVALID_PARAMS` refusal on `diff.comment` is a 422 with the daemon's message; an internal failure is a 502. |
+| `crates/crucible-web/tests/route_contract_tests/diff.rs` | 184 | `diff.get`/`file`/`comment`/`resolve_comment`/`delete_comment`/`comments` through `POST /api/rpc/{method}`, since `/api/diff*` is gone (step 19): a branch, session-record and proposal `DiffsetSource` each round-trip, sent as the row's own tagged body rather than a flat query string. |
 | `crates/crucible-web/tests/route_contract_tests/errors.rs` | 85 | `WebError` serialization to HTTP status and JSON body, with no mock daemon involved. |
 | `crates/crucible-web/tests/route_contract_tests/fs.rs` | 146 | `/api/fs/*` daemon-proxy routes: list, move, mkdir, trash. |
 | `crates/crucible-web/tests/route_contract_tests/health.rs` | 144 | `/health` and `/ready` signal daemon connectivity and readiness. A real in-process daemon answers the ping; the mock gives the refused ping. |
 | `crates/crucible-web/tests/route_contract_tests/kilns.rs` | 886 | Kiln/note listing, graph building, semantic/vector search, backlinks, patch/put, and concurrent-write serialization; every kiln-scoped file route resolves a symlink against the innermost registered kiln root consistently. The file, patch, put and backlinks tests run against a real in-process daemon with real kilns and a real index. |
+| `crates/crucible-web/tests/route_contract_tests/mcp.rs` | 27 | `mcp.status` through `POST /api/rpc/{method}`, since `GET /api/mcp/status` is gone (step 19). |
 | `crates/crucible-web/tests/route_contract_tests/plugins.rs` | 652 | Plugin discovery, install, remove, reload, option get/set/execute, publications, commands, permission checks. |
 | `crates/crucible-web/tests/route_contract_tests/projects.rs` | 149 | Project registration: list, register, unregister, `registration_roots` containment. |
+| `crates/crucible-web/tests/route_contract_tests/proposals.rs` | 90 | `proposal.list`/`get`/`accept`/`reject`/`dismiss`/`resolve` through `POST /api/rpc/{method}`, since `/api/proposals*` is gone (step 19). |
 | `crates/crucible-web/tests/route_contract_tests/router.rs` | 76 | Router wiring: method mismatches, unknown routes, the providers-enumeration endpoint. |
 | `crates/crucible-web/tests/route_contract_tests/session_config.rs` | 63 | Precognition session-config get/set. |
 | `crates/crucible-web/tests/route_contract_tests/sessions.rs` | 726 | Session lifecycle routes: create, list, retrieve, pause, end, cancel, switch model/mode, title, export, archive, scope, plugin status. The private-IP-endpoint test now runs a real daemon; the session-status wire type uses `id`/`color_group`, and the daemon always prepends a pinned `plugin_turns` item. |
-| `crates/crucible-web/tests/route_contract_tests/shared.rs` | 14 | Re-exports the mock daemon and the real in-process daemon of `crucible_web::test_support`, so sibling files never make a second copy. |
+| `crates/crucible-web/tests/route_contract_tests/shared.rs` | 42 | Re-exports the mock daemon and the real in-process daemon of `crucible_web::test_support`, and `call_rpc`, the `POST /api/rpc/{method}` request helper every domain migrated onto the one RPC route (step 19) shares, so sibling files never make a second copy of either. |
 | `crates/crucible-web/tests/route_contract_tests/skills.rs` | 144 | Skills routes: list, get, search within a kiln. |
 | `crates/crucible-web/tests/route_contract_tests/stream_version.rs` | 135 | Every versioned SSE stream names its version in both the HTTP header and the body handshake frame; the route set now includes `/api/events/system`, not `/api/plugins/events`. |
+| `crates/crucible-web/tests/route_contract_tests/surface.rs` | 33 | `surface.list` through `POST /api/rpc/{method}`, since `GET /api/surfaces` is gone (step 19). |
 | `crates/crucible-web/tests/route_contract_tests/system_events.rs` | 157 | `GET /api/events/system` forwards `proposal_changed` and `publication_changed`; all three versioned event streams (system, fs, surfaces) answer `stream_gap` on ring overflow and on an upstream gap frame. |
 
 ### `crates/crucible-web/tests/` — top level
@@ -443,7 +447,7 @@ Roles are condensed from the file's own doc comment or its test names.
 | `crates/crucible-web/tests/notification_daemon_e2e.rs` | 290 | Real-daemon E2E: a plugin `cru.log.notify(...)` call reaches the web session stream, and `GET`/`POST` notification routes list and dismiss per-session, verified against two independent live `ReconnectingDaemon` subscribers. |
 | `crates/crucible-web/tests/openapi_contract.rs` | 1195 | Hand-rolled static-analysis suite: the committed `openapi.json`, the Axum router's actual routes, and the SolidJS client's literal `/api` paths all agree — see [Boundaries and invariants](#boundaries-and-invariants). |
 | `crates/crucible-web/tests/proposal_daemon_e2e.rs` | 117 | Real-daemon E2E: `POST /api/proposals/{id}/{accept,reject,resolve}` against two kilns sharing a relative path, proving root selection and conflict-state shape. |
-| `crates/crucible-web/tests/route_contract_tests.rs` | 42 | `#[path]` mounts for the 17 `route_contract_tests/` files; no tests of its own. |
+| `crates/crucible-web/tests/route_contract_tests.rs` | 50 | `#[path]` mounts for the 21 `route_contract_tests/` files; no tests of its own. |
 | `crates/crucible-web/tests/router_security.rs` | 203 | The assembled Axum router enforces auth/host/origin before dispatch, for every sensitive route and the opt-in remote-shell WebSocket. |
 
 ## Key types and traits

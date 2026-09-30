@@ -794,8 +794,9 @@ happen on demand, well after the write that made them.
 3. `proposal.list`/`get`/`accept`/`reject`/`dismiss`/`resolve` RPCs
    (`crates/crucible-daemon/src/proposals/rpc.rs`) — from `cru proposal`
    (`crates/crucible-cli/src/commands/proposal.rs`), the web's
-   `POST /api/proposals/{id}/*` (`crates/crucible-web/src/routes/proposals.rs`,
-   a thin proxy), or `cru.proposals.accept`/`reject` through
+   `POST /api/rpc/proposal.*` (`lib/proposal-api.ts`, calling `rpc(...)`
+   directly since Simplification Plan step 19; `routes/proposals.rs` is
+   gone), or `cru.proposals.accept`/`reject` through
    `DaemonSessionApi::decide_proposal` in `crucible-lua`'s `context.rs` —
    all reach the same `ProposalStore` methods.
 4. Accepting or resolving admits every kiln root the proposal writes, then
