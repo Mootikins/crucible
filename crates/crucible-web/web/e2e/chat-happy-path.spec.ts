@@ -32,7 +32,11 @@ function buildChatEvents(
   }
   const transcript = new TranscriptFrames();
   const open = segment(messageId, 0, '', { streaming: true });
-  return [
+  // Every real frame the shared connection sends names its topic
+  // (Simplification Plan step 19); this stream serves the session's own
+  // topic verbatim, so every frame built here names it too.
+  const topic = MOCK_SESSION.session_id;
+  const frames: Array<{ type: string; data: object }> = [
     transcript.ops([upsert(userTurn(messageId, prompt))]),
     transcript.upsert(open),
     ...chunks.map((chunk) => ({
@@ -46,6 +50,7 @@ function buildChatEvents(
       data: { event: 'message_complete', data: { message_id: messageId, full_response: content } },
     },
   ];
+  return frames.map((frame) => ({ type: frame.type, data: { ...frame.data, topic } }));
 }
 
 test.describe('Chat happy path', () => {
@@ -72,7 +77,17 @@ test.describe('Chat happy path', () => {
     });
     let delivered = false;
 
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+    // The shared connection makes more than one request over the test: an
+    // early one for the `system` topic alone (the panels that mount before
+    // the session tab does), then the combined one that also names this
+    // session. Only the request that actually names this session's topic
+    // holds for `sseReady` and gets the built events; every other request
+    // (including a reconnect after delivery) answers an empty stream at once.
+    await page.route(/\/api\/events\?.*/, async (route) => {
+      const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+      if (!topics.includes(MOCK_SESSION.session_id)) {
+        return route.fulfill({ status: 200, headers: SSE_HEADERS, body: createSSEStream([]) });
+      }
       if (!delivered) {
         delivered = true;
         await sseReady;
@@ -164,7 +179,13 @@ test.describe('Chat happy path', () => {
     });
     let delivered = false;
 
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+    // See the twin of this handler above: only the request naming this
+    // session's own topic holds for `sseReady`.
+    await page.route(/\/api\/events\?.*/, async (route) => {
+      const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+      if (!topics.includes(MOCK_SESSION.session_id)) {
+        return route.fulfill({ status: 200, headers: SSE_HEADERS, body: createSSEStream([]) });
+      }
       if (!delivered) {
         delivered = true;
         await sseReady;

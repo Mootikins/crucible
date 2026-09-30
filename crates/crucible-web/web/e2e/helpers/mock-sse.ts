@@ -62,18 +62,34 @@ export const SSE_HEADERS = {
   'X-Crucible-Stream-Version': String(STREAM_VERSION),
 } as const;
 
-/** Register a page.route() that responds with SSE stream. Handles reconnection (route hit multiple times). */
-export async function mockSSERoute(
+/**
+ * Mocks the one shared event stream (`GET /api/events`, Simplification Plan
+ * step 19), which replaced the separate chat, filesystem, surface and system
+ * mocks this helper used to register one `page.route` per stream for.
+ *
+ * A request names every topic it wants in `?topics=a,b,...`; this answers
+ * `sessionFrames` for every topic that is not `system` (a chat session's own
+ * topic, whatever its id — the mocks never cared which one) and nothing for
+ * `system` (the filesystem watcher, the surface changes and the daemon's
+ * publications and proposals, none of which a spec here fabricates). Each
+ * answered frame's body gains the topic it travelled on, so the app's own
+ * dispatcher — which reads that field to route a frame at all — delivers it.
+ */
+export async function mockEventsRoute(
   page: Page,
-  urlPattern: string | RegExp,
-  events: Array<{ type: string; data: object }>,
+  sessionFrames: Array<{ type: string; data: object }>,
 ): Promise<void> {
-  const body = createSSEStream(events);
-  await page.route(urlPattern, (route) => {
+  await page.route('**/api/events?**', (route) => {
+    const requested = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+    const frames = requested.flatMap((topic) =>
+      topic === 'system'
+        ? []
+        : sessionFrames.map((frame) => ({ type: frame.type, data: { ...frame.data, topic } })),
+    );
     route.fulfill({
       status: 200,
       headers: SSE_HEADERS,
-      body,
+      body: createSSEStream(frames),
     });
   });
 }

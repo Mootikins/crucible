@@ -12,19 +12,26 @@ import {
 import { centerGroupIds, chatTab, closeTab, mountChat, mountTab, openInNewPane, resetStoredLayout } from './_panes';
 
 /**
- * Part E5: one stream per resource, whoever is reading it.
+ * Part E5, after Simplification Plan step 19: one connection for the whole
+ * page, whoever is reading it.
  *
- * Four streams reach this browser — a session's chat events, surface changes,
- * filesystem changes and plugin publications — and before `lib/query/sse.ts`
- * each consumer opened its own. Two panes on one session held two sockets to
- * one daemon endpoint, and the review store carried a hand-written refcount
- * to stop a third.
+ * Four topics reach this browser over it — a session's chat events, surface
+ * changes, filesystem changes and plugin publications (the last three all on
+ * the `system` topic) — and before `lib/query/sse.ts` each opened its own
+ * `EventSource`. Then step 11 shared one source per topic; step 19 went
+ * further and put every topic on ONE physical connection,
+ * `GET /api/events?topics=...`, rebuilt whenever the set of topics a page
+ * needs changes (a pane opens a new session, a panel that reads the `system`
+ * topic mounts or unmounts) and left alone when a reader merely joins or
+ * leaves a topic the connection already carries.
  *
- * Counting `GET /api/chat/events/{id}` is half the claim. The other half is
- * whether a stream is open NOW: a leaked source leaves exactly the same single
- * request behind as a shared one, and only the last pane leaving may close it.
- * So this spec patches `EventSource` in an init script and reads both — how
- * many were opened, and which are still open.
+ * Counting `GET /api/events` is half the claim. The other half is whether a
+ * connection is open NOW: a leaked source leaves exactly the same single
+ * request behind as a shared one, and only the last topic's last reader
+ * leaving may close it. So this spec patches `EventSource` in an init script
+ * and reads both — how many connections were opened, and which are still
+ * open — and reads each one's `topics` query to know which resource it
+ * still carries.
  */
 const state = readState();
 
@@ -40,11 +47,22 @@ async function createSession(api: APIRequestContext, title: string): Promise<str
   return id;
 }
 
+/** The topics a source's `?topics=` query names, or `[]` for a non-matching url. */
+function topicsOf(url: string): string[] {
+  const match = /[?&]topics=([^&]*)/.exec(url);
+  return match ? decodeURIComponent(match[1]).split(',') : [];
+}
+
+/** The open sources whose `topics` query names `topic`. */
+async function sourcesCarrying(page: Parameters<typeof eventSources>[0], topic: string) {
+  return (await eventSources(page)).filter((s) => topicsOf(s.url).includes(topic));
+}
+
 test.describe('live SSE routing', () => {
   test.skip(state.skip, `live tier unavailable: ${state.reason ?? ''}`);
 
   // A persisted layout would leave another spec's panels mounted, holding
-  // streams this one is about to count.
+  // topics this one is about to count.
   test.beforeEach(async () => {
     await resetStoredLayout(state.baseURL!);
   });
@@ -59,7 +77,7 @@ test.describe('live SSE routing', () => {
     if (!state.skip) await resetStoredLayout(state.baseURL!);
   });
 
-  test('two panes on one session open one stream, and the last one out closes it', async ({
+  test('two panes on one session share the connection, and the last one out drops its topic', async ({
     page,
   }) => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
@@ -78,45 +96,40 @@ test.describe('live SSE routing', () => {
     await expect(page.getByTestId('chat-input')).toHaveCount(2, { timeout: 20_000 });
     await apiQuiet(log);
 
-    // One request, for two panes.
-    expect(
-      log.count('GET', `/api/chat/events/${id}`),
-      describeRequests(log, `/api/chat/events/${id}`),
-    ).toBe(1);
-    let streams = await sourcesFor(page, `/api/chat/events/${id}`);
-    expect(streams.length).toBe(1);
-    expect(streams[0].open).toBe(true);
+    // One open source names this session's topic, whichever other topics
+    // (the default layout's own `system` topic reader) ride along with it.
+    let carrying = (await sourcesCarrying(page, id)).filter((s) => s.open);
+    expect(carrying.length, describeRequests(log, /\/api\/events\?/)).toBe(1);
 
-    // The first pane leaves. The refcount is still 1, so the stream stays: the
-    // pane that remains is mid-conversation and must not lose its events.
+    // The first pane leaves. The refcount on this topic is still 1 (the
+    // second pane), so it stays on the connection: the pane that remains is
+    // mid-conversation and must not lose its events.
     await closeTab(page, firstGroup, `tab-chat-${id}`);
     await expect(page.getByTestId('chat-input')).toHaveCount(1, { timeout: 20_000 });
-    // A quiet window, so a close that was going to reopen the stream has had
-    // its chance to. `apiQuiet` returns on the condition — no new call for a
-    // second and a half — rather than after a fixed wait that would pass
-    // whether or not the page had finished reacting.
+    // A quiet window, so a close that was going to rebuild the connection has
+    // had its chance to. `apiQuiet` returns on the condition — no new call
+    // for a second and a half — rather than after a fixed wait that would
+    // pass whether or not the page had finished reacting.
     await apiQuiet(log, 1500);
-    streams = await sourcesFor(page, `/api/chat/events/${id}`);
-    expect(streams.length, 'closing one pane opened another stream').toBe(1);
-    expect(streams[0].open, 'the surviving pane lost its stream').toBe(true);
+    carrying = (await sourcesCarrying(page, id)).filter((s) => s.open);
+    expect(carrying.length, 'closing one pane dropped the session topic').toBe(1);
 
-    // The last pane leaves. Now nothing is reading, so the socket goes.
+    // The last pane leaves. Now nothing reads this session's topic; the
+    // connection rebuilds without it (or closes outright, if nothing else
+    // reads any topic).
     await closeTab(page, secondGroup, `tab-chat-${id}-second`);
     await expect(page.getByTestId('chat-input')).toHaveCount(0, { timeout: 20_000 });
     await expect
-      .poll(async () => (await sourcesFor(page, `/api/chat/events/${id}`))[0]?.open, {
+      .poll(async () => (await sourcesCarrying(page, id)).some((s) => s.open), {
         timeout: 15_000,
-        message: 'the last pane left and the stream stayed open',
+        message: 'the last pane left and the session topic stayed on an open source',
       })
       .toBe(false);
-
-    // Still one request in the whole page session: nothing reopened it.
-    expect(log.count('GET', `/api/chat/events/${id}`)).toBe(1);
 
     await api.dispose();
   });
 
-  test('one stream delivers a turn to both panes at once', async ({ page }) => {
+  test('one connection delivers a turn to both panes at once', async ({ page }) => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
     const id = await createSession(api, 'Both panes');
 
@@ -135,9 +148,9 @@ test.describe('live SSE routing', () => {
     await page.getByTestId('chat-input').first().fill('a hermetic turn for both panes');
     await page.getByTestId('send-button').first().click();
 
-    // Both transcripts fill, from one stream, with no page reload. The pane
-    // that did not send has no request of its own to make: it reads the cache
-    // entry the shared route writes.
+    // Both transcripts fill, from one connection, with no page reload. The
+    // pane that did not send has no request of its own to make: it reads the
+    // cache entry the shared route writes.
     await expect(page.getByTestId('message-assistant').nth(0)).toContainText(
       'The live chain answered.',
       { timeout: 60_000 },
@@ -147,10 +160,7 @@ test.describe('live SSE routing', () => {
       { timeout: 60_000 },
     );
 
-    expect(
-      log.count('GET', `/api/chat/events/${id}`),
-      describeRequests(log, `/api/chat/events/${id}`),
-    ).toBe(1);
+    expect((await sourcesCarrying(page, id)).filter((s) => s.open).length).toBe(1);
 
     // The transcript is read ONCE for the whole turn, and once is the number
     // for one pane as much as for two. The read binds the pane; the ops of
@@ -166,44 +176,35 @@ test.describe('live SSE routing', () => {
     await api.dispose();
   });
 
-  test('the filesystem stream is one stream for every panel that watches it', async ({ page }) => {
+  test('the filesystem, surfaces and chat topics all ride the one connection', async ({ page }) => {
+    const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
+    const id = await createSession(api, 'One connection, three topics');
+
     await installEventSourceSpy(page);
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
     await apiQuiet(log);
 
-    // The default layout mounts one file tree, so one stream is already up.
-    expect(log.count('GET', '/api/fs/events'), describeRequests(log, '/api/fs/events')).toBe(1);
-    expect((await sourcesFor(page, '/api/fs/events')).filter((s) => s.open).length).toBe(1);
+    // The default layout mounts one file tree, so the `system` topic (the
+    // filesystem watcher, surfaces and publications all ride it) is already
+    // on an open connection.
+    let open = (await eventSources(page)).filter((s) => s.open);
+    expect(open.length, describeRequests(log, /\/api\/events\?/)).toBe(1);
+    expect(topicsOf(open[0].url)).toContain('system');
 
-    // A second and a third watcher of the same stream.
-    await mountTab(page, 'left', { id: 'files-left', title: 'Files', contentType: 'files' });
-    await expect(page.getByTestId('edge-tab-left-files-left')).toBeVisible({ timeout: 15_000 });
-    await mountTab(page, 'left', {
-      id: 'backlinks-left',
-      title: 'Backlinks',
-      contentType: 'backlinks',
-    });
-    await expect(page.getByTestId('edge-tab-left-backlinks-left')).toBeVisible({ timeout: 15_000 });
+    // A chat pane joins a second topic: the connection rebuilds to carry
+    // both, rather than opening a second `EventSource`.
+    const firstGroup = (await centerGroupIds(page))[0];
+    await mountChat(page, firstGroup, id, `tab-chat-${id}`);
+    await expect(page.getByTestId('chat-input').first()).toBeVisible({ timeout: 20_000 });
     await apiQuiet(log);
 
-    expect(log.count('GET', '/api/fs/events'), describeRequests(log, '/api/fs/events')).toBe(1);
-    const fs = await sourcesFor(page, '/api/fs/events');
-    expect(fs.length).toBe(1);
-    expect(fs[0].open).toBe(true);
-  });
+    open = (await eventSources(page)).filter((s) => s.open);
+    expect(open.length, 'a second topic opened a second connection instead of rebuilding the one').toBe(1);
+    expect(topicsOf(open[0].url).sort()).toEqual(['system', id].sort());
 
-  test('each stream is its own source, and a panel that leaves takes its own', async ({ page }) => {
-    await installEventSourceSpy(page);
-    const log = captureApiRequests(page);
-    await page.goto(state.baseURL!);
-    await appReady(page);
-    await apiQuiet(log);
-
-    // The surfaces panel is the only reader of the surface stream, so it is
-    // the one that opens it.
-    expect(log.count('GET', '/api/surfaces/events')).toBe(0);
+    // A surfaces panel joins the SAME `system` topic; still one connection.
     const groupId = await mountTab(page, 'left', {
       id: 'surfaces-tab',
       title: 'Surfaces',
@@ -211,28 +212,31 @@ test.describe('live SSE routing', () => {
     });
     await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toBeVisible({ timeout: 15_000 });
     await apiQuiet(log);
-    expect(
-      log.count('GET', '/api/surfaces/events'),
-      describeRequests(log, '/api/surfaces/events'),
-    ).toBe(1);
-    expect((await sourcesFor(page, '/api/surfaces/events')).filter((s) => s.open).length).toBe(1);
+    open = (await eventSources(page)).filter((s) => s.open);
+    expect(open.length, 'a second reader of an already-carried topic opened a new connection').toBe(1);
 
-    // Two streams, two sources, one each. A single source carrying both would
-    // give one of them the other's events.
-    const open = (await eventSources(page)).filter((s) => s.open).map((s) => s.url);
-    expect(open.filter((u) => u.includes('/api/fs/events')).length).toBe(1);
-    expect(open.filter((u) => u.includes('/api/surfaces/events')).length).toBe(1);
-
-    // The surfaces panel leaves. Its stream goes with it — and the filesystem
-    // stream, which nobody asked about, stays.
+    // The surfaces panel leaves; the `system` topic still has the file tree
+    // reading it, so the connection is untouched.
     await closeTab(page, groupId, 'surfaces-tab');
     await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toHaveCount(0, { timeout: 15_000 });
+    await apiQuiet(log, 1500);
+    open = (await eventSources(page)).filter((s) => s.open);
+    expect(open.length).toBe(1);
+    expect(topicsOf(open[0].url)).toContain('system');
+
+    // The chat pane leaves too. Only the file tree's `system` topic remains.
+    await closeTab(page, firstGroup, `tab-chat-${id}`);
+    await expect(page.getByTestId('chat-input')).toHaveCount(0, { timeout: 20_000 });
     await expect
-      .poll(async () => (await sourcesFor(page, '/api/surfaces/events')).some((s) => s.open), {
+      .poll(async () => (await sourcesCarrying(page, id)).some((s) => s.open), {
         timeout: 15_000,
-        message: 'the surfaces panel left and its stream stayed open',
+        message: 'the chat pane left and the session topic stayed on an open source',
       })
       .toBe(false);
-    expect((await sourcesFor(page, '/api/fs/events')).filter((s) => s.open).length).toBe(1);
+    open = (await eventSources(page)).filter((s) => s.open);
+    expect(open.length, 'the file tree lost its connection when an unrelated topic left').toBe(1);
+    expect(topicsOf(open[0].url)).toEqual(['system']);
+
+    await api.dispose();
   });
 });

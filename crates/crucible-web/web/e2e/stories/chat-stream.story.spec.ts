@@ -143,7 +143,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
     const story = createStory(testInfo);
     await setupBasicMocks(page, { sseEvents: [] });
     // Hold the stream open: the turn stays in flight (no reconnect churn).
-    await page.route(/\/api\/chat\/events\/.*/, async () => {
+    await page.route(/\/api\/events\?.*/, async () => {
       await new Promise(() => {});
     });
 
@@ -178,14 +178,24 @@ test.describe('WS-101/102/103 streaming chat', () => {
     });
 
     let hit = 0;
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+    const SESSION_TOPIC = 'test-session-001';
+    const withTopic = (frames: Frame[]) => frames.map((frame) => ({ type: frame.type, data: { ...frame.data, topic: SESSION_TOPIC } }));
+    await page.route(/\/api\/events\?.*/, async (route) => {
+      const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+      if (!topics.includes(SESSION_TOPIC)) {
+        return route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+          body: createSSEStream([]),
+        });
+      }
       hit += 1;
       if (hit === 1) {
         await sent;
         return route.fulfill({
           status: 200,
           headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
-          body: createSSEStream(COMPLETE_STREAM),
+          body: createSSEStream(withTopic(COMPLETE_STREAM)),
         });
       }
       await new Promise(() => {});
@@ -260,14 +270,24 @@ test.describe('WS-101/102/103 streaming chat', () => {
         },
       },
     ];
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+    const SESSION_TOPIC = 'test-session-001';
+    const withTopic = (frames: Frame[]) => frames.map((frame) => ({ type: frame.type, data: { ...frame.data, topic: SESSION_TOPIC } }));
+    await page.route(/\/api\/events\?.*/, async (route) => {
+      const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+      if (!topics.includes(SESSION_TOPIC)) {
+        return route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+          body: createSSEStream([]),
+        });
+      }
       hit += 1;
       if (hit === 1) {
         await sent;
         return route.fulfill({
           status: 200,
           headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
-          body: createSSEStream(THINKING_ONLY),
+          body: createSSEStream(withTopic(THINKING_ONLY)),
         });
       }
       if (hit === 2) {
@@ -276,7 +296,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
         return route.fulfill({
           status: 200,
           headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
-          body: createSSEStream(REST),
+          body: createSSEStream(withTopic(REST)),
         });
       }
       await new Promise(() => {});
@@ -319,7 +339,7 @@ test.describe('WS-101/102/103 streaming chat', () => {
     const story = createStory(testInfo);
     await setupBasicMocks(page, { sseEvents: [] });
     // Hold the stream open: the first turn never completes.
-    await page.route(/\/api\/chat\/events\/.*/, async () => {
+    await page.route(/\/api\/events\?.*/, async () => {
       await new Promise(() => {});
     });
     // The send POST answers (the turn is admitted) but no events follow.

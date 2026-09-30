@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
+import { createSSEStream, SSE_HEADERS } from './helpers/mock-sse';
 import { MOCK_SESSION } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
 
@@ -58,16 +59,17 @@ async function mockListRenamedAfterTheStreamOpens(
     }),
   );
 
-  await page.route(/\/api\/chat\/events\/.*/, (route) => {
+  await page.route(/\/api\/events\?.*/, (route) => {
+    const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+    if (!topics.includes(UNTITLED_SESSION.session_id)) {
+      return route.fulfill({ status: 200, headers: SSE_HEADERS, body: createSSEStream([]) });
+    }
     renamed = true;
     route.fulfill({
       status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
+      headers: SSE_HEADERS,
       body: `event: title_changed\ndata: ${JSON.stringify({
+        topic: UNTITLED_SESSION.session_id,
         event: 'title_changed',
         data: { title },
       })}\n\n`,

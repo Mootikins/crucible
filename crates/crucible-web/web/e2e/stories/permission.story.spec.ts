@@ -133,15 +133,21 @@ test.describe('WS-104 permission from the browser', () => {
       return route.fulfill({ status: 200, body: '' });
     });
 
+    const SESSION_TOPIC = 'test-session-001';
+    const withTopic = (frame: { type: string; data: object }) => ({ type: frame.type, data: { ...frame.data, topic: SESSION_TOPIC } });
     let hit = 0;
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
-      hit += 1;
+    await page.route(/\/api\/events\?.*/, async (route) => {
+      const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
       const sse = (frames: Array<{ type: string; data: object }>) =>
         route.fulfill({
           status: 200,
           headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
-          body: createSSEStream(frames),
+          body: createSSEStream(frames.map(withTopic)),
         });
+      if (!topics.includes(SESSION_TOPIC)) {
+        return sse([]);
+      }
+      hit += 1;
       if (hit === 1) {
         return sse([permFrame('q-1', '# Draft\n\nfirst\n')]);
       }
@@ -177,7 +183,7 @@ test.describe('WS-104 permission from the browser', () => {
     // held one freezes it in its visible state. The mask then pins the
     // baseline to the two surfaces' edges, not the transport.
     const { promise: never } = Promise.withResolvers<void>();
-    await page.route(/\/api\/chat\/events\/.*/, async () => {
+    await page.route(/\/api\/events\?.*/, async () => {
       await never;
     });
     await expect(page.getByTestId('chat-connection-banner')).toBeVisible();

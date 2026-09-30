@@ -22,10 +22,12 @@ import { openSessionsList } from '../helpers/nav';
  * exercised by the live tier.
  */
 
+const SESSION_TOPIC = 'test-session-001';
+
 /** The one frame that ends the turn, whatever stopped it. */
 const TURN_FINISHED_FRAME = {
   type: 'turn_finished',
-  data: { event: 'turn_finished', data: { status: 'cancelled' } },
+  data: { event: 'turn_finished', data: { status: 'cancelled' }, topic: SESSION_TOPIC },
 };
 
 test.describe('WS-108 cancel a turn', () => {
@@ -46,7 +48,11 @@ test.describe('WS-108 cancel a turn', () => {
     // churn); answer it with the daemon's end-of-turn frames once the cancel
     // POST lands.
     let hit = 0;
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+    await page.route(/\/api\/events\?.*/, async (route) => {
+      const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+      if (!topics.includes(SESSION_TOPIC)) {
+        return route.fulfill({ status: 200, headers: SSE_HEADERS, body: createSSEStream([]) });
+      }
       hit += 1;
       if (hit === 1) {
         await cancelAcknowledged;

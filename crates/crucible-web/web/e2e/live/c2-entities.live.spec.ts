@@ -152,7 +152,7 @@ test.describe('live C2 entities', () => {
     expect(log.count('GET', MODES)).toBe(1);
     expect(log.count('GET', MODELS)).toBe(1);
     expect(log.count('GET', STATUS)).toBe(1);
-    expect(log.count('GET', `/api/chat/events/${id}`)).toBe(1);
+    expect((await sourcesFor(page, id)).filter((s) => s.open).length, 'one open source names this session').toBe(1);
 
     // A SECOND pane, side by side, bound to the same session. This is the
     // claim the whole part exists for: the second pane is a second reader,
@@ -166,14 +166,14 @@ test.describe('live C2 entities', () => {
     expect(log.count('GET', MODELS)).toBe(1);
     expect(log.count('GET', STATUS)).toBe(1);
     expect(
-      log.count('GET', `/api/chat/events/${id}`),
-      describeRequests(log, `/api/chat/events/${id}`),
+      (await sourcesFor(page, id)).filter((s) => s.open).length,
+      'one open source names this session',
     ).toBe(1);
 
     // And one source is OPEN, which the request count alone cannot say: a
     // stream that was opened and leaked leaves the same single request behind
     // as a stream that is shared.
-    const streams = await sourcesFor(page, `/api/chat/events/${id}`);
+    const streams = await sourcesFor(page, id);
     expect(streams.length).toBe(1);
     expect(streams[0].open).toBe(true);
 
@@ -275,6 +275,11 @@ test.describe('live C2 entities', () => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
     const id = await createSession(api, 'A real turn');
 
+    // `sourcesFor` reads the spy's record, which only an installed spy
+    // populates — needed here because the shared connection (Simplification
+    // Plan step 19) makes the session id a `topics=` query value, not a
+    // distinct path a plain request count can key on.
+    await installEventSourceSpy(page);
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
@@ -295,8 +300,8 @@ test.describe('live C2 entities', () => {
     // turn opened no second one.
     expect(log.count('POST', '/api/chat/send')).toBe(1);
     expect(
-      log.count('GET', `/api/chat/events/${id}`),
-      describeRequests(log, `/api/chat/events/${id}`),
+      (await sourcesFor(page, id)).filter((s) => s.open).length,
+      'one open source names this session',
     ).toBe(1);
 
     // The one thing `fakeLogPath` IS evidence of: the turn left the daemon and

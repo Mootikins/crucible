@@ -29,6 +29,11 @@ test.describe('Tool call display', () => {
       args: { path: '/test.txt' } as never,
       status: 'running',
     });
+    const SESSION_TOPIC = 'test-session-001';
+    const withTopic = (frame: { type: string; data: object }) => ({
+      type: frame.type,
+      data: { ...frame.data, topic: SESSION_TOPIC },
+    });
     const sseBody = createSSEStream([
       transcript.ops([upsert(userTurn('msg-001', 'Read the file'))]),
       transcript.ops([upsert(call)]),
@@ -58,7 +63,7 @@ test.describe('Tool call display', () => {
           data: { message_id: 'msg-002', full_response: 'I read the file for you.' },
         },
       },
-    ]);
+    ].map(withTopic));
 
     // Set up mocks with empty SSE (we control SSE delivery separately)
     await setupBasicMocks(page, { sseEvents: [] });
@@ -75,30 +80,23 @@ test.describe('Tool call display', () => {
     });
     let delivered = false;
 
-    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+    await page.route(/\/api\/events\?.*/, async (route) => {
+      const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+      const headers = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      };
+      if (!topics.includes(SESSION_TOPIC)) {
+        return route.fulfill({ status: 200, headers, body: '' });
+      }
       if (!delivered) {
         delivered = true;
         await sseReady;
-        await route.fulfill({
-          status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          },
-          body: sseBody,
-        });
+        await route.fulfill({ status: 200, headers, body: sseBody });
       } else {
         // Reconnects after delivery: empty stream
-        await route.fulfill({
-          status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          },
-          body: '',
-        });
+        await route.fulfill({ status: 200, headers, body: '' });
       }
     });
 

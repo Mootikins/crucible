@@ -212,10 +212,14 @@ test.describe('live seq-cursor replay', () => {
       // distinguishes a cursor from its absence: this session was created by
       // this spec, so the first turn's events are the only thing that can
       // have advanced it past zero.
-      const streams = await sourcesFor(page, `/api/chat/events/${id}`);
+      const streams = await sourcesFor(page, id);
       expect(streams.length, 'the disconnect opened a new source').toBeGreaterThanOrEqual(2);
       const reconnect = streams[streams.length - 1]!.url;
-      const cursor = Number(new URL(reconnect, server.baseURL).searchParams.get('after'));
+      // `after=` is now `topic:seq` pairs, comma-separated (Simplification
+      // Plan step 19); this session's own pair is the one that matters here.
+      const afterParam = new URL(reconnect, server.baseURL).searchParams.get('after') ?? '';
+      const ownPair = afterParam.split(',').find((pair) => pair.startsWith(`${id}:`));
+      const cursor = Number(ownPair?.split(':')[1]);
       expect(cursor, `reconnect asked for ${reconnect}`).toBeGreaterThan(0);
 
       // And nothing drew twice. The counts are the coarse half; the EXACT
@@ -282,8 +286,8 @@ test.describe('live seq-cursor replay', () => {
     const HISTORY = new RegExp(`/api/session/${id}/history`);
     expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBeLessThanOrEqual(2);
     expect(
-      log.count('GET', `/api/chat/events/${id}`),
-      describeRequests(log, `/api/chat/events/${id}`),
+      (await sourcesFor(page, id)).filter((s) => s.open).length,
+      'one open source names this session',
     ).toBe(1);
 
     // The turn ends; the ops keep the transcript current, so the end reads
@@ -294,7 +298,7 @@ test.describe('live seq-cursor replay', () => {
     });
     await apiQuiet(log);
     expect(log.count('GET', HISTORY)).toBeLessThanOrEqual(3);
-    expect(log.count('GET', `/api/chat/events/${id}`)).toBe(1);
+    expect((await sourcesFor(page, id)).filter((s) => s.open).length, 'one open source names this session').toBe(1);
 
     // And the reloaded transcript drew the turn exactly once.
     await expect(page.getByTestId('message-user')).toHaveCount(1);

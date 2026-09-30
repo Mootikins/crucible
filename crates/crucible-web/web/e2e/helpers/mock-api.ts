@@ -13,7 +13,7 @@ import {
   MOCK_DIFF_FILES,
   MOCK_DIFF_TEXTS,
 } from './fixtures';
-import { mockSSERoute } from './mock-sse';
+import { mockEventsRoute } from './mock-sse';
 
 export interface MockOverrides {
   sessions?: object[];
@@ -125,7 +125,11 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }),
   );
 
-  await mockSSERoute(page, /\/api\/chat\/events\/.*/, overrides.sseEvents ?? []);
+  // The one shared connection (Simplification Plan step 19): a chat
+  // session's own topic answers `sseEvents`, and the `system` topic (the
+  // filesystem watcher, surfaces, publications and proposals) answers
+  // nothing, matching the two mocks this used to be.
+  await mockEventsRoute(page, overrides.sseEvents ?? []);
 
   await page.route('**/api/interactions/pending', (route) =>
     route.fulfill({ json: { pending: [] } }),
@@ -136,8 +140,6 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
   );
 
   await page.route('**/api/fs/list**', (route) => route.fulfill({ json: { entries: [] } }));
-
-  await mockSSERoute(page, /\/api\/fs\/events/, []);
 
   await page.route('**/api/recents', (route) => route.fulfill({ json: { recents: [] } }));
 
@@ -292,8 +294,9 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     return route.fulfill({ json: text });
   });
 
-  // The proposals in the Inbox, and one proposal by id. The system stream
-  // carries `proposal_changed`; the mock sends none.
+  // The proposals in the Inbox, and one proposal by id. The `system` topic
+  // of the shared connection carries `proposal_changed`; the mock sends none
+  // (registered once, above, for every topic).
   await page.route(
     (url) => url.pathname === '/api/proposals',
     (route) => route.fulfill({ json: overrides.proposals ?? [] }),
@@ -307,7 +310,6 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
       return route.fulfill({ json: proposal });
     },
   );
-  await mockSSERoute(page, /\/api\/events\/system/, []);
 
   // Draft-session panel loads (lazy session creation surface).
   await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: [] } }));

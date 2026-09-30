@@ -58,7 +58,7 @@ const endedStream = {
 test('a dropped system stream reopens and reconciles a missed change without another event', async ({ page }) => {
   await setupBasicMocks(page);
   let connections = 0;
-  await page.route('**/api/events/system', route => {
+  await page.route('**/api/events*', route => {
     connections++;
     // EOF deliberately drops the connection.
     return route.fulfill(endedStream);
@@ -72,7 +72,7 @@ test('a system stream that the server refuses with a 502 opens again', async ({ 
   // never retries it. The client must open a new source itself.
   await setupBasicMocks(page);
   let connections = 0;
-  await page.route('**/api/events/system', route => {
+  await page.route('**/api/events*', route => {
     connections++;
     if (connections === 1) return route.fulfill({ status: 502, contentType: 'text/plain', body: 'bad gateway' });
     return route.fulfill(endedStream);

@@ -14,7 +14,10 @@ interface FsHold {
  * that must put a keystroke before that report cannot win the race with a
  * sleep. It holds the stream instead, and releases it when the order is set.
  * Install it before `page.goto`: it wraps the listeners that the app adds to
- * the `/api/fs/events` stream.
+ * the shared `/api/events` connection, and matches its `system` topic (the
+ * one the filesystem watcher's frames travel on) — a topic parameter, not a
+ * dedicated route, since Simplification Plan step 19 folded `/api/fs/events`
+ * into the one stream.
  */
 export async function holdFsEvents(page: Page): Promise<{
   hold(): Promise<void>;
@@ -43,7 +46,12 @@ export async function holdFsEvents(page: Page): Promise<{
       listener: EventListenerOrEventListenerObject | null,
       options?: boolean | AddEventListenerOptions,
     ) {
-      if (!this.url.endsWith('/api/fs/events') || typeof listener !== 'function') {
+      // The shared connection's query names every topic it carries
+      // (`?topics=a,b,...`); the filesystem watcher's frames always travel
+      // the `system` topic, so a source that names it is the one to hold.
+      const url = new URL(this.url, window.location.origin);
+      const topics = (url.searchParams.get('topics') ?? '').split(',');
+      if (url.pathname !== '/api/events' || !topics.includes('system') || typeof listener !== 'function') {
         return add.call(this, type, listener, options);
       }
       const held = function (this: EventSource, event: Event) {

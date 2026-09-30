@@ -107,14 +107,24 @@ async function streamTurn(page: Page) {
     return route.fulfill({ json: { message_id: 'msg-1' } });
   });
   let hit = 0;
-  await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+  const SESSION_TOPIC = 'test-session-001';
+  const topicStream = STREAM.map((frame) => ({ type: frame.type, data: { ...frame.data, topic: SESSION_TOPIC } }));
+  await page.route(/\/api\/events\?.*/, async (route) => {
+    const topics = new URL(route.request().url()).searchParams.get('topics')?.split(',') ?? [];
+    if (!topics.includes(SESSION_TOPIC)) {
+      return route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        body: createSSEStream([]),
+      });
+    }
     hit += 1;
     if (hit === 1) {
       await sent;
       return route.fulfill({
         status: 200,
         headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
-        body: createSSEStream(STREAM),
+        body: createSSEStream(topicStream),
       });
     }
     await new Promise(() => {});
