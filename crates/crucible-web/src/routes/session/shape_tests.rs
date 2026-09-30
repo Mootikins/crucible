@@ -15,8 +15,6 @@
 //! demand the same JSON back — so naming the reply cannot have dropped a
 //! field or added one.
 
-use crucible_core::protocol::rpc::RpcMethod;
-
 use super::*;
 use crate::routes::helpers::ModelsResponse;
 use crate::test_support::request_json;
