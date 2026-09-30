@@ -110,6 +110,12 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
 /// `include_models: false` skips model discovery (which dials endpoints and
 /// can hang on a dead provider); the CLI's chat preflight uses it to answer
 /// "are there any providers at all?" quickly.
+///
+/// Cached for [`crate::agent_manager::CATALOG_CACHE_TTL`], keyed by
+/// `(kiln_path, include_models)` — a provider dials its endpoint on every
+/// call otherwise, and the catalog does not change per request. Every caller
+/// of this RPC method shares the cache; it used to live only in the web
+/// server.
 pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) -> Response {
     let params = match typed_params::<ListProvidersRequest>(&req) {
         Ok(p) => p,
@@ -117,6 +123,19 @@ pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) 
     };
     let kiln_path = params.kiln_path.map(PathBuf::from);
     let include_models = params.include_models.unwrap_or(true);
+    let cache_key = format!(
+        "{}:{include_models}",
+        kiln_path
+            .as_deref()
+            .map_or("", |p| p.to_str().unwrap_or(""))
+    );
+
+    if let Some(entry) = am.providers_cache.get(cache_key.as_str()) {
+        let (reply, fetched_at) = entry.value();
+        if fetched_at.elapsed() < crate::agent_manager::CATALOG_CACHE_TTL {
+            return typed_success(req.id, reply.clone());
+        }
+    }
 
     let classification = kiln_path
         .as_ref()
@@ -127,7 +146,10 @@ pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) 
     } else {
         am.list_providers_summary(classification).await
     };
-    typed_success(req.id, ProvidersListReply { providers })
+    let reply = ProvidersListReply { providers };
+    am.providers_cache
+        .insert(cache_key, (reply.clone(), std::time::Instant::now()));
+    typed_success(req.id, reply)
 }
 
 /// Fork a session by creating a new session and replaying messages from the parent.
@@ -165,5 +187,86 @@ pub(crate) async fn handle_session_fork(
             | crate::agent_manager::AgentError::NotSupported(message),
         ) => Response::error(req.id, INVALID_PARAMS, message),
         Err(error) => internal_error(req.id, error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::types::ProviderInfo;
+    use std::time::Instant;
+
+    fn list_providers_request() -> Request {
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(crate::protocol::RequestId::Number(1)),
+            method: "providers.list".to_string(),
+            params: serde_json::json!({}),
+        }
+    }
+
+    fn fabricated_provider() -> ProviderInfo {
+        ProviderInfo {
+            name: "not-a-real-provider".to_string(),
+            provider_type: "ollama".to_string(),
+            available: true,
+            default_model: None,
+            models: vec![],
+            endpoint: None,
+            reason: None,
+            is_local: true,
+        }
+    }
+
+    /// `providers.list`'s reply is cached, keyed by its params: a call with
+    /// no `kiln_path` and the default `include_models` answers straight from
+    /// `AgentManager::providers_cache` within the TTL, proved by seeding a
+    /// fabricated reply no live discovery could produce.
+    #[tokio::test]
+    async fn providers_list_answers_from_the_cache_within_the_ttl() {
+        let am = crate::test_support::bare_agent_manager();
+        let fabricated = ProvidersListReply {
+            providers: vec![fabricated_provider()],
+        };
+        am.providers_cache
+            .insert(":true".to_string(), (fabricated.clone(), Instant::now()));
+
+        let resp = handle_providers_list(list_providers_request(), &am).await;
+        let reply: ProvidersListReply =
+            serde_json::from_value(resp.result.expect("a reply")).unwrap();
+
+        assert_eq!(
+            reply.providers.len(),
+            fabricated.providers.len(),
+            "a fresh cache entry must be served as-is"
+        );
+        assert_eq!(reply.providers[0].name, "not-a-real-provider");
+    }
+
+    /// A stale entry (older than the TTL) is not served: the handler
+    /// discovers again and replaces it.
+    #[tokio::test]
+    async fn providers_list_reprobes_after_the_ttl_expires() {
+        let am = crate::test_support::bare_agent_manager();
+        let stale = ProvidersListReply {
+            providers: vec![fabricated_provider()],
+        };
+        let expired_at = Instant::now()
+            - crate::agent_manager::CATALOG_CACHE_TTL
+            - std::time::Duration::from_secs(1);
+        am.providers_cache
+            .insert(":true".to_string(), (stale, expired_at));
+
+        let resp = handle_providers_list(list_providers_request(), &am).await;
+        let reply: ProvidersListReply =
+            serde_json::from_value(resp.result.expect("a reply")).unwrap();
+
+        assert!(
+            reply
+                .providers
+                .iter()
+                .all(|p| p.name != "not-a-real-provider"),
+            "an expired cache entry must not reach the caller: {reply:?}"
+        );
     }
 }

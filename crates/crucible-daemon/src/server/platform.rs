@@ -6,6 +6,7 @@ use crucible_core::protocol::requests::{
     AgentsListCardsRequest, McpStartRequest, NameRequest, SkillsGetRequest, SkillsListRequest,
     SkillsSearchRequest,
 };
+use std::time::Instant;
 // The skill reply types are canonical in core: the RPC client and the web
 // route name them from there. Re-exported here so this module's own callers
 // keep their `crate::server::platform::SkillDetail` path.
@@ -221,10 +222,27 @@ pub(crate) async fn handle_skills_search(
     }
 }
 
+/// `agents.list_profiles`: every agent profile, with the availability probe's
+/// verdict.
+///
+/// Cached for [`crate::agent_manager::CATALOG_CACHE_TTL`]: installing an
+/// agent binary or editing the config is rare next to how often a client
+/// asks "what agents exist", and each entry's probe can take up to 2s. Every
+/// caller of this RPC method shares the cache — it used to live only in the
+/// web server, reached by the browser alone.
 pub(crate) async fn handle_agents_list_profiles(
     req: Request,
     agent_manager: &Arc<AgentManager>,
 ) -> Response {
+    {
+        let cached = agent_manager.agent_profiles_cache.lock().await;
+        if let Some((reply, fetched_at)) = cached.as_ref() {
+            if fetched_at.elapsed() < crate::agent_manager::CATALOG_CACHE_TTL {
+                return typed_success(req.id, reply.clone());
+            }
+        }
+    }
+
     let profiles = agent_manager.build_available_agents();
 
     // Probe availability concurrently: missing binaries fail the PATH lookup
@@ -246,7 +264,10 @@ pub(crate) async fn handle_agents_list_profiles(
     });
     let mut profiles: Vec<AgentProfileEntry> = futures::future::join_all(probes).await;
     profiles.sort_by(|a, b| a.name.cmp(&b.name));
-    typed_success(req.id, AgentProfilesReply { profiles })
+    let reply = AgentProfilesReply { profiles };
+
+    *agent_manager.agent_profiles_cache.lock().await = Some((reply.clone(), Instant::now()));
+    typed_success(req.id, reply)
 }
 
 /// The agent cards a session started from the request's workspace would
@@ -396,5 +417,72 @@ mod tests {
         // `cargo` exists wherever the tests run and answers --version.
         let profile = profile_with_command(Some("cargo"));
         assert!(probe_profile_availability(&profile).await);
+    }
+
+    fn list_profiles_request() -> Request {
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(crate::protocol::RequestId::Number(1)),
+            method: "agents.list_profiles".to_string(),
+            params: serde_json::json!({}),
+        }
+    }
+
+    /// `agents.list_profiles`'s reply is cached: a second call inside the TTL
+    /// answers straight from `AgentManager::agent_profiles_cache`, not from a
+    /// fresh probe of every profile's binary — proved by pre-loading a
+    /// fabricated reply no live probe could produce, and getting it back
+    /// unchanged.
+    #[tokio::test]
+    async fn agents_list_profiles_answers_from_the_cache_within_the_ttl() {
+        let am = crate::test_support::bare_agent_manager();
+        let fabricated = AgentProfilesReply {
+            profiles: vec![AgentProfileEntry {
+                name: "not-a-real-probe-result".to_string(),
+                description: String::new(),
+                command: String::new(),
+                is_builtin: false,
+                available: true,
+            }],
+        };
+        *am.agent_profiles_cache.lock().await = Some((fabricated.clone(), Instant::now()));
+
+        let resp = handle_agents_list_profiles(list_profiles_request(), &am).await;
+        let reply: AgentProfilesReply =
+            serde_json::from_value(resp.result.expect("a reply")).unwrap();
+
+        assert_eq!(
+            reply, fabricated,
+            "a fresh cache entry must be served as-is"
+        );
+    }
+
+    /// Once the cached entry is older than the TTL, the handler probes again
+    /// and replaces it — a stale fabricated entry never reaches the caller.
+    #[tokio::test]
+    async fn agents_list_profiles_reprobes_after_the_ttl_expires() {
+        let am = crate::test_support::bare_agent_manager();
+        let stale = AgentProfilesReply {
+            profiles: vec![AgentProfileEntry {
+                name: "not-a-real-probe-result".to_string(),
+                description: String::new(),
+                command: String::new(),
+                is_builtin: false,
+                available: true,
+            }],
+        };
+        let expired_at = Instant::now()
+            - crate::agent_manager::CATALOG_CACHE_TTL
+            - std::time::Duration::from_secs(1);
+        *am.agent_profiles_cache.lock().await = Some((stale.clone(), expired_at));
+
+        let resp = handle_agents_list_profiles(list_profiles_request(), &am).await;
+        let reply: AgentProfilesReply =
+            serde_json::from_value(resp.result.expect("a reply")).unwrap();
+
+        assert_ne!(
+            reply, stale,
+            "an expired cache entry must not reach the caller"
+        );
     }
 }

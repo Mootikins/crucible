@@ -235,7 +235,6 @@ async fn browser_stream_at(peer: &Peer, uri: &str) -> axum::body::Body {
         http_client: reqwest::Client::new(),
         layout_path: Arc::new(peer._dir.path().join("layout.json")),
         remote_shell: false,
-        swr: Arc::new(crate::services::catalog::SwrCache::default()),
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
     let response = crate::test_support::build_test_app(state)

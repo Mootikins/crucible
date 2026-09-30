@@ -40,6 +40,8 @@ impl AgentManager {
             // here is a decision, not an oversight.
             titles_in_flight: _, // InFlightGuard owns its lifetime (title.rs:13)
             model_cache: _,      // keyed by provider classification, not session
+            agent_profiles_cache: _, // unkeyed catalog cache, not session
+            providers_cache: _,  // keyed by call params, not session
             runtimepath: _,      // daemon config
             modes: _,            // global mode registry
             kiln_manager: _,     // shared service

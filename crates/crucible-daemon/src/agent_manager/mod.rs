@@ -48,6 +48,13 @@ pub use tool_safety::{believed_read_only, is_safe};
 
 pub(crate) const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
+/// `agents.list_profiles` and `providers.list` probe binaries and endpoints
+/// (0.5-1s each). The catalog changes on install or config edits, not per
+/// request, so a caller pays that cost at most once per TTL — this used to
+/// be a cache in `crucible-web`, reached only through the browser; every
+/// caller of the RPC method gets it now.
+pub(crate) const CATALOG_CACHE_TTL: Duration = Duration::from_secs(30);
+
 #[derive(Error, Debug)]
 pub enum AgentError {
     #[error("Session not found: {0}")]
@@ -348,6 +355,27 @@ pub struct AgentManager {
     /// to load still has working modes rather than none.
     modes: crucible_lua::ModeRegistry,
     pub(crate) model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
+    /// `agents.list_profiles`'s answer, unkeyed: the method takes no params.
+    pub(crate) agent_profiles_cache: Arc<
+        tokio::sync::Mutex<
+            Option<(
+                crucible_core::protocol::requests::AgentProfilesReply,
+                Instant,
+            )>,
+        >,
+    >,
+    /// `providers.list`'s answer, keyed by its params
+    /// (`{kiln_path}:{include_models}`) — most calls take neither, so almost
+    /// every caller shares one entry.
+    pub(crate) providers_cache: Arc<
+        DashMap<
+            String,
+            (
+                crucible_core::protocol::requests::ProvidersListReply,
+                Instant,
+            ),
+        >,
+    >,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
     background_manager: Arc<BackgroundJobManager>,
@@ -506,6 +534,8 @@ impl AgentManager {
             runtimepath: Vec::new(),
             modes: crucible_lua::ModeRegistry::new(),
             model_cache: Arc::new(DashMap::new()),
+            agent_profiles_cache: Arc::new(tokio::sync::Mutex::new(None)),
+            providers_cache: Arc::new(DashMap::new()),
             kiln_manager: params.kiln_manager,
             session_manager: params.session_manager,
             background_manager: params.background_manager,

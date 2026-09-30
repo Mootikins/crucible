@@ -666,6 +666,33 @@ pub fn scratch_snapshot_root() -> std::path::PathBuf {
         .join("review-snapshots")
 }
 
+/// An `AgentManager` with no kilns, no plugins and no configured providers —
+/// enough to exercise an RPC handler that only needs the manager's own
+/// caches (`agents.list_profiles`, `providers.list`), not a live agent or
+/// session.
+pub fn bare_agent_manager() -> std::sync::Arc<crate::agent_manager::AgentManager> {
+    use crate::agent_manager::{AgentManager, AgentManagerParams};
+    use crate::background_manager::BackgroundJobManager;
+    use crate::kiln_manager::KilnManager;
+
+    let (event_tx, _) = crate::EventBus::channel(16);
+    let background_manager = std::sync::Arc::new(BackgroundJobManager::new(event_tx));
+    AgentManager::new(AgentManagerParams {
+        kiln_manager: std::sync::Arc::new(KilnManager::new()),
+        session_manager: temp_session_manager(),
+        background_manager,
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: None,
+        source_roots: Default::default(),
+        review_snapshot_root: scratch_snapshot_root(),
+    })
+    .into()
+}
+
 /// The recordings and stored logs that the transcript readers are pinned
 /// against, with golden files in `assets/fixtures/golden/`.
 pub const READER_FIXTURES: [&str; 7] = [

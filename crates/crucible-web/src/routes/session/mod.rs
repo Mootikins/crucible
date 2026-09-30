@@ -158,31 +158,14 @@ struct SessionScopeResponse {
     workspace: Option<String>,
 }
 
-/// One LLM provider the daemon found.
-///
-/// Mirrors `crucible_core::types::ProviderInfo` field for field. It is
-/// declared here rather than re-exported because `crucible-core` takes no
-/// utoipa dependency, and a schema is what puts the fields in the document.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct ProviderRow {
-    name: String,
-    /// The backend behind the provider, such as `ollama` or `openai`.
-    provider_type: String,
-    /// Whether the provider answered its probe.
-    available: bool,
-    default_model: Option<String>,
-    models: Vec<String>,
-    endpoint: Option<String>,
-    /// Why the provider is unavailable, when it is.
-    reason: Option<String>,
-    /// Whether the provider runs on this machine.
-    is_local: bool,
-}
-
 /// What `GET /api/providers` answers.
+///
+/// `crucible_core::types::ProviderInfo` is the daemon's own reply type now
+/// that `list_providers` is typed end to end; this route no longer keeps a
+/// field-for-field copy of it.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct ProvidersResponse {
-    providers: Vec<ProviderRow>,
+    providers: Vec<crucible_core::types::ProviderInfo>,
 }
 
 /// Read a daemon reply into the shape this route promises.
@@ -1113,8 +1096,11 @@ async fn export_session(
     ))
 }
 
-/// Served through the SWR catalog cache — provider probing takes ~0.7s and
-/// must not gate every splash render. Shape: `{providers: [ProviderInfo]}`.
+/// Cached in the daemon (`providers.list`,
+/// `crate::agent_manager::CATALOG_CACHE_TTL`) — provider probing takes ~0.7s
+/// and must not gate every splash render. Every caller of that RPC method
+/// shares the cache now; it used to be a cache in this crate alone. Shape:
+/// `{providers: [ProviderInfo]}`.
 ///
 /// Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and
 /// forward the raw directory to the daemon, which fed it to
@@ -1134,12 +1120,8 @@ async fn export_session(
 async fn list_providers(
     State(state): State<AppState>,
 ) -> Result<Json<ProvidersResponse>, WebError> {
-    let providers = crate::services::catalog::providers_value(&state)
-        .await
-        .daemon_err()?;
-    Ok(Json(ProvidersResponse {
-        providers: daemon_shape(providers, "providers.list")?,
-    }))
+    let providers = state.daemon.list_providers(None).await.daemon_err()?;
+    Ok(Json(ProvidersResponse { providers }))
 }
 
 #[cfg(test)]

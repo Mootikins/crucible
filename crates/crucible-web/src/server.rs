@@ -48,10 +48,6 @@ pub async fn start_server(
         tracing::info!(path = %state.layout_path.display(), "Standalone: using isolated web layout");
     }
 
-    // Pre-fill the slow catalog entries (agent/provider probes, ~0.5-1s each)
-    // so the first splash render is served from cache.
-    crate::services::catalog::warm(state.clone());
-
     let api_key = resolve_api_key(web_config.api_key.as_deref());
     if api_key.is_some() {
         tracing::info!("API Bearer token auth enabled for non-localhost requests");

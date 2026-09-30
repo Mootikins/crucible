@@ -740,6 +740,39 @@ impl Server {
             });
         }
 
+        // Warm the agent/provider catalog cache the same way: the first
+        // `agents.list_profiles` or `providers.list` call of any client
+        // (the browser, the CLI's own preflight) would otherwise pay the
+        // probe cost the cache exists to avoid. This used to be
+        // `crucible-web`'s own startup warm-up, reached only by the
+        // browser's cache; every client shares this one.
+        {
+            let am = self.agent_manager.clone();
+            tokio::spawn(async move {
+                let warm_once = |am: Arc<crate::agent_manager::AgentManager>| async move {
+                    let req = |method: &str| crate::protocol::Request {
+                        jsonrpc: "2.0".to_string(),
+                        id: None,
+                        method: method.to_string(),
+                        params: serde_json::json!({}),
+                    };
+                    crate::server::platform::handle_agents_list_profiles(
+                        req("agents.list_profiles"),
+                        &am,
+                    )
+                    .await;
+                    crate::server::session::handle_providers_list(req("providers.list"), &am).await;
+                };
+                warm_once(am.clone()).await;
+                let mut interval = tokio::time::interval(crate::agent_manager::CATALOG_CACHE_TTL);
+                interval.tick().await; // skip immediate tick (just warmed)
+                loop {
+                    interval.tick().await;
+                    warm_once(am.clone()).await;
+                }
+            });
+        }
+
         // Spawn event persistence task with cancellation support
         // The same registry the session manager resolves against. Without it
         // this task would save sessions whose every kiln name resolves to
