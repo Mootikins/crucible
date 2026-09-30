@@ -391,11 +391,6 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
-        Once SessionResumeFromStorage =>
-        session_resume_from_storage(session_id: &str, page: crucible_core::protocol::requests::Page)
-        -> serde_json::Value = session_resume_from_storage(&session_id, page);
-    }
-    forward_rpc! {
         /// The persisted wire envelopes past a seq cursor — the tail the chat
         /// stream replays to a reconnecting client before its live tail.
         Safe SessionEventsAfter =>

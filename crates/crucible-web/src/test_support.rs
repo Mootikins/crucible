@@ -822,11 +822,26 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             "previous_state": "active",
             "state": "paused"
         }),
-        RpcMethod::SessionResume => json!({
-            "session_id": "test-session-001",
-            "previous_state": "paused",
-            "state": "active"
-        }),
+        // Session id "cold-resume-session" answers as `session.resume`
+        // itself does for a session it had to reload from storage — a
+        // resumed-in-memory session names no such id and gets `false`
+        // (omitted, matching the daemon's `skip_serializing_if`).
+        RpcMethod::SessionResume => {
+            let session_id = msg
+                .get("params")
+                .and_then(|p| p.get("session_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("test-session-001");
+            let mut reply = json!({
+                "session_id": session_id,
+                "previous_state": "paused",
+                "state": "active"
+            });
+            if session_id == "cold-resume-session" {
+                reply["resumed_from_storage"] = json!(true);
+            }
+            reply
+        }
         RpcMethod::SessionEnd => json!({
             "session_id": "test-session-001",
             "state": "ended",

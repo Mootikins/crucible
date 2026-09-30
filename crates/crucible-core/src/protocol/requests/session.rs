@@ -399,6 +399,14 @@ pub struct SessionTransitionReply {
     pub session_id: String,
     pub previous_state: String,
     pub state: String,
+    /// `session.resume` only: the session was not resumable in memory (not
+    /// held at all, or held but not `Paused`), so the daemon reloaded it
+    /// from storage and revived it. A caller that needs the full transcript
+    /// after a resume — the web client does — reads this to decide whether
+    /// its own view is stale and it must also call `session.history`.
+    /// Omitted, not `false`, for `session.pause`, which never sets it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub resumed_from_storage: bool,
 }
 
 /// Reply from `session.history` and `session.resume_from_storage`: the

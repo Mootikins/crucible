@@ -133,24 +133,21 @@ async fn resume_session_answers_the_declared_shape() {
 /// field, because that is the mistake it exists to catch.
 #[tokio::test]
 async fn a_cold_resume_answers_the_restored_history() {
-    use crate::test_support::{build_state, build_test_app, start_mock_daemon_with_errors};
+    use crate::test_support::{build_state, build_test_app, start_mock_daemon};
     use tower::ServiceExt;
 
-    // A session the daemon no longer holds: the warm `session.resume` fails
-    // and the route reloads it from the store.
-    let mut errors = crate::test_support::MockErrors::new();
-    errors.insert(
-        RpcMethod::SessionResume,
-        (-32000, "Session is not resident".to_string()),
-    );
-    let (_mock, client) = start_mock_daemon_with_errors(errors).await;
+    // "cold-resume-session" is the mock's own stand-in for a session
+    // `session.resume` had to reload from storage: the daemon's reply names
+    // `resumed_from_storage: true`, which is the ONLY thing that decides this
+    // route also reads `session.history` — not a second daemon call failing.
+    let (_mock, client) = start_mock_daemon().await;
     let app = build_test_app(build_state(client));
 
     let response = app
         .oneshot(
             axum::http::Request::builder()
                 .method("POST")
-                .uri(format!("{SESSION}/resume"))
+                .uri("/api/session/cold-resume-session/resume")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )

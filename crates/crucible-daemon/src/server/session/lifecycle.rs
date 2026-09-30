@@ -23,6 +23,7 @@ pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecy
                 session_id: session_id.clone(),
                 previous_state: format!("{}", previous),
                 state: "paused".to_string(),
+                resumed_from_storage: false,
             },
         ),
         Ok(other) => unexpected_stop(req.id, "pause", other),
@@ -54,13 +55,27 @@ pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
     };
     let session_id = &params.session_id;
 
-    // A session that this daemon does not hold (an earlier daemon recorded
-    // it) resumes from storage. The client asks once, and the daemon decides
-    // where the session is. The dispatcher runs the start checks after
-    // either path.
-    let resumed = match sm.resume_session(session_id).await {
-        Err(SessionError::NotFound(_)) => resume_stored(sm, session_id).await,
-        resumed => resumed,
+    // A session this daemon does not hold in memory at all (an earlier
+    // daemon recorded it), or holds but not `Paused` — most commonly
+    // `Ended`, resumed after the client that ended it reconnects — resumes
+    // from storage instead. The client asks once, and the daemon decides
+    // where the session is; the reply says which path it took, because a
+    // client that needs the full transcript after a stored resume (the web
+    // client does) must know its own view of the session may be stale. The
+    // dispatcher runs the start checks after either path.
+    let warm = sm.resume_session(session_id).await;
+    let from_storage = matches!(
+        warm,
+        Err(SessionError::NotFound(_))
+            | Err(SessionError::InvalidState {
+                actual: SessionState::Ended,
+                ..
+            })
+    );
+    let resumed = if from_storage {
+        resume_stored(sm, session_id).await
+    } else {
+        warm
     };
     match resumed {
         Ok(previous_state) => typed_success(
@@ -69,6 +84,7 @@ pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
                 session_id: session_id.clone(),
                 previous_state: format!("{}", previous_state),
                 state: "active".to_string(),
+                resumed_from_storage: from_storage,
             },
         ),
         Err(e) => invalid_state_error(req.id, "resume", e),

@@ -118,11 +118,15 @@ struct SessionLifecycleResponse {
 }
 
 /// What `POST /api/session/{id}/resume` answers, which depends on the path
-/// that resumed the session.
+/// that resumed the session — a decision `session.resume` itself makes and
+/// reports (`SessionTransitionReply::resumed_from_storage`), not something
+/// this route infers from which daemon call happened to succeed.
 ///
-/// The warm path answers the state change. The cold path reloads the session
-/// from the store and answers its history, because that call is also what
-/// `GET /api/session/{id}/history` serves.
+/// The warm path answers the state change alone. The cold path (the session
+/// was not held in memory, or was held but not `Paused` — most commonly
+/// `Ended`) also answers the full history, read with `session.history`
+/// after the daemon's own resume, because the browser's view of a session it
+/// did not just have open may be stale.
 ///
 /// **`Restored` must stay first.** The daemon sends no tag, so the variants
 /// are told apart by their fields, and `Live`'s required fields
@@ -561,20 +565,29 @@ async fn resume_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<ResumeSessionResponse>, WebError> {
-    // Transparent resume: sessions are always resumable. Try the warm path
-    // (session still resident and merely paused); on any failure — ended,
-    // evicted, or not in memory — fall back to reloading it from the daemon's
-    // session store so an idle session is never a dead end for the UI.
-    let reply = match state.daemon.session_resume(&id).await {
-        Ok(result) => ResumeSessionResponse::Live(daemon_shape(result, "session.resume")?),
-        Err(_) => {
-            let result = state
-                .daemon
-                .session_resume_from_storage(&id, Default::default())
-                .await
-                .map_err(|e| map_session_not_found(e, &id))?;
-            ResumeSessionResponse::Restored(daemon_shape(result, "session.resume_from_storage")?)
-        }
+    // Transparent resume: sessions are always resumable. `session.resume`
+    // itself decides whether the session was resident and merely paused, or
+    // needed reloading from the daemon's session store — the daemon's own
+    // policy, shared by every caller (see `SessionTransitionReply::resumed_from_storage`).
+    // This route only decides what a resumed browser needs NEXT: a stored
+    // resume means the browser's own view may be stale, so it also reads the
+    // full transcript (a read-only `session.history` call); a warm resume
+    // needs no such call, because the browser's live view never lapsed.
+    let raw = state
+        .daemon
+        .session_resume(&id)
+        .await
+        .map_err(|e| map_session_not_found(e, &id))?;
+
+    let reply = if raw["resumed_from_storage"].as_bool().unwrap_or(false) {
+        let history = state
+            .daemon
+            .session_history(&id, Default::default())
+            .await
+            .map_err(|e| map_session_not_found(e, &id))?;
+        ResumeSessionResponse::Restored(Box::new(daemon_shape(history, "session.history")?))
+    } else {
+        ResumeSessionResponse::Live(daemon_shape(raw, "session.resume")?)
     };
 
     Ok(Json(reply))
