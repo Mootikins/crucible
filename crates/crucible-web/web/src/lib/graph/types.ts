@@ -1,24 +1,9 @@
 import type { SimulationNodeDatum } from 'd3-force';
+import type { RpcMethods } from '@/lib/rpc-methods';
 
-/** Wire shape of `kiln.graph` (`POST /api/rpc/kiln.graph`). */
-interface GraphNoteDto {
-  path: string;
-  title: string;
-  tags: string[];
-}
-
-interface GraphLinkDto {
-  source: string;
-  /** Resolved: a note path joinable against `notes[].path`. Unresolved: the
-   * normalized target key of a link pointing at no existing note. */
-  target: string;
-  resolved: boolean;
-}
-
-export interface GraphDto {
-  notes: GraphNoteDto[];
-  links: GraphLinkDto[];
-}
+/** Wire shape of `kiln.graph` (`POST /api/rpc/kiln.graph`): the daemon's own
+ * `KilnGraphReply`, `KilnGraphNote` and `KilnGraphLink`. */
+export type GraphDto = RpcMethods['kiln.graph']['result'];
 
 type GraphNodeKind = 'note' | 'phantom' | 'tag';
 
