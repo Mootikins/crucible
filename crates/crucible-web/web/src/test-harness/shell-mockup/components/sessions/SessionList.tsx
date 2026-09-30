@@ -1,6 +1,6 @@
-/** The sessions, grouped by project, and a last row that opens the full list. */
-import { For, type Component } from 'solid-js';
-import { SectionLabel } from '../primitives/SectionLabel';
+/** The sessions, grouped by project, each group folds; a last row opens the full list. */
+import { For, Show, type Component } from 'solid-js';
+import { SessionGroupHeader } from './SessionGroupHeader';
 import { SessionRow } from './SessionRow';
 import type { SessionGroupView } from './types';
 
@@ -8,6 +8,8 @@ export interface SessionListProps {
   groups: SessionGroupView[];
   activeId: string;
   onOpen: (id: string) => void;
+  /** Fold or unfold the group with this label. */
+  onToggleGroup: (label: string) => void;
 }
 
 export const SessionList: Component<SessionListProps> = (props) => (
@@ -15,10 +17,12 @@ export const SessionList: Component<SessionListProps> = (props) => (
     <For each={props.groups}>
       {(group) => (
         <>
-          <SectionLabel kind="group">{group.label}</SectionLabel>
-          <For each={group.sessions}>
-            {(s) => <SessionRow session={s} current={props.activeId === s.id} onOpen={props.onOpen} />}
-          </For>
+          <SessionGroupHeader label={group.label} open={group.open} onToggle={() => props.onToggleGroup(group.label)} />
+          <Show when={group.open}>
+            <For each={group.sessions}>
+              {(s) => <SessionRow session={s} current={props.activeId === s.id} onOpen={props.onOpen} />}
+            </For>
+          </Show>
         </>
       )}
     </For>

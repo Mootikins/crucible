@@ -33,6 +33,17 @@ function openPop(kind: Exclude<Pop, null>, e: MouseEvent) {
 }
 const closePop = () => setPop(null);
 
+/**
+ * Open the settings popover at the rail's settings button, for a command
+ * elsewhere ("Manage projects and kilns…" in the Files pane).
+ */
+export function openSettings() {
+  const button = document.querySelector('[data-testid="mk-settings"]');
+  if (!button) return;
+  setAnchor(button.getBoundingClientRect());
+  setPop('settings');
+}
+
 export function mockSlots(onNewSession: () => void, onSearch: () => void): WindowingSlots {
   return {
     railHead: (position: EdgePanelPosition) =>
@@ -51,7 +62,7 @@ export function mockSlots(onNewSession: () => void, onSearch: () => void): Windo
           {/* The core's own swap button (it swaps the rails) is hidden by the
               mockup stylesheet; this one swaps what opens in the centre. */}
           <SpawnButton spawn={state.spawn} onToggle={() => setState('spawn', state.spawn === 'docs' ? 'sessions' : 'docs')} />
-          <RailButton title="Settings" onClick={(e) => openPop('settings', e)}><Settings class="w-4 h-4" /></RailButton>
+          <RailButton title="Settings" testId="mk-settings" onClick={(e) => openPop('settings', e)}><Settings class="w-4 h-4" /></RailButton>
           <Popover open={pop() === 'inbox'} anchor={anchor()} onClose={closePop}>
             <InboxContainer onDone={closePop} />
           </Popover>

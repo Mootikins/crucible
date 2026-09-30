@@ -4,12 +4,12 @@
  */
 import type { Component } from 'solid-js';
 import { windowActions, windowStore } from '@/windowing/store';
-import { openChanges, withTransition } from '../actions';
+import { focusComposer, openChanges, withTransition } from '../actions';
 import { SessionHeader } from '../components/session/SessionHeader';
 import { SessionLayout } from '../components/session/SessionLayout';
 import { Transcript } from '../components/session/Transcript';
 import { blocks } from '../components/session/blocks';
-import { pendingHunks, state } from '../state';
+import { pendingHunks, setState, state } from '../state';
 import { SessionFooterContainer } from './SessionFooterContainer';
 import { mockToolHandlers } from './toolHandlers';
 import { noteLinks } from './wikilinks';
@@ -50,7 +50,22 @@ export const SessionContainer: Component<{ sid?: string }> = (props) => {
           onToggleExpand={() => withTransition(() => windowActions.toggleEdgeExpanded('right'))}
         />
       }
-      transcript={<Transcript blocks={blocks(state.transcripts[sid()] ?? [])} links={links} tools={mockToolHandlers} />}
+      transcript={
+        <Transcript
+          blocks={blocks(state.transcripts[sid()] ?? [])}
+          links={links}
+          tools={mockToolHandlers}
+          turn={{
+            onEdit: (text) => {
+              setState('drafts', sid(), text);
+              focusComposer();
+            },
+            // The mockup has no model, so a regenerate does nothing. The real
+            // app sends the last user message again (`chat.sendMessage`).
+            onRegenerate: () => {},
+          }}
+        />
+      }
       footer={<SessionFooterContainer sid={sid()} />}
     />
   );

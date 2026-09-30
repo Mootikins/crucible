@@ -4,7 +4,7 @@
  * sends; Shift+Enter makes a new line. The capsule is round while the draft
  * is one line, and takes the card radius when it wraps.
  */
-import { createSignal, type Component } from 'solid-js';
+import { createEffect, createSignal, on, type Component } from 'solid-js';
 import { Mic } from 'lucide-solid';
 import { IconButton } from '../primitives/IconButton';
 import { SendButton } from './SendButton';
@@ -30,6 +30,9 @@ export const Composer: Component<ComposerProps> = (props) => {
     const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
     setLines(Math.max(1, Math.round(el.scrollHeight / lh)));
   };
+  let box: HTMLTextAreaElement | undefined;
+  // A draft can change from outside (edit a message): the box fits it too.
+  createEffect(on(() => props.draft, () => box && resize(box), { defer: true }));
   return (
     <div class="mk-composer-a">
       <div class="mk-composer" data-lines={lines() > 1 ? 'many' : 'one'}>
@@ -38,7 +41,10 @@ export const Composer: Component<ComposerProps> = (props) => {
           placeholder="Type a message…"
           aria-label="Message"
           value={props.draft}
-          ref={(el) => queueMicrotask(() => resize(el))}
+          ref={(el) => {
+            box = el;
+            queueMicrotask(() => resize(el));
+          }}
           onInput={(e) => {
             resize(e.currentTarget);
             props.onDraft(e.currentTarget.value);

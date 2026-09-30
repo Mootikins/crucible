@@ -1,5 +1,5 @@
 /** The sessions rail on the mock store. A port reads `useSessionSafe()` and `sessionStatus` instead. */
-import { createMemo, type Component } from 'solid-js';
+import { createMemo, createSignal, type Component } from 'solid-js';
 import { openSession } from '../actions';
 import { SessionList } from '../components/sessions/SessionList';
 import type { SessionGroupView, SessionRowView } from '../components/sessions/types';
@@ -26,10 +26,19 @@ const rowView = (sid: string): SessionRowView => ({
 });
 
 export const SessionsPanelContainer: Component = () => {
+  // The folded groups, by label. Display state: it stays in the client, as
+  // `SessionTree` keeps it in localStorage.
+  const [folded, setFolded] = createSignal<ReadonlySet<string>>(new Set());
+  const toggle = (label: string) =>
+    setFolded((s) => {
+      const n = new Set(s);
+      if (!n.delete(label)) n.add(label);
+      return n;
+    });
   const groups = createMemo(() => {
     const out: Record<string, string[]> = {};
     for (const [sid, s] of Object.entries(state.sessions)) (out[s.group] ??= []).push(sid);
-    return Object.entries(out).map(([label, sids]): SessionGroupView => ({ label, sessions: sids.map(rowView) }));
+    return Object.entries(out).map(([label, sids]): SessionGroupView => ({ label, open: !folded().has(label), sessions: sids.map(rowView) }));
   });
-  return <SessionList groups={groups()} activeId={state.active} onOpen={openSession} />;
+  return <SessionList groups={groups()} activeId={state.active} onOpen={openSession} onToggleGroup={toggle} />;
 };

@@ -7,6 +7,7 @@ import { createSignal } from 'solid-js';
 import { NOTE_TEXT } from './data';
 import type { RootKey } from './components/files/FileTree';
 import type { HunkState } from './components/review/types';
+import type { PermissionChoice } from './components/session/PermissionCard';
 import type { TranscriptItem } from './components/session/types';
 import type { SessionMarkStatus } from './components/sessions/types';
 
@@ -24,6 +25,19 @@ export interface Session {
   plugin?: boolean;
 }
 
+/**
+ * A pending edit that waits for permission: the call, the file, and the
+ * lines it inserts above the line `before`. The real request carries
+ * `diffs` (a `FileDiff` with the old and the new content) instead.
+ */
+export interface PermissionRequest {
+  call: string;
+  tool: string;
+  path: string;
+  before: string;
+  lines: string[];
+}
+
 /** A transcript item. The components own the shape; this store fills it. */
 type Item = TranscriptItem;
 
@@ -38,12 +52,15 @@ export interface Hunk {
   add?: string[];
 }
 
+/** The label of the group of sessions that have no project. */
+export const NO_PROJECT = 'Chats';
+
 const canvas = (slot: string) => `var(--cru-color-canvas-${slot})`;
 
 const [state, setState] = createStore({
   sessions: {
-    s1: { title: 'Tighten the Precognition note', group: 'No project', roots: ['folder', 'docs'], color: canvas('cyan'), status: 'need', time: '2 m', model: 'glm-5.2', mode: 'Ask', ctx: 18 },
-    s4: { title: 'Draft Windows setup troubleshooting', group: 'No project', roots: ['folder', 'docs'], color: canvas('orange'), status: 'idle', time: 'Yesterday', model: 'glm-5.2', mode: 'Ask', ctx: 31 },
+    s1: { title: 'Tighten the Precognition note', group: NO_PROJECT, roots: ['folder', 'docs'], color: canvas('cyan'), status: 'need', time: '2 m', model: 'glm-5.2', mode: 'Ask', ctx: 18 },
+    s4: { title: 'Draft Windows setup troubleshooting', group: NO_PROJECT, roots: ['folder', 'docs'], color: canvas('orange'), status: 'idle', time: 'Yesterday', model: 'glm-5.2', mode: 'Ask', ctx: 31 },
     s2: { title: 'Explain the review undo stack', group: 'crucible', roots: ['crucible', 'docs'], color: canvas('green'), status: 'run', time: 'now', model: 'glm-5.2', mode: 'Auto', ctx: 9 },
     s5: { title: 'Check kiln chip copy against the glossary', group: 'crucible', roots: ['crucible', 'docs'], color: canvas('yellow'), status: 'idle', time: '3 d', model: 'glm-5.2', mode: 'Plan', ctx: 12 },
     s3: { title: 'Nightly reflection pass', group: 'Reflections', roots: ['docs'], color: canvas('purple'), status: 'owe', time: '6 h', model: 'reflection', mode: 'Auto', ctx: 22, plugin: true },
@@ -61,8 +78,8 @@ const [state, setState] = createStore({
   } as Record<string, Hunk>,
   /** One pending permission per session, keyed by session id. */
   perms: {
-    s1: { call: 'c6', tool: 'write_file', path: 'Help/Concepts/Precognition.md', lines: ['### When to turn it off', '', 'Turn Precognition off when a conversation is not about your notes, for example a quick shell question. The injected notes then cost context and add nothing. Run `:set noprecognition` before the first message, because the injection happens only once.'] },
-  } as Record<string, { call: string; tool: string; path: string; lines: string[] }>,
+    s1: { call: 'c6', tool: 'write_file', path: 'Help/Concepts/Precognition.md', before: '### Customizing with Lua', lines: ['### When to turn it off', '', 'Turn Precognition off when a conversation is not about your notes, for example a quick shell question. The injected notes then cost context and add nothing. Run `:set noprecognition` before the first message, because the injection happens only once.'] },
+  } as Record<string, PermissionRequest>,
   transcripts: {
     s1: [
       { t: 'user', text: 'The opening of [[Precognition]] leans on a metaphor. Replace it with what a new user needs to know first.', time: '7:38 PM' },
@@ -185,7 +202,14 @@ export function decide(ids: string[], accept: boolean) {
   }
 }
 
-export function answerPermission(sid: string, choice: 'once' | 'session' | 'deny') {
+/** The line of record that each wider grant leaves in the transcript. */
+const GRANT_RECORD: Partial<Record<PermissionChoice, string>> = {
+  session: 'Edits allowed for this session',
+  project: 'Edits allowed for this project',
+  user: 'Edits always allowed',
+};
+
+export function answerPermission(sid: string, choice: PermissionChoice) {
   const p = state.perms[sid];
   if (!p) return;
   setState('perms', produce((perms) => delete perms[sid]));
@@ -201,7 +225,8 @@ export function answerPermission(sid: string, choice: 'once' | 'session' | 'deny
       if (choice === 'deny') items.push({ t: 'text', md: 'OK. I did not change the note.', elapsed: '0.4 s' });
       else {
         items.push({ t: 'text', md: 'Added **When to turn it off** under Configuration.', elapsed: '5.2 s', tokens: '1,207' });
-        if (choice === 'session') items.push({ t: 'record', text: 'Edits allowed for this session' });
+        const record = GRANT_RECORD[choice];
+        if (record) items.push({ t: 'record', text: record });
       }
     }),
   );

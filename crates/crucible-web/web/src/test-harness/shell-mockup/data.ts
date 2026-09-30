@@ -138,6 +138,32 @@ export const KILN_PATHS: readonly string[] = [
   "Search & Discovery"
 ];
 
+/**
+ * Files of the docs kiln that are not notes, with their extensions. The real
+ * docs kiln has none; these show how the tree labels a canvas, an image and
+ * a data file.
+ */
+export const KILN_FILES: readonly string[] = [
+  "Help/Concepts/Knowledge Map.canvas",
+  "Help/Concepts/precognition-flow.png",
+  "Help/Concepts/session-states.json",
+];
+
+/**
+ * The files by the time of their last change, the newest first, for the
+ * tree's "Modified" order. A file that is not in this list is older than
+ * all of them. The real app reads `mtime` from `useListDir`.
+ */
+export const RECENT_FILES: readonly string[] = [
+  "Help/Concepts/Precognition.md",
+  "Help/Concepts/Knowledge Map.canvas",
+  "Help/Concepts/Semantic Search.md",
+  "Help/Concepts/Review Ledger.md",
+  "Help/Concepts/Kilns.md",
+  "Help/Concepts/precognition-flow.png",
+  "Help/Concepts/Session Compaction.md",
+];
+
 /** The top level of the crucible project root. A trailing `/` marks a folder. */
 export const PROJECT_PATHS: readonly string[] = [
   "AGENTS.md",

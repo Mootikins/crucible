@@ -22,7 +22,9 @@ export interface SessionRowView {
 }
 
 export interface SessionGroupView {
-  /** The project name, or "No project". */
+  /** The project name, or "Chats" for the sessions that have no project. */
   label: string;
+  /** Does the group show its sessions? A fold per project, as `SessionTree` keeps one per group key. */
+  open: boolean;
   sessions: SessionRowView[];
 }

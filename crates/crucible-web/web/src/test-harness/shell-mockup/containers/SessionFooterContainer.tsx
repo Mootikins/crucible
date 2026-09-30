@@ -10,14 +10,21 @@ import { basename } from '../components/path';
 import { PermissionCard } from '../components/session/PermissionCard';
 import { QueuedMessage } from '../components/session/QueuedMessage';
 import { RecordLine } from '../components/session/RecordLine';
-import { answerPermission, removeQueued, send, sendQueuedNow, setState, state } from '../state';
+import { NO_PROJECT, answerPermission, removeQueued, send, sendQueuedNow, setState, state } from '../state';
+import { permissionDiff } from './permissionDiff';
 
 export const SessionFooterContainer: Component<{ sid: string }> = (props) => {
   const s = () => state.sessions[props.sid]!;
   return (
     <>
       <Show when={state.perms[props.sid]}>
-        {(p) => <PermissionCard file={basename(p().path)} lines={p().lines} onAnswer={(choice) => answerPermission(props.sid, choice)} />}
+        {(p) => (
+          <PermissionCard
+            file={basename(p().path)}
+            diff={permissionDiff(p().path, state.notes[p().path.replace(/\.md$/, '')] ?? '', p().before, p().lines)}
+            onAnswer={(choice) => answerPermission(props.sid, choice)}
+          />
+        )}
       </Show>
       <For each={state.queue[props.sid] ?? []}>
         {(text, i) => (
@@ -33,7 +40,7 @@ export const SessionFooterContainer: Component<{ sid: string }> = (props) => {
           running={s().status === 'run'}
           mode={s().mode}
           model={s().model}
-          workspace={s().group === 'No project' ? 'Session folder' : s().group}
+          workspace={s().group === NO_PROJECT ? 'Session folder' : s().group}
           kiln={s().roots.includes('docs') ? 'docs' : 'No kiln'}
         />
       </Show>

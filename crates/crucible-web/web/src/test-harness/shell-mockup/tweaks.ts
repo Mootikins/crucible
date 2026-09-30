@@ -56,6 +56,7 @@ const defaults = (): Tweaks => ({
   plugin: 'none',
   changesControls: 'ab',
   hoverBar: 'title',
+  fileLabels: 'extensions',
 });
 
 // v2: the defaults changed, so the settings saved under v1 no longer apply.

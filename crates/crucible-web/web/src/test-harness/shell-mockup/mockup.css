@@ -128,9 +128,14 @@
 /* Session list */
 .mk-list { padding: 2px 0 8px; }
 .mk-grouplabel { padding: 8px 12px 2px; font-size: 11px; color: var(--cru-color-muted-dark); }
+/* A project header folds its group. Its caret sits in the column of the row
+   marks, so the name starts where the session titles start. */
+.mk-grouphead { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer; }
+.mk-grouphead:hover { color: var(--cru-color-body); }
+.mk-grouphead .mk-i { color: var(--cru-color-muted-dark); }
 /* A row sits a little in from both pane edges, so a selected row never
    touches the edge where the open tab joins the pane. */
-.mk-srow, .mk-trow, .mk-rootrow { width: calc(100% - 12px); margin-inline: 6px; border-radius: 6px; }
+.mk-srow, .mk-trow { width: calc(100% - 12px); margin-inline: 6px; border-radius: 6px; }
 .mk-srow { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; height: var(--cru-row-sm); padding: 0 6px; text-align: left; color: var(--cru-color-body); font-size: 13px; cursor: pointer; }
 .mk-srow > :first-child { justify-self: center; }
 .mk-srow:hover { background: var(--cru-color-hover-wash); }
@@ -141,11 +146,15 @@
 .mk-meta.run { color: var(--cru-color-primary); }
 .mk-more { color: var(--cru-color-muted); font-size: 12px; }
 
-/* Tree */
+/* Files pane: its own bar, then the tree of one root. The bar's first icon
+   lines up with the tree's carets; its last icon with the row ends. */
+.mk-files { display: grid; grid-template-rows: 30px minmax(0, 1fr); height: 100%; min-height: 0; }
+.mk-filesbar { display: flex; align-items: center; padding-inline: 10px calc(12px - var(--mk-icon-inset)); min-width: 0; border-bottom: 1px solid transparent; }
+.mk-rootsel { display: inline-flex; align-items: center; gap: 6px; height: 26px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--cru-color-ink); cursor: pointer; }
+.mk-rootsel .mk-i { color: var(--cru-color-muted-dark); }
+.mk-rootsel:hover .mk-i { color: var(--cru-color-ink); }
+.mk-rootsel.dim { color: var(--cru-color-muted); }
 .mk-tree { padding-bottom: 10px; }
-.mk-rootrow { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px; text-align: left; font-size: 12px; font-weight: 600; color: var(--cru-color-ink); cursor: pointer; }
-.mk-rootrow:hover { background: var(--cru-color-hover-wash); }
-.mk-rootrow.dim { color: var(--cru-color-muted); }
 .mk-kind { font-weight: 400; color: var(--cru-color-muted-dark); font-size: 11px; }
 .mk-sessionbar { width: 3px; height: 14px; border-radius: 2px; }
 .mk-trow { display: flex; align-items: center; gap: 5px; height: 24px; text-align: left; padding-right: 6px; color: var(--cru-color-body); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
@@ -156,7 +165,13 @@
 .mk-touch { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 .mk-owe { font-size: 11px; font-weight: 600; color: var(--cru-color-attention); padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--cru-color-attention) 14%, transparent); line-height: 16px; }
 .mk-i + .mk-t { margin-left: 0; }
-.mk-trow .mk-i, .mk-rootrow .mk-i { color: var(--cru-color-muted-dark); }
+.mk-trow .mk-i { color: var(--cru-color-muted-dark); }
+/* A file that is not a note shows its extension (toolbox "File labels"). */
+.mk-ext { flex: none; font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; line-height: 14px; padding: 0 4px; border-radius: 3px; color: var(--cru-color-muted-dark); background: var(--mk-line); }
+/* An open folder's children hang from a faint guide in the other shade,
+   under the centre of the folder's caret. */
+.mk-tchildren { position: relative; }
+.mk-tchildren::before { content: ''; position: absolute; inset-block: 0; left: calc(16.5px + var(--mk-depth) * 14px); width: 1px; background: var(--mk-line); pointer-events: none; }
 
 /* Note */
 .mk-body { display: grid; grid-template-rows: 30px minmax(0, 1fr); height: 100%; min-height: 0; background: var(--cru-color-shell-panel); }
@@ -182,7 +197,17 @@
 .mk-note pre code { background: none; padding: 0; }
 .mk-note a.wikilink, .mk-bubble a.wikilink, .mk-atext a.wikilink { color: var(--cru-color-primary); text-decoration: none; background: color-mix(in srgb, var(--cru-color-primary) 9%, transparent); border-radius: 3px; padding: 0 2px; }
 .mk-note a.wikilink:hover, .mk-bubble a.wikilink:hover, .mk-atext a.wikilink:hover { text-decoration: underline; text-underline-offset: 3px; }
-.mk-props { border: 1px solid var(--cru-color-hairline); border-radius: var(--cru-radius-card); padding: 8px 12px; margin: 0 0 22px; font-size: 12.5px; line-height: 1.5; display: grid; grid-template-columns: 110px 1fr; gap: 5px 12px; }
+/* The properties fold to one quiet line. Open, the rows sit on the text
+   column with no frame. The body grows from a 0fr row to a 1fr row. */
+.mk-propsfold { margin: 0 0 14px; }
+.mk-propstoggle { display: inline-flex; align-items: center; gap: 6px; height: 24px; font-size: 12.5px; color: var(--cru-color-muted-dark); cursor: pointer; }
+.mk-propstoggle:hover { color: var(--cru-color-body); }
+.mk-propstoggle .mk-i { color: inherit; }
+.mk-propsbody { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 180ms ease-out; }
+.mk-propsfold.open .mk-propsbody { grid-template-rows: 1fr; }
+.mk-propsclip { min-height: 0; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .mk-propsbody { transition: none; } }
+.mk-props { padding: 4px 0 6px; margin: 0; font-size: 12.5px; line-height: 1.5; display: grid; grid-template-columns: 110px 1fr; gap: 5px 12px; }
 .mk-props dt { color: var(--cru-color-muted); }
 .mk-props dd { margin: 0; }
 .mk-status { color: var(--cru-color-ok); }
@@ -240,9 +265,17 @@
 .mk-atext strong { color: var(--cru-color-ink); }
 .mk-aturn { display: grid; gap: 2px; }
 .mk-meta-row { font-size: 11px; color: var(--cru-color-muted-dark); font-variant-numeric: tabular-nums; }
-.mk-meta-row.hov { opacity: 0; transition: opacity 200ms; }
-.mk-user .mk-meta-row { position: absolute; top: 100%; right: 2px; padding-top: 2px; }
-.mk-aturn:hover .hov, .mk-aturn:focus-within .hov, .mk-user:hover .hov { opacity: 1; }
+.mk-meta-row.hov { opacity: 0; pointer-events: none; transition: opacity 200ms; }
+.mk-aturn:hover .hov, .mk-aturn:focus-within .hov, .mk-user:hover .hov, .mk-user:focus-within .hov { opacity: 1; pointer-events: auto; }
+/* The action row under a message holds its room at rest, so a hover moves
+   nothing. The icon at the text side lines up with the text edge. */
+.mk-turnacts { display: flex; align-items: center; gap: 0; min-height: 22px; }
+.mk-turnacts .mk-iconbtn { height: 22px; min-width: 22px; padding: 0 4px; }
+.mk-aturn .mk-turnacts { margin-inline-start: -4px; }
+.mk-aturn .mk-turnacts > span { margin-inline-start: 6px; }
+.mk-user .mk-turnacts { margin-inline-end: -4px; margin-top: 2px; }
+.mk-user .mk-turnacts > span { margin-inline-end: 6px; }
+.mk-ok { color: var(--cru-color-ok); }
 @media (hover: none) { .mk-meta-row.hov { opacity: 1; } }
 .mk-precog summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 7px; color: var(--cru-color-precog); font-size: 12.5px; }
 .mk-precog ul { list-style: none; margin: 4px 0 0; padding: 0 0 0 20px; display: grid; gap: 2px; }
@@ -279,9 +312,21 @@
 .mk-cinner { max-width: 48rem; margin: 0 auto; display: grid; gap: 8px; }
 .mk-perm { border: 1px solid color-mix(in srgb, var(--cru-color-attention) 50%, transparent); background: transparent; border-radius: var(--cru-radius-card); box-shadow: var(--cru-shadow-md); overflow: hidden; }
 .mk-ph { padding: 9px 12px 6px; font-size: 12.5px; color: var(--cru-color-ink); font-weight: 500; }
-.mk-perm pre { margin: 0 12px 8px; font-family: var(--cru-font-mono); font-size: 11px; line-height: 1.55; border-radius: 6px; border: 1px solid var(--cru-color-hairline); white-space: pre-wrap; overflow: hidden; }
-.mk-perm pre .a { display: block; background: var(--mk-diff-add); padding: 0 8px; min-height: 1.55em; }
-.mk-pa { display: flex; gap: 6px; padding: 0 12px 10px; }
+/* The change, as the app's diff viewer shows it, in NAV with no frame: the
+   path and the counts, then the old and new line numbers, the mark, the line. */
+.mk-pdiff { margin: 0 12px 8px; border-radius: 6px; background: var(--mk-nav-solid); overflow: hidden; font-family: var(--cru-font-mono); font-size: 11px; line-height: 1.6; }
+.mk-pdhead { display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: var(--cru-color-body); }
+.mk-pdhead .mk-t { flex: 1; }
+.mk-pdrows { max-height: 12rem; overflow: auto; padding-bottom: 2px; }
+.mk-pdrow { display: grid; grid-template-columns: 4ch 4ch 2.5ch minmax(0, 1fr); color: var(--cru-color-muted); }
+.mk-pdrow .n { text-align: right; color: var(--cru-color-muted-dark); user-select: none; }
+.mk-pdrow .m { text-align: center; user-select: none; }
+.mk-pdrow .c { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 8px; }
+.mk-pdrow.add { background: var(--mk-diff-add); color: var(--cru-color-body); }
+.mk-pdrow.add .m { color: var(--cru-color-ok); }
+.mk-pdrow.remove { background: var(--mk-diff-del); }
+.mk-pdrow.remove .m { color: var(--cru-color-error); }
+.mk-pa { display: flex; align-items: center; gap: 6px; padding: 0 calc(12px - var(--mk-icon-inset)) 10px 12px; }
 /* A queued message: a mild accent, and the override beside it. */
 .mk-queued { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: var(--cru-radius-card); border: 1px dashed color-mix(in srgb, var(--cru-color-primary) 45%, transparent); background: color-mix(in srgb, var(--cru-color-primary) 7%, transparent); font-size: 12.5px; }
 .mk-qlabel { font-size: 11px; font-weight: 600; color: var(--cru-color-primary); }
@@ -320,6 +365,12 @@
 .mk-inbox .mk-item { padding: 10px 12px; border-top: 1px solid var(--cru-color-hairline); display: grid; gap: 6px; }
 .mk-inbox .mk-who { display: flex; align-items: center; gap: 8px; color: var(--cru-color-ink); }
 .mk-acts { display: flex; gap: 6px; }
+/* A menu floats in MAIN. Its NAV edge shows over MAIN and fades into NAV,
+   so it reads apart from either shade with one line at most. */
+.mk-menu { position: fixed; z-index: 71; min-width: 180px; max-width: 300px; padding: 4px; border-radius: 10px; background: var(--mk-main-solid); outline: 1px solid var(--mk-nav-solid); outline-offset: -1px; box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6); display: grid; font-size: 12.5px; }
+.mk-menu button { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; text-align: left; color: var(--cru-color-body); cursor: pointer; white-space: nowrap; }
+.mk-menu button:hover, .mk-menu button:focus-visible { background: var(--mk-nav-solid); color: var(--cru-color-ink); outline: none; }
+.mk-menu hr { border: 0; height: 1px; background: var(--mk-nav-solid); margin: 4px 2px; }
 .mk-settings { padding-bottom: 6px; }
 .mk-check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 12px; color: var(--cru-color-body); cursor: pointer; }
 .mk-check input { margin-top: 3px; accent-color: var(--cru-color-primary); }
@@ -439,9 +490,9 @@ body { background: var(--mk-nav); }
 .wm-pane-boundary { height: 1px; top: 0; }
 .wm-pane-boundary:not(:hover):not([data-dragging]),
 .wm-edge-handle:not(:hover):not([data-dragging]) { background: transparent; }
-:is(.wm-ribbon-toggle, .wm-pane-marker, .wm-tabbar, .mk-crumbbar, .mk-shead) { border-color: transparent; }
+:is(.wm-ribbon-toggle, .wm-pane-marker, .wm-tabbar, .mk-crumbbar, .mk-shead, .mk-filesbar) { border-color: transparent; }
 :root[data-mk-lines] {
-  :is(.wm-ribbon-toggle, .wm-pane-marker, .wm-tabbar, .mk-crumbbar, .mk-shead) { border-color: var(--mk-line); }
+  :is(.wm-ribbon-toggle, .wm-pane-marker, .wm-tabbar, .mk-crumbbar, .mk-shead, .mk-filesbar) { border-color: var(--mk-line); }
   .wm-edge-handle:not(:hover):not([data-dragging]) { background: var(--mk-line); }
 }
 
@@ -632,6 +683,7 @@ body { background: var(--mk-nav); }
 /* Floating layers are frosted: windows (peek, hover editor), popovers, the permission card. */
 :root[data-material='glass'] .wm-floating,
 :root[data-material='glass'] .mk-pop,
+:root[data-material='glass'] .mk-menu,
 :root[data-material='glass'] .mk-toolbox,
 :root[data-material='glass'] .mk-perm {
   backdrop-filter: var(--mk-glass-blur);
@@ -661,7 +713,6 @@ body { background: var(--mk-nav); }
 :root[data-material='glass'] .mk-btn:not(.primary):not(.ghost) { box-shadow: var(--mk-glass-edge); }
 
 :root[data-material='glass'] .mk-bubble { box-shadow: var(--mk-glass-edge); }
-:root[data-material='glass'] .mk-props,
 :root[data-material='glass'] .mk-chunk { box-shadow: var(--mk-glass-edge); }
 
 /* The expand morph: one short cross-fade of the whole row. */

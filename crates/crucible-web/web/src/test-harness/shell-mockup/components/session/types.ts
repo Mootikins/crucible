@@ -52,3 +52,14 @@ export interface ToolLineHandlers {
   onOpenPath: (path: string) => void;
   onDecide: (hunkId: string, accept: boolean) => void;
 }
+
+/**
+ * What the action rows under the messages need from their owner. Copy needs
+ * nothing: it writes to the clipboard itself.
+ */
+export interface TurnHandlers {
+  /** Put a user message back into the composer (`Message.tsx`: edit, then send as new). */
+  onEdit: (text: string) => void;
+  /** Ask again for the last answer (`AssistantTurn.tsx`: send the last user message again). */
+  onRegenerate: () => void;
+}
