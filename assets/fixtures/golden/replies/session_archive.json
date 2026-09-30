@@ -1,0 +1,10 @@
+[
+  {
+    "session_id": "chat-2",
+    "archived": true
+  },
+  {
+    "session_id": "chat-2",
+    "archived": false
+  }
+]

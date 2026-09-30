@@ -1,0 +1,15 @@
+[
+  {
+    "status": {
+      "kind": "awaiting_approval",
+      "gate": {
+        "id": "0.gate0",
+        "title": "Ready?",
+        "owner": "0"
+      }
+    },
+    "completed_slots": 0,
+    "total_slots": 4,
+    "scope": {}
+  }
+]

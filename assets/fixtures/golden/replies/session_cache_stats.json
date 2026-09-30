@@ -1,0 +1,12 @@
+[
+  {
+    "session_id": "chat-1",
+    "hits": 0,
+    "misses": 0,
+    "read_tokens": 0,
+    "creation_tokens": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "hit_rate": null
+  }
+]

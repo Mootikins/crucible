@@ -1,0 +1,78 @@
+[
+  {
+    "session_id": "chat-1",
+    "commands": [
+      {
+        "name": "help",
+        "description": "Show the commands of this session",
+        "kind": "builtin",
+        "command": "help"
+      },
+      {
+        "name": "clear",
+        "description": "Clear the model context (the transcript stays)",
+        "kind": "builtin",
+        "command": "clear"
+      },
+      {
+        "name": "model",
+        "description": "Switch the model, or list the models",
+        "input_hint": "[name]",
+        "kind": "builtin",
+        "command": "model"
+      },
+      {
+        "name": "mode",
+        "description": "Switch to the next mode",
+        "kind": "builtin",
+        "command": "mode"
+      },
+      {
+        "name": "undo",
+        "description": "Undo the last turns",
+        "input_hint": "[turns]",
+        "kind": "builtin",
+        "command": "undo"
+      },
+      {
+        "name": "resume",
+        "description": "Resume an earlier session",
+        "input_hint": "[session]",
+        "kind": "builtin",
+        "command": "resume"
+      },
+      {
+        "name": "export",
+        "description": "Export the session to markdown",
+        "input_hint": "[path]",
+        "kind": "builtin",
+        "command": "export"
+      },
+      {
+        "name": "search",
+        "description": "Search sessions",
+        "input_hint": "<query>",
+        "kind": "builtin",
+        "command": "search"
+      },
+      {
+        "name": "ask",
+        "description": "Ask before each change",
+        "kind": "mode",
+        "mode_id": "ask"
+      },
+      {
+        "name": "plan",
+        "description": "Read-only exploration mode",
+        "kind": "mode",
+        "mode_id": "plan"
+      },
+      {
+        "name": "auto",
+        "description": "Auto-approve all operations",
+        "kind": "mode",
+        "mode_id": "auto"
+      }
+    ]
+  }
+]

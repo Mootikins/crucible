@@ -1,0 +1,14 @@
+[
+  {
+    "session_id": "chat-1",
+    "kilns": [
+      "kiln"
+    ],
+    "workspace": "/tmp/.tmpKdUKIw/workspaces/chat-1"
+  },
+  {
+    "session_id": "chat-1",
+    "kilns": [],
+    "workspace": "/tmp/.tmpKdUKIw/workspaces/chat-1"
+  }
+]

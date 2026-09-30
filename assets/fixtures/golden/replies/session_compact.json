@@ -1,0 +1,7 @@
+[
+  {
+    "session_id": "chat-1",
+    "state": "compacting",
+    "compaction_requested": true
+  }
+]

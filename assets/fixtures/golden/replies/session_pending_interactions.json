@@ -1,0 +1,19 @@
+[
+  {
+    "pending": []
+  },
+  {
+    "pending": [
+      {
+        "session_id": "chat-6",
+        "request_id": "ix-1",
+        "request": {
+          "kind": "ask",
+          "question": "Which?",
+          "multi_select": false,
+          "allow_other": false
+        }
+      }
+    ]
+  }
+]

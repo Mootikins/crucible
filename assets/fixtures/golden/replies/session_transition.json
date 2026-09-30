@@ -1,0 +1,12 @@
+[
+  {
+    "session_id": "chat-1",
+    "previous_state": "active",
+    "state": "paused"
+  },
+  {
+    "session_id": "chat-1",
+    "previous_state": "paused",
+    "state": "active"
+  }
+]

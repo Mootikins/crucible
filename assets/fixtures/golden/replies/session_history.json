@@ -1,0 +1,44 @@
+[
+  {
+    "session_id": "chat-1",
+    "type": "chat",
+    "state": "active",
+    "kilns": [],
+    "history": [
+      {
+        "type": "event",
+        "session_id": "chat-1",
+        "event": "model_switched",
+        "data": {
+          "model_id": "llama3.2",
+          "provider": "ollama"
+        },
+        "timestamp": "2024-01-01T00:00:00Z",
+        "seq": 7
+      },
+      {
+        "type": "event",
+        "session_id": "chat-1",
+        "event": "context_injected",
+        "data": {
+          "role": "user",
+          "content": "context"
+        },
+        "timestamp": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "total_events": 2,
+    "transcript": {
+      "as_of_seq": 13,
+      "items": [
+        {
+          "id": "context-0",
+          "timestamp": "2024-01-01T00:00:00Z",
+          "type": "injected_context",
+          "role": "user",
+          "content": "context"
+        }
+      ]
+    }
+  }
+]

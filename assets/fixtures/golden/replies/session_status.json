@@ -1,0 +1,17 @@
+[
+  {
+    "status": [
+      {
+        "id": "plugin_turns:oci",
+        "text": "oci \u00b7 ask",
+        "priority": 0,
+        "color_group": "warn",
+        "action": "plugin_approval",
+        "pinned": true,
+        "plugin": "oci",
+        "kind": "plugin_turns",
+        "progress": null
+      }
+    ]
+  }
+]
