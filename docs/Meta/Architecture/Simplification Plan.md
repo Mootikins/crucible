@@ -1704,6 +1704,21 @@ decision.
 | The workflow engine emits `WorkflowPayload` | `WorkflowEvent` | One translator reads it |
 | `daemon.capabilities` drops its constant flags | `CapabilityFlags` | An outside client may read them |
 
+## Step 22. Verified duplicates from the type audit
+
+A type audit found these candidates. Each item's claim was read and
+confirmed before the change, and each change kept one commit.
+
+| Item | Count | Result |
+|---|---|---|
+| Dead agent-card matcher (`AgentCardRegistry`, `AgentCardMatcher`, `MatchingWeights`, `AgentCardQuery`, `AgentCardMatch`) | 5 types | Done. Deleted the cluster and the tests that only tested it. `AgentCard`, `AgentCardFrontmatter` and `AgentCardLoader` stay. |
+| Two status replies (`McpStopReply`, `SessionInjectContextReply`) | 2 types | Done. Both used `StatusReply` instead. The golden reply fixtures pass unchanged. |
+| Byte-identical test doubles (`AlwaysFail` x2, `Wrapper` x3) | 2 duplicates | Done. Kept one `AlwaysFail` and one `Wrapper` per test module. |
+| CLI output copies (`SkillOutput`, `StatsOutput`) | 2 types | Done. `SkillOutput` was deleted; `cru skills list --format json` now serializes `SkillSummary` directly. `StatsOutput` was deleted; `KilnStats` got a hand-written `Serialize` impl that writes the same field names plus the derived `indexed_count`. A captured-shape test in each module pins the pre-change JSON. |
+| Runner stage params (`EventLoopParams`, `HandleSelectedEventParams`, `HandleSelectOutcomeParams`, `ProcessActionParams`) | 4 types | Done. Merged three into one `StageCtx`. `EventLoopParams` stays apart: it owns both channel ends, and the other three only borrow the sender. |
+| Discord test type (`Calls`, `recording_api`) | 2 files | Done. Moved into `runtime/plugins/discord/tests/support.luau`, required as `discord.tests.support` from both suites, the pattern `web-search.tests.fixtures` already uses. |
+| Graph copies in TS (`GraphDto`, `GraphNoteDto`, `GraphLinkDto`) | 3 types | Done. `GraphDto` is now `RpcMethods['kiln.graph']['result']`; the two field copies are gone. |
+
 ## What not to merge
 
 These look like duplicates but are separate contracts. Keep them apart.

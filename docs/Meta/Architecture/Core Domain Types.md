@@ -87,12 +87,10 @@ behavior on top of them.
 
 | Path | Lines | Role |
 |---|---|---|
-| `crates/crucible-core/src/agent/integration_test.rs` | 46 | Best-effort smoke test loading real example agent cards from disk, if any ship. |
 | `crates/crucible-core/src/agent/loader.rs` | 205 | `AgentCardLoader` — parses agent-card markdown (frontmatter + system prompt) into `AgentCard`, cached by path; always sets the card's `namespace` to `None`. |
-| `crates/crucible-core/src/agent/matcher.rs` | 136 | `AgentCardMatcher` — tag/text scoring of `AgentCard`s against an `AgentCardQuery`. |
-| `crates/crucible-core/src/agent/mod.rs` | 116 | `AgentCardRegistry` — the in-memory, name-keyed store combining loader and matcher. |
-| `crates/crucible-core/src/agent/tests.rs` | 491 | Unit tests for the loader, registry, and matcher. |
-| `crates/crucible-core/src/agent/types.rs` | 191 | `AgentCard`/`AgentCardFrontmatter`/`AgentCardQuery`/`AgentCardMatch`/`ToolPolicy` — the "Model Card" schema; `AgentCard.namespace` disambiguates two cards of one name. |
+| `crates/crucible-core/src/agent/mod.rs` | 13 | Re-exports `AgentCardLoader` and the types below. The daemon's `agent_cards.rs` loads and resolves cards itself; no registry or matcher lives here. |
+| `crates/crucible-core/src/agent/tests.rs` | 285 | Unit tests for the loader. |
+| `crates/crucible-core/src/agent/types.rs` | 169 | `AgentCard`/`AgentCardFrontmatter`/`ToolPolicy` — the "Model Card" schema; `AgentCard.namespace` disambiguates two cards of one name. |
 
 ### `crates/crucible-core/src/background/`
 
@@ -527,9 +525,11 @@ pure domain events the daemon bridges into `SessionEventMessage`.
 own the `WorkflowExecution` instance, drive `tick`, and persist
 `WorkflowSnapshot` between RPC calls.
 
-**Agent cards and background jobs.** `AgentCard`/`AgentCardRegistry`
+**Agent cards and background jobs.** `AgentCard`/`AgentCardLoader`
 (`agent/*`) is the "Model Card" metadata-about-agents pattern, consumed by
-`crucible-cli`'s `agents` command and by `SessionAgent::from_card`. A card's
+`crucible-cli`'s `agents` command and by `SessionAgent::from_card`. The
+daemon's `agent_cards.rs` loads and resolves cards itself; `agent/*` holds no
+registry or matcher. A card's
 `namespace: Option<String>` field records which plugin source discovered it,
 disambiguating two same-named cards so a bare-name lookup resolves
 deterministically by layer while a full `source:name` always resolves to one
@@ -741,12 +741,12 @@ built from them. The exceptions:
   foreign-owned, or group/other-accessible. `remove_socket` runs at daemon
   startup, after the daemon acquires the socket lock, to reclaim a stale
   socket left by a prior process.
-- `Integrity::clear_root` and `AgentCardRegistry::clear` are the explicit
-  reset points a caller uses between test runs or session resets. There is
-  no per-session `NotificationQueue::clear` any more (the daemon owns one
-  notification store, not a queue per session) and no whole-ledger
-  `Integrity::clear` (only `clear_root`, scoped to one root, remains) — the
-  review gate that `Integrity::clear` once supported was removed.
+- `Integrity::clear_root` is the explicit reset point a caller uses between
+  test runs or session resets. There is no per-session
+  `NotificationQueue::clear` any more (the daemon owns one notification
+  store, not a queue per session) and no whole-ledger `Integrity::clear`
+  (only `clear_root`, scoped to one root, remains) — the review gate that
+  `Integrity::clear` once supported was removed.
 - `test_support::EnvVarGuard` is not thread-safe against parallel tests
   mutating the same variable in one process; it relies on nextest's process
   isolation, per `AGENTS.md`.
@@ -868,9 +868,7 @@ built from them. The exceptions:
 Tests in this file set are almost entirely colocated with their modules,
 pure, and free of `TempDir`/PTY/process boundaries except where noted:
 
-- `agent/tests.rs` and `agent/integration_test.rs` prove the agent-card
-  loader/registry/matcher stack; the integration test is a no-op when no
-  example cards ship, which is a weak gate.
+- `agent/tests.rs` proves the `AgentCardLoader`.
 - `canvas/tests.rs` proves lossless round-trip, spec-surface parsing, graph
   projection, and byte-for-byte fidelity against a real Obsidian sample
   fixture.
