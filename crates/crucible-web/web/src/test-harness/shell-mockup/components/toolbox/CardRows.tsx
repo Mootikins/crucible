@@ -8,7 +8,7 @@ import type { TweakRowsProps } from './types';
 export const CardRows: Component<TweakRowsProps> = (props) => (
   <>
     <FieldRow label="Gap">
-      <Slider value={props.tweaks.gap} min={0} max={16} unit="px" onInput={(v) => props.onSet('gap', v)} />
+      <Slider value={props.tweaks.gap} min={0} max={12} unit="px" onInput={(v) => props.onSet('gap', v)} />
     </FieldRow>
     <FieldRow label="Radius">
       <Slider value={props.tweaks.radius} min={0} max={20} unit="px" onInput={(v) => props.onSet('radius', v)} />

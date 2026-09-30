@@ -1,60 +1,62 @@
 /**
- * The message box: the draft, then a row with attach, the context note, the
- * mode and the model, dictation and send. Enter sends; Shift+Enter makes a
- * new line.
+ * The message box, in the current app's form: a capsule with the draft,
+ * dictation and send, and a quiet row of session chips under it. Enter
+ * sends; Shift+Enter makes a new line. The capsule is round while the draft
+ * is one line, and takes the card radius when it wraps.
  */
-import { Show, type Component } from 'solid-js';
-import { ChevronDown, Mic, Plus } from 'lucide-solid';
+import { createSignal, type Component } from 'solid-js';
+import { Mic } from 'lucide-solid';
 import { IconButton } from '../primitives/IconButton';
-import { basename } from '../path';
-import { ContextChip } from './ContextChip';
-import { KnobButton } from './KnobButton';
 import { SendButton } from './SendButton';
+import { SessionChips, type SessionChipsProps } from './SessionChips';
 
-export interface ComposerProps {
+export interface ComposerProps extends SessionChipsProps {
   draft: string;
   onDraft: (text: string) => void;
   onSend: () => void;
-  /** A turn runs: send queues the message. */
+  /** Stops the turn that runs. */
+  onStop: () => void;
+  /** A turn runs: send queues the message, and an empty draft offers stop. */
   running: boolean;
-  /** The path of the note that goes with the message (`useSessionScopeChips` in the real app). */
-  contextNote: string | null;
-  onDropContext: (path: string) => void;
-  mode: string;
-  model: string;
 }
 
-export const Composer: Component<ComposerProps> = (props) => (
-  <div class="mk-composer">
-    <textarea
-      rows={1}
-      placeholder="Message"
-      aria-label="Message"
-      value={props.draft}
-      onInput={(e) => props.onDraft(e.currentTarget.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-          e.preventDefault();
-          props.onSend();
-        }
-      }}
-    />
-    <div class="mk-crow">
-      <IconButton label="Attach a note or a kiln">
-        <Plus class="mk-i" />
-      </IconButton>
-      <Show when={props.contextNote}>{(n) => <ContextChip name={basename(n())} onRemove={() => props.onDropContext(n())} />}</Show>
-      <span class="mk-grow" />
-      <KnobButton title="Permission mode">{props.mode}</KnobButton>
-      <KnobButton title="Model">
-        {props.model}
-        <ChevronDown class="mk-i" />
-      </KnobButton>
-      {/* The real app records through WhisperContext. */}
-      <IconButton label="Hold to dictate">
-        <Mic class="mk-i" />
-      </IconButton>
-      <SendButton running={props.running} disabled={!props.draft.trim()} onSend={props.onSend} />
+const MAX_HEIGHT_PX = 200;
+
+export const Composer: Component<ComposerProps> = (props) => {
+  const [lines, setLines] = createSignal(1);
+  const resize = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    setLines(Math.max(1, Math.round(el.scrollHeight / lh)));
+  };
+  return (
+    <div class="mk-composer-a">
+      <div class="mk-composer" data-lines={lines() > 1 ? 'many' : 'one'}>
+        <textarea
+          rows={1}
+          placeholder="Type a message…"
+          aria-label="Message"
+          value={props.draft}
+          ref={(el) => queueMicrotask(() => resize(el))}
+          onInput={(e) => {
+            resize(e.currentTarget);
+            props.onDraft(e.currentTarget.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+              e.preventDefault();
+              props.onSend();
+            }
+          }}
+        />
+        {/* The real app records through WhisperContext. */}
+        <IconButton label="Hold to dictate">
+          <Mic class="mk-i" />
+        </IconButton>
+        <SendButton running={props.running} empty={!props.draft.trim()} onSend={props.onSend} onStop={props.onStop} />
+      </div>
+      <SessionChips mode={props.mode} model={props.model} workspace={props.workspace} kiln={props.kiln} />
     </div>
-  </div>
-);
+  );
+};

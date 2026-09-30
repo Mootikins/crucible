@@ -10,15 +10,10 @@ import { basename } from '../components/path';
 import { PermissionCard } from '../components/session/PermissionCard';
 import { QueuedMessage } from '../components/session/QueuedMessage';
 import { RecordLine } from '../components/session/RecordLine';
-import { answerPermission, focusedNote, removeQueued, send, sendQueuedNow, setState, state } from '../state';
+import { answerPermission, removeQueued, send, sendQueuedNow, setState, state } from '../state';
 
 export const SessionFooterContainer: Component<{ sid: string }> = (props) => {
   const s = () => state.sessions[props.sid]!;
-  // The focused note goes with the message, unless the user took it off.
-  const ctx = () => {
-    const n = focusedNote();
-    return n && !state.ctxOff[n] ? n : null;
-  };
   return (
     <>
       <Show when={state.perms[props.sid]}>
@@ -34,11 +29,12 @@ export const SessionFooterContainer: Component<{ sid: string }> = (props) => {
           draft={state.drafts[props.sid] ?? ''}
           onDraft={(text) => setState('drafts', props.sid, text)}
           onSend={() => send(props.sid)}
+          onStop={() => setState('sessions', props.sid, 'status', 'idle')}
           running={s().status === 'run'}
-          contextNote={ctx()}
-          onDropContext={(n) => setState('ctxOff', n, true)}
           mode={s().mode}
           model={s().model}
+          workspace={s().group === 'No project' ? 'Session folder' : s().group}
+          kiln={s().roots.includes('docs') ? 'docs' : 'No kiln'}
         />
       </Show>
     </>

@@ -286,21 +286,25 @@
 .mk-queued { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: var(--cru-radius-card); border: 1px dashed color-mix(in srgb, var(--cru-color-primary) 45%, transparent); background: color-mix(in srgb, var(--cru-color-primary) 7%, transparent); font-size: 12.5px; }
 .mk-qlabel { font-size: 11px; font-weight: 600; color: var(--cru-color-primary); }
 .mk-qtext { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--cru-color-body); }
-.mk-composer { border: 1px solid var(--cru-color-hairline-strong); background: var(--cru-color-surface-base); border-radius: var(--cru-radius-composer); padding: 8px 8px 6px 12px; display: grid; gap: 6px; }
-.mk-composer:focus-within { border-color: color-mix(in srgb, var(--cru-color-primary) 70%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cru-color-primary) 14%, transparent); }
-.mk-composer textarea { border: 0; outline: 0; resize: none; background: transparent; line-height: 1.5; min-height: 21px; font-size: 13px; color: var(--cru-color-ink); }
+.mk-composer {
+  display: flex; align-items: flex-end; gap: 6px;
+  padding: 6px 6px 6px 16px; border-radius: 999px;
+  background: var(--mk-nav-solid);
+  outline: 1px solid transparent; transition: border-radius 120ms ease-out;
+}
+/* A wrapped draft reads wrong in a stadium: the capsule takes the card radius. */
+.mk-composer[data-lines='many'] { border-radius: var(--cru-radius-composer); }
+.mk-composer:focus-within { outline-color: color-mix(in srgb, var(--cru-color-primary) 60%, transparent); }
+.mk-composer textarea { flex: 1; min-width: 0; align-self: center; border: 0; outline: 0; resize: none; background: transparent; line-height: 1.55; font-size: 13px; color: var(--cru-color-ink); padding: 3px 0; }
 .mk-composer textarea::placeholder { color: var(--cru-color-muted-dark); }
-/* The chip gives up room first, so the controls stay on one row. */
-.mk-crow { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.mk-crow > * { flex-shrink: 0; }
-.mk-crow .mk-iconbtn { margin-left: -4px; }
-.mk-chip { flex-shrink: 1; min-width: 0; height: 22px; display: inline-flex; align-items: center; gap: 5px; padding: 0 4px 0 7px; border-radius: 11px; font-size: 11.5px; color: var(--cru-color-body); background: var(--cru-color-control); max-width: 10rem; }
-.mk-chip button { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; cursor: pointer; }
-.mk-quietbtn { height: 24px; display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: var(--cru-radius-control); font-size: 12px; color: var(--cru-color-muted); cursor: pointer; }
-.mk-quietbtn:hover { background: var(--cru-color-hover-wash); color: var(--cru-color-ink); }
-.mk-send { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--cru-color-primary); color: var(--cru-color-on-primary); cursor: pointer; }
-.mk-send.queue { background: color-mix(in srgb, var(--cru-color-primary) 22%, var(--cru-color-control)); color: var(--cru-color-primary); }
-.mk-send:disabled { background: var(--cru-color-control); color: var(--cru-color-muted-dark); cursor: default; }
+.mk-composer .mk-iconbtn { height: 28px; }
+.mk-chips { display: flex; align-items: center; gap: 12px; padding: 6px 4px 0; min-width: 0; overflow: hidden; }
+.mk-quietbtn { height: 22px; display: inline-flex; align-items: center; gap: 4px; padding: 0; font-size: 12px; color: var(--cru-color-muted); cursor: pointer; white-space: nowrap; }
+.mk-quietbtn:hover { color: var(--cru-color-ink); }
+.mk-send { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--cru-color-primary); color: var(--cru-color-on-primary); cursor: pointer; }
+.mk-send.queue { background: color-mix(in srgb, var(--cru-color-primary) 22%, var(--mk-main-solid)); color: var(--cru-color-primary); }
+.mk-send.stop { background: var(--cru-color-error); color: #fff; }
+.mk-send:disabled { background: var(--mk-main-solid); color: var(--cru-color-muted-dark); cursor: default; }
 
 /* Terminal (corner pane) */
 .mk-term { padding: 10px 12px; font-family: var(--cru-font-mono); font-size: 12px; line-height: 1.6; color: var(--cru-color-body); background: var(--cru-color-shell-bg); }
@@ -380,6 +384,10 @@
   --mk-strip: color-mix(in oklab, var(--mk-nav-solid), var(--mk-main-base) 45%);
   --mk-line: var(--mk-main-solid);
 }
+/* A closed rail is only its icons, on the plain ground. `data-edge-shown`
+   comes on when the rail starts to open and goes off when it has slid shut,
+   so the strip grows out of the icon and leaves with the body. */
+[data-testid='edge-host-left']:not([data-edge-shown]) { --mk-strip: var(--mk-nav-solid); }
 [data-testid='edge-host-right'] { --mk-dir: rtl; --mk-start: right; --mk-end: left; }
 /* The toolbox "Right rail: Card": each pane is a MAIN card. The card starts
    level with the document tabs. */
@@ -600,14 +608,14 @@ body { background: var(--mk-nav); }
 :root[data-material='glass'][data-theme='light'] .mk-pop,
 :root[data-material='glass'][data-theme='light'] .mk-perm { box-shadow: var(--mk-glass-edge), 0 24px 60px -20px rgba(20, 22, 28, 0.25); }
 
-/* The composer is a frosted capsule; focus draws a quiet ring. */
+/* The composer is a frosted capsule. */
 :root[data-material='glass'] .mk-composer {
   backdrop-filter: var(--mk-glass-blur);
   -webkit-backdrop-filter: var(--mk-glass-blur);
   box-shadow: var(--mk-glass-edge);
 }
 :root[data-material='glass'] .mk-composer:focus-within {
-  border-color: color-mix(in srgb, var(--cru-color-primary) 45%, transparent);
+  outline-color: color-mix(in srgb, var(--cru-color-primary) 45%, transparent);
   box-shadow: var(--mk-glass-edge), 0 0 0 3px color-mix(in srgb, var(--cru-color-primary) 10%, transparent);
 }
 
