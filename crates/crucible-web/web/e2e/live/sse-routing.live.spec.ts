@@ -43,7 +43,7 @@ async function createSession(api: APIRequestContext, title: string): Promise<str
   });
   expect(created.status(), await created.text()).toBe(200);
   const id = ((await created.json()) as { session_id: string }).session_id;
-  await api.put(`/api/session/${id}/title`, { data: { title } });
+  await api.post('/api/rpc/session.set_title', { data: { session_id: id, title } });
   return id;
 }
 
@@ -167,10 +167,12 @@ test.describe('live SSE routing', () => {
     // the stream keep the daemon's transcript current after it, so the end of
     // the turn reads nothing. Both panes share the one session store — a pane
     // with a store of its own would make the count two.
+    // `session.history` is one RPC method now (Simplification Plan step 19
+    // item 9), reached through `POST /api/rpc/session.history`.
     await apiQuiet(log, 3000);
     expect(
-      log.count('GET', /^\/api\/session\/[^/]+\/history$/),
-      describeRequests(log, /^\/api\/session\/[^/]+\/history$/),
+      log.count('POST', '/api/rpc/session.history'),
+      describeRequests(log, '/api/rpc/session.history'),
     ).toBe(1);
 
     await api.dispose();

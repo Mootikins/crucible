@@ -35,14 +35,17 @@ async function createTitledSession(api: APIRequestContext, title: string): Promi
   });
   expect(created.status(), await created.text()).toBe(200);
   const id = ((await created.json()) as { session_id: string }).session_id;
-  const titled = await api.put(`/api/session/${id}/title`, { data: { title } });
+  const titled = await api.post('/api/rpc/session.set_title', { data: { session_id: id, title } });
   expect(titled.status(), await titled.text()).toBe(200);
   return id;
 }
 
 async function sessionIds(api: APIRequestContext, includeArchived = false): Promise<string[]> {
-  const url = includeArchived ? '/api/session/list?include_archived=true' : '/api/session/list';
-  const res = await api.get(url);
+  // `session.list` is one RPC method now (Simplification Plan step 19 item
+  // 9), told apart by its body's `include_archived`, not a query string.
+  const res = await api.post('/api/rpc/session.list', {
+    data: includeArchived ? { include_archived: true } : {},
+  });
   expect(res.status()).toBe(200);
   // `session_id` on the wire: `session.list` sends the daemon's own record, and
   // `id` is the name the browser's mapper gives it afterwards. Reading `id`
@@ -82,12 +85,23 @@ test.describe('live session lifecycle', () => {
       data: { session_id: id, content: 'hermetic turn before resume' },
     });
     expect(sent.status(), await sent.text()).toBe(200);
+    // `session.history` is one RPC method now (Simplification Plan step 19
+    // item 9), reached through `POST /api/rpc/session.history`.
     await expect
-      .poll(async () => (await api.get(`/api/session/${id}/history`)).status(), { timeout: 30_000 })
+      .poll(
+        async () =>
+          (await api.post('/api/rpc/session.history', { data: { session_id: id } })).status(),
+        { timeout: 30_000 },
+      )
       .toBe(200);
     await expect
       .poll(
-        async () => JSON.stringify(await (await api.get(`/api/session/${id}/history`)).json()),
+        async () =>
+          JSON.stringify(
+            await (
+              await api.post('/api/rpc/session.history', { data: { session_id: id } })
+            ).json(),
+          ),
         { timeout: 60_000, message: 'the turn never reached the transcript' },
       )
       .toContain('The live chain answered.');

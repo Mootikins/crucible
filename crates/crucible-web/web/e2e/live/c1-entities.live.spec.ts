@@ -81,7 +81,12 @@ test.describe('live C1 entities', () => {
       log.count('POST', '/api/rpc/project.list'),
       describeRequests(log, '/api/rpc/project.list'),
     ).toBe(1);
-    expect(log.count('GET', '/api/providers'), describeRequests(log, '/api/providers')).toBe(1);
+    // `providers.list` is one RPC method now (Simplification Plan step 19
+    // item 9), reached through `POST /api/rpc/providers.list`.
+    expect(
+      log.count('POST', '/api/rpc/providers.list'),
+      describeRequests(log, '/api/rpc/providers.list'),
+    ).toBe(1);
 
     // Nothing asks the branch provider anything on a bare load. The workspace
     // is part of the targets key, so a load with no project selected has no
@@ -159,7 +164,7 @@ test.describe('live C1 entities', () => {
     });
     expect(created.status(), await created.text()).toBe(200);
     const id = ((await created.json()) as { session_id: string }).session_id;
-    await api.put(`/api/session/${id}/title`, { data: { title: 'Attach from the tree' } });
+    await api.post('/api/rpc/session.set_title', { data: { session_id: id, title: 'Attach from the tree' } });
 
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
@@ -178,11 +183,14 @@ test.describe('live C1 entities', () => {
     log.reset();
     await attach.click();
 
-    // The daemon took the write.
+    // The daemon took the write. `session.get`/`session.connect_kiln` are
+    // RPC methods now (Simplification Plan step 19 item 9).
     await expect
       .poll(
         async () =>
-          ((await (await api.get(`/api/session/${id}`)).json()) as { kilns?: string[] }).kilns ?? [],
+          ((await (
+            await api.post('/api/rpc/session.get', { data: { session_id: id } })
+          ).json()) as { kilns?: string[] }).kilns ?? [],
         { timeout: 20_000, message: 'the daemon never attached the kiln' },
       )
       .toContain(BETA);
@@ -192,7 +200,7 @@ test.describe('live C1 entities', () => {
     await expect(page.getByTestId('scope-kiln').first()).toContainText(BETA, { timeout: 20_000 });
     await apiQuiet(log);
 
-    expect(log.count('POST', `/api/session/${id}/kilns/connect`)).toBe(1);
+    expect(log.count('POST', '/api/rpc/session.connect_kiln')).toBe(1);
     // The KILN REGISTRY did not change, so nothing re-read it. A scope write
     // that invalidated the roster would refetch a list of every kiln on the
     // box for a change to one session's reach.

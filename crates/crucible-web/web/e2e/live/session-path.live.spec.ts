@@ -243,7 +243,7 @@ test.describe('the live session path', () => {
       await expect
         .poll(
           async () => {
-            const read = await api.get(`/api/session/${sessionId}`);
+            const read = await api.post('/api/rpc/session.get', { data: { session_id: sessionId } });
             if (read.status() !== 200) return `status ${read.status()}`;
             return ((await read.json()) as { kilns: string[] }).kilns;
           },
@@ -264,7 +264,7 @@ test.describe('the live session path', () => {
     await expect
       .poll(
         async () =>
-          ((await (await api.get(`/api/session/${sessionId}`)).json()) as { kilns: string[] })
+          ((await (await api.post('/api/rpc/session.get', { data: { session_id: sessionId } })).json()) as { kilns: string[] })
             .kilns,
         { timeout: 15_000, message: `detaching ${first} never took` },
       )
@@ -289,7 +289,7 @@ test.describe('the live session path', () => {
       timeout: 20_000,
     });
     await expect
-      .poll(async () => (await api.get('/api/session/list')).status(), {
+      .poll(async () => (await api.post('/api/rpc/session.list', { data: {} })).status(), {
         timeout: 30_000,
         message: 'the web process never reconnected to a fresh daemon',
       })
@@ -348,7 +348,7 @@ test.describe('the live session path', () => {
     await expect
       .poll(
         async () =>
-          ((await (await api.get(`/api/session/${sessionId}`)).json()) as { kilns: string[] })
+          ((await (await api.post('/api/rpc/session.get', { data: { session_id: sessionId } })).json()) as { kilns: string[] })
             .kilns,
         { timeout: 15_000, message: 'the switch never reached the daemon' },
       )

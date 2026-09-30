@@ -145,7 +145,11 @@ test('hero flow: TUI → web → TUI, one session across three consoles', async 
   // internally asserts turns 1 AND 2 hydrate in the terminal (baseline + records)
   // and that `!cat` shows the browser's edit, then sends turn 3 — so a passing
   // leg 3 proves all 3 turns live on the daemon and the buffer is shared.
-  await request.post(`${state.baseURL}/api/session/${sessionId}/pause`).catch(() => undefined);
+  // `session.pause` is one RPC method now (Simplification Plan step 19 item
+  // 9), reached through `POST /api/rpc/session.pause`.
+  await request
+    .post(`${state.baseURL}/api/rpc/session.pause`, { data: { session_id: sessionId } })
+    .catch(() => undefined);
   const leg3 = await runTuiLeg(tuiBin!, 'hero::hero_leg_3', legEnv, 120_000);
   expect(leg3.code, `leg 3 failed:\n${leg3.out}`).toBe(0);
   expect(leg3.out, `leg 3 did not actually run:\n${leg3.out}`).toContain('1 passed');

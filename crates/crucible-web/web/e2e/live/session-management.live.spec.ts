@@ -26,7 +26,7 @@ async function createTitledSession(api: APIRequestContext, title: string): Promi
   });
   expect(created.status(), await created.text()).toBe(200);
   const id = ((await created.json()) as { session_id: string }).session_id;
-  const titled = await api.put(`/api/session/${id}/title`, { data: { title } });
+  const titled = await api.post('/api/rpc/session.set_title', { data: { session_id: id, title } });
   expect(titled.status(), await titled.text()).toBe(200);
   return id;
 }
@@ -70,7 +70,7 @@ test.describe('live session management', () => {
 
   test('a draft creates nothing until its first message is sent', async ({ page }) => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
-    const before = ((await (await api.get('/api/session/list')).json()) as { sessions: unknown[] })
+    const before = ((await (await api.post('/api/rpc/session.list', { data: {} })).json()) as { sessions: unknown[] })
       .sessions.length;
 
     await page.goto(state.baseURL!);
@@ -87,7 +87,7 @@ test.describe('live session management', () => {
     // And the daemon agrees: lazy creation is a claim about the daemon's
     // records, not only about the browser's outbound calls.
     expect(
-      ((await (await api.get('/api/session/list')).json()) as { sessions: unknown[] }).sessions
+      ((await (await api.post('/api/rpc/session.list', { data: {} })).json()) as { sessions: unknown[] }).sessions
         .length,
     ).toBe(before);
 
@@ -97,7 +97,7 @@ test.describe('live session management', () => {
     await expect
       .poll(
         async () =>
-          ((await (await api.get('/api/session/list')).json()) as { sessions: unknown[] }).sessions
+          ((await (await api.post('/api/rpc/session.list', { data: {} })).json()) as { sessions: unknown[] }).sessions
             .length,
         { timeout: 30_000, message: 'the first message created no session' },
       )
@@ -114,9 +114,15 @@ test.describe('live session management', () => {
     await appReady(page);
     await openSessionsList(page);
 
-    const read = page.waitForResponse(
-      (res) => res.url().includes(`/api/session/${target}`) && res.request().method() === 'GET',
-    );
+    // `session.get` is one RPC method now (Simplification Plan step 19 item
+    // 9), told apart per session by the request body, not the URL.
+    const read = page.waitForResponse((res) => {
+      if (!res.url().includes('/api/rpc/session.get') || res.request().method() !== 'POST') {
+        return false;
+      }
+      const body = res.request().postDataJSON() as { session_id?: string };
+      return body.session_id === target;
+    });
     await page.getByTestId(`session-item-${target}`).click();
     // The daemon answered the read, rather than the browser drawing a row it
     // already had. A 200 is part of the claim: the stored-session read used to

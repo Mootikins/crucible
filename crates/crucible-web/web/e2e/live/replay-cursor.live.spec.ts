@@ -109,7 +109,7 @@ async function createSession(api: APIRequestContext, title: string): Promise<str
   });
   expect(created.status(), await created.text()).toBe(200);
   const id = ((await created.json()) as { session_id: string }).session_id;
-  await api.put(`/api/session/${id}/title`, { data: { title } });
+  await api.post('/api/rpc/session.set_title', { data: { session_id: id, title } });
   return id;
 }
 
@@ -283,8 +283,10 @@ test.describe('live seq-cursor replay', () => {
       'the stones remember',
       { timeout: 90_000 },
     );
-    const HISTORY = new RegExp(`/api/session/${id}/history`);
-    expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBeLessThanOrEqual(2);
+    // `session.history` is one RPC method now (Simplification Plan step 19
+    // item 9); this test opens one session, so the route alone identifies it.
+    const HISTORY = '/api/rpc/session.history';
+    expect(log.count('POST', HISTORY), describeRequests(log, HISTORY)).toBeLessThanOrEqual(2);
     expect(
       (await sourcesFor(page, id)).filter((s) => s.open).length,
       'one open source names this session',

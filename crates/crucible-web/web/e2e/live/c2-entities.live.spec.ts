@@ -31,25 +31,27 @@ async function createSession(api: APIRequestContext, title: string): Promise<str
   });
   expect(created.status(), await created.text()).toBe(200);
   const id = ((await created.json()) as { session_id: string }).session_id;
-  const titled = await api.put(`/api/session/${id}/title`, { data: { title } });
+  const titled = await api.post('/api/rpc/session.set_title', { data: { session_id: id, title } });
   expect(titled.status(), await titled.text()).toBe(200);
   return id;
 }
 
-/** The per-session routes a bound chat pane reads, as regular expressions. */
-const HISTORY = /^\/api\/session\/[^/]+\/history$/;
-const MODES = /^\/api\/session\/[^/]+\/modes$/;
-const MODELS = /^\/api\/session\/[^/]+\/models$/;
-// `session.status` is one RPC method now (Simplification Plan step 19 item
-// 9), reached through `POST /api/rpc/session.status`.
-const STATUS = /^\/api\/rpc\/session\.status$/;
+/**
+ * The per-session RPC methods a bound chat pane reads (Simplification Plan
+ * step 19 item 9). Each test below that uses these opens exactly one
+ * session, so the route alone identifies its calls.
+ */
+const HISTORY = '/api/rpc/session.history';
+const MODES = '/api/rpc/session.list_modes';
+const MODELS = '/api/rpc/session.list_models';
+const STATUS = '/api/rpc/session.status';
 
 /** The session record the daemon holds, read straight from it. */
 async function sessionRecord(
   api: APIRequestContext,
   id: string,
 ): Promise<{ state?: string; archived?: boolean; agent?: { model?: string | null } }> {
-  const res = await api.get(`/api/session/${id}`);
+  const res = await api.post('/api/rpc/session.get', { data: { session_id: id } });
   expect(res.status(), await res.text()).toBe(200);
   return (await res.json()) as { state?: string; archived?: boolean; agent?: { model?: string | null } };
 }
@@ -85,13 +87,19 @@ test.describe('live C2 entities', () => {
     // TWO reads, not two of one: the archived and unarchived rosters are
     // different questions under different keys (`keys.sessions(boolean)`),
     // and the rail asks both. A third would be the defect — one key read by
-    // two observers that did not share it.
-    const roster = log.matching('/api/session/list');
-    expect(roster.length, describeRequests(log, '/api/session/list')).toBe(2);
-    expect(roster.map((r) => r.query).sort()).toEqual(['', 'include_archived=true']);
+    // two observers that did not share it. `session.list` is one RPC method
+    // now (Simplification Plan step 19 item 9), told apart by its body's
+    // `include_archived`, not a query string.
+    const roster = log.matching('/api/rpc/session.list');
+    expect(roster.length, describeRequests(log, '/api/rpc/session.list')).toBe(2);
+    expect(
+      roster
+        .map((r) => (JSON.parse(r.body ?? '{}') as { include_archived?: boolean }).include_archived ?? false)
+        .sort(),
+    ).toEqual([false, true]);
 
     // The whole roster of root entities, once each, in one load.
-    expect(log.count('GET', '/api/providers')).toBe(1);
+    expect(log.count('POST', '/api/rpc/providers.list')).toBe(1);
     expect(log.count('GET', '/api/interactions/pending')).toBeLessThanOrEqual(2);
   });
 
@@ -102,9 +110,14 @@ test.describe('live C2 entities', () => {
     await openSessionsList(page);
     await apiQuiet(log);
 
-    const plain = (): number => log.matching('/api/session/list').filter((r) => r.query === '').length;
+    // `session.list` is one RPC method now (Simplification Plan step 19 item
+    // 9), told apart by its body's `include_archived`, not a query string.
+    const includeArchivedOf = (r: { body: string | null }): boolean =>
+      (JSON.parse(r.body ?? '{}') as { include_archived?: boolean }).include_archived ?? false;
+    const plain = (): number =>
+      log.matching('/api/rpc/session.list').filter((r) => !includeArchivedOf(r)).length;
     const archived = (): number =>
-      log.matching('/api/session/list').filter((r) => r.query === 'include_archived=true').length;
+      log.matching('/api/rpc/session.list').filter((r) => includeArchivedOf(r)).length;
     expect(plain()).toBe(1);
     expect(archived()).toBe(1);
 
@@ -120,7 +133,7 @@ test.describe('live C2 entities', () => {
     // The unarchived roster is untouched. This is the cache claim: a second
     // panel with a cache of its own would have to fill it, and filling it
     // means fetching both variants over again.
-    expect(plain(), describeRequests(log, '/api/session/list')).toBe(1);
+    expect(plain(), describeRequests(log, '/api/rpc/session.list')).toBe(1);
 
     // The archived roster is read once more, and once only. That read is not
     // a second cache — it is `SessionsPanel.onMount`, which calls
@@ -130,7 +143,7 @@ test.describe('live C2 entities', () => {
     // mounts, into the one entry both panels then read. A count above this
     // would mean the refresh had become a loop, or that each panel had
     // acquired a cache of its own after all.
-    expect(archived(), describeRequests(log, '/api/session/list')).toBe(2);
+    expect(archived(), describeRequests(log, '/api/rpc/session.list')).toBe(2);
   });
 
   test('two panes on one session share one history read and one stream', async ({ page }) => {
@@ -150,9 +163,9 @@ test.describe('live C2 entities', () => {
     await apiQuiet(log);
 
     // The first pane binds: one read of each per-session entity, one stream.
-    expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBe(1);
-    expect(log.count('GET', MODES)).toBe(1);
-    expect(log.count('GET', MODELS)).toBe(1);
+    expect(log.count('POST', HISTORY), describeRequests(log, HISTORY)).toBe(1);
+    expect(log.count('POST', MODES)).toBe(1);
+    expect(log.count('POST', MODELS)).toBe(1);
     expect(log.count('POST', STATUS)).toBe(1);
     expect((await sourcesFor(page, id)).filter((s) => s.open).length, 'one open source names this session').toBe(1);
 
@@ -163,9 +176,9 @@ test.describe('live C2 entities', () => {
     await expect(page.getByTestId('chat-input')).toHaveCount(2, { timeout: 15_000 });
     await apiQuiet(log);
 
-    expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBe(1);
-    expect(log.count('GET', MODES)).toBe(1);
-    expect(log.count('GET', MODELS)).toBe(1);
+    expect(log.count('POST', HISTORY), describeRequests(log, HISTORY)).toBe(1);
+    expect(log.count('POST', MODES)).toBe(1);
+    expect(log.count('POST', MODELS)).toBe(1);
     expect(log.count('POST', STATUS)).toBe(1);
     expect(
       (await sourcesFor(page, id)).filter((s) => s.open).length,
@@ -213,7 +226,7 @@ test.describe('live C2 entities', () => {
     await expect
       .poll(
         async () =>
-          ((await (await api.get(`/api/session/${id}`)).json()) as { kilns?: string[] }).kilns ?? [],
+          ((await (await api.post('/api/rpc/session.get', { data: { session_id: id } })).json()) as { kilns?: string[] }).kilns ?? [],
         { timeout: 20_000, message: 'the daemon never attached the kiln' },
       )
       .toContain('alpha');
@@ -223,13 +236,13 @@ test.describe('live C2 entities', () => {
     // patched.
     await expect(page.getByTestId('scope-kiln').nth(1)).toContainText('alpha', { timeout: 20_000 });
     await expect(page.getByTestId('scope-kiln').first()).toContainText('alpha');
-    expect(log.count('POST', `/api/session/${id}/kilns/connect`)).toBe(1);
+    expect(log.count('POST', '/api/rpc/session.connect_kiln')).toBe(1);
 
     // The roster the write invalidates is refetched ONCE per variant, not once
     // per pane that displays it.
     await apiQuiet(log);
-    const roster = log.matching('/api/session/list');
-    expect(roster.length, describeRequests(log, '/api/session/list')).toBeLessThanOrEqual(2);
+    const roster = log.matching('/api/rpc/session.list');
+    expect(roster.length, describeRequests(log, '/api/rpc/session.list')).toBeLessThanOrEqual(2);
 
     await api.dispose();
   });
@@ -259,13 +272,13 @@ test.describe('live C2 entities', () => {
     expect(log.count('POST', `/api/session/${id}/archive`)).toBe(1);
     // One refresh per roster variant. More than that is the same list fetched
     // once for every observer of it.
-    const roster = log.matching('/api/session/list');
-    expect(roster.length, describeRequests(log, '/api/session/list')).toBeLessThanOrEqual(2);
+    const roster = log.matching('/api/rpc/session.list');
+    expect(roster.length, describeRequests(log, '/api/rpc/session.list')).toBeLessThanOrEqual(2);
     expect(roster.length).toBeGreaterThanOrEqual(1);
 
     // The daemon agrees, which is what makes this an archive rather than a
     // request that fired.
-    const listed = ((await (await api.get('/api/session/list')).json()) as {
+    const listed = ((await (await api.post('/api/rpc/session.list', { data: {} })).json()) as {
       sessions: { session_id: string }[];
     }).sessions.map((s) => s.session_id);
     expect(listed).not.toContain(id);
@@ -333,7 +346,7 @@ test.describe('live C2 entities', () => {
     await apiQuiet(log);
 
     // Two panes read the session's model LIST once between them.
-    expect(log.count('GET', MODELS), describeRequests(log, MODELS)).toBe(1);
+    expect(log.count('POST', MODELS), describeRequests(log, MODELS)).toBe(1);
     log.reset();
 
     // The picker, as a user reaches it. The tier's fake model server
@@ -349,8 +362,10 @@ test.describe('live C2 entities', () => {
     const label = (await option.innerText()).trim();
     await option.click();
 
+    // `session.knob.set` is one RPC method now (Simplification Plan step 19
+    // item 9), reached through `POST /api/rpc/session.knob.set`.
     await expect
-      .poll(() => log.count('PUT', `/api/session/${id}/knob`), {
+      .poll(() => log.count('POST', '/api/rpc/session.knob.set'), {
         timeout: 20_000,
         message: 'the picker sent no model write',
       })
@@ -377,7 +392,7 @@ test.describe('live C2 entities', () => {
     // together — on purpose, because an agent that accepts a model may offer
     // a different set of them afterwards. Two panes are bound here and two
     // caches would make that two reads, which is the defect this counts for.
-    expect(log.count('GET', MODELS), describeRequests(log, MODELS)).toBe(1);
+    expect(log.count('POST', MODELS), describeRequests(log, MODELS)).toBe(1);
 
     await api.dispose();
   });
@@ -399,7 +414,11 @@ test.describe('live C2 entities', () => {
     // context's `pauseSession`). So the write goes through the page's own
     // request context, which carries the same session cookie the app does.
     // Everything asserted after it is the product's.
-    const paused = await page.request.post(`${state.baseURL}/api/session/${id}/pause`);
+    // `session.pause` is one RPC method now (Simplification Plan step 19
+    // item 9), reached through `POST /api/rpc/session.pause`.
+    const paused = await page.request.post(`${state.baseURL}/api/rpc/session.pause`, {
+      data: { session_id: id },
+    });
     expect(paused.status(), await paused.text()).toBe(200);
     await expect
       .poll(async () => (await sessionRecord(api, id)).state, {
@@ -463,7 +482,11 @@ test.describe('live C2 entities', () => {
     // The shell ships no unarchive control either — the context's
     // `unarchiveSession` has no caller in any component — so this write also
     // goes through the page's request context.
-    const back = await page.request.post(`${state.baseURL}/api/session/${id}/unarchive`);
+    // `session.unarchive` is one RPC method now (Simplification Plan step 19
+    // item 9), reached through `POST /api/rpc/session.unarchive`.
+    const back = await page.request.post(`${state.baseURL}/api/rpc/session.unarchive`, {
+      data: { session_id: id },
+    });
     expect(back.status(), await back.text()).toBe(200);
     expect((await sessionRecord(api, id)).archived ?? false).toBe(false);
 
@@ -483,12 +506,18 @@ test.describe('live C2 entities', () => {
     await apiQuiet(log);
 
     const archivedReads = log
-      .matching('/api/session/list')
-      .filter((r) => r.query === 'include_archived=true').length;
-    expect(archivedReads, describeRequests(log, '/api/session/list')).toBe(1);
+      .matching('/api/rpc/session.list')
+      .filter((r) => (JSON.parse(r.body ?? '{}') as { include_archived?: boolean }).include_archived)
+      .length;
+    expect(archivedReads, describeRequests(log, '/api/rpc/session.list')).toBe(1);
     // The unarchived roster was never asked for: the row returned from the
     // one list the rail is showing, not from a second fetch beside it.
-    expect(log.matching('/api/session/list').filter((r) => r.query === '').length).toBe(0);
+    expect(
+      log
+        .matching('/api/rpc/session.list')
+        .filter((r) => !(JSON.parse(r.body ?? '{}') as { include_archived?: boolean }).include_archived)
+        .length,
+    ).toBe(0);
 
     await api.dispose();
   });
