@@ -972,7 +972,8 @@ crate — see [[Agent Manager]] for that hazard.
   lowercase spelling `FromStr`/`Display` already used. Proved by
   `session/types/tests/context_strategy.rs::old_pascal_case_records_still_load`,
   against fixtures captured before the change
-  (`crates/crucible-core/tests/fixtures/wire_compat/context_strategy_*_pre_step18.json`).
+  (`crates/crucible-core/tests/fixtures/wire_compat/context_strategy_truncate_pre_step18.json`
+  and `context_strategy_summarize_pre_step18.json`).
   `protocol/requests/storage.rs`'s `FsPathRequest.kind`/`FsMoveRequest.kind`
   are now `FsRootKind`, not `String` with a `#[schema(value_type = ...)]`
   override faking the OpenAPI shape; `crucible-daemon`'s `resolve_root`
