@@ -280,8 +280,9 @@ window, as the panel menu of an Adobe app does. `TabContextMenu` in
 `TabBar.tsx` holds the menu. The menu also has the three close rows.
 
 - **Pop out.** A tab in a docked pane (the centre or a rail) shows this row.
-  The row calls `popOutPane(paneId, tabId)`, the same action as the pop-out
-  button of the tab bar. With a tab id, the action moves that tab only into
+  The row calls `popOutPane(paneId, tabId)`. The pop-out button of the tab
+  bar calls the same action for the active tab, and it hides when the policy
+  keeps that tab. With a tab id, the action moves that tab only into
   a new floating window, and the pane keeps its other tabs. When the tab is
   the only tab of the pane, the whole group moves, as without a tab id.
 - **Dock.** A tab in a floating window shows this row. The row calls

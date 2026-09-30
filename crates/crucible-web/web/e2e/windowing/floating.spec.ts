@@ -15,7 +15,7 @@ test('creates a floating window at requested position', async ({ page }) => {
   await expect(page.locator('div[style*="left: 320px"][style*="top: 180px"]')).toBeVisible();
 });
 
-test('pop-out MOVES the tabs to a floating window (no mirrored group)', async ({ page }) => {
+test('pop-out MOVES the active tab to a floating window (no mirrored group)', async ({ page }) => {
   // The drag registry must stay coherent while the group moves between tab
   // bars. A "Cannot remove nonexistent draggable/droppable" warning means a
   // cleanup took the new container's registration, and the tab can no longer
@@ -38,16 +38,14 @@ test('pop-out MOVES the tabs to a floating window (no mirrored group)', async ({
   await expect(page.locator('[data-tab-id="tab-beta"]')).toHaveCount(1);
   const s = await readStore(page);
   expect(s.floatingWindows).toHaveLength(1);
-  expect(s.tabGroups[s.floatingWindows[0]!.tabGroupId]!.tabs.map((t) => t.id)).toEqual([
-    'tab-alpha',
-    'tab-beta',
-  ]);
-  expect(await tabIds(page, 'center')).toEqual([]);
+  // Only the active tab leaves. Its neighbour stays in the centre.
+  expect(s.tabGroups[s.floatingWindows[0]!.tabGroupId]!.tabs.map((t) => t.id)).toEqual(['tab-alpha']);
+  expect(await tabIds(page, 'center')).toEqual(['tab-beta']);
 
-  // Closing the floating window closes its tabs with it. Nothing is orphaned.
+  // Closing the floating window closes its tab with it. Nothing is orphaned.
   await page.locator('button[title="Close (closes its tabs)"]').click();
   await expect(page.locator('[data-tab-id="tab-alpha"]')).toHaveCount(0);
-  await expect(page.locator('[data-tab-id="tab-beta"]')).toHaveCount(0);
+  await expect(page.locator('[data-tab-id="tab-beta"]')).toHaveCount(1);
   expect((await readStore(page)).floatingWindows).toHaveLength(0);
   expect(dndWarnings).toEqual([]);
 });

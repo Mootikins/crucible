@@ -188,7 +188,11 @@
 .mk-sep { opacity: 0.5; margin: 0 4px; }
 .mk-nav { display: flex; margin-inline-start: calc(-1 * var(--mk-icon-inset)); }
 .mk-seg { display: inline-flex; }
-.mk-seg button { height: 22px; padding: 0 6px; color: var(--cru-color-muted-dark); display: inline-flex; align-items: center; cursor: pointer; }
+/* The window controls take the size and the spacing of the view switch, so
+   the icons of one bar match. */
+.wm-window-controls { gap: 0; }
+:is(.mk-seg, .wm-window-controls) button { height: 22px; padding: 0 6px; color: var(--cru-color-muted-dark); display: inline-flex; align-items: center; cursor: pointer; }
+.wm-window-controls svg { width: 14px; height: 14px; }
 .mk-seg button:hover, .mk-seg button[aria-pressed='true'] { color: var(--cru-color-ink); }
 .mk-note { max-width: var(--mk-measure-note); margin: 0 auto; padding: 28px 40px 80px; font-size: var(--mk-font-note); line-height: 1.7; color: var(--cru-color-body); user-select: text; }
 /* A floating window is small: its bar and the text are one paragraph gap apart. */

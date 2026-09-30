@@ -18,6 +18,8 @@ const EXPECTED_ICONS = [
   'IconPanelRight',
   'IconPanelRightClose',
   'IconLayout',
+  'IconPopOut',
+  'IconDock',
   'IconGripVertical',
   'IconClose',
   'IconMaximize',

@@ -124,3 +124,4 @@ export { default as ZoomOut } from 'lucide-solid/icons/zoom-out';
 export { default as Frame } from 'lucide-solid/icons/frame';
 export { default as MoreHorizontal } from 'lucide-solid/icons/more-horizontal';
 export { default as SquareArrowOutUpRight } from 'lucide-solid/icons/square-arrow-out-up-right';
+export { default as SquareArrowDownLeft } from 'lucide-solid/icons/square-arrow-down-left';

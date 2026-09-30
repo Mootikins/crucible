@@ -2,7 +2,7 @@ import { Component, Show, createContext, onCleanup, useContext, type JSX } from 
 import { windowStore, windowActions } from '@/windowing/store';
 import type { FloatingChrome, FloatingWindow } from '@/windowing/model/types';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
-import { IconClose, IconLayout, IconMinimize, IconMaximize, IconPin, IconTabBar } from './icons';
+import { IconClose, IconDock, IconMinimize, IconMaximize, IconPin, IconTabBar } from './icons';
 
 /**
  * The controls of one floating window. They act on the whole window, that
@@ -85,7 +85,7 @@ export const WindowActionButtons: Component<{ windowId: string; compact?: boolea
         onClick={() => windowActions.dockFloatingWindow(props.windowId)}
         title="Dock back into the layout"
       >
-        <IconLayout class="w-3 h-3" />
+        <IconDock class="w-3 h-3" />
       </button>
       <Show when={!props.compact}>
         <button

@@ -80,11 +80,18 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     onCleanup(() => cleanup?.());
   };
 
-  // Pop-out MOVES the group (popOutPane detaches it from this pane) — sharing
-  // one group between a pane and a floating window would register duplicate
-  // solid-dnd draggable ids and mirror the tab strip in two places.
+  // The pop-out button MOVES the active tab into a floating window, and its
+  // neighbours stay. A group shared between a pane and a floating window
+  // would register duplicate solid-dnd draggable ids. The button hides on a
+  // tab that the policy keeps, because the store refuses that pop-out.
+  const canPopOut = () => {
+    const tab = activeTab();
+    const group = tabGroupId();
+    return !!tab && !!group && windowActions.canPopOutTab(group, tab.id);
+  };
   const handlePopOut = () => {
-    windowActions.popOutPane(props.paneId);
+    const tab = activeTab();
+    if (tab) windowActions.popOutPane(props.paneId, tab.id);
   };
 
   // Re-render the panel only when the active tab's identity or content type
@@ -167,7 +174,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
         <TabBar
           groupId={tabGroupId()!}
           paneId={props.paneId}
-          onPopOut={handlePopOut}
+          onPopOut={canPopOut() ? handlePopOut : undefined}
         />
         {renderContent()}
       </Show>
