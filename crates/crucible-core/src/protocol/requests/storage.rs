@@ -6,6 +6,7 @@
 /// `process` and `force` default because the server read them with
 /// `optional_param!`: a caller that sends only `path` must keep working.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KilnOpenRequest {
     pub path: String,
     #[serde(default)]
@@ -21,6 +22,7 @@ pub struct KilnOpenRequest {
 /// derived the entry rather than the user naming it, and `make_default` is the
 /// chat preflight's answer to "which kiln does every future command use".
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KilnRegisterRequest {
     /// The name to bind, or `None` to let the daemon derive one.
     ///
@@ -39,6 +41,7 @@ pub struct KilnRegisterRequest {
 
 /// Request for `llm.register_provider`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LlmRegisterProviderRequest {
     /// The provider key, which is also its `BackendType` name.
     pub provider: String,
@@ -54,6 +57,7 @@ pub struct LlmRegisterProviderRequest {
 /// `scope` is the request authority. When it is absent, the daemon uses
 /// `Scope::Workspace { path: kiln }`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NoteRef {
     pub kiln: String,
     pub name: String,
@@ -67,6 +71,7 @@ pub struct NoteRef {
 /// `scope` is the request authority. When it is absent, the daemon uses
 /// `Scope::Workspace { path: kiln }`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KilnRef {
     pub kiln: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,6 +83,7 @@ pub struct KilnRef {
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SuggestLinksRequest {
     pub kiln: String,
     pub text: String,
@@ -90,6 +96,7 @@ pub struct SuggestLinksRequest {
 /// `note` stays a `Value`: the handler answers a distinct
 /// `Invalid note record: {e}` for a `note` that is not a `NoteRecord`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NoteUpsertRequest {
     pub kiln: String,
     pub note: serde_json::Value,
@@ -102,6 +109,7 @@ pub struct NoteUpsertRequest {
 /// (workspace-scoped read, which is the safest default for legacy callers
 /// without a session context). `note.delete` ignores `scope`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NotePathRequest {
     pub kiln: String,
     pub path: String,
@@ -111,6 +119,7 @@ pub struct NotePathRequest {
 
 /// Request for `process_batch`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProcessBatchRequest {
     pub kiln: String,
     pub paths: Vec<String>,
@@ -118,6 +127,7 @@ pub struct ProcessBatchRequest {
 
 /// Request for `storage.backup`.
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageBackupRequest {
     pub kiln: String,
     pub dest: String,
@@ -125,6 +135,7 @@ pub struct StorageBackupRequest {
 
 /// Request for `storage.restore`.
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageRestoreRequest {
     pub kiln: String,
     pub source: String,
@@ -137,6 +148,7 @@ pub struct StorageRestoreRequest {
 /// `port` stay `Option` so the substitution keeps happening in the handler,
 /// where the default values are visible next to the call they configure.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct McpStartRequest {
     pub kiln_path: String,
     #[serde(default)]
@@ -159,6 +171,7 @@ pub struct McpStartRequest {
 /// `properties.scope` is outside the authority are filtered out at the SQL
 /// layer, so out-of-scope notes never occupy result slots.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SearchVectorsRequest {
     pub kiln: String,
     pub vector: Vec<f32>,
@@ -181,6 +194,7 @@ fn default_search_limit() -> usize {
 /// absent when the kiln has note vectors only. `snippet` is the block's own
 /// text, so a client can quote the passage without a second round trip.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VectorHit {
     pub document_id: String,
     pub score: f64,
@@ -237,6 +251,7 @@ mod first_per_note_tests {
 
 /// Request for `search_text`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SearchTextRequest {
     pub kiln: String,
     pub query: String,
@@ -246,6 +261,7 @@ pub struct SearchTextRequest {
 
 /// Request for `embed.query`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EmbedQueryRequest {
     pub kiln: String,
     pub text: String,
@@ -277,6 +293,7 @@ pub struct GrepSearchRequest {
 
 /// Request for `fs.list_dir`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct FsListDirRequest {
@@ -299,12 +316,14 @@ pub struct FsListDirRequest {
 /// For a branch source, an empty `base` asks the daemon for the default
 /// branch. The reply then names the branch that the daemon used.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffsetRef {
     pub source: crate::diff::DiffsetSource,
 }
 
 /// Request for `diff.file`: one file of the diffset of `source`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DiffFileRequest {
     pub source: crate::diff::DiffsetSource,
     /// The path relative to the root, on the current side.
@@ -443,6 +462,7 @@ pub struct FsPathRequest {
 
 /// Request for `note.rename` (and its `note.move` alias).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NoteRenameRequest {
     pub kiln: String,
     pub from_rel: String,
@@ -467,6 +487,7 @@ pub struct ScmCloneRequest {
 
 /// Request for `process_file`: index one file of one kiln.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProcessFileRequest {
     pub kiln: String,
     pub path: String,
@@ -477,6 +498,7 @@ pub struct ProcessFileRequest {
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ListNotesRequest {
     pub kiln: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

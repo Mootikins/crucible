@@ -63,6 +63,7 @@ pub type ToolPolicyMap = HashMap<String, ToolPolicy>;
 /// - Model selection (provider/model)
 /// - Tool policy and MCP server references
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentCard {
     /// Unique identifier for this agent card (generated on load)
     pub id: Uuid,

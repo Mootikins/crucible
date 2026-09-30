@@ -92,6 +92,7 @@ pub fn public_properties(
 /// This represents the indexed metadata for a single note. The actual content
 /// lives in the plaintext markdown file at `path`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NoteRecord {
     /// Primary key: path to the plaintext file (relative to kiln root)
     pub path: String,
@@ -159,6 +160,7 @@ pub struct NoteRecord {
 /// first of `|`/`#`/`]]`) so a rename splice preserves alias, heading/block
 /// refs, and the embed marker automatically.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LinkOccurrence {
     /// Target text as written (`"async"`, `"notes/async"`, `"Async"`)
     pub raw_target: String,

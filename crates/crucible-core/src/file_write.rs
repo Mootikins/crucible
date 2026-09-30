@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 /// An absolute file path and the change to apply under its write lock.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FileWriteRequest {
     pub path: String,
     #[serde(flatten)]
@@ -14,6 +15,7 @@ pub struct FileWriteRequest {
 
 /// A whole text or an anchored batch. Missing bases retain legacy replacement semantics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum FileChange {
     Put {
@@ -32,6 +34,7 @@ pub enum FileChange {
 
 /// An absolute file path for `fs.read`, and the form of the answer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FileReadRequest {
     pub path: String,
     #[serde(default)]
@@ -40,6 +43,7 @@ pub struct FileReadRequest {
 
 /// How `fs.read` carries the bytes of a file.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FileEncoding {
     /// UTF-8 text. The daemon refuses a file that is not UTF-8.

@@ -427,4 +427,29 @@ mod tests {
             );
         }
     }
+
+    /// `schema_types.rs` is a committed, generated file: one
+    /// `#[derive(utoipa::OpenApi)]` struct naming every row's params/reply
+    /// type, which `crucible-web`'s `api_spec` merges into its own document
+    /// (step 19 item 7 of the Simplification Plan) so a row's type gets a
+    /// schema whether or not a live route names it too. A row added without
+    /// regenerating that file would silently miss this gate — the derive
+    /// itself only proves the *committed* list resolves, not that the list
+    /// is current — so this test re-renders the same text
+    /// (`type_text::render_schema_types_file`, the renderer
+    /// `examples/gen_rpc_schema_types.rs` also calls) and compares it
+    /// against the committed file, the way `openapi_contract.rs`'s
+    /// `the_committed_openapi_json_is_current` holds `openapi.json` current
+    /// against its own router.
+    #[test]
+    fn the_committed_schema_types_file_matches_the_rows() {
+        let committed = include_str!("schema_types.rs");
+        let fresh = crate::protocol::rpc::type_text::render_schema_types_file();
+        assert_eq!(
+            committed, fresh,
+            "crates/crucible-core/src/protocol/rpc/schema_types.rs is stale; regenerate with \
+             `cargo run -p crucible-core --features openapi --example gen_rpc_schema_types \
+             > crates/crucible-core/src/protocol/rpc/schema_types.rs`"
+        );
+    }
 }

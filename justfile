@@ -153,6 +153,16 @@ lint what="all":
                 echo "src/lib/api-schema.d.ts is stale; run just web-contract" >&2
                 exit 1
             }
+            # The generated method map must match the committed contract too.
+            cd ../../..
+            fresh_methods="$(mktemp)"
+            trap 'rm -f "$fresh" "$fresh_methods"' EXIT
+            cargo run -q -p crucible-core --example gen_rpc_methods_ts -- \
+                crates/crucible-web/web/src/lib/api-schema.d.ts > "$fresh_methods"
+            diff -u crates/crucible-web/web/src/lib/rpc-methods.d.ts "$fresh_methods" || {
+                echo "rpc-methods.d.ts is stale; regenerate it with the command in its own header comment" >&2
+                exit 1
+            }
             ;;
         dead)
             # Include tests: --production misclassifies lazy-loaded dependencies.

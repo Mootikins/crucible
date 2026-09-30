@@ -12,6 +12,7 @@
 
 /// Daemon capabilities returned by `daemon.capabilities` RPC
 #[derive(Debug, Clone, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DaemonCapabilities {
     pub version: String,
     #[serde(default)]
@@ -22,6 +23,7 @@ pub struct DaemonCapabilities {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CapabilityFlags {
     pub kilns: bool,
     pub sessions: bool,
@@ -67,6 +69,7 @@ impl Scoped<()> {
 ///
 /// An absent `limit` or `offset` lets the daemon choose.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct Page {
@@ -80,6 +83,7 @@ pub struct Page {
 
 /// Request for methods that take only a kiln path.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct KilnPathRequest {
@@ -89,6 +93,7 @@ pub struct KilnPathRequest {
 
 /// Request for methods that take only a filesystem path.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct PathRequest {
@@ -99,12 +104,14 @@ pub struct PathRequest {
 
 /// Request for methods that take only a name.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NameRequest {
     pub name: String,
 }
 
 /// Request for `skills.list`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SkillsListRequest {
     pub kiln_path: String,
     /// The workspace whose skill roots are searched. Absent means no
@@ -117,6 +124,7 @@ pub struct SkillsListRequest {
 
 /// Request for `skills.get`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SkillsGetRequest {
     pub name: String,
     pub kiln_path: String,
@@ -128,6 +136,7 @@ pub struct SkillsGetRequest {
 
 /// Request for `skills.search`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SkillsSearchRequest {
     pub query: String,
     pub kiln_path: String,
@@ -147,6 +156,7 @@ pub struct SkillsSearchRequest {
 /// directory it runs in and the kiln path its config names, and the daemon
 /// resolves cards by directory (`agent_cards::card_directories`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentsListCardsRequest {
     /// The workspace a session started here would attach.
     pub workspace: String,

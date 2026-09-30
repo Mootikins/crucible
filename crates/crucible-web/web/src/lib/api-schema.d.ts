@@ -2073,6 +2073,102 @@ export interface components {
             paths?: string[];
         };
         /**
+         * @description An agent card - static definition of an agent's configuration
+         *
+         *     Agent cards are loaded from markdown files and contain:
+         *     - Identity (name, version, description)
+         *     - Discovery (tags, specialty)
+         *     - System prompt (markdown body)
+         *     - Model selection (provider/model)
+         *     - Tool policy and MCP server references
+         */
+        AgentCard: {
+            /** @description Default configuration values */
+            config: {
+                [key: string]: unknown;
+            };
+            /** @description Brief description of what this agent does */
+            description: string;
+            /**
+             * Format: uuid
+             * @description Unique identifier for this agent card (generated on load)
+             */
+            id: string;
+            /**
+             * Format: date-time
+             * @description When this agent card was loaded
+             */
+            loaded_at: string;
+            /** @description Optional MCP servers this agent can use */
+            mcp_servers: string[];
+            /** @description Initial mode ("auto"/"plan"). */
+            mode?: string | null;
+            /** @description Model override. `None` inherits the spawning context's model. */
+            model?: string | null;
+            /** @description Human-readable name of the agent */
+            name: string;
+            /** @description Discovery source used to disambiguate cards with the same name. */
+            namespace?: string | null;
+            /**
+             * @description Provider override (e.g. "ollama", "anthropic"). `None` inherits the
+             *     spawning context's provider.
+             */
+            provider?: string | null;
+            /**
+             * @description Informational specialty label (e.g. "reasoning", "coder"). Kept as
+             *     metadata; model selection uses explicit `provider`/`model`.
+             */
+            specialty?: string | null;
+            /** @description System prompt (extracted from markdown body) */
+            system_prompt: string;
+            /** @description Tags for categorization and discovery */
+            tags: string[];
+            tools?: null | components["schemas"]["HashMap"];
+            /** @description Version of this agent card (semantic versioning) */
+            version: string;
+        };
+        /**
+         * @description What `agents.list_cards` answers.
+         *
+         *     No `ToSchema`: `AgentCard` does not derive it (its fields would need to,
+         *     transitively), and no web route publishes this reply's OpenAPI shape
+         *     today.
+         */
+        AgentCardsListReply: {
+            cards: components["schemas"]["AgentCard"][];
+        };
+        /**
+         * @description The body of `session.configure_agent`, inside `Scoped`.
+         *
+         *     `agent` stays a `Value` on purpose: the handler answers a distinct
+         *     `Invalid agent config: {e}` for an `agent` that is not a `SessionAgent`,
+         *     and typing the field here would fold that into the generic params error.
+         */
+        AgentConfig: {
+            agent: unknown;
+        };
+        /**
+         * @description A setting an external agent advertised for itself.
+         *
+         *     Crucible has no knob for these: they belong to the agent, and a different
+         *     agent advertises different ones. A client renders them from this
+         *     description and sends the chosen value back; the daemon does not interpret
+         *     them beyond the model selector, which has its own control.
+         */
+        AgentConfigOption: components["schemas"]["AgentOptionKind"] & {
+            /**
+             * @description The agent's own category string, when it sent one. UX only: it exists
+             *     so a client can place or icon a control, never for correctness.
+             */
+            category?: string | null;
+            /** @description Optional help text the agent supplied. */
+            description?: string | null;
+            /** @description The id to name in `session.set_agent_option`. */
+            id: string;
+            /** @description What to label the control. */
+            name: string;
+        };
+        /**
          * @description The agent picker's list.
          *
          *     The key is `agents`, where the daemon's own answer says `profiles`: this
@@ -2083,11 +2179,42 @@ export interface components {
             agents: components["schemas"]["AgentProfileEntry"][];
         };
         /** @description One choice in an agent's select option. */
+        AgentOptionChoice: {
+            /** @description What to show for it. */
+            name: string;
+            /** @description The id to send back when this choice is picked. */
+            value: string;
+        };
+        /** @description One choice in an agent's select option. */
         AgentOptionChoiceRow: {
             /** @description What to show for it. */
             name: string;
             /** @description The value to send back when this choice is picked. */
             value: string;
+        };
+        /**
+         * @description The shape of an agent option's control.
+         *
+         *     ACP's `SessionConfigKind` is `#[non_exhaustive]`; a kind this does not
+         *     cover is dropped rather than guessed at, because a control rendered from a
+         *     shape nobody understood is worse than no control.
+         */
+        AgentOptionKind: {
+            /**
+             * @description Every value it accepts, in the order it listed them. Grouped
+             *     options are flattened: the grouping is presentation, and this
+             *     projection carries no group headers.
+             */
+            choices: components["schemas"]["AgentOptionChoice"][];
+            /** @description The value the agent reports as current. */
+            current: string;
+            /** @enum {string} */
+            kind: "select";
+        } | {
+            /** @description The value the agent reports as current. */
+            current: boolean;
+            /** @enum {string} */
+            kind: "toggle";
         };
         /**
          * @description The control an agent option asks for.
@@ -2157,6 +2284,37 @@ export interface components {
              */
             is_builtin: boolean;
             name: string;
+        };
+        /**
+         * @description What `agents.resolve_profile` answers for a name it knows. `None` when
+         *     the daemon has no profile of that name.
+         */
+        AgentProfileResolved: {
+            args: string[];
+            command: string;
+            description: string;
+            env: {
+                [key: string]: string;
+            };
+            is_builtin: boolean;
+            name: string;
+        };
+        /** @description What `agents.list_profiles` answers. */
+        AgentProfilesReply: {
+            profiles: components["schemas"]["AgentProfileEntry"][];
+        };
+        /**
+         * @description Request for `agents.list_cards`.
+         *
+         *     Paths, not kiln names: the caller is `cru agents`, which knows the
+         *     directory it runs in and the kiln path its config names, and the daemon
+         *     resolves cards by directory (`agent_cards::card_directories`).
+         */
+        AgentsListCardsRequest: {
+            /** @description The kiln whose `.crucible/agents/` is searched. `None` means no kiln. */
+            kiln_path?: string | null;
+            /** @description The workspace a session started here would attach. */
+            workspace: string;
         };
         /** @description One change: the text expected, and what replaces it. */
         AnchoredEdit: {
@@ -2411,6 +2569,16 @@ export interface components {
             /** @description The message of a cell that failed to evaluate. */
             value: string;
         };
+        /**
+         * @description A BLAKE3 hash used for block-level content addressing
+         *
+         *     The one content hash type. It names
+         *     the hash of a whole file or of an individual content block
+         *     extracted from documents (headings, paragraphs, code blocks, etc.).
+         *
+         *     This is the canonical definition of BlockHash in the Crucible system.
+         */
+        BlockHash: number[];
         /** @description Where in a note a hit sits. */
         BlockRef: {
             /**
@@ -2557,6 +2725,13 @@ export interface components {
          * @enum {string}
          */
         CanvasSide: "top" | "right" | "bottom" | "left";
+        CapabilityFlags: {
+            agents: boolean;
+            events: boolean;
+            kilns: boolean;
+            model_switching: boolean;
+            sessions: boolean;
+        };
         /**
          * @description One SSE `data:` payload of `GET /api/chat/events/{session_id}`.
          *
@@ -2696,6 +2871,22 @@ export interface components {
          */
         CommentSide: "base" | "current";
         /**
+         * @description Request for `config.reset`, `config.pop` and `config.unset`: one leaf,
+         *     named by its dot-joined path.
+         */
+        ConfigKeyRequest: {
+            key: string;
+        };
+        /**
+         * @description Request for `config.get` and `config.origin`.
+         *
+         *     With `key`, the daemon answers for the leaf at that dot-joined path.
+         *     Without it, the daemon answers for the whole store.
+         */
+        ConfigLookupRequest: {
+            key?: string | null;
+        };
+        /**
          * @description One row of `config.origin`: a leaf, the value the store holds for it, and
          *     where that value came from.
          *
@@ -2783,6 +2974,33 @@ export interface components {
              */
             rejected: string[];
         };
+        /** @description Reply from `config.set`. */
+        ConfigSetReply: {
+            /** @description Always true: `config.set` never partially refuses. */
+            ok: boolean;
+            /**
+             * @description The top-level keys the merge dropped because they name where the
+             *     daemon acts (`kilns`, `kiln_path`, `projects`, and the like).
+             */
+            rejected: string[];
+        };
+        /**
+         * @description Request for `config.set` and `config.save`: the values to merge.
+         *
+         *     The two methods take the same shape. They differ only in the layer that
+         *     they write.
+         */
+        ConfigValuesRequest: {
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description The body of `session.inject_context`, inside `Scoped`. */
+        ContextInjection: {
+            content: string;
+            /** @description `system`, `user` or `assistant` — anything else is `INVALID_PARAMS`. */
+            role: string;
+        };
         ContextLimitResolvedPayload: {
             limit: number;
             source: components["schemas"]["ContextLimitSource"];
@@ -2851,6 +3069,14 @@ export interface components {
             provider?: string | null;
             session_type?: string;
             workspace?: string | null;
+        };
+        /** @description Daemon capabilities returned by `daemon.capabilities` RPC */
+        DaemonCapabilities: {
+            build_sha?: string | null;
+            capabilities: components["schemas"]["CapabilityFlags"];
+            methods: string[];
+            protocol_version: string;
+            version: string;
         };
         /** @description Delegation configuration for an ACP agent */
         DelegationConfig: {
@@ -2971,6 +3197,15 @@ export interface components {
              */
             too_large: boolean;
         };
+        /** @description Request for `diff.file`: one file of the diffset of `source`. */
+        DiffFileRequest: {
+            /** @description The old path of a renamed file. The base text comes from this path. */
+            from?: string | null;
+            /** @description The path relative to the root, on the current side. */
+            path: string;
+            root?: null | components["schemas"]["PhysicalRoot"];
+            source: components["schemas"]["DiffsetSource"];
+        };
         /** @description The two texts of one file of a diffset. */
         DiffFileText: {
             /** @description `None` when the file is added. */
@@ -3003,6 +3238,16 @@ export interface components {
          *     id, and a client can use the id as the key of a tab.
          */
         DiffsetId: string;
+        /**
+         * @description One diffset, named by its source: the request of `diff.get` and
+         *     `diff.comments`.
+         *
+         *     For a branch source, an empty `base` asks the daemon for the default
+         *     branch. The reply then names the branch that the daemon used.
+         */
+        DiffsetRef: {
+            source: components["schemas"]["DiffsetSource"];
+        };
         /**
          * @description Where the two sides of a diffset come from.
          *
@@ -3075,6 +3320,106 @@ export interface components {
             /** @description The modified content. */
             modified: string;
         };
+        /** @description The answer to `embeddings.models`. */
+        EmbeddingCatalog: {
+            /** @description The directory the daemon reads and writes models in. */
+            cache_dir?: string | null;
+            /** @description The model the daemon's own config names, when it names one. */
+            configured?: string | null;
+            /**
+             * Format: int64
+             * @description The bytes that download occupies.
+             *
+             *     Only for the model just fetched. Every row carried this once, which
+             *     cost a directory walk per model on a listing that never prints it.
+             */
+            downloaded_bytes?: number | null;
+            /** @description The directory the requested download landed in. */
+            downloaded_to?: string | null;
+            /**
+             * @description Every model the daemon can run, ordered by name. Empty when the daemon
+             *     was built without the `fastembed` feature.
+             */
+            models?: components["schemas"]["EmbeddingModelRow"][];
+            /** @description The canonical catalog name of the model the request named. */
+            resolved?: string | null;
+        };
+        /**
+         * @description One local embedding model, as `embeddings.models` reports it.
+         *
+         *     The daemon owns the catalog because it links fastembed and holds the model
+         *     cache. This struct is the projection the CLI renders; it carries no
+         *     fastembed type, so a build without that feature still compiles.
+         */
+        EmbeddingModelRow: {
+            /** @description Whether Crucible curates this model, so `download` can fetch it. */
+            curated: boolean;
+            /** @description The width of the vector. */
+            dimensions: number;
+            /** @description Whether the files are already in the cache. */
+            downloaded: boolean;
+            /**
+             * Format: int32
+             * @description The longest input the model accepts, or `None` for a model Crucible
+             *     does not curate.
+             */
+            max_input_tokens?: number | null;
+            /** @description The name to write in the config file. */
+            name: string;
+            /** @description One sentence on why to pick this model, or why not. */
+            note: string;
+            /**
+             * Format: int32
+             * @description The parameter count in millions, or `None` for a model Crucible does
+             *     not curate.
+             */
+            parameter_millions?: number | null;
+            /**
+             * Format: float
+             * @description The MTEB v1 English retrieval score, or `None` when nobody published
+             *     one. Never a guess.
+             */
+            retrieval_score?: number | null;
+        };
+        /** @description Request for `embeddings.models`. */
+        EmbeddingModelsRequest: {
+            /**
+             * @description Fetch `model` into the cache before the daemon answers.
+             *
+             *     One method, two questions, because the answer to the second is the
+             *     first asked again: after a download the caller wants the row, and the
+             *     row is what says where the files are.
+             */
+            download?: boolean;
+            /**
+             * @description A name to resolve through the catalog, in any form the catalog accepts.
+             *
+             *     The answer carries the canonical form as `resolved`, and an unknown
+             *     name is an error that names the near entries. The caller therefore
+             *     holds no matcher of its own, so no second matcher can drift from the
+             *     catalog's.
+             */
+            model?: string | null;
+        };
+        /** @description What `embed.query` answers. */
+        EmbedQueryReply: {
+            vector: number[];
+        };
+        /** @description Request for `embed.query`. */
+        EmbedQueryRequest: {
+            kiln: string;
+            text: string;
+        };
+        /**
+         * @description The body of `session.events_after`, inside `Scoped`.
+         *
+         *     `after` is the caller's seq cursor: the last event it APPLIED. The reply
+         *     carries the persisted wire envelopes strictly past it, in order.
+         */
+        EventCursor: {
+            /** Format: int64 */
+            after: number;
+        };
         ExecuteCommandRequest: {
             /** @description The command line, with or without its leading slash. */
             command: string;
@@ -3101,6 +3446,24 @@ export interface components {
             /** @enum {string} */
             kind: "text";
             text: string;
+        };
+        /** @description The body of `session.export_to_file`, inside `Scoped`. */
+        ExportOptions: {
+            include_timestamps?: boolean | null;
+            output_path?: string | null;
+        };
+        /** @description A whole text or an anchored batch. Missing bases retain legacy replacement semantics. */
+        FileChange: {
+            base_hash?: string | null;
+            base_text?: string | null;
+            content: string;
+            /** @enum {string} */
+            operation: "put";
+        } | {
+            base_hash?: string | null;
+            edits: components["schemas"]["AnchoredEdit"][];
+            /** @enum {string} */
+            operation: "patch";
         };
         /**
          * @description Kind of file change detected by the watch system.
@@ -3154,6 +3517,11 @@ export interface components {
             /** @description Path to the modified file */
             path: string;
         };
+        /**
+         * @description How `fs.read` carries the bytes of a file.
+         * @enum {string}
+         */
+        FileEncoding: "text" | "base64";
         /** @description One entry of a kiln's file listing. */
         FileEntryRow: {
             /**
@@ -3165,6 +3533,20 @@ export interface components {
             /** @description The file stem, or the whole path when the stem is not UTF-8. */
             name: string;
             /** @description RELATIVE to the kiln root. */
+            path: string;
+        };
+        /**
+         * @description One file a batch or a full-kiln process step failed on: the shape
+         *     `kiln.open { process: true }` and `process_batch` both answer for an
+         *     unindexed file.
+         */
+        FileProcessError: {
+            error: string;
+            path: string;
+        };
+        /** @description An absolute file path for `fs.read`, and the form of the answer. */
+        FileReadRequest: {
+            encoding?: components["schemas"]["FileEncoding"];
             path: string;
         };
         /** @description How a file changed between the two sides. */
@@ -3223,6 +3605,10 @@ export interface components {
             /** @description Always `false`. */
             ok: boolean;
         };
+        /** @description An absolute file path and the change to apply under its write lock. */
+        FileWriteRequest: components["schemas"]["FileChange"] & {
+            path: string;
+        };
         /**
          * @description What a write answers when it lands.
          *
@@ -3263,6 +3649,20 @@ export interface components {
             path: string;
             /** @description The empty string when the index holds no title. Never `null`. */
             title: string;
+        };
+        /**
+         * @description The body of `session.fork`, inside `Scoped`.
+         *
+         *     The session id of the envelope names the PARENT. The fork reports its
+         *     own id as `id`.
+         */
+        ForkPoint: {
+            /**
+             * Format: int64
+             * @description Copy only the first N user/assistant/system messages. All of them when
+             *     omitted.
+             */
+            up_to?: number | null;
         };
         /**
          * @description One directory entry in an `fs.list_dir` response.
@@ -3311,6 +3711,17 @@ export interface components {
             /** @enum {string} */
             type: "moved";
         };
+        /** @description Request for `fs.list_dir`. */
+        FsListDirRequest: {
+            /** @description Root-relative POSIX path of the directory. Empty lists the root. */
+            rel_path?: string;
+            /** @description Absolute path of the root to list inside. */
+            root: string;
+            /** @description Include dotfiles. `.git` never lists, whatever this says. */
+            show_hidden?: boolean;
+            /** @description Include entries git ignores. The file tree sends `true`. */
+            show_ignored?: boolean;
+        };
         /**
          * @description One directory level, plus whether the cap cut it short: what
          *     `fs.list_dir` answers.
@@ -3324,6 +3735,11 @@ export interface components {
         FsListing: {
             entries: components["schemas"]["FsEntry"][];
             truncated: boolean;
+        };
+        /** @description What `fs.mkdir` answers. */
+        FsMkdirReply: {
+            /** @description Always true. A refusal is an error, not a `false`. */
+            created: boolean;
         };
         /**
          * @description What `POST /api/fs/mkdir` answers.
@@ -3395,6 +3811,41 @@ export interface components {
             trash_path: string;
             /** @description Always true. A refusal is an error, not a `false`. */
             trashed: boolean;
+        };
+        /**
+         * @description A full-text search result: the reply shape of `search_text`.
+         *
+         *     Also the `search_text` wire shape: the daemon serializes it and the
+         *     client deserializes it, so the field names are the JSON keys.
+         */
+        FtsResult: {
+            /** @description Path to the note */
+            path: string;
+            /**
+             * Format: double
+             * @description BM25 relevance score (lower is better in FTS5)
+             */
+            rank: number;
+            /**
+             * @description Snippet of matching content (with highlights). An older daemon may
+             *     omit it.
+             */
+            snippet?: string;
+            /** @description Note title */
+            title: string;
+        };
+        /** @description The body of `workflow.approve_gate`, inside `Scoped`. */
+        GateRef: {
+            gate_id: string;
+        };
+        /**
+         * @description What `get_backlinks` answers: the resolved note, and the notes that
+         *     wikilink to it.
+         */
+        GetBacklinksReply: {
+            backlinks: components["schemas"]["BacklinkEntry"][];
+            path: string;
+            title: string;
         };
         /**
          * @description A single content-search hit.
@@ -3478,6 +3929,11 @@ export interface components {
          * @enum {string}
          */
         IndeterminateProgress: "indeterminate";
+        /** @description The body of `session.interaction_respond`, inside `Scoped`. */
+        InteractionAnswer: {
+            request_id: string;
+            response: unknown;
+        };
         /**
          * @description Unified interaction request type.
          *
@@ -3724,6 +4180,17 @@ export interface components {
         KilnFilesResponse: {
             files: components["schemas"]["FileEntryRow"][];
         };
+        /** @description What `kiln.forget` answers. */
+        KilnForgetReply: {
+            name: string;
+            state_file: string;
+            status: string;
+            /**
+             * @description Always `"next daemon start"`: a removal waits for the boot freeze,
+             *     unlike an add, which takes effect immediately.
+             */
+            takes_effect: string;
+        };
         /** @description One edge of the `kiln.graph` note-link graph. */
         KilnGraphLink: {
             /** @description Whether `target` resolves to a note the caller can see. */
@@ -3756,8 +4223,116 @@ export interface components {
         KilnListResponse: {
             kilns: components["schemas"]["KilnRow"][];
         };
+        /**
+         * @description A kiln name: the key of a `[kilns]` entry in the user's config.
+         *
+         *     Guaranteed by construction to be non-empty, at most [`MAX_LEN`] bytes, drawn
+         *     from `[A-Za-z0-9._- ]`, neither starting nor ending with a space, and not to
+         *     start with a dot — so it is never `.`, `..`, a hidden file, or anything
+         *     holding a path separator.
+         *
+         *     Two strings, not one, and the pair is the whole design: `display` is what
+         *     the user wrote and what every renderer shows; `key` is that text with ASCII
+         *     case folded, and it is the only field [`PartialEq`], [`Hash`] and [`Ord`]
+         *     read. So a map keyed by a name answers to any casing of it, and still hands
+         *     back the casing its owner chose.
+         */
+        KilnName: {
+            display: string;
+            key: string;
+        };
         KilnNotesIndexedPayload: {
             notes: string[];
+        };
+        /** @description One kiln `project.open_kilns` failed to open. */
+        KilnOpenError: {
+            error: string;
+            /** @description `null` — not absent — for a kiln the registry cannot name. */
+            kiln: string | null;
+            path: string;
+        };
+        /**
+         * @description What `kiln.open` answers.
+         *
+         *     Untagged: the three arms answer a caller that asked to index the kiln
+         *     (`Processed`), one whose indexing failed outright (`ProcessError`), and
+         *     one that only opened the kiln (`Opened`). The wire has always told the
+         *     three apart by which keys are present, not by a tag field.
+         */
+        KilnOpenReply: {
+            discovered: number;
+            errors: components["schemas"]["FileProcessError"][];
+            processed: number;
+            skipped: number;
+            status: string;
+        } | {
+            process_error: string;
+            status: string;
+        } | {
+            status: string;
+        };
+        /**
+         * @description Request for `kiln.open`.
+         *
+         *     `process` and `force` default because the server read them with
+         *     `optional_param!`: a caller that sends only `path` must keep working.
+         */
+        KilnOpenRequest: {
+            force?: boolean;
+            path: string;
+            process?: boolean;
+        };
+        /** @description Request for methods that take only a kiln path. */
+        KilnPathRequest: {
+            /** @description The absolute path of the kiln. */
+            kiln: string;
+        };
+        /**
+         * @description One kiln, read under one authority: the request of `kiln.graph` and
+         *     `note.list`.
+         *
+         *     `scope` is the request authority. When it is absent, the daemon uses
+         *     `Scope::Workspace { path: kiln }`.
+         */
+        KilnRef: {
+            kiln: string;
+            scope?: null | components["schemas"]["Scope"];
+        };
+        /**
+         * @description Whether `kiln.register` added a new state entry or found one already
+         *     there.
+         * @enum {string}
+         */
+        KilnRegisterOutcome: "added" | "already_present";
+        /** @description What `kiln.register` answers. */
+        KilnRegisterReply: {
+            name: string;
+            outcome: components["schemas"]["KilnRegisterOutcome"];
+            path: string;
+            state_file: string;
+            status: string;
+        };
+        /**
+         * @description Request for `kiln.register`.
+         *
+         *     `auto` and `make_default` default because they answer questions the plain
+         *     `cru kiln register <name> <path>` does not ask: `auto` records that Crucible
+         *     derived the entry rather than the user naming it, and `make_default` is the
+         *     chat preflight's answer to "which kiln does every future command use".
+         */
+        KilnRegisterRequest: {
+            auto?: boolean;
+            make_default?: boolean;
+            /**
+             * @description The name to bind, or `None` to let the daemon derive one.
+             *
+             *     Optional because the derivation depends on what is already registered
+             *     (`notes`, then `notes-2`), and only the daemon's registry knows that.
+             *     A caller that derived its own name would be deriving against a
+             *     different set.
+             */
+            name?: string | null;
+            path: string;
         };
         /**
          * @description One kiln, as `kiln.list` reports it.
@@ -3797,6 +4372,25 @@ export interface components {
              *     not be offered in a picker.
              */
             registered: boolean;
+        };
+        /** @description One knob and whether this session can change it. */
+        KnobDescriptor: {
+            /** @description The wire id, as [`SessionKnob::id`] reports it. */
+            id: string;
+            /**
+             * @description Whether this session can change it. `false` means the control should
+             *     not be offered: the daemon refuses the call.
+             */
+            supported: boolean;
+        };
+        /**
+         * @description The body of `session.knob.get`, inside `Scoped`.
+         *
+         *     `session.knob.set` needs no sibling of this: its body IS
+         *     [`crate::types::KnobValue`], which already names its own knob.
+         */
+        KnobRef: {
+            knob: components["schemas"]["SessionKnob"];
         };
         /**
          * @description One setting and whether this session can change it.
@@ -3908,6 +4502,25 @@ export interface components {
             start: number;
         };
         /**
+         * @description One wikilink occurrence inside a note's raw file bytes.
+         *
+         *     `span` addresses exactly the *target token* (between `[[`/`![[` and the
+         *     first of `|`/`#`/`]]`) so a rename splice preserves alias, heading/block
+         *     refs, and the embed marker automatically.
+         */
+        LinkOccurrence: {
+            /** @description Heading or named Base view following the target. */
+            heading_ref?: string | null;
+            /** @description Whether the occurrence is an embed (`![[...]]`) */
+            is_embed: boolean;
+            /** @description Target text as written (`"async"`, `"notes/async"`, `"Async"`) */
+            raw_target: string;
+            /** @description FILE-absolute byte offset (exclusive) of the target token end */
+            span_end: number;
+            /** @description FILE-absolute byte offset of the target token start */
+            span_start: number;
+        };
+        /**
          * @description A single suggestion to convert a plain-text mention into a wikilink:
          *     one row of `suggest_links`.
          */
@@ -3918,6 +4531,10 @@ export interface components {
             offset: number;
             /** @description The note name to link to */
             target: string;
+        };
+        /** @description Request for `models.list` (no active session required). */
+        ListAllModelsRequest: {
+            kiln_path?: string | null;
         };
         /** @description A comment as the daemon lists it: its range follows its text. */
         ListedComment: {
@@ -3930,6 +4547,131 @@ export interface components {
             outdated: boolean;
         };
         /**
+         * @description Request for `list_notes`.
+         *
+         *     `scope` is the request authority — defaults server-side to
+         *     `Scope::Workspace { path: kiln }` when absent.
+         */
+        ListNotesRequest: {
+            kiln: string;
+            path_filter?: string | null;
+            scope?: null | components["schemas"]["Scope"];
+        };
+        /** @description Request for `providers.list` (no active session required). */
+        ListProvidersRequest: {
+            /**
+             * @description `false` skips per-provider model discovery (which dials endpoints).
+             *     Omitted means `true` for backward compatibility.
+             */
+            include_models?: boolean | null;
+            kiln_path?: string | null;
+        };
+        /** @description What `llm.register_provider` answers. */
+        LlmRegisterProviderReply: {
+            /** @description Whether the running daemon applied the selection immediately. */
+            live: boolean;
+            model: string;
+            /**
+             * @description `"additive"` or `"deferred"` — see `SelectionOutcome` (daemon-local:
+             *     it also carries the apply-now decision, not only the wire word).
+             */
+            outcome: string;
+            provider: string;
+            state_file: string;
+            status: string;
+            /**
+             * @description What the daemon keeps using until the next start, when `live` is
+             *     `false`. `null` — not absent — when nothing was serving, or the
+             *     selection applied: the wire has always written this key.
+             */
+            still_serving: string | null;
+        };
+        /** @description Request for `llm.register_provider`. */
+        LlmRegisterProviderRequest: {
+            make_default?: boolean;
+            /** @description The model to use by default with it. */
+            model: string;
+            /** @description The provider key, which is also its `BackendType` name. */
+            provider: string;
+        };
+        /** @description The body of `lua.register_commands`, inside `Scoped`. */
+        LuaCommands: {
+            commands: unknown[];
+        };
+        LuaDiscoverPluginsRequest: {
+            kiln_path: string;
+        };
+        LuaDiscoverPluginsResponse: {
+            plugins?: unknown[];
+        };
+        /**
+         * @description Request for `lua.eval`: Luau source that the daemon runs in its plugin
+         *     VM.
+         */
+        LuaEvalRequest: {
+            code: string;
+        };
+        LuaGenerateStubsRequest: {
+            output_dir: string;
+            verify?: boolean;
+        };
+        LuaGenerateStubsResponse: {
+            path: string;
+            status: string;
+        };
+        LuaInitSessionResponse: {
+            commands?: unknown[];
+            session_id: string;
+        };
+        LuaPluginHealthRequest: {
+            plugin_path: string;
+        };
+        LuaPluginHealthResponse: {
+            checks?: unknown[];
+            healthy: boolean;
+            message?: string | null;
+            name: string;
+        };
+        /** @description Reply from `lua.register_commands`. */
+        LuaRegisterCommandsReply: {
+            /** @description How many of the sent commands loaded. */
+            registered: number;
+        };
+        LuaRunPluginTestsRequest: {
+            filter?: string | null;
+            test_path: string;
+        };
+        LuaRunPluginTestsResponse: {
+            failed: number;
+            /**
+             * @description Per-test diagnostics. Without these the caller sees only counts — the
+             *     runner's own `✗` output goes to the daemon's stdout, not the client's.
+             */
+            failures?: components["schemas"]["PluginTestFailure"][];
+            load_failure_details?: components["schemas"]["PluginTestLoadFailure"][];
+            load_failures: number;
+            message?: string | null;
+            passed: number;
+        };
+        /** @description The body of `lua.init_session`, inside `Scoped`. */
+        LuaSessionInit: {
+            /**
+             * @description Optional because the handler treats it as optional: an absent path falls
+             *     back to the daemon's data root. It was a required `String` while the
+             *     server read it with `optional_param!`, so the type claimed a guarantee
+             *     the wire never had.
+             *
+             *     `kiln` is accepted as an alias. No in-tree caller sends it, but
+             *     `lua.init_session` is a public RPC method and the server has always
+             *     honoured both spellings — the alias records that here instead of leaving
+             *     it as an undocumented second name in the handler.
+             */
+            kiln_path?: string | null;
+        };
+        LuaShutdownSessionResponse: {
+            shutdown: boolean;
+        };
+        /**
          * @description A row's status, stated as a fact rather than as a glyph.
          *
          *     The plugin says what is true. The TUI may draw `●` and the web a coloured
@@ -3939,6 +4681,13 @@ export interface components {
          * @enum {string}
          */
         Mark: "busy" | "blocked" | "ok" | "failed";
+        /** @description The body of `session.render_markdown`, inside `Scoped`. */
+        MarkdownOptions: {
+            include_timestamps?: boolean | null;
+            include_tokens?: boolean | null;
+            include_tools?: boolean | null;
+            max_content_length?: number | null;
+        };
         /**
          * @description List view item markers.
          * @enum {string}
@@ -3972,6 +4721,38 @@ export interface components {
         McpServersReadyPayload: {
             servers: components["schemas"]["McpServerInfo"][];
         };
+        /** @description What `mcp.start` answers. */
+        McpStartReply: {
+            /**
+             * Format: int32
+             * @description The SSE port, or `null` under stdio. Always written.
+             */
+            port: number | null;
+            status: string;
+            tool_count: number;
+            transport: string;
+        };
+        /**
+         * @description Request for `mcp.start`.
+         *
+         *     Every field but `kiln_path` defaults, because the server used to read them
+         *     with `optional_param!` and substitute its own default. `transport` and
+         *     `port` stay `Option` so the substitution keeps happening in the handler,
+         *     where the default values are visible next to the call they configure.
+         */
+        McpStartRequest: {
+            /**
+             * @description Accepted and ignored: it fed the annotation-scanned Lua tool discovery
+             *     that `cru mcp` no longer does. Dropping it would break callers that
+             *     still send it.
+             */
+            just_dir?: string | null;
+            kiln_path: string;
+            no_just?: boolean;
+            /** Format: int32 */
+            port?: number | null;
+            transport?: string | null;
+        };
         /**
          * @description What `mcp.status` answers: the server is up, or it is not.
          *
@@ -3985,6 +4766,10 @@ export interface components {
         McpStopped: {
             /** @description Always `false`. */
             running: boolean;
+        };
+        /** @description What `mcp.stop` answers. */
+        McpStopReply: {
+            status: string;
         };
         /**
          * @description A cluster both sides changed differently.
@@ -4011,6 +4796,48 @@ export interface components {
             start_line: number;
             /** @description The cluster as their side wrote it. */
             theirs: string;
+        };
+        /** @description The body of `session.send_message`, inside `Scoped`. */
+        MessageInput: {
+            /**
+             * @description The stored review comments that the message attaches. The daemon
+             *     resolves each one into a context block. `null` reads as no comments.
+             */
+            comments?: components["schemas"]["CommentRef"][];
+            content: string;
+            /** @description An absent value means an interactive turn. */
+            is_interactive?: boolean;
+            /** @description The daemon ignores a mode that it does not know. */
+            permission_mode?: string | null;
+        };
+        /**
+         * @description A mode descriptor with UI presentation metadata
+         *
+         *     This type extends the ACP SessionMode with additional fields for UI display,
+         *     such as an icon. It can be created from a SessionMode for interoperability
+         *     with the ACP protocol.
+         */
+        ModeDescriptor: {
+            /** @description Optional description of the mode */
+            description?: string | null;
+            /** @description Optional icon for UI display (emoji or icon name) */
+            icon?: string | null;
+            /** @description Unique identifier for the mode (e.g., "plan", "act") */
+            id: string;
+            /** @description Human-readable name (e.g., "Plan Mode", "Act Mode") */
+            name: string;
+            /**
+             * @description What a note write in this mode does.
+             *
+             *     Carries the *effective* value, see [`ModeDescriptor::degraded_for`].
+             *     The default is [`WriteMode::Apply`], so a descriptor from an older
+             *     daemon reads as the behavior that the older daemon has.
+             */
+            writes?: components["schemas"]["WriteMode"];
+        };
+        /** @description What `models.list` answers. */
+        ModelsListReply: {
+            models: string[];
         };
         /**
          * @description Response for model listings — the session-scoped `list_models` and the
@@ -4050,6 +4877,19 @@ export interface components {
              *     that nobody registered.
              */
             kiln: string;
+        };
+        /** @description Request for methods that take only a name. */
+        NameRequest: {
+            name: string;
+        };
+        /**
+         * @description The body of `session.add_notification`, inside `Scoped`.
+         *
+         *     `notification` is the whole [`Notification`], so a malformed one answers
+         *     `INVALID_PARAMS` with the reason from its own deserializer.
+         */
+        NewNotification: {
+            notification: components["schemas"]["Notification"];
         };
         /**
          * @description What `get_note_by_name` answers: the note's own facts, without the heavy
@@ -4114,6 +4954,113 @@ export interface components {
             title: string | null;
             updated_at: string | null;
         };
+        /**
+         * @description Request for `note.get` and `note.delete`.
+         *
+         *     `note.get` accepts an optional `scope` field — the request authority.
+         *     When absent, the server defaults to `Scope::Workspace { path: kiln }`
+         *     (workspace-scoped read, which is the safest default for legacy callers
+         *     without a session context). `note.delete` ignores `scope`.
+         */
+        NotePathRequest: {
+            kiln: string;
+            path: string;
+            scope?: null | components["schemas"]["Scope"];
+        };
+        /**
+         * @description A note record stored in the NoteStore index
+         *
+         *     This represents the indexed metadata for a single note. The actual content
+         *     lives in the plaintext markdown file at `path`.
+         */
+        NoteRecord: {
+            /** @description BLAKE3 content hash (32 bytes) for change detection */
+            content_hash: components["schemas"]["BlockHash"];
+            /**
+             * @description Optional embedding vector (typically 768+ dimensions)
+             *
+             *     `None` if the note hasn't been embedded yet or if embedding failed.
+             */
+            embedding?: number[] | null;
+            /**
+             * Format: int32
+             * @description Dimensions of the embedding vector
+             *
+             *     `None` if the note hasn't been embedded yet or if embedding failed.
+             */
+            embedding_dimensions?: number | null;
+            /**
+             * @description Model used to generate the embedding (e.g., "all-MiniLM-L6-v2")
+             *
+             *     `None` if the note hasn't been embedded yet or if embedding failed.
+             */
+            embedding_model?: string | null;
+            /**
+             * @description Wikilink occurrences with FILE-absolute byte spans of each target
+             *     token — the input to the resolved-link index (`note_links`) that the
+             *     rename rewrite splices by. Populated by the note pipeline from
+             *     `ParsedNote` (`target_span` + `body_offset`); empty for records built
+             *     by legacy paths that lack span data.
+             */
+            links?: components["schemas"]["LinkOccurrence"][];
+            /**
+             * @description Denormalized wikilink targets, exactly as written in the note.
+             *
+             *     These are **raw targets, not resolved paths** — the pipeline fills this
+             *     from `parsed.wikilinks`, so `[[async]]` lands here as `"async"`, never as
+             *     `"notes/async.md"`. It is therefore not interchangeable with what
+             *     `backlinks`/`graph_links` return, and the two do not join.
+             *
+             *     Graph traversal reads the resolved `note_links` index instead, so that
+             *     `outlinks` and `backlinks` are inverses and a caller can walk the graph a
+             *     hop at a time. Reach for this field only when you want what the author
+             *     typed, including targets that resolve to nothing.
+             */
+            links_to?: string[];
+            /** @description Primary key: path to the plaintext file (relative to kiln root) */
+            path: string;
+            /** @description Frontmatter properties (arbitrary key-value pairs) */
+            properties?: {
+                [key: string]: unknown;
+            };
+            /** @description Tags from both inline tags and frontmatter */
+            tags?: string[];
+            /** @description Note title (from frontmatter or first heading) */
+            title: string;
+            /**
+             * Format: date-time
+             * @description When this record was last updated
+             */
+            updated_at: string;
+        };
+        /**
+         * @description One note of one kiln, found by its name: the request of
+         *     `get_note_by_name` and `get_backlinks`.
+         *
+         *     `scope` is the request authority. When it is absent, the daemon uses
+         *     `Scope::Workspace { path: kiln }`.
+         */
+        NoteRef: {
+            kiln: string;
+            name: string;
+            scope?: null | components["schemas"]["Scope"];
+        };
+        /**
+         * @description Outcome of a `note.rename` / `note.move`, returned to the caller for UX
+         *     ("N links updated, M ambiguous links skipped").
+         */
+        NoteRenameReply: {
+            from: string;
+            rewritten_sources: string[];
+            skipped: components["schemas"]["SkippedRef"][];
+            to: string;
+        };
+        /** @description Request for `note.rename` (and its `note.move` alias). */
+        NoteRenameRequest: {
+            from_rel: string;
+            kiln: string;
+            to_rel: string;
+        };
         /** @description What `PUT /api/notes/{name}` answers. */
         NoteSavedResponse: {
             /**
@@ -4129,6 +5076,21 @@ export interface components {
              * @description When this route wrote it, not when the index noticed.
              */
             updated_at: string;
+        };
+        /** @description What `note.upsert` answers. */
+        NoteUpsertReply: {
+            events_count: number;
+            status: string;
+        };
+        /**
+         * @description Request for `note.upsert`.
+         *
+         *     `note` stays a `Value`: the handler answers a distinct
+         *     `Invalid note record: {e}` for a `note` that is not a `NoteRecord`.
+         */
+        NoteUpsertRequest: {
+            kiln: string;
+            note: unknown;
         };
         Notice: {
             /** @enum {string} */
@@ -4169,6 +5131,17 @@ export interface components {
             /** @description Who may see it. The default is global: everyone. */
             scope: components["schemas"]["NotificationScope"];
         };
+        /** @description Request for `notification.dismiss`. */
+        NotificationDismissRequest: {
+            id: string;
+        };
+        NotificationDismissResponse: {
+            dismissed: boolean;
+        };
+        /** @description The body of `session.dismiss_notification`, inside `Scoped`. */
+        NotificationKey: {
+            notification_id: string;
+        };
         /** @description The kind of notification, determining display and lifecycle behavior. */
         NotificationKind: "toast" | {
             /** @description Progress indicator with current/total counts */
@@ -4177,6 +5150,20 @@ export interface components {
                 total: number;
             };
         } | "warning";
+        /**
+         * @description Request for `notification.list`.
+         *
+         *     `workspace` and `kilns` say who is asking, so the daemon answers with
+         *     what that client may see. `all` is the operator's view of the whole ring.
+         */
+        NotificationListRequest: {
+            all?: boolean;
+            kilns?: string[];
+            workspace?: string | null;
+        };
+        NotificationListResponse: {
+            notifications: components["schemas"]["Notification"][];
+        };
         /**
          * @description Session notification list changes. `NotificationAdded` carries the body,
          *     so a client can show it without a round trip. `NotificationDismissed`
@@ -4212,9 +5199,26 @@ export interface components {
             /** @description The canonical workspace path, when the notification belongs to one. */
             workspace?: string | null;
         };
+        /**
+         * @description What `storage.verify`, `storage.cleanup`, `storage.backup` and
+         *     `storage.restore` answer today: none of the four is implemented yet.
+         */
+        NotImplementedReply: {
+            message: string;
+            status: string;
+        };
         /** @description Standard acknowledgment response for successful mutations. */
         OkResponse: {
             ok: boolean;
+        };
+        /** @description One kiln `project.open_kilns` opened. */
+        OpenedKiln: {
+            /**
+             * @description `null` — not absent — for a kiln the registry cannot name: the wire
+             *     has always written this key.
+             */
+            kiln: string | null;
+            path: string;
         };
         /**
          * @description One read, write, or button press against a plugin's settings tree.
@@ -4230,6 +5234,18 @@ export interface components {
             path: string[];
             /** @description The new value, for a `set`. Ignored otherwise. */
             value?: unknown;
+        };
+        /**
+         * @description One page of a list: the body of `session.history` and
+         *     `session.resume_from_storage`.
+         *
+         *     An absent `limit` or `offset` lets the daemon choose.
+         */
+        Page: {
+            /** @description How many items to return. */
+            limit?: number | null;
+            /** @description How many items to skip. */
+            offset?: number | null;
         };
         /** @description Render/behavior hints for an interactive panel. */
         PanelHints: {
@@ -4264,6 +5280,20 @@ export interface components {
             base_hash?: string | null;
             edits: components["schemas"]["AnchoredEdit"][];
             path: string;
+        };
+        /** @description Request for methods that take only a filesystem path. */
+        PathRequest: {
+            /**
+             * @description The ABSOLUTE path of the file. The daemon decides which root holds it,
+             *     and whether that root serves it.
+             */
+            path: string;
+        };
+        PendingGate: {
+            id: string;
+            /** @description Step id that owns the gate, or `"preamble"` for workflow-level. */
+            owner: string;
+            title?: string | null;
         };
         /**
          * @description One interaction a session is waiting on an answer to.
@@ -4396,6 +5426,19 @@ export interface components {
          * @enum {string}
          */
         PluginApproval: "inherit" | "ask" | "stop";
+        /** @description The body of `session.set_plugin_approval`, inside `Scoped`. */
+        PluginApprovalChange: {
+            approval: string;
+            plugin: string;
+        };
+        /**
+         * @description Reply from `session.set_plugin_approval` and `session.get_plugin_approval`:
+         *     the same shape either way.
+         */
+        PluginApprovalReply: {
+            approval: string;
+            plugin: string;
+        };
         PluginApprovalResponse: {
             approval: components["schemas"]["PluginApproval"];
             plugin: string;
@@ -4437,6 +5480,14 @@ export interface components {
         /** @description What `plugin.commands` answers. */
         PluginCommandsReply: {
             commands: components["schemas"]["PluginCommand"][];
+        };
+        /**
+         * @description A plugin directory that failed discovery before it became a plugin at
+         *     all — so it has no [`PluginInfo`] entry to carry its own error.
+         */
+        PluginDiscoveryError: {
+            error: string;
+            path: string;
         };
         /**
          * @description One discovered plugin, as `plugin.list`'s `plugin_info` rows describe it.
@@ -4546,6 +5597,26 @@ export interface components {
             url: string;
         };
         /**
+         * @description What `plugin.list` answers.
+         *
+         *     Not `ToSchema`: no web route sends this shape whole — `GET /api/plugins`
+         *     answers `plugin_info` alone, under its own envelope.
+         */
+        PluginListReply: {
+            /** @description Directories that never became plugins at all. */
+            errors: components["schemas"]["PluginDiscoveryError"][];
+            /** @description The same plugins, with version, source, state and capability counts. */
+            plugin_info: components["schemas"]["PluginInfo"][];
+            /** @description Every discovered plugin's name. */
+            plugins: string[];
+            /**
+             * @description The merged spec, in name order. `cru plugin list` reads the git rows
+             *     from here: the spec lives on the plugin VM, so no client can evaluate
+             *     it on its own.
+             */
+            spec: components["schemas"]["PluginSpecRow"][];
+        };
+        /**
          * @description What `GET /api/plugins` answers.
          *
          *     The daemon's own `plugin.list` reply carries this same data under
@@ -4572,6 +5643,24 @@ export interface components {
          */
         PluginOptionCallReply: components["schemas"]["PluginOptionValue"] | components["schemas"]["PluginAck"];
         /**
+         * @description Request for `plugin.option_get`, `plugin.option_set` and
+         *     `plugin.option_execute` — one path through one plugin's settings tree.
+         *
+         *     `value` is read by `option_set` only; the other two never send it, and an
+         *     absent one is `null`.
+         */
+        PluginOptionCallRequest: {
+            /**
+             * @description Defaulted, not required, so an absent `path` reaches the handler's own
+             *     "`path` is required" answer instead of a serde "missing field" — the
+             *     message callers have always seen for this mistake.
+             */
+            path?: string[];
+            plugin: string;
+            ui?: string | null;
+            value?: unknown;
+        };
+        /**
          * @description What `plugin.options` answers: one settings tree per plugin.
          *
          *     **A deliberate narrowing to the envelope.** The tree itself stays opaque,
@@ -4585,6 +5674,17 @@ export interface components {
             options: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * @description Request for `plugin.options`.
+         *
+         *     `ui` is the frontend asking ("tui" or "web"); it drives the per-frontend
+         *     hide flags. Absent means "web", which is what the handler substituted.
+         *     An absent `plugin` asks for every plugin's tree.
+         */
+        PluginOptionsRequest: {
+            plugin?: string | null;
+            ui?: string | null;
         };
         /** @description What `plugin.option_get` answers: one option's current value. */
         PluginOptionValue: {
@@ -4603,6 +5703,15 @@ export interface components {
                     [key: string]: unknown;
                 };
             };
+        };
+        /** @description Request for `plugin.publications`. An absent `key` asks for every key. */
+        PluginPublicationsRequest: {
+            /** @description Narrow the reply to one contribution kind. */
+            key?: string | null;
+        };
+        /** @description The body of `session.get_plugin_approval`, inside `Scoped`. */
+        PluginRef: {
+            plugin: string;
         };
         /** @description What `plugin.reload` answers. */
         PluginReloadReply: {
@@ -4636,6 +5745,11 @@ export interface components {
             /** @description The directory that was deleted, or `None` without `?purge=true`. */
             purged_dir: string | null;
         };
+        /** @description Request for `plugin.remove`. */
+        PluginRemoveRequest: {
+            name: string;
+            purge?: boolean;
+        };
         /** @description What `plugin.run_command` answers. */
         PluginRunCommandReply: {
             /** @description The command that ran, echoed. */
@@ -4667,6 +5781,16 @@ export interface components {
         PluginsDiscoveredPayload: {
             plugins: components["schemas"]["PluginStatusEntry"][];
         };
+        /**
+         * @description One row of the `spec` array in `plugin.list`'s response: a merged spec
+         *     entry, the highest rank that wrote it, and whether the operator's own
+         *     entry names a git source (`declared`). `cru plugin list` reads the git
+         *     rows; the daemon builds them from the spec store.
+         */
+        PluginSpecRow: components["schemas"]["SpecEntry"] & {
+            declared: boolean;
+            rank: components["schemas"]["SpecRank"];
+        };
         PluginStatusEntry: {
             error?: string | null;
             name: string;
@@ -4680,6 +5804,25 @@ export interface components {
              *     which every front end drew as if it were a release.
              */
             version?: string | null;
+        };
+        /** @description A single failed Lua test, as the plugin test runner saw it. */
+        PluginTestFailure: {
+            error: string;
+            /**
+             * @description Test file and line the assertion fired on, taken from the location Lua
+             *     prefixes onto a level-2 `error()` — not from `debug.traceback()`, whose
+             *     innermost frame is always inside the runner.
+             */
+            file?: string | null;
+            line?: string | null;
+            name: string;
+            /** @description Full `describe` path. The bare test name is ambiguous across suites. */
+            suite?: string | null;
+        };
+        /** @description A test file that could not be read or parsed at all. */
+        PluginTestLoadFailure: {
+            error: string;
+            file: string;
         };
         /**
          * @description A simple popup entry for cross-platform use
@@ -4765,6 +5908,28 @@ export interface components {
             score?: number;
             title: string;
         };
+        /** @description What `process_batch` answers. */
+        ProcessBatchReply: {
+            errors: components["schemas"]["FileProcessError"][];
+            processed: number;
+            skipped: number;
+        };
+        /** @description Request for `process_batch`. */
+        ProcessBatchRequest: {
+            kiln: string;
+            paths: string[];
+        };
+        /** @description What `process_file` answers. */
+        ProcessFileReply: {
+            path: string;
+            /** @description `"processed"` or `"skipped"`. */
+            status: string;
+        };
+        /** @description Request for `process_file`: index one file of one kiln. */
+        ProcessFileRequest: {
+            kiln: string;
+            path: string;
+        };
         /**
          * @description A registered project — a directory the user works on.
          *
@@ -4798,6 +5963,30 @@ export interface components {
             name?: string | null;
             path: string;
         };
+        /**
+         * @description The `NoMatch` arm of [`ProjectOpenKilnsReply`], closed so it cannot also
+         *     read a `Matched` payload.
+         */
+        ProjectOpenKilnsNoMatch: {
+            matched: boolean;
+            opened: components["schemas"]["OpenedKiln"][];
+            skipped: components["schemas"]["SkippedKiln"][];
+        };
+        /**
+         * @description What `project.open_kilns` answers.
+         *
+         *     Untagged: a directory that matches no registered project answers with
+         *     `NoMatch` alone — no `project` key, no `errors` key — and a match answers
+         *     with `Matched`, which always carries both. The wire has told the two
+         *     apart by which keys are present since the method shipped.
+         */
+        ProjectOpenKilnsReply: {
+            errors: components["schemas"]["KilnOpenError"][];
+            matched: boolean;
+            opened: components["schemas"]["OpenedKiln"][];
+            project: string;
+            skipped: components["schemas"]["SkippedKiln"][];
+        } | components["schemas"]["ProjectOpenKilnsNoMatch"];
         ProjectPathRequest: {
             /** @description Absolute path of the project root. */
             path: string;
@@ -4824,6 +6013,17 @@ export interface components {
             state: components["schemas"]["ProposalState"];
             title: string;
             writes: components["schemas"]["ProposedWrite"][];
+        };
+        /** @description Request for `proposal.accept`. */
+        ProposalAcceptRequest: {
+            /** @description Root-qualified file identities. Cannot be combined with paths. */
+            files?: components["schemas"]["ProposalFile"][];
+            id: components["schemas"]["ProposalId"];
+            /**
+             * @description The files to write, as the proposal names them. The daemon moves them
+             *     into a new proposal and accepts that one. Empty means every file.
+             */
+            paths?: string[];
         };
         /**
          * @description The writer of a proposal.
@@ -4861,6 +6061,41 @@ export interface components {
          *     leading dot, so an id can never name a path outside that directory.
          */
         ProposalId: string;
+        /** @description Request for `proposal.get` and `proposal.dismiss`. */
+        ProposalIdRequest: {
+            id: components["schemas"]["ProposalId"];
+        };
+        /** @description Request for `proposal.list`. */
+        ProposalListRequest: {
+            /**
+             * @description Also list the proposals that left the Inbox: accepted, rejected and
+             *     dismissed.
+             */
+            all?: boolean;
+        };
+        /** @description Request for `proposal.reject`. */
+        ProposalRejectRequest: {
+            /** @description Root-qualified file identities. Cannot be combined with paths. */
+            files?: components["schemas"]["ProposalFile"][];
+            id: components["schemas"]["ProposalId"];
+            /**
+             * @description The files to reject, as the proposal names them. The daemon moves
+             *     them into a new proposal and rejects that one. Empty means every file.
+             */
+            paths?: string[];
+            reason?: string | null;
+        };
+        /**
+         * @description Request for `proposal.resolve`: the text that the user settled for one
+         *     conflicted file.
+         */
+        ProposalResolveRequest: {
+            id: components["schemas"]["ProposalId"];
+            /** @description The path relative to the kiln root, as the proposal names it. */
+            path: string;
+            root?: null | components["schemas"]["PhysicalRoot"];
+            text: string;
+        };
         /**
          * @description Where a proposal is in its life.
          *
@@ -4949,6 +6184,10 @@ export interface components {
             reason?: string | null;
         };
         ProvidersListedPayload: {
+            providers: components["schemas"]["ProviderInfo"][];
+        };
+        /** @description What `providers.list` answers. */
+        ProvidersListReply: {
             providers: components["schemas"]["ProviderInfo"][];
         };
         /** @description What `GET /api/providers` answers. */
@@ -5290,6 +6529,58 @@ export interface components {
             project: components["schemas"]["Project"];
         };
         /**
+         * @description Memory scope for a note or a request authority.
+         *
+         *     Stored on a [`NoteRecord`](crate::storage::NoteRecord) as a string in
+         *     `properties.scope`. Encoded/decoded via [`Scope::to_property_value`] /
+         *     [`Scope::from_property_value`].
+         *
+         *     # Wire format (JSON)
+         *
+         *     ```text
+         *     {"kind":"workspace","path":"/abs/path"}
+         *     ```
+         *
+         *     # Frontmatter format
+         *
+         *     ```text
+         *     scope: workspace          # path inferred from kiln binding
+         *     scope: workspace:/foo     # explicit workspace path
+         *     ```
+         */
+        Scope: {
+            /** @enum {string} */
+            kind: "workspace";
+            /**
+             * @description Absolute, canonical workspace path. Use [`Scope::workspace`] or
+             *     [`Scope::workspace_unchecked`] to construct.
+             *
+             *     `PathBuf` serializes as a plain string, and `utoipa` has no
+             *     built-in schema for it; the override names the wire shape.
+             */
+            path: string;
+        };
+        /** @description Request for `search_text`. */
+        SearchTextRequest: {
+            kiln: string;
+            limit?: number;
+            query: string;
+        };
+        /**
+         * @description Request for `search_vectors`.
+         *
+         *     `scope` is the request authority — defaults server-side to
+         *     `Scope::Workspace { path: kiln }` when absent. Hits whose stored
+         *     `properties.scope` is outside the authority are filtered out at the SQL
+         *     layer, so out-of-scope notes never occupy result slots.
+         */
+        SearchVectorsRequest: {
+            kiln: string;
+            limit?: number;
+            scope?: null | components["schemas"]["Scope"];
+            vector: number[];
+        };
+        /**
          * @description `POST /api/search/semantic` — text semantic search over a kiln's notes.
          *     Embeds the query with the kiln's embedding provider, then cosine-scans the
          *     embeddings in the kiln's SQLite store. Two daemon RPCs (`embed.query` +
@@ -5351,6 +6642,11 @@ export interface components {
             outcome: "command";
             result: unknown;
         };
+        /** @description Reply from `session.add_notification`. */
+        SessionAddNotificationReply: {
+            session_id: string;
+            success: boolean;
+        };
         /**
          * @description Agent configuration bound to a session.
          *
@@ -5400,6 +6696,67 @@ export interface components {
             system_prompt: string;
             tool_policy?: null | components["schemas"]["HashMap"];
         };
+        /** @description Reply from `session.archive` and `session.unarchive`. */
+        SessionArchiveReply: {
+            archived: boolean;
+            session_id: components["schemas"]["SessionId"];
+        };
+        /**
+         * @description Reply from `session.cache_stats`. `hit_rate` is `null` until at least one
+         *     completion has reported cache fields.
+         */
+        SessionCacheStatsReply: {
+            /** Format: int64 */
+            completion_tokens: number;
+            /** Format: int64 */
+            creation_tokens: number;
+            /** Format: double */
+            hit_rate?: number | null;
+            /** Format: int64 */
+            hits: number;
+            /** Format: int64 */
+            misses: number;
+            /** Format: int64 */
+            prompt_tokens: number;
+            /** Format: int64 */
+            read_tokens: number;
+            session_id: string;
+        };
+        /** @description Response from `session.cancel`. */
+        SessionCancelResponse: {
+            cancelled: boolean;
+        };
+        /** @description Reply from `session.can_undo`. */
+        SessionCanUndoReply: {
+            can_undo: boolean;
+            session_id: string;
+        };
+        /** @description Reply from `session.cleanup`. */
+        SessionCleanupReply: {
+            deleted: components["schemas"]["SessionId"][];
+            dry_run: boolean;
+            scope: string;
+            total: number;
+        };
+        /**
+         * @description Request for `session.cleanup`.
+         *
+         *     `kilns` is the caller's whole kiln set; deletion is scoped to the sessions
+         *     overlapping it. `all_kilns` widens that to every session on the machine and
+         *     has to be set deliberately — sessions live in one flat root now, so an
+         *     unscoped sweep is not recoverable.
+         */
+        SessionCleanupRequest: {
+            all_kilns?: boolean;
+            dry_run?: boolean;
+            kilns?: string[];
+            /** Format: int64 */
+            older_than_days: number;
+        };
+        /** @description Reply from `session.clear`. */
+        SessionClearReply: {
+            session_id: string;
+        };
         /** @description One entry of a session's command catalog. */
         SessionCommand: components["schemas"]["CommandKind"] & {
             description: string;
@@ -5407,6 +6764,119 @@ export interface components {
             input_hint?: string | null;
             /** @description The name after the slash. */
             name: string;
+        };
+        /** @description Reply from `session.commands`. */
+        SessionCommandsReply: {
+            commands: components["schemas"]["SessionCommand"][];
+            session_id: string;
+        };
+        /** @description Reply from `session.compact`. */
+        SessionCompactReply: {
+            compaction_requested: boolean;
+            session_id: components["schemas"]["SessionId"];
+            state: string;
+        };
+        /** @description Reply from `session.configure_agent`. */
+        SessionConfigureAgentReply: {
+            configured: boolean;
+            session_id: string;
+        };
+        /** @description Request for `session.create`. */
+        SessionCreateRequest: {
+            /**
+             * @description Agent-card name for an internal session (a specialized internal agent:
+             *     card prompt/model/tools over the config-derived defaults). Ignored when
+             *     `agent_type == "acp"`, which selects a profile via `agent_name`.
+             */
+            agent_card?: string | null;
+            /**
+             * @description ACP profile name; used when `configure_agent` and `agent_type == "acp"`.
+             *
+             *     DEPRECATED on an internal session, where it is an alias for
+             *     [`Self::agent_card`]. It still resolves an agent card there because
+             *     `crucible-web` sends exactly that shape, but new callers should say
+             *     `agent_card`: one field cannot mean both "launch this ACP subprocess"
+             *     and "use this internal agent card" without `agent_type` silently
+             *     deciding which. Setting both fields is `INVALID_PARAMS`.
+             */
+            agent_name?: string | null;
+            /**
+             * @description "acp" | "internal"; None treated as "internal" for back-compat.
+             *     Lets the daemon's setup task branch on agent type at create time,
+             *     before `session.configure_agent` has been called.
+             */
+            agent_type?: string | null;
+            /**
+             * @description When true, the daemon resolves and configures the session's agent as
+             *     part of create (ACP profile for `agent_type == "acp"`, otherwise
+             *     config-derived internal defaults), and returns the resolved model in
+             *     `agent_model`. Absent/false ⇒ today's behavior: the session is created
+             *     agent-less and the caller configures it separately via
+             *     `session.configure_agent`.
+             */
+            configure_agent?: boolean;
+            endpoint?: string | null;
+            /** @description Explicit ACP environment values, merged over the selected profile. */
+            env_overrides?: {
+                [key: string]: string;
+            };
+            /**
+             * @description Isolation override, forwarded untouched to the plugin that resolves it:
+             *     `false` (no container even if the project has one), `true` (the default
+             *     profile), a profile name, or an environment object. Untyped on purpose
+             *     — the vocabulary belongs to the isolating plugin, not to this client.
+             *     Absent must stay absent: it means "resolve normally", which is a
+             *     different instruction from `false`.
+             */
+            isolation?: unknown;
+            /**
+             * @description The session's whole kiln set — flat, no member privileged. Omitted or
+             *     empty → the daemon resolves its default (home kiln); keeping that
+             *     fallback daemon-side means clients can never drift from it.
+             *
+             *     Replaces the pre-flatten `kiln` + `connect_kilns` pair. `kilns` is the
+             *     spelling the Lua binding always used (`cru.session.create{ kilns =
+             *     {...} }`), so plugins keep working; a caller still sending `kiln` or
+             *     `connect_kilns` now gets the default set, which is the intended break.
+             */
+            kilns?: string[] | null;
+            /** @description `Some([])` disables configured MCP servers for this session. */
+            mcp_servers?: string[] | null;
+            model?: string | null;
+            /**
+             * @description The plugin that creates the session. The Lua binding of
+             *     `cru.session.create` writes it from the running plugin and removes a
+             *     value that the Lua caller supplies. The daemon stores it on every
+             *     type. A proposal names this plugin as its author only on a `plugin`
+             *     session.
+             */
+            plugin?: string | null;
+            /** @description Internal-agent overrides applied on top of config-derived defaults. */
+            provider?: string | null;
+            provider_key?: string | null;
+            recording_mode?: string | null;
+            recording_path?: string | null;
+            system_prompt?: string | null;
+            tool_policy?: null | components["schemas"]["HashMap"];
+            /**
+             * @description Defaulted rather than required because the server now *deserializes*
+             *     this struct instead of hand-plucking `params["type"]` with an
+             *     `.unwrap_or("chat")`. Without the serde default, omitting `type` — which
+             *     several callers do — would start failing as `INVALID_PARAMS`.
+             */
+            type?: string;
+            workspace?: string | null;
+            /**
+             * @description A workspace that a plugin provides, for example `worktree:feat/x`. The
+             *     daemon resolves it before the create and writes the path to
+             *     `workspace`. A target that no plugin resolves refuses the create.
+             */
+            workspace_target?: string | null;
+        };
+        /** @description Reply from `session.delete`. */
+        SessionDeleteReply: {
+            deleted: boolean;
+            session_id: components["schemas"]["SessionId"];
         };
         /**
          * @description The full session record, as `session.get` answers it: every
@@ -5431,6 +6901,18 @@ export interface components {
              */
             plugin_turn_limit: number;
             recording_mode?: null | components["schemas"]["RecordingMode"];
+        };
+        /** @description Reply from `session.dismiss_notification`. */
+        SessionDismissNotificationReply: {
+            notification_id: string;
+            session_id: string;
+            success: boolean;
+        };
+        /** @description Reply from `session.end`. */
+        SessionEndReply: {
+            kilns: components["schemas"]["KilnName"][];
+            session_id: components["schemas"]["SessionId"];
+            state: string;
         };
         SessionEventMessage: {
             /**
@@ -5468,6 +6950,40 @@ export interface components {
          *     `untagged` documents to a reader of `openapi.json`.
          */
         SessionEventPayload: components["schemas"]["TurnPayload"] | components["schemas"]["SetupPayload"] | components["schemas"]["SettingsPayload"] | components["schemas"]["JobPayload"] | components["schemas"]["ReviewPayload"] | components["schemas"]["NotificationPayload"] | components["schemas"]["WorkflowPayload"] | components["schemas"]["SystemPayload"];
+        /** @description Response from `session.export_to_file`. */
+        SessionExportToFileResponse: {
+            output_path: string;
+            /**
+             * @description Always `"ok"`: the handler answers an error reply instead of this
+             *     type when the export fails.
+             */
+            status: string;
+        };
+        /** @description Reply from `session.fork`. */
+        SessionForkReply: {
+            id: components["schemas"]["SessionId"];
+            /** Format: int64 */
+            messages_copied: number;
+            parent_id: string;
+        };
+        /**
+         * @description Reply from `session.history` and `session.resume_from_storage`: the
+         *     session and one page of its stored events.
+         */
+        SessionHistoryReply: {
+            /**
+             * @description Each event as the storage log holds it — old and new wire shapes
+             *     mixed, so the element type is not one shape. See
+             *     `crucible_core::protocol::session_events::migrate_history`.
+             */
+            history: unknown[];
+            kilns: components["schemas"]["KilnName"][];
+            session_id: components["schemas"]["SessionId"];
+            state: string;
+            total_events: number;
+            transcript: components["schemas"]["Transcript"];
+            type: string;
+        };
         /**
          * @description What `GET /api/session/{id}/history` answers.
          *
@@ -5524,6 +7040,35 @@ export interface components {
             model: string;
             workspace_path: string;
         };
+        /** @description Reply from `session.inject_context`. */
+        SessionInjectContextReply: {
+            /** @description Always `"ok"`: a failed injection answers an error reply instead. */
+            status: string;
+        };
+        /** @description Reply from `session.interaction_respond`. */
+        SessionInteractionRespondReply: {
+            request_id: string;
+            session_id: string;
+        };
+        /**
+         * @description A per-session setting a client can read and write.
+         *
+         *     One variant per setting. The name is the wire id, so `Precognition` is
+         *     `precognition` in `session.list_knobs`. Every knob shares the one write
+         *     method, `session.knob.set`, and the one read method, `session.knob.get`;
+         *     see [`KnobValue`].
+         * @enum {string}
+         */
+        SessionKnob: "context_strategy" | "precognition" | "model" | "mode" | "plugin_turn_limit";
+        /**
+         * @description Reply from `session.knob.set`. The value is not echoed back — see
+         *     `session.knob.get` for the read path.
+         */
+        SessionKnobSetReply: {
+            knob: string;
+            session_id: string;
+            set: boolean;
+        };
         /** @description What `GET /api/session/{id}/knobs` answers. */
         SessionKnobsResponse: {
             /**
@@ -5531,6 +7076,14 @@ export interface components {
              *     missing is talking to an older daemon.
              */
             knobs: components["schemas"]["KnobRow"][];
+        };
+        /** @description What `session.list_knobs` answers. */
+        SessionKnobSupport: {
+            /**
+             * @description Every knob Crucible has, answered for. A client that finds an id
+             *     missing is talking to an older daemon, not to a session without it.
+             */
+            knobs: components["schemas"]["KnobDescriptor"][];
         };
         /** @description What `session.pause`, `session.resume` and `session.end` answer. */
         SessionLifecycleResponse: {
@@ -5542,6 +7095,41 @@ export interface components {
             /** @description The state the session is in now. */
             state: string;
         };
+        /** @description Reply from `session.list_agent_options`. */
+        SessionListAgentOptionsReply: {
+            options: components["schemas"]["AgentConfigOption"][];
+            session_id: string;
+        };
+        /** @description Reply from `session.list_models`. */
+        SessionListModelsReply: {
+            models: string[];
+            session_id: string;
+        };
+        /** @description Reply from `session.list_notifications`. */
+        SessionListNotificationsReply: {
+            notifications: components["schemas"]["Notification"][];
+            session_id: string;
+        };
+        /**
+         * @description Request for `session.list_persisted`.
+         *
+         *     `kilns` is the caller's whole kiln set, not directories to scan: the daemon
+         *     returns the sessions whose own set overlaps it — the same predicate
+         *     `session.search` and `session.cleanup` answer to.
+         */
+        SessionListPersistedRequest: {
+            kilns?: string[];
+            /** @description An absent value returns at most 50 sessions. */
+            limit?: number | null;
+            /** @description The daemon ignores a type that it does not know. */
+            session_type?: string | null;
+        };
+        /** @description Reply from `session.list_plugin_approvals`. */
+        SessionListPluginApprovalsReply: {
+            approvals: {
+                [key: string]: components["schemas"]["PluginApproval"];
+            };
+        };
         /**
          * @description Reply from `session.list`.
          *
@@ -5552,6 +7140,40 @@ export interface components {
             sessions: components["schemas"]["SessionSummary"][];
             /** @description How many sessions the reply carries. */
             total: number;
+        };
+        /**
+         * @description Request for `session.list`.
+         *
+         *     The daemon ignores a `type` or a `state` that it does not know. It does
+         *     not refuse the listing.
+         */
+        SessionListRequest: {
+            include_archived?: boolean | null;
+            /** @description Include delegated child sessions (hidden by default). */
+            include_children?: boolean | null;
+            /**
+             * @description The caller's whole kiln set. A session is listed when its own set
+             *     overlaps it. An empty set lists what the daemon can see.
+             */
+            kilns?: string[];
+            state?: string | null;
+            type?: string | null;
+            workspace?: string | null;
+        };
+        /**
+         * @description The wire shape of `session.list_modes`: which modes a session may enter,
+         *     and which one it is in now.
+         *
+         *     Both fields come from the same daemon call on purpose. A client that
+         *     fetched the list and the current mode separately can render a mode that is
+         *     not in its own list — exactly the state a restored session lands in when
+         *     its mode was declared in Lua the client has never seen.
+         */
+        SessionModes: {
+            /** @description The mode the session is in. Always present in `modes`. */
+            current_mode_id: string;
+            /** @description Every mode the session may switch to, in declaration order. */
+            modes: components["schemas"]["ModeDescriptor"][];
         };
         /** @description What `GET /api/session/{id}/modes` answers. */
         SessionModesResponse: {
@@ -5567,6 +7189,41 @@ export interface components {
              *     `id`, `kind` and `message`, as `notification_added` carries them.
              */
             notifications: Record<string, never>[];
+        };
+        /** @description Reply from `session.pending_interactions`. */
+        SessionPendingInteractionsReply: {
+            pending: components["schemas"]["PendingInteraction"][];
+        };
+        /** @description Response from `session.render_markdown`. */
+        SessionRenderMarkdownResponse: {
+            markdown: string;
+        };
+        /** @description Request for `session.replay`. */
+        SessionReplayRequest: {
+            recording_path: string;
+            /**
+             * Format: double
+             * @description Real time when omitted, which is what the handler's `unwrap_or` did.
+             */
+            speed?: number;
+        };
+        /** @description Reply from `session.replay`: the transient session it registered. */
+        SessionReplayStartedReply: {
+            session_id: string;
+            /** Format: double */
+            speed: number;
+            status: string;
+        };
+        /**
+         * @description Reply from `session.connect_kiln`, `session.disconnect_kiln` and
+         *     `session.set_workspace`: the session's scope after the change (or, for
+         *     `set_workspace`, before the refusal — the workspace is fixed at
+         *     creation and this method always refuses).
+         */
+        SessionScopeReply: {
+            kilns: components["schemas"]["KilnName"][];
+            session_id: components["schemas"]["SessionId"];
+            workspace?: string | null;
         };
         /** @description The session scope that a kiln or workspace mutation echoes. */
         SessionScopeResponse: {
@@ -5593,6 +7250,18 @@ export interface components {
             line: number;
             session_id: string;
         };
+        /** @description Request for `session.search`. */
+        SessionSearchRequest: {
+            /**
+             * @description The caller's whole kiln set — results are the sessions overlapping it.
+             *     Always sent, empty included: an empty scope overlaps nothing, which is
+             *     the fail-closed answer a kiln-less session should get.
+             */
+            kilns?: string[];
+            /** @description An absent value returns at most 20 matches. */
+            limit?: number | null;
+            query: string;
+        };
         /** @description What `session.search` answers. */
         SessionSearchResponse: {
             matches: components["schemas"]["SessionSearchMatch"][];
@@ -5608,10 +7277,24 @@ export interface components {
             total: number;
         };
         /**
+         * @description Params for `session.set_agent_option`. Moved from a function-local
+         *     struct in the daemon so the row can name a real type instead of
+         *     `serde_json::Value`.
+         */
+        SessionSetAgentOptionRequest: {
+            option_id: string;
+            session_id: string;
+            value: string;
+        };
+        /**
          * @description Current state of a session.
          * @enum {string}
          */
         SessionState: "active" | "paused" | "compacting" | "ended";
+        /** @description Reply from `session.status`. */
+        SessionStatusReply: {
+            status: components["schemas"]["StatusDisplayItem"][];
+        };
         /**
          * @description What `GET /api/session/{id}/status` answers.
          *
@@ -5629,6 +7312,15 @@ export interface components {
              *     item answers an empty list.
              */
             status: components["schemas"]["StatusDisplayItem"][];
+        };
+        /** @description Reply from `session.subscribe`. */
+        SessionSubscribeReply: {
+            client_id: string;
+            subscribed: string[];
+        };
+        /** @description Shared request for `session.subscribe` and `session.unsubscribe`. */
+        SessionSubscribeRequest: {
+            session_ids: string[];
         };
         /**
          * @description Summary of a session for listing. The one core reply shape for
@@ -5672,11 +7364,49 @@ export interface components {
             /** @description Workspace, when the session has one. See [`Session::workspace`]. */
             workspace?: string | null;
         };
+        /** @description Reply from `session.test_interaction`. */
+        SessionTestInteractionReply: {
+            request_id: string;
+            session_id: string;
+            type: string;
+        };
+        /**
+         * @description Reply from `session.set_title` and `session.generate_title`: the same
+         *     shape either way.
+         */
+        SessionTitleReply: {
+            session_id: string;
+            title: string;
+        };
+        /**
+         * @description Reply from `session.pause` and `session.resume`: the state the session
+         *     left, and the state it is in now.
+         */
+        SessionTransitionReply: {
+            previous_state: string;
+            session_id: string;
+            state: string;
+        };
         /**
          * @description Type of session, determines logging format and behavior.
          * @enum {string}
          */
         SessionType: "chat" | "agent" | "workflow" | "plugin";
+        /** @description Reply from `session.undo_depth`. */
+        SessionUndoDepthReply: {
+            session_id: string;
+            undo_depth: number;
+        };
+        /** @description Reply from `session.undo`. */
+        SessionUndoReply: {
+            session_id: string;
+            undone: components["schemas"]["UndoSummary"][];
+        };
+        /** @description Reply from `session.unsubscribe`. */
+        SessionUnsubscribeReply: {
+            client_id: string;
+            unsubscribed: string[];
+        };
         SetAgentOptionRequest: {
             option_id: string;
             value: string;
@@ -5877,9 +7607,44 @@ export interface components {
             /** @description Where the skill file sits on disk. */
             source_path: string;
         };
+        /** @description Request for `skills.get`. */
+        SkillsGetRequest: {
+            kiln_path: string;
+            name: string;
+            /**
+             * @description The workspace whose skill roots are searched. Absent means no
+             *     workspace, never the daemon's own working directory.
+             */
+            workspace?: string | null;
+        };
+        /** @description Request for `skills.list`. */
+        SkillsListRequest: {
+            kiln_path: string;
+            scope_filter?: string | null;
+            /**
+             * @description The workspace whose skill roots are searched. Absent means no
+             *     workspace, never the daemon's own working directory.
+             */
+            workspace?: string | null;
+        };
         /** @description What `skills.list` and `skills.search` answer. */
         SkillsReply: {
             skills: components["schemas"]["SkillSummary"][];
+        };
+        /** @description Request for `skills.search`. */
+        SkillsSearchRequest: {
+            kiln_path: string;
+            /**
+             * @description Absent means the server's own default (20), not zero — so the server
+             *     keeps the `unwrap_or` rather than serde defaulting the field.
+             */
+            limit?: number | null;
+            query: string;
+            /**
+             * @description The workspace whose skill roots are searched. Absent means no
+             *     workspace, never the daemon's own working directory.
+             */
+            workspace?: string | null;
         };
         /**
          * @description One skill in a `skills.list` or `skills.search` answer.
@@ -5896,6 +7661,12 @@ export interface components {
             scope: string;
             /** @description How many same-named skills this one shadows. */
             shadowed_count: number;
+        };
+        /** @description One kiln `project.open_kilns` left closed because it is lazy. */
+        SkippedKiln: {
+            /** @description `null` — not absent — for a kiln the registry cannot name. */
+            kiln: string | null;
+            reason: string;
         };
         /**
          * @description One inbound reference that an `fs.move` or a `note.rename` intentionally
@@ -5943,6 +7714,54 @@ export interface components {
             line?: number | null;
             /** @description The one-word source name, as [`ConfigSource::short`] gives it. */
             source: string;
+        };
+        /** @description One table in the spec. */
+        SpecEntry: {
+            /**
+             * @description `None` means "this entry does not say". `enabled` resolves in this
+             *     order, first answer wins: the operator's entry, the config leaf
+             *     `plugins.<name>.enabled`, the Builtin fragment (the installed manifest
+             *     merges at the same rank), then `true`. A plugin's own `spec.luau`
+             *     has no `enabled` field, so it never answers. `docs/Meta/CONTEXT.md`
+             *     defines the terms.
+             */
+            enabled?: boolean | null;
+            /**
+             * @description Whether the defining VM holds a `config` function for this name.
+             *     OR-merged across ranks, so `true` means some rank holds one; the
+             *     store keyed by name says which.
+             */
+            has_config?: boolean;
+            /** @description The plugin's directory name on the runtimepath. */
+            name: string;
+            /** @description The table passed to `setup(opts)`. Object or `Null`. */
+            opts?: unknown;
+            /** @description Where the plugin comes from. */
+            source: components["schemas"]["SpecSource"];
+        };
+        /**
+         * @description Who wrote an entry. Higher wins. `enabled` resolves in this order, first
+         *     answer wins: the operator's entry, the config leaf
+         *     `plugins.<name>.enabled`, the Builtin fragment (the installed manifest
+         *     merges at the same rank), then `true`. A plugin's own `spec.luau` has no
+         *     `enabled` field, so it never answers. `Spec::merge` is the only reader of
+         *     the order, and `docs/Meta/CONTEXT.md` defines the terms.
+         * @enum {string}
+         */
+        SpecRank: "plugin_fragment" | "builtin" | "operator";
+        /** @description Where a plugin comes from. */
+        SpecSource: {
+            /** @enum {string} */
+            kind: "runtimepath";
+        } | {
+            /** @description The branch to check out. `None` is the remote's default. */
+            branch?: string | null;
+            /** @enum {string} */
+            kind: "git";
+            /** @description A commit or tag to pin to. `None` follows the branch head. */
+            pin?: string | null;
+            /** @description The `user/repo` short form or the full clone URL, as written. */
+            url: string;
         };
         /**
          * @description Names shared by status producers and both renderers. Unknown names render
@@ -6002,6 +7821,14 @@ export interface components {
          */
         StatusProgress: number | components["schemas"]["IndeterminateProgress"];
         /**
+         * @description A bare status word: what `kiln.close`, `note.delete` and `fs.mkdir`'s
+         *     siblings answer when there is nothing else to say. The word itself
+         *     varies (`"ok"`, `"not_found"`), so it stays a `String`, not a `bool`.
+         */
+        StatusReply: {
+            status: string;
+        };
+        /**
          * @description Reason a turn ended, carried on `TurnEvent::Done`.
          *
          *     It reaches a plugin on the `turn:complete` payload and a front end on
@@ -6017,7 +7844,41 @@ export interface components {
          * @enum {string}
          */
         StopReason: "end_turn" | "cancelled" | "empty" | "max_tokens" | "refusal";
+        /** @description Request for `storage.backup`. */
+        StorageBackupRequest: {
+            dest: string;
+            kiln: string;
+        };
+        /** @description Request for `storage.restore`. */
+        StorageRestoreRequest: {
+            kiln: string;
+            source: string;
+        };
         String: string;
+        /** @description Request for `subagent.collect`: wait for background jobs to finish. */
+        SubagentCollectRequest: {
+            job_ids: string[];
+            /**
+             * Format: double
+             * @description How long to wait, in seconds. An absent value waits two minutes.
+             */
+            timeout_secs?: number;
+        };
+        /** @description What `suggest_links` answers. */
+        SuggestLinksReply: {
+            suggestions: components["schemas"]["LinkSuggestion"][];
+        };
+        /**
+         * @description Request for `suggest_links`.
+         *
+         *     `scope` is the request authority — defaults server-side to
+         *     `Scope::Workspace { path: kiln }` when absent.
+         */
+        SuggestLinksRequest: {
+            kiln: string;
+            scope?: null | components["schemas"]["Scope"];
+            text: string;
+        };
         /**
          * @description One declared surface, as `surface.list` and `surface.get` report it.
          *
@@ -6068,9 +7929,27 @@ export interface components {
              */
             withdrawn?: boolean;
         };
+        /**
+         * @description What `surface.get` answers: one surface, or `null` when nothing declares
+         *     it. Always written, so `null` means "not found", never "unknown".
+         */
+        SurfaceGetReply: {
+            surface?: null | components["schemas"]["Surface"];
+        };
         /** @description What `surface.list` answers: every declared surface, rows included. */
         SurfaceListReply: {
             surfaces: components["schemas"]["Surface"][];
+        };
+        /**
+         * @description Request for `surface.list` and `surface.get`.
+         *
+         *     Both take the same shape. `list` ignores `name`; `get` requires it. A `plugin`
+         *     narrows either, because two plugins may declare a surface of the same name
+         *     and a client asking for one should not be handed the other.
+         */
+        SurfaceRequest: {
+            name?: string | null;
+            plugin?: string | null;
         };
         /** @description One row of a surface. */
         SurfaceRow: {
@@ -6383,6 +8262,24 @@ export interface components {
             };
             /** @enum {string} */
             event: "session:ended";
+        };
+        /**
+         * @description The body of `session.test_interaction`, inside `Scoped`.
+         *
+         *     The method is the developer-facing prod that emits an
+         *     `interaction_requested` event nobody is waiting on.
+         *
+         *     Every field is optional and every default is a canned
+         *     example, because the method exists to check that a client renders a modal
+         *     at all.
+         */
+        TestInteraction: {
+            /** @description The command a `permission` asks about. */
+            action?: string | null;
+            /** @description The question an `ask` puts to the user. */
+            question?: string | null;
+            /** @description `ask` (the default) or `permission`. */
+            type?: string | null;
         };
         /** @enum {string} */
         TextField: "text" | "thinking";
@@ -6806,6 +8703,38 @@ export interface components {
          */
         TurnStatus: "completed" | "cancelled" | "handler_cancelled" | "timed_out" | "failed";
         /**
+         * @description Params for `ui.config`.
+         *
+         *     `session_id` picks the expression values a caller sees riding along with
+         *     the snapshot (`crate::rpc::ui::style_payload` in `crucible-daemon`); an
+         *     absent id reads as the global, session-less snapshot.
+         */
+        UiConfigRequest: {
+            session_id?: string | null;
+        };
+        /** @description Reply from `ui.set_theme`. */
+        UiSetThemeReply: {
+            /** @description The theme's own name, which may differ from `name` in case only. */
+            theme: string;
+        };
+        /** @description Params for `ui.set_theme`. */
+        UiSetThemeRequest: {
+            name: string;
+        };
+        /**
+         * @description The body of `session.undo`, inside `Scoped`.
+         *
+         *     An absent `count` undoes one turn.
+         */
+        UndoCount: {
+            count?: number | null;
+        };
+        /** @description Result of a single undo operation, returned to the caller. */
+        UndoSummary: {
+            /** @description How many messages were removed from history. */
+            messages_removed: number;
+        };
+        /**
          * @description A root that a diffset leaves out, and the reason.
          *
          *     The session record compares each root with its session base. When the
@@ -6817,6 +8746,21 @@ export interface components {
             /** @description Why the daemon cannot read the root, as a sentence for the user. */
             reason: string;
             root: string;
+        };
+        /**
+         * @description One row of a `search_vectors` reply.
+         *
+         *     The daemon answers from the block-first search, the same path the search
+         *     tool and precognition read. `block` says which passage answered; it is
+         *     absent when the kiln has note vectors only. `snippet` is the block's own
+         *     text, so a client can quote the passage without a second round trip.
+         */
+        VectorHit: {
+            block?: null | components["schemas"]["BlockRef"];
+            document_id: string;
+            /** Format: double */
+            score: number;
+            snippet?: string | null;
         };
         VectorSearchRequest: {
             /** @description Absolute path of the kiln to search. */
@@ -6878,9 +8822,35 @@ export interface components {
             /** @description Always `ok`. */
             status: string;
         };
+        /**
+         * @description Request for `webhook.receive`: one webhook delivery that the HTTP edge
+         *     already checked.
+         *
+         *     `body` is the text that the sender wrote. The signature covers those
+         *     bytes, so the daemon does not parse or change them.
+         */
+        WebhookReceiveRequest: {
+            body: string;
+            headers: {
+                [key: string]: unknown;
+            };
+            /** @description The name of the webhook, from its route. */
+            name: string;
+        };
         /** @description One wikilink target, as [`NoteByNameReply::wikilinks`] reports it. */
         WikilinkTarget: {
             target: string;
+        };
+        /**
+         * @description Reply from `workflow.cancel`.
+         *
+         *     `status` is `"cancelled"`, or `"not_found"` when the session had no
+         *     active or persisted run — not a [`crate::workflow::WorkflowStatus`]
+         *     variant, since "there was never a run" is not a state a run can be in.
+         */
+        WorkflowCancelReply: {
+            session_id: string;
+            status: string;
         };
         /**
          * @description Workflow-engine progress.
@@ -6946,6 +8916,65 @@ export interface components {
             event: "workflow.cancelled";
         };
         /**
+         * @description Reply from `workflow.start` and `workflow.approve_gate`: the same shape
+         *     either way.
+         */
+        WorkflowRunReply: {
+            session_id: string;
+            status: components["schemas"]["WorkflowStatus"];
+        };
+        /** @description The body of `workflow.start`, inside `Scoped`. */
+        WorkflowSource: {
+            /** @description Optional path used for title fallback / error messages. */
+            path?: string | null;
+            /** @description Full markdown source of the workflow note (frontmatter + body). */
+            source: string;
+        };
+        /** @description Top-level status for the workflow run. */
+        WorkflowStatus: {
+            /** @enum {string} */
+            kind: "running";
+        } | {
+            gate: components["schemas"]["PendingGate"];
+            /** @enum {string} */
+            kind: "awaiting_approval";
+        } | {
+            /** @enum {string} */
+            kind: "completed";
+        } | {
+            at_step?: string | null;
+            /** @enum {string} */
+            kind: "failed";
+            reason: string;
+        } | {
+            /** @enum {string} */
+            kind: "cancelled";
+        };
+        /**
+         * @description Reply from `workflow.status`.
+         *
+         *     Moved here from `crucible-daemon`'s `workflow_registry` module: nothing
+         *     in it named a daemon-local type.
+         */
+        WorkflowStatusReply: {
+            completed_slots: number;
+            /**
+             * @description The workflow's own output variables. Each step's outputs are
+             *     arbitrary JSON that the step itself defines, so the map's values stay
+             *     open even though the map itself is now named. `schema`'s override
+             *     names the same alias `crate::workflow::OutputScope` expands to:
+             *     `utoipa`'s derive needs the concrete generic spelled out here because
+             *     `serde_json::Value` has a hand-written `ToSchema` (above) rather than
+             *     a derived one, and only a derived one composes into a container's
+             *     schema without help.
+             */
+            scope: {
+                [key: string]: unknown;
+            };
+            status: components["schemas"]["WorkflowStatus"];
+            total_slots: number;
+        };
+        /**
          * @description The body of `session.set_workspace`, inside `Scoped`.
          *
          *     `workspace: None` detaches.
@@ -6969,6 +8998,14 @@ export interface components {
             code: number;
             message: string;
         };
+        /**
+         * @description What a note write of a session in this mode does.
+         *
+         *     `Apply` writes the file. `Propose` records the write as a proposal and
+         *     leaves the disk unchanged, so the user accepts or rejects it later.
+         * @enum {string}
+         */
+        WriteMode: "apply" | "propose";
         /**
          * @description What a note write in a mode does.
          *
@@ -7013,12 +9050,21 @@ export interface components {
     pathItems: never;
 }
 export type SchemaAcceptProposalBody = components['schemas']['AcceptProposalBody'];
+export type SchemaAgentCard = components['schemas']['AgentCard'];
+export type SchemaAgentCardsListReply = components['schemas']['AgentCardsListReply'];
+export type SchemaAgentConfig = components['schemas']['AgentConfig'];
+export type SchemaAgentConfigOption = components['schemas']['AgentConfigOption'];
 export type SchemaAgentListResponse = components['schemas']['AgentListResponse'];
+export type SchemaAgentOptionChoice = components['schemas']['AgentOptionChoice'];
 export type SchemaAgentOptionChoiceRow = components['schemas']['AgentOptionChoiceRow'];
+export type SchemaAgentOptionKind = components['schemas']['AgentOptionKind'];
 export type SchemaAgentOptionKindRow = components['schemas']['AgentOptionKindRow'];
 export type SchemaAgentOptionRow = components['schemas']['AgentOptionRow'];
 export type SchemaAgentOptionsResponse = components['schemas']['AgentOptionsResponse'];
 export type SchemaAgentProfileEntry = components['schemas']['AgentProfileEntry'];
+export type SchemaAgentProfileResolved = components['schemas']['AgentProfileResolved'];
+export type SchemaAgentProfilesReply = components['schemas']['AgentProfilesReply'];
+export type SchemaAgentsListCardsRequest = components['schemas']['AgentsListCardsRequest'];
 export type SchemaAnchoredEdit = components['schemas']['AnchoredEdit'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
 export type SchemaArtifactFormat = components['schemas']['ArtifactFormat'];
@@ -7033,6 +9079,7 @@ export type SchemaBacklinkEntry = components['schemas']['BacklinkEntry'];
 export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
 export type SchemaBacklinksResponse = components['schemas']['BacklinksResponse'];
 export type SchemaBaseValue = components['schemas']['BaseValue'];
+export type SchemaBlockHash = components['schemas']['BlockHash'];
 export type SchemaBlockRef = components['schemas']['BlockRef'];
 export type SchemaBuiltinCommand = components['schemas']['BuiltinCommand'];
 export type SchemaCancelledResponse = components['schemas']['CancelledResponse'];
@@ -7045,6 +9092,7 @@ export type SchemaCanvasNode = components['schemas']['CanvasNode'];
 export type SchemaCanvasResponse = components['schemas']['CanvasResponse'];
 export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedResponse'];
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
+export type SchemaCapabilityFlags = components['schemas']['CapabilityFlags'];
 export type SchemaChatSseFrame = components['schemas']['ChatSseFrame'];
 export type SchemaColumn = components['schemas']['Column'];
 export type SchemaCommandEffect = components['schemas']['CommandEffect'];
@@ -7056,14 +9104,20 @@ export type SchemaCommentAnchor = components['schemas']['CommentAnchor'];
 export type SchemaCommentAuthor = components['schemas']['CommentAuthor'];
 export type SchemaCommentRef = components['schemas']['CommentRef'];
 export type SchemaCommentSide = components['schemas']['CommentSide'];
+export type SchemaConfigKeyRequest = components['schemas']['ConfigKeyRequest'];
+export type SchemaConfigLookupRequest = components['schemas']['ConfigLookupRequest'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
+export type SchemaConfigSetReply = components['schemas']['ConfigSetReply'];
+export type SchemaConfigValuesRequest = components['schemas']['ConfigValuesRequest'];
+export type SchemaContextInjection = components['schemas']['ContextInjection'];
 export type SchemaContextLimitResolvedPayload = components['schemas']['ContextLimitResolvedPayload'];
 export type SchemaContextLimitSource = components['schemas']['ContextLimitSource'];
 export type SchemaContextStrategy = components['schemas']['ContextStrategy'];
 export type SchemaCreateEntryParams = components['schemas']['CreateEntryParams'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
+export type SchemaDaemonCapabilities = components['schemas']['DaemonCapabilities'];
 export type SchemaDelegationConfig = components['schemas']['DelegationConfig'];
 export type SchemaDelegationStatus = components['schemas']['DelegationStatus'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
@@ -7073,34 +9127,54 @@ export type SchemaDiffCommentRequest = components['schemas']['DiffCommentRequest
 export type SchemaDiffCommentsReply = components['schemas']['DiffCommentsReply'];
 export type SchemaDiffDeleteCommentReply = components['schemas']['DiffDeleteCommentReply'];
 export type SchemaDiffFileEntry = components['schemas']['DiffFileEntry'];
+export type SchemaDiffFileRequest = components['schemas']['DiffFileRequest'];
 export type SchemaDiffFileText = components['schemas']['DiffFileText'];
 export type SchemaDiffResolveCommentReply = components['schemas']['DiffResolveCommentReply'];
 export type SchemaDiffset = components['schemas']['Diffset'];
 export type SchemaDiffsetId = components['schemas']['DiffsetId'];
+export type SchemaDiffsetRef = components['schemas']['DiffsetRef'];
 export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
 export type SchemaDismissSessionNotificationResponse = components['schemas']['DismissSessionNotificationResponse'];
 export type SchemaEditRefusal = components['schemas']['EditRefusal'];
 export type SchemaEditRequest = components['schemas']['EditRequest'];
 export type SchemaEditResponse = components['schemas']['EditResponse'];
+export type SchemaEmbeddingCatalog = components['schemas']['EmbeddingCatalog'];
+export type SchemaEmbeddingModelRow = components['schemas']['EmbeddingModelRow'];
+export type SchemaEmbeddingModelsRequest = components['schemas']['EmbeddingModelsRequest'];
+export type SchemaEmbedQueryReply = components['schemas']['EmbedQueryReply'];
+export type SchemaEmbedQueryRequest = components['schemas']['EmbedQueryRequest'];
+export type SchemaEventCursor = components['schemas']['EventCursor'];
 export type SchemaExecuteCommandRequest = components['schemas']['ExecuteCommandRequest'];
 export type SchemaExpectedBase = components['schemas']['ExpectedBase'];
+export type SchemaExportOptions = components['schemas']['ExportOptions'];
+export type SchemaFileChange = components['schemas']['FileChange'];
 export type SchemaFileChangeKind = components['schemas']['FileChangeKind'];
 export type SchemaFileConflict = components['schemas']['FileConflict'];
 export type SchemaFileDiff = components['schemas']['FileDiff'];
+export type SchemaFileEncoding = components['schemas']['FileEncoding'];
 export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
+export type SchemaFileProcessError = components['schemas']['FileProcessError'];
+export type SchemaFileReadRequest = components['schemas']['FileReadRequest'];
 export type SchemaFileStatus = components['schemas']['FileStatus'];
 export type SchemaFileWriteConflict = components['schemas']['FileWriteConflict'];
+export type SchemaFileWriteRequest = components['schemas']['FileWriteRequest'];
 export type SchemaFileWriteResponse = components['schemas']['FileWriteResponse'];
 export type SchemaFocusedNoteRow = components['schemas']['FocusedNoteRow'];
+export type SchemaForkPoint = components['schemas']['ForkPoint'];
 export type SchemaFsEntry = components['schemas']['FsEntry'];
 export type SchemaFsEvent = components['schemas']['FsEvent'];
+export type SchemaFsListDirRequest = components['schemas']['FsListDirRequest'];
 export type SchemaFsListing = components['schemas']['FsListing'];
+export type SchemaFsMkdirReply = components['schemas']['FsMkdirReply'];
 export type SchemaFsMkdirResponse = components['schemas']['FsMkdirResponse'];
 export type SchemaFsMoveReply = components['schemas']['FsMoveReply'];
 export type SchemaFsMoveRequest = components['schemas']['FsMoveRequest'];
 export type SchemaFsPathRequest = components['schemas']['FsPathRequest'];
 export type SchemaFsRootKind = components['schemas']['FsRootKind'];
 export type SchemaFsTrashReply = components['schemas']['FsTrashReply'];
+export type SchemaFtsResult = components['schemas']['FtsResult'];
+export type SchemaGateRef = components['schemas']['GateRef'];
+export type SchemaGetBacklinksReply = components['schemas']['GetBacklinksReply'];
 export type SchemaGrepHit = components['schemas']['GrepHit'];
 export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
 export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
@@ -7108,6 +9182,7 @@ export type SchemaGroup = components['schemas']['Group'];
 export type SchemaHashMap = components['schemas']['HashMap'];
 export type SchemaImageFit = components['schemas']['ImageFit'];
 export type SchemaIndeterminateProgress = components['schemas']['IndeterminateProgress'];
+export type SchemaInteractionAnswer = components['schemas']['InteractionAnswer'];
 export type SchemaInteractionRequest = components['schemas']['InteractionRequest'];
 export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
 export type SchemaInteractionResponse = components['schemas']['InteractionResponse'];
@@ -7117,45 +9192,103 @@ export type SchemaItemBody = components['schemas']['ItemBody'];
 export type SchemaJobPayload = components['schemas']['JobPayload'];
 export type SchemaKilnFileResponse = components['schemas']['KilnFileResponse'];
 export type SchemaKilnFilesResponse = components['schemas']['KilnFilesResponse'];
+export type SchemaKilnForgetReply = components['schemas']['KilnForgetReply'];
 export type SchemaKilnGraphLink = components['schemas']['KilnGraphLink'];
 export type SchemaKilnGraphNote = components['schemas']['KilnGraphNote'];
 export type SchemaKilnGraphReply = components['schemas']['KilnGraphReply'];
 export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
+export type SchemaKilnName = components['schemas']['KilnName'];
 export type SchemaKilnNotesIndexedPayload = components['schemas']['KilnNotesIndexedPayload'];
+export type SchemaKilnOpenError = components['schemas']['KilnOpenError'];
+export type SchemaKilnOpenReply = components['schemas']['KilnOpenReply'];
+export type SchemaKilnOpenRequest = components['schemas']['KilnOpenRequest'];
+export type SchemaKilnPathRequest = components['schemas']['KilnPathRequest'];
+export type SchemaKilnRef = components['schemas']['KilnRef'];
+export type SchemaKilnRegisterOutcome = components['schemas']['KilnRegisterOutcome'];
+export type SchemaKilnRegisterReply = components['schemas']['KilnRegisterReply'];
+export type SchemaKilnRegisterRequest = components['schemas']['KilnRegisterRequest'];
 export type SchemaKilnRow = components['schemas']['KilnRow'];
+export type SchemaKnobDescriptor = components['schemas']['KnobDescriptor'];
+export type SchemaKnobRef = components['schemas']['KnobRef'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaKnobValue = components['schemas']['KnobValue'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
 export type SchemaLineRange = components['schemas']['LineRange'];
+export type SchemaLinkOccurrence = components['schemas']['LinkOccurrence'];
 export type SchemaLinkSuggestion = components['schemas']['LinkSuggestion'];
+export type SchemaListAllModelsRequest = components['schemas']['ListAllModelsRequest'];
 export type SchemaListedComment = components['schemas']['ListedComment'];
+export type SchemaListNotesRequest = components['schemas']['ListNotesRequest'];
+export type SchemaListProvidersRequest = components['schemas']['ListProvidersRequest'];
+export type SchemaLlmRegisterProviderReply = components['schemas']['LlmRegisterProviderReply'];
+export type SchemaLlmRegisterProviderRequest = components['schemas']['LlmRegisterProviderRequest'];
+export type SchemaLuaCommands = components['schemas']['LuaCommands'];
+export type SchemaLuaDiscoverPluginsRequest = components['schemas']['LuaDiscoverPluginsRequest'];
+export type SchemaLuaDiscoverPluginsResponse = components['schemas']['LuaDiscoverPluginsResponse'];
+export type SchemaLuaEvalRequest = components['schemas']['LuaEvalRequest'];
+export type SchemaLuaGenerateStubsRequest = components['schemas']['LuaGenerateStubsRequest'];
+export type SchemaLuaGenerateStubsResponse = components['schemas']['LuaGenerateStubsResponse'];
+export type SchemaLuaInitSessionResponse = components['schemas']['LuaInitSessionResponse'];
+export type SchemaLuaPluginHealthRequest = components['schemas']['LuaPluginHealthRequest'];
+export type SchemaLuaPluginHealthResponse = components['schemas']['LuaPluginHealthResponse'];
+export type SchemaLuaRegisterCommandsReply = components['schemas']['LuaRegisterCommandsReply'];
+export type SchemaLuaRunPluginTestsRequest = components['schemas']['LuaRunPluginTestsRequest'];
+export type SchemaLuaRunPluginTestsResponse = components['schemas']['LuaRunPluginTestsResponse'];
+export type SchemaLuaSessionInit = components['schemas']['LuaSessionInit'];
+export type SchemaLuaShutdownSessionResponse = components['schemas']['LuaShutdownSessionResponse'];
 export type SchemaMark = components['schemas']['Mark'];
+export type SchemaMarkdownOptions = components['schemas']['MarkdownOptions'];
 export type SchemaMarkers = components['schemas']['Markers'];
 export type SchemaMcpRunning = components['schemas']['McpRunning'];
 export type SchemaMcpServerInfo = components['schemas']['McpServerInfo'];
 export type SchemaMcpServersReadyPayload = components['schemas']['McpServersReadyPayload'];
+export type SchemaMcpStartReply = components['schemas']['McpStartReply'];
+export type SchemaMcpStartRequest = components['schemas']['McpStartRequest'];
 export type SchemaMcpStatus = components['schemas']['McpStatus'];
 export type SchemaMcpStopped = components['schemas']['McpStopped'];
+export type SchemaMcpStopReply = components['schemas']['McpStopReply'];
 export type SchemaMergeRegion = components['schemas']['MergeRegion'];
+export type SchemaMessageInput = components['schemas']['MessageInput'];
+export type SchemaModeDescriptor = components['schemas']['ModeDescriptor'];
+export type SchemaModelsListReply = components['schemas']['ModelsListReply'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
 export type SchemaModeRow = components['schemas']['ModeRow'];
 export type SchemaNamedKiln = components['schemas']['NamedKiln'];
+export type SchemaNameRequest = components['schemas']['NameRequest'];
+export type SchemaNewNotification = components['schemas']['NewNotification'];
 export type SchemaNoteByNameReply = components['schemas']['NoteByNameReply'];
 export type SchemaNoteChangeType = components['schemas']['NoteChangeType'];
 export type SchemaNoteListResponse = components['schemas']['NoteListResponse'];
 export type SchemaNoteListRow = components['schemas']['NoteListRow'];
+export type SchemaNotePathRequest = components['schemas']['NotePathRequest'];
+export type SchemaNoteRecord = components['schemas']['NoteRecord'];
+export type SchemaNoteRef = components['schemas']['NoteRef'];
+export type SchemaNoteRenameReply = components['schemas']['NoteRenameReply'];
+export type SchemaNoteRenameRequest = components['schemas']['NoteRenameRequest'];
 export type SchemaNoteSavedResponse = components['schemas']['NoteSavedResponse'];
+export type SchemaNoteUpsertReply = components['schemas']['NoteUpsertReply'];
+export type SchemaNoteUpsertRequest = components['schemas']['NoteUpsertRequest'];
 export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNotification = components['schemas']['Notification'];
+export type SchemaNotificationDismissRequest = components['schemas']['NotificationDismissRequest'];
+export type SchemaNotificationDismissResponse = components['schemas']['NotificationDismissResponse'];
+export type SchemaNotificationKey = components['schemas']['NotificationKey'];
 export type SchemaNotificationKind = components['schemas']['NotificationKind'];
+export type SchemaNotificationListRequest = components['schemas']['NotificationListRequest'];
+export type SchemaNotificationListResponse = components['schemas']['NotificationListResponse'];
 export type SchemaNotificationPayload = components['schemas']['NotificationPayload'];
 export type SchemaNotificationScope = components['schemas']['NotificationScope'];
+export type SchemaNotImplementedReply = components['schemas']['NotImplementedReply'];
 export type SchemaOkResponse = components['schemas']['OkResponse'];
+export type SchemaOpenedKiln = components['schemas']['OpenedKiln'];
 export type SchemaOptionRequest = components['schemas']['OptionRequest'];
+export type SchemaPage = components['schemas']['Page'];
 export type SchemaPanelHints = components['schemas']['PanelHints'];
 export type SchemaPanelResult = components['schemas']['PanelResult'];
 export type SchemaPatchFileRequest = components['schemas']['PatchFileRequest'];
+export type SchemaPathRequest = components['schemas']['PathRequest'];
+export type SchemaPendingGate = components['schemas']['PendingGate'];
 export type SchemaPendingInteraction = components['schemas']['PendingInteraction'];
 export type SchemaPendingInteractionsResponse = components['schemas']['PendingInteractionsResponse'];
 export type SchemaPermAction = components['schemas']['PermAction'];
@@ -7166,44 +9299,68 @@ export type SchemaPhysicalRoot = components['schemas']['PhysicalRoot'];
 export type SchemaPinnedLeaf = components['schemas']['PinnedLeaf'];
 export type SchemaPluginAck = components['schemas']['PluginAck'];
 export type SchemaPluginApproval = components['schemas']['PluginApproval'];
+export type SchemaPluginApprovalChange = components['schemas']['PluginApprovalChange'];
+export type SchemaPluginApprovalReply = components['schemas']['PluginApprovalReply'];
 export type SchemaPluginApprovalResponse = components['schemas']['PluginApprovalResponse'];
 export type SchemaPluginApprovalsResponse = components['schemas']['PluginApprovalsResponse'];
 export type SchemaPluginCommand = components['schemas']['PluginCommand'];
 export type SchemaPluginCommandsReply = components['schemas']['PluginCommandsReply'];
+export type SchemaPluginDiscoveryError = components['schemas']['PluginDiscoveryError'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginInstallOutcome = components['schemas']['PluginInstallOutcome'];
 export type SchemaPluginInstallReply = components['schemas']['PluginInstallReply'];
 export type SchemaPluginInstallRequest = components['schemas']['PluginInstallRequest'];
+export type SchemaPluginListReply = components['schemas']['PluginListReply'];
 export type SchemaPluginListResponse = components['schemas']['PluginListResponse'];
 export type SchemaPluginOptionCallReply = components['schemas']['PluginOptionCallReply'];
+export type SchemaPluginOptionCallRequest = components['schemas']['PluginOptionCallRequest'];
 export type SchemaPluginOptionsReply = components['schemas']['PluginOptionsReply'];
+export type SchemaPluginOptionsRequest = components['schemas']['PluginOptionsRequest'];
 export type SchemaPluginOptionValue = components['schemas']['PluginOptionValue'];
 export type SchemaPluginPublicationsReply = components['schemas']['PluginPublicationsReply'];
+export type SchemaPluginPublicationsRequest = components['schemas']['PluginPublicationsRequest'];
+export type SchemaPluginRef = components['schemas']['PluginRef'];
 export type SchemaPluginReloadReply = components['schemas']['PluginReloadReply'];
 export type SchemaPluginRemoveReply = components['schemas']['PluginRemoveReply'];
+export type SchemaPluginRemoveRequest = components['schemas']['PluginRemoveRequest'];
 export type SchemaPluginRunCommandReply = components['schemas']['PluginRunCommandReply'];
 export type SchemaPluginRunCommandRequest = components['schemas']['PluginRunCommandRequest'];
 export type SchemaPluginsDiscoveredPayload = components['schemas']['PluginsDiscoveredPayload'];
+export type SchemaPluginSpecRow = components['schemas']['PluginSpecRow'];
 export type SchemaPluginStatusEntry = components['schemas']['PluginStatusEntry'];
+export type SchemaPluginTestFailure = components['schemas']['PluginTestFailure'];
+export type SchemaPluginTestLoadFailure = components['schemas']['PluginTestLoadFailure'];
 export type SchemaPopupEntry = components['schemas']['PopupEntry'];
 export type SchemaPopupRequest = components['schemas']['PopupRequest'];
 export type SchemaPopupResponse = components['schemas']['PopupResponse'];
 export type SchemaPrecognition = components['schemas']['Precognition'];
 export type SchemaPrecognitionNoteInfo = components['schemas']['PrecognitionNoteInfo'];
+export type SchemaProcessBatchReply = components['schemas']['ProcessBatchReply'];
+export type SchemaProcessBatchRequest = components['schemas']['ProcessBatchRequest'];
+export type SchemaProcessFileReply = components['schemas']['ProcessFileReply'];
+export type SchemaProcessFileRequest = components['schemas']['ProcessFileRequest'];
 export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectKiln = components['schemas']['ProjectKiln'];
+export type SchemaProjectOpenKilnsNoMatch = components['schemas']['ProjectOpenKilnsNoMatch'];
+export type SchemaProjectOpenKilnsReply = components['schemas']['ProjectOpenKilnsReply'];
 export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest'];
 export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnregisterResponse'];
 export type SchemaProposal = components['schemas']['Proposal'];
+export type SchemaProposalAcceptRequest = components['schemas']['ProposalAcceptRequest'];
 export type SchemaProposalAuthor = components['schemas']['ProposalAuthor'];
 export type SchemaProposalChangedEvent = components['schemas']['ProposalChangedEvent'];
 export type SchemaProposalFile = components['schemas']['ProposalFile'];
 export type SchemaProposalId = components['schemas']['ProposalId'];
+export type SchemaProposalIdRequest = components['schemas']['ProposalIdRequest'];
+export type SchemaProposalListRequest = components['schemas']['ProposalListRequest'];
+export type SchemaProposalRejectRequest = components['schemas']['ProposalRejectRequest'];
+export type SchemaProposalResolveRequest = components['schemas']['ProposalResolveRequest'];
 export type SchemaProposalState = components['schemas']['ProposalState'];
 export type SchemaProposedWrite = components['schemas']['ProposedWrite'];
 export type SchemaProviderInfo = components['schemas']['ProviderInfo'];
 export type SchemaProviderRow = components['schemas']['ProviderRow'];
 export type SchemaProvidersListedPayload = components['schemas']['ProvidersListedPayload'];
+export type SchemaProvidersListReply = components['schemas']['ProvidersListReply'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
 export type SchemaPutCanvasRequest = components['schemas']['PutCanvasRequest'];
@@ -7230,31 +9387,80 @@ export type SchemaRowHeight = components['schemas']['RowHeight'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
 export type SchemaScmCloneRequest = components['schemas']['ScmCloneRequest'];
 export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
+export type SchemaScope = components['schemas']['Scope'];
+export type SchemaSearchTextRequest = components['schemas']['SearchTextRequest'];
+export type SchemaSearchVectorsRequest = components['schemas']['SearchVectorsRequest'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
 export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearchResponse'];
 export type SchemaSemanticSearchRow = components['schemas']['SemanticSearchRow'];
 export type SchemaSendMessageRequest = components['schemas']['SendMessageRequest'];
 export type SchemaSendOutcome = components['schemas']['SendOutcome'];
+export type SchemaSessionAddNotificationReply = components['schemas']['SessionAddNotificationReply'];
 export type SchemaSessionAgent = components['schemas']['SessionAgent'];
+export type SchemaSessionArchiveReply = components['schemas']['SessionArchiveReply'];
+export type SchemaSessionCacheStatsReply = components['schemas']['SessionCacheStatsReply'];
+export type SchemaSessionCancelResponse = components['schemas']['SessionCancelResponse'];
+export type SchemaSessionCanUndoReply = components['schemas']['SessionCanUndoReply'];
+export type SchemaSessionCleanupReply = components['schemas']['SessionCleanupReply'];
+export type SchemaSessionCleanupRequest = components['schemas']['SessionCleanupRequest'];
+export type SchemaSessionClearReply = components['schemas']['SessionClearReply'];
 export type SchemaSessionCommand = components['schemas']['SessionCommand'];
+export type SchemaSessionCommandsReply = components['schemas']['SessionCommandsReply'];
+export type SchemaSessionCompactReply = components['schemas']['SessionCompactReply'];
+export type SchemaSessionConfigureAgentReply = components['schemas']['SessionConfigureAgentReply'];
+export type SchemaSessionCreateRequest = components['schemas']['SessionCreateRequest'];
+export type SchemaSessionDeleteReply = components['schemas']['SessionDeleteReply'];
 export type SchemaSessionDetail = components['schemas']['SessionDetail'];
+export type SchemaSessionDismissNotificationReply = components['schemas']['SessionDismissNotificationReply'];
+export type SchemaSessionEndReply = components['schemas']['SessionEndReply'];
 export type SchemaSessionEventMessage = components['schemas']['SessionEventMessage'];
 export type SchemaSessionEventPayload = components['schemas']['SessionEventPayload'];
+export type SchemaSessionExportToFileResponse = components['schemas']['SessionExportToFileResponse'];
+export type SchemaSessionForkReply = components['schemas']['SessionForkReply'];
+export type SchemaSessionHistoryReply = components['schemas']['SessionHistoryReply'];
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
 export type SchemaSessionId = components['schemas']['SessionId'];
 export type SchemaSessionInitializedPayload = components['schemas']['SessionInitializedPayload'];
+export type SchemaSessionInjectContextReply = components['schemas']['SessionInjectContextReply'];
+export type SchemaSessionInteractionRespondReply = components['schemas']['SessionInteractionRespondReply'];
+export type SchemaSessionKnob = components['schemas']['SessionKnob'];
+export type SchemaSessionKnobSetReply = components['schemas']['SessionKnobSetReply'];
 export type SchemaSessionKnobsResponse = components['schemas']['SessionKnobsResponse'];
+export type SchemaSessionKnobSupport = components['schemas']['SessionKnobSupport'];
 export type SchemaSessionLifecycleResponse = components['schemas']['SessionLifecycleResponse'];
+export type SchemaSessionListAgentOptionsReply = components['schemas']['SessionListAgentOptionsReply'];
+export type SchemaSessionListModelsReply = components['schemas']['SessionListModelsReply'];
+export type SchemaSessionListNotificationsReply = components['schemas']['SessionListNotificationsReply'];
+export type SchemaSessionListPersistedRequest = components['schemas']['SessionListPersistedRequest'];
+export type SchemaSessionListPluginApprovalsReply = components['schemas']['SessionListPluginApprovalsReply'];
 export type SchemaSessionListReply = components['schemas']['SessionListReply'];
+export type SchemaSessionListRequest = components['schemas']['SessionListRequest'];
+export type SchemaSessionModes = components['schemas']['SessionModes'];
 export type SchemaSessionModesResponse = components['schemas']['SessionModesResponse'];
 export type SchemaSessionNotificationsResponse = components['schemas']['SessionNotificationsResponse'];
+export type SchemaSessionPendingInteractionsReply = components['schemas']['SessionPendingInteractionsReply'];
+export type SchemaSessionRenderMarkdownResponse = components['schemas']['SessionRenderMarkdownResponse'];
+export type SchemaSessionReplayRequest = components['schemas']['SessionReplayRequest'];
+export type SchemaSessionReplayStartedReply = components['schemas']['SessionReplayStartedReply'];
+export type SchemaSessionScopeReply = components['schemas']['SessionScopeReply'];
 export type SchemaSessionScopeResponse = components['schemas']['SessionScopeResponse'];
 export type SchemaSessionSearchMatch = components['schemas']['SessionSearchMatch'];
+export type SchemaSessionSearchRequest = components['schemas']['SessionSearchRequest'];
 export type SchemaSessionSearchResponse = components['schemas']['SessionSearchResponse'];
+export type SchemaSessionSetAgentOptionRequest = components['schemas']['SessionSetAgentOptionRequest'];
 export type SchemaSessionState = components['schemas']['SessionState'];
+export type SchemaSessionStatusReply = components['schemas']['SessionStatusReply'];
 export type SchemaSessionStatusResponse = components['schemas']['SessionStatusResponse'];
+export type SchemaSessionSubscribeReply = components['schemas']['SessionSubscribeReply'];
+export type SchemaSessionSubscribeRequest = components['schemas']['SessionSubscribeRequest'];
 export type SchemaSessionSummary = components['schemas']['SessionSummary'];
+export type SchemaSessionTestInteractionReply = components['schemas']['SessionTestInteractionReply'];
+export type SchemaSessionTitleReply = components['schemas']['SessionTitleReply'];
+export type SchemaSessionTransitionReply = components['schemas']['SessionTransitionReply'];
 export type SchemaSessionType = components['schemas']['SessionType'];
+export type SchemaSessionUndoDepthReply = components['schemas']['SessionUndoDepthReply'];
+export type SchemaSessionUndoReply = components['schemas']['SessionUndoReply'];
+export type SchemaSessionUnsubscribeReply = components['schemas']['SessionUnsubscribeReply'];
 export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionRequest'];
 export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApprovalRequest'];
 export type SchemaSetPropertyParams = components['schemas']['SetPropertyParams'];
@@ -7263,24 +9469,40 @@ export type SchemaSetupPayload = components['schemas']['SetupPayload'];
 export type SchemaShape = components['schemas']['Shape'];
 export type SchemaShowRequest = components['schemas']['ShowRequest'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
+export type SchemaSkillsGetRequest = components['schemas']['SkillsGetRequest'];
+export type SchemaSkillsListRequest = components['schemas']['SkillsListRequest'];
 export type SchemaSkillsReply = components['schemas']['SkillsReply'];
+export type SchemaSkillsSearchRequest = components['schemas']['SkillsSearchRequest'];
 export type SchemaSkillSummary = components['schemas']['SkillSummary'];
+export type SchemaSkippedKiln = components['schemas']['SkippedKiln'];
 export type SchemaSkippedRef = components['schemas']['SkippedRef'];
 export type SchemaSkipReason = components['schemas']['SkipReason'];
 export type SchemaSource = components['schemas']['Source'];
 export type SchemaSourceOrigin = components['schemas']['SourceOrigin'];
+export type SchemaSpecEntry = components['schemas']['SpecEntry'];
+export type SchemaSpecRank = components['schemas']['SpecRank'];
+export type SchemaSpecSource = components['schemas']['SpecSource'];
 export type SchemaStatusColorGroup = components['schemas']['StatusColorGroup'];
 export type SchemaStatusDisplayItem = components['schemas']['StatusDisplayItem'];
 export type SchemaStatusItemKind = components['schemas']['StatusItemKind'];
 export type SchemaStatusProgress = components['schemas']['StatusProgress'];
+export type SchemaStatusReply = components['schemas']['StatusReply'];
 export type SchemaStopReason = components['schemas']['StopReason'];
+export type SchemaStorageBackupRequest = components['schemas']['StorageBackupRequest'];
+export type SchemaStorageRestoreRequest = components['schemas']['StorageRestoreRequest'];
 export type SchemaString = components['schemas']['String'];
+export type SchemaSubagentCollectRequest = components['schemas']['SubagentCollectRequest'];
+export type SchemaSuggestLinksReply = components['schemas']['SuggestLinksReply'];
+export type SchemaSuggestLinksRequest = components['schemas']['SuggestLinksRequest'];
 export type SchemaSurface = components['schemas']['Surface'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
+export type SchemaSurfaceGetReply = components['schemas']['SurfaceGetReply'];
 export type SchemaSurfaceListReply = components['schemas']['SurfaceListReply'];
+export type SchemaSurfaceRequest = components['schemas']['SurfaceRequest'];
 export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
 export type SchemaSystemPayload = components['schemas']['SystemPayload'];
+export type SchemaTestInteraction = components['schemas']['TestInteraction'];
 export type SchemaTextField = components['schemas']['TextField'];
 export type SchemaTitle = components['schemas']['Title'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
@@ -7295,18 +9517,31 @@ export type SchemaTranscriptOp = components['schemas']['TranscriptOp'];
 export type SchemaTurnOrigin = components['schemas']['TurnOrigin'];
 export type SchemaTurnPayload = components['schemas']['TurnPayload'];
 export type SchemaTurnStatus = components['schemas']['TurnStatus'];
+export type SchemaUiConfigRequest = components['schemas']['UiConfigRequest'];
+export type SchemaUiSetThemeReply = components['schemas']['UiSetThemeReply'];
+export type SchemaUiSetThemeRequest = components['schemas']['UiSetThemeRequest'];
+export type SchemaUndoCount = components['schemas']['UndoCount'];
+export type SchemaUndoSummary = components['schemas']['UndoSummary'];
 export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
+export type SchemaVectorHit = components['schemas']['VectorHit'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
 export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
 export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
 export type SchemaViewOptions = components['schemas']['ViewOptions'];
 export type SchemaViewSummary = components['schemas']['ViewSummary'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
+export type SchemaWebhookReceiveRequest = components['schemas']['WebhookReceiveRequest'];
 export type SchemaWikilinkTarget = components['schemas']['WikilinkTarget'];
+export type SchemaWorkflowCancelReply = components['schemas']['WorkflowCancelReply'];
 export type SchemaWorkflowPayload = components['schemas']['WorkflowPayload'];
+export type SchemaWorkflowRunReply = components['schemas']['WorkflowRunReply'];
+export type SchemaWorkflowSource = components['schemas']['WorkflowSource'];
+export type SchemaWorkflowStatus = components['schemas']['WorkflowStatus'];
+export type SchemaWorkflowStatusReply = components['schemas']['WorkflowStatusReply'];
 export type SchemaWorkspaceChoice = components['schemas']['WorkspaceChoice'];
 export type SchemaWorkspaceIndexedPayload = components['schemas']['WorkspaceIndexedPayload'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
+export type SchemaWriteMode = components['schemas']['WriteMode'];
 export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
 export type SchemaWriteOutcome = components['schemas']['WriteOutcome'];
 export type $defs = Record<string, never>;

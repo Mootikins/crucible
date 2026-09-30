@@ -51,6 +51,7 @@ use serde::{Deserialize, Serialize};
 /// scope: workspace:/foo     # explicit workspace path
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Scope {
     /// The note is private to a single workspace. Sibling workspaces cannot
@@ -59,6 +60,10 @@ pub enum Scope {
     Workspace {
         /// Absolute, canonical workspace path. Use [`Scope::workspace`] or
         /// [`Scope::workspace_unchecked`] to construct.
+        ///
+        /// `PathBuf` serializes as a plain string, and `utoipa` has no
+        /// built-in schema for it; the override names the wire shape.
+        #[cfg_attr(feature = "openapi", schema(value_type = String))]
         path: PathBuf,
     },
 }

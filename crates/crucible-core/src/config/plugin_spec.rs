@@ -11,6 +11,7 @@ use serde_json::Value;
 
 /// Where a plugin comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpecSource {
     /// A directory already on the runtimepath: shipped or local.
@@ -28,6 +29,7 @@ pub enum SpecSource {
 
 /// One table in the spec.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SpecEntry {
     /// The plugin's directory name on the runtimepath.
     pub name: String,
@@ -100,6 +102,7 @@ pub fn is_valid_plugin_name(name: &str) -> bool {
 /// `enabled` field, so it never answers. `Spec::merge` is the only reader of
 /// the order, and `docs/Meta/CONTEXT.md` defines the terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SpecRank {
     /// A plugin's own `init.luau` calling `cru.plugin.setup` during

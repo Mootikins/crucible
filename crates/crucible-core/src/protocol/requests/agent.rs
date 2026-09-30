@@ -7,6 +7,7 @@
 /// `Invalid agent config: {e}` for an `agent` that is not a `SessionAgent`,
 /// and typing the field here would fold that into the generic params error.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentConfig {
     pub agent: serde_json::Value,
 }
@@ -23,6 +24,7 @@ pub struct KnobRef {
 
 /// The body of `session.set_plugin_approval`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginApprovalChange {
     pub plugin: String,
     pub approval: String,
@@ -30,6 +32,7 @@ pub struct PluginApprovalChange {
 
 /// The body of `session.get_plugin_approval`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginRef {
     pub plugin: String,
 }
@@ -38,6 +41,7 @@ pub struct PluginRef {
 ///
 /// An absent `count` undoes one turn.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UndoCount {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<usize>,
@@ -45,6 +49,7 @@ pub struct UndoCount {
 
 /// Request for `subagent.collect`: wait for background jobs to finish.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SubagentCollectRequest {
     pub job_ids: Vec<String>,
     /// How long to wait, in seconds. An absent value waits two minutes.
@@ -58,6 +63,7 @@ fn default_collect_timeout() -> f64 {
 
 /// Request for `models.list` (no active session required).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ListAllModelsRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kiln_path: Option<String>,
@@ -65,6 +71,7 @@ pub struct ListAllModelsRequest {
 
 /// Request for `embeddings.models`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EmbeddingModelsRequest {
     /// A name to resolve through the catalog, in any form the catalog accepts.
     ///
@@ -90,6 +97,7 @@ pub struct EmbeddingModelsRequest {
 /// cache. This struct is the projection the CLI renders; it carries no
 /// fastembed type, so a build without that feature still compiles.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EmbeddingModelRow {
     /// The name to write in the config file.
     pub name: String,
@@ -114,6 +122,7 @@ pub struct EmbeddingModelRow {
 
 /// The answer to `embeddings.models`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EmbeddingCatalog {
     /// Every model the daemon can run, ordered by name. Empty when the daemon
     /// was built without the `fastembed` feature.
@@ -141,6 +150,7 @@ pub struct EmbeddingCatalog {
 
 /// Request for `providers.list` (no active session required).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ListProvidersRequest {
     #[serde(default)]
     pub kiln_path: Option<String>,
@@ -221,6 +231,7 @@ pub struct AgentProfilesReply {
 /// transitively), and no web route publishes this reply's OpenAPI shape
 /// today.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentCardsListReply {
     pub cards: Vec<crate::agent::AgentCard>,
 }

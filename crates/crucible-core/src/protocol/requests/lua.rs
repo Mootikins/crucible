@@ -4,12 +4,14 @@
 /// Request for `lua.eval`: Luau source that the daemon runs in its plugin
 /// VM.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaEvalRequest {
     pub code: String,
 }
 
 /// The body of `lua.init_session`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaSessionInit {
     /// Optional because the handler treats it as optional: an absent path falls
     /// back to the daemon's data root. It was a required `String` while the
@@ -25,6 +27,7 @@ pub struct LuaSessionInit {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaInitSessionResponse {
     pub session_id: String,
     #[serde(default)]
@@ -32,27 +35,32 @@ pub struct LuaInitSessionResponse {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaShutdownSessionResponse {
     pub shutdown: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaDiscoverPluginsRequest {
     pub kiln_path: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaDiscoverPluginsResponse {
     #[serde(default)]
     pub plugins: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaPluginHealthRequest {
     pub plugin_path: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaPluginHealthResponse {
     pub name: String,
     pub healthy: bool,
@@ -63,6 +71,7 @@ pub struct LuaPluginHealthResponse {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaGenerateStubsRequest {
     pub output_dir: String,
     #[serde(default)]
@@ -70,12 +79,14 @@ pub struct LuaGenerateStubsRequest {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaGenerateStubsResponse {
     pub status: String,
     pub path: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaRunPluginTestsRequest {
     pub test_path: String,
     #[serde(default)]
@@ -84,6 +95,7 @@ pub struct LuaRunPluginTestsRequest {
 
 /// A single failed Lua test, as the plugin test runner saw it.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginTestFailure {
     pub name: String,
     /// Full `describe` path. The bare test name is ambiguous across suites.
@@ -101,12 +113,14 @@ pub struct PluginTestFailure {
 
 /// A test file that could not be read or parsed at all.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginTestLoadFailure {
     pub file: String,
     pub error: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaRunPluginTestsResponse {
     pub passed: usize,
     pub failed: usize,
@@ -123,6 +137,7 @@ pub struct LuaRunPluginTestsResponse {
 
 /// The body of `lua.register_commands`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LuaCommands {
     pub commands: Vec<serde_json::Value>,
 }

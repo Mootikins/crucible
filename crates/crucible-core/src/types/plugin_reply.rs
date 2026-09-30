@@ -62,6 +62,7 @@ pub struct PluginInfo {
 /// A plugin directory that failed discovery before it became a plugin at
 /// all — so it has no [`PluginInfo`] entry to carry its own error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginDiscoveryError {
     pub path: String,
     pub error: String,
@@ -72,6 +73,7 @@ pub struct PluginDiscoveryError {
 /// Not `ToSchema`: no web route sends this shape whole — `GET /api/plugins`
 /// answers `plugin_info` alone, under its own envelope.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginListReply {
     /// Every discovered plugin's name.
     pub plugins: Vec<String>,

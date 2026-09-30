@@ -126,6 +126,7 @@ pub enum AcpKnob {
 
 /// One choice in an agent's select option.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentOptionChoice {
     /// The id to send back when this choice is picked.
     pub value: String,
@@ -139,6 +140,7 @@ pub struct AgentOptionChoice {
 /// cover is dropped rather than guessed at, because a control rendered from a
 /// shape nobody understood is worse than no control.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentOptionKind {
     /// Pick one of several values.
@@ -164,6 +166,7 @@ pub enum AgentOptionKind {
 /// description and sends the chosen value back; the daemon does not interpret
 /// them beyond the model selector, which has its own control.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentConfigOption {
     /// The id to name in `session.set_agent_option`.
     pub id: String,
@@ -181,6 +184,7 @@ pub struct AgentConfigOption {
 
 /// One knob and whether this session can change it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KnobDescriptor {
     /// The wire id, as [`SessionKnob::id`] reports it.
     pub id: String,
@@ -191,6 +195,7 @@ pub struct KnobDescriptor {
 
 /// What `session.list_knobs` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionKnobSupport {
     /// Every knob Crucible has, answered for. A client that finds an id
     /// missing is talking to an older daemon, not to a session without it.

@@ -4,6 +4,8 @@ pub mod rpc;
 pub mod session_events;
 
 pub use lifecycle::{remove_socket, socket_path};
+#[cfg(feature = "openapi")]
+pub use rpc::RpcMethodSchemas;
 pub use rpc::{
     Request, RequestId, Response, RpcError, RpcMethod, SessionEventMessage, BUSY, INTERNAL_ERROR,
     INVALID_PARAMS, INVALID_REQUEST, METHODS, METHOD_NOT_FOUND, PARSE_ERROR,

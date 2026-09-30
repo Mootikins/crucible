@@ -56,6 +56,7 @@ impl KilnName {
 /// read. So a map keyed by a name answers to any casing of it, and still hands
 /// back the casing its owner chose.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KilnName {
     display: String,
     key: String,

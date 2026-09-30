@@ -4,6 +4,7 @@
 use crate::config::KilnName;
 /// Request for `session.create`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionCreateRequest {
     /// Defaulted rather than required because the server now *deserializes*
     /// this struct instead of hand-plucking `params["type"]` with an
@@ -138,6 +139,7 @@ fn default_session_type() -> String {
 /// The daemon ignores a `type` or a `state` that it does not know. It does
 /// not refuse the listing.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionListRequest {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub session_type: Option<String>,
@@ -163,6 +165,7 @@ pub struct SessionListRequest {
 
 /// Request for `session.replay`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionReplayRequest {
     pub recording_path: String,
     /// Real time when omitted, which is what the handler's `unwrap_or` did.
@@ -179,12 +182,14 @@ fn default_replay_speed() -> f64 {
 /// `after` is the caller's seq cursor: the last event it APPLIED. The reply
 /// carries the persisted wire envelopes strictly past it, in order.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EventCursor {
     pub after: u64,
 }
 
 /// The body of `session.send_message`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MessageInput {
     pub content: String,
     /// An absent value means an interactive turn.
@@ -205,6 +210,7 @@ pub struct MessageInput {
 
 /// The body of `session.interaction_respond`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct InteractionAnswer {
     pub request_id: String,
     pub response: serde_json::Value,
@@ -212,6 +218,7 @@ pub struct InteractionAnswer {
 
 /// The body of `session.inject_context`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ContextInjection {
     /// `system`, `user` or `assistant` — anything else is `INVALID_PARAMS`.
     pub role: String,
@@ -227,6 +234,7 @@ pub struct ContextInjection {
 /// example, because the method exists to check that a client renders a modal
 /// at all.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TestInteraction {
     /// `ask` (the default) or `permission`.
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
@@ -244,6 +252,7 @@ pub struct TestInteraction {
 /// The session id of the envelope names the PARENT. The fork reports its
 /// own id as `id`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ForkPoint {
     /// Copy only the first N user/assistant/system messages. All of them when
     /// omitted.
@@ -253,6 +262,7 @@ pub struct ForkPoint {
 
 /// The body of `session.dismiss_notification`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NotificationKey {
     pub notification_id: String,
 }
@@ -266,6 +276,7 @@ pub struct Title {
 
 /// Request for `session.search`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionSearchRequest {
     pub query: String,
     /// The caller's whole kiln set — results are the sessions overlapping it.
@@ -284,6 +295,7 @@ pub struct SessionSearchRequest {
 /// returns the sessions whose own set overlaps it — the same predicate
 /// `session.search` and `session.cleanup` answer to.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionListPersistedRequest {
     #[serde(default, alias = "kiln", deserialize_with = "super::common::kiln_set")]
     pub kilns: Vec<String>,
@@ -297,6 +309,7 @@ pub struct SessionListPersistedRequest {
 
 /// The body of `session.render_markdown`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MarkdownOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_timestamps: Option<bool>,
@@ -310,6 +323,7 @@ pub struct MarkdownOptions {
 
 /// The body of `session.export_to_file`, inside `Scoped`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ExportOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
@@ -324,6 +338,7 @@ pub struct ExportOptions {
 /// has to be set deliberately — sessions live in one flat root now, so an
 /// unscoped sweep is not recoverable.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionCleanupRequest {
     #[serde(default, alias = "kiln", deserialize_with = "super::common::kiln_set")]
     pub kilns: Vec<String>,
@@ -336,18 +351,21 @@ pub struct SessionCleanupRequest {
 
 /// Response from `session.cancel`.
 #[derive(Debug, Clone, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionCancelResponse {
     pub cancelled: bool,
 }
 
 /// Response from `session.render_markdown`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionRenderMarkdownResponse {
     pub markdown: String,
 }
 
 /// Response from `session.export_to_file`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionExportToFileResponse {
     /// Always `"ok"`: the handler answers an error reply instead of this
     /// type when the export fails.
@@ -386,6 +404,7 @@ pub struct SessionTransitionReply {
 /// Reply from `session.history` and `session.resume_from_storage`: the
 /// session and one page of its stored events.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionHistoryReply {
     pub session_id: crate::session::SessionId,
     #[serde(rename = "type")]
@@ -402,6 +421,7 @@ pub struct SessionHistoryReply {
 
 /// Reply from `session.end`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionEndReply {
     pub session_id: crate::session::SessionId,
     pub state: String,
@@ -495,6 +515,7 @@ pub struct SessionClearReply {
 /// `set_workspace`, before the refusal — the workspace is fixed at
 /// creation and this method always refuses).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionScopeReply {
     pub session_id: crate::session::SessionId,
     pub kilns: Vec<crate::config::KilnName>,
@@ -519,6 +540,7 @@ pub struct SessionCommandsReply {
 
 /// Reply from `session.list_agent_options`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionListAgentOptionsReply {
     pub session_id: String,
     pub options: Vec<crate::types::AgentConfigOption>,

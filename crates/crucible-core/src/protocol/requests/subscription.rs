@@ -3,6 +3,7 @@
 
 /// Shared request for `session.subscribe` and `session.unsubscribe`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionSubscribeRequest {
     pub session_ids: Vec<String>,
 }

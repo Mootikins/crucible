@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 /// Top-level status for the workflow run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkflowStatus {
     /// Ready to advance.
@@ -66,6 +67,7 @@ pub struct WorkflowSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PendingGate {
     pub id: String,
     pub title: Option<String>,

@@ -3,6 +3,7 @@
 
 /// Request for `plugin.publications`. An absent `key` asks for every key.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct PluginPublicationsRequest {
@@ -17,6 +18,7 @@ pub struct PluginPublicationsRequest {
 /// narrows either, because two plugins may declare a surface of the same name
 /// and a client asking for one should not be handed the other.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SurfaceRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
@@ -34,6 +36,7 @@ pub struct SurfaceListReply {
 /// What `surface.get` answers: one surface, or `null` when nothing declares
 /// it. Always written, so `null` means "not found", never "unknown".
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SurfaceGetReply {
     #[serde(default)]
     pub surface: Option<crate::types::Surface>,
@@ -45,6 +48,7 @@ pub struct SurfaceGetReply {
 /// hide flags. Absent means "web", which is what the handler substituted.
 /// An absent `plugin` asks for every plugin's tree.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginOptionsRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui: Option<String>,
@@ -58,6 +62,7 @@ pub struct PluginOptionsRequest {
 /// `value` is read by `option_set` only; the other two never send it, and an
 /// absent one is `null`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginOptionCallRequest {
     pub plugin: String,
     /// Defaulted, not required, so an absent `path` reaches the handler's own
@@ -104,6 +109,7 @@ pub struct PluginInstallRequest {
 /// entry names a git source (`declared`). `cru plugin list` reads the git
 /// rows; the daemon builds them from the spec store.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginSpecRow {
     #[serde(flatten)]
     pub entry: crate::config::SpecEntry,
@@ -117,6 +123,7 @@ pub struct PluginSpecRow {
 /// `body` is the text that the sender wrote. The signature covers those
 /// bytes, so the daemon does not parse or change them.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct WebhookReceiveRequest {
     /// The name of the webhook, from its route.
     pub name: String,
@@ -126,6 +133,7 @@ pub struct WebhookReceiveRequest {
 
 /// Request for `plugin.remove`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PluginRemoveRequest {
     pub name: String,
     #[serde(default)]

@@ -13,6 +13,7 @@
 //! Writes to stdout; the caller redirects it into
 //! `crates/crucible-web/web/src/lib/rpc-methods.d.ts`.
 
+use crucible_core::protocol::rpc::type_text::{split_generic, strip_path};
 use crucible_core::protocol::RpcMethod;
 use std::collections::HashSet;
 
@@ -42,20 +43,6 @@ fn schema_names(api_schema_path: &str) -> HashSet<String> {
             }
         })
         .collect()
-}
-
-fn strip_path(ty: &str) -> &str {
-    ty.rsplit("::").next().unwrap_or(ty)
-}
-
-/// Split `Outer<Inner>` into `("Outer", "Inner")`, respecting nested `<>`.
-fn split_generic(ty: &str) -> Option<(&str, &str)> {
-    let ty = ty.trim();
-    let open = ty.find('<')?;
-    if !ty.ends_with('>') {
-        return None;
-    }
-    Some((&ty[..open], &ty[open + 1..ty.len() - 1]))
 }
 
 fn rust_to_ts(ty: &str, known: &HashSet<String>, missing: &mut Vec<String>) -> String {

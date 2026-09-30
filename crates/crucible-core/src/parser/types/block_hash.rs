@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is the canonical definition of BlockHash in the Crucible system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BlockHash([u8; 32]);
 
 impl BlockHash {

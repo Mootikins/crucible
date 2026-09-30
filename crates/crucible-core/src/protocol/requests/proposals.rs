@@ -5,6 +5,7 @@ use crate::proposal::ProposalFile;
 use crate::proposal::ProposalId;
 /// Request for `proposal.list`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct ProposalListRequest {
@@ -16,12 +17,14 @@ pub struct ProposalListRequest {
 
 /// Request for `proposal.get` and `proposal.dismiss`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProposalIdRequest {
     pub id: ProposalId,
 }
 
 /// Request for `proposal.accept`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProposalAcceptRequest {
     pub id: ProposalId,
     /// The files to write, as the proposal names them. The daemon moves them
@@ -35,6 +38,7 @@ pub struct ProposalAcceptRequest {
 
 /// Request for `proposal.reject`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProposalRejectRequest {
     pub id: ProposalId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,6 +55,7 @@ pub struct ProposalRejectRequest {
 /// Request for `proposal.resolve`: the text that the user settled for one
 /// conflicted file.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ProposalResolveRequest {
     pub id: ProposalId,
     /// The path relative to the kiln root, as the proposal names it.

@@ -161,12 +161,25 @@ fn api_router(
 /// It comes from the same `api_router` the server serves, so a route cannot
 /// appear in one and not the other. The arguments only decide which handler a
 /// path reaches, never which paths exist, so the defaults describe them all.
+///
+/// `utoipa` only emits a schema for a type a live route names, so the router's
+/// own document alone would leave most `rpc_methods!` rows' types out of it —
+/// [[Simplification Plan#Step 19]] item 7. `RpcMethodSchemas::openapi()`
+/// carries one schema per named row type regardless of routing, generated
+/// from the `rpc_methods!` table itself
+/// (`crates/crucible-core/examples/gen_rpc_schema_types.rs`); merging it in
+/// here is what lets `gen_rpc_methods_ts` reference those types instead of
+/// answering `unknown` for them.
 pub fn api_spec() -> utoipa::openapi::OpenApi {
+    use utoipa::OpenApi as _;
+
     let shell_gate = Arc::new(ShellGateState {
         allow_remote: false,
         credentials: None,
     });
-    api_router(shell_gate, Arc::new(Vec::new())).into_openapi()
+    api_router(shell_gate, Arc::new(Vec::new()))
+        .into_openapi()
+        .merge_from(crucible_core::protocol::RpcMethodSchemas::openapi())
 }
 
 /// Assemble the served application from injected runtime state and credentials.

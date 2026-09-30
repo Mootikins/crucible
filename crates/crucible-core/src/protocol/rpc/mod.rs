@@ -1,6 +1,11 @@
 mod method;
+#[cfg(feature = "openapi")]
+mod schema_types;
+pub mod type_text;
 
 pub use method::{RpcMethod, METHODS};
+#[cfg(feature = "openapi")]
+pub use schema_types::RpcMethodSchemas;
 // `for_each_rpc_method!` is defined inside the `rpc_methods!` invocation
 // below, so it is `#[macro_export]`ed at the crate root only
 // (`crucible_core::for_each_rpc_method!`) — a macro a macro invocation

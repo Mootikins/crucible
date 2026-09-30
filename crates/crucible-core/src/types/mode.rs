@@ -20,6 +20,7 @@ use crate::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
 /// `Apply` writes the file. `Propose` records the write as a proposal and
 /// leaves the disk unchanged, so the user accepts or rejects it later.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WriteMode {
     /// The note tools write the file.
@@ -134,6 +135,7 @@ impl BuiltinMode {
 /// such as an icon. It can be created from a SessionMode for interoperability
 /// with the ACP protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ModeDescriptor {
     /// Unique identifier for the mode (e.g., "plan", "act")
     pub id: String,
@@ -173,6 +175,7 @@ impl ModeDescriptor {
 /// not in its own list — exactly the state a restored session lands in when
 /// its mode was declared in Lua the client has never seen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionModes {
     /// The mode the session is in. Always present in `modes`.
     pub current_mode_id: String,

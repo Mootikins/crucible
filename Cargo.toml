@@ -89,7 +89,7 @@ tower = "0.5"
 # The API contract: the OpenAPI document comes from the router, so the path and
 # the response shape stay together. `preserve_order` keeps the generated
 # `openapi.json` diffable.
-utoipa = { version = "5.5", features = ["axum_extras", "chrono", "preserve_order"] }
+utoipa = { version = "5.5", features = ["axum_extras", "chrono", "preserve_order", "uuid"] }
 utoipa-axum = "0.2"
 
 # MCP protocol

@@ -6,6 +6,7 @@
 /// With `key`, the daemon answers for the leaf at that dot-joined path.
 /// Without it, the daemon answers for the whole store.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ConfigLookupRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
@@ -14,6 +15,7 @@ pub struct ConfigLookupRequest {
 /// Request for `config.reset`, `config.pop` and `config.unset`: one leaf,
 /// named by its dot-joined path.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ConfigKeyRequest {
     pub key: String,
 }
@@ -23,6 +25,7 @@ pub struct ConfigKeyRequest {
 /// The two methods take the same shape. They differ only in the layer that
 /// they write.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ConfigValuesRequest {
     pub values: serde_json::Map<String, serde_json::Value>,
 }
