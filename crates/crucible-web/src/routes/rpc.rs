@@ -58,7 +58,7 @@ pub fn rpc_routes() -> OpenApiRouter<AppState> {
     path = "/api/rpc/{method}",
     params(
         ("method" = String, Path, description = "A wire method name from `RpcMethod`, e.g. `session.get`"),
-        ("x-crucible-plugin" = Option<String>, Header, description = "Who is asking: `app`, or the plugin being drawn for. Omitted, the caller is treated as the app."),
+        ("x-crucible-plugin" = Option<String>, Header, description = "Who is asking: `app`, or the plugin being drawn for. Omitted, the caller is the app, except for `plugin.run_command` and `plugin.publications`, which refuse an omitted caller."),
     ),
     request_body(
         content = serde_json::Value,
@@ -88,7 +88,7 @@ async fn call_rpc_method(
         )));
     }
 
-    let caller = rpc_caller(&headers);
+    let caller = rpc_caller(method, &headers)?;
     plugin_may_call(&state, &caller, method, &params).await?;
 
     let reply = state
@@ -101,25 +101,20 @@ async fn call_rpc_method(
 }
 
 /// Who is asking, read the way `routes/plugin_caller.rs`'s own extractor
-/// reads it — same header, same three-valued identity — except that an
-/// absent header is the app rather than a refusal.
+/// reads it: the same header and the same identity.
 ///
-/// `PluginCaller`'s own [`axum::extract::FromRequestParts`] refuses a missing
-/// header, which is right for the plugin-only routes it guards: every caller
-/// there is either the app or a plugin block, and omitting the header would
-/// be the bypass. This route serves every RPC method, and almost none of them
-/// are plugin business — the app calling `session.get` sends no
-/// `x-crucible-plugin` header at all, and treating that omission as a
-/// refusal would 403 the whole route for its main caller. Only a caller that
-/// *declares* itself a plugin (and only for the two methods
-/// [`plugin_may_call`] lists) gets the stricter treatment.
+/// For the two methods that [`plugin_may_call`] gates, an absent or empty
+/// header is refused, as the extractor refuses it on the plugin routes. If
+/// the route took an omission as the app, a plugin block that forgot to name
+/// itself could run another plugin's command. For every other method, an
+/// absent header is the app, because those methods are not plugin business.
 ///
 /// See `routes/plugin_caller.rs`'s own module comment: this identity is
 /// asserted by the caller, not proved. A hostile same-origin script can
 /// still call itself `app`. Nothing here or there closes that; it is closed
 /// only once plugin blocks run in a sandboxed origin behind a bridge that
 /// stamps their identity (`docs/Meta/Analysis/Plugin API Plan.md`).
-fn rpc_caller(headers: &HeaderMap) -> PluginCaller {
+fn rpc_caller(method: RpcMethod, headers: &HeaderMap) -> Result<PluginCaller, WebError> {
     let declared = headers
         .get(PLUGIN_CALLER_HEADER)
         .and_then(|value| value.to_str().ok())
@@ -127,8 +122,19 @@ fn rpc_caller(headers: &HeaderMap) -> PluginCaller {
         .filter(|value| !value.is_empty());
 
     match declared {
-        Some(APP_CALLER) | None => PluginCaller::App,
-        Some(name) => PluginCaller::Plugin(name.to_string()),
+        Some(APP_CALLER) => Ok(PluginCaller::App),
+        Some(name) => Ok(PluginCaller::Plugin(name.to_string())),
+        None if matches!(
+            method,
+            RpcMethod::PluginRunCommand | RpcMethod::PluginPublications
+        ) =>
+        {
+            Err(WebError::Forbidden(format!(
+                "`{method}` needs a caller identity: send `{PLUGIN_CALLER_HEADER}: {APP_CALLER}`, \
+                 or the name of the plugin you are drawing for"
+            )))
+        }
+        None => Ok(PluginCaller::App),
     }
 }
 
@@ -569,12 +575,16 @@ mod tests {
         );
     }
 
-    /// The app is narrowed to nothing: it sees every plugin's publications,
-    /// same as `GET /api/plugins/publications` with no caller narrowing.
+    /// The app sees the publications of every plugin.
     #[tokio::test]
     async fn the_app_sees_every_plugins_publications() {
-        let (status, body) =
-            request_json("POST", "/api/rpc/plugin.publications", Some(json!({}))).await;
+        let (status, body) = request_json_as(
+            "POST",
+            "/api/rpc/plugin.publications",
+            Some(json!({})),
+            vec![(PLUGIN_CALLER_HEADER, APP_CALLER.to_string())],
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         let publications = body["publications"].as_object().unwrap();
         assert_eq!(publications.len(), 2, "{body}");

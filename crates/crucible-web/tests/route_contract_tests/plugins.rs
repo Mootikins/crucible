@@ -412,14 +412,9 @@ fn gated_routes() -> Vec<(&'static str, &'static str, Option<&'static str>)> {
 /// the way a plugin block or the app would send it.
 ///
 /// `plugin.run_command` and `plugin.publications` reach the browser only
-/// through this route now ([[Simplification Plan#Step 19]] item 4): a
-/// caller narrows itself the same way the six routes above do, but through
-/// the header `rpc()` (`lib/api-client.ts`) merges onto every call, not a
-/// per-route `PluginCaller` extractor. Unlike that extractor, an ABSENT or
-/// empty header on this route resolves to the app rather than a refusal —
-/// see `routes/rpc.rs`'s own `rpc_caller` doc comment for why: almost none
-/// of this route's callers are plugin business, so refusing the common case
-/// (no header at all) would 403 the route for its main caller.
+/// through this route. For these two methods, the route refuses an absent or
+/// empty header, as the `PluginCaller` extractor refuses it on the plugin
+/// routes above.
 fn rpc_request_as(caller: Option<&str>, method: &str, body: Value) -> Request<Body> {
     let mut builder = Request::builder()
         .method("POST")
@@ -479,13 +474,8 @@ async fn a_request_naming_no_caller_is_refused_on_every_gated_route() {
 /// An empty header value names nobody either — a client that built the header
 /// from an unset variable must not read as the app.
 ///
-/// Proved through `/api/plugins/{name}/option`, not the RPC route: every
-/// route still gated by `PluginCaller`'s own extractor shares this behavior,
-/// and `option_call` is the one of the six this file exercises elsewhere
-/// too. `POST /api/rpc/{method}` reads the SAME empty-or-absent header
-/// differently by design (see `rpc_request_as`'s own doc comment) — that
-/// difference is what `an_empty_or_absent_caller_on_the_rpc_route_is_the_app`
-/// below proves, so both readings of one empty header stay tested.
+/// Proved through `/api/plugins/{name}/option`. The RPC route has its own
+/// test below.
 #[tokio::test]
 async fn an_empty_caller_header_names_nobody() {
     let (_mock, client) = start_mock_daemon().await;
@@ -504,27 +494,28 @@ async fn an_empty_caller_header_names_nobody() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
-/// The RPC route's own reading of the same empty header: an absent or
-/// whitespace-only `x-crucible-plugin` is the app there, not a refusal — see
-/// `rpc_request_as`'s doc comment. Both callers reach `plugin.publications`
-/// and see the unnarrowed answer.
+/// On the RPC route, the two plugin methods refuse a caller that names
+/// nobody: an absent header or an empty one. If the route took the omission
+/// as the app, a plugin block that forgot to name itself could run another
+/// plugin's command.
 #[tokio::test]
-async fn an_empty_or_absent_caller_on_the_rpc_route_is_the_app() {
-    for caller in [None, Some("   ")] {
-        let (_mock, client) = start_mock_daemon().await;
-        let app = build_test_app(build_state(client));
+async fn the_plugin_methods_on_the_rpc_route_refuse_a_caller_that_names_nobody() {
+    for method in ["plugin.run_command", "plugin.publications"] {
+        for caller in [None, Some("   ")] {
+            let (_mock, client) = start_mock_daemon().await;
+            let app = build_test_app(build_state(client));
 
-        let response = app
-            .oneshot(rpc_request_as(caller, "plugin.publications", json!({})))
-            .await
-            .unwrap();
+            let response = app
+                .oneshot(rpc_request_as(caller, method, json!({})))
+                .await
+                .unwrap();
 
-        assert_eq!(response.status(), StatusCode::OK, "caller {caller:?}");
-        let json = response_json(response).await;
-        assert!(
-            json["publications"].get("and-more").is_some(),
-            "the app's unnarrowed answer, caller {caller:?}: got {json}"
-        );
+            assert_eq!(
+                response.status(),
+                StatusCode::FORBIDDEN,
+                "{method} answered caller {caller:?}"
+            );
+        }
     }
 }
 

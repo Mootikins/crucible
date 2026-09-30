@@ -9386,7 +9386,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Who is asking: `app`, or the plugin being drawn for. Omitted, the caller is treated as the app. */
+                /** @description Who is asking: `app`, or the plugin being drawn for. Omitted, the caller is the app, except for `plugin.run_command` and `plugin.publications`, which refuse an omitted caller. */
                 "x-crucible-plugin"?: string | null;
             };
             path: {
