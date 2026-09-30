@@ -8,6 +8,7 @@ mod knob_rpc;
 mod model_prefetch;
 mod proposal_fetch;
 mod replay;
+mod resume_warnings;
 mod session_resume;
 mod status_read;
 mod stream_gap;

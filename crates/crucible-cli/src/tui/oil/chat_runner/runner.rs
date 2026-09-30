@@ -194,8 +194,17 @@ impl OilChatRunner {
             events,
             pending,
             workspace,
+            resume_warnings,
         } = open_session(selection).await?;
         app.set_session_workspace(workspace);
+        // What a stored resume of this session did not bring back. The
+        // daemon computed the list once in `session.resume`'s own reply;
+        // this is only the TUI's wording of it.
+        for warning in &resume_warnings {
+            app.add_notification(crucible_core::types::Notification::warning(
+                crate::tui::oil::chat_runner::resume_warning_text(warning),
+            ));
+        }
         // The model list is session-scoped: `session.list_models` answers an
         // ACP agent's own selector and the provider catalogue (narrowed by
         // the session's classification) for an internal one. The

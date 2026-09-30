@@ -183,6 +183,10 @@ pub struct OpenedSession {
     /// Where the session acts. A resumed session keeps the workspace it was
     /// created in, which need not be this process's directory.
     pub workspace: Option<std::path::PathBuf>,
+    /// What a stored resume of this session did not bring back, from
+    /// `session.resume`'s own reply. Empty for a session this call created,
+    /// and for a resume that stayed in memory.
+    pub resume_warnings: Vec<crucible_core::protocol::requests::ResumeWarning>,
 }
 
 /// Create or resume a daemon session, and subscribe to its events.
@@ -207,7 +211,10 @@ pub async fn open_session(
         .await
         .map_err(|e| anyhow::anyhow!("failed to subscribe to session events: {}", e))?;
 
-    let id = resolve_session_id(&client, config, params).await?;
+    let ResolvedSession {
+        id,
+        resume_warnings,
+    } = resolve_session_id(&client, config, params).await?;
 
     client
         .session_subscribe(&[id.as_str()])
@@ -228,6 +235,7 @@ pub async fn open_session(
         events,
         pending,
         workspace,
+        resume_warnings,
     })
 }
 
@@ -288,11 +296,33 @@ pub(crate) fn resolve_is_acp(
         || *preference == crucible_core::config::AgentPreference::Acp
 }
 
+/// The session id `open_session` resolved, and what a resume of it — if it
+/// resumed one — cost, per the daemon's own `session.resume` reply. Empty
+/// for a session this call created.
+struct ResolvedSession {
+    id: String,
+    resume_warnings: Vec<crucible_core::protocol::requests::ResumeWarning>,
+}
+
+/// The `warnings` array of a `session.resume` reply, decoded. A reply that
+/// carries none, or a shape this build does not recognize, answers empty:
+/// the resume itself already succeeded, and a client that cannot read a
+/// warning must not treat that as the resume having failed.
+fn resume_warnings_of(
+    reply: &serde_json::Value,
+) -> Vec<crucible_core::protocol::requests::ResumeWarning> {
+    reply
+        .get("warnings")
+        .cloned()
+        .and_then(|w| serde_json::from_value(w).ok())
+        .unwrap_or_default()
+}
+
 async fn resolve_session_id(
     client: &DaemonClient,
     config: &CliAppConfig,
     params: &AgentInitParams,
-) -> Result<String> {
+) -> Result<ResolvedSession> {
     let workspace = params
         .working_dir
         .clone()
@@ -308,11 +338,12 @@ async fn resolve_session_id(
         );
     let create_agent_type = if is_acp { "acp" } else { "internal" };
 
+    let mut resume_warnings = Vec::new();
     let session_id = match &params.resume_session_id {
         Some(id) if !id.is_empty() => {
             info!("Resuming specific daemon session: {}", id);
             match client.session_resume(id).await {
-                Ok(_) => {}
+                Ok(reply) => resume_warnings = resume_warnings_of(&reply),
                 Err(e) => {
                     info!("Session resume skipped (may already be active): {}", e);
                 }
@@ -334,7 +365,8 @@ async fn resolve_session_id(
             if let Some(session) = sessions.sessions.first() {
                 let id = session.id.to_string();
                 info!("Resuming most recent daemon session: {}", id);
-                client.session_resume(&id).await?;
+                let reply = client.session_resume(&id).await?;
+                resume_warnings = resume_warnings_of(&reply);
                 id
             } else {
                 info!("No existing session to resume, creating new one");
@@ -347,7 +379,10 @@ async fn resolve_session_id(
         }
     };
 
-    Ok(session_id)
+    Ok(ResolvedSession {
+        id: session_id,
+        resume_warnings,
+    })
 }
 
 async fn create_new_daemon_session(

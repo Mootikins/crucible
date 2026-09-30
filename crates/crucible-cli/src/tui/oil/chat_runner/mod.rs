@@ -32,6 +32,37 @@ pub use stream::event_msgs;
 pub use stream::SessionEventStream;
 pub(crate) use stream::{live_session_event_consumer, session_event_consumer};
 
+/// The TUI's own wording of one [`crucible_core::protocol::requests::ResumeWarning`].
+///
+/// The one place this client turns the daemon's warning list into text, so
+/// every caller (today, only the resume of a fresh chat run) reads the same
+/// sentence for the same warning.
+pub(crate) fn resume_warning_text(
+    warning: &crucible_core::protocol::requests::ResumeWarning,
+) -> String {
+    use crucible_core::protocol::requests::ResumeWarning;
+    match warning {
+        ResumeWarning::PluginStateReset => {
+            "This session's plugin state did not survive the resume. Values a plugin \
+             saved with session:set_variable came back; anything else a plugin kept in \
+             memory did not, and its session_start hooks ran again."
+                .to_string()
+        }
+        ResumeWarning::PendingWorkCleared => {
+            "Work in progress when this session ended did not survive: any running \
+             subagent, in-flight tool call, or unanswered prompt is gone. The session \
+             starts clean."
+                .to_string()
+        }
+        ResumeWarning::KilnUnavailable { path } => {
+            format!(
+                "The kiln at {path} no longer resolves. This session keeps searching \
+                 its other kilns, but not this one, until it is registered again."
+            )
+        }
+    }
+}
+
 /// Parameters for event_loop function.
 ///
 /// `session` is `None` in a replay: a replay reaches no daemon. Owns both
