@@ -46,7 +46,7 @@ pub async fn execute(_config: CliAppConfig, args: TestArgs) -> Result<()> {
 
     // Run plugin tests via daemon RPC
     let response = client
-        .lua_run_plugin_tests(LuaRunPluginTestsRequest {
+        .rpc_lua_run_plugin_tests(LuaRunPluginTestsRequest {
             test_path: test_path.to_string_lossy().to_string(),
             filter: args.filter,
         })

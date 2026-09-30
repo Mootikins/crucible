@@ -34,7 +34,7 @@ pub async fn execute(_config: CliAppConfig, args: StubsArgs) -> Result<()> {
 
     // Generate or verify stubs via daemon RPC
     let response = client
-        .lua_generate_stubs(LuaGenerateStubsRequest {
+        .rpc_lua_generate_stubs(LuaGenerateStubsRequest {
             output_dir: output_dir.to_string_lossy().to_string(),
             verify: args.verify,
         })

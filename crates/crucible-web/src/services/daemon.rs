@@ -95,7 +95,7 @@ impl ReconnectingDaemon {
     /// probe repairs the link it found broken instead of only reporting it.
     pub async fn ping(&self) -> anyhow::Result<String> {
         self.forward_rpc(ReplayPolicy::Safe, RpcMethod::Ping, |client| {
-            Box::pin(client.ping())
+            Box::pin(client.rpc_ping(()))
         })
         .await
     }
@@ -401,10 +401,30 @@ impl ReconnectingDaemon {
         -> () = session_clear(&session_id);
     }
 
-    forward_rpc! {
-        Once SessionUndo =>
-        session_undo(session_id: &str, count: usize)
-        -> Vec<crucible_core::types::UndoSummary> = session_undo(&session_id, count);
+    /// `DaemonClient::session_undo` was a thin forwarder with no transform of
+    /// its own; gone per step 19 item 9. This hand-written forwarder stays
+    /// (the `forward_rpc!` macro only spells a single `ident(args)` call, and
+    /// this one also unwraps the reply's `undone` field), calling the
+    /// generated `rpc_session_undo` and building its `Scoped<UndoCount>` body.
+    pub async fn session_undo(
+        &self,
+        session_id: &str,
+        count: usize,
+    ) -> anyhow::Result<Vec<crucible_core::types::UndoSummary>> {
+        let session_id = session_id.to_owned();
+        self.forward_rpc(ReplayPolicy::Once, RpcMethod::SessionUndo, move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move {
+                let reply = daemon
+                    .rpc_session_undo(crucible_core::protocol::requests::Scoped::new(
+                        session_id,
+                        crucible_core::protocol::requests::UndoCount { count: Some(count) },
+                    ))
+                    .await?;
+                Ok(reply.undone)
+            })
+        })
+        .await
     }
 
     forward_rpc! {
@@ -472,9 +492,11 @@ impl ReconnectingDaemon {
 
     // providers.list, models.list and agents.list_profiles: the browser
     // calls them through `POST /api/rpc/{method}` now (Simplification Plan
-    // step 19), so these forwarders are gone. `DaemonClient::list_providers`/
-    // `list_all_models`/`agents_list_profiles` stay (item 9 is a separate
-    // pass; the `rpc.rs` route reaches them directly).
+    // step 19), so these forwarders are gone. `DaemonClient::list_all_models`
+    // stays (the CLI calls it by name); `list_providers` (no caller) and
+    // `agents_list_profiles`/`agents_list_cards`/`agents_resolve_profile`
+    // (each with a single CLI caller, inlined onto the generated method) are
+    // gone too — step 19 item 9.
 
     // Used only by this module's own startup auto-registration of the
     // operator-configured kiln path, which is a local, trusted decision, not

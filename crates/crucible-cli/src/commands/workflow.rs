@@ -437,26 +437,14 @@ async fn run_approve(session: &str, gate: Option<&str>) -> Result<()> {
 async fn run_status(session: &str) -> Result<()> {
     let client = daemon_client().await?;
     let snap = client
-        .workflow_status(session)
+        .rpc_workflow_status(Scoped::session(session.to_string()))
         .await
         .context("workflow.status RPC failed")?;
 
-    println!(
-        "Progress: {} / {}",
-        snap.get("completed_slots")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        snap.get("total_slots")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-    );
-    if let Some(status) = snap.get("status") {
-        println!("Status: {}", status);
-    }
-    if let Some(scope) = snap.get("scope") {
-        if !scope.as_object().map(|o| o.is_empty()).unwrap_or(true) {
-            println!("Outputs: {}", scope);
-        }
+    println!("Progress: {} / {}", snap.completed_slots, snap.total_slots);
+    print_status_result(&serde_json::to_value(&snap)?);
+    if !snap.scope.is_empty() {
+        println!("Outputs: {}", serde_json::to_value(&snap.scope)?);
     }
     Ok(())
 }
@@ -464,7 +452,7 @@ async fn run_status(session: &str) -> Result<()> {
 async fn run_cancel(session: &str) -> Result<()> {
     let client = daemon_client().await?;
     client
-        .workflow_cancel(session)
+        .rpc_workflow_cancel(Scoped::session(session.to_string()))
         .await
         .context("workflow.cancel RPC failed")?;
     println!("Cancelled workflow on session {}", session);
@@ -505,20 +493,16 @@ async fn gate_id_from_status(
     session: &str,
 ) -> Result<String> {
     let snap = client
-        .workflow_status(session)
+        .rpc_workflow_status(Scoped::session(session.to_string()))
         .await
         .context("workflow.status RPC failed")?;
-    snap.get("status")
-        .and_then(|s| s.get("gate"))
-        .and_then(|g| g.get("id"))
-        .and_then(|id| id.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            anyhow!(
-                "no gate is currently pending on session '{}'; pass gate id explicitly",
-                session
-            )
-        })
+    match snap.status {
+        crucible_core::workflow::WorkflowStatus::AwaitingApproval { gate } => Ok(gate.id),
+        _ => Err(anyhow!(
+            "no gate is currently pending on session '{}'; pass gate id explicitly",
+            session
+        )),
+    }
 }
 
 fn print_status_result(value: &serde_json::Value) {

@@ -174,7 +174,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             // Poll until daemon responds
             for _ in 0..50 {
                 if let Ok(client) = DaemonClient::connect().await {
-                    if client.ping().await.is_ok() {
+                    if client.rpc_ping(()).await.is_ok() {
                         println!("Daemon started");
                         return Ok(());
                     }
@@ -207,7 +207,7 @@ async fn stop_daemon() -> Result<()> {
 
     match DaemonClient::connect().await {
         Ok(client) => {
-            client.shutdown().await?;
+            client.rpc_shutdown(()).await?;
             println!("Daemon stopped");
         }
         Err(e) => {
@@ -224,7 +224,7 @@ async fn restart_daemon(config_path: Option<PathBuf>) -> Result<()> {
         // Stop the existing daemon
         match DaemonClient::connect().await {
             Ok(client) => {
-                let _ = client.shutdown().await;
+                let _ = client.rpc_shutdown(()).await;
                 println!("Stopping daemon...");
                 // Wait for daemon to release socket
                 for _ in 0..50 {
@@ -271,7 +271,7 @@ async fn show_status(json: bool) -> Result<()> {
     let status = if is_daemon_running(&sock) {
         match DaemonClient::connect().await {
             Ok(client) => {
-                client.ping().await?;
+                client.rpc_ping(()).await?;
                 let kilns = client
                     .kiln_list()
                     .await?

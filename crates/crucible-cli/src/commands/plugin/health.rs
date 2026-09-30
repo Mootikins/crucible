@@ -33,7 +33,7 @@ pub async fn execute(_config: CliAppConfig, args: HealthArgs) -> Result<()> {
 
     // Run health check via daemon RPC
     let response = client
-        .lua_plugin_health(LuaPluginHealthRequest {
+        .rpc_lua_plugin_health(LuaPluginHealthRequest {
             plugin_path: args.path.to_string_lossy().to_string(),
         })
         .await?;

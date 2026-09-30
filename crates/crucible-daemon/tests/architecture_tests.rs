@@ -222,6 +222,18 @@ fn shared_request_type_failures(
 // instead of echoing a single field — but the field-name bug class is
 // identical, so they get their own parity table instead of CONFIG_METHODS
 // rows.
+//
+// `session_connect_kiln`/`session_disconnect_kiln` no longer have a
+// hand-written client wrapper to scan (Simplification Plan step 19 item 9:
+// each only built `Scoped::new(id, NamedKiln { kiln })` and called the row,
+// no reshaping a caller could not do itself) — every caller, including
+// `routes/rpc.rs`'s generic `POST /api/rpc/{method}` forwarder, now goes
+// through the generated `rpc_session_connect_kiln`/`rpc_session_disconnect_kiln`,
+// whose signature IS the row's `Scoped<NamedKiln>`, so a field-name drift
+// there is a compile error rather than something this string-scan gate needs
+// to catch. `session_set_workspace` keeps its hand-written wrapper (it turns
+// an `Option<&Path>` into the row's `Option<String>`), so it keeps its row
+// here.
 // ===========================================================================
 
 struct ScopeMethod {
@@ -233,23 +245,11 @@ struct ScopeMethod {
     request_type: &'static str,
 }
 
-const SCOPE_METHODS: &[ScopeMethod] = &[
-    ScopeMethod {
-        client_fn: "session_connect_kiln",
-        server_fn: "handle_session_connect_kiln",
-        request_type: "NamedKiln",
-    },
-    ScopeMethod {
-        client_fn: "session_disconnect_kiln",
-        server_fn: "handle_session_disconnect_kiln",
-        request_type: "NamedKiln",
-    },
-    ScopeMethod {
-        client_fn: "session_set_workspace",
-        server_fn: "handle_session_set_workspace",
-        request_type: "WorkspaceChoice",
-    },
-];
+const SCOPE_METHODS: &[ScopeMethod] = &[ScopeMethod {
+    client_fn: "session_set_workspace",
+    server_fn: "handle_session_set_workspace",
+    request_type: "WorkspaceChoice",
+}];
 
 // The request side of each pair is a shared type (`shared_request_type_failures`
 // below), so a client/server field-name mismatch there is a compile error, not
@@ -281,6 +281,25 @@ fn rpc_scope_mutation_field_names_match_across_the_wire() {
             &client_body,
             &server_body,
         ));
+    }
+
+    // `session_connect_kiln`/`session_disconnect_kiln` lost their
+    // hand-written client wrapper (see the module comment above), so their
+    // client-side type parity is a compile-time property now, not this
+    // gate's. Their server side still deserializes by hand, so that half
+    // keeps its check here.
+    let scoped_named_kiln = Regex::new(r"typed_params::<\s*Scoped<\s*NamedKiln\s*>\s*>").unwrap();
+    for server_fn in [
+        "handle_session_connect_kiln",
+        "handle_session_disconnect_kiln",
+    ] {
+        let server_body = fn_body(&server, &format!("fn {server_fn}("));
+        if !scoped_named_kiln.is_match(&server_body) {
+            failures.push(format!(
+                "{server_fn}: does not deserialize Scoped<NamedKiln> — use \
+                 `typed_params::<Scoped<NamedKiln>>(&req)`, not a field read by hand"
+            ));
+        }
     }
 
     // All three mutations return the shared scope response.

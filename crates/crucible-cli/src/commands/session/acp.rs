@@ -102,9 +102,11 @@ fn annotate_unknown_agent(
 /// daemon's own error (the one that lists the cards) as what the user sees.
 async fn is_known_acp_profile(client: &DaemonClient, name: &str) -> bool {
     client
-        .agents_resolve_profile(name)
+        .rpc_agents_resolve_profile(crucible_core::protocol::requests::NameRequest {
+            name: name.to_string(),
+        })
         .await
-        .is_ok_and(|v| !v.is_null())
+        .is_ok_and(|v| v.is_some())
 }
 
 /// The `--raw` line for one session event. The keys match the wire message

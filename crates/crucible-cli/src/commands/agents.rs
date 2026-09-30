@@ -3,7 +3,7 @@
 //! `cru agents` lists the agent cards and ACP profiles the daemon resolves;
 //! `cru agents validate` checks the card files on disk.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crucible_core::agent::{AgentCard, AgentCardLoader};
 use crucible_daemon::agent_cards::card_directories;
 use crucible_daemon::runtime_path::SourceRoots;
@@ -90,17 +90,11 @@ struct AcpProfile {
     available: bool,
 }
 
-/// The `cards` array of an `agents.list_cards` reply, as the shared type.
-fn parse_cards_reply(reply: serde_json::Value) -> Option<Vec<AgentCard>> {
-    let cards = reply.get("cards")?.clone();
-    serde_json::from_value(cards).ok()
-}
-
 /// The ACP profiles the daemon knows, or an empty list.
 ///
 /// Best-effort on purpose: a failed profile query means no ACP section.
 async fn acp_profiles(client: &DaemonClient) -> Vec<AcpProfile> {
-    let Ok(reply) = client.agents_list_profiles().await else {
+    let Ok(reply) = client.rpc_agents_list_profiles(()).await else {
         return Vec::new();
     };
     reply
@@ -123,9 +117,12 @@ async fn acp_profiles(client: &DaemonClient) -> Vec<AcpProfile> {
 async fn list(config: &CliAppConfig, tag: Option<String>, format: OutputFormat) -> Result<()> {
     let client = daemon_client().await?;
     let reply = client
-        .agents_list_cards(&current_workspace(), Some(&config.kiln_path))
+        .rpc_agents_list_cards(crucible_core::protocol::requests::AgentsListCardsRequest {
+            workspace: current_workspace().to_string_lossy().to_string(),
+            kiln_path: Some(config.kiln_path.to_string_lossy().to_string()),
+        })
         .await?;
-    let all_cards = parse_cards_reply(reply).context("The daemon reply has no agent cards")?;
+    let all_cards = reply.cards;
 
     // Get cards, optionally filtered by tag
     let cards: Vec<&AgentCard> = match &tag {
@@ -405,34 +402,12 @@ mod tests {
 
     /// The CLI reads the daemon's `agents.list_cards` reply through the
     /// shared `AgentCard` type, so the wire shape pinned in
-    /// `rpc::dispatch::tests::dispatch_agents_list_cards_pins_the_card_json`
-    /// is the shape parsed here.
-    #[test]
-    fn parse_cards_reply_reads_the_daemon_wire_shape() {
-        let reply = serde_json::json!({
-            "cards": [{
-                "id": "9d7a4a3e-3c2f-4a4a-9e2b-0d0f3f5d8b11",
-                "name": "alpha",
-                "version": "0.1.0",
-                "description": "First by name",
-                "tags": ["review"],
-                "system_prompt": "Help.",
-                "mcp_servers": [],
-                "config": {},
-                "loaded_at": "2026-08-23T00:00:00Z",
-            }]
-        });
-        let cards = parse_cards_reply(reply).expect("cards parse");
-        assert_eq!(cards.len(), 1);
-        assert_eq!(cards[0].name, "alpha");
-        assert_eq!(cards[0].tags, vec!["review".to_string()]);
-    }
-
-    /// A reply without `cards` is not a list.
-    #[test]
-    fn parse_cards_reply_without_cards_is_none() {
-        assert!(parse_cards_reply(serde_json::json!({})).is_none());
-    }
+    // `parse_cards_reply` (hand-decoding the `agents.list_cards` wire shape
+    // out of a raw `Value`) is gone with the `DaemonClient::agents_list_cards`
+    // forwarder it served: `list` now reads `rpc_agents_list_cards(...)`'s
+    // typed `AgentCardsListReply` directly, and
+    // `crucible_core::protocol::requests::golden_reply_tests::agents_list_cards`
+    // already pins that reply's wire shape.
 
     #[test]
     fn agents_list_truncates_description_on_a_char_boundary() {

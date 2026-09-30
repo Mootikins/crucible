@@ -684,7 +684,7 @@ async fn run_interactive_chat(
         if let Some(client) = setup_client.as_ref() {
             for session_id in opened {
                 let shutdown_params = Scoped::session(session_id);
-                if let Err(e) = client.lua_shutdown_session(shutdown_params).await {
+                if let Err(e) = client.rpc_lua_shutdown_session(shutdown_params).await {
                     warn!("Failed to shutdown Lua session via daemon RPC: {}", e);
                 }
             }
@@ -958,7 +958,7 @@ async fn init_lua_session(session_id: &str, kiln_root: &std::path::Path) -> bool
             kiln_path: Some(kiln_root.to_string_lossy().to_string()),
         },
     );
-    match client.lua_init_session(init_params).await {
+    match client.rpc_lua_init_session(init_params).await {
         Ok(response) => {
             debug!(session_id = %response.session_id, "Initialized Lua session via daemon RPC");
             true

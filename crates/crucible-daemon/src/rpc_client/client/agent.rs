@@ -1,6 +1,15 @@
 //! Agent and skills RPC methods
 //!
 //! Methods for managing agents, skills, and models.
+//!
+//! Every method below keeps its own hand-written place because it does
+//! real work the generated `rpc_<variant>` method does not: a retry
+//! policy, a download timeout, an argument transform several callers
+//! need, or a decode from a wire-only shape (a `String` enum tag, a
+//! borrowed `&Path`) into the caller's own type. A method that only
+//! built the row's request from its arguments and called the row — no
+//! transform, no retry, no decode — is gone; its callers now call the
+//! generated method directly (Simplification Plan step 19 item 9).
 
 use anyhow::Result;
 use crucible_core::protocol::requests::*;
@@ -8,13 +17,15 @@ use crucible_core::protocol::RpcMethod;
 use std::path::Path;
 use std::time::Duration;
 
-use super::types::extract_string_array;
-use super::{DaemonClient, NO_PARAMS};
-use crucible_core::protocol::requests::NameRequest;
+use super::DaemonClient;
 use crucible_core::protocol::requests::Scoped;
 use crucible_core::types::{KnobValue, SessionKnob};
 
 impl DaemonClient {
+    /// Serializes a typed `&SessionAgent` into the row's wire `Value` and
+    /// discards the reply. 13 call sites configure a session's agent this
+    /// way rather than building `AgentConfig` and handling the fallible
+    /// serialization themselves.
     pub async fn session_configure_agent(
         &self,
         session_id: &str,
@@ -44,7 +55,8 @@ impl DaemonClient {
     }
 
     /// Read one knob's value, in the same [`KnobValue`] shape
-    /// [`Self::session_knob_set`] writes.
+    /// [`Self::session_knob_set`] writes. Retries on a transient failure,
+    /// unlike the generated method's single attempt.
     pub async fn session_knob_get(&self, session_id: &str, knob: SessionKnob) -> Result<KnobValue> {
         self.call_with_retry(
             RpcMethod::SessionKnobGet,
@@ -53,35 +65,8 @@ impl DaemonClient {
         .await
     }
 
-    /// Attach a kiln to a session's set. Returns the updated scope
-    /// `{session_id, kilns, workspace}`.
-    pub async fn session_connect_kiln(
-        &self,
-        session_id: &str,
-        kiln: &crucible_core::config::KilnName,
-    ) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::SessionConnectKiln,
-            Scoped::new(session_id.to_string(), NamedKiln { kiln: kiln.clone() }),
-        )
-        .await
-    }
-
-    /// Detach a kiln from the session's set. Any member may be detached — the
-    /// set is flat, including the kiln the session was created with.
-    pub async fn session_disconnect_kiln(
-        &self,
-        session_id: &str,
-        kiln: &crucible_core::config::KilnName,
-    ) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::SessionDisconnectKiln,
-            Scoped::new(session_id.to_string(), NamedKiln { kiln: kiln.clone() }),
-        )
-        .await
-    }
-
-    /// Set (Some) or detach (None) the session's workspace.
+    /// Set (Some) or detach (None) the session's workspace. Turns the
+    /// caller's `Option<&Path>` into the row's `Option<String>`.
     pub async fn session_set_workspace(
         &self,
         session_id: &str,
@@ -99,6 +84,9 @@ impl DaemonClient {
         .await
     }
 
+    /// Turns a typed [`crucible_core::session::PluginApproval`] into the
+    /// row's wire string and discards the reply. 9 call sites change a
+    /// plugin's approval this way.
     pub async fn session_set_plugin_approval(
         &self,
         session_id: &str,
@@ -118,12 +106,14 @@ impl DaemonClient {
         .await
     }
 
+    /// Retries on a transient failure, and decodes the row's wire `String`
+    /// back into [`crucible_core::session::PluginApproval`].
     pub async fn session_get_plugin_approval(
         &self,
         session_id: &str,
         plugin: &str,
     ) -> Result<crucible_core::session::PluginApproval> {
-        let result: serde_json::Value = self
+        let reply: PluginApprovalReply = self
             .call_with_retry(
                 RpcMethod::SessionGetPluginApproval,
                 Scoped::new(
@@ -134,38 +124,39 @@ impl DaemonClient {
                 ),
             )
             .await?;
-        Ok(serde_json::from_value(result["approval"].clone())?)
+        Ok(serde_json::from_value(serde_json::Value::String(
+            reply.approval,
+        ))?)
     }
 
+    /// Retries on a transient failure, and decodes each wire `String` in
+    /// the reply into [`crucible_core::session::PluginApproval`].
     pub async fn session_list_plugin_approvals(
         &self,
         session_id: &str,
     ) -> Result<std::collections::BTreeMap<String, crucible_core::session::PluginApproval>> {
-        let result: serde_json::Value = self
+        let reply: SessionListPluginApprovalsReply = self
             .call_with_retry(
                 RpcMethod::SessionListPluginApprovals,
                 Scoped::session(session_id.to_owned()),
             )
             .await?;
-        Ok(serde_json::from_value(result["approvals"].clone())?)
+        Ok(reply.approvals)
     }
 
+    /// Retries on a transient failure.
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {
-        let result: serde_json::Value = self
+        let reply: SessionListModelsReply = self
             .call_with_retry(
                 RpcMethod::SessionListModels,
                 Scoped::session(session_id.to_string()),
             )
             .await?;
-
-        Ok(extract_string_array(&result, "models"))
+        Ok(reply.models)
     }
 
-    /// The modes this session may enter, and the one it is in.
-    ///
-    /// The list is per-session because it is resolved from the session's Lua
-    /// registry — two sessions in different projects can offer different modes.
     /// The settings this session's external agent advertised for itself.
+    /// Retries on a transient failure.
     pub async fn session_list_agent_options(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call_with_retry(
             RpcMethod::SessionListAgentOptions,
@@ -174,33 +165,8 @@ impl DaemonClient {
         .await
     }
 
-    /// Set one of the agent's own settings.
-    pub async fn session_set_agent_option(
-        &self,
-        session_id: &str,
-        option_id: &str,
-        value: &str,
-    ) -> Result<()> {
-        #[derive(serde::Serialize)]
-        struct Params<'a> {
-            session_id: &'a str,
-            option_id: &'a str,
-            value: &'a str,
-        }
-        let _: serde_json::Value = self
-            .call(
-                RpcMethod::SessionSetAgentOption,
-                Params {
-                    session_id,
-                    option_id,
-                    value,
-                },
-            )
-            .await?;
-        Ok(())
-    }
-
-    /// Which settings this session can change.
+    /// Which settings this session can change. Retries on a transient
+    /// failure.
     pub async fn session_list_knobs(
         &self,
         session_id: &str,
@@ -213,15 +179,12 @@ impl DaemonClient {
     }
 
     /// The session's command catalog, in the order of its sources.
+    /// Retries on a transient failure.
     pub async fn session_commands(
         &self,
         session_id: &str,
     ) -> Result<Vec<crucible_core::types::SessionCommand>> {
-        #[derive(serde::Deserialize)]
-        struct Reply {
-            commands: Vec<crucible_core::types::SessionCommand>,
-        }
-        let reply: Reply = self
+        let reply: SessionCommandsReply = self
             .call_with_retry(
                 RpcMethod::SessionCommands,
                 Scoped::session(session_id.to_string()),
@@ -230,6 +193,7 @@ impl DaemonClient {
         Ok(reply.commands)
     }
 
+    /// Retries on a transient failure.
     pub async fn session_list_modes(
         &self,
         session_id: &str,
@@ -242,11 +206,12 @@ impl DaemonClient {
     }
 
     /// List all available models without requiring an active session.
+    /// Retries on a transient failure.
     ///
     /// If `kiln_path` is provided, the daemon resolves the kiln's data classification
     /// and filters providers whose trust level doesn't satisfy it.
     pub async fn list_all_models(&self, kiln_path: Option<&Path>) -> Result<Vec<String>> {
-        let result: serde_json::Value = self
+        let reply: ModelsListReply = self
             .call_with_retry(
                 RpcMethod::ModelsList,
                 ListAllModelsRequest {
@@ -254,8 +219,7 @@ impl DaemonClient {
                 },
             )
             .await?;
-
-        Ok(extract_string_array(&result, "models"))
+        Ok(reply.models)
     }
 
     /// The local embedding catalog, and what of it is already on disk.
@@ -284,76 +248,37 @@ impl DaemonClient {
         }
     }
 
-    /// List all available providers without requiring an active session.
-    pub async fn list_providers(
-        &self,
-        kiln_path: Option<&std::path::Path>,
-    ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
-        self.list_providers_inner(kiln_path, None).await
-    }
-
-    /// Like [`Self::list_providers`], but skips model discovery — no endpoint
-    /// is dialed, so this returns fast even when a provider is down. The
-    /// `models` field comes back empty and `available` is not meaningful;
-    /// use this when only the *existence* of providers matters (preflight).
+    /// Skips model discovery — no endpoint is dialed, so this returns fast
+    /// even when a provider is down. The `models` field comes back empty
+    /// and `available` is not meaningful; use this when only the
+    /// *existence* of providers matters (preflight). Retries on a
+    /// transient failure.
+    ///
+    /// `DaemonClient::list_providers` (`include_models` left `None`) had no
+    /// caller and is gone; this is the only shape anything still asks for.
     pub async fn list_providers_summary(
         &self,
         kiln_path: Option<&std::path::Path>,
     ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
-        self.list_providers_inner(kiln_path, Some(false)).await
-    }
-
-    async fn list_providers_inner(
-        &self,
-        kiln_path: Option<&std::path::Path>,
-        include_models: Option<bool>,
-    ) -> Result<Vec<crate::agent_manager::providers::ProviderInfo>> {
-        let result: serde_json::Value = self
+        let reply: ProvidersListReply = self
             .call_with_retry(
                 RpcMethod::ProvidersList,
                 ListProvidersRequest {
                     kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
-                    include_models,
+                    include_models: Some(false),
                 },
             )
             .await?;
-        let providers = result["providers"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-        Ok(providers)
-    }
-
-    /// Undo the last N agent turns for a session.
-    pub async fn session_undo(
-        &self,
-        session_id: &str,
-        count: usize,
-    ) -> Result<Vec<crucible_core::types::UndoSummary>> {
-        let resp: serde_json::Value = self
-            .call(
-                RpcMethod::SessionUndo,
-                Scoped::new(session_id.to_string(), UndoCount { count: Some(count) }),
-            )
-            .await?;
-        let undone = resp
-            .get("undone")
-            .cloned()
-            .unwrap_or(serde_json::Value::Array(vec![]));
-        let summaries: Vec<crucible_core::types::UndoSummary> =
-            serde_json::from_value(undone).unwrap_or_default();
-        Ok(summaries)
+        Ok(reply.providers)
     }
 
     // =========================================================================
     // Skills Discovery RPC Methods
     // =========================================================================
 
-    /// List discovered skills with optional scope filter.
+    /// List discovered skills with optional scope filter. Turns `&Path`
+    /// arguments into the row's wire `String` fields; the CLI
+    /// (`crates/crucible-cli/src/commands/skills.rs`) calls this by name.
     pub async fn skills_list(
         &self,
         kiln_path: &Path,
@@ -371,7 +296,8 @@ impl DaemonClient {
         .await
     }
 
-    /// Get a single skill by name with full body.
+    /// Get a single skill by name with full body. Turns `&Path` arguments
+    /// into the row's wire `String` fields.
     pub async fn skills_get(
         &self,
         name: &str,
@@ -390,6 +316,7 @@ impl DaemonClient {
     }
 
     /// Search skills by text query (case-insensitive match on name + description).
+    /// Turns `&Path` arguments into the row's wire `String` fields.
     pub async fn skills_search(
         &self,
         query: &str,
@@ -404,38 +331,6 @@ impl DaemonClient {
                 kiln_path: kiln_path.to_string_lossy().to_string(),
                 workspace: workspace.map(|p| p.to_string_lossy().to_string()),
                 limit,
-            },
-        )
-        .await
-    }
-
-    /// List all available agent profiles (builtins + configured).
-    pub async fn agents_list_profiles(&self) -> Result<crate::AgentProfilesReply> {
-        self.call(RpcMethod::AgentsListProfiles, NO_PARAMS).await
-    }
-
-    /// List the agent cards a session started from `workspace` would resolve.
-    pub async fn agents_list_cards(
-        &self,
-        workspace: &Path,
-        kiln_path: Option<&Path>,
-    ) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::AgentsListCards,
-            AgentsListCardsRequest {
-                workspace: workspace.to_string_lossy().to_string(),
-                kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
-            },
-        )
-        .await
-    }
-
-    /// Resolve a named agent profile.
-    pub async fn agents_resolve_profile(&self, name: &str) -> Result<serde_json::Value> {
-        self.call(
-            RpcMethod::AgentsResolveProfile,
-            NameRequest {
-                name: name.to_string(),
             },
         )
         .await

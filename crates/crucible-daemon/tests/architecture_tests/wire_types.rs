@@ -445,7 +445,11 @@ fn wire_request_types_are_deserialized_not_hand_plucked() {
 #[test]
 fn every_lua_request_type_is_in_the_wire_table() {
     let root = workspace_root();
-    let lua_client = read(&root.join("crates/crucible-daemon/src/rpc_client/client/lua.rs"));
+    // `crates/crucible-daemon/src/rpc_client/client/lua.rs` held the
+    // `DaemonClient` methods for these rows; each was a thin forwarder onto
+    // its row (no argument reshaping), so it is gone (Simplification Plan
+    // step 19 item 9) and the types it imported are defined here instead.
+    let lua_client = read(&root.join("crates/crucible-core/src/protocol/requests/lua.rs"));
     let defined = captures(r"pub struct (Lua[A-Za-z0-9]+Request)\b", &lua_client);
     let tabled: BTreeSet<String> = WIRE_REQUEST_TYPES
         .iter()

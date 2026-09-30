@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use super::server::TestServer;
 
-/// Test DaemonClient.ping() with real daemon
+/// Test DaemonClient.rpc_ping(()) with real daemon
 #[tokio::test]
 async fn test_client_ping_with_real_daemon() {
     let server = TestServer::start().await.expect("Failed to start server");
@@ -17,7 +17,7 @@ async fn test_client_ping_with_real_daemon() {
         .await
         .expect("Failed to connect");
 
-    let result = client.ping().await.expect("Ping failed");
+    let result = client.rpc_ping(()).await.expect("Ping failed");
     assert_eq!(result, "pong");
 
     server.shutdown().await;
@@ -110,7 +110,7 @@ async fn test_client_shutdown_with_real_daemon() {
         .expect("Failed to connect");
 
     // Send shutdown
-    client.shutdown().await.expect("Shutdown failed");
+    client.rpc_shutdown(()).await.expect("Shutdown failed");
 
     // Poll until the daemon stops accepting rather than assuming it is down
     // after a fixed interval — under load it may still be draining.
@@ -139,7 +139,7 @@ async fn test_client_multiple_sequential_calls() {
     // Make multiple calls
     for i in 0..10 {
         let result = client
-            .ping()
+            .rpc_ping(())
             .await
             .unwrap_or_else(|_| panic!("Ping {} failed", i));
         assert_eq!(result, "pong", "Ping {} should return pong", i);
@@ -183,7 +183,7 @@ async fn test_multiple_clients_concurrent() {
             // Each client makes 3 requests
             for j in 0..3 {
                 let result = client
-                    .ping()
+                    .rpc_ping(())
                     .await
                     .unwrap_or_else(|_| panic!("Client {} request {} failed", i, j));
                 assert_eq!(result, "pong");
@@ -247,7 +247,7 @@ async fn test_new_connection_fails_after_shutdown() {
         .expect("Failed to connect");
 
     // First ping should work
-    let result = client.ping().await;
+    let result = client.rpc_ping(()).await;
     assert!(result.is_ok(), "First ping should succeed");
 
     // Shutdown server

@@ -4,8 +4,28 @@
 mod common;
 
 use common::InProcessDaemonBuilder;
-use crucible_core::protocol::requests::SessionCreateRequest;
+use crucible_core::protocol::requests::{NamedKiln, Scoped, SessionCreateRequest};
 use crucible_daemon::DaemonClient;
+
+async fn connect_kiln(
+    client: &DaemonClient,
+    session_id: &str,
+    kiln: crucible_core::config::KilnName,
+) -> anyhow::Result<crucible_core::protocol::requests::SessionScopeReply> {
+    client
+        .rpc_session_connect_kiln(Scoped::new(session_id.to_string(), NamedKiln { kiln }))
+        .await
+}
+
+async fn disconnect_kiln(
+    client: &DaemonClient,
+    session_id: &str,
+    kiln: crucible_core::config::KilnName,
+) -> anyhow::Result<crucible_core::protocol::requests::SessionScopeReply> {
+    client
+        .rpc_session_disconnect_kiln(Scoped::new(session_id.to_string(), NamedKiln { kiln }))
+        .await
+}
 
 /// The three registered kilns this suite needs: the one every session is
 /// created with, a second to attach mid-session, and one classified
@@ -62,27 +82,24 @@ async fn connect_then_disconnect_kiln_roundtrips() {
         .expect("Failed to connect");
     let session_id = create_session(&client).await;
 
-    let created_with = vec![serde_json::json!("kiln")];
-    let with_extra = vec![serde_json::json!("kiln"), serde_json::json!("extra-kiln")];
+    let created_with = vec![kiln_name("kiln")];
+    let with_extra = vec![kiln_name("kiln"), kiln_name("extra-kiln")];
 
-    let scope = client
-        .session_connect_kiln(&session_id, &kiln_name("extra-kiln"))
+    let scope = connect_kiln(&client, &session_id, kiln_name("extra-kiln"))
         .await
         .expect("connect_kiln failed");
-    assert_eq!(scope["kilns"].as_array(), Some(&with_extra));
+    assert_eq!(scope.kilns, with_extra);
 
     // Idempotent: connecting again doesn't duplicate.
-    let scope = client
-        .session_connect_kiln(&session_id, &kiln_name("extra-kiln"))
+    let scope = connect_kiln(&client, &session_id, kiln_name("extra-kiln"))
         .await
         .expect("second connect_kiln failed");
-    assert_eq!(scope["kilns"].as_array(), Some(&with_extra));
+    assert_eq!(scope.kilns, with_extra);
 
-    let scope = client
-        .session_disconnect_kiln(&session_id, &kiln_name("extra-kiln"))
+    let scope = disconnect_kiln(&client, &session_id, kiln_name("extra-kiln"))
         .await
         .expect("disconnect_kiln failed");
-    assert_eq!(scope["kilns"].as_array(), Some(&created_with));
+    assert_eq!(scope.kilns, created_with);
 
     // Persisted: session.get reflects the final set.
     let session = client.session_get(&session_id).await.unwrap();
@@ -110,25 +127,20 @@ async fn the_kiln_a_session_was_created_with_detaches_like_any_other() {
         .expect("Failed to connect");
     let session_id = create_session(&client).await;
 
-    let scope = client
-        .session_disconnect_kiln(&session_id, &kiln_name("kiln"))
+    let scope = disconnect_kiln(&client, &session_id, kiln_name("kiln"))
         .await
         .expect("detaching the create-time kiln is allowed");
     assert_eq!(
-        scope["kilns"].as_array().map(Vec::len),
-        Some(0),
+        scope.kilns.len(),
+        0,
         "the set must be empty after detaching its only member: {:?}",
-        scope["kilns"]
+        scope.kilns
     );
 
-    let scope = client
-        .session_connect_kiln(&session_id, &kiln_name("kiln"))
+    let scope = connect_kiln(&client, &session_id, kiln_name("kiln"))
         .await
         .expect("re-attaching it is an ordinary connect");
-    assert_eq!(
-        scope["kilns"].as_array(),
-        Some(&vec![serde_json::json!("kiln")])
-    );
+    assert_eq!(scope.kilns, vec![kiln_name("kiln")]);
 
     server.shutdown().await;
 }
@@ -198,8 +210,7 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
         .expect("Failed to connect");
     let session_id = create_session(&client).await;
 
-    let err = client
-        .session_connect_kiln(&session_id, &kiln_name("classified"))
+    let err = connect_kiln(&client, &session_id, kiln_name("classified"))
         .await
         .expect_err("trust-rejected attach must fail");
     assert!(

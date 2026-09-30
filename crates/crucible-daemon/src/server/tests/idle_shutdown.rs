@@ -54,7 +54,7 @@ async fn a_connected_client_holds_the_daemon_open() {
 
     let mut task = tokio::spawn(server.run());
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
-    client.ping().await.unwrap();
+    client.rpc_ping(()).await.unwrap();
     tokio::time::pause();
 
     // Several probe periods with the connection open and idle. The daemon has

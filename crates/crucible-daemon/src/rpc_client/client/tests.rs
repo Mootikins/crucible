@@ -101,7 +101,7 @@ async fn test_client_ping() {
     let (_tmp, sock_path, _handle) = setup_test_server().await;
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
-    let result = client.ping().await.unwrap();
+    let result = client.rpc_ping(()).await.unwrap();
     assert_eq!(result, "pong");
 }
 
@@ -393,7 +393,7 @@ async fn test_client_capabilities() {
     let (_tmp, sock_path, _handle) = setup_test_server().await;
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
-    let caps = client.capabilities().await.unwrap();
+    let caps = client.rpc_daemon_capabilities(()).await.unwrap();
 
     assert_eq!(caps.protocol_version, "1.0");
     assert!(caps.capabilities.kilns);
@@ -422,7 +422,7 @@ async fn test_client_ping_event_mode() {
     let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
         .await
         .unwrap();
-    let result = client.ping().await.unwrap();
+    let result = client.rpc_ping(()).await.unwrap();
     assert_eq!(result, "pong");
 }
 
@@ -473,7 +473,7 @@ async fn test_multiple_sequential_calls_event_mode() {
         .unwrap();
 
     for _ in 0..5 {
-        let result = client.ping().await.unwrap();
+        let result = client.rpc_ping(()).await.unwrap();
         assert_eq!(result, "pong");
     }
 }

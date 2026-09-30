@@ -26,7 +26,7 @@
 mod common;
 
 use common::{InProcessDaemon, InProcessDaemonBuilder};
-use crucible_core::protocol::requests::SessionCreateRequest;
+use crucible_core::protocol::requests::{NamedKiln, Scoped, SessionCreateRequest};
 use crucible_daemon::DaemonClient;
 
 /// One registered kiln, so the scope mutations below have a NAME to attach.
@@ -148,29 +148,33 @@ async fn kilnless_session_composes_with_scope_mutations() {
     // A kiln-less session must still accept the mid-session scope RPCs: connect
     // an extra kiln, then disconnect it, round-tripping back to empty.
     let scope = client
-        .session_connect_kiln(&session_id, &extra_kiln)
+        .rpc_session_connect_kiln(Scoped::new(
+            session_id.clone(),
+            NamedKiln {
+                kiln: extra_kiln.clone(),
+            },
+        ))
         .await
         .expect("connect_kiln on a kiln-less session failed");
-    let attached = scope["kilns"].as_array().unwrap();
     assert!(
-        attached
-            .iter()
-            .any(|k| k.as_str() == Some(extra_kiln.as_str())),
-        "extra kiln should be attached: {attached:?}"
+        scope.kilns.contains(&extra_kiln),
+        "extra kiln should be attached: {:?}",
+        scope.kilns
     );
 
     let scope = client
-        .session_disconnect_kiln(&session_id, &extra_kiln)
+        .rpc_session_disconnect_kiln(Scoped::new(
+            session_id.clone(),
+            NamedKiln {
+                kiln: extra_kiln.clone(),
+            },
+        ))
         .await
         .expect("disconnect_kiln on a kiln-less session failed");
     assert!(
-        !scope["kilns"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|k| k.as_str() == Some(extra_kiln.as_str())),
+        !scope.kilns.contains(&extra_kiln),
         "the extra kiln should be gone after disconnect: {:?}",
-        scope["kilns"]
+        scope.kilns
     );
 
     // Persisted: attach then detach round-trips back to the empty set the

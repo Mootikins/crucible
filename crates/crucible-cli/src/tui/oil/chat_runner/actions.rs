@@ -471,7 +471,15 @@ impl OilChatRunner {
                                 ));
                             return Ok(false);
                         };
-                        match session.client.session_undo(&session.id, count).await {
+                        let undo_result = session
+                            .client
+                            .rpc_session_undo(crucible_core::protocol::requests::Scoped::new(
+                                session.id.clone(),
+                                crucible_core::protocol::requests::UndoCount { count: Some(count) },
+                            ))
+                            .await
+                            .map(|reply| reply.undone);
+                        match undo_result {
                             Ok(summaries) if !summaries.is_empty() => {
                                 let total_removed: usize =
                                     summaries.iter().map(|s| s.messages_removed).sum();
@@ -995,7 +1003,7 @@ impl OilChatRunner {
                             match crucible_daemon::DaemonClient::connect().await {
                                 Ok(client) => {
                                     if name.is_empty() {
-                                        match client.plugin_list().await {
+                                        match client.rpc_plugin_list(()).await.map(|r| r.plugins) {
                                             Ok(plugins) if plugins.is_empty() => {
                                                 let _ = tx.send(ChatAppMsg::Status(
                                                     "No plugins loaded".to_string(),

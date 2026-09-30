@@ -10,19 +10,3 @@
 /// This is the wire type itself. A client reads the wire type once; it
 /// does not keep a second copy with other field names.
 pub type SessionEvent = crucible_core::protocol::SessionEventMessage;
-
-// =========================================================================
-// Generic RPC Request Types
-// =========================================================================
-
-/// Extract a string array from a JSON value at the given key.
-pub(super) fn extract_string_array(value: &serde_json::Value, key: &str) -> Vec<String> {
-    value[key]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}

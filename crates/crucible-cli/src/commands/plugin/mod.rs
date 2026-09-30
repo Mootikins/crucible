@@ -66,7 +66,7 @@ pub(crate) async fn configured_plugin_entries(
     let mut notes = Vec::new();
 
     if let Some(client) = client {
-        let rows = client.plugin_list_spec().await?;
+        let rows = client.rpc_plugin_list(()).await?.spec;
         let entries = rows
             .into_iter()
             .filter_map(|row| {

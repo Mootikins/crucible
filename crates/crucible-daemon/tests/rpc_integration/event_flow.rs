@@ -57,7 +57,7 @@ async fn test_event_streaming_with_background_reader() {
         .await
         .expect("subscribe failed");
 
-    let ping_result = client.ping().await.expect("ping failed");
+    let ping_result = client.rpc_ping(()).await.expect("ping failed");
     assert_eq!(ping_result, "pong");
 
     let list_result = client.kiln_list().await.expect("kiln_list failed");
@@ -100,7 +100,7 @@ async fn test_concurrent_rpc_calls_event_mode() {
     let mut handles = vec![];
     for _ in 0..5 {
         let c = client.clone();
-        handles.push(tokio::spawn(async move { c.ping().await }));
+        handles.push(tokio::spawn(async move { c.rpc_ping(()).await }));
     }
 
     for handle in handles {

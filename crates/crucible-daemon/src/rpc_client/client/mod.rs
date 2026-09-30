@@ -4,7 +4,6 @@
 //! Supports both request/response RPC calls and asynchronous event streaming.
 
 use anyhow::{Context, Result};
-use crucible_core::protocol::requests::SurfaceRequest;
 use crucible_core::protocol::requests::*;
 use crucible_core::protocol::RpcMethod;
 use std::collections::HashMap;
@@ -144,14 +143,11 @@ impl Drop for SpawnedDaemon {
 // retries) lives here in `mod.rs`.
 pub mod agent;
 pub mod generated;
-pub mod lua;
-pub mod notifications;
 pub mod proposals;
 pub mod session;
 pub mod storage;
 pub mod subscription;
 pub mod types;
-pub mod workflow;
 
 // Re-export public types so the original `rpc_client::client::<Type>` paths
 // still resolve after the split. Only types the parent `rpc_client` module
@@ -241,6 +237,12 @@ impl DaemonClient {
         Self::start_and_retry(Self::connect_with_events).await
     }
 
+    // `ping`/`shutdown`/`capabilities` used to live here as thin forwarders:
+    // `Ping` and `Shutdown` are typed `() => String` and `DaemonCapabilities`
+    // is typed `() => DaemonCapabilities`, so `rpc_ping(())`/`rpc_shutdown(())`/
+    // `rpc_daemon_capabilities(())` already return exactly what these did,
+    // with no decode of their own. Gone per step 19 item 9.
+
     /// Check daemon version. Returns true if usable, false if restarted/needs restart.
     async fn verify_or_restart(&self) -> bool {
         match self.check_version().await {
@@ -250,7 +252,7 @@ impl DaemonClient {
                 daemon: d,
             }) => {
                 warn!(client_sha = %c, daemon_sha = %d, "Daemon version mismatch, restarting");
-                let _ = self.shutdown().await;
+                let _ = self.rpc_shutdown(()).await;
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 false
             }
@@ -849,23 +851,12 @@ impl DaemonClient {
     // Basic RPC Methods
     // =========================================================================
 
-    pub async fn ping(&self) -> Result<String> {
-        let result: serde_json::Value = self.call(RpcMethod::Ping, NO_PARAMS).await?;
-        Ok(result.as_str().unwrap_or("").to_string())
-    }
-
-    pub async fn shutdown(&self) -> Result<()> {
-        let _: serde_json::Value = self.call(RpcMethod::Shutdown, NO_PARAMS).await?;
-        Ok(())
-    }
-
-    pub async fn capabilities(&self) -> Result<DaemonCapabilities> {
-        self.call(RpcMethod::DaemonCapabilities, NO_PARAMS).await
-    }
-
     /// The opaque blob a caller previously stored under `(client, key)` with
     /// [`Self::client_state_set`], or `None` if nothing was ever stored
-    /// there.
+    /// there. Kept because `crucible-web`'s `forward_rpc!` calls it by name
+    /// (`/api/layout`, `/api/recents` — plain REST routes, not part of the
+    /// `POST /api/rpc/{method}` migration), and it derives the `Option` a
+    /// route wants from the row's reply struct.
     pub async fn client_state_get(
         &self,
         client: &str,
@@ -886,7 +877,8 @@ impl DaemonClient {
     /// Store `value` under `(client, key)`, opaque to the daemon, for a
     /// later [`Self::client_state_get`] — the same caller's own display
     /// state (a pane layout, a recents list), kept in one place instead of
-    /// wherever that caller's own process happens to keep its files.
+    /// wherever that caller's own process happens to keep its files. Kept
+    /// for the same `forward_rpc!` reason as [`Self::client_state_get`].
     pub async fn client_state_set(
         &self,
         client: &str,
@@ -907,7 +899,7 @@ impl DaemonClient {
     }
 
     pub async fn check_version(&self) -> Result<VersionCheck> {
-        let caps = self.capabilities().await?;
+        let caps = self.rpc_daemon_capabilities(()).await?;
         let client_sha = option_env!("CRUCIBLE_BUILD_SHA").unwrap_or("dev");
         let daemon_sha = caps.build_sha.as_deref().unwrap_or("unknown");
 
@@ -938,28 +930,20 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn plugin_list(&self) -> Result<Vec<String>> {
-        let result: crucible_core::types::PluginListReply =
-            self.call(RpcMethod::PluginList, NO_PARAMS).await?;
-        Ok(result.plugins)
-    }
-
-    /// Like [`plugin_list`] but returns the richer `plugin_info` array
-    /// (name, version, source, state, dir, capability counts).
+    /// Returns the richer `plugin_info` array (name, version, source, state,
+    /// dir, capability counts). Kept because `crucible-web`'s
+    /// `services/daemon_plugins.rs` `forward_rpc!` calls it by name for the
+    /// plugin panel.
+    ///
+    /// `plugin_list` (just the names) and `plugin_list_spec` (the `spec`
+    /// array, with a since-obsolete "an older daemon answers no `spec`"
+    /// fallback — this client and the daemon it talks to are always the same
+    /// build) had one caller each; both are gone, their callers now read
+    /// `.plugins`/`.spec` off `rpc_plugin_list(())`'s reply directly.
     pub async fn plugin_list_info(&self) -> Result<Vec<crucible_core::types::PluginInfo>> {
         let result: crucible_core::types::PluginListReply =
             self.call(RpcMethod::PluginList, NO_PARAMS).await?;
         Ok(result.plugin_info)
-    }
-
-    /// The merged spec, one row per entry: the `spec` array of `plugin.list`.
-    /// An older daemon answers no `spec`, which reads as an empty list.
-    pub async fn plugin_list_spec(&self) -> Result<Vec<PluginSpecRow>> {
-        let result: serde_json::Value = self.call(RpcMethod::PluginList, NO_PARAMS).await?;
-        match result.get("spec") {
-            Some(rows) => Ok(serde_json::from_value(rows.clone())?),
-            None => Ok(Vec::new()),
-        }
     }
 
     /// What plugins published about themselves, as `key -> plugin -> value`.
@@ -986,31 +970,9 @@ impl DaemonClient {
         Ok(result.publications)
     }
 
-    /// Every surface a plugin declared, rows included.
-    ///
-    /// Rows come with the list because a surface is a panel, not a feed: a
-    /// client that had to fetch each one separately would draw an empty sidebar
-    /// first. The registry's row cap is what keeps the response bounded.
-    pub async fn surface_list(&self) -> Result<Vec<crucible_core::types::Surface>> {
-        let result: SurfaceListReply = self
-            .call(RpcMethod::SurfaceList, SurfaceRequest::default())
-            .await?;
-        Ok(result.surfaces)
-    }
-
-    /// One surface by name, or `None` when nothing declares it.
-    pub async fn surface_get(&self, name: &str) -> Result<Option<crucible_core::types::Surface>> {
-        let result: SurfaceGetReply = self
-            .call(
-                RpcMethod::SurfaceGet,
-                SurfaceRequest {
-                    plugin: None,
-                    name: Some(name.to_string()),
-                },
-            )
-            .await?;
-        Ok(result.surface)
-    }
+    // `surface_list`/`surface_get` had no caller (the browser reaches
+    // `surface.list` through `POST /api/rpc/{method}`, and nothing else
+    // named either by hand) and are gone: step 19 item 9.
 
     /// Settings trees plugins declared, as `plugin -> tree`.
     ///

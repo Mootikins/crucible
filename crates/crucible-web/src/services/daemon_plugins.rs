@@ -28,7 +28,8 @@ impl ReconnectingDaemon {
 
     // surface.list: the browser calls it through `POST /api/rpc/{method}` now
     // (Simplification Plan step 19), so this forwarder is gone.
-    // `DaemonClient::surface_list` stays: item 9 is a separate pass.
+    // `DaemonClient::surface_list`/`surface_get` had no other caller either,
+    // so both are gone too (step 19 item 9).
 
     forward_rpc! {
         Safe PluginPublications =>

@@ -871,9 +871,12 @@ async fn mock_rpc_response(method: RpcMethod, msg: &Value) -> Value {
             }));
             json!({ "session_id": "test-session-001", "commands": commands })
         }
-        RpcMethod::SessionUndo => json!({ "undone": [] }),
+        RpcMethod::SessionUndo => json!({ "session_id": "test-session-001", "undone": [] }),
         RpcMethod::SessionInteractionRespond => json!(null),
-        RpcMethod::SessionListModels => json!({"models": ["llama3.2", "mistral"]}),
+        RpcMethod::SessionListModels => json!({
+            "session_id": "test-session-001",
+            "models": ["llama3.2", "mistral"]
+        }),
         RpcMethod::SessionKnobSet => json!(null),
         // Echoes a canned value per knob, keyed by the request's own `knob`
         // field, so a route test reads back the same shape

@@ -231,7 +231,7 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
 
     // Check 6: Plugins (only if daemon is running)
     if let Ok(client) = DaemonClient::connect().await {
-        match client.plugin_list().await {
+        match client.rpc_plugin_list(()).await.map(|r| r.plugins) {
             Ok(plugins) => {
                 results.push(DoctorCheckResult {
                     check_name: "Plugins".to_string(),
