@@ -253,6 +253,8 @@ holds the controls, so each control has one implementation in every place.
   floating window it returns `{ id, controls, chrome, hasTabBar }`. The
   content renders `<fw.controls />` in its own nav bar when `fw.chrome()` is
   `merged` and `fw.hasTabBar()` is false.
+- **Compact controls.** A nav bar has little room. To omit roll up and
+  maximize there, the content renders `<fw.controls compact />`.
 - **The fallback.** A tabless `merged` window whose content does not mount
   `controls` draws its title bar. Without it, the window has no close control.
 - **Drag handles.** A press in an element that carries `data-wm-drag-handle`
@@ -270,6 +272,7 @@ popup with only pin and close) calls `fw.claim()` in its setup instead of
 mounting `fw.controls`: the window then draws no fallback title bar while
 that component is mounted. `fw.close()` closes the window with the same
 unsaved-changes check as its close button.
+
 ## Pop out and dock
 
 The right-click menu of a tab moves the tab between the layout and a floating

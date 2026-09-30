@@ -25,7 +25,7 @@ export function withTransition(change: () => void) {
   else change();
 }
 
-/** Put the caret in the session's composer (Ctrl+L, the note's ask button, New session). */
+/** Put the caret in the session's composer (Ctrl+L, New session). */
 export function focusComposer() {
   document.querySelector<HTMLTextAreaElement>('.mk-composer textarea')?.focus();
 }

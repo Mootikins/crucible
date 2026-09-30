@@ -7,7 +7,7 @@ import {
 } from '@thisbeyond/solid-dnd';
 import type { Tab as TabType, TabBarProps, DragSource } from '@/windowing/model/types';
 import { windowStore, windowActions, findEdgePanelForGroup } from '@/windowing/store';
-import { IconGripVertical, IconClose, IconLayout } from './icons';
+import { IconGripVertical, IconClose, IconPopOut } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { menuContent, menuItem } from '@/components/ui/menu-style';
@@ -610,7 +610,7 @@ const CenterTabBar: Component<{
             title="Pop out to floating window"
             aria-label="Pop out to floating window"
           >
-            <IconLayout class="w-4 h-4" />
+            <IconPopOut class="w-4 h-4" />
           </button>
         )}
         <Show when={floatingWindow && merged()}>

@@ -2,7 +2,7 @@
 import { Match, Show, Switch, type Component, type JSX } from 'solid-js';
 import { useFloatingWindow } from '@/windowing';
 import { windowActions, windowStore } from '@/windowing/store';
-import { canGoBack, canGoForward, focusComposer, goHistory, openNote } from '../actions';
+import { canGoBack, canGoForward, goHistory, openNote } from '../actions';
 import { basename } from '../components/path';
 import { HoverCornerControls } from '../components/note/HoverCornerControls';
 import { HoverCrumbsBar } from '../components/note/HoverCrumbsBar';
@@ -51,12 +51,12 @@ export const NoteContainer: Component<{ tabId?: string; path: string }> = (props
       links={links}
       renderHunk={(id) => <HunkContainer id={id} />}
       orphanHunks={pendingHunks().filter((id) => state.hunks[id]!.path === props.path)}
-      onAsk={focusComposer}
       windowControls={
         <Show when={hostsControls() && fw}>
           {(w) => {
+            // The nav bar of a note has little room: no roll up, no maximize.
             const Controls = w().controls;
-            return <Controls />;
+            return <Controls compact />;
           }}
         </Show>
       }
@@ -77,7 +77,6 @@ export const NoteContainer: Component<{ tabId?: string; path: string }> = (props
                       path={props.path}
                       mode={view.mode}
                       onMode={view.setMode}
-                      onAsk={focusComposer}
                       onPin={hover.onPin}
                       onClose={hover.onClose}
                       onOpenInTab={hover.onOpenInTab}

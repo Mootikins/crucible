@@ -1,11 +1,9 @@
 /**
- * The bar over a note: history, path, the view switch and the button that
- * sends the reader to the session. A note outside a tab (a peek or a hover
+ * The bar over a note: history, path and the view switch. A note outside a tab (a peek or a hover
  * editor) has no history, so it shows no history buttons.
  */
 import { Show, type Component, type JSX } from 'solid-js';
-import { BookOpen, Code, MessageSquare, Pencil } from 'lucide-solid';
-import { IconButton } from '../primitives/IconButton';
+import { BookOpen, Code, Pencil } from 'lucide-solid';
 import { ToggleGroup, type ToggleOption } from '../primitives/ToggleGroup';
 import { Breadcrumb } from './Breadcrumb';
 import { HistoryNav, type HistoryNavProps } from './HistoryNav';
@@ -23,7 +21,6 @@ export interface NoteToolbarProps {
   history?: HistoryNavProps;
   mode: NoteMode;
   onMode: (mode: NoteMode) => void;
-  onAsk: () => void;
   /**
    * The controls of the window around a note that has no tab bar (a peek or
    * a hover editor). The bar then also drags the window.
@@ -38,9 +35,6 @@ export const NoteToolbar: Component<NoteToolbarProps> = (props) => (
     </Show>
     <Breadcrumb root="docs" path={props.path} />
     <ToggleGroup label="View" value={props.mode} options={MODES} onChange={props.onMode} />
-    <IconButton label="Ask the session about this note" onClick={() => props.onAsk()}>
-      <MessageSquare class="mk-i" />
-    </IconButton>
     {props.windowControls}
   </div>
 );

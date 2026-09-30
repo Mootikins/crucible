@@ -226,6 +226,18 @@ describe('a tabless merged window', () => {
     expect(win(id)).toBeUndefined();
   });
 
+  it('compact controls omit roll up and maximize, and keep the rest', () => {
+    floatTwoTabs({ showTabBar: false });
+    const compact: WindowingContextValue['renderContent'] = (tab) => {
+      if (tab().contentType !== 'float') return neutralRenderer(tab);
+      const fw = useFloatingWindow()!;
+      return <nav data-testid="doc-nav"><fw.controls compact /></nav>;
+    };
+    const { getByTestId } = mount(compact);
+    const ids = Array.from(getByTestId('doc-nav').querySelectorAll<HTMLElement>('[data-testid]')).map((b) => b.dataset.testid);
+    expect(ids).toEqual(['window-controls', 'float-tabbar-toggle', 'float-dock', 'float-close']);
+  });
+
   it('draws its title bar when the content does not take the controls', () => {
     floatTwoTabs({ showTabBar: false });
     const { container } = mount();

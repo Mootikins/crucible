@@ -3,6 +3,7 @@ export { PanelLeftClose as IconPanelLeftClose } from '@/lib/icons';
 export { PanelRight as IconPanelRight } from '@/lib/icons';
 export { PanelRightClose as IconPanelRightClose } from '@/lib/icons';
 export { LayoutDashboard as IconLayout } from '@/lib/icons';
+export { SquareArrowOutUpRight as IconPopOut } from '@/lib/icons';
 export { GripVertical as IconGripVertical } from '@/lib/icons';
 export { X as IconClose } from '@/lib/icons';
 export { Maximize2 as IconMaximize } from '@/lib/icons';

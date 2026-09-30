@@ -41,7 +41,6 @@ export const WindowPinButton: Component<{ windowId: string }> = (props) => (
   </Show>
 );
 
-/** The tab bar toggle, dock, roll up, maximize or restore, and close. */
 /**
  * Close a floating window. Closing the window closes its tabs: the same
  * unsaved-changes contract as every other path that closes a tab
@@ -57,7 +56,11 @@ function closeWindow(windowId: string): void {
   windowActions.closeFloatingWindow(windowId);
 }
 
-export const WindowActionButtons: Component<{ windowId: string }> = (props) => {
+/**
+ * The tab bar toggle, dock, roll up, maximize or restore, and close.
+ * `compact` omits roll up and maximize, for a bar with little room.
+ */
+export const WindowActionButtons: Component<{ windowId: string; compact?: boolean }> = (props) => {
   const w = () => windowOf(props.windowId);
   const handleClose = () => closeWindow(props.windowId);
   return (
@@ -84,28 +87,30 @@ export const WindowActionButtons: Component<{ windowId: string }> = (props) => {
       >
         <IconLayout class="w-3 h-3" />
       </button>
-      <button
-        type="button"
-        class={btn}
-        data-testid="float-minimize"
-        onClick={() => windowActions.minimizeFloatingWindow(props.windowId)}
-        title="Roll up into the window bar"
-      >
-        <IconMinimize class="w-3 h-3" />
-      </button>
-      <button
-        type="button"
-        class={btn}
-        data-testid="float-maximize"
-        onClick={() =>
-          w()?.isMaximized
-            ? windowActions.restoreFloatingWindow(props.windowId)
-            : windowActions.maximizeFloatingWindow(props.windowId)
-        }
-        title={w()?.isMaximized ? 'Restore previous size' : 'Maximize'}
-      >
-        <IconMaximize class="w-3 h-3" />
-      </button>
+      <Show when={!props.compact}>
+        <button
+          type="button"
+          class={btn}
+          data-testid="float-minimize"
+          onClick={() => windowActions.minimizeFloatingWindow(props.windowId)}
+          title="Roll up into the window bar"
+        >
+          <IconMinimize class="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          class={btn}
+          data-testid="float-maximize"
+          onClick={() =>
+            w()?.isMaximized
+              ? windowActions.restoreFloatingWindow(props.windowId)
+              : windowActions.maximizeFloatingWindow(props.windowId)
+          }
+          title={w()?.isMaximized ? 'Restore previous size' : 'Maximize'}
+        >
+          <IconMaximize class="w-3 h-3" />
+        </button>
+      </Show>
       <button
         type="button"
         class={btn}
@@ -124,10 +129,10 @@ export const WindowActionButtons: Component<{ windowId: string }> = (props) => {
  * content use this component. The title bar puts the pin before the title
  * instead, so it renders the two halves itself.
  */
-export const WindowControls: Component<{ windowId: string }> = (props) => (
+export const WindowControls: Component<{ windowId: string; compact?: boolean }> = (props) => (
   <div class="wm-window-controls flex items-center" data-testid="window-controls">
     <WindowPinButton windowId={props.windowId} />
-    <WindowActionButtons windowId={props.windowId} />
+    <WindowActionButtons windowId={props.windowId} compact={props.compact} />
   </div>
 );
 
@@ -140,8 +145,9 @@ export interface FloatingWindowHandle {
   /**
    * `WindowControls` for this window. A tabless content renders it in its
    * own nav bar. While it is mounted, the window draws no fallback title bar.
+   * `compact` omits roll up and maximize, for a nav bar with little room.
    */
-  controls: Component;
+  controls: Component<{ compact?: boolean }>;
   /** Where the window puts its controls. See `FloatingChrome`. */
   chrome: () => FloatingChrome;
   /** True when the window shows its tab bar. */
@@ -171,9 +177,9 @@ export function FloatingWindowProvider(props: {
   const id = props.windowId;
   const handle: FloatingWindowHandle = {
     id,
-    controls: () => {
+    controls: (p) => {
       onCleanup(props.onClaim());
-      return <WindowControls windowId={id} />;
+      return <WindowControls windowId={id} compact={p.compact} />;
     },
     chrome: () => windowStore.floatingChrome,
     hasTabBar: () => windowOf(id)?.showTabBar !== false,

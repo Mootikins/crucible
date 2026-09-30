@@ -21,7 +21,6 @@ export interface NoteViewProps {
   renderHunk: (id: string) => JSX.Element;
   /** Hunks to show under a note whose text is not loaded. */
   orphanHunks: string[];
-  onAsk: () => void;
   /** See `NoteToolbarProps.windowControls`. */
   windowControls?: JSX.Element;
   /** A bar in place of the toolbar, for example the bar of a hover popup. */
@@ -53,7 +52,6 @@ export const NoteView: Component<NoteViewProps> = (props) => {
             history={props.history}
             mode={mode()}
             onMode={setMode}
-            onAsk={props.onAsk}
             windowControls={props.windowControls}
           />
         }

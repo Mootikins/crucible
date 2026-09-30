@@ -1,6 +1,6 @@
 /**
  * A hover popup's bar, variant "crumbs": the path, pin, and one menu with
- * the view modes, ask, open in a tab and close.
+ * the view modes, open in a tab and close.
  */
 import { For, Show, createSignal, type Component } from 'solid-js';
 import { Check, MoreHorizontal, Pin } from 'lucide-solid';
@@ -13,7 +13,6 @@ export interface HoverCrumbsBarProps extends HoverActions {
   path: string;
   mode: NoteMode;
   onMode: (mode: NoteMode) => void;
-  onAsk: () => void;
   onOpenInTab: () => void;
 }
 
@@ -51,7 +50,6 @@ export const HoverCrumbsBar: Component<HoverCrumbsBarProps> = (props) => {
               )}
             </For>
             <hr />
-            <button type="button" role="menuitem" onClick={() => run(props.onAsk)}><span class="mk-hm-check" />Ask the session</button>
             <button type="button" role="menuitem" onClick={() => run(props.onOpenInTab)}><span class="mk-hm-check" />Open in a tab</button>
             <button type="button" role="menuitem" onClick={() => run(props.onClose)}><span class="mk-hm-check" />Close</button>
           </div>
