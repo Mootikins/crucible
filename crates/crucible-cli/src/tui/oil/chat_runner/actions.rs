@@ -458,11 +458,10 @@ impl OilChatRunner {
                 match &msg {
                     ChatAppMsg::Undo(count) => {
                         if ctx.app.is_streaming() {
-                            ctx.app.add_notification(
-                                crucible_core::types::Notification::warning(
+                            ctx.app
+                                .add_notification(crucible_core::types::Notification::warning(
                                     "Cannot undo while streaming".to_string(),
-                                ),
-                            );
+                                ));
                             return Ok(false);
                         }
                         let count = *count;
@@ -895,11 +894,10 @@ impl OilChatRunner {
                             return Ok(false);
                         }
                         if ctx.app.is_streaming() {
-                            ctx.app.add_notification(
-                                crucible_core::types::Notification::warning(
+                            ctx.app
+                                .add_notification(crucible_core::types::Notification::warning(
                                     "Cannot resume another session while a turn runs".to_string(),
-                                ),
-                            );
+                                ));
                             return Ok(false);
                         }
                         match check_session_exists(id).await {
