@@ -76,7 +76,13 @@ function openStream() {
   installFakeEventSource();
   installFsEventRoute();
   stopStream = fsEvents().subscribe(() => {});
-  return onlyEventSource();
+  const source = onlyEventSource();
+  // Production frames carry a `topic` field (Simplification Plan step 19);
+  // this stream only ever joins the `system` topic.
+  return {
+    emit: (type: string, data: Record<string, unknown>, options?: { lastEventId?: string }) =>
+      source.emit(type, { topic: 'system', ...data }, options),
+  };
 }
 
 /** How many times the daemon was asked to list one relative folder. */

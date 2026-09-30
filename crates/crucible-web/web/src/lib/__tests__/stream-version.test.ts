@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installFakeEventSource, FakeEventSource } from '@/test-utils/sse';
-import { subscribeToEvents } from '@/lib/api';
+import { resetEventsConnectionForTests, subscribeToEvents } from '@/lib/api';
 import { STREAM_VERSION, assertStreamVersion, StreamVersionError } from '@/lib/stream-version';
 
 // No `vi.mock('@/lib/api')`. The gate runs inside the REAL subscribeToEvents
@@ -10,6 +10,14 @@ import { STREAM_VERSION, assertStreamVersion, StreamVersionError } from '@/lib/s
 
 beforeEach(() => {
   installFakeEventSource();
+});
+
+afterEach(() => {
+  // `subscribeToEvents` joins the module-level shared connection directly
+  // here (not through a `lib/query/sse.ts` root), so each case must leave
+  // its topic itself or the next case's `subscribeToEvents('s1', ...)` finds
+  // `s1` already joined and opens no fresh source to assert against.
+  resetEventsConnectionForTests();
 });
 
 describe('assertStreamVersion', () => {
@@ -35,13 +43,20 @@ describe('the stream version gate in subscribeToEvents', () => {
     source.emit('stream_version', { version: 2 });
     // Payload frames after the refusal must not reach the handler — a
     // half-read transcript looks like the truth, which is worse than none.
-    source.emit('text_delta', { event: 'text_delta', data: { content: 'should not render' } });
+    source.emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'should not render' } });
     source.emit('message_complete', {
+      topic: 's1',
       event: 'message_complete',
       data: { message_id: 'm1', full_response: 'nor this' },
     });
 
-    expect(seen).toEqual([]);
+    // The shared connection now reports every refusal through `onDisconnect`
+    // (Simplification Plan step 19 harmonised chat with the other three
+    // domains, which always did), so a synthetic `connection` event is the
+    // one thing `seen` carries — never a payload frame.
+    expect(seen).toEqual([
+      { type: 'connection', status: 'reconnecting', message: 'Reconnecting…' },
+    ]);
     expect(source.closed).toBe(true);
   });
 
@@ -51,7 +66,7 @@ describe('the stream version gate in subscribeToEvents', () => {
 
     const source = FakeEventSource.instances[0]!;
     source.emit('stream_version', { version: STREAM_VERSION });
-    source.emit('text_delta', { event: 'text_delta', data: { content: 'renders' } });
+    source.emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'renders' } });
 
     expect(seen).toEqual([{ event: 'text_delta', data: { content: 'renders' } }]);
     expect(source.closed).toBe(false);
@@ -62,7 +77,7 @@ describe('the stream version gate in subscribeToEvents', () => {
     subscribeToEvents('s1', (event) => seen.push(event));
 
     const source = FakeEventSource.instances[0]!;
-    source.emit('text_delta', { event: 'text_delta', data: { content: 'legacy' } });
+    source.emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'legacy' } });
 
     expect(seen).toEqual([{ event: 'text_delta', data: { content: 'legacy' } }]);
     expect(source.closed).toBe(false);

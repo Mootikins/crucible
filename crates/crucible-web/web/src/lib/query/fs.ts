@@ -26,9 +26,10 @@ type Schemas = components['schemas'];
  * The filesystem as one cache: a listing per folder, and a file per path.
  *
  * Every entry here is held under an ABSOLUTE path, because that is the only
- * name the daemon's stream uses. `/api/fs/events` says `/kiln/notes/a.md` and
- * nothing else — no root, no relative path — so a listing held under the pair
- * the list route takes (`root`, `rel_path`) is a listing no event can reach.
+ * name the daemon's stream uses. The `system` topic of `GET /api/events` says
+ * `/kiln/notes/a.md` and nothing else — no root, no relative path — so a
+ * listing held under the pair the list route takes (`root`, `rel_path`) is a
+ * listing no event can reach.
  * `absFolderPath` is what turns the caller's pair into that name, and its test
  * asserts it against `folderOf`, which is what the stream's route calls.
  *

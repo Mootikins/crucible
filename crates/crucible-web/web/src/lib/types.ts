@@ -195,7 +195,8 @@ export type FsEntry = Schemas['FsEntry'];
 export type FsListing = Schemas['FsListing'];
 
 /**
- * A live filesystem-change event delivered over `GET /api/fs/events` (SSE).
+ * A live filesystem-change event delivered over the `system` topic of
+ * `GET /api/events` (SSE).
  * Paths are ABSOLUTE. `moved` is decomposed into remove+add by the reconciler,
  * so a platform that emits `deleted`+`changed` instead converges to the same
  * tree.

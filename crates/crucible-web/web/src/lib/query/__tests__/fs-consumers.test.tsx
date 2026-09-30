@@ -103,7 +103,7 @@ describe('the shared fs stream', () => {
     await waitFor(() => expect(editor.openFiles()).toHaveLength(1));
 
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0]!.url).toBe('/api/fs/events');
+    expect(FakeEventSource.instances[0]!.url).toBe('/api/events?topics=system');
   });
 
   // Each consumer keeps its own handler on the one source. The editor's fold
@@ -118,6 +118,7 @@ describe('the shared fs stream', () => {
     getFileContent.mockResolvedValueOnce('another writer was here\n');
 
     FakeEventSource.instances[0]!.emit('fs_changed', {
+      topic: 'system',
       type: 'changed',
       path,
       kind: 'modified',

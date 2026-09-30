@@ -7,9 +7,9 @@ import { systemEvents } from '@/lib/query/sse';
  *
  * Read once, then re-read whenever the daemon says that key changed. The push
  * is what makes this different from polling: `cru.plugin.publish` fires a
- * `publication_changed` event on the daemon's system channel, and
- * `/api/events/system` forwards it. Without that a board would re-fetch on a
- * timer and still show a stale value between ticks.
+ * `publication_changed` event on the daemon's system channel, and the
+ * `system` topic of `GET /api/events` forwards it. Without that a board would
+ * re-fetch on a timer and still show a stale value between ticks.
  *
  * The block no longer re-reads for itself. The value is a cache entry keyed by
  * the plugin and the key, and the stream's route invalidates exactly that pair

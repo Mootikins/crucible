@@ -122,7 +122,7 @@ describe('SurfacesPanel', () => {
     expect(fetches()).toBe(1);
 
     served = [surface([{ id: 'b', text: 'second', detail: null, mark: null }], { version: 2 })];
-    (await stream()).emit('surface_changed', changed());
+    (await stream()).emit('surface_changed', { topic: 'system', ...changed() });
 
     await waitFor(() => expect(getByText('second')).toBeTruthy());
     expect(fetches()).toBe(2);
@@ -137,7 +137,7 @@ describe('SurfacesPanel', () => {
     await waitFor(() => expect(getByText('crucible')).toBeTruthy());
     expect(fetches()).toBe(1);
 
-    (await stream()).emit('surface_changed', changed({ withdrawn: true }));
+    (await stream()).emit('surface_changed', { topic: 'system', ...changed({ withdrawn: true }) });
 
     await waitFor(() => expect(getByText('No plugin surfaces')).toBeTruthy());
     expect(queryByText('crucible')).toBeNull();
@@ -154,7 +154,7 @@ describe('SurfacesPanel', () => {
     const { getByText, queryByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('crucible')).toBeTruthy());
 
-    (await stream()).emit('surface_changed', changed({ name: 'reviews', withdrawn: true }));
+    (await stream()).emit('surface_changed', { topic: 'system', ...changed({ name: 'reviews', withdrawn: true }) });
 
     await waitFor(() => expect(queryByText('Reviews')).toBeNull());
     expect(getByText('crucible')).toBeTruthy();
@@ -171,7 +171,7 @@ describe('SurfacesPanel', () => {
     const { getByText, queryByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('crucible')).toBeTruthy());
 
-    (await stream()).emit('surface_changed', changed({ withdrawn: true }));
+    (await stream()).emit('surface_changed', { topic: 'system', ...changed({ withdrawn: true }) });
 
     await waitFor(() => expect(queryByText('crucible')).toBeNull());
     expect(getByText('other plugin')).toBeTruthy();
@@ -193,7 +193,7 @@ describe('SurfacesPanel', () => {
     await waitFor(() => expect(getByText('review queue')).toBeTruthy());
 
     const source = await stream();
-    source.emit('surface_changed', changed({ name: 'reviews', withdrawn: true }));
+    source.emit('surface_changed', { topic: 'system', ...changed({ name: 'reviews', withdrawn: true }) });
     await waitFor(() => expect(queryByText('review queue')).toBeNull());
 
     // The plugin comes back with the same name. The panel must stay where the
@@ -202,7 +202,7 @@ describe('SurfacesPanel', () => {
       surface([{ id: 'a', text: 'crucible', detail: null, mark: null }]),
       surface([{ id: 'c', text: 'new review', detail: null, mark: null }], { name: 'reviews', title: 'Reviews' }),
     ];
-    source.emit('surface_changed', changed({ name: 'reviews' }));
+    source.emit('surface_changed', { topic: 'system', ...changed({ name: 'reviews' }) });
 
     await waitFor(() => expect(fetches()).toBe(2));
     await waitFor(() =>
@@ -265,7 +265,7 @@ describe('the shared surface stream', () => {
     ));
 
     const source = await stream();
-    expect(source.url).toBe('/api/surfaces/events');
+    expect(source.url).toBe('/api/events?topics=system');
   });
 
   // The two panels share the cache entry as well as the source, so one write
@@ -280,7 +280,7 @@ describe('the shared surface stream', () => {
     await waitFor(() => expect(getAllByText('crucible')).toHaveLength(2));
     expect(fetches()).toBe(1);
 
-    (await stream()).emit('surface_changed', changed({ withdrawn: true }));
+    (await stream()).emit('surface_changed', { topic: 'system', ...changed({ withdrawn: true }) });
 
     await waitFor(() => expect(queryByText('crucible')).toBeNull());
     expect(fetches()).toBe(1);

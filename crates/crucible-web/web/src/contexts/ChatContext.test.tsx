@@ -936,10 +936,14 @@ describe('the shared session stream', () => {
     ));
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(FakeEventSource.instances[0]!.url).toBe(`/api/chat/events/${mockSession.session_id}`);
+    expect(FakeEventSource.instances[0]!.url).toBe(`/api/events?topics=${mockSession.session_id}`);
   });
 
-  it('opens one EventSource per session when the panes differ', async () => {
+  it('carries both sessions on the one shared connection when the panes differ', async () => {
+    // Simplification Plan step 19: a second session's topic joining the
+    // shared connection rebuilds it to carry both, rather than opening a
+    // second `EventSource` — so the LATEST source, not a second one, is
+    // what ends up carrying `session-a` too.
     render(() => (
       <>
         <ChatProvider sessionId="session-a">
@@ -951,11 +955,9 @@ describe('the shared session stream', () => {
       </>
     ));
 
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
-    expect(FakeEventSource.instances.map((source) => source.url)).toEqual([
-      '/api/chat/events/session-a',
-      '/api/chat/events/session-b',
-    ]);
+    await waitFor(() =>
+      expect(FakeEventSource.instances.at(-1)!.url).toBe('/api/events?topics=session-a%2Csession-b'),
+    );
   });
 
   it('re-issues the source on a manual retry, and closes the dead one', async () => {

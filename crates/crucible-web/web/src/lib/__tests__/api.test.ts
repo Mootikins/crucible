@@ -1,8 +1,10 @@
-import { describe, it, expect, afterEach, vi, type Mock, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { createMockFetch } from '@/test-utils';
+import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import {
   sendChatMessage,
   subscribeToEvents,
+  resetEventsConnectionForTests,
   createSession,
   listSessions,
   getSession,
@@ -61,7 +63,6 @@ import {
   fetchRawFile,
 } from '../api';
 import { generateMessageId } from '../turn';
-import { STREAM_VERSION, StreamVersionError } from '../stream-version';
 
 // Preserve original fetch so we can restore it after each test
 const originalFetch = global.fetch;
@@ -1364,267 +1365,107 @@ describe('generateMessageId', () => {
 // We mock EventSource to drive the lifecycle deterministically.
 // =============================================================================
 
-describe('subscribeToEvents', () => {
-  type EventSourceListener = (event: MessageEvent) => void;
-
-  class MockEventSource {
-    public static instances: MockEventSource[] = [];
-    public url: string;
-    public readyState = 0;
-    public onerror: ((ev: Event) => unknown) | null = null;
-    public onopen: ((ev: Event) => unknown) | null = null;
-    public onmessage: ((ev: MessageEvent) => unknown) | null = null;
-    public closed = false;
-    private listeners = new Map<string, EventSourceListener[]>();
-
-    constructor(url: string) {
-      this.url = url;
-      MockEventSource.instances.push(this);
-    }
-
-    addEventListener(type: string, listener: EventSourceListener) {
-      const arr = this.listeners.get(type) ?? [];
-      arr.push(listener);
-      this.listeners.set(type, arr);
-    }
-
-    /** Test helper: dispatch an event by type. A real EventSource is silent
-     * once closed; the mock honours that too. */
-    dispatch(type: string, data: unknown) {
-      if (this.closed) return;
-      const arr = this.listeners.get(type) ?? [];
-      const evt = { data: JSON.stringify(data) } as MessageEvent;
-      for (const l of arr) l(evt);
-    }
-
-    /** Test helper: dispatch raw (unparseable) data. */
-    dispatchRaw(type: string, raw: string) {
-      if (this.closed) return;
-      const arr = this.listeners.get(type) ?? [];
-      const evt = { data: raw } as MessageEvent;
-      for (const l of arr) l(evt);
-    }
-
-    close() {
-      this.closed = true;
-    }
-
-    triggerError() {
-      const handler = this.onerror;
-      if (handler) handler(new Event('error'));
-    }
-  }
-
-  let OriginalEventSource: typeof EventSource;
+describe('subscribeToEvents, subscribeToSurfaceEvents, subscribeToFsEvents, subscribeToSystemEvents', () => {
+  // The full mechanics (URL building, reconnect backoff, topic isolation,
+  // the shared connection) are tested against the public `sse.ts` API in
+  // `lib/query/__tests__/sse.test.ts` and the version handshake in
+  // `lib/__tests__/stream-version.test.ts`. This block is the low-level
+  // sanity check that each of the four functions still joins the right
+  // topic and decodes its own domain's frames — Simplification Plan step 19
+  // moved the transport the four share, not what each one reads off it.
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    OriginalEventSource = global.EventSource;
-    (global as { EventSource: unknown }).EventSource = MockEventSource;
-    MockEventSource.instances = [];
+    installFakeEventSource();
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
-    (global as { EventSource: typeof EventSource }).EventSource = OriginalEventSource;
+    resetEventsConnectionForTests();
     warnSpy.mockRestore();
   });
 
-  it('subscribes to expected event types and parses incoming messages', () => {
+  it('subscribeToEvents joins the session\'s own topic and decodes its frames', () => {
     const events: unknown[] = [];
     const cleanup = subscribeToEvents('ses-1', (e) => events.push(e));
 
-    expect(MockEventSource.instances).toHaveLength(1);
-    const source = MockEventSource.instances[0];
-    expect(source.url).toBe('/api/chat/events/ses-1');
+    expect(FakeEventSource.instances).toHaveLength(1);
+    const source = FakeEventSource.instances[0]!;
+    expect(source.url).toBe('/api/events?topics=ses-1');
 
-    source.dispatch('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    source.emit('text_delta', { topic: 'ses-1', event: 'text_delta', data: { content: 'hi' } });
     expect(events).toEqual([{ event: 'text_delta', data: { content: 'hi' } }]);
 
     cleanup();
-    expect(source.closed).toBe(true);
   });
 
-  it('warns on unparseable event data', () => {
+  it('subscribeToEvents warns on unparseable event data', () => {
     subscribeToEvents('ses-1', () => {});
-    const source = MockEventSource.instances[0];
-    source.dispatchRaw('text_delta', 'not json {{{');
+    const source = FakeEventSource.instances[0]!;
+    for (const listener of [...(source.listeners.get('text_delta') ?? [])]) {
+      listener({ data: 'not json {{{', lastEventId: '' } as MessageEvent);
+    }
     expect(warnSpy).toHaveBeenCalled();
-    expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse SSE event');
+    expect(warnSpy.mock.calls[0]![0]).toContain('Failed to parse SSE event');
   });
 
-  it('emits a transient connection event (not a daemon error) and schedules reconnect on disconnect', () => {
-    const events: unknown[] = [];
-    subscribeToEvents('ses-1', (e) => events.push(e));
-
-    const first = MockEventSource.instances[0];
-    first.triggerError();
-
-    // A transport reconnect must be a distinct 'connection' event — NOT a
-    // daemon 'error', which the reducer routes through the destructive path
-    // that corrupts an in-flight streaming turn.
-    expect(events).toEqual([
-      { type: 'connection', status: 'reconnecting', message: 'Reconnecting…' },
-    ]);
-    expect(first.closed).toBe(true);
-
-    // Advance timers — reconnect should fire and create a second instance.
-    vi.advanceTimersByTime(1000);
-    expect(MockEventSource.instances).toHaveLength(2);
-  });
-
-  it('does not reconnect after cleanup', () => {
-    subscribeToEvents('ses-1', () => {});
-    const cleanup = subscribeToEvents('ses-2', () => {});
-    cleanup();
-
-    // Even if an error fires on the closed source, no reconnect attempted.
-    const second = MockEventSource.instances[1];
-    second.triggerError();
-    vi.advanceTimersByTime(5000);
-    // Still only the original two instances.
-    expect(MockEventSource.instances).toHaveLength(2);
-  });
-
-  it('encodes session id in URL', () => {
+  it('encodes a session id with reserved characters into the topics query', () => {
     subscribeToEvents('ses 1/weird', () => {});
-    expect(MockEventSource.instances[0].url).toBe(
-      '/api/chat/events/ses%201%2Fweird',
+    expect(FakeEventSource.instances[0]!.url).toBe(
+      '/api/events?topics=ses+1%2Fweird',
     );
   });
 
-  it('onopen resets the backoff so the next disconnect uses the base delay', () => {
+  it('subscribeToSurfaceEvents and subscribeToFsEvents join the system topic together', () => {
+    const surfaceEvents: unknown[] = [];
+    const fsEvents: unknown[] = [];
+    const stopSurface = subscribeToSurfaceEvents((e) => surfaceEvents.push(e));
+    const stopFs = subscribeToFsEvents((e) => fsEvents.push(e));
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    const source = FakeEventSource.instances[0]!;
+    expect(source.url).toBe('/api/events?topics=system');
+
+    source.emit('surface_changed', { topic: 'system', plugin: 'kanban', name: 'board', version: 1 });
+    source.emit('fs_changed', { topic: 'system', type: 'changed', path: '/a.md', kind: 'modified' });
+
+    expect(surfaceEvents).toEqual([{ plugin: 'kanban', name: 'board', version: 1 }]);
+    expect(fsEvents).toEqual([{ type: 'changed', path: '/a.md', kind: 'modified' }]);
+
+    stopSurface();
+    stopFs();
+  });
+
+  it('subscribeToSystemEvents decodes publication_changed and proposal_changed', () => {
     const events: unknown[] = [];
-    subscribeToEvents('ses-1', (e) => events.push(e));
+    const cleanup = subscribeToSystemEvents((e) => events.push(e), () => {});
 
-    // First disconnect: attempt 1 → 1000ms backoff, then reconnect fires.
-    MockEventSource.instances[0].triggerError();
-    vi.advanceTimersByTime(1000);
-    expect(MockEventSource.instances).toHaveLength(2);
+    const source = FakeEventSource.instances[0]!;
+    source.emit('publication_changed', { topic: 'system', plugin: 'kanban', key: 'board' });
 
-    // A successful (re)connection resets the attempt counter and emits a
-    // distinct 'connected' event — the first observable effect.
-    const second = MockEventSource.instances[1];
-    expect(second.onopen).toBeTruthy();
-    second.onopen!(new Event('open'));
-    expect(events).toContainEqual({ type: 'connection', status: 'connected' });
+    expect(events).toEqual([{ event: 'publication_changed', plugin: 'kanban', key: 'board' }]);
 
-    // Second observable effect: because the counter reset to 0, the NEXT
-    // disconnect schedules at the base 1000ms delay again rather than the
-    // escalated 2000ms of attempt 2. Advancing exactly 1000ms fires the
-    // reconnect, proving the reset actually happened.
-    second.triggerError();
-    vi.advanceTimersByTime(1000);
-    expect(MockEventSource.instances).toHaveLength(3);
-  });
-
-  it('cleanup while reconnect is pending clears the timer', () => {
-    // Exercises the `if (reconnectTimeout) clearTimeout(reconnectTimeout)`
-    // branch in the cleanup closure (api.ts:148). Trigger an error to schedule
-    // a reconnect, then cleanup before timers fire.
-    const cleanup = subscribeToEvents('ses-1', () => {});
-    MockEventSource.instances[0].triggerError();
-    // Reconnect is scheduled but not yet fired.
     cleanup();
-    // Advancing timers must NOT create a new instance because cleanup cancelled.
-    vi.advanceTimersByTime(5000);
-    expect(MockEventSource.instances).toHaveLength(1);
   });
 
-  // ---------------------------------------------------------------------------
-  // The stream_version handshake. Every SSE stream names the protocol it
-  // speaks in its first frame; a version this build cannot read must close
-  // the stream and render nothing it carries — a half-read transcript looks
-  // like the truth, so the refusal is the honest answer.
-  // ---------------------------------------------------------------------------
+  it('a malformed publication frame is dropped, and the connection keeps reading', () => {
+    const events: unknown[] = [];
+    const cleanup = subscribeToSystemEvents((e) => events.push(e), () => {});
+    const source = FakeEventSource.instances[0]!;
 
-  describe('stream_version handshake', () => {
-    let errorSpy: Mock;
+    // The shared connection's own dispatcher parses the envelope to read the
+    // topic before a domain ever sees the frame, so an unparseable frame is
+    // now caught there, not inside `subscribeToSystemEvents`'s own decode.
+    for (const listener of [...(source.listeners.get('publication_changed') ?? [])]) {
+      listener({ data: 'not json {', lastEventId: '' } as MessageEvent);
+    }
+    expect(warnSpy.mock.calls[0]![0]).toContain('Failed to parse SSE event');
 
-    beforeEach(() => {
-      errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    });
+    source.emit('publication_changed', { topic: 'system', plugin: 'kanban', key: 'board' });
+    expect(events).toEqual([{ event: 'publication_changed', plugin: 'kanban', key: 'board' }]);
 
-    afterEach(() => {
-      errorSpy.mockRestore();
-    });
-
-    it('chat stream fails closed on a version this build cannot read', () => {
-      const events: unknown[] = [];
-      subscribeToEvents('ses-1', (e) => events.push(e));
-      const source = MockEventSource.instances[0];
-
-      source.dispatch('stream_version', { version: STREAM_VERSION + 1 });
-
-      // The raised error is the user-visible half; the close is fail-closed.
-      expect(errorSpy.mock.calls[0][0]).toBeInstanceOf(StreamVersionError);
-      expect(source.closed).toBe(true);
-
-      // Nothing the stream carries after the refusal is rendered.
-      source.dispatch('token', { type: 'token', content: 'hi' });
-      expect(events).toEqual([]);
-
-      // And the dead stream must not resurrect itself.
-      source.triggerError();
-      vi.advanceTimersByTime(30000);
-      expect(MockEventSource.instances).toHaveLength(1);
-    });
-
-    it('surface stream fails closed on a version this build cannot read', () => {
-      subscribeToSurfaceEvents(() => {});
-      const source = MockEventSource.instances[0];
-
-      source.dispatch('stream_version', { version: STREAM_VERSION + 1 });
-
-      expect(errorSpy.mock.calls[0][0]).toBeInstanceOf(StreamVersionError);
-      expect(source.closed).toBe(true);
-      source.triggerError();
-      vi.advanceTimersByTime(30000);
-      expect(MockEventSource.instances).toHaveLength(1);
-    });
-
-    it('file-system stream fails closed on a version this build cannot read', () => {
-      subscribeToFsEvents(() => {});
-      const source = MockEventSource.instances[0];
-
-      source.dispatch('stream_version', { version: STREAM_VERSION + 1 });
-
-      expect(errorSpy.mock.calls[0][0]).toBeInstanceOf(StreamVersionError);
-      expect(source.closed).toBe(true);
-      source.triggerError();
-      vi.advanceTimersByTime(30000);
-      expect(MockEventSource.instances).toHaveLength(1);
-    });
-
-    it('refuses a well-formed frame that is not a shape the document declares', () => {
-      const events: unknown[] = [];
-      subscribeToEvents('ses-1', (e) => events.push(e));
-
-      // Valid JSON, tagged like nothing the document declares: decodeEvent
-      // refuses it and the stream lives on.
-      MockEventSource.instances[0].dispatch('text_delta', { hello: 1 });
-
-      expect(events).toEqual([]);
-      expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse SSE event');
-    });
-
-    it('plugin stream keeps reading after a malformed publication frame', () => {
-      const events: unknown[] = [];
-      const cleanup = subscribeToSystemEvents((e) => events.push(e), () => {});
-      const source = MockEventSource.instances[0];
-
-      source.dispatchRaw('publication_changed', 'not json {');
-      expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse system SSE event');
-
-      // A malformed frame must not tear down the shared system stream.
-      source.dispatch('publication_changed', { plugin: 'kanban', key: 'board' });
-      expect(events).toEqual([{ event: 'publication_changed', plugin: 'kanban', key: 'board' }]);
-
-      cleanup();
-      expect(source.closed).toBe(true);
-    });
+    cleanup();
+    expect(source.closed).toBe(true);
   });
 });
 

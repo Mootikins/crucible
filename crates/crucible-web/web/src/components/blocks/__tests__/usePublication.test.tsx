@@ -78,7 +78,7 @@ describe('usePublication on the shared plugin stream', () => {
     ));
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(FakeEventSource.instances[0]!.url).toBe('/api/events/system');
+    expect(FakeEventSource.instances[0]!.url).toBe('/api/events?topics=system');
   });
 
   // The fault this file exists to find: a block that goes around the root opens
@@ -91,7 +91,7 @@ describe('usePublication on the shared plugin stream', () => {
     await waitFor(() => expect(asked).toHaveLength(1));
     expect(FakeEventSource.instances).toHaveLength(1);
 
-    FakeEventSource.instances[0]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
+    FakeEventSource.instances[0]!.emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
     expect(other).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
     stop();
   });
@@ -109,7 +109,7 @@ describe('usePublication on the shared plugin stream', () => {
     reply = (key, plugin) => published(key, plugin, 'second');
     asked.length = 0;
 
-    FakeEventSource.instances[0]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
+    FakeEventSource.instances[0]!.emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
 
     await waitFor(() => expect(getByTestId('board-rows').textContent).toBe('second'));
     expect(getByTestId('board-columns').textContent).toBe('first');

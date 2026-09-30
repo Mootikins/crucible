@@ -2,12 +2,22 @@
  * One shared root per server-sent-event stream.
  *
  * Four streams reach the browser: a session's chat events, surface changes,
- * filesystem changes, and system events (publications and proposals). Before this module each
- * consumer opened its own `EventSource`, so two panes on one session held two
- * streams and the review store carried a hand-written refcount to stop a
- * third. Here every consumer of a stream shares one source: the first
- * `subscribe` opens it, the last unsubscribe closes it one microtask later,
- * and a `subscribe` after that close opens a fresh one.
+ * filesystem changes, and system events (publications and proposals).
+ * Before this module each consumer opened its own `EventSource`, so two
+ * panes on one session held two streams and the review store carried a
+ * hand-written refcount to stop a third. Here every consumer of a stream
+ * shares one root: the first `subscribe` joins it, the last unsubscribe
+ * leaves it one microtask later, and a `subscribe` after that leave joins
+ * a fresh one.
+ *
+ * Simplification Plan step 19 moved what a root's `connect` actually opens:
+ * the four streams' topics (a session's own id, or `system` for the other
+ * three) now travel one physical `EventSource`, `GET /api/events`, owned by
+ * `lib/api.ts`. This module still keeps one root per stream (so `surfaceEvents`,
+ * `fsEvents` and `systemEvents` do not fight over which one reads a `system`
+ * topic frame), it just no longer owns a transport of its own —
+ * `api.ts`'s `joinEventsTopic` does, and `reconnectEventsConnection` is the
+ * one knob every root's manual `reconnect()` turns.
  *
  * The root also carries ONE hook point per stream, the "route". A route turns
  * an event into a cache write (`setQueryData`, `invalidateQueries`) or a bus
@@ -27,6 +37,8 @@
 import { createRoot, createSignal, onCleanup, type Accessor } from 'solid-js';
 import type { QueryClient } from '@tanstack/solid-query';
 import {
+  reconnectEventsConnection,
+  resetEventsConnectionForTests,
   subscribeToEvents,
   subscribeToFsEvents,
   subscribeToSurfaceEvents,
@@ -181,6 +193,15 @@ interface StreamSpec<E> {
    * such an event (`connection`); the three others do not, and leave it out.
    */
   openState?: (event: E) => boolean | undefined;
+  /**
+   * Forces a hard reconnect of the underlying transport, in place of the
+   * default close-then-`connect()` dance. The four streams share ONE
+   * connection now (`GET /api/events`, Simplification Plan step 19): a manual
+   * reconnect of any one of them must rebuild that shared connection for
+   * every topic it carries, not close and reopen only this stream's own
+   * topic subscription.
+   */
+  forceReconnect?: () => void;
 }
 
 /** One handler, the open callback that arrived with it, and whether it ran. */
@@ -288,6 +309,14 @@ function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E>
       // Nobody subscribes, so there is no source to reissue. The next
       // `subscribe` opens one.
       if (!close) return;
+      if (spec.forceReconnect) {
+        // The topic join itself (`close`) stays open; only the shared
+        // transport underneath it rebuilds, which is every topic's manual
+        // retry at once, and starts the backoff again at its first step.
+        open = false;
+        spec.forceReconnect();
+        return;
+      }
       close();
       open = false;
       // A new connect, not a reopen of the old one: the backoff of each
@@ -377,10 +406,12 @@ export function advanceSessionCursor(sessionId: string, seq: number): void {
 }
 
 /**
- * The chat events of one session (`GET /api/chat/events/{id}`).
+ * The chat events of one session — the session's own topic of the shared
+ * connection (`GET /api/events`, Simplification Plan step 19).
  *
- * One source per session id: two panes on one session share it, and a pane on
- * another session opens its own.
+ * One join per session id: two panes on one session share it, and a pane on
+ * another session joins its own. All the topics a running app has joined
+ * travel one physical `EventSource`; joining or leaving one rebuilds it.
  */
 export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> {
   const name = `chat events ${sessionId}`;
@@ -410,33 +441,38 @@ export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> 
     // handler. Without reading it the stream would look open through a drop.
     openState: (event) =>
       'type' in event && event.type === 'connection' ? event.status === 'connected' : undefined,
+    forceReconnect: reconnectEventsConnection,
   });
 }
 
-/** The surface changes of every plugin (`GET /api/surfaces/events`). */
+/** The surface changes of every plugin — the `system` topic of the shared
+ * connection. */
 export function surfaceEvents(): SseStream<SurfaceChangedEvent> {
   return rootFor(roots.surface, GLOBAL, {
     name: 'surface events',
     connect: subscribeToSurfaceEvents,
     reconcile: () => reconcileStream('surface'),
     route: (event) => runRoute('surface events', 'surface', event, routeContext()),
+    forceReconnect: reconnectEventsConnection,
   });
 }
 
-/** The filesystem changes of every watched root (`GET /api/fs/events`). */
+/** The filesystem changes of every watched root — the `system` topic of the
+ * shared connection. */
 export function fsEvents(): SseStream<FsEvent> {
   return rootFor(roots.fs, GLOBAL, {
     name: 'fs events',
     connect: subscribeToFsEvents,
     reconcile: () => reconcileStream('fs'),
     route: (event) => runRoute('fs events', 'fs', event, routeContext()),
+    forceReconnect: reconnectEventsConnection,
   });
 }
 
 /**
- * The daemon's system session (`GET /api/events/system`): plugin publications
- * and proposal changes. A proposal belongs to no user session, so only this
- * stream carries it.
+ * The daemon's system session: plugin publications and proposal changes, the
+ * `system` topic of the shared connection. A proposal belongs to no user
+ * session, so only this stream carries it.
  */
 export function systemEvents(): SseStream<SystemEvent> {
   return rootFor(roots.system, GLOBAL, {
@@ -444,6 +480,7 @@ export function systemEvents(): SseStream<SystemEvent> {
     connect: subscribeToSystemEvents,
     reconcile: () => reconcileStream('system'),
     route: (event) => runRoute('system events', 'system', event, routeContext()),
+    forceReconnect: reconnectEventsConnection,
   });
 }
 
@@ -463,4 +500,8 @@ export function resetSseForTests(): void {
   for (const perKey of Object.values(roots)) perKey.clear();
   sessionCursors.clear();
   hooks = emptyHooks();
+  // Disposing every root above already leaves each of its topics the normal
+  // way; this also forgets one joined directly (a test that called
+  // `subscribeToEvents` and friends without going through a root).
+  resetEventsConnectionForTests();
 }

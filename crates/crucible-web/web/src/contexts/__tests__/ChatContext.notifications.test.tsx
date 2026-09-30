@@ -36,8 +36,8 @@ it('a delayed attach snapshot cannot resurrect a notice dismissed on the stream'
     'GET /api/session/s1/notifications': () => pending,
   });
   render(() => <ChatProvider sessionId="s1"><span>Chat</span></ChatProvider>);
-  await waitFor(() => expect(FakeEventSource.instances.some((s) => s.url === '/api/chat/events/s1')).toBe(true));
-  const sources = FakeEventSource.instances.filter((s) => s.url === '/api/chat/events/s1');
+  await waitFor(() => expect(FakeEventSource.instances.some((s) => s.url === '/api/events?topics=s1')).toBe(true));
+  const sources = FakeEventSource.instances.filter((s) => s.url === '/api/events?topics=s1');
   expect(sources).toHaveLength(1);
   const source = sources[0]!;
   source.open();

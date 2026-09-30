@@ -392,24 +392,17 @@ function isChatEvent(payload: object): boolean {
 }
 
 /**
- * The event names of the two side-channel streams, by stream.
+ * The event names of the two side-channel domains carried on the `system`
+ * topic, by domain.
  *
- * The listener table of each stream has the type `Record<name, listener>`
- * over its row, so tsc refuses a table that misses a name or adds one. The
- * Rust test `every_side_channel_event_name_has_a_frontend_listener`
- * (`crucible-web/src/events.rs`) compares this table with the event names
- * that the routes compile, in both directions.
+ * The Rust test `every_side_channel_event_name_has_a_frontend_listener`
+ * (`crucible-web/src/routes/chat.rs`) compares this table with the event
+ * names that the routes compile, in both directions.
  */
 const SIDE_CHANNEL_EVENTS = {
   surface: ['surface_changed'],
   system: ['publication_changed', 'proposal_changed'],
 } as const;
-
-/** One listener for each event name of the side-channel stream `S`. */
-type SideChannelListeners<S extends keyof typeof SIDE_CHANNEL_EVENTS> = Record<
-  (typeof SIDE_CHANNEL_EVENTS)[S][number],
-  (event: MessageEvent) => void
->;
 
 /** The first retry of a dropped stream waits this long. */
 const RECONNECT_BASE_MS = 1000;
@@ -420,11 +413,6 @@ const RECONNECT_CAP_MS = 30_000;
 interface ReconnectingSourceHooks {
   /** Runs at each open: the first open and each reopen. */
   onOpen?: () => void;
-  /**
-   * Runs when the server says that it dropped frames (`stream_gap`). A stream
-   * that carries its gap as data (the chat stream) leaves it out.
-   */
-  onGap?: () => void;
   /** Runs when the transport drops. A retry is then on its timer. */
   onDisconnect?: () => void;
   /** Runs when the version gate refuses the protocol. No retry follows. */
@@ -474,19 +462,6 @@ function openReconnectingSource(
     for (const [name, listener] of Object.entries(listeners)) {
       current.addEventListener(name, listener);
     }
-    const onGap = hooks.onGap;
-    if (onGap) {
-      current.addEventListener('stream_gap', (event: MessageEvent) => {
-        try {
-          decodeEvent<{ dropped: number }>(streamName, 'stream_gap', event.data,
-            payload => 'dropped' in payload && typeof payload.dropped === 'number' && payload.dropped >= 0);
-        } catch {
-          console.warn('Failed to parse stream gap:', event.data);
-          return;
-        }
-        onGap();
-      });
-    }
     current.onopen = () => {
       attempts = 0;
       hooks.onOpen?.();
@@ -508,14 +483,234 @@ function openReconnectingSource(
   return stop;
 }
 
+// =============================================================================
+// The one event stream (`GET /api/events`, Simplification Plan step 19)
+// =============================================================================
+//
+// Four streams used to reach the browser, each its own `EventSource`: the
+// chat events of a session, the filesystem watcher, the surface changes and
+// the daemon's system session (publications and proposals). They now share
+// ONE connection, `GET /api/events?topics=<a>,<b>,...`, and every frame's
+// JSON body carries a `topic` field naming which one it belongs to — a
+// session id, or `system` for the other three. `joinEventsTopic` is the one
+// place that owns the shared connection; `subscribeToEvents`,
+// `subscribeToFsEvents`, `subscribeToSurfaceEvents` and
+// `subscribeToSystemEvents` below keep their old names and signatures (`sse.ts`
+// calls them by name) but now join a topic of it instead of opening a source
+// of their own.
+
+/** The topic every publication, proposal, filesystem and surface event
+ * travels on — the same literal the route reserves on the wire. */
+const SYSTEM_TOPIC = 'system';
+
+/** What a joiner of one topic wants to hear. */
+interface EventsTopicHandlers {
+  /** One frame of this topic, other than a `stream_gap` of the `system`
+   * topic (that one is `onGap` instead, matching the old per-route split). */
+  onFrame: (name: string, raw: string, lastEventId: string) => void;
+  /** The shared connection opened, or already was open when this joined. */
+  onOpen?: () => void;
+  /** The `system` topic's own `stream_gap`, decoded and validated. */
+  onGap?: () => void;
+  /** The shared connection dropped, or refused the protocol. */
+  onDisconnect?: () => void;
+}
+
+/** One joiner's handlers, so `dispatchFrame` can fan out to every joiner of
+ * a topic — the `system` topic has three (fs, surface, system events). */
+const topicSubscribers = new Map<string, Set<EventsTopicHandlers>>();
+/** The resume cursor of a joined topic, read again at every (re)connect. A
+ * topic with none (the `system` topic, always) states no `after` pair. */
+const topicCursors = new Map<string, () => number | undefined>();
+/** Closes the shared connection. `null` when no topic is joined. */
+let closeEventsConnection: (() => void) | null = null;
+let eventsConnectionOpen = false;
+
+/** Every SSE `event:` name any of the four domains listens for. */
+function allStreamEventNames(): readonly string[] {
+  return [...SSE_EVENT_TYPES, ...SIDE_CHANNEL_EVENTS.surface, ...SIDE_CHANNEL_EVENTS.system, ...FS_SSE_EVENT_TYPES];
+}
+
+/** `topics=<a>,<b>,...&after=<topic>:<seq>,...`, read fresh at each (re)connect. */
+function eventsConnectionUrl(): string {
+  const topics = [...topicSubscribers.keys()];
+  const after = topics
+    .map((topic) => {
+      const seq = topicCursors.get(topic)?.();
+      return seq === undefined ? null : `${topic}:${seq}`;
+    })
+    .filter((pair): pair is string => pair !== null);
+  const params = new URLSearchParams({ topics: topics.join(',') });
+  if (after.length > 0) params.set('after', after.join(','));
+  return `/api/events?${params.toString()}`;
+}
+
+/** Routes one frame to every joiner of the topic its body names. */
+function dispatchEventsFrame(name: string, raw: string, lastEventId: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.warn(`Failed to parse SSE event (${name}):`, raw);
+    return;
+  }
+  const named =
+    typeof parsed === 'object' && parsed !== null && 'topic' in parsed && typeof parsed.topic === 'string'
+      ? parsed.topic
+      : undefined;
+  // Every real frame the server sends names its topic (see
+  // `routes/events.rs::with_topic`); a frame with none can only be a
+  // hand-built test frame. When exactly one topic is joined there is no
+  // ambiguity to resolve, so it is read as that topic's own frame — the
+  // single-stream behavior every domain had before it shared this
+  // connection. Two or more joined topics make the frame unroutable, and it
+  // is dropped rather than guessed at.
+  const topic = named ?? (topicSubscribers.size === 1 ? [...topicSubscribers.keys()][0] : undefined);
+  if (topic === undefined) return;
+  const subscribers = topicSubscribers.get(topic);
+  if (!subscribers) return;
+
+  // The `system` topic's gap is its own hook (`reconcile`, in `sse.ts`); a
+  // session topic's gap is an ordinary frame its own reducer reads, exactly
+  // as the four streams split it before they shared one connection.
+  if (name === 'stream_gap' && topic === SYSTEM_TOPIC) {
+    try {
+      decodeEvent<{ dropped: number }>(
+        topic,
+        'stream_gap',
+        raw,
+        (payload) => 'dropped' in payload && typeof payload.dropped === 'number' && payload.dropped >= 0,
+      );
+    } catch {
+      console.warn('Failed to parse stream gap:', raw);
+      return;
+    }
+    for (const subscriber of subscribers) subscriber.onGap?.();
+    return;
+  }
+
+  // The topic is the envelope's own field, not part of the payload shape a
+  // domain decodes: `ChatEvent`, `FsEvent`, `SurfaceChangedEvent` and
+  // `SystemEvent` are the same shapes they were before a topic existed on
+  // the wire (Simplification Plan step 19 grew only the envelope). Strip it
+  // before a subscriber's own `decodeEvent` reads the frame again.
+  const { topic: _topic, ...withoutTopic } = parsed as Record<string, unknown>;
+  const raw2 = JSON.stringify(withoutTopic);
+  for (const subscriber of subscribers) subscriber.onFrame(name, raw2, lastEventId);
+}
+
+/** Tears the shared connection down and, if a topic is still joined, opens a
+ * fresh one — the backoff restarts, as a manual reconnect always did. */
+function rebuildEventsConnection(): void {
+  closeEventsConnection?.();
+  closeEventsConnection = null;
+  eventsConnectionOpen = false;
+  if (topicSubscribers.size === 0) return;
+
+  const listeners: Record<string, (event: MessageEvent) => void> = {};
+  for (const name of allStreamEventNames()) {
+    listeners[name] = (e: MessageEvent) => dispatchEventsFrame(name, e.data, e.lastEventId);
+  }
+  closeEventsConnection = openReconnectingSource(eventsConnectionUrl, 'events', listeners, {
+    onOpen: () => {
+      eventsConnectionOpen = true;
+      for (const subscribers of topicSubscribers.values()) {
+        for (const subscriber of subscribers) subscriber.onOpen?.();
+      }
+    },
+    onDisconnect: () => {
+      eventsConnectionOpen = false;
+      for (const subscribers of topicSubscribers.values()) {
+        for (const subscriber of subscribers) subscriber.onDisconnect?.();
+      }
+    },
+    onRefused: () => {
+      eventsConnectionOpen = false;
+      for (const subscribers of topicSubscribers.values()) {
+        for (const subscriber of subscribers) subscriber.onDisconnect?.();
+      }
+    },
+  });
+}
+
+/**
+ * Joins the shared connection to receive the frames of `topic`. The first
+ * joiner of a topic not already carried rebuilds the connection with it
+ * added; the answer leaves, and the last joiner of a topic rebuilds the
+ * connection without it.
+ *
+ * `cursor`, when given, is this topic's own resume cursor (a session's
+ * applied seq); the `system` topic keeps no log and names none.
+ */
+function joinEventsTopic(
+  topic: string,
+  handlers: EventsTopicHandlers,
+  cursor?: () => number | undefined,
+): () => void {
+  let subscribers = topicSubscribers.get(topic);
+  const isNewTopic = !subscribers;
+  if (!subscribers) {
+    subscribers = new Set();
+    topicSubscribers.set(topic, subscribers);
+  }
+  subscribers.add(handlers);
+  if (cursor) topicCursors.set(topic, cursor);
+
+  if (isNewTopic) {
+    rebuildEventsConnection();
+  } else if (eventsConnectionOpen) {
+    handlers.onOpen?.();
+  }
+
+  let live = true;
+  return () => {
+    if (!live) return;
+    live = false;
+    subscribers!.delete(handlers);
+    if (subscribers!.size === 0) {
+      topicSubscribers.delete(topic);
+      topicCursors.delete(topic);
+      rebuildEventsConnection();
+    }
+  };
+}
+
+/**
+ * Forces a hard reconnect of the shared connection — every joined topic's
+ * manual retry, because there is one transport under all of them now.
+ * A no-op when nothing is joined.
+ */
+export function reconnectEventsConnection(): void {
+  rebuildEventsConnection();
+}
+
+/**
+ * Forgets every joined topic and closes the shared connection.
+ *
+ * Test-only. The connection is a module-level singleton, so a test that calls
+ * `subscribeToEvents`/`subscribeToFsEvents`/`subscribeToSurfaceEvents`/
+ * `subscribeToSystemEvents` directly (not through `lib/query/sse.ts`'s
+ * roots, whose own `resetSseForTests` leaves every topic through the normal
+ * path) must call this between cases, or a topic a case forgot to leave
+ * still looks joined to the next one and no fresh connection opens for it.
+ */
+export function resetEventsConnectionForTests(): void {
+  closeEventsConnection?.();
+  closeEventsConnection = null;
+  eventsConnectionOpen = false;
+  topicSubscribers.clear();
+  topicCursors.clear();
+}
+
 /**
  * Subscribe to SSE events for a session.
- * Returns a cleanup function that closes the EventSource.
+ * Returns a cleanup function that leaves the shared connection's `session_id`
+ * topic.
  *
  * Call this BEFORE sending a message so no events are missed.
  * Automatically reconnects on disconnect with exponential backoff. Each
- * (re)connect states the caller's cursor — the last seq it APPLIED — as
- * `?after=`, and the server replays the persisted events past it.
+ * (re)connect states the caller's cursor — the last seq it APPLIED — as this
+ * topic's `after=` pair, and the server replays the persisted events past it.
  *
  * The transport state travels as a client-minted `connection` event:
  * `connected` at each open, `reconnecting` at each drop. The server
@@ -533,43 +728,35 @@ export function subscribeToEvents(
    */
   cursor?: () => number | undefined,
 ): () => void {
-  // EventSource cannot set headers; the HttpOnly session cookie (set by
-  // login()) authenticates the stream for non-localhost clients.
-  const base = `/api/chat/events/${encodeURIComponent(sessionId)}`;
-  const listeners: Record<string, (event: MessageEvent) => void> = {};
-  for (const eventType of SSE_EVENT_TYPES) {
-    listeners[eventType] = (e: MessageEvent) => {
-      try {
-        const event = decodeEvent<ChatEvent>('chat', eventType, e.data, isChatEvent);
-        // The seq the route stamped as the frame's `id:` — absent when the
-        // frame carried none, and then the event travels without one.
-        const seq = readSeq(e.lastEventId);
-        onEvent(seq === undefined ? event : { ...event, seq });
-      } catch {
-        console.warn(`Failed to parse SSE event (${eventType}):`, e.data);
-      }
-    };
-  }
-  return openReconnectingSource(
-    () => {
-      const after = cursor?.();
-      return after === undefined ? base : `${base}?after=${after}`;
-    },
-    'chat',
-    listeners,
+  return joinEventsTopic(
+    sessionId,
     {
+      onFrame: (eventType, raw, lastEventId) => {
+        try {
+          const event = decodeEvent<ChatEvent>('chat', eventType, raw, isChatEvent);
+          // The seq the route stamped as the frame's `id:` — absent when the
+          // frame carried none, and then the event travels without one.
+          const seq = readSeq(lastEventId);
+          onEvent(seq === undefined ? event : { ...event, seq });
+        } catch {
+          console.warn(`Failed to parse SSE event (${eventType}):`, raw);
+        }
+      },
       onOpen: () => onEvent({ type: 'connection', status: 'connected' }),
       // Transient transport status — NOT a daemon 'error' (that path
       // overwrites the streaming message and nulls the streaming id,
       // permanently losing the in-flight turn on a routine idle reconnect).
-      onDisconnect: () => onEvent({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' }),
+      onDisconnect: () =>
+        onEvent({ type: 'connection', status: 'reconnecting', message: 'Reconnecting…' }),
     },
+    cursor,
   );
 }
 
 /** The seq off a frame's `id:` field, or undefined when the frame sent none. */
 function readSeq(lastEventId: string): number | undefined {
-  const seq = Number.parseInt(lastEventId, 10);
+  // The id is `topic:seq`; only the part after the last colon is the seq.
+  const seq = Number.parseInt(lastEventId.slice(lastEventId.lastIndexOf(':') + 1), 10);
   return Number.isInteger(seq) && seq > 0 ? seq : undefined;
 }
 
@@ -1400,9 +1587,8 @@ export async function getSurfaces(): Promise<Surface[]> {
 }
 
 /**
- * Subscribe to surface changes (`GET /api/surfaces/events`): one
- * `EventSource` with exponential-backoff reconnect. Returns a cleanup
- * function that closes the stream.
+ * Subscribe to surface changes: the `system` topic of the shared connection
+ * (`GET /api/events`). Returns a cleanup function that leaves the topic.
  */
 export function subscribeToSurfaceEvents(
   onEvent: (event: SurfaceChangedEvent) => void,
@@ -1410,16 +1596,17 @@ export function subscribeToSurfaceEvents(
   onGap: () => void = () => {},
   onDisconnect: () => void = () => {},
 ): () => void {
-  const listeners: SideChannelListeners<'surface'> = {
-    surface_changed: (e: MessageEvent) => {
+  return joinEventsTopic(SYSTEM_TOPIC, {
+    onFrame: (name, raw) => {
+      if (name !== 'surface_changed') return;
       try {
         // The payload carries no tag of its own — the stream has one event
-        // name — so the check is the three fields the document requires.
+        // name — so the check is the fields the document requires.
         onEvent(
           decodeEvent<SurfaceChangedEvent>(
             'surface',
             'surface_changed',
-            e.data,
+            raw,
             (payload) =>
               'name' in payload &&
               typeof payload.name === 'string' &&
@@ -1430,12 +1617,13 @@ export function subscribeToSurfaceEvents(
           ),
         );
       } catch {
-        console.warn('Failed to parse surface SSE event:', e.data);
+        console.warn('Failed to parse surface SSE event:', raw);
       }
     },
-  };
-  return openReconnectingSource(() => '/api/surfaces/events', 'surface', listeners,
-    { onOpen, onGap, onDisconnect, onRefused: onDisconnect });
+    onOpen,
+    onGap,
+    onDisconnect,
+  });
 }
 
 /**
@@ -2023,8 +2211,9 @@ export async function fsTrash(
 }
 
 /**
- * SSE event names the `/api/fs/events` stream emits. Kept in lockstep with the
- * Rust `FsEvent::event_name()` (web/fs_events.rs). Each event's `data` parses
+ * SSE event names the filesystem domain of the `system` topic emits. Kept in
+ * lockstep with the Rust `FsEvent::event_name()` (web/fs_events.rs). Each
+ * event's `data` parses
  * to the `FsEvent` discriminated union.
  */
 const FS_SSE_EVENT_TYPES = ['fs_changed', 'fs_deleted', 'fs_moved'] as const;
@@ -2046,10 +2235,9 @@ void _FS_EVENT_TAGS_ARE_COMPLETE;
 const FS_EVENT_TAG_SET = new Set<string>(FS_EVENT_TAGS);
 
 /**
- * Subscribe to live filesystem-change events (`GET /api/fs/events`): one
- * `EventSource`, exponential-backoff reconnect, cookie auth. In Phase 1 only
- * watched kiln directories emit these. Returns a cleanup function that closes
- * the stream.
+ * Subscribe to live filesystem-change events: the `system` topic of the
+ * shared connection (`GET /api/events`). In Phase 1 only watched kiln
+ * directories emit these. Returns a cleanup function that leaves the topic.
  */
 export function subscribeToFsEvents(
   onEvent: (event: FsEvent) => void,
@@ -2057,15 +2245,15 @@ export function subscribeToFsEvents(
   onGap: () => void = () => {},
   onDisconnect: () => void = () => {},
 ): () => void {
-  const listeners: Record<string, (event: MessageEvent) => void> = {};
-  for (const eventType of FS_SSE_EVENT_TYPES) {
-    listeners[eventType] = (e: MessageEvent) => {
+  return joinEventsTopic(SYSTEM_TOPIC, {
+    onFrame: (name, raw) => {
+      if (!(FS_SSE_EVENT_TYPES as readonly string[]).includes(name)) return;
       try {
         onEvent(
           decodeEvent<FsEvent>(
             'file-system',
-            eventType,
-            e.data,
+            name,
+            raw,
             (payload) =>
               'type' in payload &&
               typeof payload.type === 'string' &&
@@ -2073,12 +2261,13 @@ export function subscribeToFsEvents(
           ),
         );
       } catch {
-        console.warn(`Failed to parse FS SSE event (${eventType}):`, e.data);
+        console.warn(`Failed to parse FS SSE event (${name}):`, raw);
       }
-    };
-  }
-  return openReconnectingSource(() => '/api/fs/events', 'file-system', listeners,
-    { onOpen, onGap, onDisconnect, onRefused: onDisconnect });
+    },
+    onOpen,
+    onGap,
+    onDisconnect,
+  });
 }
 
 /**
@@ -2099,12 +2288,13 @@ export type SystemEvent =
   | ({ event: 'proposal_changed' } & Schemas['ProposalChangedEvent']);
 
 /**
- * Subscribe to the daemon's system session (`GET /api/events/system`).
+ * Subscribe to the daemon's system session: the `system` topic of the shared
+ * connection (`GET /api/events`).
  *
- * The stream carries `publication_changed` and `proposal_changed`. The source
- * reopens itself after each error with a backoff, as the other streams do.
- * Cleanup closes it and stops the retries; the shared root can also
- * reconnect it by hand.
+ * The stream carries `publication_changed` and `proposal_changed`. The
+ * connection reopens itself after each error with a backoff. Cleanup leaves
+ * the topic; `reconnectEventsConnection` reconnects the shared connection by
+ * hand.
  */
 export function subscribeToSystemEvents(
   onEvent: (event: SystemEvent) => void,
@@ -2112,39 +2302,39 @@ export function subscribeToSystemEvents(
   onGap: () => void = () => {},
   onDisconnect: () => void = () => {},
 ): () => void {
-  // EventSource cannot set headers; the HttpOnly session cookie (set by
-  // login()) authenticates the stream for non-localhost clients.
-  const listeners: SideChannelListeners<'system'> = {
-    publication_changed: (e: MessageEvent) => {
-      try {
-        const payload = decodeEvent<{ plugin: string; key: string }>(
-          'system',
-          'publication_changed',
-          e.data,
-          (p) =>
-            'plugin' in p && typeof p.plugin === 'string' && 'key' in p && typeof p.key === 'string',
-        );
-        onEvent({ event: 'publication_changed', plugin: payload.plugin, key: payload.key });
-      } catch {
-        console.warn('Failed to parse system SSE event:', e.data);
+  return joinEventsTopic(SYSTEM_TOPIC, {
+    onFrame: (name, raw) => {
+      if (name === 'publication_changed') {
+        try {
+          const payload = decodeEvent<{ plugin: string; key: string }>(
+            'system',
+            'publication_changed',
+            raw,
+            (p) =>
+              'plugin' in p && typeof p.plugin === 'string' && 'key' in p && typeof p.key === 'string',
+          );
+          onEvent({ event: 'publication_changed', plugin: payload.plugin, key: payload.key });
+        } catch {
+          console.warn('Failed to parse system SSE event:', raw);
+        }
+      } else if (name === 'proposal_changed') {
+        try {
+          const payload = decodeEvent<{ id: string }>(
+            'system',
+            'proposal_changed',
+            raw,
+            (p) => 'id' in p && typeof p.id === 'string',
+          );
+          onEvent({ event: 'proposal_changed', id: payload.id });
+        } catch {
+          console.warn('Failed to parse system SSE event:', raw);
+        }
       }
     },
-    proposal_changed: (e: MessageEvent) => {
-      try {
-        const payload = decodeEvent<{ id: string }>(
-          'system',
-          'proposal_changed',
-          e.data,
-          (p) => 'id' in p && typeof p.id === 'string',
-        );
-        onEvent({ event: 'proposal_changed', id: payload.id });
-      } catch {
-        console.warn('Failed to parse system SSE event:', e.data);
-      }
-    },
-  };
-  return openReconnectingSource(() => '/api/events/system', 'system', listeners,
-    { onOpen, onGap, onDisconnect, onRefused: onDisconnect });
+    onOpen,
+    onGap,
+    onDisconnect,
+  });
 }
 
 // ===========================================================================

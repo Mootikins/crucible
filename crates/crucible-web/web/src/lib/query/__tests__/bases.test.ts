@@ -46,8 +46,8 @@ describe('base queries and file events', () => {
 
     fsEvents().subscribe(() => {});
     const source = onlyEventSource();
-    for (const name of ['a', 'b', 'c']) source.emit('fs_changed', { type: 'changed', kind: 'modify', path: `/work/tickets/${name}.md` });
-    source.emit('fs_changed', { type: 'changed', kind: 'modify', path: '/elsewhere/x.md' });
+    for (const name of ['a', 'b', 'c']) source.emit('fs_changed', { topic: 'system', type: 'changed', kind: 'modify', path: `/work/tickets/${name}.md` });
+    source.emit('fs_changed', { topic: 'system', type: 'changed', kind: 'modify', path: '/elsewhere/x.md' });
     await vi.advanceTimersByTimeAsync(500);
 
     expect(work.reads()).toBe(2);
@@ -60,7 +60,7 @@ describe('base queries and file events', () => {
     const work = openBase('Work');
     await vi.advanceTimersByTimeAsync(0);
     fsEvents().subscribe(() => {});
-    onlyEventSource().emit('fs_deleted', { type: 'deleted', path: '/somewhere/a.md' });
+    onlyEventSource().emit('fs_deleted', { topic: 'system', type: 'deleted', path: '/somewhere/a.md' });
     await vi.advanceTimersByTimeAsync(500);
     expect(work.reads()).toBe(2);
     work.stop();

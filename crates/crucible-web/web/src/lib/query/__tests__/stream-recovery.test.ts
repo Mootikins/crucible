@@ -49,7 +49,7 @@ describe('stream recovery', () => {
     await vi.waitFor(assertRefreshed);
 
     seed();
-    onlyEventSource().emit('stream_gap', { dropped: 4 });
+    onlyEventSource().emit('stream_gap', { topic: 'system', dropped: 4 });
     await vi.waitFor(assertRefreshed);
 
     seed();
@@ -70,7 +70,7 @@ describe('stream recovery', () => {
     const stop = observer.subscribe(() => {});
     row.stream().subscribe(() => {});
     expect(reads).toBe(1);
-    onlyEventSource().emit('stream_gap', { dropped: 1 });
+    onlyEventSource().emit('stream_gap', { topic: 'system', dropped: 1 });
     release(['before gap']);
     try {
       await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(['current']));
@@ -128,7 +128,7 @@ describe('stream recovery', () => {
     });
     row.stream().subscribe(() => {});
     onlyEventSource().open();
-    onlyEventSource().emit('stream_gap', { dropped: 1 });
+    onlyEventSource().emit('stream_gap', { topic: 'system', dropped: 1 });
     release(['first']);
     await expect(fetched).resolves.toEqual(['first']);
     await vi.waitFor(() => expect(env.client.getQueryState(row.keys[0])?.isInvalidated).toBe(true));

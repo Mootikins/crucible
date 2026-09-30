@@ -393,6 +393,7 @@ describe('FilesPanel — a root picked before any session', () => {
 
     // The daemon says a note was written into the browsed kiln.
     onlyEventSource().emit('fs_changed', {
+      topic: 'system',
       type: 'changed',
       path: '/project/kiln/fresh.md',
       kind: 'created',

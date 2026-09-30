@@ -153,7 +153,9 @@ it('delivers filesystem and surface events, reconnects, and cancels pending reco
     const onEvent = vi.fn();
     const cleanup = kind === 'fs' ? api.subscribeToFsEvents(onEvent) : api.subscribeToSurfaceEvents(onEvent);
     let source = Source.instances.at(-1)!;
-    expect(source.url).toBe(kind === 'fs' ? '/api/fs/events' : '/api/surfaces/events');
+    // Both domains read the `system` topic of the one shared connection
+    // (Simplification Plan step 19).
+    expect(source.url).toBe('/api/events?topics=system');
     const names = kind === 'fs' ? ['fs_changed', 'fs_deleted', 'fs_moved'] : ['surface_changed'];
     // The payload has to be a shape the document declares: the decode checks
     // the tag an fs event carries and the fields a surface event carries,
@@ -162,9 +164,9 @@ it('delivers filesystem and surface events, reconnects, and cancels pending reco
       ? { type: 'deleted', path: '/a' }
       : { name: 'board', plugin: 'kanban', version: 2 };
     for (const name of names) {
-      source.handlers.get(name)!(new MessageEvent(name, { data: JSON.stringify(payload) }));
+      source.handlers.get(name)!(new MessageEvent(name, { data: JSON.stringify({ topic: 'system', ...payload }) }));
       source.handlers.get(name)!(new MessageEvent(name, { data: 'invalid' }));
-      source.handlers.get(name)!(new MessageEvent(name, { data: '{"id":"a"}' }));
+      source.handlers.get(name)!(new MessageEvent(name, { data: '{"id":"a","topic":"system"}' }));
     }
     expect(onEvent).toHaveBeenCalledTimes(names.length);
     expect(onEvent).toHaveBeenCalledWith(payload);

@@ -28,6 +28,14 @@ async function settle(): Promise<void> {
   await Promise.resolve();
 }
 
+/** The most recently opened source — the one still live, after a rebuild
+ * replaced an earlier one. */
+function latestSource(): FakeEventSource {
+  const source = FakeEventSource.instances.at(-1);
+  if (!source) throw new Error('no EventSource was opened');
+  return source;
+}
+
 beforeEach(() => {
   installFakeEventSource();
   setQueryClientForTests(new QueryClient());
@@ -47,7 +55,7 @@ describe('sessionEvents', () => {
     sessionEvents('s1').subscribe(second);
 
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(onlySource().url).toBe('/api/chat/events/s1');
+    expect(onlySource().url).toBe('/api/events?topics=s1');
   });
 
   it('reads the notifications of the session once, when it attaches, oldest first', async () => {
@@ -115,7 +123,7 @@ describe('sessionEvents', () => {
     sessionEvents('s1').subscribe(first);
     sessionEvents('s1').subscribe(second);
 
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'hi' } });
 
     expect(first).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'hi' } });
     expect(second).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'hi' } });
@@ -151,23 +159,18 @@ describe('sessionEvents', () => {
     expect(joined).toHaveBeenCalledTimes(1);
   });
 
-  it('builds a second EventSource for a second session', () => {
-    sessionEvents('s1').subscribe(vi.fn());
-    sessionEvents('s2').subscribe(vi.fn());
-
-    expect(FakeEventSource.instances.map((s) => s.url)).toEqual([
-      '/api/chat/events/s1',
-      '/api/chat/events/s2',
-    ]);
-  });
-
-  it('keeps the two sessions apart', () => {
+  it('keeps the two sessions apart, on one shared connection', () => {
+    // Two different session ids are two different topics, so the second
+    // subscribe rebuilds the ONE connection to carry both — it does not open
+    // a second `EventSource`.
     const first = vi.fn();
     const second = vi.fn();
     sessionEvents('s1').subscribe(first);
     sessionEvents('s2').subscribe(second);
 
-    FakeEventSource.instances[0]!.emit('text_delta', { event: 'text_delta', data: { content: 'one' } });
+    expect(latestSource().url).toBe('/api/events?topics=s1%2Cs2');
+
+    latestSource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'one' } });
 
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).not.toHaveBeenCalled();
@@ -192,7 +195,7 @@ describe('sessionEvents', () => {
     sessionEvents('s1').subscribe(second);
 
     stopFirst();
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'hi' } });
 
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
@@ -203,7 +206,7 @@ describe('sessionEvents', () => {
     stream.subscribe(vi.fn());
 
     expect(stream.latest()).toBeUndefined();
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'hi' } });
 
     expect(stream.latest()).toEqual({ event: 'text_delta', data: { content: 'hi' } });
   });
@@ -226,7 +229,7 @@ describe('sessionEvents', () => {
     setEventRoute('session', route);
     sessionEvents('s1').subscribe(vi.fn());
 
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'hi' } });
 
     expect(route).toHaveBeenCalledWith(
       { event: 'text_delta', data: { content: 'hi' } },
@@ -241,7 +244,7 @@ describe('sessionEvents', () => {
     const handler = vi.fn();
     sessionEvents('s1').subscribe(handler);
 
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'hi' } });
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -252,7 +255,7 @@ describe('sessionEvents', () => {
     resetSseForTests();
 
     sessionEvents('s1').subscribe(vi.fn());
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'hi' } });
 
     expect(route).not.toHaveBeenCalled();
   });
@@ -263,21 +266,21 @@ describe('the session resume cursor', () => {
     expect(sessionCursor('s1')).toBeUndefined();
     sessionEvents('s1').subscribe(vi.fn());
 
-    expect(onlySource().url).toBe('/api/chat/events/s1');
+    expect(onlySource().url).toBe('/api/events?topics=s1');
   });
 
-  it('states the applied seq as ?after= on every reopen', () => {
+  it('states the applied seq as this topic\'s ?after= pair on every reopen', () => {
     advanceSessionCursor('s1', 7);
     sessionEvents('s1').subscribe(vi.fn());
 
-    expect(onlySource().url).toBe('/api/chat/events/s1?after=7');
+    expect(onlySource().url).toBe('/api/events?topics=s1&after=s1%3A7');
 
     // A manual reconnect re-reads the cursor at connect time, so a watermark
     // that moved while the stream was down travels on the new source.
     advanceSessionCursor('s1', 9);
     sessionEvents('s1').reconnect();
 
-    expect(FakeEventSource.instances[1]!.url).toBe('/api/chat/events/s1?after=9');
+    expect(FakeEventSource.instances[1]!.url).toBe('/api/events?topics=s1&after=s1%3A9');
   });
 
   it('advances monotonically and never walks back', () => {
@@ -287,19 +290,24 @@ describe('the session resume cursor', () => {
     expect(sessionCursor('s1')).toBe(5);
   });
 
-  it('carries the seq a frame stamped, and nothing when it did not', () => {
+  it('carries the seq a frame stamped (topic:seq), and nothing when it did not', () => {
     const seen: Array<{ seq?: number | null; event?: string; type?: string }> = [];
     sessionEvents('s1').subscribe((event) => seen.push(event));
 
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'a' } }, { lastEventId: '12' });
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'b' } });
+    onlySource().emit(
+      'text_delta',
+      { topic: 's1', event: 'text_delta', data: { content: 'a' } },
+      { lastEventId: 's1:12' },
+    );
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'b' } });
     onlySource().emit(
       'message_complete',
       {
+        topic: 's1',
         event: 'message_complete',
         data: { message_id: 'm1', full_response: 'c' },
       },
-      { lastEventId: '13' },
+      { lastEventId: 's1:13' },
     );
 
     expect(seen.map((event) => ['event' in event ? event.event : event.type, event.seq])).toEqual([
@@ -310,6 +318,66 @@ describe('the session resume cursor', () => {
   });
 });
 
+describe('the shared connection', () => {
+  it('carries the surface, filesystem and system domains on one EventSource', () => {
+    // All three read the daemon's `system` topic, so joining the second and
+    // third domain must not open a second connection.
+    surfaceEvents().subscribe(vi.fn());
+    fsEvents().subscribe(vi.fn());
+    systemEvents().subscribe(vi.fn());
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(onlySource().url).toBe('/api/events?topics=system');
+  });
+
+  it('rebuilds the connection when a new topic joins, and drops it from the url when the topic leaves', async () => {
+    sessionEvents('s1').subscribe(vi.fn());
+    expect(latestSource().url).toBe('/api/events?topics=s1');
+
+    const stopSurface = surfaceEvents().subscribe(vi.fn());
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(latestSource().url).toBe('/api/events?topics=s1%2Csystem');
+    expect(FakeEventSource.instances[0]!.closed).toBe(true);
+
+    stopSurface();
+    await settle();
+    expect(FakeEventSource.instances).toHaveLength(3);
+    expect(latestSource().url).toBe('/api/events?topics=s1');
+  });
+
+  it('routes a frame only to the domain whose event names it matches', () => {
+    const surfaceHandler = vi.fn();
+    const fsHandler = vi.fn();
+    const systemHandler = vi.fn();
+    surfaceEvents().subscribe(surfaceHandler);
+    fsEvents().subscribe(fsHandler);
+    systemEvents().subscribe(systemHandler);
+
+    onlySource().emit('surface_changed', {
+      topic: 'system',
+      plugin: 'board',
+      name: 'tasks',
+      version: 2,
+    });
+
+    expect(surfaceHandler).toHaveBeenCalledTimes(1);
+    expect(fsHandler).not.toHaveBeenCalled();
+    expect(systemHandler).not.toHaveBeenCalled();
+  });
+
+  it('a frame of a topic nobody joined reaches nobody', () => {
+    const handler = vi.fn();
+    sessionEvents('s1').subscribe(handler);
+
+    // The frontend never asks for `s2`; a frame naming it (impossible through
+    // the real route, since this connection never named it as a topic) is
+    // dropped rather than misrouted to `s1`'s handler.
+    onlySource().emit('text_delta', { topic: 's2', event: 'text_delta', data: { content: 'not mine' } });
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
+
 describe('surfaceEvents', () => {
   it('builds one EventSource for every subscriber', () => {
     const first = vi.fn();
@@ -317,9 +385,10 @@ describe('surfaceEvents', () => {
     surfaceEvents().subscribe(first);
     surfaceEvents().subscribe(second);
 
-    expect(onlySource().url).toBe('/api/surfaces/events');
+    expect(onlySource().url).toBe('/api/events?topics=system');
 
     onlySource().emit('surface_changed', {
+      topic: 'system',
       plugin: 'board',
       name: 'tasks',
       version: 2,
@@ -358,6 +427,7 @@ describe('surfaceEvents', () => {
     surfaceEvents().subscribe(vi.fn());
 
     onlySource().emit('surface_changed', {
+      topic: 'system',
       plugin: 'board',
       name: 'tasks',
       version: 2,
@@ -378,9 +448,9 @@ describe('fsEvents', () => {
     fsEvents().subscribe(first);
     fsEvents().subscribe(second);
 
-    expect(onlySource().url).toBe('/api/fs/events');
+    expect(onlySource().url).toBe('/api/events?topics=system');
 
-    onlySource().emit('fs_changed', { type: 'changed', path: '/k/a.md', kind: 'modified' });
+    onlySource().emit('fs_changed', { topic: 'system', type: 'changed', path: '/k/a.md', kind: 'modified' });
     expect(first).toHaveBeenCalledWith({ type: 'changed', path: '/k/a.md', kind: 'modified' });
     expect(second).toHaveBeenCalledWith({ type: 'changed', path: '/k/a.md', kind: 'modified' });
   });
@@ -400,7 +470,7 @@ describe('fsEvents', () => {
     setEventRoute('fs', route);
     fsEvents().subscribe(vi.fn());
 
-    onlySource().emit('fs_deleted', { type: 'deleted', path: '/k/a.md' });
+    onlySource().emit('fs_deleted', { topic: 'system', type: 'deleted', path: '/k/a.md' });
 
     expect(route).toHaveBeenCalledWith(
       { type: 'deleted', path: '/k/a.md' },
@@ -416,10 +486,10 @@ describe('systemEvents', () => {
     setEventRoute('system', route);
     systemEvents().subscribe(handler);
 
-    expect(onlySource().url).toBe('/api/events/system');
+    expect(onlySource().url).toBe('/api/events?topics=system');
 
-    onlySource().emit('proposal_changed', { id: 'p-1' });
-    onlySource().emit('publication_changed', { plugin: 'board', key: 'rows' });
+    onlySource().emit('proposal_changed', { topic: 'system', id: 'p-1' });
+    onlySource().emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
 
     expect(handler.mock.calls).toEqual([
       [{ event: 'proposal_changed', id: 'p-1' }],
@@ -435,22 +505,20 @@ describe('systemEvents', () => {
     const handler = vi.fn();
     systemEvents().subscribe(handler);
 
-    onlySource().emit('proposal_changed', { other: 1 });
+    onlySource().emit('proposal_changed', { topic: 'system', other: 1 });
 
     expect(handler).not.toHaveBeenCalled();
   });
-});
 
-describe('systemEvents', () => {
   it('builds one EventSource for every subscriber, and names the plugin and the key', () => {
     const first = vi.fn();
     const second = vi.fn();
     systemEvents().subscribe(first);
     systemEvents().subscribe(second);
 
-    expect(onlySource().url).toBe('/api/events/system');
+    expect(onlySource().url).toBe('/api/events?topics=system');
 
-    onlySource().emit('publication_changed', { plugin: 'board', key: 'rows' });
+    onlySource().emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
     expect(first).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
     expect(second).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
   });
@@ -473,7 +541,7 @@ describe('systemEvents', () => {
     setEventRoute('system', route);
     systemEvents().subscribe(vi.fn());
 
-    onlySource().emit('publication_changed', { plugin: 'board', key: 'rows' });
+    onlySource().emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
 
     expect(route).toHaveBeenCalledWith(
       { event: 'publication_changed', plugin: 'board', key: 'rows' },
@@ -492,6 +560,21 @@ describe('systemEvents', () => {
     expect(handler).not.toHaveBeenCalled();
     expect(onlySource().closed).toBe(false);
   });
+
+  it('reports the system stream_gap through the reconcile hook, not as a frame', () => {
+    const route = vi.fn();
+    const handler = vi.fn();
+    setEventRoute('system', route);
+    systemEvents().subscribe(handler);
+
+    onlySource().emit('stream_gap', { topic: 'system', dropped: 3 });
+
+    // The gap does not reach the handler or the route as an ordinary frame —
+    // `reconcile` (wired to `hooks.onGap` in `api.ts`) is the only thing it
+    // triggers, mirroring the old `/api/events/system` stream's own split.
+    expect(handler).not.toHaveBeenCalled();
+    expect(route).not.toHaveBeenCalled();
+  });
 });
 
 describe('resetSseForTests', () => {
@@ -500,7 +583,6 @@ describe('resetSseForTests', () => {
     surfaceEvents().subscribe(vi.fn());
     fsEvents().subscribe(vi.fn());
     systemEvents().subscribe(vi.fn());
-    expect(FakeEventSource.instances).toHaveLength(4);
 
     resetSseForTests();
 
@@ -509,7 +591,7 @@ describe('resetSseForTests', () => {
 });
 
 describe('reconnect', () => {
-  it('opens a new source, closes the old one, and keeps every subscriber', () => {
+  it('rebuilds the ONE shared connection, keeping every subscriber of every joined topic', () => {
     const first = vi.fn();
     const second = vi.fn();
     const stream = sessionEvents('s1');
@@ -521,13 +603,30 @@ describe('reconnect', () => {
 
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(original.closed).toBe(true);
-    const replacement = FakeEventSource.instances[1]!;
-    expect(replacement.url).toBe('/api/chat/events/s1');
+    const replacement = latestSource();
+    expect(replacement.url).toBe('/api/events?topics=s1');
     expect(replacement.closed).toBe(false);
 
-    replacement.emit('text_delta', { event: 'text_delta', data: { content: 'after' } });
+    replacement.emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'after' } });
     expect(first).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'after' } });
     expect(second).toHaveBeenCalledWith({ event: 'text_delta', data: { content: 'after' } });
+  });
+
+  it('reconnecting one stream also rebuilds a concurrently joined topic, on the same new source', () => {
+    // Both streams read the ONE shared connection, so reconnecting the
+    // session stream carries `system` along too — there is only one
+    // transport to rebuild.
+    sessionEvents('s1').subscribe(vi.fn());
+    const systemHandler = vi.fn();
+    systemEvents().subscribe(systemHandler);
+    expect(latestSource().url).toBe('/api/events?topics=s1%2Csystem');
+
+    sessionEvents('s1').reconnect();
+
+    const replacement = latestSource();
+    expect(replacement.url).toBe('/api/events?topics=s1%2Csystem');
+    replacement.emit('publication_changed', { topic: 'system', plugin: 'p', key: 'k' });
+    expect(systemHandler).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'p', key: 'k' });
   });
 
   it('keeps the route on the new source', () => {
@@ -537,7 +636,7 @@ describe('reconnect', () => {
     stream.subscribe(vi.fn());
 
     stream.reconnect();
-    FakeEventSource.instances[1]!.emit('text_delta', { event: 'text_delta', data: { content: 'after' } });
+    latestSource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'after' } });
 
     expect(route).toHaveBeenCalledTimes(1);
   });
@@ -569,7 +668,7 @@ describe('reconnect', () => {
 
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(original.closed).toBe(true);
-    FakeEventSource.instances[1]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
+    latestSource().emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
     expect(handler).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
   });
 
@@ -583,7 +682,7 @@ describe('reconnect', () => {
     stream.subscribe(vi.fn(), later);
     expect(later).not.toHaveBeenCalled();
 
-    FakeEventSource.instances[1]!.open();
+    latestSource().open();
     expect(later).toHaveBeenCalledTimes(1);
   });
 });
@@ -626,7 +725,7 @@ describe('a handler that throws', () => {
     sessionEvents('s1').subscribe(broken);
     sessionEvents('s1').subscribe(good);
 
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'hi' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'hi' } });
 
     expect(broken).toHaveBeenCalledTimes(1);
     expect(good).toHaveBeenCalledTimes(1);
@@ -641,8 +740,8 @@ describe('a handler that throws', () => {
     });
     sessionEvents('s1').subscribe(broken);
 
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'one' } });
-    onlySource().emit('text_delta', { event: 'text_delta', data: { content: 'two' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'one' } });
+    onlySource().emit('text_delta', { topic: 's1', event: 'text_delta', data: { content: 'two' } });
 
     expect(broken).toHaveBeenCalledTimes(2);
     expect(onlySource().closed).toBe(false);

@@ -97,11 +97,18 @@ describe('two providers, two sessions', () => {
       </>
     ));
 
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
-    const [srcA, srcB] = FakeEventSource.instances;
+    // Both sessions' topics travel the ONE shared connection
+    // (Simplification Plan step 19): joining `session-b` while `session-a`
+    // is already open rebuilds it to carry both, rather than opening a
+    // second `EventSource`. The topic each frame names, not which physical
+    // source carries it, is what keeps the two apart.
+    await waitFor(() => expect(FakeEventSource.instances.at(-1)!.url).toBe(
+      '/api/events?topics=session-a%2Csession-b',
+    ));
+    const shared = FakeEventSource.instances.at(-1)!;
 
-    emitOps(srcA!, 1, [upsert(segment('turn-a', 0, 'answer for A'))]);
-    emitOps(srcB!, 1, [upsert(segment('turn-b', 0, 'answer for B'))]);
+    emitOps(shared, 1, [upsert(segment('turn-a', 0, 'answer for A'))], 'session-a');
+    emitOps(shared, 1, [upsert(segment('turn-b', 0, 'answer for B'))], 'session-b');
 
     // One event to each: neither session's transcript may leak into the other.
     await waitFor(() => expect(aSeen).toEqual(['answer for A']));

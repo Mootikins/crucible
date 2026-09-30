@@ -78,7 +78,19 @@ export function append(id: string, at: number, text: string, field: 'text' | 'th
   return { op: 'append', id, field, at, text };
 }
 
-/** Acts as the server: one `transcript` frame with the seq `seq`. */
-export function emitOps(source: FakeEventSource, seq: number, ops: TranscriptOp[]): void {
-  source.emit('transcript', { type: 'transcript', seq, ops }, { lastEventId: String(seq) });
+/**
+ * Acts as the server: one `transcript` frame with the seq `seq`.
+ *
+ * `topic` names the session the frame belongs to — required once more than
+ * one session's topic travels the shared connection at once (Simplification
+ * Plan step 19), since then the connection cannot infer it. A single-session
+ * test may omit it: `lib/api.ts`'s dispatcher reads a topic-less frame as the
+ * one topic joined, when there is only one.
+ */
+export function emitOps(source: FakeEventSource, seq: number, ops: TranscriptOp[], topic?: string): void {
+  source.emit(
+    'transcript',
+    { ...(topic ? { topic } : {}), type: 'transcript', seq, ops },
+    { lastEventId: topic ? `${topic}:${seq}` : String(seq) },
+  );
 }

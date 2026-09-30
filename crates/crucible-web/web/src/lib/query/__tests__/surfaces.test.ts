@@ -89,7 +89,7 @@ describe('a mounted reader and the surface stream', () => {
     await vi.waitFor(() => expect(query.data).toHaveLength(1));
     stop = surfaceEvents().subscribe(() => {});
 
-    onlyEventSource().emit('surface_changed', changed());
+    onlyEventSource().emit('surface_changed', { topic: 'system', ...changed() });
 
     await vi.waitFor(() => expect(env.fetch.calls('GET /api/surfaces')).toBe(2));
   });
@@ -104,7 +104,7 @@ describe('a mounted reader and the surface stream', () => {
     await vi.waitFor(() => expect(query.data).toHaveLength(2));
     stop = surfaceEvents().subscribe(() => {});
 
-    onlyEventSource().emit('surface_changed', changed({ withdrawn: true }));
+    onlyEventSource().emit('surface_changed', { topic: 'system', ...changed({ withdrawn: true }) });
 
     await vi.waitFor(() => expect(query.data?.map((s) => s.name)).toEqual(['reviews']));
     // The frame said the surface is gone, so asking would spend a round trip
@@ -124,7 +124,7 @@ describe('a mounted reader and the surface stream', () => {
     await vi.waitFor(() => expect(query.data).toHaveLength(2));
     stop = surfaceEvents().subscribe(() => {});
 
-    onlyEventSource().emit('surface_changed', changed({ withdrawn: true }));
+    onlyEventSource().emit('surface_changed', { topic: 'system', ...changed({ withdrawn: true }) });
 
     await vi.waitFor(() => expect(query.data?.map((s) => s.plugin)).toEqual(['q']));
   });

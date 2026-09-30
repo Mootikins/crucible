@@ -2,8 +2,9 @@
  * The route of the system stream: one event, the cache writes it owes.
  *
  * A proposal belongs to no user session, so the daemon sends
- * `proposal_changed` on its system session, and `/api/events/system` forwards
- * it. The frame names the proposal and carries no value. Thus the route
+ * `proposal_changed` on its system session, and the `system` topic of
+ * `GET /api/events` forwards it. The frame names the proposal and carries no
+ * value. Thus the route
  * invalidates the proposal, its diffset and the Inbox list, and each reader
  * asks the daemon again.
  *

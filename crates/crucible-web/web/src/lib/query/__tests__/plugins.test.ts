@@ -354,7 +354,7 @@ describe('a publication', () => {
     const columnsBefore = read.columns.data;
     const reads = env.fetch.calls('GET /api/plugins/publications');
 
-    onlyEventSource().emit('publication_changed', { plugin: 'board', key: 'rows' });
+    onlyEventSource().emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
 
     await vi.waitFor(() =>
       expect(env.fetch.calls('GET /api/plugins/publications')).toBe(reads + 1),

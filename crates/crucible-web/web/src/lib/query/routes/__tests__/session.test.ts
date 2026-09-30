@@ -27,7 +27,15 @@ let stop: (() => void) | null = null;
  */
 function openStream() {
   stop = sessionEvents(SESSION).subscribe(() => {});
-  return onlyEventSource();
+  const source = onlyEventSource();
+  // Production frames carry a `topic` field (Simplification Plan step 19);
+  // this stream only ever joins its own session's topic, so the tests below
+  // can still write the plain payload each frame carried before the shared
+  // connection existed.
+  return {
+    emit: (type: string, data: Record<string, unknown>, options?: { lastEventId?: string }) =>
+      source.emit(type, { topic: SESSION, ...data }, options),
+  };
 }
 
 beforeEach(() => {
@@ -208,15 +216,20 @@ describe('the session event route', () => {
   });
 
   it('names the session of the stream the event arrived on', () => {
+    // Both sessions' topics now travel one shared connection
+    // (Simplification Plan step 19), so one frame at a time, tagged with its
+    // own topic, is what tells the two apart — not two different sources.
     const titles: { sessionId: string; title: string }[] = [];
     getBus().on('sessionTitleChanged', (payload) => titles.push(payload));
     const stopOther = sessionEvents('s2').subscribe(() => {});
     stop = sessionEvents('s1').subscribe(() => {});
-    const [first, second] = FakeEventSource.instances;
+    // Joining `s1` while `s2` is already open rebuilds the ONE shared
+    // connection to carry both, closing the source `s2` alone opened.
+    const source = FakeEventSource.instances.at(-1)!;
 
-    expect(second!.url).toBe('/api/chat/events/s1');
-    second!.emit('title_changed', { event: 'title_changed', data: { title: 'One' } });
-    first!.emit('title_changed', { event: 'title_changed', data: { title: 'Two' } });
+    expect(source.url).toBe('/api/events?topics=s2%2Cs1');
+    source.emit('title_changed', { topic: 's1', event: 'title_changed', data: { title: 'One' } });
+    source.emit('title_changed', { topic: 's2', event: 'title_changed', data: { title: 'Two' } });
 
     expect(titles).toEqual([
       { sessionId: 's1', title: 'One' },

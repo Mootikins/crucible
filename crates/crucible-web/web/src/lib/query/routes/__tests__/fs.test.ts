@@ -18,7 +18,15 @@ let stop: (() => void) | null = null;
  */
 function openStream() {
   stop = fsEvents().subscribe(() => {});
-  return onlyEventSource();
+  const source = onlyEventSource();
+  // Production frames carry a `topic` field (Simplification Plan step 19);
+  // this stream only ever joins the `system` topic, so the tests below can
+  // still write the plain payload each frame carried before the shared
+  // connection existed.
+  return {
+    emit: (type: string, data: Record<string, unknown>, options?: { lastEventId?: string }) =>
+      source.emit(type, { topic: 'system', ...data }, options),
+  };
 }
 
 beforeEach(() => {

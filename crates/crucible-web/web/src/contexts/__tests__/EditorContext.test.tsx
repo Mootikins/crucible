@@ -54,8 +54,9 @@ const { resetKilnsForTests } = await import('@/lib/query/kilns');
 const { resetSseForTests } = await import('@/lib/query/sse');
 const { installFakeEventSource } = await import('@/test-utils/sse');
 
-/** The one stream every watcher of the disk shares. */
-const FS_STREAM = '/api/fs/events';
+/** The `system` topic of the one shared connection every watcher of the disk
+ * reads (Simplification Plan step 19 folded `/api/fs/events` into it). */
+const FS_STREAM = '/api/events?topics=system';
 /** The watcher sources still open — a root that closed no longer hears. */
 const openFsSources = () =>
   FakeEventSource.instances.filter((s) => s.url === FS_STREAM && !s.closed);
@@ -69,7 +70,7 @@ const drainPromises = () => new Promise<void>((resolve) => setTimeout(resolve, 0
 const diskSays = (event: FsEvent) => {
   const source = openFsSources().at(-1);
   if (!source) throw new Error('no fs stream is open for the disk to speak on');
-  source.emit(`fs_${event.type}`, event);
+  source.emit(`fs_${event.type}`, { topic: 'system', ...event });
 };
 
 // The routes `kilnOf` resolves against and the offline layer reads and writes

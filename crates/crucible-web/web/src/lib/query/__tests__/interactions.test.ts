@@ -96,6 +96,7 @@ describe('usePendingInteractions', () => {
 
     const stop = sessionEvents('s-1').subscribe(() => {});
     onlyEventSource().emit('interaction_requested', {
+      topic: 's-1',
       event: 'interaction_requested',
       data: { request_id: 'r-2', request: perm },
     });
@@ -228,6 +229,7 @@ describe('the requests this client already answered', () => {
     // A second session raises a request, which invalidates this key.
     const stop = sessionEvents('s-2').subscribe(() => {});
     onlyEventSource().emit('interaction_requested', {
+      topic: 's-2',
       event: 'interaction_requested',
       data: { request_id: 'r-9', request: perm },
     });

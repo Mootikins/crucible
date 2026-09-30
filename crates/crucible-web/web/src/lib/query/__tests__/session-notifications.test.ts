@@ -21,17 +21,37 @@ const pending = () => {
   const promise = new Promise((r) => { resolve = r; });
   return { promise, resolve };
 };
+/** A `FakeEventSource` with `emit` bound to one session's own topic — every
+ * production frame carries a `topic` (Simplification Plan step 19), and the
+ * shared connection would otherwise drop a topic-less test frame. */
+interface SessionSource {
+  readonly closed: boolean;
+  open(): void;
+  emit(type: string, data: Record<string, unknown>, options?: { lastEventId?: string }): void;
+}
+
 function attach(session = 's1') {
   const stream = sessionEvents(session);
   const unsubscribe = stream.subscribe(() => {});
-  const source = FakeEventSource.instances.at(-1)!;
-  source.open();
+  // Re-resolved on every call, not captured once: a later session joining
+  // (or leaving) the shared connection rebuilds it, retiring this source for
+  // a new one, and this topic's own emits must keep landing on whichever one
+  // is live now.
+  const current = () => FakeEventSource.instances.at(-1)!;
+  current().open();
+  const source: SessionSource = {
+    get closed() {
+      return current().closed;
+    },
+    open: () => current().open(),
+    emit: (type, data, options) => current().emit(type, { topic: session, ...data }, options),
+  };
   return { stream, source, unsubscribe };
 }
-function added(source: FakeEventSource, id: string, message = id) {
+function added(source: SessionSource, id: string, message = id) {
   source.emit('notification_added', { event: 'notification_added', data: { notification: notice(id, message) } });
 }
-function dismissed(source: FakeEventSource, id: string) {
+function dismissed(source: SessionSource, id: string) {
   source.emit('notification_dismissed', { event: 'notification_dismissed', data: { notification_id: id } });
 }
 
