@@ -1340,7 +1340,17 @@ route.
    and client state in the daemon, the four rules in the daemon.
 6. Map daemon error codes to one error shape in the browser, in one place.
 
-7. Delete the hand-written `DaemonClient` methods that only forward one
+7. Put every `rpc_methods!` row's params and reply type in the schema
+   document, not only the types that a web route names. Today utoipa emits a
+   schema only for a type a route references, so the generated TS method map
+   says `unknown` for most typed rows (155 after gap 2B, 158 after gap 2A).
+   One `components(schemas(...))` list, or a document generated from the
+   rows, fixes it; a row whose type is missing then fails the build.
+8. Capture the reply fixtures of gap 2A again, from the code before that
+   change. Its 31 wire tests compare the new types with JSON written by hand
+   from the old `json!` calls in the same change, which the acceptance rules
+   do not accept as proof.
+9. Delete the hand-written `DaemonClient` methods that only forward one
    row. Gap 1 added one generated `rpc_<method>` function per row, so each
    such method is now a second way to make the same call. About 160 stay
    because the web's `forward_rpc!` calls them by name; the one route of
@@ -1355,6 +1365,9 @@ route.
 - The change cost of a browser method falls from about 9 places to 3 (plus
   one allow-list line), measured by adding a scratch method.
 - No hand-written `DaemonClient` method only forwards one row.
+- The generated TS method map has no `unknown` entry except for the rows
+  whose reply is open by design (for example `lua.eval`, `config.get`), and
+  each such row names its reason.
 - Each local-admin method answers 403 through the real HTTP route.
 - The four moved rules refuse a bad call from the TUI and from Lua too,
   tested through the daemon RPC, not only through the web.
