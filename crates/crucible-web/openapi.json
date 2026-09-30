@@ -3151,33 +3151,6 @@
           "left"
         ]
       },
-      "CapabilityFlags": {
-        "type": "object",
-        "required": [
-          "kilns",
-          "sessions",
-          "agents",
-          "events",
-          "model_switching"
-        ],
-        "properties": {
-          "kilns": {
-            "type": "boolean"
-          },
-          "sessions": {
-            "type": "boolean"
-          },
-          "agents": {
-            "type": "boolean"
-          },
-          "events": {
-            "type": "boolean"
-          },
-          "model_switching": {
-            "type": "boolean"
-          }
-        }
-      },
       "ClientStateGetReply": {
         "type": "object",
         "description": "Reply from `client_state.get`. `None` when nothing was ever stored under\nthat `(client, key)` — not an error, the common case before a first save.",
@@ -3841,11 +3814,10 @@
       },
       "DaemonCapabilities": {
         "type": "object",
-        "description": "Daemon capabilities returned by `daemon.capabilities` RPC",
+        "description": "The reply of `daemon.capabilities`: the daemon's version, its build and\nthe methods that it answers.",
         "required": [
           "version",
           "protocol_version",
-          "capabilities",
           "methods"
         ],
         "properties": {
@@ -3860,9 +3832,6 @@
           },
           "protocol_version": {
             "type": "string"
-          },
-          "capabilities": {
-            "$ref": "#/components/schemas/CapabilityFlags"
           },
           "methods": {
             "type": "array",

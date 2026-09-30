@@ -1413,13 +1413,6 @@ export interface components {
          * @enum {string}
          */
         CanvasSide: "top" | "right" | "bottom" | "left";
-        CapabilityFlags: {
-            agents: boolean;
-            events: boolean;
-            kilns: boolean;
-            model_switching: boolean;
-            sessions: boolean;
-        };
         /**
          * @description Reply from `client_state.get`. `None` when nothing was ever stored under
          *     that `(client, key)` — not an error, the common case before a first save.
@@ -1769,10 +1762,12 @@ export interface components {
             session_type?: string;
             workspace?: string | null;
         };
-        /** @description Daemon capabilities returned by `daemon.capabilities` RPC */
+        /**
+         * @description The reply of `daemon.capabilities`: the daemon's version, its build and
+         *     the methods that it answers.
+         */
         DaemonCapabilities: {
             build_sha?: string | null;
-            capabilities: components["schemas"]["CapabilityFlags"];
             methods: string[];
             protocol_version: string;
             version: string;
@@ -7534,7 +7529,6 @@ export type SchemaCanvasNode = components['schemas']['CanvasNode'];
 export type SchemaCanvasResponse = components['schemas']['CanvasResponse'];
 export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedResponse'];
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
-export type SchemaCapabilityFlags = components['schemas']['CapabilityFlags'];
 export type SchemaClientStateGetReply = components['schemas']['ClientStateGetReply'];
 export type SchemaClientStateKey = components['schemas']['ClientStateKey'];
 export type SchemaClientStateSetRequest = components['schemas']['ClientStateSetRequest'];

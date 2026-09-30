@@ -10,26 +10,16 @@
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 
-/// Daemon capabilities returned by `daemon.capabilities` RPC
-#[derive(Debug, Clone, serde::Deserialize)]
+/// The reply of `daemon.capabilities`: the daemon's version, its build and
+/// the methods that it answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DaemonCapabilities {
     pub version: String,
     #[serde(default)]
     pub build_sha: Option<String>,
     pub protocol_version: String,
-    pub capabilities: CapabilityFlags,
     pub methods: Vec<String>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct CapabilityFlags {
-    pub kilns: bool,
-    pub sessions: bool,
-    pub agents: bool,
-    pub events: bool,
-    pub model_switching: bool,
 }
 
 /// The params of a method that acts on one session.

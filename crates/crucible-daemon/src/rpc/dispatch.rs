@@ -21,6 +21,7 @@ use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
 use crucible_core::config::ConfigSource;
+use crucible_core::protocol::requests::DaemonCapabilities;
 use crucible_core::protocol::requests::{
     ConfigKeyRequest, ConfigLookupRequest, ConfigSaveReply, ConfigValuesRequest, LuaEvalRequest,
     Scoped, SessionCreateRequest, SessionSubscribeRequest, SubagentCollectRequest, Title,
@@ -1121,19 +1122,21 @@ impl RpcDispatcher {
     }
 
     fn handle_capabilities(&self) -> RpcResult<serde_json::Value> {
-        Ok(serde_json::json!({
-            "version": env!("CARGO_PKG_VERSION"),
-            "build_sha": option_env!("CRUCIBLE_BUILD_SHA").unwrap_or("dev"),
-            "protocol_version": "1.0",
-            "capabilities": {
-                "kilns": true,
-                "sessions": true,
-                "agents": true,
-                "events": true,
-                "model_switching": true,
-            },
-            "methods": METHODS,
-        }))
+        serde_json::to_value(DaemonCapabilities {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            build_sha: Some(
+                option_env!("CRUCIBLE_BUILD_SHA")
+                    .unwrap_or("dev")
+                    .to_string(),
+            ),
+            protocol_version: "1.0".to_string(),
+            methods: METHODS.iter().map(|m| (*m).to_string()).collect(),
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
 
     fn handle_subscribe(&self, client_id: ClientId, req: &Request) -> RpcResult<serde_json::Value> {

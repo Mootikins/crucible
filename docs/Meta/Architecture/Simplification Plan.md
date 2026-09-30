@@ -1702,7 +1702,7 @@ decision.
 | Popup requests become single-select panels | `PopupRequest`, `PopupResponse` | Changes `cru.ui.popup` and both client renderers |
 | An ask becomes a batch of one | `AskRequest`, `AskResponse` | Changes `cru.ui.ask` and both client renderers |
 | The workflow engine emits `WorkflowPayload` | `WorkflowEvent` | One translator reads it |
-| `daemon.capabilities` drops its constant flags | `CapabilityFlags` | An outside client may read them |
+| `daemon.capabilities` drops its constant flags | `CapabilityFlags` | **Done.** Neither the TUI nor the web read them. The handler now returns the typed `DaemonCapabilities`, not a hand-built `json!` |
 
 ## Step 22. Verified duplicates from the type audit
 

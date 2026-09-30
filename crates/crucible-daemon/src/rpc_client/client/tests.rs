@@ -396,11 +396,6 @@ async fn test_client_capabilities() {
     let caps = client.rpc_daemon_capabilities(()).await.unwrap();
 
     assert_eq!(caps.protocol_version, "1.0");
-    assert!(caps.capabilities.kilns);
-    assert!(caps.capabilities.sessions);
-    assert!(caps.capabilities.agents);
-    assert!(caps.capabilities.events);
-    assert!(caps.capabilities.model_switching);
     assert!(caps.methods.contains(&"ping".to_string()));
     assert!(caps.methods.contains(&"session.knob.set".to_string()));
 }
