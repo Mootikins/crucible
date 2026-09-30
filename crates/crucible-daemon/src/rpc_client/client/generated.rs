@@ -29,16 +29,28 @@
 //! keep in sync, and a hand-written method that turns an ergonomic
 //! argument list into a wire body (`kiln_forget(name: &str)`, and the
 //! like) keeps its own name free.
+//!
+//! Each method retries by the row's own `read`/`write` word — a `read` row
+//! calls [`DaemonClient::call_with_retry`], a `write` row calls
+//! [`DaemonClient::call`] once — so a caller of the generated method gets
+//! the same retry decision [`RpcMethod::is_replay_safe`] answers, with no
+//! second place to keep in sync. `call_with_retry`'s policy (2 retries,
+//! 200ms/400ms backoff, the client's 30s default timeout) fits every `read`
+//! row but two: `embeddings.models`' download path and `scm.clone` need a
+//! timeout far past 30s, so `DaemonClient::embedding_models` and
+//! `DaemonClient::scm_clone` stay hand-written and call
+//! [`DaemonClient::call_with_timeout`] directly instead of the generated
+//! method.
 
 use super::DaemonClient;
 use anyhow::Result;
 use crucible_core::protocol::RpcMethod;
 
 /// The callback [`crucible_core::for_each_rpc_method!`] invokes with every
-/// row, as `Variant, "wire.name", ReqTy, RespTy;` repeated. Expands to one
-/// `impl DaemonClient` block holding one method per row.
+/// row, as `Variant, "wire.name", read|write, ReqTy, RespTy;` repeated.
+/// Expands to one `impl DaemonClient` block holding one method per row.
 macro_rules! gen_rpc_methods {
-    ($( $variant:ident, $name:literal, $req:ty, $resp:ty ; )*) => {
+    ($( $variant:ident, $name:literal, $safety:ident, $req:ty, $resp:ty ; )*) => {
         impl DaemonClient {
             ::pastey::paste! {
                 $(
@@ -47,11 +59,17 @@ macro_rules! gen_rpc_methods {
                         stringify!($req), "` in, `", stringify!($resp), "` out."
                     )]
                     pub async fn [<rpc_ $variant:snake>](&self, params: $req) -> Result<$resp> {
-                        self.call(RpcMethod::$variant, params).await
+                        gen_rpc_methods!(@dispatch $safety, self, RpcMethod::$variant, params)
                     }
                 )*
             }
         }
+    };
+    (@dispatch read, $self:ident, $method:expr, $params:ident) => {
+        $self.call_with_retry($method, $params).await
+    };
+    (@dispatch write, $self:ident, $method:expr, $params:ident) => {
+        $self.call($method, $params).await
     };
 }
 
