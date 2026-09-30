@@ -12,6 +12,7 @@ import type { ToolLineHandlers, TranscriptItem, TurnHandlers } from './types';
 export interface TranscriptItemViewProps {
   it: TranscriptItem;
   last: boolean;
+  copyText?: string;
   links: WikilinkEvents;
   tools: ToolLineHandlers;
   turn: TurnHandlers;
@@ -25,5 +26,5 @@ export const TranscriptItemView: Component<TranscriptItemViewProps> = (props) =>
   if (it.t === 'thinking') return <ThinkingLine secs={it.secs} />;
   if (it.t === 'record') return <RecordLine>{it.text}</RecordLine>;
   if (it.t === 'tool') return <ToolLine it={it} tools={props.tools} />;
-  return <AssistantText md={it.md} elapsed={it.elapsed} tokens={it.tokens} last={props.last} links={props.links} onRegenerate={props.turn.onRegenerate} />;
+  return <AssistantText md={it.md} elapsed={it.elapsed} tokens={it.tokens} last={props.last} copyText={props.copyText} links={props.links} onRegenerate={props.turn.onRegenerate} />;
 };

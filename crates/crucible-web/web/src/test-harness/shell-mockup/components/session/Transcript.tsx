@@ -13,7 +13,7 @@ export const Transcript: Component<{ blocks: Block[]; links: WikilinkEvents; too
         b.kind === 'group' ? (
           <ToolGroup items={b.items} tools={props.tools} />
         ) : (
-          <TranscriptItemView it={b.it} last={b.last} links={props.links} tools={props.tools} turn={props.turn} />
+          <TranscriptItemView it={b.it} last={b.last} copyText={b.copyText} links={props.links} tools={props.tools} turn={props.turn} />
         )
       }
     </For>

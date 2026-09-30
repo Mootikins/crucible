@@ -50,7 +50,6 @@ export interface ToolLineHandlers {
   onToggle: (id: string) => void;
   hunkFor: (hunkId: string) => ToolHunkView | undefined;
   onOpenPath: (path: string) => void;
-  onDecide: (hunkId: string, accept: boolean) => void;
 }
 
 /**
