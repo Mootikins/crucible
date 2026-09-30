@@ -1,243 +1,132 @@
 # Working on Crucible
 
 Crucible is a plaintext-first, knowledge-grounded agent runtime. It has a
-headless daemon, RPC clients, Luau extensions and a TUI-first interface.
+headless daemon, two clients (the TUI and the web), and Luau plugins.
 A local, gitignored `CLAUDE.md` symlinks here.
 
 [Product](docs/Meta/Product.md) gives the behavior and its proof.
 [Architecture](docs/Meta/Architecture/Index.md) gives one page for each
-subsystem: its owners, flows, boundaries and extension seams.
-[CONTEXT](docs/Meta/CONTEXT.md) defines the terms (project, workspace, kiln,
-discovery, activation).
+subsystem. [CONTEXT](docs/Meta/CONTEXT.md) defines the terms (project,
+workspace, kiln, discovery, activation).
 
-## How a change works
+## The rule
 
-Many agents change this code in parallel. The same concept then gets a second
-implementation, and two clients drift apart. Each step below prevents one
-cause of that. Do them for every change, also a small one.
+Many agents change this code in parallel. The usual failure is a second
+implementation of one concept, and then two clients that disagree. So:
 
-1. **Find the owner.** Before you write a type, a function, a list or a
-   handler, search for the concept. Search the Rust crates, the web frontend
-   (`crates/crucible-web/web/src`) and `runtime/`. Search for the likely
-   names, the RPC method, the event name and the config key. If
-   `graphify-out/` exists, `graphify explain "<Symbol>"` shows callers.
-2. **Read the page of the owner.** The architecture index names the page.
-   The page tells you the flow you are about to change.
-3. **Extend the owner.** Do not add a parallel path, a wrapper or a copy
-   for your caller. If the owner does not fit, change the owner.
-4. **Remove what you replace.** Delete the old path in the same change.
-   Keep a shim only when stored data or an external wire needs it. Name
-   that need in a comment.
-5. **Remove a duplicate that you find.** Merge it in the same change, or
-   write the reason for the delay in the commit message.
-6. **Keep a behavior in the daemon.** A client sends intent and renders the
-   result. If the TUI and the web client both need a decision, the daemon
-   makes it once.
-7. **Update the docs.** Change the architecture page and the Help note that
-   describe the old behavior.
+1. **Find the owner first.** Search the Rust crates, the web frontend
+   (`crates/crucible-web/web/src`) and `runtime/` for the concept, its RPC
+   method, its event and its config key. Read the architecture page of the
+   owner.
+2. **Extend the owner.** Do not add a wrapper, a copy or a parallel path. If
+   the owner does not fit, change the owner.
+3. **Delete what you replace, in the same change.** Keep a shim only for
+   stored data or an external wire, and name that need in a comment.
+4. **Put behavior in the daemon.** A client sends intent and renders the
+   result. If the TUI and the web both need a decision, the daemon makes it.
+   A feature must work in both clients, or the change says why not.
 
-A change that adds a second way to do one thing is not finished. This is also
-true when the change is small.
+## The core abstractions
 
-## Where a change goes
+Each abstraction below has one definition. Everything else is generated from
+it or reads it.
 
-Start at the owner. The architecture page lists the rest of the path.
+**Core types are the one source of truth.** Wire and domain types live in
+`crucible-core`. The TS types and the Luau declarations are generated from
+them. Never copy a core type into another crate, into TS or into Luau.
 
-| To add | Start at | Page |
-|---|---|---|
-| A builtin tool | `crates/crucible-daemon/src/tools/surface.rs`, then its executor | [Tools and Admission](<docs/Meta/Architecture/Tools and Admission.md>) |
-| An RPC method | `RpcMethod` in `crates/crucible-core/src/protocol/rpc/method.rs`, then its arm in `crates/crucible-daemon/src/rpc/dispatch.rs` | [Daemon Server](<docs/Meta/Architecture/Daemon Server.md>) |
-| A request or reply type | `crates/crucible-core/src/protocol/requests/` | [RPC Client](<docs/Meta/Architecture/RPC Client.md>) |
-| A session event | `SessionEventPayload` in `crates/crucible-core/src/protocol/session_events/` | [Core Domain Types](<docs/Meta/Architecture/Core Domain Types.md>) |
-| A session setting | `SessionKnob` in `crates/crucible-core/src/types/knob.rs`, then the cross-layer checklist below | [Session Services](<docs/Meta/Architecture/Session Services.md>) |
-| A config key | `crates/crucible-core/src/config/components/` | [Core Config](<docs/Meta/Architecture/Core Config.md>) |
-| A provider | `crates/crucible-core/src/config/components/backend.rs`, then the daemon factory | [Providers and LLM](<docs/Meta/Architecture/Providers and LLM.md>) |
-| A Lua hook | `crates/crucible-lua/src/handlers/hook_name.rs`, then the call site | [Luau Host](<docs/Meta/Architecture/Luau Host.md>) |
-| A `cru.*` function | its binding in `crates/crucible-lua/src/`, and its declaration | [Luau APIs](<docs/Meta/Architecture/Luau APIs.md>) |
-| Storage | the core storage traits, then `crates/crucible-daemon/src/storage/` | [Knowledge Storage and Retrieval](<docs/Meta/Architecture/Knowledge Storage and Retrieval.md>) |
-| A web route | `crates/crucible-web/src/routes/` | [Web Server](<docs/Meta/Architecture/Web Server.md>) |
-| A TUI component | `crates/crucible-cli/src/tui/oil/components/` | [TUI Components](<docs/Meta/Architecture/TUI Components.md>) |
+**One table of RPC methods.** `rpc_methods!` in
+`crates/crucible-core/src/protocol/rpc/method.rs` has one row per method:
 
-A feature must be reachable in the TUI **and** the web client. If it belongs
-in neither, write the reason in the change.
+```rust
+SessionGet = read "session.get": Scoped<()> => SessionDetail,
+```
 
-## Ownership
+The row gives the variant, `read` (safe to repeat) or `write`, the wire name,
+the params type and the reply type. From the rows come `RpcMethod`, the typed
+client method `DaemonClient::rpc_session_get` (which retries a `read` row),
+the schema document and the TS map `RpcMethods`. To add a method: add the row,
+add its arm in `crates/crucible-daemon/src/rpc/dispatch.rs`, and run
+`just web-contract`. A hand-written `DaemonClient` method is allowed only
+when it adds behavior, and its comment names that behavior.
 
-| Owner | Responsibility |
-|---|---|
-| `crucible-core` | Canonical domain types, wire types, config, parser |
-| `crucible-daemon` | Sessions, admission, tools, storage, retrieval, review, plugin lifecycle |
-| `crucible-cli` / `crucible-web` | Input, presentation, client-local state |
-| `crucible-oil` | Terminal rendering primitives |
-| `crucible-lua` / `runtime/` | Luau host, bindings, plugin behavior and defaults |
+**One web route for RPC.** The browser calls
+`rpc('session.get', params)` (`web/src/lib/api-client.ts`), which posts to
+`POST /api/rpc/{method}`. `browser_may_call` in
+`crates/crucible-web/src/routes/rpc.rs` is the allow list: one exhaustive
+match. `plugin_may_call` narrows a plugin caller. Add a separate web route
+only for behavior that the web alone has (auth, raw bytes, streams).
 
-- The daemon owns business logic and authoritative storage. A client must not
-  make a second agent configuration or a second write pipeline.
-- The session owns state that all clients share: model, mode and context
-  budget. The client owns display state: theme and show-thinking. Wire a
-  session setting through `SessionKnobs`, the daemon handle and both clients.
-  Test set, get and resume.
-- See the cross-layer checklist below for the files that one session
-  setting touches.
-- One `cru` binary exists. `DaemonClient::connect_or_start()` starts the
-  daemon. Use the per-user 0700 socket directory. Never use a shared socket
-  without authentication.
-- Knowledge has separate owners. The parser owns text and byte spans. The
-  SQLite link index owns resolution, backlinks and rename. `KilnName` and
-  `KilnRegistry` own identity. Embeddings own retrieval and indexing.
-  `NotePipeline` connects them. It does not merge them.
-- JSON-RPC, web transports, ACP and MCP share `SessionEventMessage`. They do
-  not share codecs, correlation or error policy. ACP and MCP wire types
-  belong to their external crates.
-- Session-scoped runtime state belongs in `SessionSlot` and in Lua session
-  scopes, not in a VM for each session. An event is a broadcast. A request
-  needs a correlated reply, a timeout and cleanup. Publish job state before
-  you announce it. Wake a collector on completion. Do not poll.
+**One event vocabulary.** `SessionEventPayload` in
+`crates/crucible-core/src/protocol/session_events/` names every session
+event. The web gets all topics on one SSE stream, `GET /api/events`. An event
+is a broadcast. A request needs a correlated reply, a timeout and cleanup.
 
-## Cross-layer checklist
+**One transcript fold.** `crucible-core/src/transcript` turns events into a
+transcript. The daemon folds. The clients render the result.
 
-Use this checklist for a setting that changes agent or session behavior. A
-setting that only changes the display (theme, show-thinking, verbose) stays
-in the client. It needs no RPC. Before you start, decide the scope: if two
-clients on one session must agree, the setting belongs to the session.
+**One knob per session setting.** `SessionKnob` and `KnobValue` in
+`crates/crucible-core/src/types/knob.rs`, with `session.knob.set` and
+`session.knob.get`. A new setting is a variant, a daemon apply arm and,
+if wanted, a client control. It needs no new method or route. Display-only
+state (theme, show-thinking) stays in the client.
 
-Every session knob shares one RPC method pair, `session.knob.set` and
-`session.knob.get`, and one web route pair, `PUT /api/session/{id}/knob` and
-`GET /api/session/{id}/knob/{knob}`. A new knob needs no new method, no new
-route and no new client method: it needs three things.
-
-**Before you add a setting**
-- [ ] Look for an existing `SessionKnob` variant with the same job.
-- [ ] Read [Session Services](<docs/Meta/Architecture/Session Services.md>).
-
-**1. The `SessionKnob` variant and its value type**
-- [ ] Add the variant to `SessionKnob` in `crates/crucible-core/src/types/knob.rs`.
-- [ ] Add its `#[deny]`-checked arm to `SessionKnob::on_acp` (Daemon, Wire,
-      AdvertisedModel or Absent).
-- [ ] Add the matching variant to `KnobValue`, in the same file.
-
-**2. The daemon's apply arm**
-- [ ] Add the match arm to `handle_session_knob_set` and
-      `handle_session_knob_get` in
-      `crates/crucible-daemon/src/server/session/params.rs`.
-- [ ] Add the getter/setter to `AgentManager`
-      (`crates/crucible-daemon/src/agent_manager/models.rs`), and to
-      `SessionKnobs` only if the handle really needs a per-knob operation
-      (the ACP handle maps model and mode to distinct wire calls; most knobs
-      need no handle method at all).
-- [ ] Keep the knob's own `SettingsPayload` event and emit it on write.
-
-**3. A client control, if one is wanted**
-- [ ] TUI: a `:set` key in `crates/crucible-cli/src/tui/oil/commands/set.rs`
-      (`classify_set_value`), returning
-      `SetRpcAction::Knob(KnobValue::YourVariant(_))`.
-- [ ] Web: a call site through `session_knob_set`/`session_knob_get` in
-      `crates/crucible-web/web/src/lib/api.ts` (`setKnob`/`getKnob`) and the
-      `useKnob`/`useSetKnob` hooks in
-      `crates/crucible-web/web/src/lib/query/session-config.ts`.
-
-**Proof**
-- [ ] A test proves set, get and resume for the new knob.
-- [ ] An ACP session refuses the knob if `on_acp` marks it `Absent`.
-- [ ] The knob RPC matrix in `crates/crucible-cli/src/tui/oil/chat_runner/tests/knob_rpc.rs` covers the new knob.
-- [ ] The TUI gate in `crates/crucible-cli/tests/architecture_tests.rs` (`every_session_knob_is_reachable_from_the_tui`) finds the knob's `:set` key, or names it exempt with a reason.
-
-The TUI calls the daemon directly. It holds no agent handle and no copy
-of the session state.
+**One plugin VM.** The daemon owns one shared Luau VM. Installed plugins are
+operator code, not a sandbox. `daemon_plugins/activate.rs` is the only
+activation path. Discovery runs no plugin code. A plugin reads its settings
+through `cru.settings`.
 
 ## Rules that no compiler checks
 
-These rules guard behavior that a type cannot express. Keep each one when you
-change the code near it.
-
-- **Admission.** Creation, resume, delegation and fork must honor the current
-  kiln trust and isolation. A copied configuration is not admission. An
-  absent isolation claim does not prove that a session never needed one. The
-  owners are `agent_manager/scope.rs`, `tools/containment.rs`,
-  `tools/surface.rs` and `execution_roots.rs`.
+- **Admission.** Creation, resume, delegation and fork honor the current
+  kiln trust and isolation. A copied configuration is not admission. Owners:
+  `agent_manager/scope.rs`, `tools/containment.rs`, `tools/surface.rs`,
+  `execution_roots.rs`.
 - **Turns.** `agent_manager/messaging/` owns the turn lifecycle. Injected
-  context is not a user turn. Keep its role and provenance through live
-  input, replay, undo and fork.
-- **Note writes.** Agent edits and plugin note writes use the same
-  review disposition, and the daemon owns it. A rejection must tell an absent
-  file from an empty file. Shared write locks coordinate the daemon writers
-  only, not outside editors.
-- **Canonical types.** Parser types live in `crucible-core/src/parser/types/`.
-  `BlockHash` is the content hash. `ContextMessage` is the conversation
-  message. Re-export a type. Do not copy it into another crate or into Lua.
-- **Plugins.** The daemon owns one shared plugin VM. Installed plugins are
-  operator code, not a sandbox. Host-owned `require` lives in `modules.rs`.
-  Never add `package.path`.
-- **Activation.** Discovery runs no plugin code. Boot, require, install and
-  reload all use `daemon_plugins/activate.rs`. Do not add another activation
-  path.
-- **Callbacks.** Each callback in `LuaScriptHandlerRegistry` records its
-  `LuaSource`. `handlers::clear_source` removes the callbacks, schedules and
-  tasks of that source. Keep synchronous `StageId` hooks apart from broadcast
-  `EventName` observers. Permission, session start and end, and provider-auth
-  hooks have their own registration APIs.
-- **Tool takeover.** `may_take_a_tool_call_over` decides it, not a method on
-  `LuaSource`. A plugin needs `intercepts_tools = true` in its fragment.
-  `UserLua` and `Builtin` are exempt by design. `Eval` cannot take a call
-  over. All sources can cancel. Keep the declaration check before the
-  permission gate.
-- **Permission defaults.** `runtime/defaults/init.luau` defines the
-  permission modes, the plan denial and the precognition format. Permission
-  behavior has no Rust fallback. The default system prompt is
-  `ChatConfig::default().system_prompt` on the Default layer of the config
-  store.
-- **Declarations.** A declared tool type must parse, or activation fails.
-  `signature.rs` projects the types. `host_api.rs` must name only functions
-  that the running VM provides.
-- **Cards and profiles.** `cru chat --agent` is an alias of `--acp` and
-  selects an ACP profile. `cru session create --agent` selects an agent card.
-  Do not mix the two.
+  context is not a user turn. Keep its role and provenance through replay,
+  undo and fork.
+- **Note writes.** Agent edits and plugin writes use one review disposition,
+  which the daemon owns. A rejection tells an absent file from an empty one.
+- **Knowledge.** The parser owns text and spans. The SQLite link index owns
+  resolution, backlinks and rename. `KilnName` owns identity. Embeddings own
+  retrieval. `NotePipeline` connects them and does not merge them.
+- **Callbacks.** Each Lua callback records its `LuaSource`, and
+  `handlers::clear_source` removes them. `may_take_a_tool_call_over` decides
+  tool takeover; a plugin needs `intercepts_tools = true`.
+- **Permissions.** `runtime/defaults/init.luau` defines the permission
+  modes. Permission behavior has no Rust fallback.
+- **Sockets.** One `cru` binary. Use the per-user 0700 socket directory.
+- **Cards and profiles.** `cru chat --agent` selects an ACP profile.
+  `cru session create --agent` selects an agent card. Do not mix them.
 
 ## Design
 
-- A crate is a compilation boundary, not a folder. Prefer fewer, larger
-  crates.
-- Use an enum. Use a trait only for real implementations in two crates, a
-  test double, or a dependency firewall. A required method is better than a
-  silent default.
-- Use `anyhow` inside a crate. Use `thiserror` where a caller matches the
-  variants. Each option needs a meaningful absent path. Each error variant
-  needs its own handler.
-- A closed set needs one exhaustive table. Let the compiler or a runtime
-  check prove it complete (`EnumIter`, required methods, exhaustive
-  matches). Do not use a source-text grep as the check.
-- Prefer derives, conversions, `?` and small shared helpers to repeated
-  plumbing. A comment explains why. Name code for its actual role. Do not
-  add a module-level lint allow.
+- Prefer fewer, larger crates. A crate is a compilation boundary.
+- Use an enum. Use a trait only for implementations in two crates, a test
+  double or a dependency firewall.
+- A closed set has one exhaustive table that the compiler checks. A source
+  grep is not a check.
+- Use `anyhow` inside a crate and `thiserror` where a caller matches
+  variants. Give each option a meaningful absent path.
+- A comment explains why. Do not write a comment about deleted code; git
+  keeps the history.
 
 ## Tests and commits
 
-- To iterate, run `just test quick`. Before a commit, run `just ci`. Only
-  `just ci` runs the linters. Scope nextest with `-p` or `-E`. Use `--lib`
-  for a focused unit run. Build release only to install.
-- A bugfix starts with a failing test. **Break each new gate, see it fail,
-  then restore it.** When behavior crosses a process or language boundary,
-  test that crossing.
-- Do not call a failure unrelated or pre-existing. Find its cause.
-- Use nextest process isolation, injected data roots, `TempDir` and mocked
-  providers. Never call `std::env::set_var` directly. Give a child process
-  a scoped environment. Use `EnvVarGuard` only in a test that reads the
-  environment. Provider fixtures install rustls. Mark a test that needs an
-  external prerequisite as ignored, and name the prerequisite.
-- Before you add a test server, a harness or a mock, look for the shared
-  one. Shared test code lives in `tests/common/` and `src/test_support` of
-  each crate. Extend it. Do not copy it.
-- TUI: test `OilChatApp` units and `AppHarness` or `Vt100TestRuntime` first.
-  Use a PTY only where you must. New behavior needs a user story and T1 and
-  T2 coverage ([TUI User Stories](<docs/Meta/TUI User Stories.md>)).
-  Examine the layout, Unicode and colors of each changed snapshot. Never
-  accept snapshots in bulk.
-- When a change widens data, test it where the data is rendered. Check the
-  defaults of both clients.
-- Read the narrower `AGENTS.md` files in the crates you change. Put new docs
-  in `docs/Help/`, `docs/Meta/` or `docs/Guides/`. Put scripts in `scripts/`
-  and examples in `examples/`. Do not put scratch files at the root. The
-  docs kiln is test input: keep the frontmatter tags and valid wikilinks.
-- Use conventional commits. Put a fix and its regression test in one
-  commit. A vendor change needs a `NOTE(crucible):` marker, regression
-  coverage and an update to `vendor/README.md`.
+- Iterate with `just test quick`. Run `just ci` before a commit. Under
+  parallel agents, run `flock /tmp/crucible-ci.lock just ci`.
+- A bugfix starts with a failing test. Break each new gate, see it fail,
+  then restore it. Test each process or language boundary that a change
+  crosses.
+- Do not call a failure flaky, unrelated or pre-existing. Find its cause.
+- Use `TempDir`, injected data roots and mocked providers. Never call
+  `std::env::set_var`. Use the shared helpers in `tests/common/` and
+  `src/test_support`; extend them, do not copy them.
+- TUI: test `OilChatApp` and `AppHarness` first. Read each changed snapshot.
+  Never accept snapshots in bulk.
+- The docs kiln is test input. After a docs change, run
+  `git add docs && cargo nextest run -p crucible-core --test dev_kiln --run-ignored all`.
+- Update the architecture page and the Help note that describe a behavior
+  you change. Read the narrower `AGENTS.md` of each crate you change.
+- Use conventional commits. Put a fix and its test in one commit. A vendor
+  change needs a `NOTE(crucible):` marker and an entry in `vendor/README.md`.

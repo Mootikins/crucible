@@ -160,7 +160,7 @@ lint what="all":
             cargo run -q -p crucible-core --example gen_rpc_methods_ts -- \
                 crates/crucible-web/web/src/lib/api-schema.d.ts > "$fresh_methods"
             diff -u crates/crucible-web/web/src/lib/rpc-methods.d.ts "$fresh_methods" || {
-                echo "rpc-methods.d.ts is stale; regenerate it with the command in its own header comment" >&2
+                echo "rpc-methods.d.ts is stale; run `just web-contract`" >&2
                 exit 1
             }
             ;;
@@ -320,11 +320,21 @@ web-build pwa="on":
 # satisfy. `bun run api:generate` turns that document into
 # `web/src/lib/api-schema.d.ts`. Both files are committed, and `just lint
 # types` fails when either one is stale.
+#
+# The recipe also writes the two files around that document, in the order
+# that each one reads the one before it: the list of `rpc_methods!` row types
+# (`schema_types.rs`), which the document includes, and the typed method map
+# (`rpc-methods.d.ts`), which reads `api-schema.d.ts`. Run it after a change
+# to an `rpc_methods!` row, a row type or a web route.
 web-contract:
+    cargo run -q -p crucible-core --features openapi --example gen_rpc_schema_types > target/schema_types.rs.new
+    mv target/schema_types.rs.new crates/crucible-core/src/protocol/rpc/schema_types.rs
     CRUCIBLE_WRITE_OPENAPI=1 cargo nextest run -p crucible-web \
         --test openapi_contract --no-capture \
         -E 'test(the_committed_openapi_json_is_current)'
     cd crates/crucible-web/web && bun install && bun run api:generate
+    cargo run -q -p crucible-core --example gen_rpc_methods_ts -- crates/crucible-web/web/src/lib/api-schema.d.ts > target/rpc-methods.d.ts.new
+    mv target/rpc-methods.d.ts.new crates/crucible-web/web/src/lib/rpc-methods.d.ts
 
 # Prove the test suite writes nothing under the developer's own directories
 test-hermetic tier="quick":

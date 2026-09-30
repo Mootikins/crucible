@@ -72,7 +72,7 @@ fn run_set(app: &mut OilChatApp, body: &str) -> Action<ChatAppMsg> {
 }
 
 // Every session-scoped key must emit a daemon-sync `Action::Send` so
-// multi-client state stays consistent (see AGENTS.md cross-layer checklist).
+// multi-client state stays consistent (see "One knob per session setting" in AGENTS.md).
 #[test_case("model=gpt-4o" ; "model")]
 #[test_case("contextstrategy=truncate" ; "context strategy")]
 #[test_case("outputvalidation=off" ; "output validation")]

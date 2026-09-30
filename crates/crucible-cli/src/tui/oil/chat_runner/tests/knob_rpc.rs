@@ -5,7 +5,7 @@
 //! (initial_sets.rs) covers only context_strategy + model. Nothing verified
 //! that each knob message's arm in `process_action` sends the *matching*
 //! daemon RPC — the "budget vs context_budget" miswiring class that the
-//! cross-layer checklist in AGENTS.md guards. This matrix drives every
+//! knob rule in AGENTS.md guards. This matrix drives every
 //! daemon-scoped knob end-to-end: real keystrokes (`:set …` + Enter) through
 //! `OilChatApp::update`, then the resulting action through the real
 //! `process_action`, and asserts on the requests that reach a fake daemon.
