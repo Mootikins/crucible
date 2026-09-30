@@ -105,7 +105,7 @@ fn session_configure_agent() {
 
 #[test]
 fn session_inject_context() {
-    golden::<SessionInjectContextReply>("session_inject_context");
+    golden::<StatusReply>("session_inject_context");
 }
 
 #[test]

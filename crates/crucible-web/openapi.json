@@ -7766,18 +7766,6 @@
         ],
         "description": "What `mcp.status` answers: the server is up, or it is not.\n\nUntagged, because the two arms are told apart by `running` and the wire\nhas always spelled them that way. The stopped arm carries `running`\nALONE: a stopped server has no transport, no port and no kiln, and\nwriting those keys as null would say it has them and they are empty."
       },
-      "McpStopReply": {
-        "type": "object",
-        "description": "What `mcp.stop` answers.",
-        "required": [
-          "status"
-        ],
-        "properties": {
-          "status": {
-            "type": "string"
-          }
-        }
-      },
       "McpStopped": {
         "type": "object",
         "description": "The stopped arm of [`McpStatus`].",
@@ -12381,19 +12369,6 @@
           },
           "workspace_path": {
             "type": "string"
-          }
-        }
-      },
-      "SessionInjectContextReply": {
-        "type": "object",
-        "description": "Reply from `session.inject_context`.",
-        "required": [
-          "status"
-        ],
-        "properties": {
-          "status": {
-            "type": "string",
-            "description": "Always `\"ok\"`: a failed injection answers an error reply instead."
           }
         }
       },

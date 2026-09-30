@@ -3393,10 +3393,6 @@ export interface components {
             /** @description Always `false`. */
             running: boolean;
         };
-        /** @description What `mcp.stop` answers. */
-        McpStopReply: {
-            status: string;
-        };
         /**
          * @description A cluster both sides changed differently.
          *
@@ -5577,11 +5573,6 @@ export interface components {
             model: string;
             workspace_path: string;
         };
-        /** @description Reply from `session.inject_context`. */
-        SessionInjectContextReply: {
-            /** @description Always `"ok"`: a failed injection answers an error reply instead. */
-            status: string;
-        };
         /** @description Reply from `session.interaction_respond`. */
         SessionInteractionRespondReply: {
             request_id: string;
@@ -7693,7 +7684,6 @@ export type SchemaMcpStartReply = components['schemas']['McpStartReply'];
 export type SchemaMcpStartRequest = components['schemas']['McpStartRequest'];
 export type SchemaMcpStatus = components['schemas']['McpStatus'];
 export type SchemaMcpStopped = components['schemas']['McpStopped'];
-export type SchemaMcpStopReply = components['schemas']['McpStopReply'];
 export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaMessageInput = components['schemas']['MessageInput'];
 export type SchemaModeDescriptor = components['schemas']['ModeDescriptor'];
@@ -7856,7 +7846,6 @@ export type SchemaSessionHistoryReply = components['schemas']['SessionHistoryRep
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
 export type SchemaSessionId = components['schemas']['SessionId'];
 export type SchemaSessionInitializedPayload = components['schemas']['SessionInitializedPayload'];
-export type SchemaSessionInjectContextReply = components['schemas']['SessionInjectContextReply'];
 export type SchemaSessionInteractionRespondReply = components['schemas']['SessionInteractionRespondReply'];
 export type SchemaSessionKnob = components['schemas']['SessionKnob'];
 export type SchemaSessionKnobSetReply = components['schemas']['SessionKnobSetReply'];

@@ -96,7 +96,7 @@ export interface RpcMethods {
   'session.set_plugin_approval': { params: WithSessionId<Schemas['PluginApprovalChange']>; result: Schemas['PluginApprovalReply'] };
   'session.get_plugin_approval': { params: WithSessionId<Schemas['PluginRef']>; result: Schemas['PluginApprovalReply'] };
   'session.list_plugin_approvals': { params: WithSessionId<Record<string, never>>; result: Schemas['SessionListPluginApprovalsReply'] };
-  'session.inject_context': { params: WithSessionId<Schemas['ContextInjection']>; result: Schemas['SessionInjectContextReply'] };
+  'session.inject_context': { params: WithSessionId<Schemas['ContextInjection']>; result: Schemas['StatusReply'] };
   'session.test_interaction': { params: WithSessionId<Schemas['TestInteraction']>; result: Schemas['SessionTestInteractionReply'] };
   'session.fork': { params: WithSessionId<Schemas['ForkPoint']>; result: Schemas['SessionForkReply'] };
   'session.set_title': { params: WithSessionId<Schemas['Title']>; result: Schemas['SessionTitleReply'] };
@@ -177,7 +177,7 @@ export interface RpcMethods {
   'storage.backup': { params: Schemas['StorageBackupRequest']; result: Schemas['NotImplementedReply'] };
   'storage.restore': { params: Schemas['StorageRestoreRequest']; result: Schemas['NotImplementedReply'] };
   'mcp.start': { params: Schemas['McpStartRequest']; result: Schemas['McpStartReply'] };
-  'mcp.stop': { params: null; result: Schemas['McpStopReply'] };
+  'mcp.stop': { params: null; result: Schemas['StatusReply'] };
   'mcp.status': { params: null; result: Schemas['McpStatus'] };
   'skills.list': { params: Schemas['SkillsListRequest']; result: Schemas['SkillsReply'] };
   'skills.get': { params: Schemas['SkillsGetRequest']; result: Schemas['SkillDetail'] };

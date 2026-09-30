@@ -146,7 +146,7 @@ fn mcp_start_reply() {
 
 #[test]
 fn mcp_stop_reply() {
-    golden::<McpStopReply>("mcp_stop");
+    golden::<StatusReply>("mcp_stop");
 }
 
 #[test]

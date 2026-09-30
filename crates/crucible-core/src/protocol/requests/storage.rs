@@ -1113,13 +1113,6 @@ pub struct McpStartReply {
     pub tool_count: usize,
 }
 
-/// What `mcp.stop` answers.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct McpStopReply {
-    pub status: String,
-}
-
 /// The running arm of [`McpStatus`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

@@ -3,9 +3,8 @@ use crate::agent_manager::commands::SlashRoute;
 use crate::rpc_helpers::typed_params;
 use crucible_core::protocol::requests::{
     AgentConfig, ContextInjection, InteractionAnswer, MessageInput, PendingInteraction, Scoped,
-    SessionClearReply, SessionConfigureAgentReply, SessionInjectContextReply,
-    SessionInteractionRespondReply, SessionPendingInteractionsReply, SessionTestInteractionReply,
-    TestInteraction,
+    SessionClearReply, SessionConfigureAgentReply, SessionInteractionRespondReply,
+    SessionPendingInteractionsReply, SessionTestInteractionReply, StatusReply, TestInteraction,
 };
 use crucible_core::types::SendOutcome;
 
@@ -299,7 +298,7 @@ pub(crate) async fn handle_session_inject_context(
     {
         Ok(()) => typed_success(
             req.id,
-            SessionInjectContextReply {
+            StatusReply {
                 status: "ok".to_string(),
             },
         ),

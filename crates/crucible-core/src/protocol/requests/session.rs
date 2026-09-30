@@ -503,14 +503,6 @@ pub struct SessionConfigureAgentReply {
     pub configured: bool,
 }
 
-/// Reply from `session.inject_context`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct SessionInjectContextReply {
-    /// Always `"ok"`: a failed injection answers an error reply instead.
-    pub status: String,
-}
-
 /// Reply from `session.clear`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

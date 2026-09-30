@@ -184,7 +184,7 @@ impl McpServerManager {
     }
 
     /// Stop the running MCP server.
-    pub async fn stop(&self) -> Result<crucible_core::protocol::requests::McpStopReply, String> {
+    pub async fn stop(&self) -> Result<crucible_core::protocol::requests::StatusReply, String> {
         let mut state = self.state.lock().await;
 
         match std::mem::replace(&mut *state, McpServerState::Stopped) {
@@ -196,7 +196,7 @@ impl McpServerManager {
             } => {
                 handle.abort();
                 info!("MCP server stopped (was {} on port {:?})", transport, port);
-                Ok(crucible_core::protocol::requests::McpStopReply {
+                Ok(crucible_core::protocol::requests::StatusReply {
                     status: "stopped".to_string(),
                 })
             }
