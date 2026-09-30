@@ -119,30 +119,6 @@ pub struct AgentCard {
     pub loaded_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Query for finding agent cards
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AgentCardQuery {
-    /// Search by tags
-    #[serde(default)]
-    pub tags: Vec<String>,
-
-    /// Text search in name and description
-    pub text_search: Option<String>,
-}
-
-/// Result of matching an agent card to a query
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentCardMatch {
-    /// The matched agent card
-    pub card: AgentCard,
-
-    /// Match score (0-100)
-    pub score: u32,
-
-    /// Which criteria matched
-    pub matched_criteria: Vec<String>,
-}
-
 /// Frontmatter structure for parsing YAML frontmatter from markdown files.
 ///
 /// Only `description` is required; `name` defaults to the file stem and
