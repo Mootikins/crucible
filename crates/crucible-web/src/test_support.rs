@@ -1787,6 +1787,44 @@ pub async fn request_json_as(
     (status, json)
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+/// [`request_json`], against a mock daemon that answers one or more methods
+/// with a scripted JSON-RPC error instead of their canned reply.
+///
+/// A route's own error-mapping test needs to drive a REAL daemon error
+/// through the HTTP layer, not assert against a hand-built string the way
+/// `error.rs`'s unit tests do — this is how a test proves the mapping holds
+/// at the boundary the browser actually crosses.
+pub async fn request_json_with_errors(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    errors: MockErrors,
+) -> (axum::http::StatusCode, Value) {
+    use tower::ServiceExt;
+
+    let (_mock, client) = start_mock_daemon_with_errors(errors).await;
+    let state = build_state(client);
+    let app = build_test_app(state);
+
+    let builder = axum::http::Request::builder().method(method).uri(uri);
+    let request = match body {
+        Some(body) => builder
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap(),
+        None => builder.body(axum::body::Body::empty()).unwrap(),
+    };
+
+    let response = app.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
 /// Drive one request and decode the body into the reply struct `T`.
 ///
 /// A test that reads `status == 200` proves nothing about a shape: the route

@@ -6,8 +6,8 @@ use crate::middleware::auth::{
 use crate::routes::{
     agents_routes, auth_routes, canvas_routes, chat_routes, config_routes, diff_routes,
     events_routes, fs_routes, health_routes, kiln_routes, layout_routes, mcp_routes, plugin_routes,
-    project_routes, proposal_routes, scm_routes, search_routes, session_routes, skills_routes,
-    surface_routes, terminal_routes, webhook_routes,
+    project_routes, proposal_routes, rpc_routes, scm_routes, search_routes, session_routes,
+    skills_routes, surface_routes, terminal_routes, webhook_routes,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -145,6 +145,7 @@ fn api_router(
         .merge(layout_routes())
         .merge(skills_routes())
         .merge(webhook_routes())
+        .merge(rpc_routes())
         // An unknown API is not an SPA navigation: never answer it with HTML.
         .route(
             "/api/{*unmatched}",

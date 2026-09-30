@@ -2561,6 +2561,65 @@
         }
       }
     },
+    "/api/rpc/{method}": {
+      "post": {
+        "summary": "Forward one JSON-RPC method call to the daemon.",
+        "description": "The request and reply bodies are exactly the daemon's own wire shapes —\n`crucible_core::protocol::rpc::method::RpcMethod::params_type`/\n`reply_type` name them per method, and the generated\n`crates/crucible-web/web/src/lib/rpc-methods.d.ts` is the typed contract a\ncaller reads, not this document. Documenting all 169 methods as separate\nOpenAPI paths would repeat that map in a second, hand-maintained form; this\npath is documented once, generically, on purpose (step 19 item 6).",
+        "operationId": "call_rpc_method",
+        "parameters": [
+          {
+            "name": "method",
+            "in": "path",
+            "description": "A wire method name from `RpcMethod`, e.g. `session.get`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-crucible-plugin",
+            "in": "header",
+            "description": "Who is asking: `app`, or the plugin being drawn for. Omitted, the caller is treated as the app.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The method's own params type, exactly as `rpc_methods!` names it. See `rpc-methods.d.ts` for the typed map.",
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The method's own reply type, forwarded unchanged"
+          },
+          "403": {
+            "description": "This method is not on the browser's allow list, or a plugin block reached for another plugin's method"
+          },
+          "404": {
+            "description": "No `RpcMethod` has this wire name"
+          },
+          "409": {
+            "description": "The daemon reports the resource busy; retry"
+          },
+          "422": {
+            "description": "The daemon refused the params (JSON-RPC INVALID_PARAMS)"
+          },
+          "502": {
+            "description": "The daemon could not answer, or answered with a different error"
+          }
+        }
+      }
+    },
     "/api/scm/clone": {
       "post": {
         "summary": "`POST /api/scm/clone` — clone a remote repo and register it as a project.",

@@ -207,7 +207,13 @@ async fn list_publications(
 /// `PluginBlockPanel` reads every plugin's publications with no key and is the
 /// app, so it passes through here untouched. Narrow the app too and that panel
 /// goes blank.
-fn narrow_to_caller(publications: PublicationsByKey, caller: &PluginCaller) -> PublicationsByKey {
+///
+/// `pub(crate)` so `routes/rpc.rs`'s generic `plugin.publications` reply
+/// reuses this narrowing instead of a second copy of it.
+pub(crate) fn narrow_to_caller(
+    publications: PublicationsByKey,
+    caller: &PluginCaller,
+) -> PublicationsByKey {
     let PluginCaller::Plugin(plugin) = caller else {
         return publications;
     };
@@ -433,7 +439,10 @@ async fn run_command(
 /// A command nobody owns is refused too. An unknown name from a plugin caller
 /// cannot be attributed, and "cannot attribute" is the same answer as "not
 /// yours" — the alternative leaks which command names exist by their error.
-async fn refuse_another_plugins_command(
+///
+/// `pub(crate)` so `routes/rpc.rs`'s generic `plugin.run_command` gate reuses
+/// this check rather than a second copy of the ownership lookup.
+pub(crate) async fn refuse_another_plugins_command(
     state: &AppState,
     caller: &PluginCaller,
     command: &str,

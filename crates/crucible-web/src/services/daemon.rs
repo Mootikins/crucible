@@ -104,6 +104,28 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// The one generic forwarder behind `POST /api/rpc/{method}`
+    /// (`routes/rpc.rs`). Sends `params` as the request body of `method`,
+    /// unread and untouched, and hands back the daemon's reply the same way.
+    ///
+    /// `Once`, not `Safe`: every named forwarder above declares its own
+    /// replay policy because it knows whether its call is a read or a write.
+    /// This one carries an arbitrary [`RpcMethod`] chosen at the HTTP layer,
+    /// so it cannot tell the two apart — replaying an ambiguous write after a
+    /// dropped connection would risk applying it twice, and refusing to
+    /// guess is the safer default for a call this general.
+    pub async fn rpc_forward(
+        &self,
+        method: RpcMethod,
+        params: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.forward_rpc(ReplayPolicy::Once, method, move |daemon| {
+            let params = params.clone();
+            Box::pin(async move { daemon.call(method, params).await })
+        })
+        .await
+    }
+
     /// Every forwarder declares replay safety. A lost response to a write is
     /// ambiguous, so only replay-safe calls reconnect and submit again.
     pub(super) async fn forward_rpc<T>(

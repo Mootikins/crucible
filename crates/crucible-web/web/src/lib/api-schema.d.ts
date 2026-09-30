@@ -1234,6 +1234,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/{method}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Forward one JSON-RPC method call to the daemon.
+         * @description The request and reply bodies are exactly the daemon's own wire shapes —
+         *     `crucible_core::protocol::rpc::method::RpcMethod::params_type`/
+         *     `reply_type` name them per method, and the generated
+         *     `crates/crucible-web/web/src/lib/rpc-methods.d.ts` is the typed contract a
+         *     caller reads, not this document. Documenting all 169 methods as separate
+         *     OpenAPI paths would repeat that map in a second, hand-maintained form; this
+         *     path is documented once, generically, on purpose (step 19 item 6).
+         */
+        post: operations["call_rpc_method"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scm/clone": {
         parameters: {
             query?: never;
@@ -12130,6 +12156,70 @@ export interface operations {
             };
             /** @description The recents list could not be written */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    call_rpc_method: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Who is asking: `app`, or the plugin being drawn for. Omitted, the caller is treated as the app. */
+                "x-crucible-plugin"?: string | null;
+            };
+            path: {
+                /** @description A wire method name from `RpcMethod`, e.g. `session.get` */
+                method: string;
+            };
+            cookie?: never;
+        };
+        /** @description The method's own params type, exactly as `rpc_methods!` names it. See `rpc-methods.d.ts` for the typed map. */
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            /** @description The method's own reply type, forwarded unchanged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description This method is not on the browser's allow list, or a plugin block reached for another plugin's method */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No `RpcMethod` has this wire name */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon reports the resource busy; retry */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon refused the params (JSON-RPC INVALID_PARAMS) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not answer, or answered with a different error */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
