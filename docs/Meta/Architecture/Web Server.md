@@ -898,3 +898,16 @@ page's file set and are not summarized above.
   Types page for the fixture proof that old `"Truncate"`/`"Summarize"`
   session records still load under the new `#[serde(rename_all =
   "snake_case")]` spelling.
+- **Step 19 item 7 of the Simplification Plan, closed.** `api_spec()`
+  (`crates/crucible-web/src/server.rs`) used to build its document from the
+  router alone, so `utoipa` gave a schema only to a type at least one live
+  route named. Most `rpc_methods!` rows had no route yet, so their types
+  never reached `api-schema.d.ts`, and the generated `rpc-methods.d.ts`
+  called them `unknown` even when the Rust side was fully typed. `api_spec()`
+  now runs `.into_openapi().merge_from(crucible_core::protocol::RpcMethodSchemas::openapi())`.
+  `RpcMethodSchemas` is a generated, checked-in struct in
+  `crucible-core` (`protocol/rpc/schema_types.rs`) that lists every row's
+  named params and reply type. See [[RPC Client#Findings]] for the full
+  account: the shared row-text parser, the 107 types that gained
+  `ToSchema`, the two `schema(value_type = ...)` overrides, and the measured
+  before/after counts.

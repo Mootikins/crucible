@@ -1340,13 +1340,34 @@ route.
    and client state in the daemon, the four rules in the daemon.
 6. Map daemon error codes to one error shape in the browser, in one place.
 
-7. Put every `rpc_methods!` row's params and reply type in the schema
-   document, not only the types that a web route names. Today utoipa emits a
-   schema only for a type a route references, so the generated TS method map
-   says `unknown` for most typed rows (155 after gap 2B, 158 after gap 2A).
-   One `components(schemas(...))` list, or a document generated from the
-   rows, fixes it; a row whose type is missing then fails the build.
-8. **(done)** Capture the reply fixtures of gap 2A again, from the code
+7. **Done.** Put every `rpc_methods!` row's params and reply type in the
+   schema document, not only the types that a web route names. `utoipa`
+   emitted a schema only for a type a route referenced, so the generated TS
+   method map said `unknown` for most typed rows. A generated, checked-in
+   struct in core, `crucible_core::protocol::RpcMethodSchemas`
+   (`crates/crucible-core/src/protocol/rpc/schema_types.rs`, behind the
+   `openapi` feature), lists every row's named params and reply type under
+   `#[openapi(components(schemas(...)))]`; `crucible-web`'s `api_spec()`
+   merges it into the router's own document. The list is generated from the
+   `rpc_methods!` rows themselves
+   (`crates/crucible-core/examples/gen_rpc_schema_types.rs`, sharing a row-text
+   parser with the TS generator in
+   `crates/crucible-core/src/protocol/rpc/type_text.rs`), so a row's type
+   reaches the list without a hand edit, and a row whose type lacks
+   `ToSchema` fails `crucible-core`'s `--features openapi` build (proved with
+   a scratch row, then reverted). **Measured:** the `unknown` count in
+   `rpc-methods.d.ts` (`rg -c ': unknown'`) went from 149 to 21; the 21 that
+   remain are exactly the rows `rpc_methods!` still names
+   `serde_json::Value`, each with its own row comment. 107 core types gained
+   the `ToSchema` derive they lacked (84 row types, 23 nested fields); two
+   fields took a `schema(value_type = ...)` override (`Uuid`, `PathBuf`) and
+   one took it for a type-alias/`ComposeSchema` reason
+   (`WorkflowStatusReply.scope`). The Rust struct/enum count went from 1839
+   to 1840 — the one new `RpcMethodSchemas` struct; every other change is a
+   derive on an existing type. `just lint types` now also fails when
+   `rpc-methods.d.ts` is stale. See [[RPC Client#Findings]] for the full
+   account.
+8. **Done.** Capture the reply fixtures of gap 2A again, from the code
    before that change. Its 31 wire tests used to compare the new types with
    JSON written by hand from the old `json!` calls in the same change, which
    the acceptance rules do not accept as proof. `step19_gap2_wire.rs` now
