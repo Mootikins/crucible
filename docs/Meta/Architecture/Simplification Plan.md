@@ -1531,22 +1531,12 @@ not "Gone" ones.
    params, `['rpc', method, params]`, rather than adding one by hand; the
    `skills` domain below kept its existing `keys.ts` entries instead, per
    "Keep TanStack Query keys where they exist" — no caller has needed the
-   built form yet, so no helper for it exists until one does. **The
-   migration itself, per domain:** moving each REST-route caller onto
-   `rpc(...)` and deleting the
-   per-route TS function/types and the Rust route/forwarder is a separate
-   pass per domain (`session`, `kiln`/`note`/`search`, `fs`, `plugin`/
-   `surface`, `diff`/`proposal`, `skills`/`agents`/`models`/`providers`,
-   `project`/`scm`, `base`). The `skills` domain is done, as the worked
-   pattern: `GET /api/skills`, `/api/skills/{name}` and `/api/skills/search`
-   are gone, `routes/skills.rs` and its three `forward_rpc!` forwarders in
-   `services/daemon.rs` are gone, and `lib/query/skills.ts` calls
-   `rpc('skills.list' | 'skills.get' | 'skills.search', ...)` directly.
-   `DaemonClient::skills_list`/`skills_get`/`skills_search` stay (item 9):
-   each reshapes an ergonomic `&Path` argument into the wire request's
-   `String` field, and the CLI still calls them by name. The other domains
-   are not migrated yet — each still has its REST route, its forwarder and
-   its TS function.
+   built form yet, so no helper for it exists until one does.
+   **The migration is done for the domains that only forwarded.** Routes
+   went from 107 to 46 (`skills`, `mcp`, `agents`, `models`, `surface`,
+   `proposal`, `diff`, `kiln`, `note`, `search`, `fs`, `project`,
+   `session`, `providers`). The routes that stay each do more than a
+   forward. [[Web Server]] names each one and its reason.
 5. Do the decisions in the table above: one event stream, the catalog cache
    and client state in the daemon, the four rules in the daemon. **Done**,
    recorded above in "What the web itself needs".
@@ -1603,23 +1593,43 @@ not "Gone" ones.
    because the web's `forward_rpc!` calls them by name; the one route of
    this step removes those callers. Keep a method only where it adds
    behavior (a retry or timeout policy, a derived value, an argument
-   transform), and name the behavior. **Started, on the skills domain**:
-   `AppState::skills_list`/`skills_get`/`skills_search`'s three
-   `forward_rpc!` forwarders in `services/daemon.rs` are gone, since
-   `routes/skills.rs` was their only caller. `DaemonClient::skills_list`/
-   `skills_get`/`skills_search` themselves stay, because each is an
-   argument-transforming method (`&Path` in, a `String` wire field out) that
-   the CLI (`crates/crucible-cli/src/commands/skills.rs`) still calls by
-   name — not the redundancy this item removes. The rest of the about-160
-   forwarders in `services/*.rs` are still named by a live web route and are
-   not touched yet.
+   transform), and name the behavior. **In progress.** The web forwarders
+   of the migrated domains are gone. 166 hand-written `DaemonClient`
+   methods remain at `bfd3dc8f1`.
+10. Make a read on the RPC route replay-safe. The route treats every method
+    as `ReplayPolicy::Once`. After a daemon restart, the first read through
+    the route fails, and the old per-route `Safe` read retried. One
+    exhaustive table on `RpcMethod` must say which methods are safe to
+    replay. **In progress.**
+11. Delete the second copies that the migration left in the frontend: TS
+    functions whose body is only one `rpc(...)` call, TS aliases of
+    generated types, and comments about deleted code. **In progress.**
+12. Give `rpc(...)` the plugin caller header, and move `plugin.run_command`
+    and `plugin.publications` onto the route. **In progress.**
+
+**Findings of the migration.**
+- `ReconnectingDaemon::forward_rpc` healed the connection only for a `Safe`
+  call. A call through the RPC route left the connection broken after a
+  daemon restart. Fixed in `ccc5c0155`, with a regression test.
+- `GET /api/backlinks` and `POST /api/search/semantic` compose two daemon
+  calls in the web server. The TUI needs the same answers, so the daemon
+  must own each composition (AGENTS.md, step 6 of a change). Open.
+- `KilnName` derived a `ToSchema` that did not match its serialized form.
+  It now has a string schema.
+- The daemon lost a SIGTERM that arrived between `bind` and `run`, because
+  `run` made its shutdown receiver too late. Fixed in the commit
+  "hold the shutdown receiver from bind", with a red-first test.
+- When `persist_event` fails, the persist task logs a warning. The queue
+  entry still counts as done, so `settle_history` can report success after
+  the daemon dropped an event. Open.
 
 **Done when.**
 - The web server has the routes in the "keep" rows, one event stream and the
   RPC route, and no route that only forwards one RPC. About 90 types and
-  about 70 TS functions are gone. **Not yet**: one domain (skills, 3 routes,
-  3 forwarders, 3 TS functions) is migrated; the rest of the about-75
-  one-RPC routes and about-87 forwarders named in "Now" above still stand.
+  about 70 TS functions are gone. **In part**: routes 107 → 46. The web's
+  Rust types fell with them (the workspace count went from 1839 to 1796).
+  The TS count fell only from 697 to 689, because wrapper functions and
+  aliases remain (item 11).
 - The change cost of a browser method falls from about 9 places to 3 (plus
   one allow-list line), measured by adding a scratch method. **Not yet
   measured on a scratch branch** — a new method already needs only the row
@@ -1638,9 +1648,8 @@ not "Gone" ones.
   tested through the daemon RPC, not only through the web. **Done**, per
   "What the web itself needs" above.
 - The web end-to-end tests pass through the one route and the one stream.
-  **Not yet** for the route: only the skills domain's `ui`/`stories`/`live`
-  specs were moved to `POST /api/rpc/{method}`; the rest of the mocked and
-  live Playwright tiers still hit the per-domain REST routes that remain.
+  **Done** for the migrated domains: the `ui`, `stories` and `live` tiers
+  pass at `bfd3dc8f1`.
 
 
 ## Step 20. Plugin data schemas
