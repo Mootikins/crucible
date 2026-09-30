@@ -547,6 +547,13 @@ impl EmbeddingProviderConfig {
 mod tests {
     use super::*;
 
+    /// Wraps `EnrichmentConfig` under its documented `[enrichment]` table
+    /// name, so a test can load it the way a real config file does.
+    #[derive(Deserialize)]
+    struct Wrapper {
+        enrichment: EnrichmentConfig,
+    }
+
     #[test]
     fn enrichment_defaults_match_the_backend_table() {
         assert_eq!(OpenAIConfig::default().model, "text-embedding-3-small");
@@ -582,11 +589,6 @@ api_key = "x"
     fn config_with_removed_provider_knobs_still_loads() {
         // Users can have the removed keys in an old config file. The load
         // must ignore them instead of an error.
-        #[derive(Deserialize)]
-        struct Wrapper {
-            enrichment: EnrichmentConfig,
-        }
-
         let wrapper: Wrapper = toml::from_str(
             r#"
 [enrichment.provider]
@@ -620,11 +622,6 @@ timeout_ms = 30000
     fn provider_stanza_alone_loads_with_default_pipeline() {
         // Mirrors the documented shape: users configure the provider and never
         // mention `[enrichment.pipeline]`, which is entirely defaulted.
-        #[derive(Deserialize)]
-        struct Wrapper {
-            enrichment: EnrichmentConfig,
-        }
-
         let wrapper: Wrapper = toml::from_str(
             r#"
 [enrichment.provider]
@@ -640,11 +637,6 @@ model = "nomic-embed-text"
 
     #[test]
     fn pipeline_stanza_alone_loads_with_default_provider() {
-        #[derive(Deserialize)]
-        struct Wrapper {
-            enrichment: EnrichmentConfig,
-        }
-
         let wrapper: Wrapper = toml::from_str(
             r#"
 [enrichment.pipeline]

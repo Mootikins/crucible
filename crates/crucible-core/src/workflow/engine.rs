@@ -1034,15 +1034,6 @@ type: workflow
 
     #[tokio::test]
     async fn failed_handler_halts_workflow() {
-        struct AlwaysFail;
-        #[async_trait::async_trait]
-        impl crate::workflow::handler::StepHandler for AlwaysFail {
-            async fn execute(&self, _ctx: &ExecContext<'_>) -> StepOutcome {
-                StepOutcome::Fail {
-                    reason: "intentional".into(),
-                }
-            }
-        }
         let source = "---\ntype: workflow\n---\n## X [type:: boom]\n## Y\n";
         let (fm, _) = split_frontmatter(source);
         let mut note = ParsedNote::new(PathBuf::from("test.md"));
