@@ -458,7 +458,9 @@ body { background: var(--mk-nav); }
 /* Cards. The card edge is an inset outline, because a border adds width.
    The card paints no tone: the content paints MAIN, and a strip stays NAV. */
 :is([data-testid='centre-column'], .wm-edge-host [data-edge-panel-body]) > div { --color-shell-bg: transparent; outline: 1px solid var(--mk-card-edge); outline-offset: -1px; box-shadow: var(--mk-card-shadow); }
-[data-testid='centre-column'] > div { margin: var(--mk-gap); border-radius: var(--mk-radius); overflow: hidden; }
+[data-testid='centre-column'] > div { margin: var(--mk-gap); border-radius: 0 0 var(--mk-radius) var(--mk-radius); overflow: hidden; }
+/* The card's top corners are square: the tab strip there is the ground tone
+   and hides them, and a round corner would cut the first tab's corner. */
 /* A rail box takes only vertical margins, because the slide measures
    widths. It meets the ribbon, so only its document-side corners round. */
 .wm-edge-host [data-edge-panel-body] > div {
@@ -587,13 +589,13 @@ body { background: var(--mk-nav); }
   .wm-tab[data-active]::after { content: ''; position: absolute; bottom: 0; width: var(--mk-foot); height: var(--mk-foot); pointer-events: none; }
   .wm-tab[data-active]::before { left: calc(-1 * var(--mk-foot)); background: radial-gradient(circle at 0 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)); }
   .wm-tab[data-active]::after { right: calc(-1 * var(--mk-foot)); background: radial-gradient(circle at 100% 0, transparent calc(var(--mk-foot) - 0.5px), var(--mk-pane-bg) var(--mk-foot)); }
-  /* The first tab starts at the pane's left edge, and its label at the bar
-     inset. Selected, it has no left foot, and the pane's top-left corner is
-     square, so the tab and the content share one straight edge. (Each tab
-     sits in a `display: contents` menu trigger, so the first tab is the
-     tab of the strip's first child.) */
+  /* The tab row starts at the pane's left edge, so the first tab lines up
+     with the content under it. The tab keeps its padding and its rounded
+     top. Selected, it has no left foot, and the pane's top-left corner is
+     square, so the tab and the content share one edge. (Each tab sits in a
+     `display: contents` menu trigger, so the first tab is the tab of the
+     strip's first child.) */
   .wm-tabstrip { padding-inline-start: 0; }
-  .wm-tabstrip > :first-child .wm-tab { padding-left: var(--mk-pad); border-top-left-radius: 0; }
   .wm-tabstrip > :first-child .wm-tab[data-active]::before { display: none; }
   .wm-pane:has(> .wm-tabbar .wm-tabstrip > :first-child .wm-tab[data-active]) > .wm-tabbar + *,
   .wm-floating:has(.wm-tabstrip > :first-child .wm-tab[data-active]) .wm-floating-body { border-top-left-radius: 0; }
