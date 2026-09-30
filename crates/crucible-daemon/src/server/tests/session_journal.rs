@@ -20,27 +20,24 @@ fn stored_models(sessions_root: &Path, session_id: &str) -> Vec<String> {
         .collect()
 }
 
-/// Wait until the log holds `expected` switches, or until the deadline.
-///
-/// The count is the answer in both cases: a log that stops short of
-/// `expected` shows which lines were lost.
-async fn wait_for_switches(sessions_root: &Path, session_id: &str, expected: usize) -> Vec<String> {
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        let models = stored_models(sessions_root, session_id);
-        if models.len() >= expected || tokio::time::Instant::now() >= deadline {
-            return models;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-}
-
 /// A burst that overruns the broadcast ring still reaches the log whole and
 /// in order.
 ///
 /// The burst is synchronous on a current-thread runtime, so no receiver can
 /// read during it. A receiver of the ring then sees `Lagged` and the oldest
 /// events are gone. The log must hold all of them.
+///
+/// The wait for the persist task is `SessionManager::settle_history`, called
+/// directly on the daemon's own handle rather than over the client's RPC
+/// socket. That socket also carries this connection's own live event
+/// forwarder, and the burst above overruns the broadcast ring for it too —
+/// its `Lagged` branch writes a `stream_gap` line straight onto the socket.
+/// A naive single-line read of an RPC reply on that same socket can then
+/// read the gap marker instead of the intended reply, well before the
+/// persist task is done. A fixed poll deadline has the same
+/// flaw from the other side: on a loaded machine the persist task can take
+/// longer than the deadline to drain a burst this size, and the test would
+/// report the burst as lost merely because the write was still in flight.
 #[tokio::test]
 async fn a_burst_past_the_broadcast_ring_is_stored_whole_and_in_order() {
     const BURST: usize = EVENT_CHANNEL_CAPACITY + 256;
@@ -57,7 +54,8 @@ async fn a_burst_past_the_broadcast_ring_is_stored_whole_and_in_order() {
         ));
     }
 
-    let stored = wait_for_switches(&server.sessions_root(), &session_id, BURST).await;
+    server.session_manager.settle_history().await;
+    let stored = stored_models(&server.sessions_root(), &session_id);
     server.shutdown().await;
 
     assert_eq!(

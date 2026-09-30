@@ -154,6 +154,14 @@ pub(super) struct TestServer {
     pub kiln_path: PathBuf,
     pub event_tx: crate::EventBus,
     pub kiln_manager: Arc<KilnManager>,
+    /// A direct handle to the daemon's own `SessionManager`, so a test can
+    /// call [`crate::session_manager::SessionManager::settle_history`]
+    /// without going through a client socket. A client socket also carries
+    /// that connection's own live event forwarder, and a burst that overruns
+    /// the broadcast ring makes the forwarder write a `stream_gap` line onto
+    /// the same connection — a naive single-line read of an RPC reply can
+    /// then read the gap marker instead of the answer.
+    pub session_manager: Arc<crate::session_manager::SessionManager>,
     shutdown_tx: broadcast::Sender<()>,
     task: tokio::task::JoinHandle<Result<()>>,
 }
@@ -185,6 +193,7 @@ impl TestServer {
         .unwrap();
         let event_tx = server.event_sender();
         let kiln_manager = server.kiln_manager.clone();
+        let session_manager = server.session_manager.clone();
         let shutdown_tx = server.shutdown_handle();
         let task = tokio::spawn(server.run());
 
@@ -196,6 +205,7 @@ impl TestServer {
             kiln_path,
             event_tx,
             kiln_manager,
+            session_manager,
             shutdown_tx,
             task,
         }
