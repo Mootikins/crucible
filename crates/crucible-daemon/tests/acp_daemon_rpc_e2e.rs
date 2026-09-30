@@ -213,7 +213,10 @@ async fn an_acp_session_survives_a_second_turn_on_the_same_agent() {
             .await
             .unwrap_or_else(|e| panic!("turn {turn} failed to send: {e}"));
 
-        let wanted: HashSet<&str> = ["message_complete"].into_iter().collect();
+        // `turn_finished`, not `message_complete`: the daemon frees the
+        // session's turn slot between the two, so a second send after only
+        // `message_complete` can meet `ConcurrentRequest` under load.
+        let wanted: HashSet<&str> = ["message_complete", "turn_finished"].into_iter().collect();
         let seen = collect_until(&mut events, &session_id, &wanted, TURN_TIMEOUT).await;
         let names: Vec<&str> = seen.iter().map(|e| e.event.as_str()).collect();
 
