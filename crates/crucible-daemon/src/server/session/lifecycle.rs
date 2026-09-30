@@ -4,8 +4,8 @@ use crate::session_lifecycle::{SessionLifecycle, StopCause, StopError, Stopped};
 use crate::SessionError;
 use crucible_core::protocol::requests::SessionReplayRequest;
 use crucible_core::protocol::requests::{
-    Page, Scoped, SessionArchiveReply, SessionCompactReply, SessionDeleteReply, SessionEndReply,
-    SessionHistoryReply, SessionReplayStartedReply, SessionTransitionReply,
+    Page, ResumeWarning, Scoped, SessionArchiveReply, SessionCompactReply, SessionDeleteReply,
+    SessionEndReply, SessionHistoryReply, SessionReplayStartedReply, SessionTransitionReply,
 };
 use crucible_core::session::{SessionId, SessionState};
 
@@ -24,6 +24,7 @@ pub(crate) async fn handle_session_pause(req: Request, lifecycle: &SessionLifecy
                 previous_state: format!("{}", previous),
                 state: "paused".to_string(),
                 resumed_from_storage: false,
+                warnings: Vec::new(),
             },
         ),
         Ok(other) => unexpected_stop(req.id, "pause", other),
@@ -75,27 +76,41 @@ pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>
     let resumed = if from_storage {
         resume_stored(sm, session_id).await
     } else {
-        warm
+        warm.map(|p| (p, Vec::new()))
     };
     match resumed {
-        Ok(previous_state) => typed_success(
+        Ok((previous_state, warnings)) => typed_success(
             req.id,
             SessionTransitionReply {
                 session_id: session_id.clone(),
                 previous_state: format!("{}", previous_state),
                 state: "active".to_string(),
                 resumed_from_storage: from_storage,
+                warnings,
             },
         ),
         Err(e) => invalid_state_error(req.id, "resume", e),
     }
 }
 
-/// Resume a session from its stored record, and answer its stored state.
+/// Resume a session from its stored record, and answer its stored state and
+/// what the revival cost it.
+///
+/// The state a resume-from-storage revives out of is never a state a live
+/// session leaves: an in-memory `Ended` session already ran
+/// `AgentManager::cleanup_session` when it ended (the stop that set
+/// `Ended` always runs it, because ending "not on a pause" — see
+/// `SessionLifecycle::stop_steps`), and a session this daemon does not hold
+/// at all lost the same state to a restart. Either way, the live state
+/// `cleanup_session` tears down — the session's own Lua VM, its pending
+/// permission and interaction prompts, and its running delegated children —
+/// is gone before this function runs, so every warning below is
+/// unconditional on the fact of a storage resume, not a guess about what
+/// might have been running.
 async fn resume_stored(
     sm: &Arc<SessionManager>,
     session_id: &str,
-) -> Result<SessionState, SessionError> {
+) -> Result<(SessionState, Vec<ResumeWarning>), SessionError> {
     let id =
         SessionId::parse(session_id).map_err(|_| SessionError::NotFound(session_id.to_string()))?;
     let previous = sm
@@ -103,8 +118,18 @@ async fn resume_stored(
         .await?
         .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?
         .state;
-    sm.resume_session_from_storage(&id).await?;
-    Ok(previous)
+    let session = sm.resume_session_from_storage(&id).await?;
+
+    let mut warnings = vec![
+        ResumeWarning::PluginStateReset,
+        ResumeWarning::PendingWorkCleared,
+    ];
+    warnings.extend(session.unresolved_kiln_paths().iter().map(|path| {
+        ResumeWarning::KilnUnavailable {
+            path: path.display().to_string(),
+        }
+    }));
+    Ok((previous, warnings))
 }
 
 pub(crate) async fn handle_session_resume_from_storage(

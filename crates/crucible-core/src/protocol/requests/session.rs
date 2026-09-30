@@ -407,6 +407,56 @@ pub struct SessionTransitionReply {
     /// Omitted, not `false`, for `session.pause`, which never sets it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub resumed_from_storage: bool,
+    /// `session.resume` only, and only for a resume from storage: what the
+    /// revived session does not have, compared with the live session that
+    /// ended. Empty and omitted for a resume that stays in memory, because
+    /// nothing there was torn down.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<ResumeWarning>,
+}
+
+/// One thing a session lost by reviving from storage instead of staying
+/// live. `session.resume` computes the whole list once, so the TUI and the
+/// web client show the same warnings from the same reply, worded in each
+/// client's own way.
+///
+/// Each variant names a loss that the daemon can prove from its own state at
+/// resume time, not a guess. The daemon tears down a session's live state in
+/// `AgentManager::cleanup_session` when the session ends (`agent_manager/mod.rs`),
+/// and rebuilds it from the plugin `session_start` hooks and the stored
+/// `meta.json` when the session revives (`SessionLifecycle::enforce_session_start`,
+/// `SessionManager::resume_session_from_storage`). Anything torn down there and
+/// not restored from storage is a real loss and gets a variant here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ResumeWarning {
+    /// The session's Lua plugin state, kept only in the session's own Lua
+    /// VM, is gone. `AgentManager::cleanup_session` drops that VM when the
+    /// session ends, and the revived session gets a fresh one from the
+    /// `session_start` hooks. Values a plugin stored with
+    /// `session:set_variable` survive (the daemon persists them and seeds
+    /// the new VM from them); anything a hook kept only in a Lua local or
+    /// closure does not.
+    PluginStateReset,
+    /// Work in progress when the session ended did not survive: running
+    /// subagents, an in-flight tool call, and any permission or other
+    /// prompt the session was waiting on. `AgentManager::cleanup_session`
+    /// cancels the session's delegated children and drops its pending
+    /// `permissions` and `interactions` maps, and the revived session
+    /// starts with none of them. A prompt the user never answered is not
+    /// waiting any more; the next turn asks fresh, if it asks at all.
+    PendingWorkCleared,
+    /// A kiln this session used no longer resolves in the kiln registry —
+    /// renamed, unregistered, or moved. `SessionStorage::load` runs kiln
+    /// resolution on every load, including a resume from storage, and
+    /// leaves what does not resolve in `Session::unresolved_kiln_paths`.
+    /// The session keeps searching its other kilns; this one contributes no
+    /// root, no search source and no prompt line until it is re-registered.
+    KilnUnavailable {
+        /// The stored path of the kiln that no longer resolves.
+        path: String,
+    },
 }
 
 /// Reply from `session.history` and `session.resume_from_storage`: the
