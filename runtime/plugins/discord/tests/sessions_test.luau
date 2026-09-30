@@ -9,6 +9,8 @@
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
 cru.plugin = cru.plugin or mock({})
 local sessions = require("sessions")
+local support = require("discord.tests.support")
+type Calls = support.Calls
 
 --- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
 --- and the test VM has no `cru.plugin.config` — same shape as `routing_test`.
@@ -55,36 +57,11 @@ local function at_offset(seconds: number, fn: () -> ())
     if not ok then error(err) end
 end
 
---- A session API that records what it was asked to do.
---- The recorder and the stub API. `calls` is a record, not a list: the tests
---- read `calls.created`, `calls.configured` and `calls.ended` by name.
-type Calls = { created: { any }, configured: number, ended: { any } }
-local function recording_api(opts: { [string]: any }?): (Calls, { [string]: any })
-    local calls: Calls = { created = {}, configured = 0, ended = {} }
-    return calls, {
-        -- Each session gets its own id: sessions are keyed per sender now, so
-        -- "did these two messages land in one session?" is the question most
-        -- of these tests ask, and a constant id cannot answer it.
-        create = function(o)
-            table.insert(calls.created, o)
-            return { id = "chat-" .. #calls.created }
-        end,
-        -- The bridge returns `(result, err)` rather than raising — every
-        -- `cru.session.*` method surfaces its error as a second return value
-        -- (`DaemonSessionApi`), and `configure_agent` branches on `err`.
-        configure_agent = function(): (boolean?, string?)
-            calls.configured = calls.configured + 1
-            if opts and opts.configure_fails then
-                return nil, "no such provider"
-            end
-            return true, nil
-        end,
-        end_session = function(id): (boolean, string?)
-            table.insert(calls.ended, id)
-            return true, nil
-        end,
-    }
-end
+-- Each session gets its own id: sessions are keyed per sender now, so "did
+-- these two messages land in one session?" is the question most of these
+-- tests ask, and a constant id cannot answer it. `support.recording_api`
+-- defaults its prefix to "chat", which is that id.
+local recording_api = support.recording_api
 
 describe("get_or_create", function()
     -- Without a kiln, `create_session` falls back to the daemon's data root,

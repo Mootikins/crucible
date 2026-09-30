@@ -15,6 +15,8 @@
 -- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
 cru.plugin = cru.plugin or mock({})
 local sessions = require("sessions")
+local support = require("discord.tests.support")
+type Calls = support.Calls
 
 local DM_SESSION_TTL = 86400
 
@@ -44,25 +46,8 @@ end
 --- written by an earlier test are exactly the entries a restart would find.
 --- Two tests minting "state-1" would make "is this the id I created?"
 --- unanswerable.
---- The recorder and the stub API. `calls` is a record, not a list: the tests
---- read `calls.created`, `calls.configured` and `calls.ended` by name.
-type Calls = { created: { any }, configured: number, ended: { any } }
 local function recording_api(prefix: string): (Calls, { [string]: any })
-    local calls: Calls = { created = {}, configured = 0, ended = {} }
-    return calls, {
-        create = function(o)
-            table.insert(calls.created, o)
-            return { id = prefix .. "-" .. #calls.created }
-        end,
-        configure_agent = function()
-            calls.configured = calls.configured + 1
-            return true, nil
-        end,
-        end_session = function(id): (boolean, string?)
-            table.insert(calls.ended, id)
-            return true, nil
-        end,
-    }
+    return support.recording_api({ prefix = prefix })
 end
 
 --- `cru.plugin.config`, `cru.session` and `cru.paths` are all absent from the
