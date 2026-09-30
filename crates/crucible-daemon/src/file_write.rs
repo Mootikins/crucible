@@ -127,11 +127,13 @@ pub(crate) fn contain(path: &Path, root: &Path) -> Result<PathBuf, Value> {
 
 /// Check that `raw` is inside a writable root. Return the target path with its
 /// nearest existing ancestor resolved, so that the lock key and the write agree.
+/// The contained target path, and the root that contains it — a caller that
+/// only needs the path may discard the second element.
 fn admit(
     raw: &str,
     kilns: &[PathBuf],
     projects: &[(PathBuf, ProjectFileAccess)],
-) -> Result<PathBuf, Value> {
+) -> Result<(PathBuf, PathBuf), Value> {
     let (root, policy) = enclosing_root(raw, kilns, projects)?;
     if !policy.can_write() {
         return Err(failure(
@@ -143,7 +145,37 @@ fn admit(
             "Project files are read-only",
         ));
     }
-    contain(Path::new(raw), &root)
+    let path = contain(Path::new(raw), &root)?;
+    Ok((path, root))
+}
+
+/// A `.canvas` write refuses wholesale if a reference in `content` escapes
+/// `root` — the same rule [`crucible_core::canvas::containment`] documents,
+/// applied here so every caller of `fs.write` gets it, not only the web
+/// route that used to run it alone. Content that does not even parse as a
+/// canvas is left to the write itself; only a well-formed canvas can name a
+/// reference to check.
+fn canvas_containment_refusal(path: &Path, content: &str, root: &Path) -> Option<Value> {
+    if path.extension().and_then(|e| e.to_str()) != Some("canvas") {
+        return None;
+    }
+    let canvas = crucible_core::canvas::Canvas::parse(content).ok()?;
+    let rejected = crucible_core::canvas::containment::validate_canvas(&canvas, root);
+    if rejected.is_empty() {
+        return None;
+    }
+    Some(failure(
+        "forbidden",
+        format!(
+            "Canvas references {} file(s) outside the kiln: {}",
+            rejected.len(),
+            rejected
+                .iter()
+                .map(|r| format!("node `{}` → {} ({})", r.node_id, r.reference, r.reason))
+                .collect::<Vec<_>>()
+                .join("; ")
+        ),
+    ))
 }
 
 fn io_failure(e: std::io::Error) -> Value {
@@ -185,10 +217,15 @@ pub async fn write_for_roots(
     kilns: &[PathBuf],
     projects: &[(PathBuf, ProjectFileAccess)],
 ) -> Value {
-    let path = match admit(&req.path, kilns, projects) {
-        Ok(path) => path,
+    let (path, root) = match admit(&req.path, kilns, projects) {
+        Ok(found) => found,
         Err(refused) => return refused,
     };
+    if let FileChange::Put { content, .. } = &req.change {
+        if let Some(refused) = canvas_containment_refusal(&path, content, &root) {
+            return refused;
+        }
+    }
     let (change, base) = match from_wire(req.change) {
         Ok(mapped) => mapped,
         Err(refused) => return refused,
@@ -214,7 +251,7 @@ pub async fn write_many_for_roots(
     let mut paths = Vec::with_capacity(requests.len());
     for request in &requests {
         match admit(&request.path, kilns, projects) {
-            Ok(path) => paths.push(path),
+            Ok((path, _root)) => paths.push(path),
             Err(mut refused) => {
                 refused["path"] = json!(request.path);
                 return refused;

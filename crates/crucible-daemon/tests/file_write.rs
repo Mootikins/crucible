@@ -653,4 +653,92 @@ mod fs_write_size_and_containment {
         shutdown.send(()).unwrap();
         task.await.unwrap().unwrap();
     }
+
+    /// `fs.write`'s canvas-reference containment, through the live RPC
+    /// method — the path the TUI and a Lua script use, not the web's canvas
+    /// route. The web's `put_canvas` used to run this check itself, before
+    /// ever calling `fs.write`, so a raw RPC caller who wrote a `.canvas`
+    /// file directly skipped it and could land a reference to a file outside
+    /// the kiln on disk.
+    #[tokio::test]
+    async fn fs_write_refuses_a_canvas_with_a_reference_outside_the_kiln() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let dir = tempfile::tempdir().unwrap();
+        let kiln = dir.path().join("kiln");
+        std::fs::create_dir(&kiln).unwrap();
+        let socket = dir.path().join("daemon.sock");
+        let data = dir.path().join("data");
+
+        let server = Server::bind_with_data_home_and_kilns(&socket, data, &[("notes", &kiln)])
+            .await
+            .unwrap();
+        let shutdown = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+        let client = DaemonClient::connect_to(&socket).await.unwrap();
+        client.kiln_open(&kiln).await.unwrap();
+
+        let canvas = json!({
+            "nodes": [{
+                "id": "n1", "type": "file",
+                "x": 0, "y": 0, "width": 10, "height": 10,
+                "file": "../../etc/passwd"
+            }]
+        })
+        .to_string();
+        let request = json!({
+            "path": kiln.join("Board.canvas"),
+            "operation": "put",
+            "content": canvas,
+        });
+        let answer: Value = client.call(RpcMethod::FsWrite, request).await.unwrap();
+        assert_eq!(answer["ok"], false, "{answer}");
+        assert_eq!(answer["failure"], "forbidden", "{answer}");
+        assert!(!kiln.join("Board.canvas").exists());
+
+        drop(client);
+        shutdown.send(()).unwrap();
+        task.await.unwrap().unwrap();
+    }
+
+    /// A canvas whose references all stay inside the kiln writes normally —
+    /// the gate narrows nothing else about an ordinary `fs.write`.
+    #[tokio::test]
+    async fn fs_write_allows_a_canvas_whose_references_stay_inside_the_kiln() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let dir = tempfile::tempdir().unwrap();
+        let kiln = dir.path().join("kiln");
+        std::fs::create_dir(&kiln).unwrap();
+        std::fs::write(kiln.join("Note.md"), "# Note\n").unwrap();
+        let socket = dir.path().join("daemon.sock");
+        let data = dir.path().join("data");
+
+        let server = Server::bind_with_data_home_and_kilns(&socket, data, &[("notes", &kiln)])
+            .await
+            .unwrap();
+        let shutdown = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+        let client = DaemonClient::connect_to(&socket).await.unwrap();
+        client.kiln_open(&kiln).await.unwrap();
+
+        let canvas = json!({
+            "nodes": [{
+                "id": "n1", "type": "file",
+                "x": 0, "y": 0, "width": 10, "height": 10,
+                "file": "Note.md"
+            }]
+        })
+        .to_string();
+        let request = json!({
+            "path": kiln.join("Board.canvas"),
+            "operation": "put",
+            "content": canvas,
+        });
+        let answer: Value = client.call(RpcMethod::FsWrite, request).await.unwrap();
+        assert_eq!(answer["ok"], true, "{answer}");
+        assert!(kiln.join("Board.canvas").exists());
+
+        drop(client);
+        shutdown.send(()).unwrap();
+        task.await.unwrap().unwrap();
+    }
 }

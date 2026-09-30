@@ -6,11 +6,15 @@
 //! that holds it. The daemon's `fs.read` names that root with the same rule as
 //! every other file route: the innermost kiln, else the innermost project or
 //! session folder. See [`crucible_core::canvas::containment`] for why, and for
-//! the three-layer scheme this implements two thirds of.
+//! the three-layer scheme this implements one third of.
 //!
 //! The read path does not merely *report* bad references — it removes them from
 //! the payload. A client that never learns the offending path cannot request
 //! it, so quarantine is enforced here rather than trusted to the renderer.
+//!
+//! The write path's containment check (that module's layer 2) is NOT here: it
+//! runs in the daemon's `fs.write`, so a `.canvas` write through any caller —
+//! the TUI, a Lua script, or this route — gets the same refusal.
 
 use axum::{extract::State, Json};
 use crucible_core::canvas::containment::{
@@ -133,10 +137,13 @@ async fn get_canvas(
 
 /// `PUT /api/canvas` — write a canvas document.
 ///
-/// This is the authoritative layer: the document is parsed and every reference
-/// checked before anything touches disk. A canvas naming a file outside its
-/// kiln is refused wholesale with the offending node ids, rather than being
-/// written and cleaned up later.
+/// The document is parsed here, but the authoritative reference check runs in
+/// the daemon's `fs.write`: it checks the bytes this route actually sends,
+/// after [`restore_redacted`] has put back any reference the read path
+/// blanked, so a historical bad reference cannot ride back to disk unchecked
+/// on an unrelated edit. A canvas naming a file outside its kiln is refused
+/// wholesale with the offending node ids, rather than being written and
+/// cleaned up later.
 #[utoipa::path(
     put,
     path = "/api/canvas",
@@ -172,18 +179,17 @@ async fn put_canvas(
     let canvas = Canvas::parse(&req.content)
         .map_err(|e| WebError::Validation(format!("Invalid canvas: {e}")))?;
 
-    let rejected = validate_canvas(&canvas, &kiln);
-    if !rejected.is_empty() {
-        return Err(WebError::Forbidden(format!(
-            "Canvas references {} file(s) outside the kiln: {}",
-            rejected.len(),
-            rejected
-                .iter()
-                .map(|r| format!("node `{}` → {} ({})", r.node_id, r.reference, r.reason))
-                .collect::<Vec<_>>()
-                .join("; ")
-        )));
-    }
+    // Reference containment is the daemon's `fs.write` gate now
+    // (`crucible_daemon::file_write::canvas_containment_refusal`), because it
+    // must hold for every caller of that method, not only this route. This
+    // route no longer pre-checks the client's submission; `check_file_answer`
+    // below turns the daemon's refusal into the same 403 it always answered.
+    //
+    // Checking there rather than here also closes a gap this route's own doc
+    // comment used to claim was already closed: the check below used to run
+    // BEFORE `restore_redacted`, so a reference the read path had quarantined
+    // came back unchecked on every later save of the same document. The
+    // daemon checks the bytes actually written, restoration included.
 
     // Restore any reference the READ path blanked.
     //

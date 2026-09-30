@@ -25,7 +25,10 @@
 //!    be made directly.
 //! 2. **Write path (authoritative)** — [`validate_canvas`] runs before a
 //!    `.canvas` is persisted, and the write is refused naming the offending
-//!    nodes.
+//!    nodes. This runs in the daemon's `fs.write`
+//!    (`crucible_daemon::file_write::canvas_containment_refusal`), not in a
+//!    web route, so it holds for every caller — the TUI and a Lua script
+//!    included, not only the browser.
 //! 3. **Read path (fail-safe)** — the same check runs when a canvas is loaded,
 //!    so a file hand-edited on disk to contain `../../../etc/passwd` renders as
 //!    a quarantined broken node and its content is never fetched.
