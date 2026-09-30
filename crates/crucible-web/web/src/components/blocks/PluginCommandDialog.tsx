@@ -29,10 +29,10 @@ import {
  * labelling, not a gate, and it must not be mistaken for one:
  *
  * - the effect is declared by the plugin and verified by nothing;
- * - a block is same-origin script that can call `POST /api/plugins/command`
- *   directly, so this dialog is not on the only path to a write.
+ * - a block is same-origin script that can call `rpc('plugin.run_command',
+ *   ...)` directly, so this dialog is not on the only path to a write.
  *
- * When item 7 lands, the gate belongs on the daemon side of that route, and
+ * When item 7 lands, the gate belongs on the daemon side of that call, and
  * this dialog becomes one of its callers rather than its enforcement.
  */
 interface PluginCommandDialogProps {

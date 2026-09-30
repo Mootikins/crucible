@@ -43,7 +43,7 @@ beforeEach(() => {
     // now ([[Simplification Plan#Step 19]] item 3); `GET /api/project/list`
     // is gone.
     'POST /api/rpc/project.list': () => [{ path: '/work/alpha', name: 'alpha', kilns: [] }],
-    'GET /api/plugins/publications': () => ({ publications: { targets: {} } }),
+    'POST /api/rpc/plugin.publications': () => ({ publications: { targets: {} } }),
   });
   created.params = [];
   created.opts = [];
@@ -68,7 +68,9 @@ describe('NewSessionSheet', () => {
     render(() => <NewSessionSheet />);
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     for (const row of ['Project', 'Workspace', 'Kiln', 'Model', 'Runtime']) {
-      expect(await waitFor(() => screen.getByRole('button', { name: new RegExp(`^${row}`) }))).toBeTruthy();
+      expect(
+        await waitFor(() => screen.getByRole('button', { name: new RegExp(`^${row}`) })),
+      ).toBeTruthy();
     }
   });
 

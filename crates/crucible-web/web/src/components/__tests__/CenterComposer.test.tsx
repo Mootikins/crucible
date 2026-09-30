@@ -123,8 +123,8 @@ beforeEach(async () => {
     // now ([[Simplification Plan#Step 19]] item 3); `GET /api/project/list`
     // is gone.
     'POST /api/rpc/project.list': () => [{ path: '/repos/crucible', name: 'crucible', kilns: [] }],
-    'GET /api/plugins/publications': () => ({ publications: { targets: declared } }),
-    'POST /api/plugins/command': async (request) => {
+    'POST /api/rpc/plugin.publications': () => ({ publications: { targets: declared } }),
+    'POST /api/rpc/plugin.run_command': async (request) => {
       const { name } = (await request.json()) as { name: string };
       return commands[name] ?? [];
     },
@@ -200,7 +200,13 @@ describe('CenterComposer', () => {
     expect(surface.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The draft used to draw its chips on a row ABOVE the card.
     expect(queryByTestId('composer-context')).toBeNull();
-    const ids = ['composer-kiln', 'composer-project', 'composer-target', 'composer-agent', 'composer-model'];
+    const ids = [
+      'composer-kiln',
+      'composer-project',
+      'composer-target',
+      'composer-agent',
+      'composer-model',
+    ];
     for (const id of ids) {
       expect(surface.contains(getByTestId(id)), `${id} is inside the capsule`).toBe(false);
       expect(row.contains(getByTestId(id)), `${id} is off the row`).toBe(true);
@@ -232,7 +238,9 @@ describe('CenterComposer', () => {
     const { getByTestId } = render(() => <CenterComposer />);
     const textarea = await waitFor(() => getByTestId('composer-input'));
     expect(textarea.getAttribute('rows')).toBe('1');
-    expect((document.querySelector('.composer-surface') as HTMLElement).getAttribute('data-lines')).toBe('one');
+    expect(
+      (document.querySelector('.composer-surface') as HTMLElement).getAttribute('data-lines'),
+    ).toBe('one');
   });
 
   it('marks each ACP agent row with its own icon', async () => {
@@ -261,9 +269,7 @@ describe('CenterComposer', () => {
     const { getByTestId, queryByRole } = render(() => <CenterComposer />);
     // Wait for the async defaults (config/kilns) to land before submitting —
     // 'helios' appears on the chip label once defaultKiln resolves.
-    await waitFor(() =>
-      expect(getByTestId('composer-kiln').textContent).toContain('helios'),
-    );
+    await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('helios'));
 
     const input = getByTestId('composer-input') as HTMLTextAreaElement;
     // No card field: a card names a subagent or an @-callout, not a draft.
@@ -362,7 +368,12 @@ describe('CenterComposer', () => {
 
     cloneAnswer = {
       path: '/home/user/Projects/Spoon-Knife',
-      project: { path: '/home/user/Projects/Spoon-Knife', name: 'Spoon-Knife', kilns: [], last_accessed: '' },
+      project: {
+        path: '/home/user/Projects/Spoon-Knife',
+        name: 'Spoon-Knife',
+        kilns: [],
+        last_accessed: '',
+      },
     };
     fireEvent.click(submit);
     await waitFor(() => expect(clonedUrl).toBe('octocat/Spoon-Knife'));
@@ -407,7 +418,9 @@ describe('CenterComposer', () => {
     cleanup();
 
     const second = render(() => <CenterComposer />);
-    await waitFor(() => expect(second.getByTestId('composer-workspace-target')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(second.getByTestId('composer-workspace-target')).toBeInTheDocument(),
+    );
     fireEvent.click(second.getByTestId('composer-workspace-target'));
     await waitFor(() => expect(screen.getByText('feat/x')).toBeInTheDocument());
     fireEvent.click(screen.getByText('feat/x'));
@@ -599,5 +612,4 @@ describe('CenterComposer', () => {
       ),
     );
   });
-
 });

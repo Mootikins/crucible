@@ -70,13 +70,28 @@ describe('the generated client', () => {
   });
 
   it('lets a block name its own plugin instead', async () => {
-    const mockFetch = createMockFetch({ 'POST /api/plugins/command': { body: {} } });
+    const mockFetch = createMockFetch({
+      'POST /api/plugins/kanban/option': { body: { value: null } },
+    });
     global.fetch = mockFetch;
 
-    await client.POST('/api/plugins/command', {
-      body: { name: 'kanban.board', args: {} },
-      params: { header: callerParam('kanban') },
+    await client.POST('/api/plugins/{name}/option', {
+      params: { path: { name: 'kanban' }, header: callerParam('kanban') },
+      body: { action: 'get', path: ['board'] },
     });
+
+    expect((await mockFetch.sent(0)).headers.get(PLUGIN_CALLER_HEADER)).toBe('kanban');
+  });
+
+  it("rpc() sends the caller option's plugin, not the client's default app", async () => {
+    const mockFetch = createMockFetch({ 'POST /api/rpc/plugin.run_command': { body: {} } });
+    global.fetch = mockFetch;
+
+    await rpc(
+      'plugin.run_command',
+      { name: 'kanban_move', args: {}, session_id: null },
+      { caller: 'kanban' },
+    );
 
     expect((await mockFetch.sent(0)).headers.get(PLUGIN_CALLER_HEADER)).toBe('kanban');
   });

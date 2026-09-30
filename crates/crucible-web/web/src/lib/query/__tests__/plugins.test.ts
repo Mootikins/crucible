@@ -214,7 +214,10 @@ describe('one plugin option', () => {
       'POST /api/plugins/demo-plugin/option': async (request: Request) => {
         const body = (await request.json()) as { action: string; value?: unknown };
         if (body.action === 'get') return { value: stored.value };
-        if (refuse) return new Response(JSON.stringify({ error: { code: 422, message: 'refused' } }), { status: 422 });
+        if (refuse)
+          return new Response(JSON.stringify({ error: { code: 422, message: 'refused' } }), {
+            status: 422,
+          });
         if (body.action === 'set') stored.value = body.value;
         return {};
       },
@@ -302,7 +305,7 @@ describe('a plugin command', () => {
     let seen: { name?: string; args?: unknown } = {};
     let caller: string | null = null;
     env = createTestQueryEnv({
-      'POST /api/plugins/command': async (request: Request) => {
+      'POST /api/rpc/plugin.run_command': async (request: Request) => {
         caller = request.headers.get('X-Crucible-Plugin');
         seen = (await request.json()) as { name?: string; args?: unknown };
         return { ok: true };
@@ -332,7 +335,7 @@ describe('a publication', () => {
   it('re-reads the block the daemon named, and leaves a sibling key alone', async () => {
     let answered = 0;
     env = createTestQueryEnv({
-      'GET /api/plugins/publications': (request: Request) => {
+      'POST /api/rpc/plugin.publications': (request: Request) => {
         answered += 1;
         const key = new URL(request.url).searchParams.get('key') ?? '';
         return { publications: { [key]: { board: `value ${answered}` } } };
@@ -352,12 +355,16 @@ describe('a publication', () => {
       expect(read.columns.data).toBeDefined();
     });
     const columnsBefore = read.columns.data;
-    const reads = env.fetch.calls('GET /api/plugins/publications');
+    const reads = env.fetch.calls('POST /api/rpc/plugin.publications');
 
-    onlyEventSource().emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
+    onlyEventSource().emit('publication_changed', {
+      topic: 'system',
+      plugin: 'board',
+      key: 'rows',
+    });
 
     await vi.waitFor(() =>
-      expect(env.fetch.calls('GET /api/plugins/publications')).toBe(reads + 1),
+      expect(env.fetch.calls('POST /api/rpc/plugin.publications')).toBe(reads + 1),
     );
     expect(read.columns.data).toEqual(columnsBefore);
     expect(read.rows.data).not.toEqual(columnsBefore);

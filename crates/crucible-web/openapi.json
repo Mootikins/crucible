@@ -1000,55 +1000,6 @@
         }
       }
     },
-    "/api/plugins/command": {
-      "post": {
-        "summary": "`POST /api/plugins/command` — invoke a plugin command by name.",
-        "description": "Not under `/{name}` because the name sent here resolves through the daemon's\ncommand registry. The result is passed\nthrough verbatim, like publications and options: what a command returns is\nthe plugin's vocabulary, and a shape this layer validated would be a shape\nonly today's plugins could send.\n\nThe reply is `crucible_core::types::PluginRunCommandReply`, forwarded\nunchanged.",
-        "operationId": "run_command",
-        "parameters": [
-          {
-            "name": "x-crucible-plugin",
-            "in": "header",
-            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PluginRunCommandRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PluginRunCommandReply"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "No caller identity was sent, or the command belongs to another plugin"
-          },
-          "422": {
-            "description": "`name` names no command"
-          },
-          "502": {
-            "description": "The daemon could not run the command, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
     "/api/plugins/commands": {
       "get": {
         "summary": "`GET /api/plugins/commands` — the executable primitives plugins declared.",
@@ -1089,51 +1040,6 @@
           },
           "502": {
             "description": "The daemon could not read the settings trees, or answered a shape this route cannot read"
-          }
-        }
-      }
-    },
-    "/api/plugins/publications": {
-      "get": {
-        "summary": "`GET /api/plugins/publications` — what plugins published about themselves.",
-        "description": "The two levels are read; the values are passed through verbatim. Nothing\nhere interprets one, which is the point: the frontend used to learn what\nisolation a box offered by having the server match on the shape of the `oci`\nplugin's config, so one plugin's schema lived in the rendering layer and a\nsecond isolating plugin would not have appeared at all.",
-        "operationId": "list_publications",
-        "parameters": [
-          {
-            "name": "key",
-            "in": "query",
-            "description": "Narrow the reply to one contribution kind.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "x-crucible-plugin",
-            "in": "header",
-            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PluginPublicationsReply"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "No caller identity was sent"
-          },
-          "502": {
-            "description": "The daemon could not read the publications, or answered a shape this route cannot read"
           }
         }
       }

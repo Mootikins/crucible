@@ -485,7 +485,7 @@ describe('getConfig', () => {
 // =============================================================================
 
 const publications = (targets: unknown) => ({
-  'GET /api/plugins/publications': { body: { publications: { targets } } },
+  'POST /api/rpc/plugin.publications': { body: { publications: { targets } } },
 });
 
 describe('getTargetProviders', () => {
@@ -540,7 +540,7 @@ describe('getTargetProviders', () => {
 
   it('offers nothing when no plugin published a targets key', async () => {
     global.fetch = createMockFetch({
-      'GET /api/plugins/publications': { body: { publications: {} } },
+      'POST /api/rpc/plugin.publications': { body: { publications: {} } },
     });
     expect(await getTargetProviders('runtime')).toEqual([]);
   });
@@ -556,7 +556,7 @@ describe('getProviderTargets', () => {
 
   it('reads a provider’s targets from its command', async () => {
     global.fetch = createMockFetch({
-      'POST /api/plugins/command': {
+      'POST /api/rpc/plugin.run_command': {
         body: {
           targets: [
             { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
@@ -591,7 +591,7 @@ describe('getProviderTargets', () => {
 
   it('accepts a bare array as readily as a wrapped one', async () => {
     global.fetch = createMockFetch({
-      'POST /api/plugins/command': { body: [{ value: 'main', label: 'main' }] },
+      'POST /api/rpc/plugin.run_command': { body: [{ value: 'main', label: 'main' }] },
     });
     expect(await getProviderTargets(worktree)).toEqual([
       {
@@ -610,7 +610,7 @@ describe('getProviderTargets', () => {
   // with its branch from it, and the files-pane picker jumps to it.
   it('carries an existing checkout path through', async () => {
     global.fetch = createMockFetch({
-      'POST /api/plugins/command': {
+      'POST /api/rpc/plugin.run_command': {
         body: {
           targets: [
             { value: 'master', label: 'master', path: '/repo', current: true },
@@ -627,7 +627,7 @@ describe('getProviderTargets', () => {
 
   it('drops entries with no value rather than offering unselectable rows', async () => {
     global.fetch = createMockFetch({
-      'POST /api/plugins/command': {
+      'POST /api/rpc/plugin.run_command': {
         body: { targets: [{ label: 'nameless' }, { value: 'main', label: 'main' }] },
       },
     });
@@ -637,7 +637,7 @@ describe('getProviderTargets', () => {
   // A provider whose plugin was unloaded, or whose command was renamed, must
   // not take the rest of the menu with it.
   it('answers empty when the command fails', async () => {
-    global.fetch = createMockFetch({ 'POST /api/plugins/command': { status: 500 } });
+    global.fetch = createMockFetch({ 'POST /api/rpc/plugin.run_command': { status: 500 } });
     expect(await getProviderTargets(worktree)).toEqual([]);
   });
 
@@ -1411,7 +1411,9 @@ describe('caller identity', () => {
   });
 
   it('carries the plugin a block declares, not the app', async () => {
-    const mockFetch = createMockFetch({ 'POST /api/plugins/command': { body: { ok: true } } });
+    const mockFetch = createMockFetch({
+      'POST /api/rpc/plugin.run_command': { body: { name: 'kanban_move', result: null } },
+    });
     global.fetch = mockFetch;
 
     await runPluginCommand('kanban_move', {}, 'kanban');
@@ -1420,7 +1422,9 @@ describe('caller identity', () => {
   });
 
   it('keeps the caller alongside a body content type rather than replacing it', async () => {
-    const mockFetch = createMockFetch({ 'POST /api/plugins/command': { body: {} } });
+    const mockFetch = createMockFetch({
+      'POST /api/rpc/plugin.run_command': { body: { name: 'kanban_move', result: null } },
+    });
     global.fetch = mockFetch;
 
     await runPluginCommand('kanban_move', {}, 'kanban');
@@ -1432,7 +1436,7 @@ describe('caller identity', () => {
 
   it('reads publications as the plugin when a block asks', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/plugins/publications': { body: { publications: {} } },
+      'POST /api/rpc/plugin.publications': { body: { publications: {} } },
     });
     global.fetch = mockFetch;
 

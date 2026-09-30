@@ -5,13 +5,11 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use crucible_core::protocol::requests::{
-    PluginInstallRequest, PluginPublicationsRequest, PluginRunCommandRequest,
-};
+use crucible_core::protocol::requests::PluginInstallRequest;
 use crucible_core::protocol::SystemPayload;
 use crucible_core::types::{
     PluginCommandsReply, PluginInfo, PluginInstallReply, PluginOptionCallReply, PluginOptionsReply,
-    PluginPublicationsReply, PluginReloadReply, PluginRemoveReply, PluginRunCommandReply,
+    PluginReloadReply, PluginRemoveReply,
 };
 use crucible_daemon::server::plugins::OptionAction;
 use crucible_daemon::SessionEvent;
@@ -24,14 +22,23 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 const CALLER_HEADER_DOC: &str =
     "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.";
 
-/// The ten plugin endpoints, six of which take a caller identity and four of
-/// which do not.
+/// The eight plugin endpoints left here, four of which take a caller
+/// identity and four of which do not.
+///
+/// `plugin.publications` and `plugin.run_command` moved onto the generic
+/// `POST /api/rpc/{method}` route: `routes/rpc.rs`'s own `plugin_may_call`
+/// gives a plugin caller the same narrowing ([`narrow_to_caller`]) and the
+/// same ownership check ([`refuse_another_plugins_command`]) this file
+/// already applied, so keeping a second route here would be a second way to
+/// reach the same two calls, not a different one.
 ///
 /// Gated by [`PluginCaller`]: `POST /api/plugins` (install), `DELETE
-/// /api/plugins/{name}`, `POST /api/plugins/{name}/reload` — app only; `POST
-/// /api/plugins/{name}/option` and `POST /api/plugins/command` — the app, or
-/// the plugin that owns the thing; `GET /api/plugins/publications` — narrowed
-/// to the caller's own.
+/// /api/plugins/{name}`, `POST /api/plugins/{name}/reload` — app only, because
+/// each changes what code the daemon's one shared plugin VM runs, which a
+/// block must never do to itself or another plugin; `POST
+/// /api/plugins/{name}/option` — the app, or the plugin that owns the
+/// setting, because `{name}` is caller-supplied and a block that could name
+/// any plugin there would read and write settings it does not own.
 ///
 /// Ungated, and each for a reason worth knowing before you "finish the job":
 /// `GET /api/plugins`, `/commands` and `/options` are enumerations the plugins
@@ -64,11 +71,9 @@ pub fn plugin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(list_plugins, install_plugin))
         .routes(routes!(remove_plugin))
         .routes(routes!(reload_plugin))
-        .routes(routes!(list_publications))
         .routes(routes!(list_commands))
         .routes(routes!(list_options))
         .routes(routes!(option_call))
-        .routes(routes!(run_command))
 }
 
 /// One read, write, or button press against a plugin's settings tree.
@@ -164,37 +169,6 @@ async fn list_plugins(State(state): State<AppState>) -> Result<Json<PluginListRe
 /// `crucible_core::types::PluginPublications`), kept as an alias here so the
 /// rest of this file reads the same as it did before the type moved.
 pub(crate) type PublicationsByKey = crucible_core::types::PluginPublications;
-
-/// `GET /api/plugins/publications` — what plugins published about themselves.
-///
-/// The two levels are read; the values are passed through verbatim. Nothing
-/// here interprets one, which is the point: the frontend used to learn what
-/// isolation a box offered by having the server match on the shape of the `oci`
-/// plugin's config, so one plugin's schema lived in the rendering layer and a
-/// second isolating plugin would not have appeared at all.
-#[utoipa::path(
-    get,
-    path = "/api/plugins/publications",
-    params(
-        PluginPublicationsRequest,
-        ("x-crucible-plugin" = String, Header, description = CALLER_HEADER_DOC),
-    ),
-    responses(
-        (status = 200, body = PluginPublicationsReply),
-        (status = 403, description = "No caller identity was sent"),
-        (status = 502, description = "The daemon could not read the publications, or answered a shape this route cannot read"),
-    )
-)]
-async fn list_publications(
-    State(state): State<AppState>,
-    caller: PluginCaller,
-    Query(q): Query<PluginPublicationsRequest>,
-) -> Result<Json<PluginPublicationsReply>, WebError> {
-    let publications = state.daemon.plugin_publications(q.key).await.daemon_err()?;
-    Ok(Json(PluginPublicationsReply {
-        publications: narrow_to_caller(publications, &caller),
-    }))
-}
 
 /// Keep only what the caller may see: everything for the app, a plugin's own
 /// rows for a plugin.
@@ -389,47 +363,6 @@ impl PublicationChangedEvent {
     }
 }
 
-/// `POST /api/plugins/command` — invoke a plugin command by name.
-///
-/// Not under `/{name}` because the name sent here resolves through the daemon's
-/// command registry. The result is passed
-/// through verbatim, like publications and options: what a command returns is
-/// the plugin's vocabulary, and a shape this layer validated would be a shape
-/// only today's plugins could send.
-///
-/// The reply is `crucible_core::types::PluginRunCommandReply`, forwarded
-/// unchanged.
-#[utoipa::path(
-    post,
-    path = "/api/plugins/command",
-    params(("x-crucible-plugin" = String, Header, description = CALLER_HEADER_DOC)),
-    request_body = PluginRunCommandRequest,
-    responses(
-        (status = 200, body = PluginRunCommandReply),
-        (status = 403, description = "No caller identity was sent, or the command belongs to another plugin"),
-        (status = 422, description = "`name` names no command"),
-        (status = 502, description = "The daemon could not run the command, or answered a shape this route cannot read"),
-    )
-)]
-async fn run_command(
-    State(state): State<AppState>,
-    caller: PluginCaller,
-    Json(req): Json<PluginRunCommandRequest>,
-) -> Result<Json<PluginRunCommandReply>, WebError> {
-    if req.name.trim().is_empty() {
-        return Err(WebError::Validation(
-            "`name` must name a command".to_string(),
-        ));
-    }
-    refuse_another_plugins_command(&state, &caller, &req.name).await?;
-    let result = state
-        .daemon
-        .plugin_run_command(&req.name, req.args, req.session_id.as_deref())
-        .await
-        .daemon_err()?;
-    Ok(Json(result))
-}
-
 /// A caller drawing for plugin X may invoke only X's commands.
 ///
 /// The owning plugin is already on every entry `plugin.commands` returns, so
@@ -608,20 +541,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_publications_answers_the_declared_shape() {
-        let published: PluginPublicationsReply =
-            shape_as("GET", "/api/plugins/publications", None, as_app()).await;
-
-        // The app sees every plugin's rows: narrowing it too is what would
-        // blank the plugins panel.
-        assert_eq!(published.publications.len(), 2);
-        assert_eq!(
-            published.publications["everything"]["mock-plugin"],
-            serde_json::json!({ "narrowed": false })
-        );
-    }
-
-    #[tokio::test]
     async fn list_commands_answers_the_declared_shape() {
         let commands: PluginCommandsReply =
             shape_as("GET", "/api/plugins/commands", None, Vec::new()).await;
@@ -673,34 +592,6 @@ mod tests {
                 "a {action} answers an acknowledgement, not {done:?}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn run_command_answers_the_declared_shape() {
-        let ran: PluginRunCommandReply = shape_as(
-            "POST",
-            "/api/plugins/command",
-            Some(serde_json::json!({ "name": "mock_command", "args": {} })),
-            as_app(),
-        )
-        .await;
-
-        assert_eq!(ran.name, "mock_command");
-        // The browser's hand-written caller types this reply as `unknown`, so
-        // nothing told a reader the answer sits under `result`.
-        assert_eq!(ran.result["branches"][0], "main");
-    }
-
-    #[tokio::test]
-    async fn plugin_caller_can_use_full_name_of_unique_command() {
-        let ran: PluginRunCommandReply = shape_as(
-            "POST",
-            "/api/plugins/command",
-            Some(serde_json::json!({ "name": "mock-plugin:mock_command", "args": {} })),
-            vec![(PLUGIN_CALLER_HEADER, "mock-plugin".to_string())],
-        )
-        .await;
-        assert_eq!(ran.name, "mock-plugin:mock_command");
     }
 
     #[tokio::test]

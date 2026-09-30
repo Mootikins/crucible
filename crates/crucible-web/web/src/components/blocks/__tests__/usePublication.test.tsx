@@ -23,7 +23,7 @@ import { PLUGIN_CALLER_HEADER } from '@/lib/api';
  */
 
 // No `vi.mock('@/lib/api')`: the cache entry's fetch runs the real
-// `getPluginPublications` against the `GET /api/plugins/publications` route
+// `getPluginPublications` against the `plugin.publications` route
 // below, so the narrowed KEY and the plugin CALLER are read off the wire.
 /** Every read the stream's cache issued, as it went out. */
 const asked: { key: string; plugin: string }[] = [];
@@ -38,7 +38,7 @@ function Block(props: { plugin: string; publicationKey: string }) {
   return <span data-testid={`${props.plugin}-${props.publicationKey}`}>{value() ?? ''}</span>;
 }
 
-/** What `GET /api/plugins/publications` answers for one plugin and key. */
+/** What `plugin.publications` answers for one plugin and key. */
 function published(key: string, plugin: string, value: string) {
   return { [key]: { [plugin]: value } };
 }
@@ -52,8 +52,9 @@ beforeEach(() => {
   // A fresh cache per case: the entries of one case would otherwise answer the
   // next one, and the counts below are about who asked the daemon.
   env = createTestQueryEnv({
-    'GET /api/plugins/publications': (request) => {
-      const key = new URL(request.url).searchParams.get('key') ?? '';
+    'POST /api/rpc/plugin.publications': async (request) => {
+      const body = (await request.clone().json()) as { key?: string | null };
+      const key = body.key ?? '';
       const plugin = request.headers.get(PLUGIN_CALLER_HEADER) ?? '';
       asked.push({ key, plugin });
       return { publications: reply(key, plugin) };
@@ -91,8 +92,16 @@ describe('usePublication on the shared plugin stream', () => {
     await waitFor(() => expect(asked).toHaveLength(1));
     expect(FakeEventSource.instances).toHaveLength(1);
 
-    FakeEventSource.instances[0]!.emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
-    expect(other).toHaveBeenCalledWith({ event: 'publication_changed', plugin: 'board', key: 'rows' });
+    FakeEventSource.instances[0]!.emit('publication_changed', {
+      topic: 'system',
+      plugin: 'board',
+      key: 'rows',
+    });
+    expect(other).toHaveBeenCalledWith({
+      event: 'publication_changed',
+      plugin: 'board',
+      key: 'rows',
+    });
     stop();
   });
 
@@ -109,7 +118,11 @@ describe('usePublication on the shared plugin stream', () => {
     reply = (key, plugin) => published(key, plugin, 'second');
     asked.length = 0;
 
-    FakeEventSource.instances[0]!.emit('publication_changed', { topic: 'system', plugin: 'board', key: 'rows' });
+    FakeEventSource.instances[0]!.emit('publication_changed', {
+      topic: 'system',
+      plugin: 'board',
+      key: 'rows',
+    });
 
     await waitFor(() => expect(getByTestId('board-rows').textContent).toBe('second'));
     expect(getByTestId('board-columns').textContent).toBe('first');

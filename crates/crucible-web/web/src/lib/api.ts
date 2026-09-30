@@ -863,12 +863,7 @@ export async function getPluginPublications(
   key?: string,
   caller: string = APP_CALLER,
 ): Promise<PluginPublications> {
-  const body = decode(
-    await client.GET('/api/plugins/publications', {
-      params: { query: { key }, header: callerParam(caller) },
-    }),
-    'Failed to get plugin publications',
-  );
+  const body = await rpc('plugin.publications', { key: key ?? null }, { caller });
   return body.publications ?? {};
 }
 
@@ -936,14 +931,9 @@ export async function runPluginCommand(
   args: unknown = {},
   caller: string = APP_CALLER,
 ): Promise<unknown> {
-  const result = await client.POST('/api/plugins/command', {
-    params: { header: callerParam(caller) },
-    body: { name, args },
-  });
-  expectOk(result, `Plugin command '${name}' failed`);
-  // Read whole rather than decoded: a command may answer nothing, and what it
-  // does answer is its own vocabulary. The caller knows the shape it asked for.
-  return result.data;
+  // `plugin.run_command`'s reply is `PluginRunCommandReply` (`{name,
+  // result}`), the same envelope `POST /api/plugins/command` answered.
+  return rpc('plugin.run_command', { name, args }, { caller });
 }
 
 /** Providers on one axis, sorted by label so the menu is stable. */

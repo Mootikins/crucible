@@ -465,33 +465,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/plugins/command": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/plugins/command` — invoke a plugin command by name.
-         * @description Not under `/{name}` because the name sent here resolves through the daemon's
-         *     command registry. The result is passed
-         *     through verbatim, like publications and options: what a command returns is
-         *     the plugin's vocabulary, and a shape this layer validated would be a shape
-         *     only today's plugins could send.
-         *
-         *     The reply is `crucible_core::types::PluginRunCommandReply`, forwarded
-         *     unchanged.
-         */
-        post: operations["run_command"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/plugins/commands": {
         parameters: {
             query?: never;
@@ -541,30 +514,6 @@ export interface paths {
          *     function-valued fields describe the box as it is now.
          */
         get: operations["list_options"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/plugins/publications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /api/plugins/publications` — what plugins published about themselves.
-         * @description The two levels are read; the values are passed through verbatim. Nothing
-         *     here interprets one, which is the point: the frontend used to learn what
-         *     isolation a box offered by having the server match on the shape of the `oci`
-         *     plugin's config, so one plugin's schema lived in the rendering layer and a
-         *     second isolating plugin would not have appeared at all.
-         */
-        get: operations["list_publications"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9288,53 +9237,6 @@ export interface operations {
             };
         };
     };
-    run_command: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Who is asking: `app`, or the plugin being drawn for. A request without it is refused. */
-                "x-crucible-plugin": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PluginRunCommandRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PluginRunCommandReply"];
-                };
-            };
-            /** @description No caller identity was sent, or the command belongs to another plugin */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description `name` names no command */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not run the command, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     list_plugin_commands: {
         parameters: {
             query?: never;
@@ -9379,45 +9281,6 @@ export interface operations {
                 };
             };
             /** @description The daemon could not read the settings trees, or answered a shape this route cannot read */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_publications: {
-        parameters: {
-            query?: {
-                /** @description Narrow the reply to one contribution kind. */
-                key?: string;
-            };
-            header: {
-                /** @description Who is asking: `app`, or the plugin being drawn for. A request without it is refused. */
-                "x-crucible-plugin": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PluginPublicationsReply"];
-                };
-            };
-            /** @description No caller identity was sent */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not read the publications, or answered a shape this route cannot read */
             502: {
                 headers: {
                     [name: string]: unknown;

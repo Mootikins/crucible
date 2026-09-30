@@ -48,7 +48,7 @@ const INVENTED = {
 beforeEach(() => {
   sent.length = 0;
   env = createTestQueryEnv({
-    'POST /api/plugins/command': async (request) => {
+    'POST /api/rpc/plugin.run_command': async (request) => {
       const { name, args } = (await request.json()) as { name: string; args: unknown };
       sent.push({ name, args, caller: request.headers.get(PLUGIN_CALLER_HEADER) ?? '' });
       return { ok: true };
@@ -144,7 +144,9 @@ describe('PluginCommandDialog', () => {
    * flat would tell a user the daemon checked something; nothing did.
    */
   it('presents the declared effect as a declaration', () => {
-    const { getByText } = render(() => <PluginCommandDialog command={INVENTED} onClose={() => {}} />);
+    const { getByText } = render(() => (
+      <PluginCommandDialog command={INVENTED} onClose={() => {}} />
+    ));
     const badge = getByText('declares: write');
     expect(badge.getAttribute('title')).toMatch(/nothing verifies it/i);
   });
@@ -166,8 +168,6 @@ describe('PluginCommandDialog', () => {
 
     expect(controlsByName(container)).toEqual({});
     fireEvent.click(getByText('Run'));
-    await waitFor(() =>
-      expect(sent[0]).toEqual({ name: 'bare', args: {}, caller: 'app' }),
-    );
+    await waitFor(() => expect(sent[0]).toEqual({ name: 'bare', args: {}, caller: 'app' }));
   });
 });

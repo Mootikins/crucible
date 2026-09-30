@@ -159,9 +159,9 @@ async fn plugin_may_call(
             plugin::refuse_another_plugins_command(state, caller, command).await
         }
         // Publications are narrowed after the daemon answers, in
-        // `narrow_reply_for_caller`, the same way `routes/plugin.rs`'s own
-        // `list_publications` narrows rather than refuses (a `?key=` reply is
-        // a courtesy; narrowing is the boundary the courtesy stands in for).
+        // `narrow_reply_for_caller` (a `?key=` request only narrows
+        // daemon-side; this route's own narrowing is the boundary that
+        // request is a courtesy in front of).
         RpcMethod::PluginPublications => Ok(()),
         _ => Err(WebError::Forbidden(format!(
             "plugin `{plugin}` may not call `{method}` through this route: only its own \
@@ -502,8 +502,24 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
     }
 
+    /// A plugin block may address its own command by its bare name, or by
+    /// the `plugin:command` form `plugin.commands` uses when two plugins
+    /// declare the same bare name.
+    #[tokio::test]
+    async fn a_plugin_may_use_the_full_name_of_its_own_command() {
+        let (status, body) = request_json_as(
+            "POST",
+            "/api/rpc/plugin.run_command",
+            Some(json!({ "name": "mock-plugin:mock_command", "args": {} })),
+            vec![(PLUGIN_CALLER_HEADER, "mock-plugin".to_string())],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["name"], "mock-plugin:mock_command");
+    }
+
     /// A plugin block may not run another plugin's command through this
-    /// route, the same refusal `POST /api/plugins/command` already gives.
+    /// route.
     #[tokio::test]
     async fn a_plugin_may_not_run_another_plugins_command() {
         let (status, body) = request_json_as(

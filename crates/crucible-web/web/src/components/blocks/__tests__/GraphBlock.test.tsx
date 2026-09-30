@@ -63,7 +63,7 @@ beforeEach(() => {
   mocks.activeFile.mockReturnValue(null);
   env = createTestQueryEnv({
     'POST /api/rpc/kiln.list': () => KILNS,
-    'POST /api/plugins/command': async (request) => {
+    'POST /api/rpc/plugin.run_command': async (request) => {
       const { name, args } = (await request.json()) as { name: string; args: unknown };
       sent.push({ name, args, caller: request.headers.get(PLUGIN_CALLER_HEADER) ?? '' });
       return reply;
@@ -90,7 +90,11 @@ describe('GraphBlock', () => {
     };
 
     const { container } = render(() => (
-      <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md', depth: 2 }} />
+      <GraphBlock
+        plugin="graph"
+        block="neighborhood"
+        params={{ path: 'Meta/Canvas.md', depth: 2 }}
+      />
     ));
 
     await waitFor(() => expect(container.textContent).toContain('Oil.md'));
@@ -200,7 +204,9 @@ describe('GraphBlock', () => {
       <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
     ));
 
-    await waitFor(() => expect(container.textContent).toContain('malformed graph_neighborhood reply'));
+    await waitFor(() =>
+      expect(container.textContent).toContain('malformed graph_neighborhood reply'),
+    );
     expect(container.textContent).not.toContain('Nothing links to or from');
   });
 

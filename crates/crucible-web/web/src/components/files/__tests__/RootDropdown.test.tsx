@@ -56,8 +56,8 @@ const PUBLICATIONS = {
 
 function installDaemon(): void {
   env = createTestQueryEnv({
-    'GET /api/plugins/publications': () => PUBLICATIONS,
-    'POST /api/plugins/command': async (request) => {
+    'POST /api/rpc/plugin.publications': () => PUBLICATIONS,
+    'POST /api/rpc/plugin.run_command': async (request) => {
       const body = (await request.json()) as CommandCall;
       commands.push(body);
       if (body.name === 'worktree:list') return { targets: branchRows };
@@ -420,7 +420,7 @@ describe('RootDropdown', () => {
     fireEvent.click(screen.getByText('fix/y'));
     await waitFor(() =>
       expect(onNotice).toHaveBeenCalledWith(
-        expect.stringContaining("Plugin command 'worktree:add' failed"),
+        expect.stringContaining('RPC `plugin.run_command` failed'),
       ),
     );
   });

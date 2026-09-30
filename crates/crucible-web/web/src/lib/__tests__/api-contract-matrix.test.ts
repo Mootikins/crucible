@@ -274,7 +274,7 @@ it('keeps optional discovery fallbacks separate from explicit target resolution 
     Promise.resolve(
       new Response(
         JSON.stringify(
-          new URL(request.url).pathname === '/api/plugins/publications' ? publications : answer,
+          new URL(request.url).pathname === '/api/rpc/plugin.publications' ? publications : answer,
         ),
       ),
     ),

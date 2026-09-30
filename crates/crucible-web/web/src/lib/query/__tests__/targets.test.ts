@@ -11,7 +11,7 @@ import {
   useResolveWorkspaceTarget,
 } from '../targets';
 
-/** What `GET /api/plugins/publications` answers: two providers, one per axis. */
+/** What `plugin.publications` answers: two providers, one per axis. */
 const PUBLICATIONS = {
   publications: {
     targets: {
@@ -56,8 +56,8 @@ function commandRoute(): (request: Request) => Promise<unknown> {
 /** The two routes every target read goes through. */
 function targetRoutes(publications: unknown = PUBLICATIONS) {
   return {
-    'GET /api/plugins/publications': () => publications as MockFetchHandler,
-    'POST /api/plugins/command': commandRoute(),
+    'POST /api/rpc/plugin.publications': () => publications as MockFetchHandler,
+    'POST /api/rpc/plugin.run_command': commandRoute(),
   };
 }
 
@@ -93,7 +93,7 @@ describe('useTargetProviders', () => {
 
     await vi.waitFor(() => expect(both.first.data?.map((p) => p.plugin)).toEqual(['worktree']));
     expect(both.second.data?.map((p) => p.plugin)).toEqual(['worktree']);
-    expect(env.fetch.calls('GET /api/plugins/publications')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/plugin.publications')).toBe(1);
   });
 
   it('keeps the two axes apart', async () => {
@@ -110,7 +110,7 @@ describe('useTargetProviders', () => {
 
   it('surfaces a refusal as an error rather than as no providers', async () => {
     env = createTestQueryEnv({
-      'GET /api/plugins/publications': apiError(500, 'the plugin host is down'),
+      'POST /api/rpc/plugin.publications': apiError(500, 'the plugin host is down'),
     });
 
     const query = inRoot(() => useTargetProviders('workspace'));
@@ -133,7 +133,7 @@ describe('useAxisTargets', () => {
     expect(both.first.targets.worktree?.map((t) => t.spec)).toEqual(['worktree:/repo/a']);
     await vi.waitFor(() => expect(both.second.targets.worktree?.[0]?.value).toBe('/repo/a'));
     expect(ranCommand('worktree:list')).toHaveLength(1);
-    expect(env.fetch.calls('GET /api/plugins/publications')).toBe(1);
+    expect(env.fetch.calls('POST /api/rpc/plugin.publications')).toBe(1);
   });
 
   it('re-keys on the project, so one project never answers for another', async () => {
@@ -183,7 +183,7 @@ describe('useWorkspaceTargets', () => {
     const query = inRoot(() => useWorkspaceTargets(() => undefined));
 
     await vi.waitFor(() => expect(query.fetchStatus).toBe('idle'));
-    expect(env.fetch.calls('GET /api/plugins/publications')).toBe(0);
+    expect(env.fetch.calls('POST /api/rpc/plugin.publications')).toBe(0);
   });
 });
 
@@ -263,8 +263,8 @@ describe('useResolveWorkspaceTarget', () => {
 
   it('reports a provider that resolves nothing, rather than doing nothing', async () => {
     env = createTestQueryEnv({
-      'GET /api/plugins/publications': () => PUBLICATIONS as MockFetchHandler,
-      'POST /api/plugins/command': () => ({ path: null }),
+      'POST /api/rpc/plugin.publications': () => PUBLICATIONS as MockFetchHandler,
+      'POST /api/rpc/plugin.run_command': () => ({ path: null }),
     });
 
     const resolve = inRoot(() => useResolveWorkspaceTarget());
