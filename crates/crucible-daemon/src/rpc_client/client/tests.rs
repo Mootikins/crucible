@@ -350,6 +350,44 @@ fn session_create_request_omits_kilns_when_none() {
     );
 }
 
+/// Gap 1 of step 19: the generated `rpc_*` method for a `()`-params row must
+/// reach the daemon the same way the hand-written `ping()` does — the
+/// send-side `null` → `{}` canonicalization
+/// (`DaemonClient::send_raw`) must apply to it too, not only to `NO_PARAMS`.
+#[tokio::test]
+async fn generated_method_of_a_no_params_row_reaches_the_daemon() {
+    let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+    let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+    let result = client.rpc_ping(()).await.unwrap();
+    assert_eq!(result, "pong");
+}
+
+/// Gap 1 of step 19: the generated `rpc_*` method for a row with real params
+/// must serialize and deserialize exactly as the row declares —
+/// `session.get`'s row is `Scoped<()> => SessionDetail`.
+#[tokio::test]
+async fn generated_method_of_a_params_row_reaches_the_daemon() {
+    let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+    let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+    let created = client
+        .session_create(SessionCreateRequest {
+            session_type: "chat".to_string(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let detail = client
+        .rpc_session_get(crucible_core::protocol::requests::Scoped::session(
+            created.id.to_string(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(detail.id, created.id);
+}
+
 #[tokio::test]
 async fn test_client_capabilities() {
     let (_tmp, sock_path, _handle) = setup_test_server().await;

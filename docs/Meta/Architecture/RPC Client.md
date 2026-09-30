@@ -59,6 +59,7 @@ must not construct a second agent configuration or write pipeline."
 | `crates/crucible-daemon/src/rpc_client/lifecycle.rs` | 183 | Synchronous daemon-process utilities: socket path, log path, log rotation on spawn, log tail read, `is_daemon_running`. |
 | `crates/crucible-daemon/src/rpc_client/storage.rs` | 621 | `DaemonStorageClient` (`KnowledgeRepository` impl) and `DaemonNoteStore` (`NoteStore` impl): adapt canonical storage traits onto `DaemonClient` RPC calls. |
 | `crates/crucible-daemon/src/rpc_client/client/mod.rs` | 1168 | The core `DaemonClient` struct: socket connect/spawn lifecycle, JSON-RPC framing, id correlation, retry/timeout policy, plus the plugin/surface/notification-adjacent RPC methods that have no dedicated submodule. It declares every `client` submodule and imports each request type through `crucible_core::protocol::requests::*`. |
+| `crates/crucible-daemon/src/rpc_client/client/generated.rs` | 55 | One `impl DaemonClient` block, macro-generated: a `rpc_<method>` for every `rpc_methods!` row, each typed as that row's own params/reply pair. Closes gap 1 of step 19 (see Findings below). |
 | `crates/crucible-daemon/src/rpc_client/client/types.rs` | 28 | What is left after the request and reply types moved to core: the `SessionEvent` alias and the `extract_string_array` helper, shared by two or more submodules. `DaemonCapabilities` and `VersionCheck` now live in `crucible_core::protocol::requests::common`. |
 | `crates/crucible-daemon/src/rpc_client/client/agent.rs` | 547 | `DaemonClient` methods for `session.*` agent/model/mode RPCs, `models.list`, `providers.list`, `embeddings.models`, `skills.*`, `agents.*`, and the plugin-approval/plugin-turn-limit `session.*` RPCs. The request and reply types live in `crucible_core::protocol::requests::agent`. |
 | `crates/crucible-daemon/src/rpc_client/client/session.rs` | 564 | `DaemonClient` methods for the bulk of `session.*` RPCs: create, list, get/status/status_items, history, pause/resume/end/delete/archive/clear, replay, send-message (with optional attached comments), interaction-respond, search, export, list/dismiss notifications; also `decode_status_items`. The request and reply types live in `crucible_core::protocol::requests::session`. |
@@ -164,6 +165,18 @@ must not construct a second agent configuration or write pipeline."
 - **`VersionCheck`** (`crucible_core::protocol::requests::common`): `Match`
   or `Mismatch { client, daemon }`. Drives `verify_or_restart` in
   `client/mod.rs`.
+- **The generated `rpc_<method>` methods** (`client/generated.rs`). One per
+  `rpc_methods!` row, typed as that row's own `Req`/`Resp` pair —
+  `client.rpc_session_get(Scoped::session(id))` returns `Result<SessionDetail>`
+  because the `SessionGet` row says so, and a caller that hands the wrong
+  params type or reads the reply as the wrong type fails to compile, not at
+  a runtime `serde_json::from_value`. `call`/`call_with_retry`/
+  `call_with_timeout` still exist and still let a caller pick `Req`/`Resp`
+  freely (needed for `serde_json::Value`-typed rows, and for a
+  hand-written method that turns an ergonomic Rust argument list into a
+  wire body); the generated method is the row-bound alternative, not a
+  replacement for `call` itself. See Findings for how the seam is built and
+  what did and did not change.
 
 ## Flows
 
@@ -401,8 +414,12 @@ never implements them.
   `TempDir` socket (ping, capabilities, version check, kiln listing, session
   create/list/lifecycle, subscribe/unsubscribe, retry-vs-no-retry), a
   `simple_mode_correlation` submodule proving `read_response_simple`
-  answers each caller correctly even when replies arrive out of order, and
-  `#[cfg(unix)]` SIGTERM/SIGKILL reaper tests for `SpawnedDaemon`.
+  answers each caller correctly even when replies arrive out of order,
+  `#[cfg(unix)]` SIGTERM/SIGKILL reaper tests for `SpawnedDaemon`, and
+  (step 19 gap 1) `generated_method_of_a_no_params_row_reaches_the_daemon`/
+  `generated_method_of_a_params_row_reaches_the_daemon`, live-server proofs
+  that `client/generated.rs`'s `rpc_*` methods round-trip through the real
+  daemon, not just through the type checker.
 - `crates/crucible-daemon/src/rpc_client/error_ext.rs` has two inline tests
   proving `rpc_error_message` unwraps a JSON-RPC error envelope to the
   daemon's own message and passes any other error through unchanged.
@@ -453,6 +470,79 @@ either; they are exercised, if at all, outside this page's file set.
   mutating method in this module is a pass-through to a daemon RPC, and the
   deliberate `Err`/empty-value stubs in `crates/crucible-daemon/src/rpc_client/storage.rs`
   are documented as intentional rather than left as silent gaps.
+- **Step 19 gap 1, closed.** Part A typed every `rpc_methods!` row, but
+  `DaemonClient::call<Req, Resp>` still let a caller name any `Req`/`Resp`
+  for a given `RpcMethod`, so a call site that disagreed with its row still
+  compiled. `crates/crucible-daemon/src/rpc_client/client/generated.rs` now
+  generates one method per row, `rpc_<variant in snake_case>`, whose
+  signature IS the row's own params/reply pair. The seam: `rpc_methods!`
+  (`crates/crucible-core/src/protocol/rpc/method.rs`) now also emits
+  `#[macro_export] macro_rules! for_each_rpc_method`, an X-macro that hands
+  every row to a callback macro as `Variant, "wire.name", ReqTy, RespTy;`
+  repeated — `crucible-core` cannot generate the method itself (it cannot
+  name `DaemonClient`, since the daemon depends on core, not the reverse),
+  so it hands the row data to a `macro_rules!` callback the daemon supplies
+  (`gen_rpc_methods` in `generated.rs`), which expands them into one
+  `impl DaemonClient` block. A row's `crate::...` path had to become
+  `crucible_core::...` (with `extern crate self as crucible_core;` added to
+  `crucible-core/src/lib.rs`) because a macro-captured `crate::` path
+  re-resolves against the *expanding* crate once a second macro invocation
+  (`for_each_rpc_method!` → the callback) forwards it, not the crate that
+  wrote it — an absolute path through the crate's own name does not.
+  Each method is named `rpc_<variant>`, not the bare method name
+  (`client.rpc_session_get(...)`, not `client.session_get(...)`), so it
+  never collides with a hand-written method of the same job — a curated
+  "which rows may keep their bare name" list would have been one more table
+  to keep in sync, and the prefix needs none. This also keeps the
+  struct/enum count flat (`rg -c -t rust '^\s*(pub(\([a-z:]+\))? )?(struct|enum)
+  [A-Z]' crates/*/src`, unchanged by this change): one macro invocation
+  generates 169 methods, not 169 marker types or a new facade type.
+  **Compiler proof:** `client.rpc_session_get(...)` read as a `String`
+  (the row is `Scoped<()> => SessionDetail`) fails `crucible-daemon`'s
+  build with a type mismatch at the call site, proved once and reverted.
+  **A latent wire bug this closed:** `send_raw` now canonicalizes a `()`
+  params value (which serializes to JSON `null`) to `{}` before sending —
+  the daemon has always received `{}` for a no-params method (see
+  `NO_PARAMS`'s own doc comment), so a generated `rpc_ping(())` would
+  otherwise have sent a shape the historical hand-written `ping()` never
+  did; a regression test
+  (`generated_method_of_a_no_params_row_reaches_the_daemon`) proves the
+  generated method reaches the daemon the same way. **Change cost, measured
+  on a scratch method** (`ScratchPing2`, added then reverted): 3 places —
+  the `rpc_methods!` row, the dispatch arm, and the call site
+  (`client.rpc_scratch_ping2(()).await`) — no wrapper method needed at all,
+  down from part A's own 3-places baseline (which still needed a bespoke
+  `call` invocation at the call site). **What replaced what:** two
+  thin hand-written forwarders that passed a row's struct straight through
+  with no argument reshaping, `workflow_start`/`workflow_approve_gate`
+  (`client/workflow.rs`), were deleted; their two call sites
+  (`crates/crucible-cli/src/commands/workflow.rs`) now call
+  `client.rpc_workflow_start(...)`/`.rpc_workflow_approve_gate(...)`
+  directly. The other ~160 hand-written methods across this module's
+  submodules were kept, in four categories, none of them the gap this
+  closes: (1) argument-transforming — `kiln_forget(name: &str)`,
+  `session_pause(session_id: &str)`, and the great majority of this
+  module's methods turn an ergonomic Rust argument list into a row's wire
+  body, which `docs/Meta/Architecture/Simplification Plan.md` names
+  explicitly as work `call` does not remove; (2) decode/derive —
+  `embed_query`, `plugin_list_info`, `process_batch`, and others pick a
+  field back out of a `serde_json::Value` reply or discard one; (3) policy
+  — `call_with_retry`/`call_with_timeout` callers (`diff_get`, `scm_clone`,
+  and others) add a retry or timeout the generated method does not have;
+  (4) reachable from `crucible-web`'s `forward_rpc!` macro
+  (`services/daemon.rs`, e.g. `session_create`, `diff_comment`), which
+  calls the hand-written method by a bare identifier
+  (`daemon.$client_method(...)`) — deleting these would have meant
+  reworking that macro's grammar to call through a second segment, which is
+  web-crate work outside this change's files, so they were left for a
+  follow-up rather than touched incidentally. **Not closed:** a row's
+  declared `Req`/`Resp` still is not enforced *at the row itself* — nothing
+  stops a future row from being edited to a type a handler no longer
+  matches; that is a dispatch-side property, and the module doc of
+  `crucible_core::protocol::rpc::method` already names why closing it fully
+  would need either 169 marker types (disfavored) or rewiring dispatch
+  through a shared macro-generated helper (left to a follow-up, same as
+  part A recorded).
 - Step 19 part A (typed `rpc_methods!` rows) found that roughly half the
   169 methods have a reply the daemon still builds with `json!`, not a
   named core type: about 91 rows carry `serde_json::Value` on one or both

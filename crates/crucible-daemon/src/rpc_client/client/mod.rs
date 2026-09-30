@@ -143,6 +143,7 @@ impl Drop for SpawnedDaemon {
 // them. The shared infrastructure (connection, JSON-RPC dispatch, error
 // retries) lives here in `mod.rs`.
 pub mod agent;
+pub mod generated;
 pub mod lua;
 pub mod notifications;
 pub mod proposals;
@@ -689,6 +690,19 @@ impl DaemonClient {
         timeout: Duration,
     ) -> Result<serde_json::Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+
+        // A params type of `()` (a row that takes none) serializes to
+        // `null`, but the daemon has always received `{}` for these methods
+        // — `NO_PARAMS` above exists only to hand-produce that shape.
+        // Canonicalizing here means every caller of a `()`-params method,
+        // generated (`rpc_client::client::generated`) or hand-written, sends
+        // the same wire shape the daemon has always answered, with no
+        // per-method rule to keep in sync.
+        let params = if params.is_null() {
+            serde_json::json!({})
+        } else {
+            params
+        };
 
         let request = serde_json::json!({
             "jsonrpc": "2.0",

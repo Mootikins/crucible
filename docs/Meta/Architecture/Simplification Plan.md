@@ -1054,19 +1054,58 @@ migrate its call sites — left for a follow-up step.
 
 ## Step 19. One RPC route for the web
 
-**Status: part A done (typed `rpc_methods!` rows); the route itself (parts
-1-6 of the change below) is not started.**
+**Status: part A done (typed `rpc_methods!` rows); gap 1 of part A closed;
+the route itself (parts 1-6 of the change below) is not started.**
 
-**Open after part A.** Two gaps stay, and the route needs both closed:
-1. A Rust call site is not bound to its row. `DaemonClient::call<Req, Resp>`
-   lets the caller pick the types, so a caller that disagrees with the row
-   still compiles. Fix: the macro emits one typed client function per row
-   (the row's params in, its reply out). Functions, not types, so the type
-   count does not grow; the hand-written client methods then go.
-2. 91 of 169 rows still reply `serde_json::Value`, so the generated TS map
+**Open after part A.** One gap stays, and the route needs it closed:
+1. 91 of 169 rows still reply `serde_json::Value`, so the generated TS map
    says `unknown` for them. Each needs a core reply type, as step 10 gave
    the other domains; a daemon-local reply type moves to core. The route is
    only as typed as these replies.
+
+**Gap 1, closed.** A Rust call site was not bound to its row:
+`DaemonClient::call<Req, Resp>` let the caller pick the types, so a caller
+that disagreed with the row still compiled.
+`crates/crucible-daemon/src/rpc_client/client/generated.rs` now generates
+one typed client method per row, `rpc_<variant in snake_case>`, whose
+signature is the row's own `Req`/`Resp` pair. `rpc_methods!` also emits
+`#[macro_export] macro_rules! for_each_rpc_method`, an X-macro callback:
+`crucible-core` cannot name `DaemonClient` (the daemon depends on core, not
+the reverse), so it hands every row's data to a callback macro a crate that
+*can* name the client supplies — `gen_rpc_methods` in `generated.rs`, which
+expands the rows into one `impl DaemonClient` block. Functions, not types:
+the struct/enum count did not grow (`rg -c -t rust
+'^\s*(pub(\([a-z:]+\))? )?(struct|enum) [A-Z]' crates/*/src` stays at 1772
+in this worktree's baseline, before and after) — one macro invocation
+generates 169 methods, and the methods are named `rpc_<variant>` rather
+than curated onto the bare name, so no facade type and no per-row
+name-collision table were needed either. Two thin hand-written forwarders
+that only passed a row's struct straight through
+(`workflow_start`/`workflow_approve_gate`) were deleted and their two call
+sites moved to the generated method; roughly 160 more hand-written methods
+across `rpc_client/client/*.rs` were kept, because each does real work the
+generated method does not (reshapes an ergonomic argument list into the
+wire body, decodes/derives part of the reply, adds a retry or timeout
+policy, or is called by name from `crucible-web`'s `forward_rpc!` macro) —
+see [[RPC Client#Findings]] for the categorized accounting. **Compiler
+proof:** `client.rpc_session_get(...)` (row: `Scoped<()> =>
+SessionDetail`) read as a `String` fails `crucible-daemon`'s build with a
+type mismatch, proved once and reverted. **Change cost, measured on a
+scratch method** (`ScratchPing2`, added then reverted): 3 places — the row,
+the dispatch arm, and the call site (`client.rpc_scratch_ping2(())`) — down
+from part A's own 3-places baseline, because no wrapper method is needed
+at all now. **A latent wire bug found and fixed along the way:** a
+`()`-params row serializes to JSON `null`, but the daemon has always
+required `{}` for a no-params method (`NO_PARAMS`'s own doc comment);
+`DaemonClient::send_raw` now canonicalizes `null` to `{}` for every caller,
+generated or hand-written, proved by a new live-server test
+(`generated_method_of_a_no_params_row_reaches_the_daemon`). **Not
+closed:** nothing stops a row's declared types from being edited to
+something a dispatch handler no longer matches — that remains a
+dispatch-side property, not a caller-side one; closing it fully still
+needs either 169 marker types (disfavored) or rewiring dispatch through a
+shared macro-generated helper, left to a follow-up, as part A already
+recorded.
 
 **Part A, done.** Every row in `rpc_methods!`
 (`crates/crucible-core/src/protocol/rpc/method.rs`) now names its params and

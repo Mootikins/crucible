@@ -1,6 +1,15 @@
 // Re-export uuid for downstream crates
 pub use uuid;
 
+// Lets a row of `rpc_methods!` (`protocol::rpc::method`) name its params/reply
+// type as `crucible_core::...` rather than `crate::...`. A macro-captured
+// `crate::` path loses its definition-site crate root once
+// `for_each_rpc_method!` hands the row on to a callback macro in another
+// crate (`macro_expanded_macro_exports_accessed_by_absolute_paths`-adjacent
+// hygiene: `crate` re-resolves against the *expanding* crate, not the one
+// that wrote it); an absolute path through the crate's own name does not.
+extern crate self as crucible_core;
+
 pub mod agent;
 pub mod background;
 pub mod bundled_docs;

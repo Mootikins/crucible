@@ -403,7 +403,7 @@ async fn run_start(config: CliAppConfig, target: &str, _session: Option<&str>) -
     println!();
 
     let result = client
-        .workflow_start(Scoped::new(
+        .rpc_workflow_start(Scoped::new(
             session_id.clone(),
             WorkflowSource {
                 source,
@@ -426,7 +426,7 @@ async fn run_approve(session: &str, gate: Option<&str>) -> Result<()> {
     };
 
     let result = client
-        .workflow_approve_gate(Scoped::new(session.to_string(), GateRef { gate_id }))
+        .rpc_workflow_approve_gate(Scoped::new(session.to_string(), GateRef { gate_id }))
         .await
         .context("workflow.approve_gate RPC failed")?;
 

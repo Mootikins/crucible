@@ -1427,6 +1427,7 @@ dependencies = [
  "oq",
  "ort",
  "parking_lot",
+ "pastey 0.2.3",
  "proptest",
  "rand 0.10.3",
  "regex",

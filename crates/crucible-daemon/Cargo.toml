@@ -11,6 +11,9 @@ dist = false
 
 [dependencies]
 strum = { version = "0.28", features = ["derive"] }
+# Turns an `RpcMethod` variant name (`SessionGet`) into its client method
+# name (`session_get`) at compile time, in `rpc_client::client::generated`.
+pastey = "0.2"
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

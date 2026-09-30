@@ -1,6 +1,11 @@
 mod method;
 
 pub use method::{RpcMethod, METHODS};
+// `for_each_rpc_method!` is defined inside the `rpc_methods!` invocation
+// below, so it is `#[macro_export]`ed at the crate root only
+// (`crucible_core::for_each_rpc_method!`) — a macro a macro invocation
+// defines cannot be re-exported at a nested path (rustc:
+// `macro_expanded_macro_exports_accessed_by_absolute_paths`).
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
