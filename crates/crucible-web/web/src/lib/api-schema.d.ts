@@ -172,31 +172,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/events/{session_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * The session's live event stream, resuming from a seq cursor.
-         * @description The body schema describes one SSE `data:` payload, not the whole stream:
-         *     OpenAPI has no way to say "many of these, one per line". Each event's seq
-         *     rides the SSE `id:` field, so a client that reconnects can name the last
-         *     event it applied — through `?after=` on a fresh `EventSource` (the browser
-         *     API cannot set headers) or the automatic `Last-Event-ID` a browser sends
-         *     when it retries the same source.
-         */
-        get: operations["event_stream"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chat/send": {
         parameters: {
             query?: never;
@@ -377,7 +352,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/events/system": {
+    "/api/events": {
         parameters: {
             query?: never;
             header?: never;
@@ -385,12 +360,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /api/events/system` — a push when a publication or a proposal
-         *     changes.
-         * @description A proposal belongs to no user session, so a session stream cannot carry
-         *     it. The Inbox and the note bar listen here.
+         * The browser's event stream, one connection carrying as many topics as it
+         *     names.
+         * @description The body schema describes one SSE `data:` payload, not the whole stream:
+         *     OpenAPI has no way to say "many of these, one per line".
          */
-        get: operations["system_event_stream"];
+        get: operations["events_stream"];
         put?: never;
         post?: never;
         delete?: never;
@@ -416,26 +391,6 @@ export interface paths {
          *     everything else to download.
          */
         get: operations["get_raw_file"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/fs/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Live filesystem-change stream for the file-tree explorer.
-         * @description The body schema describes one SSE `data:` payload, not the whole stream.
-         */
-        get: operations["fs_event_stream"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2008,26 +1963,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/surfaces/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Live stream of surface changes.
-         * @description The body schema describes one SSE `data:` payload, not the whole stream.
-         */
-        get: operations["surface_event_stream"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/terminal/ws": {
         parameters: {
             query?: never;
@@ -2750,17 +2685,6 @@ export interface components {
             sessions: boolean;
         };
         /**
-         * @description One SSE `data:` payload of `GET /api/chat/events/{session_id}`.
-         *
-         *     Documentation only — `to_sse` builds each frame from its own producer and
-         *     never constructs this enum. It exists so `openapi.json` can name one
-         *     schema for the route: either a typed session event, in the same
-         *     `{event, data}` shape [`SessionEventPayload`] itself serializes to, or a
-         *     [`TranscriptFrame`], the second frame a live event sends when it changed
-         *     the transcript.
-         */
-        ChatSseFrame: components["schemas"]["SessionEventPayload"] | components["schemas"]["TranscriptFrame"];
-        /**
          * @description Reply from `client_state.get`. `None` when nothing was ever stored under
          *     that `(client, key)` — not an error, the common case before a first save.
          */
@@ -3463,6 +3387,16 @@ export interface components {
             /** Format: int64 */
             after: number;
         };
+        /**
+         * @description One SSE `data:` payload of `GET /api/events`.
+         *
+         *     Documentation only — the route never constructs this enum, and builds
+         *     each frame from its own producer instead. It exists so `openapi.json` can
+         *     name one schema for the route: a typed session event
+         *     [`SessionEventPayload`] itself serializes to, a [`TranscriptFrame`], or
+         *     one of the four `system`-topic shapes.
+         */
+        EventsFrame: components["schemas"]["SessionEventPayload"] | components["schemas"]["TranscriptFrame"] | components["schemas"]["FsEvent"] | components["schemas"]["SurfaceChangedEvent"] | components["schemas"]["SystemEvent"];
         ExecuteCommandRequest: {
             /** @description The command line, with or without its leading slash. */
             command: string;
@@ -8027,7 +7961,7 @@ export interface components {
             text: string;
         };
         /**
-         * @description One frame of the system stream. The SSE `event:` name tells the two
+         * @description One frame of the `system` topic. The SSE `event:` name tells the two
          *     shapes apart.
          */
         SystemEvent: components["schemas"]["PublicationChangedEvent"] | components["schemas"]["ProposalChangedEvent"];
@@ -8427,10 +8361,10 @@ export interface components {
             items: components["schemas"]["TranscriptItem"][];
         };
         /**
-         * @description The second SSE frame for a live event that changed the transcript, with
-         *     the same `id:` as the event's own frame. The browser applies `ops` to the
-         *     snapshot the history route gave, and drops an op when `seq` is not above
-         *     the `as_of_seq` of that snapshot.
+         * @description The second SSE frame for a live session event that changed the
+         *     transcript, with the same `id:` as the event's own frame. The browser
+         *     applies `ops` to the snapshot the history route gave, and drops an op
+         *     when `seq` is not above the `as_of_seq` of that snapshot.
          *
          *     One variant, internally tagged on `type`, rather than a plain struct with
          *     a hand-set `&'static str` field: a bare `&str` gives the schema `type:
@@ -9152,7 +9086,6 @@ export type SchemaCanvasResponse = components['schemas']['CanvasResponse'];
 export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedResponse'];
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
 export type SchemaCapabilityFlags = components['schemas']['CapabilityFlags'];
-export type SchemaChatSseFrame = components['schemas']['ChatSseFrame'];
 export type SchemaClientStateGetReply = components['schemas']['ClientStateGetReply'];
 export type SchemaClientStateKey = components['schemas']['ClientStateKey'];
 export type SchemaClientStateSetRequest = components['schemas']['ClientStateSetRequest'];
@@ -9206,6 +9139,7 @@ export type SchemaEmbeddingModelsRequest = components['schemas']['EmbeddingModel
 export type SchemaEmbedQueryReply = components['schemas']['EmbedQueryReply'];
 export type SchemaEmbedQueryRequest = components['schemas']['EmbedQueryRequest'];
 export type SchemaEventCursor = components['schemas']['EventCursor'];
+export type SchemaEventsFrame = components['schemas']['EventsFrame'];
 export type SchemaExecuteCommandRequest = components['schemas']['ExecuteCommandRequest'];
 export type SchemaExpectedBase = components['schemas']['ExpectedBase'];
 export type SchemaExportOptions = components['schemas']['ExportOptions'];
@@ -10066,33 +10000,6 @@ export interface operations {
             };
         };
     };
-    event_stream: {
-        parameters: {
-            query?: {
-                /** @description Replay the persisted events past this seq. */
-                after?: number;
-            };
-            header?: never;
-            path: {
-                /** @description The session to stream */
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
-                    "X-Crucible-Stream-Version"?: number;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ChatSseFrame"];
-                };
-            };
-        };
-    };
     send_message: {
         parameters: {
             query?: never;
@@ -10461,9 +10368,22 @@ export interface operations {
             };
         };
     };
-    system_event_stream: {
+    events_stream: {
         parameters: {
-            query?: never;
+            query: {
+                /**
+                 * @description Replay the persisted events of each named topic past its seq, as
+                 *     `topic:seq` pairs, comma-separated. A topic with no pair starts from
+                 *     the live tail. The `system` topic keeps no log, so a pair for it is
+                 *     ignored.
+                 */
+                after?: string;
+                /**
+                 * @description One or more topics, comma-separated: a session id, or `system` for
+                 *     publications, proposals, surface changes and filesystem changes.
+                 */
+                topics: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10477,7 +10397,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["SystemEvent"];
+                    "text/event-stream": components["schemas"]["EventsFrame"];
                 };
             };
         };
@@ -10526,27 +10446,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    fs_event_stream: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
-                    "X-Crucible-Stream-Version"?: number;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["FsEvent"];
-                };
             };
         };
     };
@@ -13580,27 +13479,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    surface_event_stream: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
-                    "X-Crucible-Stream-Version"?: number;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["SurfaceChangedEvent"];
-                };
             };
         };
     };

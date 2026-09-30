@@ -428,57 +428,6 @@
         }
       }
     },
-    "/api/chat/events/{session_id}": {
-      "get": {
-        "summary": "The session's live event stream, resuming from a seq cursor.",
-        "description": "The body schema describes one SSE `data:` payload, not the whole stream:\nOpenAPI has no way to say \"many of these, one per line\". Each event's seq\nrides the SSE `id:` field, so a client that reconnects can name the last\nevent it applied — through `?after=` on a fresh `EventSource` (the browser\nAPI cannot set headers) or the automatic `Last-Event-ID` a browser sends\nwhen it retries the same source.",
-        "operationId": "event_stream",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "description": "The session to stream",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "description": "Replay the persisted events past this seq.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "headers": {
-              "X-Crucible-Stream-Version": {
-                "schema": {
-                  "type": "integer",
-                  "format": "int64",
-                  "minimum": 0
-                },
-                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
-              }
-            },
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatSseFrame"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/chat/send": {
       "post": {
         "summary": "Start a turn in a session, or run the daemon command that the message\nnames.",
@@ -903,11 +852,31 @@
         }
       }
     },
-    "/api/events/system": {
+    "/api/events": {
       "get": {
-        "summary": "`GET /api/events/system` — a push when a publication or a proposal\nchanges.",
-        "description": "A proposal belongs to no user session, so a session stream cannot carry\nit. The Inbox and the note bar listen here.",
-        "operationId": "system_event_stream",
+        "summary": "The browser's event stream, one connection carrying as many topics as it\nnames.",
+        "description": "The body schema describes one SSE `data:` payload, not the whole stream:\nOpenAPI has no way to say \"many of these, one per line\".",
+        "operationId": "events_stream",
+        "parameters": [
+          {
+            "name": "topics",
+            "in": "query",
+            "description": "One or more topics, comma-separated: a session id, or `system` for\npublications, proposals, surface changes and filesystem changes.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Replay the persisted events of each named topic past its seq, as\n`topic:seq` pairs, comma-separated. A topic with no pair starts from\nthe live tail. The `system` topic keeps no log, so a pair for it is\nignored.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -924,7 +893,7 @@
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/SystemEvent"
+                  "$ref": "#/components/schemas/EventsFrame"
                 }
               }
             }
@@ -967,35 +936,6 @@
           },
           "502": {
             "description": "The daemon could not be reached"
-          }
-        }
-      }
-    },
-    "/api/fs/events": {
-      "get": {
-        "summary": "Live filesystem-change stream for the file-tree explorer.",
-        "description": "The body schema describes one SSE `data:` payload, not the whole stream.",
-        "operationId": "fs_event_stream",
-        "responses": {
-          "200": {
-            "description": "",
-            "headers": {
-              "X-Crucible-Stream-Version": {
-                "schema": {
-                  "type": "integer",
-                  "format": "int64",
-                  "minimum": 0
-                },
-                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
-              }
-            },
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/FsEvent"
-                }
-              }
-            }
           }
         }
       }
@@ -4164,35 +4104,6 @@
         }
       }
     },
-    "/api/surfaces/events": {
-      "get": {
-        "summary": "Live stream of surface changes.",
-        "description": "The body schema describes one SSE `data:` payload, not the whole stream.",
-        "operationId": "surface_event_stream",
-        "responses": {
-          "200": {
-            "description": "",
-            "headers": {
-              "X-Crucible-Stream-Version": {
-                "schema": {
-                  "type": "integer",
-                  "format": "int64",
-                  "minimum": 0
-                },
-                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
-              }
-            },
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "$ref": "#/components/schemas/SurfaceChangedEvent"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/terminal/ws": {
       "get": {
         "summary": "Open a PTY and speak it over a WebSocket.",
@@ -5893,17 +5804,6 @@
           }
         }
       },
-      "ChatSseFrame": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/SessionEventPayload"
-          },
-          {
-            "$ref": "#/components/schemas/TranscriptFrame"
-          }
-        ],
-        "description": "One SSE `data:` payload of `GET /api/chat/events/{session_id}`.\n\nDocumentation only — `to_sse` builds each frame from its own producer and\nnever constructs this enum. It exists so `openapi.json` can name one\nschema for the route: either a typed session event, in the same\n`{event, data}` shape [`SessionEventPayload`] itself serializes to, or a\n[`TranscriptFrame`], the second frame a live event sends when it changed\nthe transcript."
-      },
       "ClientStateGetReply": {
         "type": "object",
         "description": "Reply from `client_state.get`. `None` when nothing was ever stored under\nthat `(client, key)` — not an error, the common case before a first save.",
@@ -7401,6 +7301,26 @@
             "minimum": 0
           }
         }
+      },
+      "EventsFrame": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SessionEventPayload"
+          },
+          {
+            "$ref": "#/components/schemas/TranscriptFrame"
+          },
+          {
+            "$ref": "#/components/schemas/FsEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SurfaceChangedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SystemEvent"
+          }
+        ],
+        "description": "One SSE `data:` payload of `GET /api/events`.\n\nDocumentation only — the route never constructs this enum, and builds\neach frame from its own producer instead. It exists so `openapi.json` can\nname one schema for the route: a typed session event\n[`SessionEventPayload`] itself serializes to, a [`TranscriptFrame`], or\none of the four `system`-topic shapes."
       },
       "ExecuteCommandRequest": {
         "type": "object",
@@ -17557,7 +17477,7 @@
             "$ref": "#/components/schemas/ProposalChangedEvent"
           }
         ],
-        "description": "One frame of the system stream. The SSE `event:` name tells the two\nshapes apart."
+        "description": "One frame of the `system` topic. The SSE `event:` name tells the two\nshapes apart."
       },
       "SystemPayload": {
         "oneOf": [
@@ -18410,7 +18330,7 @@
             }
           }
         ],
-        "description": "The second SSE frame for a live event that changed the transcript, with\nthe same `id:` as the event's own frame. The browser applies `ops` to the\nsnapshot the history route gave, and drops an op when `seq` is not above\nthe `as_of_seq` of that snapshot.\n\nOne variant, internally tagged on `type`, rather than a plain struct with\na hand-set `&'static str` field: a bare `&str` gives the schema `type:\nstring`, not the literal `\"transcript\"` a browser needs to discriminate\non. The tag is the whole reason for the enum."
+        "description": "The second SSE frame for a live session event that changed the\ntranscript, with the same `id:` as the event's own frame. The browser\napplies `ops` to the snapshot the history route gave, and drops an op\nwhen `seq` is not above the `as_of_seq` of that snapshot.\n\nOne variant, internally tagged on `type`, rather than a plain struct with\na hand-set `&'static str` field: a bare `&str` gives the schema `type:\nstring`, not the literal `\"transcript\"` a browser needs to discriminate\non. The tag is the whole reason for the enum."
       },
       "TranscriptItem": {
         "allOf": [
