@@ -598,22 +598,23 @@ body { background: var(--mk-nav); }
   .wm-tab[data-active]:not([data-focused]) { background: var(--mk-btn); color: var(--cru-color-body); }
 }
 
-/* A floating window looks as the centre does, lifted off the page: its frame
-   is the ground (translucent, blurred), its tabs sit on the frame, and its
-   content is the same rounded MAIN card with the same gap around it. A
-   window without a tab bar has the gap on top too. */
+/* A floating window looks as the centre does, lifted off the page: a thin
+   frame in the ground tone, its tabs on the frame, and the MAIN card inside.
+   The card's radius is the frame's radius less the frame, so the two curves
+   stay parallel. A window without a tab bar has the frame on top too. The
+   Glass surface (section 4) makes the frame translucent. */
 .wm-floating {
   --color-shell-bg: transparent;
-  padding: 0 var(--mk-gap) var(--mk-gap);
-  border-radius: calc(var(--mk-radius) + var(--mk-gap) / 2);
-  background: color-mix(in oklab, var(--mk-nav-solid) 72%, transparent);
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
-  box-shadow: 0 18px 48px -18px rgba(0, 0, 0, 0.7);
+  --mk-float-frame: 4px;
+  --mk-float-radius: 10px;
+  padding: 0 var(--mk-float-frame) var(--mk-float-frame);
+  border-radius: var(--mk-float-radius);
+  background: var(--mk-nav-solid);
+  box-shadow: 0 16px 40px -18px rgba(0, 0, 0, 0.65);
 }
-.wm-floating:not(:has(.wm-tabbar, .wm-floating-titlebar)) { padding-top: var(--mk-gap); }
+.wm-floating:not(:has(.wm-tabbar, .wm-floating-titlebar)) { padding-top: var(--mk-float-frame); }
 .wm-floating .wm-tabbar { background: transparent; }
-.wm-floating-body { padding: 0; border-radius: var(--mk-radius); background: var(--mk-main-solid); }
+.wm-floating-body { padding: 0; border-radius: calc(var(--mk-float-radius) - var(--mk-float-frame)); background: var(--mk-main-solid); }
 
 /* The bars of a hover popup, until it is pinned (toolbox "Hover popup"). */
 .mk-hoverbar { display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 6px 0 var(--mk-pad); font-size: 12px; color: var(--cru-color-muted); flex: none; }
@@ -681,6 +682,7 @@ body { background: var(--mk-nav); }
 }
 
 /* Floating layers are frosted: windows (peek, hover editor), popovers, the permission card. */
+:root[data-material='glass'] .wm-floating { background: color-mix(in oklab, var(--mk-nav-solid) 72%, transparent); }
 :root[data-material='glass'] .wm-floating,
 :root[data-material='glass'] .mk-pop,
 :root[data-material='glass'] .mk-menu,
