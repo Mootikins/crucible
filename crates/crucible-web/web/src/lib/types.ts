@@ -128,7 +128,7 @@ export type AgentProfileEntry = Schemas['AgentProfileEntry'];
 
 /** One provider and its models, from `GET /api/providers`. `endpoint` and
  * `reason` are nullable, not merely absent. */
-export type ProviderInfo = Schemas['ProviderRow'];
+export type ProviderInfo = Schemas['ProviderInfo'];
 
 // =============================================================================
 // File Entry Types
