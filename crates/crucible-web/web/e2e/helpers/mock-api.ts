@@ -20,7 +20,7 @@ export interface MockOverrides {
   providers?: object;
   config?: object;
   publications?: object;
-  /** Per-command answers for `POST /api/plugins/command`, by command name. */
+  /** Per-command answers for `POST /api/rpc/plugin.run_command`, by command name. */
   pluginTargets?: Record<string, { targets: object[] }>;
   kilns?: object;
   projects?: object[];
@@ -158,13 +158,16 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: overrides.config ?? MOCK_CONFIG }),
   );
 
-  await page.route('**/api/plugins/publications', (route) =>
+  // `plugin.publications` and `plugin.run_command` reach the browser
+  // through `POST /api/rpc/{method}` now (Simplification Plan step 19
+  // item 4), with the caller header `rpc(..., { caller })` sends.
+  await page.route('**/api/rpc/plugin.publications', (route) =>
     route.fulfill({ json: overrides.publications ?? MOCK_PUBLICATIONS }),
   );
 
   // Target enumeration. A command rather than more published data because the
   // workspace axis is per-project: the branch list belongs to a repository.
-  await page.route('**/api/plugins/command', (route) => {
+  await page.route('**/api/rpc/plugin.run_command', (route) => {
     const { name } = JSON.parse(route.request().postData() ?? '{}');
     const answers = overrides.pluginTargets ?? MOCK_PLUGIN_TARGETS;
     route.fulfill({ json: answers[name] ?? { targets: [] } });

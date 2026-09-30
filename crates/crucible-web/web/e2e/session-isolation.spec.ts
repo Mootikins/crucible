@@ -6,8 +6,8 @@ import { appReady, openNewSessionTab, openSession } from './helpers/nav';
  * E2E: the new-session target chips, on both axes.
  *
  * The composer offers whatever providers published to
- * `GET /api/plugins/publications` and enumerated through
- * `POST /api/plugins/command`, then hands the pick straight to
+ * `POST /api/rpc/plugin.publications` and enumerated through
+ * `POST /api/rpc/plugin.run_command`, then hands the pick straight to
  * `POST /api/session`. This spec watches the actual request body, because the
  * whole feature is "the pick reaches the server unrewritten" — and because
  * `false` and *absent* are different instructions that a truthiness bug would
@@ -189,13 +189,33 @@ test('a second provider on an axis turns the menu into a drill-down', async ({ p
   });
 });
 
-test("plugin status dots expand and expose the whole ordered list", async ({ page }) => {
+test('plugin status dots expand and expose the whole ordered list', async ({ page }) => {
   await setupBasicMocks(page, {
     sessionStatus: {
       status: [
-        { id: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', color_group: 'warn', priority: 10, pinned: false, action: null, kind: 'published', progress: null },
+        {
+          id: 'zarquon',
+          plugin: 'zarquon',
+          text: 'flux capacitor charged',
+          color_group: 'warn',
+          priority: 10,
+          pinned: false,
+          action: null,
+          kind: 'published',
+          progress: null,
+        },
         // The engine's plugin-turn item, as `session.status` sends it.
-        { id: 'plugin_turns:goal', plugin: 'goal', text: 'goal · ask', color_group: 'warn', priority: 0, pinned: true, action: 'plugin_approval', kind: 'plugin_turns', progress: null },
+        {
+          id: 'plugin_turns:goal',
+          plugin: 'goal',
+          text: 'goal · ask',
+          color_group: 'warn',
+          priority: 0,
+          pinned: true,
+          action: 'plugin_approval',
+          kind: 'plugin_turns',
+          progress: null,
+        },
       ],
     },
   });
@@ -209,14 +229,17 @@ test("plugin status dots expand and expose the whole ordered list", async ({ pag
   await expect(pinned).toContainText('goal · ask');
   await expect(page.locator('.session-status-pinned')).toHaveCSS('border-left-width', '1px');
   await expect(pinned.locator('.status-dot')).not.toHaveCSS('box-shadow', 'none');
-  expect(await pinned.locator('.status-dot').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe(await dot.locator('.status-dot').evaluate((el) => getComputedStyle(el).backgroundColor));
+  expect(
+    await pinned.locator('.status-dot').evaluate((el) => getComputedStyle(el).backgroundColor),
+  ).toBe(await dot.locator('.status-dot').evaluate((el) => getComputedStyle(el).backgroundColor));
   await expect(page.getByTestId('composer-chip-dock')).toBeVisible();
   await expect(dot.locator('.status-dot-name')).toHaveCSS('opacity', '0');
   await dot.hover();
   await expect(dot.locator('.status-dot-name')).toHaveCSS('opacity', '1');
   await dot.click();
-  await expect(page.getByRole('menu', { name: 'Session status' }).getByRole('menuitem')).toHaveCount(2);
+  await expect(
+    page.getByRole('menu', { name: 'Session status' }).getByRole('menuitem'),
+  ).toHaveCount(2);
   if (process.env.CAPTURE_STATUS_SCREENSHOT) {
     await page.screenshot({ path: process.env.CAPTURE_STATUS_SCREENSHOT });
   }
